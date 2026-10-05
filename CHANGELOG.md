@@ -34,6 +34,664 @@ OpenMM writes frame zero after one trajectory reporting interval, not at 0 ns.
 Where the sealed simulation record matches the DCD, frame `k` is labelled
 `(k + 1) * interval * timestep`; older and synthetic trajectories retain the
 previous total-duration fallback when it is explicitly supplied.
+### The B-factor comparison of a structure numbered with insertion codes
+
+**The comparison with B-factors is plotted for one chain numbered with
+insertion codes**, each residue at its own place and ticked with its number
+and code. Its table has no chain column there, and the figure grouped by
+one, so a study of trypsin (3PTB, 184 beside 184A) recorded the analysis as
+an error, `'chain'`, with no figure.
+
+### The times of several strided files, after the analysis
+
+**The GUI's axes give strided frames of several files the times they were
+written**, as the loader does: the analysis manifest keeps each analysed
+frame's time where several files were loaded at a stride
+(`frame_times_ps`), and the Analysis page's series, the convergence view
+and the results table read it. They assumed even spacing, so two files of
+five frames at stride 2, written every 10 ps, read 10 to 110 ps where the
+frames were written at 10 to 100.
+
+### A capped chain's ends
+
+**A capped peptide's end-to-end distance runs between its first and last
+alpha carbons**: the ends are the first and last residues holding the named
+atom. With the NHE and NH2 caps counted as protein, a peptide ending in one
+had the cap as its last residue, with no alpha carbon, and the analysis
+refused it; an ACE or NME cap was refused before.
+
+### The Analysis page read as a whole
+
+**The Analysis page opens with what the analyses determined**: one table
+of every analysis, under what it studies, with the mean it recorded over
+its equilibrated frames to the place its error allows (and every other
+quantity it recorded a mean of: helix and strand fractions, hydrophobic
+and polar SASA, the shape descriptors), the frames it rests on and from
+when, its independent samples, and **Determined** or **Not determined**,
+which opens to say why; a failed analysis gives its reason, and the table
+downloads as CSV. Each number is the analysis's own record, the one the
+report gives (`GET /api/analysis-overview`), the run's own temperature,
+density, energies and volume among them, first. What a study found, and which
+of it holds, had to be read from every card's caption in turn, and a mean
+too short to determine looked, at a glance, like any other.
+
+**An index of the sections by what they study, and a filter** (Find an
+analysis), above the figures; each card links the data its figure is
+plotted from.
+
+**Convergence, under any series over time**: the running mean of its
+equilibrated frames with its error beside the recorded mean, the standard
+error by block length (Flyvbjerg and Petersen), the autocorrelation with
+its integrated correlation time, and the distribution of the frames
+averaged beside those left out, computed by the estimator the recorded
+error comes from (`statistics.convergence_of`, `GET /api/convergence`) and
+said in a paragraph. The mean and error it states are the record's: an
+error the analysis withheld (a chain reaching its own periodic image, a
+molecule broken across the box) is withheld here too, with no band drawn.
+Where the recorded mean began where a study's replicas equilibrate
+together, it says so rather than show a second start.
+
+**Fixed:** a series about a large value (Total SASA of 91 nm² varying by
+0.3) was plotted from zero and read as a flat line; zero is on the axis
+only where the values reach towards it. A card no longer repeats its
+section's name as a status.
+
+### Every analysis has its own section
+
+**Every analysis has its own section on the Analysis page and in the
+report's dashboard, ordered by what it studies**: the run's ensemble, the
+protein's structure and stability, its flexibility, its secondary structure
+and backbone, its contacts and solvent, the states it visited, a ligand, a
+bilayer and a free energy. Twelve of the thirty analyses were missing from
+the list of sections, so their figures fell together under one "Other":
+end-to-end distance beside lipid order, a radial distribution beside the
+B-factors. The list is one table (`report_dashboard.ANALYSIS_THEMES`) that a
+test keeps every registered analysis in.
+
+### One start for RMSF, clustering and the projections
+
+**RMSF takes `start` as clustering and dimred take it**: a time in ns, `0`
+for every frame, or `equilibrated`, its default, found on the RMSD of the
+fitted atoms by one rule (`analysis/starting_frame.py`), and what it left
+out is recorded as `findings["frames"]`, as for the others.
+
+### Mass density across the bilayer
+
+**`bilayer_thickness` writes the mass density of each part of the system along the normal beside the thickness:** lipid heads, lipid hydrocarbon chains, water, protein and ions, in g/cm3, in 0.1 nm slabs centred on the bilayer centre in every frame and averaged over the frames analysed (`density_profile.dat`, `density_profile.png`). The density of a slab is its mass summed over frames over its volume summed over frames, `rho(z) = sum_f m_f(z) / sum_f A_f w_f(z)`, with each row's width inside the box written beside it so the density times the width, summed and times the box's area, is the component's mass. On OpenMM's POPC patch the water is 1.0 g/cm3 in bulk and none within 0.3 nm of the centre, and the heads peak 1.8 nm out, half of D_PP. Nothing computed before changes.
+
+### Each leaflet's area per lipid
+
+**`area_per_lipid` gives each leaflet's own area per lipid, `A / N_upper` and `A / N_lower`, beside the bilayer's `2 A / (N_upper + N_lower)`**, with `A` the box's area in xy less the protein's cross section and the leaflets counted every frame. In an asymmetric bilayer the leaflets share one area, so the one with fewer lipids is the more stretched, and the bilayer's value is neither: OpenMM's DMPC patch with eight lipids taken from the upper leaflet reads 0.664 nm2 for the bilayer, 0.711 for the upper leaflet and 0.622 for the lower. `area_per_lipid.dat` now has three columns, upper, lower and the bilayer's, the bilayer's last so every reader that takes the last column (the dashboard, the comparison of runs, reweighting) reads what it read before; the findings carry both leaflets' means (`per_leaflet`) and, where the counts differ, say so (`asymmetric`). The figure adds both leaflets' series when they differ. Results change: the data file gains two columns; the bilayer's area per lipid is unchanged.
+
+### A sterol changing leaflet is not a damaged bilayer
+
+**The warning that flip-flop takes hours counts only phospholipids; sterols changing leaflet get a note of their own.** It counted every head, so a cholesterol moving to the other leaflet, which it does in microseconds or faster, was reported as a bilayer that had come apart. Now `leaflet_changes` gives the range of phospholipids in the upper leaflet, and `sterol_leaflet_changes` says that sterols (and other lipids without a phosphate) changing leaflet is expected in a long run. Results change: findings only.
+
+### A Lipid21 bilayer from a PDB without bonds
+
+**`lipid_order` joins a Lipid17 or Lipid21 lipid's head and tail residues by covalent distance when the topology records no bonds between lipid residues.** They were joined only through the topology's bonds, and a PDB written without CONECT records has none, so each tail stood alone with no carbonyl to start a chain from and the analysis refused with "No acyl chain was found". Neighbouring split-lipid residues are now joined where a heavy atom of one lies within covalent distance of the other's, at the nearest periodic image. Results change: such bilayers now get an order profile, the same as with bonds.
+
+### Chain order of a trajectory wrapped atom by atom
+
+**Each C-H bond is brought to its nearest periodic image in all three box directions, triclinic cells included, before its angle to the normal is taken.** Only z was corrected, so a trajectory written with every atom wrapped into the box (as GROMACS writes one by default) split the bonds of lipids crossing the x and y faces, each of which counted as a bond nearly in the plane: OpenMM's DMPC patch wrapped this way read sn-1 C2 -0.243 against -0.233 and the chain ends up to 0.015 more ordered than they are. The bond is now taken in the cell's fractional coordinates, `f = d B^-1`, `f -= round(f)`, `d = f B`. Results change: S_CD of trajectories saved with atoms wrapped one by one, by up to 0.015.
+
+### The chain order checks the normal
+
+**`lipid_order` refuses a bilayer whose phosphates do not form two layers normal to z, as the area per lipid and the thickness do.** S_CD is the C-H bonds' angle to z, and the order analysis never checked that z was the normal: OpenMM's DMPC patch with x and z swapped gave an sn-1 C2 of +0.128 against the true -0.233, a profile of the wrong sign, with nothing refused. Results change: none for a bilayer in the xy plane; one on its side is now refused.
+
+### Water is water whatever it is called
+
+**The bilayer analyses read a residue as water by its name, by MDTraj's test, or by being one oxygen and two hydrogens with any massless sites.** The name list lacked OPC, TIP3P, TP3, SPCE, TIP4P and others, and water under those names was read as protein: on OpenMM's POPC patch with its water renamed OPC, the water among the head groups gave a "protein" cross section of 0.16 nm2 and an area per lipid of 0.663 against 0.666 nm2, and the error grows with water that reaches further into a thinner or more disordered bilayer. Results change: systems whose water is not named HOH, WAT, SOL, TIP3 or SPC lose a protein correction that was water, and a bilayer with no protein in it is again its box per lipid.
+
+### Every lipid name is a lipid
+
+**A residue is a lipid when OpenMM has a lipid template of its name: CHARMM36's, as CHARMM-GUI writes them, and AMBER Lipid17's and Lipid21's.** The list kept by hand held about forty names, and every other lipid was counted as protein: with a third of a POPC bilayer renamed DSPE, PLPC, SOPE, DLPG or DAPC, the area per lipid read 10% large and the findings said a protein took 27% of the box. The names are now read from OpenMM's force field files where OpenMM is installed (295 templates, from DSPE to the cardiolipins, ceramides and phytosterols), and otherwise from a copy of that list kept in `lipids.py`, so an install without OpenMM reads the same names; a test checks the copy holds every template OpenMM ships. Lipid21's stearoyl (SA), docosahexaenoyl (DHA), arachidonoyl (AR) and lauroyl (LAL) tails are tails, and its PGS, PH- and SPM heads are heads. A ceramide's head is its hydroxyl oxygen, as a sterol's is. When a residue read as protein has a phosphorus among the lipid heads, the findings say so (`unread_lipids`). The default bilayer of `membrane_depth`, the membrane barostat and the crash diagnosis read the same names. Results change: mixed bilayers with lipids outside the old list get the right area per lipid and thickness, and lose a protein correction that was never there.
+
+### A Lipid21 bilayer has its heads
+
+**The bilayer analyses find each lipid's phosphorus by its element, not by the name P.** AMBER's Lipid17 and Lipid21 name it P31, so on a Lipid21 POPC bilayer no head was found: the area per lipid was infinite with status ok, and the thickness was refused as having no phosphate. Where a lipid has several (a cardiolipin, a phosphoinositide) the one named P is taken, else the first. `area_per_lipid` now refuses a bilayer in which no head atom is found, rather than dividing by zero. Results change: Lipid21 and Lipid17 bilayers get an area per lipid and a thickness (0.666 nm2 and 3.66 nm on OpenMM's POPC patch split as Lipid21 writes it, as for the patch itself).
+
+### How a series converged, in one call
+
+**`statistics.convergence_of(values, times=None)` returns what a convergence view plots, from the estimators the recorded mean uses, as plain lists ready for JSON.** It gives the equilibration start `summarise` chooses with its mean and error; the running mean of the equilibrated part at about 50 points, each with the error the package would record had the run ended there (`summarise`'s own rule, from the same start), withheld where it would be, the last point the record itself; Flyvbjerg-Petersen block averaging with each error's own uncertainty, SE / sqrt(2(n_b - 1)), with no plateau named (the first agreement of the blocks read the error 14 to 19% low); the autocorrelation to its first zero or a quarter of the series, with tau_int = (g - 1) / 2 in frames and time; and Freedman-Diaconis histograms of the kept and discarded values, at most 60 bins. Fewer than ten finite values give a reason and no numbers. The correlations of every candidate start and prefix come from one Fourier pass, so a million values take about half a second of processor time, a second and a half where a transient is discarded. `summarise` was split into pieces this shares, and gives the same records as before.
+
+### A constant-volume run's volume is said as fixed
+
+**The thermodynamics record gives a constant-volume run's box volume as the value the ensemble held, with that reason, as it already did for the density.** Read as a series, a volume that never changes is one observation however long the run, so it was refused as "not long against its own correlation time" with a longer run named as the remedy, which would never have changed it. Results change: `volume` in an NVT run's thermodynamics record now carries `value` and a reason in place of the refusal and its equilibration fields.
+
+### The PMF figure marks the minimum the summary gives
+
+**The potential of mean force figure marks its minimum inside the range the umbrella windows covered, where the summary already took it.** The figure took the lowest bin over the whole grid, which runs past the last window into bins few samples reached: on a profile whose well was at 0.5 nm inside a covered 0.35 to 1.6 nm, it marked 2.2 nm. Results change: PMF figures of studies whose grid extends past the windows may mark a different minimum; the recorded summary is unchanged.
+
+### A missing value no longer makes the frames independent
+
+**The statistical inefficiency, the error of a mean, the resolution check, equilibration detection and the bootstrap block length all leave values that are not finite out before they read a correlation.** One NaN made every autocorrelation NaN, and `max(1.0, nan)` is 1.0: an AR(1) series whose inefficiency was 41 read 1, and the bootstrap block built on it was 2 frames instead of 83, so a free energy's error bar from it came out 0.032 against 0.131. `summarise` already dropped such values; these functions are also called directly, by the bootstrap and the reweighting among others. Results change: series with a missing value now get the inefficiency and error their finite values support.
+
+### One way to weight a metadynamics run
+
+**`fastmdxplora.analysis.reweight` no longer offers a `weights_for_run` of its own; `reweighted_averages.weights_for_run` is the one way the package weights a run's frames.** The removed function applied neither the Tiwary-Parrinello c(t) offset nor undid PLUMED's gamma/(gamma - 1) factor on stored hill heights: on a well-tempered run it read P(x < 0) as 0.965 against an exact 0.893. Nothing in the package called it, but it was documented and importable. The positional `reweight.read_colvar` it alone used is removed too, and the module's description, which said only the converged-bias form was implemented, now says where c(t) is applied.
+
+### A reweighted mean says how many independent samples it rests on
+
+**Each reweighted mean now carries a standard error, and the report gives the independent samples it rests on beside Kish's count, which is named for what it is: weight-concentration effective frames.** Kish's (sum w)^2 / sum w^2 was printed as the frames an average rested on, but it counts every frame as independent: on a well-tempered metadynamics run with a bias factor of 8 it read 2445 of 6000 frames while the collective variable decorrelated once every 91, about 27 independent samples. The record now has `independent_samples` (Kish's count divided by the statistical inefficiency of the collective variable, and per quantity the larger of that and the quantity's own) and `cv_statistical_inefficiency`, and each quantity a `reweighted_standard_error` from the paired block bootstrap over values and weights in blocks of twice that inefficiency. The error is withheld, with `not_a_measurement` and its `refusal` code, below 10 independent samples or where the run is shorter than 25 inefficiencies. `effective_sample_size` keeps its name and value. Results change: reweighted tables now show a ± where an error is supported and say why where it is not, and a run with few independent samples is cautioned even when its weights are evenly spread.
+
+### The live temperature counts only particles with mass
+
+**The temperature shown while a run is going counts the degrees of freedom of particles with mass only, as OpenMM's StateDataReporter does.** The massless M site of a four-point water was counted as three degrees of freedom: a TIP4P-Ew box at 300 K read 197.5 K against OpenMM's 296.4 K, and the GUI's telemetry flagged it as far from its target. A constraint between two massless particles is not counted either, and the count is made once per simulation rather than at every sample. Results change: live telemetry of runs with virtual sites (TIP4P-Ew, TIP5P, OPC) now reads the true temperature; the recorded state data, written by OpenMM, was always right.
+
+### A joined run is pooled only from segments that resolve their correlation
+
+**A joined run's pooled mean is withheld while any contributing segment has not resolved its own correlation time, and the drift test can no longer be switched off by a segment without an error.** A segment whose error had been withheld was pooled anyway, and its NaN error made the heterogeneity NaN, which no comparison passes: on joined AR(1) runs with g = 200 in ten segments of 400 frames, a ramp of four standard deviations was pooled 50 times in 50, and the pooled error held the truth 21% of the time. Now the drift test runs on the segments whose errors can be read, a heterogeneity that is not a finite number counts as disagreement, and the pooled mean is then withheld as `analysis.sampling.correlation_unresolved` if any segment is unresolved. The report's convergence table reads the same function, so it shows no pooled error for such a run. Results change: joined runs whose segments are short against their correlation time no longer report a pooled mean (about a third of runs with g = 5 in segments of 400 frames).
+
+### One set of water residue names
+
+**`water_sites` now finds water under every residue name MDTraj's `water` takes, and the names live in one set, `analysis/water_names.py`, for every module to use.** It kept six names (HOH, WAT, TIP, TIP3, SOL, H2O), so a run whose water was written TIP4, TIP2, OH2, HHO or OHH was refused as holding no water, and the Viewer's water map, which read the same list, found none. The set is MDTraj's eleven names with TIP5, TIP3P, SPC, T3P, T4P, T5P and DOD. Results change: water sites are found on systems whose water uses those names.
+
+### Each hydrogen-bond count says which criterion it is
+
+**`hbonds`, `pl_hbonds` and `pl_interactions` now record their hydrogen-bond criterion in `options.json` and name it on their axes.** The three use different criteria and count different bonds: `hbonds` Baker-Hubbard (H...A under 2.5 A), `pl_hbonds` Wernet-Nilsson, `pl_interactions` a donor to acceptor distance under 3.5 A, so an O-H...O 3.3 A apart at 180 degrees was a bond in `pl_interactions` and not in `pl_hbonds`, with nothing in either output to say why. The interactions rule's documentation credited its 3.5 A to Baker and Hubbard, whose criterion is the 2.5 A hydrogen distance; it now cites McDonald and Thornton. No count changes; the `hbonds` axis reads "Hydrogen bonds (Baker-Hubbard)" and the `pl_hbonds` axis "Protein-ligand H-bonds (Wernet-Nilsson)".
+
+### `coordination_number` in seconds
+
+**`coordination_number` now finds the shell candidates with one neighbour search over the trajectory and counts each atom's neighbours among them, with the same counts as before.** It searched once per atom of `selection_a` per frame and sliced the trajectory each time, so 188 protein oxygens against the water took 80 s for two frames of a solvated 1BHL, about 11 hours per thousand frames; it now takes 0.5 s for those two frames and 3.3 s for all forty. The counts are identical to the per-atom search on that trajectory and in a test on cubic and triclinic boxes with overlapping selections. Results do not change.
+
+### `pl_contacts` is a heavy-atom contact
+
+**`pl_contacts` now counts a residue as touching the ligand when one of its heavy atoms is within the cutoff of a ligand heavy atom, as its documentation and its 0.4 nm threshold say.** It used every atom, hydrogens included, so a leucine whose nearest carbon was 0.48 nm from the ligand was in contact because two hydrogens pointing at each other were 0.22 nm apart. A test now also holds the residue names `protein` now covers: seven residues around a ligand, five named as AMBER writes them (HIE, HID, HSP, CYX, ASH), give seven contacts. Results change: per-frame contact counts and per-residue contact frequencies fall where hydrogens alone brought a residue within the cutoff.
+
+### `sidechain_only` keeps bonds involving a side chain
+
+**`hbonds` with `sidechain_only: true` now counts every bond whose donor or acceptor heavy atom is in a side chain, as its documentation says.** It passed the option to MDTraj, which keeps a bond only when donor, hydrogen and acceptor are all side-chain atoms, so a serine OG-H donating to a backbone carbonyl was dropped: on a solvated 1BHL run it reported 16.1 bonds a frame where 40.3 involve a side chain. The bonds are now found over the whole selection and filtered on the donor or the acceptor, for Baker-Hubbard and Wernet-Nilsson alike. Results change: side-chain hydrogen-bond counts rise to include side chain to backbone bonds.
+
+### Halogen bonds check the acceptor side
+
+**A halogen bond in `pl_interactions` now also needs the angle X...A-R at the acceptor, with R a heavy atom bonded to it, between 80 and 140 degrees (ProLIF's window, after Auffinger et al. 2004), a new `acceptor_angle_deg` setting of the rule.** Only the C-X...A angle at the halogen was checked, so a chlorine 0.32 nm beyond a backbone carbonyl oxygen on the line of its C=O bond, X...O=C at 180 degrees, was reported as a halogen bond. Results change: halogen contacts that approach an acceptor along its bond axis are no longer reported.
+
+### Water bridges are PLIP's
+
+**A water bridge in `pl_interactions` is now PLIP's first-degree bridge: a water 2.5 to 4.1 A from an acceptor on one side and from a donor on the other, the donor's D-H pointing at it (above 100 degrees at the H), and the angle at the water between the acceptor and that H between 71 and 140 degrees.** The rule was labelled PLIP's but took any two polar atoms and the angle between them at the water oxygen, with no donor hydrogen and no pairing, so two acceptors either side of a water bridged and an amide N whose hydrogen pointed away from the water bridged a ligand carbonyl. It also computed the distance from every water oxygen to every polar atom in every frame, 3.77 million pairs a frame on a solvated 1BHL; only the waters within reach of the ligand are examined now, which took one serine's five frames from 3.6 s and 0.48 GB to 0.9 s and 0.29 GB. On eight residues of that trajectory the bridges agree with an independent transcription of PLIP's loop, 6 of 6. Results change: water bridges without a donor hydrogen pointing at the water are no longer reported.
+
+### Occupancy errors from the statistical inefficiency
+
+**The `standard_error` of each interaction's occupancy is now `sqrt(p(1-p) g / N)`, with `g` the statistical inefficiency of its present-or-absent series over `N` frames.** It was `sqrt(p(1-p)/episodes)`, too large by `1/sqrt(2p(1-p))`, at least 1.41 times: on a two-state contact with known rates it was 1.4 to 2.4 times the spread of the occupancy over 120 independent replicas, where the new error is 0.86 to 0.99 of it for contacts fast against the run. The inefficiency is the package's own (`statistics.statistical_inefficiency`), as every other error the analyses report uses, and the error is withheld where every mean's would be: a contact that formed fewer than twice, or whose frames hold fewer than 25 independent samples while its presence is correlated (given there, it read 0.72 to 0.76 of the spread). Results change: occupancy error bars in `pl_interactions.dat` and its figure shrink, by about a third for a contact present half the time and by more for rarer or more persistent ones.
+
+### A hydrogen bond keeps its direction
+
+**`pl_interactions` now names each hydrogen bond by its donor, `hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor`, in the `kind` column of its tables and of `pl_interactions_frames.json`.** Both directions were the kind `hydrogen_bond` and were keyed by the two heavy atoms, so a ligand O-H donating to a serine OG in one frame and the serine OG-H donating back in the next were one row at occupancy 1.0 with one episode, where each direction held for half the run. The Viewer colours both as a hydrogen bond, the ligand panel counts both, and the cross-tool comparison takes the larger as a bound on their union. Results change: hydrogen-bond rows split by direction, and a bond that reversed now shows the occupancy of each direction.
+
+### Metal coordination looks at the ions
+
+**`pl_interactions` now finds a ligand donor coordinating a metal ion.** The rule was given the ligand and the protein selection, and an ion is its own residue in neither, so it had no metal to find: a zinc 0.20 nm from a ligand oxygen and from a histidine NE2 gave no metal coordination on any run. Every single-atom residue of a metal element is now passed as the metal side beside the protein. Results change: studies with a metal ion in the site now report its coordination by the ligand.
+
+### A ligand group is charged only when it carries a charge
+
+**`pl_interactions` now takes a ligand group as charged only where its atoms carry a net formal charge of that sign.** Charged groups were found by pattern and by single formal charges, so neutral cyanoguanidine (the cimetidine core) and an acylguanidine were cations, a nitro group was both a cation and an anion, and nitromethane between an aspartate and a lysine formed a salt bridge to each, at 0.36 and 0.34 nm. A pattern match now needs a nonzero net charge of its sign, and a formal charge on an atom bonded to an opposite charge (nitro, N-oxide, azide) is left out. Results change: salt bridges and cation-pi contacts from nitro groups, N-oxides and neutral guanidine analogues are no longer reported.
+
+### Hydrogen and halogen bond acceptors have a lone pair
+
+**`pl_interactions` and the chain-contacts view now count an atom as an acceptor only where it has a lone pair free to take the bond.** Every nitrogen, oxygen and sulphur was an acceptor, so a ligand NH3+ aimed at a lysine NZ with three hydrogens was reported as a hydrogen bond at 0.30 nm and 180 degrees between two cations, a C-Cl aimed at the same NZ was a halogen bond, and on a solvated 1BHL trajectory 28 of 2105 side-chain hydrogen-bond frames had a protonated nitrogen (mostly Asn ND2 and backbone N) as acceptor. Oxygens, amine and pyridine-type nitrogens, Met SD and a Cys SG without its hydrogen accept; four-bonded and charged nitrogens, the backbone N, Asn ND2, Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole nitrogens do not. Results change: hydrogen bonds and halogen bonds to those nitrogens are no longer reported.
+
+### A ligand file is read onto the right atoms
+
+**An SDF given for the ligand, or written by setup, is now matched to the trajectory by its graph of elements and bonds and used only where it is this ligand.** It was checked by atom count and mapped by position, so an acetate SDF listing C, H, H, H, C, O, O against a trajectory written C, C, O, O, H, H, H put the carboxylate's charge on two methyl hydrogens and lost the salt bridge to an arginine 0.44 nm away. The match now decides which file atom is which trajectory atom; where the topology has no bonds for the ligand the elements must agree in order, and a file that fails either test falls through to the next route. The Chemical Component Dictionary route is removed: it called the setup phase's fetch without the entry, chain and residue number it needs, so it failed on every run and the failure was swallowed. Results change: ligands whose chemistry file lists atoms in a different order from the trajectory now get their donors, charges and rings on the right atoms.
+
+### Protein charges from the protonation, not the residue name
+
+**A side chain's charge in `pl_interactions` and the chain-contacts view now follows the hydrogens the setup phase placed.** OpenMM and PDBFixer write every protonation variant under its parent's name, and the charge was read from the name: a histidine with HD1 and HE2 (written HIS) formed no salt bridge, a lysine with two hydrogens on NZ (written LYS) formed one at 0.43 nm from an acetate, and an aspartate carrying HD2 was an anion. A histidine is now a cation only with both HD1 and HE2, an aspartate or glutamate an anion only with no hydrogen on its carboxylate, a lysine a cation only with HZ1 to HZ3, and an arginine a cation unless a guanidinium hydrogen is missing; a residue with no hydrogens falls back to its name. Results change: salt bridges and cation-pi contacts on systems prepared by OpenMM gain every doubly protonated histidine and lose neutral lysines and protonated acids.
+
+### Relative and polar surface
+
+**Per-residue SASA now gives each residue's surface as a fraction of its theoretical maximum, and a total run splits the surface into hydrophobic and polar.** An area alone does not say how exposed a residue is (0.5 nm² is about a sixth of a tryptophan's maximum and nearly all of a glycine's), and the total alone does not say whether a change is in exposed hydrophobic or polar surface. Both per-residue summaries gain `mean_relative_sasa`, the mean area over the theoretical maximum of Tien et al. 2013 (PLoS ONE 8, e80635), with the table of maxima in the code; a `total` run writes `sasa_polar_split.csv`, carbon and sulfur atoms' area as hydrophobic and nitrogen and oxygen atoms' as polar, each hydrogen with the atom it is bonded to, and records the mean of each after equilibration. Existing columns are unchanged.
+
+### Secondary structure as fractions
+
+**Secondary structure now writes how much of the run each residue spent in helix, strand and coil, and how much of the protein is in each class in every frame.** It wrote the DSSP code of every residue in every frame and a heatmap of them, so a helix content or a residue's strand propensity had to be counted from the matrix by hand. `ss_fractions_per_residue.csv` and `ss_fractions.csv` are written beside `ss.dat`, with helix as DSSP H, G and I, strand as E and B, and coil as every other code, the grouping MDTraj's simplified alphabet uses. The helix and strand fractions over time are given a mean after equilibration with its standard error under `helix_fraction` and `strand_fraction` in the findings, by the same statistics as every other series.
+
+### SASA beside a bound ligand
+
+**SASA on a complex now says that the surface reported is the protein's without the ligand, and `with_ligand: true` gives the surface with the ligand in place.** The selection is the protein by default, so the residues lining a pocket read as exposed: in trypsin with benzamidine bound, SER190 reads 0.110 nm² rather than the 0.001 nm² it has with the ligand present, with nothing in the record to say which. Where the study has a ligand the findings now say the surface is the apo surface in the bound conformation. The new option `with_ligand` runs Shrake-Rupley on the selection and the ligand together and reports the selection's atoms, summed by residue; it needs `ligand_resname`, which the analysis phase supplies. Results are unchanged unless `with_ligand` is set.
+
+### Pairs for g(r) on a solvated protein
+
+**The pairs a g(r) is computed from are chosen in under a second for a protein against every water oxygen.** Every pair was built as a Python tuple before 400,000 were drawn from them, so the default protein against water oxygens on a solvated 3,000-atom protein in 10,000 waters listed 3e7 pairs, about 25 s and gigabytes before the first distance. The positions are now drawn from the same generator with the same seed and turned into pairs arithmetically, leaving out the one i == j pair of each atom in both selections, so the pairs are exactly those the full list gave; below the limit every pair is used, as before. The subsampling note now counts the pairs available without those i == j pairs. Results are unchanged.
+
+### Mean SASA bars by residue
+
+**The per-residue mean SASA figure of a single chain has one bar for each residue, labelled with its number and insertion code.** The bars stood at the residue number, so trypsin's 184A and 184 (and 188A, 221A) were plotted at the same x and the taller hid the other. Bars now stand at their position in the table, with the residue labels on the axis. The data files are unchanged.
+
+### One spread for per-residue SASA
+
+**The spread of each residue's surface area is the sample standard deviation wherever it is written.** `average_residue` divided by the number of frames and the `sasa_average_per_residue.csv` beside a `residue` run by one less, both under `std_sasa_nm2`, so on five frames of trypsin the second read 11.8 per cent higher (sqrt(5/4)) for every residue. Both now divide by n - 1, and a single frame gives no spread rather than zero. Results change: `std_sasa_nm2` from `average_residue` rises by a factor sqrt(n/(n-1)), which is under 0.5 per cent on a run of a hundred frames.
+
+### Dihedrals without phi and psi
+
+**A dihedrals run asked for omega alone, or any set without both phi and psi, now completes with a histogram of each angle computed.** The figure read the phi and psi columns whatever had been asked for, so `angles: [omega]` computed every omega and then failed with no figure and no data file. The Ramachandran plot is made only when both phi and psi are computed, and the `angles` chosen are now written to `options.json`, where they were missing; an empty choice is refused at construction.
+
+### Dihedrals across a chain break
+
+**A phi, psi or omega is no longer computed between residues that are not joined.** MDTraj pairs consecutive residues of a chain by index without checking the peptide bond, so on trypsin with residues 50 to 54 deleted residue 55 read a phi of -61.8 and an omega of -110.4 degrees through a C49-N55 distance of 1.68 nm. A torsion is now left out when its C(i-1) and N(i) have no bond in the topology (where the topology records peptide bonds) or are more than 0.2 nm apart in the first frame; how many were left out per angle, and the residues after each break, are recorded under `chain_breaks` in the findings. Results change: on a structure with a missing loop, the residues either side of the gap lose their rows in `dihedrals.dat` and their points on the Ramachandran plot.
+
+### Order parameters of a second chain
+
+**The N-terminal NH3+ of every chain is left out of the N-H order parameters, not only the first chain's.** Only the topology's first residue was excluded, and OpenMM names the three terminal hydrogens H, H2 and H3, so on haemoglobin (1HHO) chain B's VAL1 was counted as an amide through the one named H. A residue is now left out when it is first in its chain, when its nitrogen carries H2 or H3 (or AMBER's H1 to H3, CHARMM's HT1 to HT3), or when the topology records peptide bonds and it has none to the residue before it. Results change: on a structure of several chains, each later chain loses one row, its first residue, and the mean S2 no longer includes it.
+
+### A free-energy landscape on PC 1 and PC 2
+
+**`dimred` with PCA now writes the free-energy landscape over the first two principal components, as data and a figure.** G = -kT ln P, with P the histogram over `landscape_bins` bins each way (40 by default) normalised over the bin area, bins no frame visited left empty rather than infinite, and the lowest bin set to zero. It is in kJ/mol at the production temperature the study recorded in `simulation/simulation_parameters.json`, read where the reweighting reads it; where none is recorded it is -ln P in units of kT, and the record and the colour bar say so rather than assume a temperature. On a biased run the record says it is the landscape of the biased ensemble. Written as `dimred_pca_landscape.npz` (free energy, bin edges in nm, density, counts, unit, temperature) and `dimred_pca_landscape.png`. Results do not change.
+
+### Each cluster's representative, and the RMSD map
+
+**`cluster` now writes each cluster's medoid as a structure, a table of the clusters' shares, and the frame-to-frame RMSD it clustered on.** The RMSD matrix was computed and kept only for the dendrogram, and which structure a cluster is had to be found frame by frame. Now, for each method, `cluster_<method>_populations.csv` gives every cluster's frames, its fraction of the frames clustered, and its medoid (the member with the least summed RMSD to the others, in the distances the clustering used) with its frame and time; `cluster_<method>_medoid_<k>.pdb` is that frame without its water; and `cluster_rmsd_matrix.npz` holds the matrix in nm with each row's frame and time, plotted as `cluster_rmsd_matrix.png`, time against time. Frames DBSCAN calls noise are in no cluster. Results do not change.
+
+### Which frames a clustering read
+
+**`cluster` and `dimred` now record how many frames they read and whether the run's equilibration is among them, and `start` can begin them later.** Both read every frame, the relaxation from the starting structure included, and said nothing about it, though a relaxation can come out as a cluster or a principal component of its own. The default is unchanged, so results already analysed stay as they were; `findings.frames` in `options.json` now gives the frames read, the first, and the equilibration Chodera's method detects in the RMSD of the selected atoms from the first frame. `start` (in ns, 0 by default) begins at the first frame at or after a time, and `start: equilibrated` after that equilibration; a later time on a trajectory with no clock is refused. The `frame` column of their data files is the frame of the trajectory analysed, so it begins where they began. Results do not change unless `start` is set.
+
+### t-SNE on a short trajectory
+
+**`dimred` with `methods: [tsne]` now runs on a trajectory of five frames or fewer.** The perplexity was min(perplexity, max(5, n/4)), whose floor of 5 is not below the number of frames when there are five or fewer, and t-SNE refused to run. It is now min(perplexity, max(1, (n - 1)/3)), which stays below the frame count, and the value used is recorded under `findings.tsne`. Results change: t-SNE embeddings of trajectories under 120 frames at the default perplexity of 30.
+
+### PCA axes with MDS beside them
+
+**The PCA figure's axes now say each component's share of the variance whichever other methods run.** MDS cleared the attribute that held PCA's shares, so with `methods: [pca, mds]` the PCA axes read "PCA 1" and "PCA 2" in place of "PC 1 (98.5%)". MDS now leaves them alone. Results do not change; the PCA figure's labels do.
+
+### The Ward dendrogram is the Ward clustering
+
+**With `linkage: ward`, the saved dendrogram and `hierarchical_linkage.npy` are now the hierarchy that labelled the frames.** The labels came from Ward's linkage on the frames as points (the superposed coordinates, or a classical MDS embedding of the pairwise RMSD), while the dendrogram and the linkage file were built by average linkage on the distances: cut at the number of clusters asked for, they agreed with the labels to an adjusted Rand index of 0.64 on a drifting trajectory. Now both are built with SciPy's Ward on the same points, which agree to 1.0, and which points they were is recorded under `findings.hierarchical`. Results change: the dendrogram figure and `hierarchical_linkage.npy` of Ward clusterings; the labels do not.
+
+### The k-means seed is in the record
+
+**`cluster` now writes `random_state` and `n_init` to its `options.json`.** Both were settable and both decide which local optimum k-means finds, and neither was recorded, so a clustering could not be repeated from its record or told apart from one run with another seed. Results do not change.
+
+### Ligand RMSD over heavy atoms, with the ligand's symmetry
+
+**`ligand_rmsd` is now taken over the ligand's heavy atoms, at the relabelling of a symmetric ligand that fits each frame best.** It counted every ligand atom, hydrogens included, and took the atoms as labelled, so a benzene turned by 60 degrees about its axis, lying exactly where it was, read 0.200 nm (0.139 nm over its carbons). Now hydrogens are left out by default (`include_hydrogens: true` counts them), and each frame's RMSD is the smallest over the automorphisms of the ligand's bond graph from the topology, atoms matched to atoms of the same element carrying as many hydrogens, with the same bonds and, where the topology records them, the same bond orders, with no refitting (`symmetry_corrected: false` turns this off). The same benzene reads 0.000 nm. The search stops at 10,000 automorphisms and says so; a ligand whose topology records no bonds is taken as labelled, and that is said. Where the topology records no bond orders and the ligand no hydrogens, a ring whose double bonds alone tell its atoms apart is read as more symmetric than it is. Which atoms were used, how many automorphisms, and the largest correction are recorded in the findings. Results change: every ligand RMSD with hydrogens in the ligand, and those of symmetric ligands that turned onto themselves.
+
+### Ligand RMSF across a periodic face
+
+**`ligand_rmsf` now follows the ligand across periodic faces before taking each atom's fluctuation, the same way `ligand_rmsd` does.** It read the fitted coordinates as stored, so an atom written on the far side of the box in some frames fluctuated by a box length: a bound ligand on a face of a 5 nm box, stored on the far side in 31 of 200 frames, read an RMSF of 1.80 nm against a true 0.035 nm. Both analyses now take the ligand from one shared function, so they read the same ligand. Results change: ligand RMSF where an atom of the ligand crossed a face of the box as stored.
+
+### A ligand far from the first alpha carbon
+
+**`ligand_rmsd` now follows the ligand across periodic faces from the alignment atom nearest it in the first frame.** It started from the first alignment atom, the N-terminal alpha carbon, and the first frame's minimum image is the true separation only under half the box: on an elongated receptor with that atom 4.4 nm from the ligand in a 6.8 nm box, the first frame took the wrong copy and a rigid complex tumbling in its box read a ligand RMSD of up to 13.3 nm, in a cube and in a rhombic dodecahedron alike, and also after the loader's imaging. From the nearest atom the same complex reads under 0.001 nm. Results change: ligand RMSD of complexes whose first alignment atom is more than about half a box from the ligand.
+
+### A centre-of-mass distance in a dodecahedron
+
+**`pair_distance` with `measure: com` now takes the shortest periodic copy in a cell of any shape.** It folded each Cartesian component by its box length, which is right only for a rectangular box: in the rhombic dodecahedron the setup builds, 28% of random pairs came out on the wrong copy, by up to 4.68 nm, and two centres 0.5 nm apart across a slanted face read 5.416 nm. Now the fractional coordinates are rounded with the cell vectors and the 26 neighbouring translations are compared, keeping the shortest, and the warning that a pair is near the limit of the convention is set at half the shortest periodic repeat rather than half the smallest box length. `measure: closest` was already right. Results change: centre-of-mass distances from triclinic boxes.
+
+### Shape descriptors
+
+**`moments_of_inertia` now also gives, per frame, the asphericity, acylindricity and relative shape anisotropy of the selection's gyration tensor.** The three principal moments separate a rod from a disc, but a reader comparing shapes wanted the descriptors polymer and protein papers quote. From the eigenvalues l1 <= l2 <= l3 of the mass-weighted gyration tensor, b = l3 - (l1 + l2)/2, c = l2 - l1 (nm^2) and kappa^2 = (b^2 + 3c^2/4)/(l1 + l2 + l3)^2, as Theodorou and Suter define them (Macromolecules 18, 1206, 1985), are written to `moments_of_inertia_shape.dat`, and each one's mean after equilibration is recorded in the findings under its name by the statistics every per-frame series uses. Checked against an independent computation and against shapes solvable on paper: a rod gives kappa^2 = 1, a cube 0, a spherical cloud under 0.005 and a flat square 1/4.
+
+### B-factors matched to their own residues
+
+**The B-factor comparison now matches each residue to its own deposited B-factor, by chain ID, residue number and insertion code.** B-factors were keyed by chain order and number alone, so trypsin's GLY 184A (B 9.49) and TYR 184 (B 20.72) were both compared with 20.72, and a run of 1HHO's chain B alone was compared with chain A's B-factors (VAL 1 against 70.91 rather than its own 25.93). `bfactors_from_pdb` now keys by (chain ID, number, insertion code); residues are matched by the insertion code where the trajectory carries it and by file order within a number where it does not; and chains are matched by ID, falling back to order only where the trajectory carries no IDs (MDTraj 1.10 drops them when it slices), with `findings["chains_matched_by_order"]` saying so. Results change: correlations on structures with insertion codes, and on runs of some of a structure's chains.
+
+### Insertion codes from any structure file
+
+**Insertion codes are now read from whichever file gave the topology, PDB or mmCIF.** They were read only from an external `.pdb` topology, so a PDB loaded as the trajectory itself, or a trajectory given an mmCIF topology, lost them: trypsin's GLY 184A and TYR 184 came out as two residues numbered 184 in one chain, and the per-residue tables held a duplicated row. The loader now reads the codes from the trajectory file where it carries the topology, and mmCIF files are read for `_atom_site.pdbx_PDB_ins_code`, keyed by atom id and author residue name and number as MDTraj names the atoms. Results change: per-residue tables of such loads gain their `insertion` column and lose the duplicated rows.
+
+### Stride across several trajectory files
+
+**Frames loaded with a stride from several files now carry the times they were written.** MDTraj strides each file on its own from its first frame, and the loader timed the frames as one stream: two files of five frames at stride 2, saved every 10 ps, are frames 0, 2, 4, 5, 7, 9 of the run, written at 10, 30, 50, 60, 80 and 100 ps, and read 10 to 110 ps. The loader now reads each file's length and builds every frame's index in the run (`loading.written_frames`), and the clock is set from those. Files whose lengths are multiples of the stride, and single files, read as before. Results change: time axes, and durations taken from them, of multi-file loads with a stride where a file's length is not a multiple of it.
+
+### Radius of gyration weights and chains
+
+**A radius of gyration is now weighted as `options.json` says it is, and a virtual site weighs nothing.** One atom without a mass, such as a TIP4P water's charge site, turned the whole radius unweighted while the options still read `mass_weighted: true`. A virtual site (element VS, which MDTraj also gives any atom whose element it cannot read) now has zero weight and a finding names such atoms; where no atom has a mass or one carries no element at all, every atom is weighted equally, `mass_weighted` is recorded as false and a finding says why. `by_chain` wrote bare columns numbered by position with no header, against a docstring promising a frame column; it now writes a table with `total` and one `chain <ID>` column per chain, named by chain ID as `end_to_end` does, and the legend names the chains the same way. Results change: the radius of gyration of a selection holding a virtual site, which was unweighted, is now mass-weighted.
+
+### RMSF over the equilibrated frames
+
+**RMSF is now computed over the frames after equilibration, found by the same detection every per-frame mean uses.** It averaged every frame, so a relaxation away from the starting structure was read as fluctuation: a loop of 3PTB relaxing 0.4 nm over the first 300 of 1000 frames read 0.0819 nm against 0.0514 after the discard and 0.052 by construction. The start is now detected on the RMSD of the fitted atoms from the reference frame (`statistics.summarise`), the fluctuations are taken over the frames after it, and the frames used are recorded as `findings["frames"]` and said on the figure. The option `start` gives the start instead, as clustering and dimred take it (a time in ns, `0` for every frame). Results change: RMSF of any run that relaxed from its starting structure is lower, and is the equilibrium fluctuation.
+
+### Per-residue RMSF as GROMACS gives it
+
+**A residue's RMSF is now the square root of its atoms' mass-weighted mean squared fluctuation, sqrt(sum m_i MSF_i / sum m_i), which is what `gmx rmsf -res` reports.** It was the unweighted sqrt(mean MSF) while its comment said it agreed with GROMACS, so a residue with a mobile hydrogen among rigid heavy atoms read more than 1.5 times the GROMACS value. The formula is stated in the docstring and in `options.json`; atoms with no known mass are weighted equally and a finding says so, and a virtual site has no weight. A trajectory of one frame, which returned an RMSF of zero for every residue with status ok, is refused with `analysis.sampling.too_few_frames`. Results change: per-residue RMSF over a selection with several atoms per residue; the alpha-carbon default is unchanged.
+
+### Periodic warnings reach the mean
+
+**When an end-to-end distance or a set of moments of inertia is marked by the periodic box, every reader of its mean is now told, and the mean has no error bar.** Both analyses kept the warning in a top-level `findings["not_a_measurement"]`, which the report, the GUI and the Agent never open: they read `findings["mean"]`, so a chain folded by the box was reported as a mean with an error bar and nothing else. The warning is now written into the mean's record, its standard error is withheld, and the figure's legend says why there is no error bar. The top-level finding stays where it was.
+
+### Moments of inertia in the default box
+
+**Moments of inertia now mark a molecule as broken across the periodic boundary only when it is.** The test compared the selection's extent against the smallest box vector, and in the rhombic dodecahedron setup builds by default every vector is a box length long, so whole proteins were marked: 1AKE, 8.54 nm across in a cell 10.39 nm long, was flagged though its narrowest width is 7.35 nm and no bond was broken. The test is now direct: a bond longer than half the cell's narrowest width, which the marking names with its frame. A selection without bonds is still compared by its extent, against the narrowest width.
+
+### End-to-end distance past half the box
+
+**A chain's end-to-end distance is now its length, however long it is against the cell.** It was taken between the two ends under the minimum-image convention, on coordinates the loader had already made whole, so a chain extended past half the box was folded back the short way round: a straight 10-residue chain 3.420 nm long in a 4.62 nm cube (the box setup's padding rule gives it) read 1.200 nm with no warning, and the warning that did exist tested the folded distance, which the folding itself keeps under the bound it tested against, so it could not fire. The distance is now the length of the sum of the minimum-image steps from one residue to the next along the chain, the same for a chain stored whole or wrapped into the cell, and the run is marked where an end comes within 1.0 nm of a periodic image of the other end, found exactly over the lattice for any cell shape. The cell's narrowest width is a new shared helper, `analysis.base.narrowest_width`. Results change: end-to-end distances of chains longer than half the box were too short, and are now their length.
+
+### `protein` is the whole protein
+
+**`protein` now covers every amino acid the force fields write.** MDTraj
+decides a residue is protein by its name, and its list lacked AMBER's
+disulfide cysteine CYX, protonated aspartate ASH, histidines HID, HIE and
+HSP, the NHE and NH2 caps, and (MDTraj 1.10) CHARMM's HSD. On a system with
+disulfides every bridged cysteine fell out of `protein`: trypsin's SASA
+covered 211 residues of 223 (96.2 against 92.5 nm2, the holes' neighbours
+exposed), its DSSP changed at 38 residues, its radius of gyration read 1.1%
+large, and the protein side of each ligand analysis did not see them. The
+names are added to MDTraj's own list, with their one-letter codes, the
+moment MDTraj's topology loads in a process that imported this package,
+whichever was imported first (`fastmdxplora/protein_names.py`), so every
+analysis, the GUI, a typed selection and `backbone` and `sidechain` mean
+the same protein. The finding that named HIE, HID and HSP is gone with the
+hole. Results change on a topology that keeps these names (one from AMBER's
+tleap or a GROMACS force field): the analyses cover the whole protein, and
+equilibration's positional restraints on `protein` hold its bridged
+cysteines and histidines too, which they had left free.
+
+**The alpha-carbon default is `protein and name CA`** (RMSD, RMSF, cluster,
+dimred, and the fits of the order parameters and the B-factor comparison).
+`name CA` also took a calcium ion, whose residue and atom are both named CA:
+on 3PTB a rigid protein beside a calcium that moved 1.5 nm read an RMSD of
+0.1 nm, and RMSF gave the ion a row.
+
+### The Sequence folds as the settings' sections do, and starts closed
+
+### The molecule keeps its size as the Sequence or the Playback opens
+
+**Fixed:** opening the Viewer's Sequence made the molecule narrower (about
+100 pixels in a window 900 high), its lines taken from the molecule's
+height, and opening the Playback did the same. The molecule is sized with both closed
+and keeps that size: what either shows pushes the rest down, and the column
+under the header scrolls to reach it.
+
+### No folder named or opened where no study is open
+
+**Fixed:** `fastmdx gui` in a folder that holds no study printed "The file
+.../.fastmdxplora-no-current-run does not exist." in its terminal on a Mac:
+the page took the name the GUI gives when no study is open (a folder never
+made) for the study's folder, and Open the folder asked `open` for it. That
+name is no longer shown as a folder or a title, the study menu offers no
+folder with no study open, and nothing that is not there is opened.
+
+### The Sequence and the Playback start closed
+
+**The Viewer's Sequence has the same marker as the settings' sections**,
+and it and the **Playback** start closed until first opened, then stay as
+they were left; the settings' sections are as they were. The keys play the
+frames with the Playback closed. The Sequence's marker was a character of
+the text, smaller than the sections'.
+
+### The Viewer has the window, in one shape, and each page one band
+
+**Opening the Viewer folds the sidebar and the side panel**, and another
+page brings them back as they were. Pointing at a folded column's tab shows
+the column over the page for as long as the pointer stays on the tab or the
+column; a click on the tab, then at the column's edge, keeps it open, on the
+Viewer until it is folded there again. **The molecule is 4 wide to 3 high**,
+as large as the window allows with the sequence above it and the playback
+under it in view, and centred with its settings beside it, the page's
+header lined up over them; it took every pixel of width it was given. **The
+Sequence and the Playback fold** as the settings' sections do, and stay as
+they were left. **Each page's header is one band across the centre
+column**, its rule under it; it was the width of the page's text, a strip
+of another colour over the column's own ground.
+
+### The sidebar, rebuilt
+
+**The sidebar reads top-down and fits a laptop's screen.** The product's
+name alone at the top (the product's expansion is with the citation now; a
+hosted service's own line still shows under its name). The study on screen as a
+card: its name and one line of where it stands (Running, Completed,
+Stopped, Failed) with the platform, and, when the page stops hearing from
+the server, that too; pressed, it opens the workspace's newest studies to
+switch to, All studies, Open another folder, and the study's folder with
+Open the folder (this replaces Load available study and the Output
+button). Each page has a line icon in place of the grey squares, All
+studies says how many studies the workspace holds, and the Agent and the
+Config builder stay under New study. Where a run stands is a card shown
+only while it runs, or after it stopped or failed: its stage and how far
+it is, the stages as one bar (each named when pointed at), which stage of
+how many, the time left, its step, pause and refresh, and for a stopped or
+failed run **What would fix it**, which opens the Overview at that card. A
+finished study has no card. At 900 pixels the old sidebar ran past the
+window, its foot over the stage list and its buttons out of reach. The
+standalone dashboard has the same sidebar.
+
+### Preferences and the citation are dialogs
+
+**Preferences** and **Cite FastMDXplora**, in the settings menu, open as
+dialogs over the page shown, as Agent settings does; they were pages.
+Escape, Close or a click outside closes any of the three, and focus goes
+back to the gear. Preferences are kept in the browser and applied as they
+change, with **Restore defaults**; a reload lost every one of them. Six
+that changed nothing are gone (ligand representation, depth fog, compact
+mode, reduced motion, which the page takes from the system, advanced
+metrics and the scientific notation threshold), as is the telemetry
+polling interval: the page is told of changes as they happen, and falls
+back to its own poll where a proxy holds them. The Viewer's background is
+**Ground**, dark or white, as its button says; two of its three blacks were
+one colour. **Rename for display** and **Ligand residue** moved to the
+study card's menu, kept for each study by its folder. The citation's
+reference and its BibTeX each copy in one click, in the standalone
+dashboard too.
+
+### The top bars are one height
+
+**Each page's title bar is the side panel's tab bar's height**, its title
+centred in it and its rule on the same line; it was 11 pixels taller, the
+title near its foot. The sidebar's name sits on the same line, and folds
+with the side panel's own button.
+
+### Backbone angles says what is plotted
+
+The line under the plot gives the residues, the frames and the unit, and no
+longer names the program that computed them, in a study whose angles were
+kept before too.
+
+### The Agent analyses a study again, when told
+
+**Told to add an analysis to the study open, to analyse it again or to
+write its report again**, the Agent replies `DO: analyze again rmsd sasa`
+or `DO: write the report again`, read from that one line by a strict
+pattern. The analyses named are checked against the software's own, the
+person is asked what will run and what is kept aside, and the phase
+command runs with `--rerun` on a yes; a name the software does not have is said, and nothing
+runs. Through an AI app, `ask_agent` says `run_phases_again` does it.
+
+### An AI app runs a study's analysis or report again
+
+**`run_phases_again` in `fastmdx mcp`** runs a study's analysis, its report
+or both again in its folder, by the phase command with `--rerun`, once
+the person agrees: the analyses named (by default those it ran last), what
+is replaced kept in `previous/`, under the workspace's one-study-at-a-time
+rule. A quick one says it is done; a longer one runs on after the AI app
+closes. Not offered by a read-only server. An AI app could start a study
+only in a folder never used.
+
+### Analyze again and Write it again, from the GUI
+
+**The Analysis page's Analyze again** runs the study open's analyses again
+in its folder: the analyses it ran last offered ticked and every other one
+this release has to add, what is written again and what is kept in
+`previous/` said before anything starts, and the analyses shown as they are
+written. It runs `fastmdx analyze --output <study> --rerun`, or `fastmdx
+explore --include-phase analysis report --rerun` where the study has a
+report, which is then written again too. A study of several runs is
+analysed run by run, and its comparison built again. **Write it again** on
+the Report page runs `fastmdx report --output <study> --rerun`, from the
+report settings the study recorded, and writes each run's report for a
+study of several. The GUI ran a study's phases only into a new, empty
+folder.
+
+### The lab's mark, and a sidebar that covers what scrolls under it
+
+**The AAi Research Lab's logo is the tab's icon and the avatar at the foot
+of the sidebar**, in the GUI on a person's own machine and in the standalone
+dashboard (inlined, so the page still stands alone). A hosted GUI gives
+its own with `--product-logo` (PNG, JPEG, GIF, WebP, ICO or SVG, at most
+256 KB); the avatar is the person's initials wherever the proxy names
+somebody. The tab had no icon, and the avatar was an empty grey circle.
+
+**Fixed:** the sidebar's name at the top and avatar at the foot sat inside
+its padding, so what scrolled under them showed through beside them and
+below the foot. They reach the sidebar's edges now.
+
+### `fastmdx config` writes the template
+
+**`fastmdx init-config` is now `fastmdx config`**: with no file named it
+writes `fastmdxplora.yml` where it is typed, and `-f FILE` (`--file`) names
+another. `--minimal` and `--force-overwrite` are as before. The old name
+stops with exit 2 and says where the command went.
+
+### A phase command is explore with one phase
+
+**`fastmdx setup`, `simulate`, `analyze` and `report` are `fastmdx explore
+--include-phase` with that one phase**, through the same code: what one
+does, the other does. Given an `--output` that holds a study and no system
+or config, a phase command runs on that study from the settings it recorded
+(`resolved_config.yml`), with the options given laid over them; a study
+moved since keeps reading its own frames. An outside trajectory and
+topology need no system.
+
+**A phase whose output is already in the folder runs again only when
+asked.** `--force-overwrite` removes what it wrote before; `--rerun` keeps
+it in the study's `previous/<phase>`, one copy of each phase, with its
+manifest record. Either way, the phases after it that read it (a report
+written from the analyses before, analyses of frames a simulation run
+again no longer has) are set aside the same way and named, with the
+command that writes them again, and their records leave the manifest until
+they do. A campaign is run again run by run and its comparison rebuilt,
+as it is when one of its runs is analysed again on its own. Neither is
+done while a run of the study is going. A study that stops before any
+phase runs now says why.
+From Python, `explore(..., keep_previous=True)`. A report bundle leaves
+`previous/` out.
+
+### Tags and a note on a study
+
+**A study can carry tags and a note of the person's own** ("wild type",
+"JCIM Fig. 4"; "Ca²⁺ missing, rerun before quoting"), kept in its folder in
+`study_tags.json`, beside its records and never in them, so they go where
+the study goes. All studies shows them on each card, edits them there
+(offering the tags used as one is typed), narrows the cards to a tag
+clicked, and searches them. Through `fastmdx mcp`, `list_studies` gives
+each study's tags and note and lists those with a tag, and `tag_study`
+adds tags; removing one and writing the note stay with the person, and a
+read-only server writes neither.
+
+### A study's card before it has a figure
+
+**All studies shows two cards a row**, each figure wide enough to read (one
+a row on a narrow window), and **a study that has plotted no figure yet
+shows its protein's backbone**: the Cα trace (a nucleic acid's phosphorus
+atoms) from the structure the Viewer renders first, seen face on, coloured
+from the N terminus (purple) to the C terminus (green), the nearer part
+darker, broken where a chain ends or a loop is missing. It was a grey box
+with the study's name, which is still shown where there is no structure.
+Read from the PDB's own lines on the server, kept in memory and never
+written into the study.
+
+### Every page's heading on one small line
+
+**A page's heading is one line, as a chat's title is**: the page's name at
+body size, what the page is beside it in smaller muted type, cut short with
+an ellipsis rather than wrapped, and the page's actions at the right in
+compact controls, at one height on every page (39 px under the shell's
+padding; the title had been 20 px bold, and the subtitle and actions
+wrapped onto a second line where space was short). On a phone the name
+alone, with the actions beside it where they fit.
+
+### A pocket's volume over the frames
+
+**The Viewer's Pocket volume section** plots, for a study with a ligand, how
+much room the protein leaves in the ligand's pocket in each frame played,
+counted on a grid as POVME counts it (within 4 Å of the ligand's place in
+the first frame, beyond every protein atom's van der Waals radius, inside
+the hull of the pocket's residues, joined to the ligand's place), the frames
+fitted on the pocket. A click on the plot shows that frame, and **Show the
+pocket** renders the empty space of the frame shown as a surface
+(`GET /api/pocket-volume`, `/structure/pocket.dx`). Checked against a
+known answer: a shell of protein atoms closing about a ligand.
+
+### A contact map tied to the structure
+
+**The Viewer's Contact map** gives each pair of the protein's residues the
+share of frames played they were in contact in (heavy atoms within 4.5 Å,
+MDTraj's closest-heavy contact; neighbours in a chain left out). Pointing at
+a cell names the pair; a click selects both residues and joins their closest
+heavy atoms in the frame shown with a dashed line, as the frames play, with
+how far apart they are. Two states the cluster analysis found are compared
+pair by pair (**State** B **vs** A), red where a pair is in contact more often
+in B and blue where more often in A, with a key under the map saying which
+colour is which
+(`GET /api/contact-map`, `/api/contact-pair`; `/api/states` now gives each
+frame played its state).
+
+### Backbone angles tied to the frame
+
+**The Viewer's Backbone angles section is a Ramachandran plot of the frames
+played.** Every residue's φ and ψ over every frame is plotted in grey, each
+residue in the frame shown as a dot that moves as the frames play, and the
+residue chosen (from a list, or selected in the structure or the sequence)
+as its path over the frames with a ring at the frame shown. A click on the
+path shows that frame; a click on a dot follows that residue and selects it.
+A key under the plot shows each mark beside what it is, the residue chosen
+named in it; the path is faint at the first frames and solid at the last.
+The angles are MDTraj's, from the frames played (`GET /api/backbone-angles`).
+
+### Movies from the command line and from an AI app
+
+**`fastmdx movie`** makes a movie of a study's frames without opening the
+GUI, and **`make_movie`** does it for an AI app through `fastmdx mcp`. The
+movie is the Viewer's own: the GUI is started for the study on this
+computer, a browser with no window opens its Viewer and shows a view saved
+with the study (or the Viewer as it opens), changed as asked, and the
+Viewer renders each frame and has ffmpeg encode it into `movies/`. It needs
+Playwright's Chromium, or Chrome or Edge; a read-only `fastmdx mcp` does not
+offer it.
+
+### Smoother movies
+
+**A movie can put frames in between the frames played.** A study saves a
+frame every so often, and a movie of its frames jumped from one to the next.
+The Movie section's **In between** puts 1, 3 or 7 frames between each two,
+each atom moved in a straight line from its place in one frame to its place
+in the next (`/structure/frames.dcd?...&span=&between=`). They are not
+simulated, and the movie's record says they were interpolated; since a
+straight line between two places of a molecule turning is a molecule
+shrunk, frames shown as written are superposed on the backbone first.
+
+### A colour chosen in the Viewer stays chosen
+
+**A study's first state no longer resets the Viewer.** The page treated the
+first state it was sent as a change of study and cleared what the Viewer had
+already loaded for that same study: a colour chosen in the first seconds (a
+result's, say) fell back to the spectrum, with its bar hidden.
+
+**"Run" no longer takes back a colour the person chose.** In a study of
+replicas the colour by run is chosen the first time the runs played together
+are offered. On a slow machine they arrive after the person has chosen, and
+the choice was replaced by "Run". It is now chosen only where nobody chose a
+colour (in the list, by a saved view or a scene). CI's browser leg failed
+on both, waiting for the mean RMSF's bar.
+
+### The Viewer loads a structure once
+
+**A structure asked for twice while it loads is loaded once.** As the page
+opened, the structure's state could arrive twice before the first load had
+finished, and each asked for the structure: it was loaded and rendered
+again, the Viewer's engine empty for a moment between the two. Besides the
+second render's time, anything that read the atoms then found none, which
+is why the browser tests of the pocket and of the solvent-free structure
+failed now and then (once in five or six openings here).
+
+### A preparation repeats to the last velocity, and a runaway packing is caught both ways
+
+**`state.xml` is the same file from the same seed.** The velocities setup
+saves were drawn on whatever platform the machine offered, and the CPU and
+GPU platforms do not draw the same velocities twice from one seed: two
+preparations of a bilayer matched in every position and in no velocity (up
+to 8e-8 nm/ps apart), and four of 2POR on an RTX 4090 gave four different
+`state.xml` files beside one `solvated.pdb`. They are drawn on the Reference
+platform, which drew the same bytes every time; for 26,000 atoms it takes
+about two seconds. A study that minimises first, the default, draws its
+velocities again from `simulation.random_seed` and was not affected.
+
+**A packing that runs away is packed again however it says so.** Where the
+relaxation ended on NaN positions without stopping, OpenMM met them placing
+the water and Python said "cannot convert float NaN to integer", which the
+retry let through: 2POR stopped on it once in four on an RTX 4090.
 
 ### The standalone dashboard is laid out as the GUI is
 

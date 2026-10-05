@@ -3302,13 +3302,32 @@ def _temperature_from_kinetic_energy(
     simulation: Any,
     kinetic_kj_per_mol: float | None,
 ) -> float | None:
-    """Estimate instantaneous temperature using OpenMM's standard DOF rule."""
+    """Estimate instantaneous temperature using OpenMM's standard DOF rule.
+
+    ``T = 2 KE / (N_dof R)`` with ``N_dof = 3 N_massive - N_constraints - 3``
+    (the last only with a ``CMMotionRemover``), where ``N_massive`` counts
+    particles with nonzero mass, as OpenMM's StateDataReporter does. A
+    virtual site, the massless M site of TIP4P-Ew among them, carries no
+    kinetic energy and is no degree of freedom: counting it read a TIP4P-Ew
+    box at 300 K as 197.5 K against OpenMM's 296.4 K, which the GUI then
+    flagged as far from its target.
+    """
 
     if kinetic_kj_per_mol is None:
         return None
     try:
         system = simulation.system
-        dof = 3 * int(system.getNumParticles()) - int(system.getNumConstraints())
+        # Counted once per simulation: a sample should not walk every
+        # particle, and a Simulation's System does not change under it.
+        cached = getattr(simulation, "_fastmdx_degrees_of_freedom", None)
+        if cached is not None and cached[0] is system:
+            dof = cached[1]
+        else:
+            dof = _degrees_of_freedom(system)
+            try:
+                simulation._fastmdx_degrees_of_freedom = (system, dof)
+            except AttributeError:
+                pass
         for index in range(int(system.getNumForces())):
             force = system.getForce(index)
             if force.__class__.__name__ == "CMMotionRemover":
@@ -3322,6 +3341,29 @@ def _temperature_from_kinetic_energy(
         return (2.0 * float(kinetic_kj_per_mol)) / (float(dof) * gas_constant)
     except Exception:  # noqa: BLE001 - telemetry is best-effort
         return None
+
+
+def _degrees_of_freedom(system: Any) -> int:
+    """``3 N_massive - N_constraints``, without the centre-of-mass term,
+    counting only particles with mass and constraints touching one."""
+    dof = 3 * sum(
+        1 for index in range(int(system.getNumParticles()))
+        if _particle_has_mass(system, index))
+    for index in range(int(system.getNumConstraints())):
+        # A constraint between two massless particles removes nothing, and
+        # OpenMM leaves it out of its count too.
+        first, second, _distance = system.getConstraintParameters(index)
+        if (_particle_has_mass(system, int(first))
+                or _particle_has_mass(system, int(second))):
+            dof -= 1
+    return dof
+
+
+def _particle_has_mass(system: Any, index: int) -> bool:
+    """Whether a particle carries mass, read from OpenMM's mass in daltons."""
+    mass = system.getParticleMass(index)
+    value = getattr(mass, "_value", mass)
+    return float(value) > 0.0
 
 
 def _periodic_volume_nm3(state: Any, unit: Any) -> float | None:

@@ -168,7 +168,7 @@ See [Protein-ligand interactions](interactions.md) for what the analyses mean.
 For anything beyond a single run, put it in a [Config](config.md):
 
 ```bash
-fastmdx init-config -o study.yml     # a commented template with every setting
+fastmdx config -f study.yml     # a commented template with every setting
 fastmdx explore --config study.yml
 ```
 

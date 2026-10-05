@@ -22,29 +22,74 @@ if TYPE_CHECKING:
 
 logger = get_logger("gui.report_dashboard")
 
-# Each analysis gets its own section, in the order the analysis phase runs
-# them. Grouping several analyses under invented headings ("Core Metrics",
-# "Additional Analysis") made the placement look arbitrary: whether SASA got
-# its own heading depended on how many figures it happened to produce.
-SECTION_ORDER: tuple[str, ...] = (
-    "RMSD",
-    "RMSF",
-    "Radius of Gyration",
-    "Hydrogen Bonds",
-    "Secondary Structure",
-    "Solvent Accessible Surface Area",
-    "Dihedrals",
-    "Q-value",
-    "Clustering",
-    "Dimensionality Reduction",
-    "Ligand Pose RMSD",
-    "Ligand RMSF",
-    "Protein-Ligand Contacts",
-    "Protein-Ligand Hydrogen Bonds",
-    "Region Highlights",
-    "Apo/Holo Comparison",
-    "Other",
+# Each analysis gets its own section. Grouping several analyses under
+# invented headings ("Core Metrics", "Additional Analysis") made the
+# placement look arbitrary: whether SASA got its own heading depended on how
+# many figures it happened to produce. The sections are ordered, and the
+# page's index grouped, by what each analysis studies: the run's ensemble
+# first (whether the run held what it was asked to), then the protein's
+# structure, its flexibility, its backbone, its contacts and solvent, the
+# states it visited, a ligand, a bilayer and a free energy. This is the one
+# list: every registered analysis is in it, and a test keeps it so. An
+# analysis left out of it fell into one "Other" section with every other
+# left out: twelve of thirty, end-to-end distance beside lipid order.
+ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("The run's ensemble", (
+        ("thermodynamics", "Energy, Temperature and Density"),
+    )),
+    ("Structure and stability", (
+        ("rmsd", "RMSD"),
+        ("rg", "Radius of Gyration"),
+        ("end_to_end", "End-to-end Distance"),
+        ("moments_of_inertia", "Moments of Inertia and Shape"),
+        ("qvalue", "Q-value"),
+    )),
+    ("Flexibility", (
+        ("rmsf", "RMSF"),
+        ("bfactor_comparison", "Comparison with B-factors"),
+        ("order_parameters", "Backbone Order Parameters"),
+    )),
+    ("Secondary structure and backbone", (
+        ("ss", "Secondary Structure"),
+        ("dihedrals", "Dihedrals"),
+    )),
+    ("Contacts and solvent", (
+        ("hbonds", "Hydrogen Bonds"),
+        ("pair_distance", "Pair Distance"),
+        ("sasa", "Solvent Accessible Surface Area"),
+        ("rdf", "Radial Distribution Function"),
+        ("coordination_number", "Coordination Number"),
+        ("water_sites", "Water Sites"),
+    )),
+    ("Conformations", (
+        ("cluster", "Clustering"),
+        ("dimred", "Dimensionality Reduction"),
+    )),
+    ("The ligand", (
+        ("ligand_rmsd", "Ligand Pose RMSD"),
+        ("ligand_rmsf", "Ligand RMSF"),
+        ("pl_contacts", "Protein-Ligand Contacts"),
+        ("pl_hbonds", "Protein-Ligand Hydrogen Bonds"),
+        ("pl_interactions", "Protein-Ligand Interactions"),
+    )),
+    ("The bilayer", (
+        ("area_per_lipid", "Area per Lipid"),
+        ("bilayer_thickness", "Bilayer Thickness"),
+        ("lipid_order", "Lipid Chain Order"),
+    )),
+    ("Free energy", (
+        ("pmf", "Potential of Mean Force"),
+        ("metad_surface", "Free-energy Surface"),
+        ("steered_work", "Steered Work"),
+    )),
 )
+
+#: Sections the report adds beside the analyses' own.
+_REPORT_SECTIONS: tuple[str, ...] = ("Region Highlights", "Apo/Holo Comparison", "Other")
+
+SECTION_ORDER: tuple[str, ...] = tuple(
+    title for _, members in ANALYSIS_THEMES for _, title in members
+) + _REPORT_SECTIONS
 
 SECTION_ANCHORS: dict[str, str] = {
     title: re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -52,23 +97,18 @@ SECTION_ANCHORS: dict[str, str] = {
 }
 
 ANALYSIS_SECTION_BY_FOLDER: dict[str, str] = {
-    "rmsd": "RMSD",
-    "rmsf": "RMSF",
-    "rg": "Radius of Gyration",
-    "hbonds": "Hydrogen Bonds",
-    "ss": "Secondary Structure",
-    "sasa": "Solvent Accessible Surface Area",
-    "dihedrals": "Dihedrals",
-    "qvalue": "Q-value",
-    "cluster": "Clustering",
-    "dimred": "Dimensionality Reduction",
-    "ligand_rmsd": "Ligand Pose RMSD",
-    "ligand_rmsf": "Ligand RMSF",
-    "contacts": "Protein-Ligand Contacts",
-    "pl_hbonds": "Protein-Ligand Hydrogen Bonds",
-    "apo_holo": "Apo/Holo Comparison",
+    folder: title for _, members in ANALYSIS_THEMES for folder, title in members
 }
+# Studies analysed before the contacts analysis was named pl_contacts.
+ANALYSIS_SECTION_BY_FOLDER["contacts"] = "Protein-Ligand Contacts"
+ANALYSIS_SECTION_BY_FOLDER["apo_holo"] = "Apo/Holo Comparison"
 
+#: The theme each section belongs to, for the page's index.
+SECTION_THEME: dict[str, str] = {
+    title: theme for theme, members in ANALYSIS_THEMES for _, title in members
+}
+SECTION_THEME.update({title: "From the report" for title in _REPORT_SECTIONS[:2]})
+SECTION_THEME["Other"] = "Other"
 
 
 DASHBOARD_ASSET_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
@@ -154,6 +194,7 @@ class DashboardSection:
     title: str
     anchor: str
     panels: list[DashboardPanel]
+    theme: str = ""
 
 
 @dataclass(frozen=True)
@@ -1033,6 +1074,7 @@ def _analysis_sections(
                     title=title,
                     anchor=SECTION_ANCHORS[title],
                     panels=panels,
+                    theme=SECTION_THEME.get(title, "Other"),
                 )
             )
     return sections
@@ -1291,6 +1333,20 @@ def _theme_tokens() -> str:
         return theme.read_text(encoding="utf-8")
     except OSError:  # pragma: no cover - only if the installed package is incomplete
         return ":root { color-scheme: dark; }"
+
+
+def _lab_logo_uri() -> str:
+    """The lab's mark the GUI shows (``static/lab-logo.png``), inlined so the
+    page stands alone; empty if the file is missing."""
+    import base64
+
+    from fastmdxplora.gui.server import LAB_LOGO
+
+    try:
+        data = (Path(__file__).resolve().parent / "static" / LAB_LOGO).read_bytes()
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return ""
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
 
 
 def _gui_stylesheet() -> str:
@@ -1624,21 +1680,24 @@ def _render_dashboard(
         _render_analysis_page(sections, series or {}),
         _render_report_page(report or {"ok": False}),
         _render_files_page(file_groups or [], output_folder),
-        _render_cite_page(__citation__, __doi__, __version__, __bibtex__, __copyright__),
     ))
+    logo = _lab_logo_uri()
+    icon = f'<link rel="icon" type="image/png" href="{logo}">\n' if logo else ""
     sidebar = _render_sidebar(
         title=title, system_label=system_label, word=word, dot=dot, platform=platform,
         output_folder=output_folder, stages=stage_steps, cards=cards,
         generated=generated, generated_epoch=f"{generated_at.timestamp():.0f}",
-        expansion=__expansion__)
-    settings = _render_settings(__version__)
+        expansion=__expansion__, logo=logo)
+    settings = (_render_settings(__version__) + "\n"
+                + _render_cite_dialog(__citation__, __doi__, __version__, __bibtex__,
+                                      __copyright__, __expansion__))
 
     return "".join((
         "<!doctype html>\n<html lang=\"en\" data-page=\"overview\">\n<head>\n",
         "<meta charset=\"utf-8\">\n",
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
         "<meta name=\"color-scheme\" content=\"dark light\">\n",
-        f"<title>{escape(title)} - FastMDXplora</title>\n",
+        f"<title>{escape(title)} - FastMDXplora</title>\n", icon,
         f"<script>{_THEME_FIRST_JS}</script>\n",
         "<style>\n", _theme_tokens(), "\n", _gui_stylesheet(), "\n",
         _STATIC_ONLY_CSS, "\n</style>\n</head>\n",
@@ -1668,7 +1727,13 @@ def _render_sidebar(
     generated: str,
     generated_epoch: str,
     expansion: str,
+    logo: str = "",
 ) -> str:
+    """The GUI's sidebar, as a page with no server can have it: the study as
+    its card (no studies to switch to), its pages, where a run stood when it
+    stopped short, and what the page was written from."""
+    from fastmdxplora.gui.sidebar_icons import icon
+
     by_label = {card.label: card for card in cards}
     facts = [("Written", f'<span data-when="{escape(generated_epoch)}">{escape(generated)}</span>')]
     for label in ("Simulation time", "Wall time"):
@@ -1679,56 +1744,76 @@ def _render_sidebar(
     nav = "\n".join(
         f'<a href="#{key}" class="nav-link{" active" if key == "overview" else ""}" '
         f'data-view-link="{key}"{current if key == "overview" else ""}>'
-        f'<span class="nav-icon" aria-hidden="true"></span><span>{label}</span></a>'
+        f'{icon(key)}<span>{label}</span></a>'
         for key, label in PAGES)
     steps = "\n".join(
         f'<li class="stage-step" data-stage="{escape(step.stage)}" '
         f'data-state="{escape(step.state)}"{" hidden" if step.hidden else ""}>'
         f'<span class="stage-marker"></span><span class="stage-label">{escape(step.label)}</span></li>'
         for step in stages)
+    mark = f'<img class="sidebar-account-logo" src="{logo}" alt="">' if logo else ""
     metrics = "\n".join(
         f'<span class="metric-label">{escape(label)}</span>'
         f'<span class="metric-value mono">{value}</span>' for label, value in facts)
+    # The progress card as the GUI shows it: for a run that was going on,
+    # stopped short or failed when the page was written; none once it
+    # finished.
+    state = str(word or "").lower()
+    run = ("failed" if state in {"failed", "error"} else
+           "stopped" if state == "stopped" else
+           "running" if state in {"running", "starting", "paused"} else "")
+    shown = [step for step in stages if not step.hidden]
+    at = next((k for k, step in enumerate(shown) if step.state in {"current", "failed"}), -1)
+    stage = shown[at].label if at >= 0 else ""
+    heading = (f"Failed in {stage}" if run == "failed" and stage else
+               f"Stopped in {stage}" if run == "stopped" and stage else stage or "Stopped")
+    count = f"Stage {at + 1} of {len(shown)}" if at >= 0 else ""
+    said = {"completed": "Completed", "failed": "Failed", "recorded": "Recorded",
+            "not run": "Not run"}.get(state, state[:1].upper() + state[1:])
+    platform_line = (f'<span class="status-divider" aria-hidden="true">&middot;</span>'
+                     f'<span class="status-platform mono" title="Platform">{escape(platform)}</span>'
+                     if platform else "")
     return f"""<div class="sidebar-brand">
   <div class="brand-text">
-    <div class="brand-product">FastMDXplora</div>
-    <div class="brand-tagline">{escape(expansion)}</div>
+    <div class="brand-product" title="{escape(expansion)}">FastMDXplora</div>
   </div>
 </div>
 <div class="sidebar-study">
-  <div class="study-label mono">{escape(system_label)}</div>
-  <div class="study-name" title="{escape(title)}">{escape(title)}</div>
-  <div class="study-status" role="status">
-    <span class="status-dot status-dot-{escape(dot)}"></span>
-    <span class="status-text">{escape(word)}</span>
-    <span class="status-divider" aria-hidden="true">·</span>
-    <span class="mono" title="Platform">{escape(platform or DASH)}</span>
-    <span class="status-divider" aria-hidden="true">·</span>
-    <span class="mono" title="Written by the report phase; it does not update">Snapshot</span>
+  <div class="sidebar-study-card" title="{escape(system_label)}">
+    <span class="study-card-body">
+      <span class="study-kicker">Study</span>
+      <span class="study-name" title="{escape(title)}">{escape(title)}</span>
+      <span class="study-status" role="status">
+        <span class="status-dot status-dot-{escape(dot)}"></span>
+        <span class="status-text">{escape(said)}</span>{platform_line}
+        <span class="status-divider" aria-hidden="true">&middot;</span>
+        <span title="Written by the report phase; it does not update">Snapshot</span>
+      </span>
+    </span>
   </div>
-  <div class="study-path mono" title="Output folder">{escape(output_folder)}</div>
 </div>
 <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-  <div class="nav-heading">Study</div>
+  <div class="nav-heading">This study</div>
   {nav}
 </nav>
-<div class="sidebar-progress">
-  <div class="study-label mono">Progress</div>
-  <ol class="sidebar-stages" aria-label="Stages">
-  {steps}
-  </ol>
+<div class="sidebar-snapshot">
   <div class="sidebar-metrics">
   {metrics}
   </div>
-  <div class="sidebar-controls">
-    <button class="ghost-btn" type="button" data-copy-text="{escape(output_folder)}" title="Copy the output folder's path">Output</button>
-  </div>
+  <button class="ghost-btn" type="button" data-copy-text="{escape(output_folder)}" title="Copy the output folder's path">Copy the folder's path</button>
+</div>
+<div class="sidebar-progress" data-run="{run}">
+  <div class="progress-head"><span class="progress-stage">{escape(heading)}</span></div>
+  <ol class="sidebar-stages" aria-label="Stages">
+  {steps}
+  </ol>
+  <div class="sidebar-metrics"><span class="metric-label">{escape(count)}</span></div>
 </div>
 <div class="sidebar-foot">
   <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="Settings">
-    <span class="sidebar-account-avatar" aria-hidden="true"></span>
+    <span class="sidebar-account-avatar" aria-hidden="true">{mark}</span>
     <span class="sidebar-account-text"><span class="sidebar-account-name">FastMDXplora</span></span>
-    <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
+    {icon("gear", "sidebar-account-gear")}
   </button>
 </div>"""
 
@@ -1747,7 +1832,7 @@ def _render_settings(version: str) -> str:
     </div>
   </div>
   <div class="settings-divider"></div>
-  <a href="#cite" class="settings-item" data-view-link="cite">Cite FastMDXplora <span class="mono settings-hint">{escape(version)}</span></a>
+  <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint">{escape(version)}</span></button>
   <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
   <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
 </div>"""
@@ -1938,22 +2023,36 @@ def _render_file_row(record: dict[str, Any], output_folder: str) -> str:
     )
 
 
-def _render_cite_page(citation: str, doi: str, version: str, bibtex: str, copyright_: str) -> str:
-    # If this software contributed to your work, please cite it: the report,
-    # the slides and the GUI all say so, from the same constants.
-    return ('<section class="page" data-page="cite" hidden>'
-            + _page_header("Citing FastMDXplora",
-                           "If this software contributed to your work, please cite it")
-            + '<div class="card"><div class="card-header"><h2 class="card-title">Reference</h2>'
-            f'</div><div class="card-body"><p id="cite-reference">{escape(citation)}</p>'
-            f'<p class="subtle">DOI: <a href="https://doi.org/{escape(doi)}" target="_blank" '
-            f'rel="noopener">{escape(doi)}</a> &nbsp;·&nbsp; version '
-            f'<span id="cite-version">{escape(version)}</span></p>'
-            f'<p class="subtle">&copy; Copyright {escape(copyright_)}.</p></div></div>'
-            '<div class="card"><div class="card-header"><h2 class="card-title">BibTeX</h2>'
-            '<button class="btn btn-small" type="button" data-copy-from="cite-bibtex">Copy</button>'
-            f'</div><div class="card-body"><pre class="mono" id="cite-bibtex">{escape(bibtex)}</pre>'
-            "</div></div></section>")
+def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
+                        copyright_: str, expansion: str) -> str:
+    """The citation as the GUI gives it: a dialog over the page, the
+    reference and its BibTeX each copied in one click. The report, the
+    slides and the GUI all say it, from the same constants."""
+    return f"""<div id="cite-dialog" class="agent-dialog" hidden>
+  <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true" aria-labelledby="cite-title">
+    <div class="agent-dialog-head">
+      <div>
+        <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
+        <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
+      </div>
+      <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+    </div>
+    <div class="agent-dialog-body cite-body">
+      <p class="cite-name"><strong>FastMDXplora</strong>: {escape(expansion)}</p>
+      <div class="cite-block">
+        <p id="cite-reference">{escape(citation)}</p>
+        <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+      </div>
+      <p class="subtle">DOI: <a href="https://doi.org/{escape(doi)}" target="_blank" rel="noopener">{escape(doi)}</a> &nbsp;&middot;&nbsp; version <span id="cite-version">{escape(version)}</span></p>
+      <div class="cite-bibtex-head">
+        <span class="builder-label">BibTeX</span>
+        <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+      </div>
+      <pre class="mono" id="cite-bibtex">{escape(bibtex)}</pre>
+      <p class="subtle">&copy; Copyright {escape(copyright_)}.</p>
+    </div>
+  </div>
+</div>"""
 
 
 def _render_card(card: DashboardCard) -> str:
@@ -2167,7 +2266,7 @@ _SERIES_FROM_THE_PAGE_JS = """
 _PAGE_JS = """
 (function () {
   "use strict";
-  var PAGES = ["overview", "analysis", "report", "files", "cite"];
+  var PAGES = ["overview", "analysis", "report", "files"];
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
   function applyTheme(name, chosen) {
@@ -2196,9 +2295,45 @@ _PAGE_JS = """
     }
     if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
   }
+  /* Dialogs over the page, as in the GUI: Escape, Close or a click on the
+   * dimmed page closes one, and focus goes back to what opened it. */
+  var opener = null;
+  function openDialog(id, from) {
+    var dialog = document.getElementById(id);
+    if (!dialog) return;
+    opener = from || document.activeElement;
+    dialog.hidden = false;
+    var first = dialog.querySelector("button, [href]");
+    if (first) first.focus();
+  }
+  function closeDialogs() {
+    var open = $$(".agent-dialog").filter(function (d) { return !d.hidden; });
+    open.forEach(function (d) { d.hidden = true; });
+    if (open.length && opener && opener.offsetParent !== null) opener.focus();
+    return open.length > 0;
+  }
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (target.classList.contains("agent-dialog") || target.closest("[data-dialog-close]")) {
+      closeDialogs();
+      return;
+    }
+    var trigger = target.closest("[data-dialog-open]");
+    if (trigger) {
+      var gear = document.getElementById("settings-open");
+      if (popup && popup.contains(trigger)) closeSettings();
+      openDialog(trigger.getAttribute("data-dialog-open"), popup && popup.contains(trigger) ? gear : trigger);
+    }
+  }, true);
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && closeDialogs()) event.stopImmediatePropagation();
+  }, true);
+
   function route() {
     var id = "";
     try { id = decodeURIComponent((location.hash || "").slice(1)); } catch (e) {}
+    // A link to the citation, which was a page, opens its dialog.
+    if (id === "cite") { show("overview"); openDialog("cite-dialog"); return; }
     if (!id || PAGES.indexOf(id) >= 0) { show(id || "overview"); return; }
     var target = document.getElementById(id);
     var page = target && target.closest("section.page");

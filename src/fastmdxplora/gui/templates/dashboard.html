@@ -7,6 +7,7 @@
   <title>__FASTMDX_TITLE__</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/dashboard.css">
+  <!--__FASTMDX_LAB_ICON__-->
   <meta name="fastmdx-expansion" content="Fully Automated SysTem for Molecular Dynamics eXploration">
 </head>
 <body class="state-loading" data-refresh-seconds="__FASTMDX_REFRESH_SECONDS__">
@@ -100,6 +101,130 @@
       </div>
     </div>
   </div>
+  <!-- Preferences: how this browser shows things, kept in it and applied
+       as they change. Nothing here changes a study or its files. -->
+  <div id="prefs-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="prefs-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="prefs-title">Preferences</div>
+          <div class="builder-card-note">Kept in this browser. They change how
+            studies are shown, never a study or its files.</div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <div class="pref-group">
+          <div class="pref-group-title">The Viewer, as it opens</div>
+          <div class="pref-rows">
+            <label class="pref-row"><span>Representation</span>
+              <select id="setting-protein-rep">
+                <option value="cartoon" selected>Cartoon</option>
+                <option value="backbone">Backbone</option>
+                <option value="sticks">Sticks</option>
+                <option value="ballAndStick">Ball and stick</option>
+                <option value="surface">Surface</option>
+                <option value="lines">Lines</option>
+                <option value="spacefill">Spheres</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Ground</span>
+              <select id="setting-ground">
+                <option value="dark" selected>Dark</option>
+                <option value="white">White</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Water</span><input type="checkbox" id="setting-show-water"></label>
+            <label class="pref-row"><span>Ions</span><input type="checkbox" id="setting-show-ions"></label>
+            <label class="pref-row"><span>Spin</span><input type="checkbox" id="setting-spin"></label>
+            <label class="pref-row"><span>Keep the camera as frames change<small>Off, each frame is fitted to the view</small></span><input type="checkbox" id="setting-preserve-camera" checked></label>
+            <label class="pref-row"><span>Pocket cutoff (&Aring;)<small>Residues this close to the ligand</small></span>
+              <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
+            </label>
+          </div>
+        </div>
+        <div class="pref-group">
+          <div class="pref-group-title">Display</div>
+          <div class="pref-rows">
+            <label class="pref-row"><span>Time</span>
+              <select id="setting-time-format">
+                <option value="24h" selected>24-hour</option>
+                <option value="12h">12-hour</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Chart history<small>Samples a live chart keeps</small></span>
+              <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="agent-dialog-foot">
+        <button type="button" class="ghost-btn" id="prefs-restore">Restore defaults</button>
+      </div>
+    </div>
+  </div>
+  <!-- The citation, and its BibTeX, each taken in one click. The report,
+       the slides and `fastmdx info` print it too; filled by the server from
+       the same constant, so it cannot drift from the others. -->
+  <div id="cite-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="cite-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
+          <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body cite-body">
+        <p class="cite-name"><strong>FastMDXplora</strong>: __FASTMDX_EXPANSION__</p>
+        <div class="cite-block">
+          <p id="cite-reference">__FASTMDX_CITATION__</p>
+          <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+        </div>
+        <p class="subtle">DOI: <a href="https://doi.org/__FASTMDX_DOI__"
+           target="_blank" rel="noopener">__FASTMDX_DOI__</a>
+           &nbsp;&middot;&nbsp; version <span id="cite-version">__FASTMDX_VERSION__</span></p>
+        <div class="cite-bibtex-head">
+          <span class="builder-label">BibTeX</span>
+          <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+        </div>
+        <pre class="mono" id="cite-bibtex">__FASTMDX_BIBTEX__</pre>
+        <p class="subtle">&copy; Copyright __FASTMDX_COPYRIGHT__.</p>
+      </div>
+    </div>
+  </div>
+  <!-- One of the study's own words for this browser: the name it is shown
+       under, or the ligand the Viewer centres on. Kept by the study's
+       folder; the study is not changed. -->
+  <div id="study-field-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="study-field-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="study-field-title">Name for display</div>
+          <div class="builder-card-note" id="study-field-note"></div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <label class="builder-field">
+          <span class="builder-label" id="study-field-label">Name</span>
+          <input type="text" id="study-field-input" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="builder-card-note study-field-refused" id="study-field-refused" role="alert" hidden></p>
+      </div>
+      <div class="agent-dialog-foot">
+        <button type="button" class="ghost-btn" id="study-field-clear">Use the default</button>
+        <button type="button" class="primary-btn" id="study-field-save">Save</button>
+      </div>
+    </div>
+  </div>
+  <!-- The study's own words, read by the page as they were when they were
+       settings of the page; written by the dialog above. -->
+  <input type="hidden" id="setting-run-name">
+  <input type="hidden" id="setting-ligand-resname">
   <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
     <!--__FASTMDX_ACCOUNT_ITEM__-->
     <div class="settings-section">Appearance</div>
@@ -115,44 +240,67 @@
     <div class="settings-section">Agent</div>
     <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
     <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
-    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
+    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip;</a>
     <div class="settings-divider"></div>
-    <a href="#settings" class="settings-item" data-view-link="settings">Display preferences <span class="mono settings-hint">viewer, dashboard</span></a>
-    <a href="#cite" class="settings-item" data-view-link="cite">Cite FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
+    <button type="button" class="settings-item" data-dialog-open="prefs-dialog" aria-haspopup="dialog">Preferences&hellip; <span class="mono settings-hint">viewer, time, charts</span></button>
+    <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint" id="settings-version"></span></button>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
   </div>
   <div class="app-shell">
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
+      <!-- The product's name, and the button that folds the sidebar away at
+           its end, as the side panel's folds it. A service's own line, where
+           it gives one, sits under its name. -->
       <div class="sidebar-brand">
-        <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
         <div class="brand-text">
           <div class="brand-product">__FASTMDX_PRODUCT__</div>
-          <div class="brand-tagline">__FASTMDX_TAGLINE__</div>
+          <div class="brand-tagline">__FASTMDX_BRAND_LINE__</div>
         </div>
+        <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
       </div>
+
+      <!-- The study on screen as one card: its name and one line of where it
+           stands. A press opens the studies to switch to (the newest of the
+           workspace, All studies, another folder) and its folder. -->
       <div class="sidebar-study">
-        <div class="study-label mono" id="topbar-run-id">workspace</div>
-        <div class="study-name" id="topbar-run-title">No active study</div>
-        <div class="study-status" role="status" aria-live="polite">
-          <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
-          <span class="status-text" id="topbar-status-text">live</span>
-          <span class="status-divider" aria-hidden="true">·</span>
-          <span class="mono" id="sidebar-platform" title="Platform">—</span>
-          <span class="status-divider" aria-hidden="true">·</span>
-          <span class="mono" id="sidebar-connection-state">Live</span>
-          <!-- Written by the JS, shown under Progress instead. -->
-          <span id="topbar-stage" hidden></span>
-          <span id="sidebar-status-dot" hidden></span>
-          <span id="sidebar-run-name" hidden></span>
+        <button type="button" class="sidebar-study-card" id="study-card" aria-haspopup="true" aria-expanded="false" aria-controls="study-menu" title="Switch study">
+          <span class="study-card-body">
+            <span class="study-kicker">Study</span>
+            <span class="study-name" id="topbar-run-title">No active study</span>
+            <span class="study-status" role="status" aria-live="polite">
+              <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
+              <span class="status-text" id="topbar-status-text">Ready</span>
+              <span class="status-divider" aria-hidden="true">&middot;</span>
+              <span class="status-platform mono" id="sidebar-platform" title="Platform">&mdash;</span>
+              <span class="status-connection" id="sidebar-connection-state" data-connection="live">live</span>
+            </span>
+          </span>
+          <!--icon:chevron:study-card-chevron-->
+        </button>
+        <span class="mono" id="topbar-run-id" hidden>workspace</span>
+        <span id="sidebar-status-dot" hidden></span>
+        <span id="sidebar-run-name" hidden></span>
+        <div class="study-menu" id="study-menu" role="menu" aria-label="Switch study" hidden>
+          <div class="study-menu-label">Recent studies</div>
+          <div class="study-menu-list" id="study-menu-list"><div class="study-menu-empty muted">Looking for studies&hellip;</div></div>
+          <a href="#studies" class="study-menu-item" role="menuitem" data-menu-page="studies">All studies&hellip;</a>
+          <!-- The same folder picker the builder uses, into a hidden input. -->
+          <button class="study-menu-item" type="button" role="menuitem" id="load-study" title="Open a study from another folder">Open another folder&hellip;</button>
+          <input type="hidden" id="load-study-path">
+          <div class="study-menu-divider"></div>
+          <div class="study-menu-label">This study</div>
+          <div class="study-path mono" id="sidebar-output-folder" title="Output folder">&mdash;</div>
+          <button class="study-menu-item" type="button" role="menuitem" id="open-output" title="Open the output folder, and copy its path">Open the folder</button>
+          <button class="study-menu-item" type="button" role="menuitem" data-study-field="name" aria-haspopup="dialog">Rename for display&hellip;</button>
+          <button class="study-menu-item" type="button" role="menuitem" data-study-field="ligand" aria-haspopup="dialog">Ligand residue&hellip;</button>
         </div>
-        <!-- The study block reads top-down as a person thinks: what is on
-             screen (above), what is running elsewhere (this, when it is),
-             what else can be opened (the button). From this GUI at most one
-             study runs at a time, so this is a line, not a list. -->
+        <!-- What is running elsewhere, when something is; a study of several
+             runs, each with where it stands; a run inside one, and the way
+             back. Each hidden until it applies. -->
         <div class="study-running" id="study-elsewhere" hidden>
-          <div class="study-section-label mono">Running</div>
+          <div class="study-section-label">Running</div>
           <div class="study-running-row">
             <span class="status-dot status-dot-live" aria-hidden="true"></span>
             <span class="study-running-name mono" id="study-elsewhere-name"></span>
@@ -160,99 +308,94 @@
             <button class="ghost-btn" type="button" id="study-elsewhere-view" title="View the running study">View</button>
           </div>
         </div>
-        <!-- A study of several runs: each one, with where it stands, and a
-             way into it. A run inside one: the study it belongs to, and the
-             way back. Both hidden for a study of one run. -->
         <div class="study-running" id="study-runs" hidden>
-          <div class="study-section-label mono" id="study-runs-label">Runs</div>
+          <div class="study-section-label" id="study-runs-label">Runs</div>
           <div id="study-runs-list"></div>
         </div>
         <div class="study-running" id="study-run-of" hidden>
-          <div class="study-section-label mono">Run of</div>
+          <div class="study-section-label">Run of</div>
           <div class="study-running-row">
             <span class="study-running-name mono" id="study-run-of-name"></span>
             <span class="study-running-pct mono" id="study-run-of-values"></span>
             <button class="ghost-btn" type="button" id="study-run-of-back" title="Back to the study">Back</button>
           </div>
         </div>
-        <div class="study-switch">
-          <button class="ghost-btn" type="button" id="load-study" title="Open another study from this workspace">Load available study</button>
-          <input type="hidden" id="load-study-path">
-        </div>
-        <div class="study-path mono" id="sidebar-output-folder" title="Output folder">—</div>
       </div>
 
-      <!-- The study first, since reading one is most of what is done here,
-           then the two ways to start another. Above the progress block, so
-           the navigation is never the part a short window cuts off. -->
+      <!-- The study's pages, then the two ways to start another. -->
       <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
         <a href="#studies" class="nav-link" data-view-link="studies">
-          <span class="nav-icon" aria-hidden="true"></span>
-          <span>All studies</span>
+          <!--icon:studies:nav-icon-->
+          <span>All studies</span><span class="nav-count mono" id="nav-studies-count"></span>
         </a>
-        <div class="nav-heading" id="nav-heading-study">Study</div>
+        <div class="nav-heading" id="nav-heading-study">This study</div>
         <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:overview:nav-icon-->
           <span>Overview</span>
         </a>
         <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:viewer:nav-icon-->
           <span>Viewer</span>
         </a>
         <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:analysis:nav-icon-->
           <span>Analysis</span>
         </a>
         <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:report:nav-icon-->
           <span>Report</span>
         </a>
         <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:files:nav-icon-->
           <span>Files</span>
         </a>
         <div class="nav-heading">New study</div>
         <a href="#agent" class="nav-link" data-view-link="agent">
-          <span class="nav-icon nav-icon-launch" aria-hidden="true"></span>
+          <!--icon:agent:nav-icon-->
           <span>Agent</span>
         </a>
         <a href="#run" class="nav-link" data-view-link="run">
-          <span class="nav-icon" aria-hidden="true"></span>
+          <!--icon:config:nav-icon-->
           <span>Config</span>
         </a>
       </nav>
 
-      <div class="sidebar-progress">
-        <div class="study-label mono">Progress</div>
+      <!-- Where a run stands, while it runs, or where it stopped and what
+           would fix it. Gone once it has finished: the card above says so. -->
+      <div class="sidebar-progress" id="sidebar-progress" data-run="">
+        <div class="progress-head">
+          <span class="progress-stage" id="topbar-stage">starting</span>
+          <span class="progress-pct mono" id="topbar-progress">&mdash;</span>
+        </div>
         <ol class="sidebar-stages" aria-label="Stages">
-          <li class="stage-step" data-stage="setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
-          <li class="stage-step" data-stage="minimization"><span class="stage-marker"></span><span class="stage-label">Minimisation</span></li>
-          <li class="stage-step" data-stage="nvt"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
-          <li class="stage-step" data-stage="npt"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
-          <li class="stage-step" data-stage="production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
-          <li class="stage-step" data-stage="analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
-          <li class="stage-step" data-stage="report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
+          <li class="stage-step" data-stage="setup" title="Setup"><span class="stage-marker"></span><span class="stage-label">Setup</span></li>
+          <li class="stage-step" data-stage="minimization" title="Minimisation"><span class="stage-marker"></span><span class="stage-label">Minimisation</span></li>
+          <li class="stage-step" data-stage="nvt" title="NVT"><span class="stage-marker"></span><span class="stage-label">NVT</span></li>
+          <li class="stage-step" data-stage="npt" title="NPT"><span class="stage-marker"></span><span class="stage-label">NPT</span></li>
+          <li class="stage-step" data-stage="production" title="Production"><span class="stage-marker"></span><span class="stage-label">Production</span></li>
+          <li class="stage-step" data-stage="analysis" title="Analysis"><span class="stage-marker"></span><span class="stage-label">Analysis</span></li>
+          <li class="stage-step" data-stage="report" title="Report"><span class="stage-marker"></span><span class="stage-label">Report</span></li>
         </ol>
         <div class="sidebar-metrics">
-          <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">—</span> / <span id="topbar-total">—</span></span>
-          <span class="metric-label">Complete</span><span class="metric-value mono" id="topbar-progress">—</span>
-          <span class="metric-label">ETA</span><span class="metric-value mono" id="topbar-eta">—</span>
+          <span class="metric-label" id="sidebar-stage-count">Stage</span>
+          <span class="metric-value" title="Time left, at the speed so far"><span id="topbar-eta">&mdash;</span></span>
+          <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">&mdash;</span> / <span id="topbar-total">&mdash;</span></span>
         </div>
+        <a href="#overview" class="sidebar-fix" id="sidebar-fix" data-view-link="overview" data-fix-link>What would fix it</a>
         <div class="sidebar-controls">
-          <button class="ghost-btn" type="button" id="pause-toggle" aria-pressed="false" title="Pause browser updates only (does not pause the OpenMM simulation)"><span id="pause-label">Pause</span></button>
-          <button class="ghost-btn" type="button" id="refresh-now" title="Refresh now">Refresh</button>
-          <button class="ghost-btn" type="button" id="open-output" title="Open the output folder, and copy its path">Output</button>
+          <button class="sidebar-tool" type="button" id="pause-toggle" aria-pressed="false" title="Pause the page's updates (the simulation goes on)"><span id="pause-label" class="sr-only">Pause</span><!--icon:pause:sidebar-icon pause-icon--><!--icon:play:sidebar-icon play-icon--></button>
+          <button class="sidebar-tool" type="button" id="refresh-now" title="Refresh now" aria-label="Refresh now"><!--icon:refresh:sidebar-icon--></button>
+          <span class="sidebar-refreshed" id="refreshed-indicator">updated <span id="refreshed-at">just now</span></span>
         </div>
-        <div class="sidebar-refreshed muted" id="refreshed-indicator">refreshed <span id="refreshed-at">just now</span></div>
       </div>
 
       <div class="sidebar-foot">
         <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="__FASTMDX_ACCOUNT_NAME__">
-          <span class="sidebar-account-avatar" aria-hidden="true">__FASTMDX_ACCOUNT_INITIALS__</span>
+          <span class="sidebar-account-avatar" aria-hidden="true">__FASTMDX_ACCOUNT_INITIALS__<!--__FASTMDX_LAB_MARK__--></span>
           <span class="sidebar-account-text">
             <span class="sidebar-account-name" id="account-name">__FASTMDX_ACCOUNT_NAME__</span>
           </span>
-          <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
+          <!--icon:gear:sidebar-account-gear-->
         </button>
       </div>
     </aside>
@@ -276,11 +419,16 @@
             </div>
             <div class="page-header-actions">
               <input type="search" class="studies-search" id="studies-search" autocomplete="off"
-                     placeholder="Search by name, structure, kind or state" aria-label="Search the studies">
+                     placeholder="Search by name, structure, kind, state, tag or note" aria-label="Search the studies">
               <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
               <input type="hidden" id="studies-path">
             </div>
           </div>
+          <div class="studies-tag-filter" id="studies-tag-filter" hidden>
+            <span class="study-tag is-filter" id="studies-tag-filter-said"></span>
+            <button type="button" class="ghost-btn" id="studies-tag-filter-clear">Every study</button>
+          </div>
+          <datalist id="studies-tags-used"></datalist>
           <div class="studies-compare-bar" id="studies-compare-bar" hidden>
             <span class="muted small" id="studies-chosen-said"></span>
             <button type="button" class="primary-btn" id="studies-compare" disabled>Compare</button>
@@ -688,12 +836,13 @@
             <div class="viewer-canvas-wrap">
               <!-- The sequence, one line a chain, numbered every fifth
                    residue; a click or a drag selects (viewer-sequence.js). -->
-              <details class="sequence-strip" id="sequence-strip" open hidden>
-                <summary class="seq-head">
+              <!-- Closed until opened, as the person left it after that. -->
+              <details class="sequence-strip" id="sequence-strip" hidden>
+                <summary class="seq-head"><span class="seq-head-row">
                   <span class="seq-title">Sequence</span>
                   <span class="seq-key" aria-hidden="true"><span class="seq-key-h">helix</span><span class="seq-key-s">strand</span></span>
                   <span class="seq-said muted small" id="seq-said"></span>
-                </summary>
+                </span></summary>
                 <div class="seq-scroll" id="seq-scroll"></div>
                 <div class="seq-foot">
                   <span class="muted small" id="seq-note" hidden></span>
@@ -727,6 +876,9 @@
               <!-- What plays the frames, under them: the transport, a series
                    and what holds the ligand. The settings are beside them,
                    so the molecule is always in view. -->
+              <!-- Closed until opened, as the Sequence is, then as left. -->
+              <details class="side-section viewer-under-fold" id="viewer-under-fold">
+              <summary>Playback</summary>
               <div class="viewer-controls viewer-under">
                 <!-- The transport first, under the canvas: it is what a trajectory is
                      played with, and it sat below four rows of display options. -->
@@ -799,6 +951,7 @@
                   <div class="frame-interactions-chart" id="frame-interactions-chart"></div>
                 </div>
               </div>
+              </details>
             </div>
 
             <!-- The settings, beside the molecule and scrolled on their own
@@ -985,6 +1138,66 @@
                 </div>
                 <p class="muted small" id="states-note" role="status"></p>
               </details>
+              <!-- A residue's backbone dihedrals over the frames played, on a
+                   Ramachandran plot tied to the frame shown
+                   (viewer-ramachandran.js, backbone_angles.py). -->
+              <details class="side-section" id="side-rama" hidden>
+                <summary>Backbone angles</summary>
+                <div class="occ-row">
+                  <label class="select-field">Residue
+                    <select id="rama-residue" aria-label="Residue followed"></select>
+                  </label>
+                </div>
+                <canvas class="rama-canvas" id="rama-canvas" width="300" height="300" role="img" aria-label="Ramachandran plot of the frames played"></canvas>
+                <!-- What each mark of the plot is, with the mark itself. -->
+                <ul class="plot-key" id="rama-key">
+                  <li><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" style="fill: var(--text-muted); opacity: .45"/><rect x="12" y="2" width="8" height="8" style="fill: var(--text-muted); opacity: .2"/></svg>All residues, all frames (darker where more often)</li>
+                  <li><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><circle cx="6" cy="6" r="3.5" style="fill: var(--accent-cyan)"/><circle cx="17" cy="6" r="3" style="fill: none; stroke: var(--accent-cyan); stroke-width: 1.4"/></svg>Each residue at the frame shown (hollow: glycine)</li>
+                  <li data-key="path" hidden><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><polyline points="2,9 8,4 14,8 21,3" style="fill: none; stroke: var(--accent-orange); stroke-width: 1.4"/><circle cx="2.5" cy="9" r="1.6" style="fill: var(--accent-orange); opacity: .35"/><circle cx="8" cy="4" r="1.6" style="fill: var(--accent-orange); opacity: .55"/><circle cx="14" cy="8" r="1.6" style="fill: var(--accent-orange); opacity: .8"/><circle cx="21" cy="3" r="1.6" style="fill: var(--accent-orange)"/></svg><span><span class="rama-key-chosen"></span> over the frames, faint at the first, solid at the last</span></li>
+                  <li data-key="ring" hidden><svg class="key-mark" viewBox="0 0 24 12" aria-hidden="true"><circle cx="12" cy="6" r="4.5" style="fill: none; stroke: var(--text-primary); stroke-width: 1.6"/></svg><span><span class="rama-key-chosen"></span> at the frame shown</span></li>
+                  <li data-key="choose">Choose a residue above, or click one in the structure, to follow it over the frames.</li>
+                </ul>
+                <p class="muted small" id="rama-hint">Click a point of the path to show that frame; click a dot to follow that residue.</p>
+                <p class="muted small" id="rama-note" role="status"></p>
+              </details>
+              <!-- Which residues touch which over the frames played, a pair
+                   followed in the structure (viewer-contact-map.js,
+                   contact_map.py). -->
+              <details class="side-section" id="side-cmap" hidden>
+                <summary>Contact map</summary>
+                <div class="occ-row" id="cmap-states-row" hidden>
+                  <label class="select-field">State
+                    <select id="cmap-second" aria-label="State compared"></select>
+                  </label>
+                  <label class="select-field">vs
+                    <select id="cmap-first" aria-label="State it is compared with"></select>
+                  </label>
+                  <button type="button" class="chip-btn" id="cmap-compare" title="Colour each pair by how much more often it was in contact in one state than in the other">Compare</button>
+                  <button type="button" class="chip-btn" id="cmap-all" hidden>Every frame</button>
+                </div>
+                <canvas class="cmap-canvas" id="cmap-canvas" width="300" height="300" role="img" aria-label="Contact map of the protein's residues over the frames played"></canvas>
+                <!-- What the colours mean: the share of frames, or for two
+                     states compared, which state holds a pair more often. -->
+                <div class="plot-key cmap-key" id="cmap-key" hidden>
+                  <div class="cmap-key-bar" id="cmap-key-bar"></div>
+                  <div class="cmap-key-ends"><span id="cmap-key-low"></span><span id="cmap-key-high"></span></div>
+                </div>
+                <p class="muted small" id="cmap-hover" aria-live="off"></p>
+                <div class="occ-row" id="cmap-pair-row" hidden>
+                  <button type="button" class="chip-btn" id="cmap-clear">Clear the pair</button>
+                </div>
+                <p class="muted small" id="cmap-note" role="status"></p>
+              </details>
+              <!-- The room in the ligand's pocket over the frames played,
+                   and the pocket rendered at the frame shown
+                   (viewer-pocket.js, pocket_volume.py). -->
+              <details class="side-section" id="side-pocket" hidden>
+                <summary>Pocket volume</summary>
+                <canvas class="pocket-canvas" id="pocket-canvas" width="300" height="110" role="img" aria-label="The pocket's volume over the frames played"></canvas>
+                <p class="small" id="pocket-now" role="status"></p>
+                <label class="chip-toggle" title="Render the pocket's empty space in the frame shown, the frames superposed on the pocket"><input type="checkbox" id="pocket-shown">Show the pocket</label>
+                <p class="muted small" id="pocket-note"></p>
+              </details>
               <!-- Another study's frames beside this one's: its residues
                    paired by sequence, fitted and timed to these
                    (viewer-beside.js, beside.py). -->
@@ -1050,6 +1263,14 @@
                       <label class="select-field">From frame <input type="number" id="movie-from" min="0" step="1" value="0"></label>
                       <label class="select-field">To <input type="number" id="movie-to" min="0" step="1" placeholder="last"></label>
                       <label class="select-field">Every <input type="number" id="movie-every" min="1" step="1" value="1"></label>
+                      <label class="select-field" title="Frames put in between two frames played, each atom moved in a straight line from one to the next: a smoother movie, not more simulation. The frames are superposed first.">In between
+                        <select id="movie-between">
+                          <option value="0" selected>None</option>
+                          <option value="1">1</option>
+                          <option value="3">3</option>
+                          <option value="7">7</option>
+                        </select>
+                      </label>
                     </div>
                     <div class="control-row">
                       <label class="select-field">Frames a second
@@ -1179,9 +1400,43 @@
                 download
                 hidden
               >Download all SVG figures</a>
+              <!-- The study's analyses run again in its folder, from its
+                   records (analyze-again.js, again_view.py). -->
+              <button type="button" class="ghost-btn" id="analysis-again" hidden
+                      aria-controls="analysis-again-ask" aria-expanded="false"
+                      title="Analyze this study's frames again, with the analyses you choose, simulating nothing">Analyze again</button>
             </div>
           </div>
+          <section class="card again-ask" id="analysis-again-ask" aria-label="Analyze again" hidden></section>
           <div class="quick-actions" id="analysis-quick-actions" hidden></div>
+          <!-- What every analysis recorded, read together
+               (analysis-page.js, analysis_overview.py). -->
+          <section class="card analysis-results" id="analysis-results" hidden aria-labelledby="analysis-results-title">
+            <div class="analysis-results-head">
+              <div>
+                <h2 class="analysis-results-title" id="analysis-results-title">What the analyses determined</h2>
+                <p class="analysis-results-summary muted small" id="analysis-results-summary"></p>
+              </div>
+              <button type="button" class="file-action" data-results-download title="Every quantity in this table, with its standard error and unit, as CSV">Download CSV</button>
+            </div>
+            <div class="analysis-results-scroll">
+              <table class="analysis-results-table" id="analysis-results-table">
+                <caption class="sr-only">Each analysis's mean over its equilibrated frames, the frames and independent samples it rests on, and whether it was determined</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Analysis</th>
+                    <th scope="col">Mean ± standard error</th>
+                    <th scope="col">Frames averaged</th>
+                    <th scope="col" title="Frames averaged over the statistical inefficiency">Independent samples</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </section>
+          <!-- The sections by what they study, with a filter. -->
+          <nav class="analysis-index" id="analysis-index" aria-label="Analyses on this page" hidden></nav>
+          <p class="muted small analysis-filter-none" id="analysis-filter-none" hidden>No analysis matches. Clear the filter to see them all.</p>
           <!-- A study of several runs: the runs side by side
                (runs-compared.js). Hidden for a study of one run. -->
           <section class="runs-compared" id="runs-compared" hidden>
@@ -1218,8 +1473,15 @@
               <h1 class="page-title">Report</h1>
               <div class="page-subtitle" id="report-subtitle">The study, written up.</div>
             </div>
-            <div class="page-header-actions" id="report-downloads"></div>
+            <div class="page-header-actions">
+              <div class="page-header-actions" id="report-downloads"></div>
+              <!-- The report phase alone on the study open, from its records
+                   and the report settings it recorded (report-page.js). -->
+              <button type="button" class="ghost-btn" id="report-write" hidden
+                      title="Write the report again from this study's records, simulating and analysing nothing">Write it again</button>
+            </div>
           </div>
+          <div class="fix-actions report-write-ask" id="report-write-ask" role="status" hidden></div>
           <div id="report-notices" class="report-notices" hidden></div>
           <div class="empty-state" id="report-empty">
             <p>No report yet. The report phase writes one at the end of a run.</p>
@@ -1249,38 +1511,6 @@
             <div class="files-list" id="reports-files"></div>
             <div class="files-list" id="simulation-files"></div>
             <div class="files-list" id="analysis-files"></div>
-          </div>
-        </section>
-
-        <!-- The report, the slides and `fastmdx info` all print this and the
-             GUI printed none, which made it the one interface that never told
-             a new user how to cite the software. Filled by the server from
-             the same constant, so it cannot drift from the others. -->
-        <section class="page" data-page="cite" hidden>
-          <div class="page-header">
-            <div>
-              <h1 class="page-title">Citing FastMDXplora</h1>
-              <div class="page-subtitle">If this software contributed to your work, please cite it</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Reference</h2></div>
-            <div class="card-body">
-              <p id="cite-reference">__FASTMDX_CITATION__</p>
-              <p class="subtle">DOI: <a href="https://doi.org/__FASTMDX_DOI__"
-                 target="_blank" rel="noopener">__FASTMDX_DOI__</a>
-                 &nbsp;·&nbsp; version <span id="cite-version">__FASTMDX_VERSION__</span></p>
-              <p class="subtle">&copy; Copyright __FASTMDX_COPYRIGHT__.</p>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title">BibTeX</h2>
-              <button class="btn btn-small" id="cite-copy">Copy</button>
-            </div>
-            <div class="card-body">
-              <pre class="mono" id="cite-bibtex">__FASTMDX_BIBTEX__</pre>
-            </div>
           </div>
         </section>
 
@@ -1384,91 +1614,6 @@
             </div>
           </template>
         </section>
-
-        <section class="page" data-page="settings" hidden>
-          <div class="page-header">
-            <div>
-              <h1 class="page-title">Settings</h1>
-              <div class="page-subtitle">Browser-side preferences. Existing simulations cannot be modified here.</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Viewer</h2></div>
-            <div class="kv-form mono">
-              <label>Default protein representation
-                <select id="setting-protein-rep">
-                  <option value="cartoon" selected>Cartoon</option>
-                  <option value="backbone">Backbone</option>
-                  <option value="sticks">Sticks</option>
-                  <option value="ballAndStick">Ball and Stick</option>
-                  <option value="surface">Surface</option>
-                  <option value="lines">Lines</option>
-                </select>
-              </label>
-              <label>Default ligand representation
-                <select id="setting-ligand-rep">
-                  <option value="sticks" selected>Sticks</option>
-                  <option value="ballAndStick">Ball and Stick</option>
-                  <option value="cartoon">Cartoon</option>
-                  <option value="lines">Lines</option>
-                </select>
-              </label>
-              <label>Background
-                <select id="setting-background">
-                  <option value="matte-black" selected>Matte black</option>
-                  <option value="deepest-night">Deepest night</option>
-                  <option value="charcoal">Charcoal</option>
-                </select>
-              </label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-show-water"> Show water</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-show-ions"> Show ions</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-spin"> Spin structures by default</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-fog"> Subtle depth fog</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-preserve-camera" checked> Preserve camera between frames</label>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Dashboard</h2></div>
-            <div class="kv-form mono">
-              <label>Telemetry polling (s)
-                <input type="number" id="setting-refresh-seconds" min="1" max="60" step="1" value="__FASTMDX_REFRESH_SECONDS__">
-              </label>
-              <label>Chart history (samples)
-                <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
-              </label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-compact"> Compact mode</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-reduced-motion"> Reduced motion</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-advanced-metrics"> Show advanced metrics</label>
-              <label>Time
-                <select id="setting-time-format">
-                  <option value="24h" selected>24-hour</option>
-                  <option value="12h">12-hour</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Exploration display</h2></div>
-            <div class="kv-form mono">
-              <label>Custom run display name
-                <input type="text" id="setting-run-name" placeholder="(auto from manifest)">
-              </label>
-              <label>Explicit ligand residue name
-                <input type="text" id="setting-ligand-resname" placeholder="(auto-detected)">
-              </label>
-              <label>Binding-pocket cutoff (Å)
-                <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
-              </label>
-              <label>Scientific notation threshold
-                <input type="number" id="setting-scinote" min="0" max="20" step="1" value="5">
-              </label>
-            </div>
-            <p class="muted small">
-              These preferences affect only how the dashboard renders this run.
-              They do not modify the OpenMM simulation or any output files.
-            </p>
-          </div>
-        </section>
       </main>
     </div>
     <div class="col-handle" data-handle="panel" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
@@ -1527,13 +1672,16 @@
   <script src="/static/molstar/molstar.js?v=5.12.0"></script>
   <script src="/static/viewer-engine.js"></script>
   <script src="/static/agent-panel.js"></script>
+    <script src="/static/preferences.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>
+    <script src="/static/analyze-again.js"></script>
     <script src="/static/dashboard.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/series-chart.js"></script>
+  <script src="/static/analysis-page.js"></script>
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
   <script src="/static/fixes.js"></script>
@@ -1549,6 +1697,9 @@
   <script src="/static/viewer-occupancy.js"></script>
   <script src="/static/viewer-motion.js"></script>
   <script src="/static/viewer-states.js"></script>
+  <script src="/static/viewer-ramachandran.js"></script>
+  <script src="/static/viewer-contact-map.js"></script>
+  <script src="/static/viewer-pocket.js"></script>
   <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

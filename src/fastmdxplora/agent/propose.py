@@ -134,7 +134,8 @@ class Proposal:
     #: software's own finding.
     looks: tuple[Any, ...] = ()
     #: What the action is to be done with, where it takes anything: the
-    #: windows and the values for `rerun windows`. Numbers read from the
+    #: windows and the values for `rerun windows`, the analyses for
+    #: `analyze again`. Numbers and names read from the
     #: reply's one line by a strict pattern, checked again by the software
     #: and confirmed by the person before anything runs.
     arguments: dict[str, Any] | None = None
@@ -296,6 +297,15 @@ In an umbrella study, told to run windows again at settings they name
 windows by number, then `at <force constant>` and `for <length> ns` as they
 gave them. Use only the values they gave; if they asked for a stiffer spring
 or a longer run without a number, ask for it rather than choose one.
+Told to analyse the study open again, or to add an analysis to it ("analyse
+it again", "add SASA and hydrogen bonds"), reply `DO: analyze again` to run
+the analyses it ran last, or `DO: analyze again rmsd rg sasa hbonds` naming
+every analysis to run by its name in the software, those it ran included
+where they are to stay; told to write its report again, `DO: write the
+report again`. Nothing is simulated; the software says what is replaced
+and asks first. Setup and simulation are not run again on a study that
+has them: for that, write a new study from it (`simulation.setup_from`,
+`simulation.resume_from`).
 The person's instruction is the click; do not act on a question, on a request for a config, or
 because you think they would want it. Never act twice in one reply. If
 they ask for a change and to run it in one message, write the config
@@ -530,6 +540,26 @@ def _windows_in(raw: str) -> dict[str, Any] | None:
             "force_constant": float(rest["k"]) if rest["k"] else None,
             "duration_ns": float(rest["ns"]) if rest["ns"] else None}
 
+_ANALYSE_AGAIN = re.compile(r"analy[sz]e (?:it |the study )?again(?:\s+(?:with\s+)?"
+                            r"(?P<names>[a-z0-9_]+(?:\s*(?:,\s*and|,|and)?\s*[a-z0-9_]+)*))?")
+_REPORT_AGAIN = re.compile(r"write (?:the |its )?report again")
+
+
+def _again_in(raw: str) -> tuple[str, dict[str, Any]] | None:
+    """`DO: analyze again rmsd rg` or `DO: write the report again`, read as
+    the action and the analyses named, or None. The whole line has to be
+    that; the names are checked against the software's own by the caller."""
+    said = _do_line(raw) or ""
+    if _REPORT_AGAIN.fullmatch(said):
+        return "write the report again", {}
+    found = _ANALYSE_AGAIN.fullmatch(said)
+    if found is None:
+        return None
+    names = [name for name in re.split(r"[\s,]+", found["names"] or "")
+             if name and name != "and"]
+    return "analyze again", {"analyses": list(dict.fromkeys(names)) or None}
+
+
 def _answer_in(raw: str) -> str | None:
     """A plain answer, if the reply is one: a first line starting SAY:."""
     lines = (raw or "").splitlines()
@@ -733,6 +763,10 @@ def propose_config(
         if again is not None:
             return Proposal(config=None, attempts=tuple(attempts), action="rerun windows",
                             arguments=again, looks=looked(), receipt=receipt.freeze())
+        asked_again = _again_in(raw)
+        if asked_again is not None:
+            return Proposal(config=None, attempts=tuple(attempts), action=asked_again[0],
+                            arguments=asked_again[1], looks=looked(), receipt=receipt.freeze())
         said = _answer_in(raw)
         if said:
             said, scene = _scene_in(said)

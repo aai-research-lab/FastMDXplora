@@ -45,6 +45,7 @@ def modes_of(root: str | Path) -> dict[str, Any]:
 
 
 def _from_the_analysis(out: Path) -> dict[str, Any] | None:
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     from fastmdxplora.gui.series import of_the_played_trajectory
     from fastmdxplora.gui.trajectory_frames import _source
 
@@ -67,7 +68,7 @@ def _from_the_analysis(out: Path) -> dict[str, Any] | None:
     if np.any(places >= len(shown)) or np.any(shown[places] != modes["atoms"]):
         return None
     record = _load_json(out / "analysis" / "dimred" / "options.json")
-    selection = str(record.get("selection") or "name CA")
+    selection = str(record.get("selection") or ALPHA_CARBONS)
     return {"ok": True, "from": "analysis", "atoms": places, "mean": modes["mean"],
             "vectors": modes["vectors"], "variance": modes["variance"],
             "ratio": modes["ratio"], "frames": int(modes["frames"]),
@@ -76,6 +77,7 @@ def _from_the_analysis(out: Path) -> dict[str, Any] | None:
 
 
 def _from_the_frames(out: Path) -> dict[str, Any]:
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     import mdtraj as md
 
     from fastmdxplora.analysis.base import superposed
@@ -95,7 +97,7 @@ def _from_the_frames(out: Path) -> dict[str, Any]:
         with suppress_native_output():
             frames = md.load_dcd(str(simulation / "frames.dcd"),
                                  top=str(simulation / "frames_topology.pdb"))
-        atoms = frames.topology.select("name CA")
+        atoms = frames.topology.select(ALPHA_CARBONS)
         if len(atoms) < 3 or frames.n_frames < 3:
             return {"ok": False, "reason": "A motion needs three alpha carbons and three "
                                            "frames."}

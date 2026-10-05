@@ -204,7 +204,7 @@ class TestTheSettingsPopup(unittest.TestCase):
         # the sidebar had grown crowded. That is his call to make.
         page = _page()
         popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
-        self.assertIn('data-view-link="cite">Cite FastMDXplora', popup)
+        self.assertIn('data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora', popup)
         self.assertIn('id="settings-version"', popup)
         self.assertNotIn("About FastMDXplora", popup)
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
@@ -413,32 +413,33 @@ class TestThePopupItemsAct(unittest.TestCase):
         script = _script()
         self.assertIn('el("settings-agent-link")', script)
         self.assertIn("window.FastMDXAgent.openSettings()", script)
-        handler = script[script.index('el("settings-agent-link")'):script.index("The other popup items navigate")]
+        handler = script[script.index('el("settings-agent-link")'):script.index("loadLog();", script.index('el("settings-agent-link")'))]
         self.assertNotIn('navigate("agent")', handler)
         page = _page()
         self.assertLess(page.index('id="agent-settings"'), page.index('<div class="app-shell">'))
         agent = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn("window.FastMDXAgent = { openSettings: openSettings", agent)
 
-    def test_cite_in_the_popup_goes_to_the_cite_page(self):
+    def test_cite_in_the_popup_opens_its_dialog(self):
         page = _page()
         popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
         item = popup[popup.index("Cite FastMDXplora") - 120:popup.index("Cite FastMDXplora")]
-        self.assertIn('href="#cite"', item)
+        self.assertIn('data-dialog-open="cite-dialog"', item)
 
-    def test_the_version_comes_from_the_cite_page(self):
+    def test_the_version_comes_from_the_cite_dialog(self):
         # One copy, filled in by the server, rather than a second
         # placeholder to keep in step.
         self.assertIn('el("cite-version")', _script())
 
-    def test_the_settings_page_is_named_for_what_it_holds(self):
-        # "Browser settings" read as configuring the browser. The page is
-        # viewer and dashboard preferences.
-        self.assertIn("Display preferences", _page())
+    def test_the_preferences_are_named_for_what_they_hold(self):
+        # "Browser settings" read as configuring the browser. They are how
+        # studies are shown, in this browser.
+        self.assertIn("Preferences&hellip;", _page())
 
     def test_pause_is_one_word(self):
-        # "Pause updates" overlapped Refresh in a 232px sidebar.
-        self.assertIn('<span id="pause-label">Pause</span>', _page())
+        # "Pause updates" overlapped Refresh in a 232px sidebar; now an
+        # icon, its one word for a screen reader.
+        self.assertIn('<span id="pause-label" class="sr-only">Pause</span>', _page())
 
 
 class TestTheViewerFollowsTheRun(unittest.TestCase):
@@ -595,7 +596,7 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         self.assertIn('id="sidebar-collapse"', page)
         self.assertIn('id="sidebar-expand"', page)
         script = _script()
-        self.assertIn("function setSidebarCollapsed(yes)", script)
+        self.assertIn("function setSidebarCollapsed(yes, chosen)", script)
         self.assertIn("body.sidebar-collapsed .app-shell", _css())
 
     def test_the_explanations_reach_the_log(self):
@@ -646,8 +647,9 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         page = _page()
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
         self.assertNotIn('class="study-facts', sidebar)
-        self.assertIn('<span id="topbar-stage" hidden></span>', sidebar)
-        self.assertIn('<span class="metric-label">Complete</span>', sidebar)
+        # The progress card is headed by the stage, with how far it is.
+        self.assertIn('<span class="progress-stage" id="topbar-stage">', sidebar)
+        self.assertIn('<span class="progress-pct mono" id="topbar-progress">', sidebar)
         self.assertNotIn('<span class="metric-label">Progress</span>', sidebar)
 
 
@@ -664,12 +666,12 @@ class TestTheCentreSurvivesCollapse(unittest.TestCase):
     def test_collapsed_columns_are_not_display_none(self):
         css = self.css()
         # The rule that hides the panel keeps it in flow.
-        block = css[css.index('body.panel-collapsed .side-panel,'):]
+        block = css[css.index('body.panel-collapsed:not(.panel-peek) .side-panel,'):]
         block = block[:block.index("}")]
         self.assertNotIn("display: none", block)
         self.assertIn("width: 0", block)
         self.assertIn("visibility: hidden", block)
-        sb = css[css.index('body.sidebar-collapsed .sidebar,'):]
+        sb = css[css.index('body.sidebar-collapsed:not(.sidebar-peek) .sidebar,'):]
         sb = sb[:sb.index("}")]
         self.assertNotIn("display: none", sb)
         self.assertIn("width: 0", sb)

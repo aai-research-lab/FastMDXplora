@@ -23,7 +23,6 @@
     white: "#ffffff",
     violet: "#a78bfa",
     black: "#050505",
-    charcoal: "#101012",
     green: "#67e8a3",
     orange: "#ffb86b",
   };
@@ -53,6 +52,9 @@
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
+    // A colour the person chose (the list, a saved view, a scene), which
+    // the colour by run offered later does not take back.
+    colourChosen: false,
     // A study of several runs: the runs played together, the colour of the
     // run played, and the runs the person hid (runs_together.py).
     runsTogether: null,
@@ -80,8 +82,12 @@
     superposedUrl: null,
     // A white ground and the highest quality, for a figure.
     publication: false,
-    // "dark" (the settings' black or charcoal) or "white".
+    // "dark" (black) or "white".
     ground: "dark",
+    // What Preferences last said of the ground, spin and the ligand.
+    groundChosen: "",
+    spinChosen: false,
+    ligandChosen: false,
     framesCoordinatesUrl: null,
     pocketSurface: false,
     pocketOnly: false,
@@ -144,8 +150,12 @@
     window.FastMDXDashboard?.on("viewer-page-opened", onViewerPageOpened);
     window.FastMDXDashboard?.on("live-page-opened", onLivePageOpened);
     window.FastMDXDashboard?.on("settings-updated", onSettingsUpdated);
+    // The settings kept in this browser, before anything is rendered.
+    const settings = window.FastMDXDashboard?.settings?.();
+    if (settings) onSettingsUpdated(settings);
     window.addEventListener("resize", resizeViewers);
     document.addEventListener("fullscreenchange", () => requestAnimationFrame(resizeViewers));
+    wireFolds();
     const refreshSeconds = Number(document.body?.dataset.refreshSeconds || 3);
     window.setInterval(
       pollLiveFrame,
@@ -153,7 +163,11 @@
     );
   }
 
-  function onRunChanged() {
+  function onRunChanged(change) {
+    // The first app state names the study the server was already serving:
+    // what the Viewer loaded and what the person chose before it came are
+    // of that study, and are kept.
+    if (change && change.first) return;
     // Requests started for the previous run are not safe to apply after this
     // reset; each async path captures and checks this generation.
     STATE.viewerGeneration += 1;
@@ -245,6 +259,7 @@
         engine.on("hover", onHoverAtom);
         engine.on("click", onClickAtom);
         STATE.engine = engine;
+        if (STATE.spinChosen) setSpinning(engine, true);
         return engine;
       } catch (error) {
         STATE.viewerUnavailable = true;
@@ -398,8 +413,29 @@
   }
 
   /** One structure into the Viewer's engine or the preview's, as PDB text:
-   * rendered as the controls say, its cartoon given DSSP. */
-  async function mountStructure(pdbText, options) {
+   * rendered as the controls say, its cartoon given DSSP. The same text
+   * asked for again while it is being loaded is that load: the structure's
+   * first state and the page's opening both asked for it before the first
+   * had set the model, and the second emptied the engine for a moment and
+   * rendered it all again. */
+  function mountStructure(pdbText, options) {
+    const key = options && options.mini ? "mini" : "main";
+    const going = STATE.mountsGoing && STATE.mountsGoing[key];
+    if (going && going.text === pdbText && going.generation === STATE.viewerGeneration) {
+      return going.promise;
+    }
+    const mount = {text: pdbText, generation: STATE.viewerGeneration};
+    // Shared until the structure is in the engine, not while its cartoon is
+    // given DSSP: asked for again after that, it is loaded again.
+    mount.loaded = () => {
+      if (STATE.mountsGoing && STATE.mountsGoing[key] === mount) delete STATE.mountsGoing[key];
+    };
+    STATE.mountsGoing = Object.assign(STATE.mountsGoing || {}, {[key]: mount});
+    mount.promise = mountStructureNow(pdbText, options, mount.loaded).finally(mount.loaded);
+    return mount.promise;
+  }
+
+  async function mountStructureNow(pdbText, options, loadedNow) {
     const opts = options || {};
     const mini = !!opts.mini;
     const generation = STATE.viewerGeneration;
@@ -418,6 +454,7 @@
       const loaded = await engine.loadStructure({text: pdbText,
         coordinates: coordinates ? coordinates.bytes : null,
         keepCamera: hadModel && !opts.fit && STATE.preservingCamera});
+      if (loadedNow) loadedNow();
       if (!isViewerGenerationCurrent(generation)) return;
       const rendered = {atoms: loaded.atoms, frames: loaded.frames, of};
       if (mini) {
@@ -1026,6 +1063,7 @@
     });
     document.getElementById("viewer-color")?.addEventListener("change", (event) => {
       STATE.colorMode = event.target.value || "spectrum";
+      STATE.colourChosen = true;
       void restyleViewers();
     });
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
@@ -1122,8 +1160,7 @@
   /** The look a figure is made in: a white ground, and the outlines and
    * shading of the highest quality, wherever the page is rendered; off,
    * the ground and quality as set. */
-  /** The ground the molecule is shown on: "white", or "dark" (black or
-   * charcoal, as the settings say). */
+  /** The ground the molecule is shown on: "white", or "dark" (black). */
   function setGround(ground) {
     STATE.ground = ground === "white" ? "white" : "dark";
     if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
@@ -1206,6 +1243,7 @@
     const colour = document.getElementById("viewer-color");
     if (view.colour && colour && [...colour.options].some((o) => o.value === view.colour)) {
       STATE.colorMode = view.colour;
+      STATE.colourChosen = true;
       colour.value = view.colour;
     }
     if (Number.isFinite(view.pocket_cutoff)) {
@@ -1969,8 +2007,9 @@
   }
 
   /** Coloured by run, offered while runs are played together and chosen
-   * the first time they are; taken away, with the colour it stood in for
-   * kept, when they are not. */
+   * the first time they are, unless the person chose a colour before they
+   * came; taken away, with the colour it stood in for kept, when they are
+   * not. */
   function offerTheRunColour(offered) {
     const select = document.getElementById("viewer-color");
     if (!select) return;
@@ -1980,7 +2019,7 @@
       option.value = "run";
       option.textContent = "Run";
       select.insertBefore(option, select.firstChild);
-      if (!STATE.runColourChosen) {
+      if (!STATE.runColourChosen && !STATE.colourChosen) {
         STATE.runColourChosen = true;
         STATE.colorMode = "run";
         select.value = "run";
@@ -2233,8 +2272,19 @@
   /* ------------------------------------------------------------------ */
   /* Settings, status, selections                                        */
   /* ------------------------------------------------------------------ */
+  /* The Preferences dialog's settings, as the Viewer starts and as they
+   * change. The ground and spin follow a preference only when it changes,
+   * so the ground button and the spin button keep what they were last
+   * set to otherwise. */
   function onSettingsUpdated(settings) {
-    if (settings.ligand) STATE.ligandResname = String(settings.ligand).toUpperCase();
+    if (settings.ligand) {
+      STATE.ligandResname = String(settings.ligand).toUpperCase();
+      STATE.ligandChosen = true;
+    } else if (STATE.ligandChosen) {
+      // Back to the first ligand the structure has, as at the start.
+      STATE.ligandChosen = false;
+      STATE.ligandResname = (STATE.structureInfo?.ligand_resnames || []).filter(Boolean)[0] || null;
+    }
     if (Number.isFinite(settings.pocketCutoff)) STATE.pocketCutoff = settings.pocketCutoff;
     if (settings.proteinRepresentation) {
       STATE.representation = settings.proteinRepresentation;
@@ -2247,10 +2297,14 @@
     STATE.visibility.water = !!settings.showWater;
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;
-    STATE.background = settings.background === "charcoal" ? COLORS.charcoal : COLORS.black;
-    // The publication look and a white ground keep theirs.
-    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
-    if (settings.spin && STATE.engine) setSpinning(STATE.engine, true);
+    if (settings.ground && settings.ground !== STATE.groundChosen) {
+      STATE.groundChosen = settings.ground;
+      setGround(settings.ground);
+    }
+    if (!!settings.spin !== STATE.spinChosen) {
+      STATE.spinChosen = !!settings.spin;
+      if (STATE.engine) setSpinning(STATE.engine, STATE.spinChosen);
+    }
     if (STATE.mode === "playback" && needsFullTopology()) void ensurePlaybackEnvironment();
     const cutoff = document.getElementById("pocket-cutoff");
     if (cutoff) cutoff.value = String(STATE.pocketCutoff);
@@ -2816,17 +2870,116 @@
   /* ------------------------------------------------------------------ */
   /* Generic helpers                                                     */
   /* ------------------------------------------------------------------ */
-  /* The height the Viewer's two columns take: what the window leaves
-   * under the page's header, so the molecule and what plays it are in view
-   * together and the settings scroll beside them. */
+  /* The molecule's frame keeps one shape, 4 wide to 3 high: the shape a
+   * figure and a slide take, and a globular protein turned any way fits it
+   * with little to spare. It is as large as the window allows under the
+   * page's header with the sequence's and the playback's heads above and
+   * below it, and no wider: the page's spare width is left at its sides.
+   * Opening either changes nothing of the molecule: what it shows pushes
+   * the rest down, and the column scrolls. */
+  const CANVAS_SHAPE = 4 / 3;
+  const SMALLEST_CANVAS = 280;
+
   function fitTheLayout() {
     const layout = document.querySelector(".viewer-layout");
     if (!layout || !isVisible(layout)) return;
     const page = layout.closest(".page");
     const header = page ? page.querySelector(".page-header") : null;
     const top = header ? header.getBoundingClientRect().bottom : layout.getBoundingClientRect().top;
-    const room = Math.floor(window.innerHeight - Math.max(0, top) - 20);
-    layout.style.setProperty("--viewer-height", `${Math.max(520, room)}px`);
+    const room = Math.max(520, Math.floor(window.innerHeight - Math.max(0, top) - 20));
+    layout.style.setProperty("--viewer-height", `${room}px`);
+    // Twice: the playback's rows wrap by the width the first pass gives.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const fitted = canvasWidth(layout, room);
+      if (fitted == null) {
+        layout.style.removeProperty("--viewer-canvas-width");
+        if (page) page.style.removeProperty("--viewer-content-width");
+        return;
+      }
+      layout.style.setProperty("--viewer-canvas-width", `${fitted.canvas}px`);
+      // The page's header as wide as what is under it, so the two line up.
+      if (page) page.style.setProperty("--viewer-content-width", `${fitted.whole}px`);
+    }
+  }
+
+  /* The canvas's width beside the settings, and theirs together; or null
+   * where the two stack (the canvas then takes the page's width, in the
+   * same shape). */
+  function canvasWidth(layout, room) {
+    const columns = getComputedStyle(layout).gridTemplateColumns.split(" ").filter(Boolean);
+    const wrap = layout.querySelector(".viewer-canvas-wrap");
+    const side = layout.querySelector(".viewer-side");
+    const frame = document.getElementById("viewer-canvas-frame");
+    if (columns.length < 2 || !wrap || !side || !frame) return null;
+    const gap = parseFloat(getComputedStyle(layout).columnGap) || 0;
+    const sideWidth = side.getBoundingClientRect().width;
+    // From the page's width: the layout itself is held to what it shows.
+    const page = layout.closest(".page") || layout;
+    // The column's scroll bar has its place kept beside the molecule, so
+    // the molecule is as wide as fitted whether the bar shows or not.
+    const gutter = Math.max(0, wrap.offsetWidth - wrap.clientWidth);
+    const across = page.clientWidth - gap - sideWidth - gutter;
+    const between = parseFloat(getComputedStyle(wrap).rowGap) || 0;
+    let others = 0;
+    Array.from(wrap.children).forEach((child) => {
+      if (child === frame || !isVisible(child)) return;
+      others += closedHeight(child) + between;
+    });
+    const high = Math.max(SMALLEST_CANVAS, Math.min(room - others, across / CANVAS_SHAPE));
+    const canvas = Math.floor(Math.min(across, high * CANVAS_SHAPE)) + gutter;
+    return {canvas, whole: Math.ceil(canvas + gap + sideWidth)};
+  }
+
+  /* The height a fold takes closed, its head and its own edges, whether it
+   * is open or not: opening the sequence took its lines from the molecule,
+   * which shrank as it opened. Anything else, as it stands. */
+  function closedHeight(node) {
+    const head = node.tagName === "DETAILS" ? node.querySelector(":scope > summary") : null;
+    if (!head) return node.getBoundingClientRect().height;
+    const style = getComputedStyle(node);
+    const edges = ["borderTopWidth", "borderBottomWidth", "paddingTop", "paddingBottom"]
+      .reduce((sum, key) => sum + (parseFloat(style[key]) || 0), 0);
+    // A head is padded alike above and below while closed; an open
+    // section's has less below (its body follows), which counted would
+    // move the molecule by those pixels as it opened.
+    const own = getComputedStyle(head);
+    const below = parseFloat(own.paddingBottom) || 0;
+    const above = parseFloat(own.paddingTop) || 0;
+    return head.getBoundingClientRect().height - below + above + edges;
+  }
+
+  /* The sequence and the playback fold as the settings' sections do, and
+   * stay as they were left; the molecule is sized again when either
+   * appears or its head wraps, and keeps its size as either opens. */
+  function wireFolds() {
+    [["sequence-strip", "viewerSequenceOpen"], ["viewer-under-fold", "viewerPlaybackOpen"]]
+      .forEach(([id, key]) => {
+        const fold = document.getElementById(id);
+        if (!fold) return;
+        try {
+          const kept = localStorage.getItem(`fmx.${key}`);
+          if (kept !== null) fold.open = kept === "1";
+        } catch (error) { /* private mode */ }
+        fold.addEventListener("toggle", () => {
+          try { localStorage.setItem(`fmx.${key}`, fold.open ? "1" : "0"); }
+          catch (error) { /* private mode */ }
+        });
+      });
+    if (typeof ResizeObserver !== "function") return;
+    let asked = false;
+    const again = () => {
+      if (asked) return;
+      asked = true;
+      requestAnimationFrame(() => { asked = false; resizeViewers(); });
+    };
+    const watched = new ResizeObserver(again);
+    ["sequence-strip", "viewer-under-fold"].forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) watched.observe(node);
+    });
+    // The page's width changes as the columns beside it open and close.
+    const shell = document.querySelector(".page-shell");
+    if (shell) watched.observe(shell);
   }
 
   function resizeViewers() {
@@ -2916,6 +3069,7 @@
     },
     colourBy: (mode) => {
       STATE.colorMode = mode;
+      STATE.colourChosen = true;
       const select = document.getElementById("viewer-color");
       if (select) select.value = mode;
       return restyleViewers();

@@ -275,12 +275,17 @@ def _write_dx(path: Path, values: Any, origin: Any) -> None:
     """A map as OpenDX: x slowest, z fastest, in angstroms."""
     from fastmdxplora.gui.trajectory_frames import _write_text
 
+    _write_text(path, _dx_text(values, origin, GRID_ANGSTROM))
+
+
+def _dx_text(values: Any, origin: Any, spacing: float) -> str:
+    """A map as OpenDX text: x slowest, z fastest, in angstroms."""
     nx, ny, nz = values.shape
     flat = values.ravel()
     lines = [f"object 1 class gridpositions counts {nx} {ny} {nz}",
              f"origin {origin[0]:.4f} {origin[1]:.4f} {origin[2]:.4f}",
-             f"delta {GRID_ANGSTROM:.4f} 0 0", f"delta 0 {GRID_ANGSTROM:.4f} 0",
-             f"delta 0 0 {GRID_ANGSTROM:.4f}",
+             f"delta {spacing:.4f} 0 0", f"delta 0 {spacing:.4f} 0",
+             f"delta 0 0 {spacing:.4f}",
              f"object 2 class gridconnections counts {nx} {ny} {nz}",
              f"object 3 class array type double rank 0 items {flat.size} data follows"]
     for start in range(0, flat.size, 3):
@@ -288,7 +293,7 @@ def _write_dx(path: Path, values: Any, origin: Any) -> None:
     lines += ['attribute "dep" string "positions"', 'object "occupancy" class field',
               'component "positions" value 1', 'component "connections" value 2',
               'component "data" value 3', ""]
-    _write_text(path, "\n".join(lines))
+    return "\n".join(lines)
 
 
 def water_sites_placed(root: str | Path) -> dict[str, Any]:

@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -44,20 +45,22 @@ from fastmdxplora.refusals import MissingResultError
 B_TO_MSF = 3.0 / (8.0 * np.pi ** 2)
 
 
-def bfactors_from_pdb(path: str | Path) -> dict[tuple[int, int], float]:
-    """Per-residue CA B-factors, keyed by (chain order, residue number).
+def bfactors_from_pdb(path: str | Path) -> dict[tuple[str, int, str], float]:
+    """Per-residue CA B-factors, keyed by (chain ID, residue number, insertion
+    code), in the order the file gives them.
 
     Read by column rather than by splitting on whitespace, because the PDB
     format is fixed-width and a five-figure atom serial or a four-character
     residue name runs its fields together: split on spaces and the B column
     becomes whatever happened to be next to it.
 
-    Chains are keyed by the order their identifiers first appear, which is
-    what survives preparation: PDBFixer keeps chain order while it may not
-    keep the identifiers themselves.
+    The insertion code is part of the key because it is part of the residue's
+    name: trypsin's GLY 184A (B 9.49) and TYR 184 (B 20.72) are two residues,
+    and keyed by number alone the second overwrote the first. The chain ID
+    is part of it because it names the chain: setup writes the IDs it read,
+    and a run of chain B alone is compared with chain B.
     """
-    order: dict[str, int] = {}
-    out: dict[tuple[int, int], float] = {}
+    out: dict[tuple[str, int, str], float] = {}
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.startswith("ATOM"):
             continue
@@ -66,16 +69,18 @@ def bfactors_from_pdb(path: str | Path) -> dict[tuple[int, int], float]:
         altloc = line[16]
         if altloc not in (" ", "A"):
             continue
-        chain = line[21]
-        if chain not in order:
-            order[chain] = len(order)
         try:
             resseq = int(line[22:26])
             value = float(line[60:66])
         except ValueError:
             continue
-        out[(order[chain], resseq)] = value
+        out[(line[21:22].strip(), resseq, line[26:27].strip())] = value
     return out
+
+
+def _deposited_chains(crystal: dict[tuple[str, int, str], float]) -> list[str]:
+    """The deposited chain IDs, in the order the file gives them."""
+    return list(dict.fromkeys(chain for chain, _number, _code in crystal))
 
 
 def has_crystallographic_bfactors(path: str | Path) -> bool:
@@ -103,7 +108,7 @@ class BFactorComparison(Analysis):
     structure : str, optional
         The deposited file to read B-factors from. Discovered from the run
         directory when not given.
-    align_selection : str, default "name CA"
+    align_selection : str, default "protein and name CA"
         Atoms used to remove rigid-body motion before fluctuations are
         measured, as in the RMSF analysis.
     **kwargs
@@ -134,7 +139,7 @@ class BFactorComparison(Analysis):
         self,
         *,
         structure: str | None = None,
-        align_selection: str = "name CA",
+        align_selection: str = ALPHA_CARBONS,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -161,6 +166,38 @@ class BFactorComparison(Analysis):
                         candidate):
                     return candidate
         return None
+
+    def _match_chains(self, traj: md.Trajectory, alpha: np.ndarray,
+                      crystal: dict[tuple[str, int, str], float]) -> dict[int, str]:
+        """Each trajectory chain's deposited chain ID: its own ID where it
+        carries one the file has, else its place among the chains, said.
+
+        Matched by place, a run of 1HHO's chain B alone was compared with
+        chain A's B-factors (VAL 1: 70.91 against chain B's 25.93). MDTraj
+        before 1.11 drops chain IDs when it slices or copies a trajectory,
+        and place is then all there is; the finding says so.
+        """
+        deposited = _deposited_chains(crystal)
+        chains = list(dict.fromkeys(
+            traj.topology.atom(int(i)).residue.chain for i in alpha))
+        given = {c.index: str(getattr(c, "chain_id", "") or "").strip() for c in chains}
+        if all(given[c.index] in deposited for c in chains):
+            return {c.index: given[c.index] for c in chains}
+        why = ("carries no chain IDs" if not any(given.values())
+               else "carries chain IDs the deposited file does not have ("
+               + ", ".join(sorted({v for v in given.values() if v and v not in deposited}))
+               + ")")
+        matched = {c.index: deposited[k] for k, c in enumerate(chains) if k < len(deposited)}
+        self.findings["chains_matched_by_order"] = (
+            f"The trajectory {why}, so its {len(chains)} chain(s) were matched "
+            f"to the deposited file's chains by order: "
+            + ", ".join(f"chain {k + 1} to {matched[c.index]}"
+                        for k, c in enumerate(chains) if c.index in matched)
+            + ". If the run kept only some of the deposited chains, or "
+            "reordered them, the B-factors compared are another chain's. "
+            "MDTraj before 1.11 drops chain IDs when it slices a trajectory."
+        )
+        return matched
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
         path = self._structure_path()
@@ -201,13 +238,40 @@ class BFactorComparison(Analysis):
         rmsf = np.sqrt(np.mean(
             np.sum((xyz - xyz.mean(axis=0)) ** 2, axis=2), axis=0))
 
+        chain_of = self._match_chains(traj, alpha, crystal)
+        by_number: dict[tuple[str, int], list[tuple[str, float]]] = {}
+        for (chain, number, code), value in crystal.items():
+            by_number.setdefault((chain, number), []).append((code, value))
+        from fastmdxplora.analysis.residues import has_insertions, insertion_code
+
+        codes_known = has_insertions(traj.topology)
+        seen: dict[tuple[int, int], int] = {}
+        in_trajectory: dict[tuple[int, int], int] = {}
+        for atom_index in alpha:
+            residue = traj.topology.atom(int(atom_index)).residue
+            key = (residue.chain.index, residue.resSeq)
+            in_trajectory[key] = in_trajectory.get(key, 0) + 1
+
         rows: list[tuple[float, float, float]] = []
         compared: list = []
         missing = 0
         for position, atom_index in enumerate(alpha):
             residue = traj.topology.atom(int(atom_index)).residue
-            key = (residue.chain.index, residue.resSeq)
-            value = crystal.get(key)
+            chain = chain_of.get(residue.chain.index)
+            deposited = by_number.get((chain, residue.resSeq), []) if chain is not None else []
+            occurrence = seen.get((residue.chain.index, residue.resSeq), 0)
+            seen[(residue.chain.index, residue.resSeq)] = occurrence + 1
+            value = None
+            if codes_known:
+                code = insertion_code(residue)
+                value = next((v for c, v in deposited if c == code), None)
+            elif len(deposited) == in_trajectory[(residue.chain.index, residue.resSeq)]:
+                # The trajectory does not carry the codes, so residues sharing
+                # a number are taken in the order the file gives them, which
+                # is the order they are in the chain: 184A, then 184.
+                value = deposited[occurrence][1]
+            elif len(deposited) == 1:
+                value = deposited[0][1]
             if value is None or value <= 0.0:
                 missing += 1
                 continue
@@ -272,17 +336,37 @@ class BFactorComparison(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         if hasattr(result, "columns"):
-            for name, rows in result.groupby("chain", sort=False):
-                line, = ax.plot(rows["residue"], rows["simulated_nm"], linewidth=1.2,
-                                label=f"chain {name}, simulated")
-                ax.plot(rows["residue"], rows["implied_nm"], linewidth=1.2, linestyle="--",
-                        color=line.get_color(), label=f"chain {name}, from B-factors")
-            ax.legend(loc="best", fontsize="small", ncol=2)
+            # A table names each residue's chain where there are several, and
+            # its insertion code where any has one; one chain with insertion
+            # codes (trypsin's 184 and 184A) has no chain column, and the
+            # figure raised on it.
+            several = "chain" in result
+            groups = result.groupby("chain", sort=False) if several else [("", result)]
+            for name, rows in groups:
+                said = f"chain {name}, " if several else ""
+                x = np.arange(len(rows)) if not several else rows["residue"]
+                line, = ax.plot(x, rows["simulated_nm"], linewidth=1.2,
+                                label=f"{said}simulated")
+                ax.plot(x, rows["implied_nm"], linewidth=1.2, linestyle="--",
+                        color=line.get_color(), label=f"{said}from B-factors")
+                if not several:
+                    self._label_by_residue(ax, rows)
+            ax.legend(loc="best", fontsize="small", ncol=2 if several else 1)
             return
         ax.plot(result[:, 0], result[:, 1], linewidth=1.2, label="simulated")
         ax.plot(result[:, 0], result[:, 2], linewidth=1.2,
                 linestyle="--", label="from B-factors")
         ax.legend(loc="best", fontsize="small")
+
+    @staticmethod
+    def _label_by_residue(ax: plt.Axes, rows: Any) -> None:
+        """Residues by position, ticked with their numbers and codes: 184 and
+        184A at one x drew one over the other."""
+        labels = [f"{int(n)}{code or ''}" for n, code in
+                  zip(rows["residue"], rows.get("insertion", [""] * len(rows)))]
+        step = max(1, len(labels) // 12)
+        ax.set_xticks(np.arange(0, len(labels), step))
+        ax.set_xticklabels(labels[::step])
 
     def default_xlabel(self) -> str | None:
         return "Residue"

@@ -58,6 +58,8 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "
                      "can take hours of this machine's GPU.")
+        lines.append("- run_phases_again only when the person asks to analyse a study again, "
+                     "add an analysis to it, or write its report again.")
     else:
         lines.append("- This server only reads and checks: studies are started from "
                      "FastMDXplora itself, not from here.")

@@ -204,6 +204,8 @@ def test_the_viewer_reads_them_at_the_frame_shown(study):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1400, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(60000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))

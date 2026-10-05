@@ -115,11 +115,72 @@
     if (name === "files") loadFiles();
   }
 
+  /* What each column is off the Viewer, and on it. The Viewer gives the
+   * molecule the window: both columns close as it opens, and come back as
+   * they were when another page opens. Brought back on the Viewer with
+   * their button, they stay there, on the Viewer, until closed again. */
+  var sidebarClosed = false;
+  var panelClosed = false;
+  var onTheViewer = false;
+  var keptOnTheViewer = { sidebar: false, panel: false };
+
+  function showTheColumns() {
+    var sidebar = onTheViewer ? !keptOnTheViewer.sidebar : sidebarClosed;
+    var panel = onTheViewer ? !keptOnTheViewer.panel : panelClosed;
+    document.body.classList.toggle("sidebar-collapsed", sidebar);
+    document.body.classList.toggle("panel-collapsed", panel);
+    var expand = el("sidebar-expand");
+    if (expand) expand.hidden = !sidebar;
+    expand = el("side-expand");
+    if (expand) expand.hidden = !panel;
+    if (!sidebar) peek("sidebar", false);
+    if (!panel) peek("panel", false);
+  }
+
   function setCollapsed(yes, chosen) {
-    document.body.classList.toggle("panel-collapsed", yes);
-    var expand = el("side-expand");
-    if (expand) expand.hidden = !yes;
-    if (chosen !== false) store.set("panelCollapsed", yes ? "1" : "0");
+    if (onTheViewer && chosen !== false) {
+      keptOnTheViewer.panel = !yes;
+      store.set("viewerPanelOpen", yes ? "0" : "1");
+    } else {
+      panelClosed = yes;
+      if (chosen !== false) store.set("panelCollapsed", yes ? "1" : "0");
+    }
+    showTheColumns();
+  }
+
+  /* Pointing at a closed column's button shows it over the page for as
+   * long as the pointer stays on the button or the column; a click on the
+   * button keeps it. Leaving it is given a moment, so the pointer can
+   * cross from the button to the column. */
+  var peekTimers = {};
+  function peek(which, on) {
+    clearTimeout(peekTimers[which]);
+    document.body.classList.toggle(which + "-peek", on);
+    var button = el(which === "sidebar" ? "sidebar-expand" : "side-expand");
+    var name = which === "sidebar" ? "sidebar" : "panel";
+    if (button) button.title = on ? "Keep the " + name + " open" : "Show " + name;
+  }
+  function peekWhilePointedAt(which, button, column) {
+    if (!button || !column) return;
+    var cls = which === "sidebar" ? "sidebar-collapsed" : "panel-collapsed";
+    var enter = function () {
+      if (document.body.classList.contains(cls)) peek(which, true);
+    };
+    var leave = function () {
+      clearTimeout(peekTimers[which]);
+      peekTimers[which] = setTimeout(function () { peek(which, false); }, 250);
+    };
+    [button, column].forEach(function (node) {
+      node.addEventListener("mouseenter", enter);
+      node.addEventListener("mouseleave", leave);
+    });
+  }
+
+  function followThePage() {
+    var viewer = document.documentElement.getAttribute("data-page") === "viewer";
+    if (viewer === onTheViewer) return;
+    onTheViewer = viewer;
+    showTheColumns();
   }
 
   /* Until someone opens or closes the log, it is open while a study runs,
@@ -134,11 +195,15 @@
     setCollapsed(!live, false);
   }
 
-  function setSidebarCollapsed(yes) {
-    document.body.classList.toggle("sidebar-collapsed", yes);
-    var expand = el("sidebar-expand");
-    if (expand) expand.hidden = !yes;
-    store.set("sidebarCollapsed", yes ? "1" : "0");
+  function setSidebarCollapsed(yes, chosen) {
+    if (onTheViewer && chosen !== false) {
+      keptOnTheViewer.sidebar = !yes;
+      store.set("viewerSidebarOpen", yes ? "0" : "1");
+    } else {
+      sidebarClosed = yes;
+      if (chosen !== false) store.set("sidebarCollapsed", yes ? "1" : "0");
+    }
+    showTheColumns();
   }
 
   /* ---- The log ------------------------------------------------------ */
@@ -734,6 +799,8 @@
     if (pw) setWidth("panel", pw);
     $$(".col-handle").forEach(wireHandle);
 
+    keptOnTheViewer.sidebar = store.get("viewerSidebarOpen", "0") === "1";
+    keptOnTheViewer.panel = store.get("viewerPanelOpen", "0") === "1";
     var remembered = store.get("panelCollapsed", null);
     panelChosen = remembered !== null;
     setCollapsed(remembered === "1", false);
@@ -757,9 +824,14 @@
         followTheStudy(processRunning || status === "running" || status === "starting");
       });
     }
-    setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1");
+    setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1", false);
     el("sidebar-collapse").addEventListener("click", function () { setSidebarCollapsed(true); });
     el("sidebar-expand").addEventListener("click", function () { setSidebarCollapsed(false); });
+    peekWhilePointedAt("sidebar", el("sidebar-expand"), document.querySelector(".sidebar"));
+    peekWhilePointedAt("panel", el("side-expand"), el("side-panel"));
+    followThePage();
+    new MutationObserver(followThePage).observe(document.documentElement,
+      { attributes: true, attributeFilter: ["data-page"] });
 
     $$(".side-tab").forEach(function (t) {
       t.addEventListener("click", function () { showTab(t.dataset.sideTab); });
@@ -785,7 +857,7 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") setPopup(false);
     });
-    /* The version is on the Cite page, filled in by the server. Read it
+    /* The version is in the Cite dialog, filled in by the server. Read it
      * from there rather than asking for a second copy. */
     /* One button. Open opens the folder where the browser can, and the
      * path goes to the clipboard either way, so the button is useful on
@@ -799,11 +871,64 @@
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(path.trim()).then(function () {
             openOut.textContent = "Path copied";
-            setTimeout(function () { openOut.textContent = "Output"; }, 1400);
+            setTimeout(function () { openOut.textContent = "Open the folder"; }, 1400);
           });
         }
       }, true);
     }
+
+    /* The study card opens the studies to switch to; Escape, a click
+     * elsewhere or a choice closes it, and focus goes back to the card. */
+    var studyCard = el("study-card");
+    var studyMenu = el("study-menu");
+    function setStudyMenu(open) {
+      if (!studyCard || !studyMenu) return;
+      studyMenu.hidden = !open;
+      studyCard.setAttribute("aria-expanded", String(open));
+      if (open) {
+        if (window.FastMDXStudies && window.FastMDXStudies.offerRecent) {
+          window.FastMDXStudies.offerRecent();
+        }
+        var first = studyMenu.querySelector(".study-menu-item");
+        if (first) first.focus();
+      }
+    }
+    if (studyCard && studyMenu) {
+      studyCard.addEventListener("click", function (e) {
+        e.stopPropagation();
+        setStudyMenu(studyMenu.hidden);
+      });
+      studyMenu.addEventListener("click", function (e) {
+        var item = e.target.closest(".study-menu-item");
+        var page = item && item.getAttribute("data-menu-page");
+        if (page && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+          e.preventDefault();
+          window.FastMDXDashboard.navigate(page);
+        }
+        // The folder picker opens over the page; the menu goes first.
+        if (item) setStudyMenu(false);
+        e.stopPropagation();
+      });
+      document.addEventListener("click", function () {
+        if (!studyMenu.hidden) setStudyMenu(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !studyMenu.hidden) {
+          setStudyMenu(false);
+          studyCard.focus();
+        }
+      });
+    }
+
+    /* "What would fix it" in the progress card: the Overview, at its card. */
+    $$("[data-fix-link]").forEach(function (a) {
+      a.addEventListener("click", function () {
+        setTimeout(function () {
+          var card = el("fixes-card");
+          if (card && !card.hidden) card.scrollIntoView({ block: "start" });
+        }, 60);
+      });
+    });
 
     var loadStudy = el("load-study");
     var loadPath = el("load-study-path");
@@ -1018,7 +1143,10 @@
 
     var version = el("settings-version");
     var cite = el("cite-version");
-    if (version && cite) version.textContent = cite.textContent.trim();
+    if (version && cite) {
+      version.textContent = cite.textContent.trim();
+      version.title = version.textContent;
+    }
 
     /* "Agent settings…" opens the Agent's own dialog. Landing on the page
      * and leaving somebody to find the button was the same as not
@@ -1028,6 +1156,8 @@
       agentLink.addEventListener("click", function (e) {
         e.preventDefault();
         setPopup(false);
+        // Focus goes back to the gear when the dialog closes.
+        el("settings-open").focus();
         /* No navigation. The dialog is at body level and opens over
          * whatever page is showing; changing the page to open a
          * settings dialog is a detour nobody asked for. */
@@ -1036,10 +1166,6 @@
         }
       });
     }
-    /* The other popup items navigate; close the popup when they do. */
-    $$(".settings-item[data-view-link]").forEach(function (a) {
-      a.addEventListener("click", function () { setPopup(false); });
-    });
 
     loadLog();
     loadAgentStatus();

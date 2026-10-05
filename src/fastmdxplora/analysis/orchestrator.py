@@ -836,6 +836,31 @@ class AnalysisOrchestrator:
             return [str(item) for item in value]
         return str(value)
 
+    def _frame_times_where_strided_across_files(self) -> dict[str, Any]:
+        """Each analysed frame's time, where it is not every stride-th frame.
+
+        MDTraj strides each file on its own, so the frames of several files
+        loaded at a stride are not evenly spaced (two files of five frames
+        at stride 2 are frames 0, 2, 4, 5, 7, 9 of the run); the loader
+        gives each its true time (`loading.written_frames`), and this keeps
+        those times for what reads the analyses' series afterwards, the
+        GUI's axes among them, which otherwise assumed even spacing.
+        """
+        import numpy as np
+
+        inputs = self._trajectory_input
+        stride = self._load_kwargs.get("stride")
+        if not isinstance(inputs, (list, tuple)) or len(inputs) < 2 \
+                or not stride or int(stride) <= 1:
+            return {}
+        try:
+            times = np.asarray(self.traj.time, dtype=float)
+        except (AttributeError, TypeError, ValueError):
+            return {}
+        if times.size != self.traj.n_frames or not np.all(np.isfinite(times)):
+            return {}
+        return {"frame_times_ps": [round(float(t), 9) for t in times]}
+
     def _write_manifest(self) -> None:
         """Write the phase-level analysis manifest.
 
@@ -855,6 +880,7 @@ class AnalysisOrchestrator:
                 str(self._topology_input) if self._topology_input else None
             ),
             "load_kwargs": self._load_kwargs,
+            **self._frame_times_where_strided_across_files(),
             "figure_colours": self.figure_colours,
             "figure_width": self.figure_width,
             "default_selection": self.default_selection,

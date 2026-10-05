@@ -116,9 +116,18 @@ class PMF(Analysis):
         energy = result["free_energy_kjmol"]
         ax.plot(coordinate, energy, linewidth=1.6)
 
+        # The minimum the summary gives: the lowest bin inside the range the
+        # windows covered. Taken over the whole grid it marked 2.2 nm on a
+        # profile whose well was at 0.5 nm inside a covered 0.35 to 1.6 nm,
+        # because the grid runs on past the last window into bins few
+        # samples reached.
         sampled = np.isfinite(energy)
+        covered = (result.get("summary") or {}).get("covered")
+        if covered:
+            sampled &= ((coordinate >= float(covered[0]))
+                        & (coordinate <= float(covered[1])))
         if sampled.any():
-            lowest = int(np.nanargmin(np.where(sampled, energy, np.inf)))
+            lowest = int(np.argmin(np.where(sampled, energy, np.inf)))
             ax.axvline(coordinate[lowest], color=colour("GUIDE"), linestyle=":",
                        linewidth=1.0,
                        label=f"minimum at {coordinate[lowest]:.3g}")

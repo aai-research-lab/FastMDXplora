@@ -28,10 +28,11 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
 | `fastmdx mcp` | Serve FastMDXplora to an AI app: [FastMDXplora from your AI app](mcp.md) |
-| `fastmdx init-config` | Write a commented Config template |
+| `fastmdx config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
 | `fastmdx scene` | Write a view of a study as a scene file (MolViewSpec) |
+| `fastmdx movie` | Make a movie of a study's frames, as the GUI's Viewer makes one |
 | `fastmdx info` | What is installed, and how to get what is not |
 | `fastmdx remote` | Inspect other machines over SSH: [Other machines](remote.md) |
 | `fastmdx resume` | Carry a study that stopped part-way on to its end: [When it stops early](production.md#when-it-stops-early) |
@@ -90,6 +91,17 @@ with its phase prefix.
 
 These five are on `explore` and on each of the four phase commands.
 
+Each phase command is `explore` with one phase: `fastmdx analyze` is
+`fastmdx explore --include-phase analysis`, its flags those of `explore`
+without the `--analyze-` prefix, run through the same code, by the same
+rules. Given an `--output` folder that holds a study and no system or
+Config, it runs on that study, from the settings the study recorded in its
+`resolved_config.yml` (a title, region highlights, which analyses and their
+options), the flags given laid over them. A setting left unset when the
+study ran was recorded with its default then. The study's own trajectory and
+structure are found where the study is now, not at the paths it recorded,
+so a study moved or extended since runs on its own frames.
+
 | Flag | What it does |
 |---|---|
 | `-s`, `-system`, `--system` | A `.pdb`/`.cif` path, or a 4-character PDB ID. The form is detected — there is no separate flag for an identifier |
@@ -120,14 +132,39 @@ Giving both `--include` and `--exclude` exits **2** with a message.
 | Flag | What it does |
 |---|---|
 | `--dry-run` | Validate everything, print the plan, run nothing. Creates no output directory |
-| `--force-overwrite`, `--force` | Run into an output directory that already holds results |
+| `--force-overwrite`, `--force` | Run phases whose output the folder already holds, removing that output first |
+| `--rerun` | As `--force-overwrite`, keeping what it replaces in the study's `previous/<phase>` |
 | `--rerun-window N [N ...]` | Umbrella studies: run these windows again in place, keep the rest, recombine |
 | `--rerun-force-constant K` | With `--rerun-window`: hold those windows at K (kJ/mol per unit of the variable squared); the others keep theirs |
 
-Without `--force`, a second run into an occupied directory is refused. The
-check looks only at the phases *this* run will produce, so running `analyze`
-into a directory that already holds a finished `simulation/` is the intended
-workflow and needs no flag.
+Without `--force-overwrite` or `--rerun`, a run is refused where the folder
+already holds output of a phase it would write. The check looks only at the
+phases *this* run will produce, so running `analyze` into a directory that
+already holds a finished `simulation/` is the intended workflow and needs no
+flag; into a new folder, nothing is needed either. These two flags are on
+the four phase commands too.
+
+With either, what the run writes is cleared first, and so is the output of
+any phase after it that this run does not do again, since it was written
+from what is being replaced: `fastmdx analyze --rerun` sets the report aside
+too, and says the command that writes it again. `--force-overwrite` removes
+them; `--rerun` keeps them in `previous/<phase>` (`previous/analysis`,
+`previous/report`), one copy of each, in place of what was kept there
+before, with the phase's record from the Manifest beside it. `previous/` is
+left out of the report's bundle. A study of several runs is run again run
+by run, and the comparison of its runs built again; so is that comparison
+when one run of it is analysed again on its own (`--output study/runs/a`).
+Neither is done while a run of the study is going.
+
+```bash
+fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
+fastmdx report --output runs/study --rerun
+fastmdx explore --output runs/study --include-phase analysis report --rerun
+```
+
+Setup or simulation run again this way sets aside everything after them; to
+keep a study and try another preparation or a longer run, start a new study
+from it with `simulation.setup_from` or `simulation.resume_from`.
 
 ### Scheduling
 
@@ -314,11 +351,12 @@ Anything else goes under `analysis.options` in a Config.
 --no-methods --no-reproducibility
 ```
 
-`report` does not need `--system`: it recovers it from the run's
-[Manifest](manifest.md).
+On a study, `report` needs no `--system`: it reads the study's record.
+Writing a report over one the study has needs `--force-overwrite` or
+`--rerun`.
 
 ```bash
-fastmdx report --output runs/study --no-slides --no-bundle
+fastmdx report --output runs/study --rerun --no-slides --no-bundle
 ```
 
 ---
@@ -417,16 +455,17 @@ its own settings. See [FastMDXplora from your AI app](mcp.md).
 
 ---
 
-## `init-config`
+## `config`
 
 ```bash
-fastmdx init-config                        # writes fastmdxplora.yml
-fastmdx init-config -o study.yml
-fastmdx init-config -o study.yml --minimal # a short starter instead
-fastmdx init-config -o study.yml --force   # overwrite
+fastmdx config                                     # writes fastmdxplora.yml
+fastmdx config -f study.yml                        # or --file study.yml
+fastmdx config -f study.yml --minimal              # a short starter instead
+fastmdx config -f study.yml --force-overwrite      # overwrite
 ```
 
-Refuses an existing file with exit 2 unless `--force`.
+Refuses an existing file with exit 2 unless `--force-overwrite`. The old
+name, `fastmdx init-config`, stops with exit 2 and names this one.
 
 ---
 
@@ -499,6 +538,38 @@ RMSF on the Viewer's scale) and the selections named in the GUI, unless
 where `--output` says; what a scene cannot hold (water at a frame, the
 periodic box) is said. Exits **0** when it is written, **1** when it could
 not be made, **2** where the folder or the view is not there.
+
+---
+
+## `movie`
+
+A movie of a study's frames without opening the GUI: the movie the Viewer's
+Movie section makes. The GUI is started for the study on this computer,
+reachable from it alone; a browser with no window opens its Viewer and
+shows a view saved with the study (or the Viewer as it opens), changed as
+asked; and the Viewer renders each frame and has ffmpeg encode it into the
+study's `movies/` folder, as H.264 in an MP4 or, where that ffmpeg has none,
+VP9 or VP8 in a WebM.
+
+```bash
+fastmdx movie runs/trypsin --view "pocket at 40 ns" --name pocket
+fastmdx movie runs/trypsin --from 0 --to 200 --every 2 --between 3 --turn
+fastmdx movie runs/trypsin --colour result:rmsf --superposed backbone --size 3840x2160
+```
+
+`--view` names a view saved in the GUI; `--representation`, `--colour` and
+`--superposed` change it (or the Viewer as it opens). `--from`, `--to` and
+`--every` choose the frames played, `--to` before `--from` playing them
+backwards; `--between` puts 1, 3 or 7 frames in between each two, each atom
+moved in a straight line, for a smoother movie (not more simulation; the
+frames are superposed on the backbone first where they would be shown as
+written). `--fps` (10 to 60), `--size` (`1280x720`, `1920x1080`,
+`3840x2160`), `--turn` (one turn about the screen's vertical) and
+`--no-time` (no simulated time in the corner) as in the GUI. A study without
+frames gives its structure turned once. It needs ffmpeg and a browser that
+renders WebGL: Playwright's Chromium (`pip install "fastmdxplora[movies]"`,
+then `playwright install chromium`), or Chrome or Edge where installed. Exits
+**0** when the movie is made and **1** when it could not be, with why.
 
 ---
 
@@ -675,8 +746,11 @@ fastmdx explore --config study.yml --exclude setup \
 fastmdx analyze --trajectory production.xtc --topology system.pdb \
   --output runs/analysis --analyses rmsd rmsf rg
 
-# Re-write the report over a finished run
-fastmdx report --output runs/study --no-slides --no-bundle
+# Re-write the report over a finished run, keeping the one before
+fastmdx report --output runs/study --rerun --no-slides --no-bundle
+
+# Add an analysis to a finished study; its report is set aside to write again
+fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
 
 # Watch a run in the browser while it happens
 fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete

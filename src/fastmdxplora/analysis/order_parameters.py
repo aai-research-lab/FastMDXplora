@@ -53,6 +53,7 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.analysis.plotting import colour
+from fastmdxplora.protein_names import ALPHA_CARBONS
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
@@ -122,6 +123,12 @@ def _spearman(a: np.ndarray, b: np.ndarray) -> float:
 #: proton at all, which is why the N-terminus is excluded below.
 AMIDE_H_NAMES = ("H", "HN")
 
+#: Hydrogen names that only a charged N-terminal amino group carries. OpenMM
+#: and PDBFixer name its three hydrogens H, H2 and H3, so the first one
+#: answers to the amide name ``H``; AMBER writes H1 to H3 and CHARMM HT1 to
+#: HT3. A residue with any of these is an N-terminus, wherever it sits.
+N_TERMINAL_H_NAMES = frozenset({"H1", "H2", "H3", "HT1", "HT2", "HT3"})
+
 #: How far the two halves of a trajectory may disagree before the order
 #: parameters are called an upper bound rather than a measurement. Chosen
 #: against what the comparison is for: published S^2 sets are quoted to
@@ -138,18 +145,48 @@ def amide_pairs(topology: md.Topology,
 
     Proline is absent by chemistry rather than by convention: its backbone
     nitrogen is in the ring and carries no hydrogen, so there is no vector
-    to measure and no experimental value to compare against. The first
+    to compute and no experimental value to compare against. An N-terminal
     residue is absent for a different reason, that its nitrogen carries a
     charged amino group whose hydrogens are not the amide proton the
     measurement is about.
+
+    A residue is taken as N-terminal when any of these holds:
+
+    * it is the first residue of its chain;
+    * its nitrogen carries a terminal hydrogen name (H2, H3 and the others
+      in :data:`N_TERMINAL_H_NAMES`), which finds a terminus inside a chain
+      that a file written without TER records has run together;
+    * the topology records peptide bonds and its nitrogen has none to the
+      previous residue's C, which is a chain break with nothing across it.
+
+    Only the first residue of the whole topology was left out before, so on
+    haemoglobin (1HHO) chain B's VAL1, whose NH3+ hydrogens OpenMM names H,
+    H2 and H3, was counted as an amide through the one named H.
     """
     eligible = (None if atom_indices is None
                 else {int(i) for i in atom_indices})
+    # The bond test applies only where the topology records peptide bonds at
+    # all: a topology built without bonds would otherwise lose every residue.
+    bonded: set[frozenset[int]] | None = {
+        frozenset((a.index, b.index)) for a, b in topology.bonds
+        if a.residue.index != b.residue.index
+        and {a.name, b.name} == {"C", "N"}} or None
+    previous_c: dict[int, int | None] = {}
+    for chain in topology.chains:
+        before = None
+        for residue in chain.residues:
+            previous_c[residue.index] = before
+            before = next((a.index for a in residue.atoms if a.name == "C"), None)
+    first_of_chain = {
+        next(iter(chain.residues)).index
+        for chain in topology.chains if chain.n_residues}
     pairs: list[tuple[int, int, int]] = []
     for residue in topology.residues:
         if residue.name == "PRO":
             continue
-        if residue.index == 0:
+        if residue.index in first_of_chain:
+            continue
+        if any(atom.name in N_TERMINAL_H_NAMES for atom in residue.atoms):
             continue
         nitrogen = None
         hydrogen = None
@@ -160,6 +197,10 @@ def amide_pairs(topology: md.Topology,
                 hydrogen = atom.index
         if nitrogen is None or hydrogen is None:
             continue
+        if bonded is not None:
+            carbon = previous_c.get(residue.index)
+            if carbon is None or frozenset((carbon, nitrogen)) not in bonded:
+                continue
         if eligible is not None and not (
                 nitrogen in eligible and hydrogen in eligible):
             continue
@@ -207,7 +248,7 @@ class OrderParameters(Analysis):
 
     Parameters
     ----------
-    align_selection : str, default "name CA"
+    align_selection : str, default "protein and name CA"
         Atoms used to remove global tumbling. Recorded with the result,
         because it is a choice that changes the answer.
     ref : int, default 0
@@ -254,7 +295,7 @@ class OrderParameters(Analysis):
     def __init__(
         self,
         *,
-        align_selection: str = "name CA",
+        align_selection: str = ALPHA_CARBONS,
         ref: int = 0,
         reference: "str | None" = None,
         reference_exclude: "str | None" = None,

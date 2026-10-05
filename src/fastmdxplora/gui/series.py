@@ -40,7 +40,8 @@ SERIES: dict[str, tuple[str, str]] = {
 #: evenly, and says so.
 MOST_POINTS = 4000
 
-_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_NAME = NAME
 
 
 def series_over_time(root: Path) -> dict[str, Any]:
@@ -91,6 +92,15 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     return _over_time(Path(root), analysis, label, unit, rows, found)
 
 
+def series_column(path: Path) -> list[float]:
+    """The values a time series' figure plots and its mean was recorded
+    from: the last number of each data line. An analysis records a mean
+    over its frames only where its result is one value a frame, written
+    alone or after the frame number (``Analysis._record_what_the_mean_is_worth``),
+    so that number is the series."""
+    return [numbers[-1] for _, numbers in _rows(path)]
+
+
 def _over_time(root: Path, analysis: str, label: str, unit: str,
                rows: list[tuple[list[str], list[float]]],
                found: dict[str, Any] | None) -> dict[str, Any]:
@@ -134,6 +144,14 @@ def analysed_axis(root: Path, n: int) -> tuple[list[int], list[float], str]:
     stride = _positive_int(loaded.get("stride")) or 1
     first = _non_negative_int(loaded.get("first")) or 0
     interval = loaded.get("saving_interval_ps")
+    recorded = manifest.get("frame_times_ps")
+    if (isinstance(recorded, list) and len(recorded) == n and isinstance(interval, (int, float))
+            and interval > 0 and all(isinstance(t, (int, float)) for t in recorded)):
+        # Several files loaded at a stride are not evenly spaced (MDTraj
+        # strides each file on its own); the loader's own times, kept by
+        # the orchestrator, say where each frame was.
+        frames = [int(round(float(t) / float(interval))) - 1 for t in recorded]
+        return frames, [round(float(t) / 1000.0, 12) for t in recorded], "Time (ns)"
     frames = [(first + i) * stride for i in range(n)]
     if isinstance(interval, (int, float)) and interval > 0:
         # Rounded to well past the clock's own precision, so 0.0003 ns is

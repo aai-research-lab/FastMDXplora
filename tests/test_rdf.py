@@ -158,3 +158,68 @@ class TestTheOutputs:
         record = analysis.findings["rdf"]
         assert "first_peak_nm" in record
         assert record["first_peak_nm"] > 0.15
+
+
+def _every_pair_then_a_draw(a, b, limit, seed=0):
+    """The pairs as the analysis listed them before: every (i, j) with
+    i != j, a-major, then ``limit`` positions drawn by the same generator."""
+    pairs = np.array([(int(i), int(j)) for i in a for j in b if int(i) != int(j)],
+                     dtype=int)
+    if len(pairs) > limit:
+        keep = np.random.default_rng(seed).choice(len(pairs), limit, replace=False)
+        pairs = pairs[np.sort(keep)]
+    return pairs
+
+
+class TestThePairsAreDrawnWithoutListingThemAll:
+    """A protein against every water oxygen is tens of millions of pairs,
+    and they were listed one Python tuple at a time before 400,000 were
+    drawn: about 25 s and gigabytes for 3e7 pairs."""
+
+    @pytest.mark.parametrize("a, b", [
+        (np.arange(30), np.arange(30)),                 # one selection twice
+        (np.arange(30), np.arange(20, 70)),             # overlapping
+        (np.arange(0, 60, 2), np.arange(100, 150)),     # apart
+        (np.array([5, 3, 9]), np.array([9, 1, 5, 7])),  # unsorted
+    ])
+    @pytest.mark.parametrize("limit", [10, 50, 10_000])
+    def test_the_same_pairs_as_the_full_list(self, a, b, limit):
+        from fastmdxplora.analysis.rdf import _pairs_between
+
+        pairs, available = _pairs_between(a, b, np.random.default_rng(0), limit)
+        expected = _every_pair_then_a_draw(a, b, limit)
+        assert available == sum(1 for i in a for j in b if i != j)
+        np.testing.assert_array_equal(pairs, expected)
+
+    def test_a_protein_against_ten_thousand_waters_is_quick(self, monkeypatch):
+        """3,000 atoms against 10,000 oxygens, built through the analysis."""
+        import time
+
+        from fastmdxplora.analysis import rdf as rdf_module
+
+        calls = []
+
+        def counted(traj, pairs, **kwargs):
+            calls.append(np.asarray(pairs))
+            return np.array([0.1]), np.array([1.0])
+
+        monkeypatch.setattr(rdf_module.md, "compute_rdf", counted)
+        traj = _gas(n_a=3000, n_b=10000, frames=1)
+        analysis = RadialDistribution(selection_a="name CA", selection_b="name O")
+        started = time.perf_counter()
+        analysis.compute(traj)
+        took = time.perf_counter() - started
+        record = analysis.findings["rdf"]
+        assert record["subsampled"] and record["pairs"] == rdf_module.MAX_PAIRS
+        assert "of the 30000000 available" in record["subsampled_note"]
+        assert len(calls[0]) == rdf_module.MAX_PAIRS
+        assert len({tuple(p) for p in calls[0][:1000]}) == 1000
+        assert took < 5.0, f"{took:.1f} s to choose the pairs"
+
+    def test_one_selection_against_itself_has_no_self_pair(self):
+        from fastmdxplora.analysis.rdf import _pairs_between
+
+        same = np.arange(2000)
+        pairs, available = _pairs_between(same, same, np.random.default_rng(0), 50_000)
+        assert available == 2000 * 1999
+        assert not np.any(pairs[:, 0] == pairs[:, 1])

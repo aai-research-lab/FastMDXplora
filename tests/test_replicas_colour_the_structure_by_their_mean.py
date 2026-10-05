@@ -140,8 +140,17 @@ def test_the_selection_tab_gives_the_spread(replicas):
             page.select_option("#viewer-color", "result:rmsf")
             page.wait_for_function("() => !document.getElementById('viewer-legend').hidden")
             legend = page.inner_text("#viewer-legend").splitlines()[0]
-            page.evaluate("""() => { const v = window.FastMDXMoleculeViewer;
-                v.byResidue.describe(v.atoms({resi: 60, atom: 'CA'})[0]); }""")
+            # The structure can be loading again for a moment after it was
+            # first rendered (its atoms then not found): the atom is looked
+            # for until it is there, and described in the same turn.
+            page.evaluate("""async () => { const v = window.FastMDXMoleculeViewer;
+                const t0 = performance.now();
+                let atom = v.atoms({resi: 60, atom: 'CA'})[0];
+                while (!atom && performance.now() - t0 < 60000) {
+                  await new Promise((done) => setTimeout(done, 50));
+                  atom = v.atoms({resi: 60, atom: 'CA'})[0];
+                }
+                v.byResidue.describe(atom); }""")
             rows = dict(page.eval_on_selector_all(
                 "#selection-tab-tbody tr",
                 "rows => rows.map((r) => [r.cells[0].textContent, r.cells[1].textContent])"))
@@ -159,6 +168,58 @@ def test_the_selection_tab_gives_the_spread(replicas):
     assert rows["Each run"].startswith("random_seed 1: ")
     assert rows["Each run"].count(";") == 2
     assert len(row[5]) == 3
+
+
+def test_a_colour_chosen_before_the_runs_arrive_is_kept(replicas):
+    """The runs played together come with the frames, and "Run" is chosen
+    for the colour the first time they are offered. A colour the person
+    chose before they came is theirs: CI's loaded runner chose the mean
+    RMSF first, and the runs arriving after took it back to "Run"."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(replicas), host="127.0.0.1", port=0)
+    held: list = []
+    released: list = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(120000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            # The frames, and with them the runs, kept back until the
+            # colour is chosen.
+            page.route("**/api/frames-info*",
+                       lambda route: route.continue_() if released else held.append(route))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(
+                "() => document.querySelector('#viewer-color-results option')")
+            page.select_option("#viewer-color", "result:rmsf")
+            page.wait_for_function(f"() => {state}.colorMode === 'result:rmsf'")
+            released.append(True)
+            while held:
+                held.pop().continue_()
+            # The runs offered, the structure rendered, and the colour
+            # either kept (its bar shown) or taken.
+            page.wait_for_function(
+                "() => document.querySelector('#viewer-color option[value=\"run\"]')"
+                f" && {state}.model && ({state}.colorMode !== 'result:rmsf'"
+                " || !document.getElementById('viewer-legend').hidden)")
+            chosen = page.evaluate(f"() => [document.getElementById('viewer-color').value,"
+                                   f" {state}.colorMode]")
+            legend = page.inner_text("#viewer-legend").splitlines()[0]
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert chosen == ["result:rmsf", "result:rmsf"]
+    assert legend == "RMSF, mean of 3 runs (nm)"
 
 
 def test_a_scene_of_replicas_is_coloured_by_their_mean(replicas):

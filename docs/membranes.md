@@ -165,8 +165,8 @@ is checked against before anything about the protein in it is believed.
 
 | Analysis | What it computes |
 |---|---|
-| `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet. nm², per frame |
-| `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame |
+| `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet, and each leaflet's own beside it. nm², per frame |
+| `bilayer_thickness` | The distance between the two leaflets' phosphate planes, D_PP. nm, per frame. Beside it, the mass density profile of the lipid heads, lipid chains, water, protein and ions along the normal |
 | `lipid_order` | The deuterium order parameter S_CD of every acyl-chain carbon, by chain. −S_CD is plotted |
 
 Both per-frame quantities carry the mean after equilibration, its error, and the
@@ -183,6 +183,29 @@ the hydrophobic core, averaged. Every protein correction to an area per lipid
 is a convention, because lipids next to a protein do not pack as those in bulk
 do; the findings give the protein's share of the box, so it is clear how much
 the value depends on it.
+
+**Each leaflet has its own area per lipid.** The area per lipid is the area
+shared among the lipids of one leaflet, `2 A / (N_upper + N_lower)` with `A`
+the box's area less the protein's. Beside it, `area_per_lipid.dat` gives each
+leaflet's, `A / N_upper` and `A / N_lower`, counted every frame, and the
+findings give their means. They are equal in a symmetric bilayer. In an
+asymmetric one the leaflets share one area, so the leaflet with fewer lipids
+has more area per lipid, and the bilayer's value is neither leaflet's: compare
+each leaflet's with experiment on its own lipid. The file's columns are the
+upper leaflet's, the lower leaflet's and the bilayer's, in that order.
+
+**The mass density profile** is written beside the thickness
+(`density_profile.dat` and `density_profile.png`): the density of each part of
+the system in g/cm³, in 0.1 nm slabs along z, centred on the bilayer centre in
+every frame and averaged over the frames analysed. The lipids are split into
+their hydrocarbon chains (carbons bonded only to carbon and hydrogen, and
+their hydrogens) and their heads (everything else, the ester carbonyls
+included); protein is anything else of more than one atom, and ions single
+atoms. Each row carries the slab's width inside the box, so the density times
+the width, summed and multiplied by the box's area, is the component's mass.
+The heads' peaks are the phosphate planes D_PP is taken between; where water
+falls to half its bulk density on each side is the usual water boundary of the
+bilayer.
 
 **The chains are found from the bonds**, not from atom names, so any force
 field's naming works: a chain starts at a carbonyl bonded to an ester oxygen,
@@ -207,9 +230,13 @@ and not the same quantity.
 
 - **Mixtures, cholesterol and asymmetric bilayers.** OpenMM builds one lipid.
   A mixed or asymmetric membrane built elsewhere (CHARMM-GUI, for instance)
-  can still be analysed: the three bilayer analyses read CHARMM36's lipid
-  names and AMBER Lipid21's, which makes each chain a residue of its own, and
-  count a sterol as a lipid.
+  can still be analysed: the three bilayer analyses read every lipid name
+  OpenMM has a template for, CHARMM36's (about 300, from DSPE to the
+  cardiolipins, ceramides and phytosterols) and AMBER Lipid17's and
+  Lipid21's, which make each chain a residue of its own, and count a sterol
+  as a lipid. A lipid under a name none of them uses is counted as protein,
+  and the findings say so when a residue read as protein has a phosphorus
+  among the lipid heads.
 - **Four-site water.** OpenMM's patches carry three-site water, and AMBER
   Lipid17 and CHARMM36 lipids were developed with TIP3P; a force field given
   with TIP4P-Ew or OPC is refused with a membrane rather than failing inside

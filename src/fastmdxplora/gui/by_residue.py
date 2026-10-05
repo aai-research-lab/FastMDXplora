@@ -274,6 +274,7 @@ def _span(rows: list[list[Any]], *, low: float | None = None,
 
 
 def _rmsf(folder: Path, record: dict[str, Any], frames: int | None) -> dict[str, Any] | None:
+    from fastmdxplora.protein_names import ALPHA_CARBONS
     options = record.get("options") or {}
     if options.get("per_residue") is False:
         return None
@@ -282,8 +283,8 @@ def _rmsf(folder: Path, record: dict[str, Any], frames: int | None) -> dict[str,
     if not rows:
         return None
     low, high = _span(rows)
-    selection = str(record.get("selection") or "name CA")
-    atoms = "its alpha carbon" if selection == "name CA" else f"its atoms in `{selection}`"
+    selection = str(record.get("selection") or ALPHA_CARBONS)
+    atoms = "its alpha carbon" if selection in ("name CA", ALPHA_CARBONS) else f"its atoms in `{selection}`"
     return {"label": "RMSF", "unit": "nm", "low": low, "high": high, "absent": None,
             "values": rows,
             "about": (f"Each residue's fluctuation about its mean position over {_over(frames)}, "

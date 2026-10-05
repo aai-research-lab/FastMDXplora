@@ -52,19 +52,63 @@ def test_the_same_seed_gives_the_same_system(tmp_path):
     assert one["n_atoms_solvated"] == two["n_atoms_solvated"]
     assert one["box"] == two["box"]
     assert one["_hydrogens"] == two["_hydrogens"]
-    # The positions to the last digit written. The velocities are drawn
-    # from the seed too, and agree to about one part in 10^8: OpenMM
-    # applies the constraints to them in parallel.
+    # The positions and the velocities to the last digit written. The
+    # velocities agreed only to about one part in 10^8 while they were
+    # drawn on the CPU platform, which does not draw the same velocities
+    # twice from one seed; they are drawn on the Reference platform.
     positions = [[line for line in record["_state"].splitlines() if "<Position " in line]
                  for record in (one, two)]
     assert positions[0] == positions[1] and len(positions[0]) == one["n_atoms_solvated"]
     speeds = [[float(v) for line in record["_state"].splitlines() if "<Velocity " in line
                for v in re.findall(r'"(-?[0-9.eE+-]+)"', line)] for record in (one, two)]
     assert len(speeds[0]) == 3 * one["n_atoms_solvated"]
-    assert max(abs(a - b) for a, b in zip(*speeds)) < 1e-6
+    assert speeds[0] == speeds[1]
+    assert one["_state"] == two["_state"]
     assert one["random_seed"] == {"seed": 11, "drawn": False}
     # Asked for, it is in the config already, not a decision of the phase.
     assert "random_seed" not in one["resolved"]
+
+
+def test_the_velocities_are_drawn_on_the_reference_platform(tmp_path, monkeypatch):
+    """Whatever platform the machine offers: the CPU platform drew
+    different velocities from one seed in one draw of four, and only the
+    Reference platform drew the same bytes every time."""
+    openmm = pytest.importorskip("openmm")
+
+    made: list[str] = []
+    real = openmm.Context
+
+    def context(system, integrator, *rest):
+        made.append(rest[0].getName() if rest else "default")
+        return real(system, integrator, *rest)
+
+    monkeypatch.setattr(openmm, "Context", context)
+    _prepare(tmp_path / "platform", random_seed=3)
+    # The last Context setup makes is the one the state is drawn in.
+    assert made and made[-1] == "Reference"
+
+
+def test_the_velocities_repeat_in_processes_of_their_own(tmp_path):
+    """A first draw in a process was where the CPU platform varied, so the
+    draw is made in fresh processes, from one system and one seed."""
+    pytest.importorskip("openmm")
+    import subprocess
+    import sys
+
+    one = _prepare(tmp_path / "source", random_seed=5)
+    script = (
+        "import sys, json\n"
+        "from fastmdxplora import FastMDXplora\n"
+        "FastMDXplora(config_data={'systems': [{'id': 'p', 'system': sys.argv[1]}],"
+        " 'include_phase': ['setup'], 'setup': {'heterogens': 'drop', 'random_seed': 5}},"
+        " output_dir=sys.argv[2]).explore(check=True)\n")
+    states = []
+    for n in range(3):
+        out = tmp_path / f"fresh{n}"
+        subprocess.run([sys.executable, "-c", script, str(tmp_path / "source" / "p.pdb"),
+                        str(out)], check=True, capture_output=True)
+        states.append((out / "setup" / "state.xml").read_text())
+    assert states[0] == states[1] == states[2] == one["_state"]
 
 
 def test_a_drawn_seed_is_recorded_and_repeats_the_preparation(tmp_path):

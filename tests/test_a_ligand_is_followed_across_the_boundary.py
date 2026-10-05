@@ -190,3 +190,79 @@ def test_the_analysis_actually_uses_it():
         "an image swap reached the analysis output")
     assert np.abs(result - _rmsd_from_start(truth)).max() < 1e-3, (
         "compute() did not follow the ligand across the boundary")
+
+
+def _a_rigid_complex_tumbling(cell, n_frames=40, reach=4.4):
+    """A receptor and ligand that never move relative to each other, turning
+    4 degrees a frame in ``cell``, stored as written. The receptor is
+    elongated, its first alpha carbon ``reach`` nm from the ligand, so the
+    first atom of the alignment is more than half the box from it."""
+    top = md.Topology()
+    chain = top.add_chain()
+    protein = top.add_residue("ALA", chain)
+    for _ in range(12):
+        top.add_atom("CA", md.element.carbon, protein)
+    ligand = top.add_residue("LIG", chain)
+    for k in range(6):
+        top.add_atom(f"C{k}", md.element.carbon, ligand)
+    rng = np.random.default_rng(0)
+    alphas = np.column_stack([np.linspace(0, reach, 12),
+                              rng.normal(0, 0.3, 12), rng.normal(0, 0.3, 12)])
+    body = np.vstack([alphas, [reach, 0.5, 0] + rng.normal(0, 0.12, (6, 3))])
+    body -= body.mean(axis=0)
+    xyz = []
+    for frame in range(n_frames):
+        angle = np.deg2rad(4 * frame)
+        turn = np.array([[np.cos(angle), -np.sin(angle), 0],
+                         [np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+        xyz.append(body @ turn.T + 3.4)
+    traj = md.Trajectory(np.array(xyz, dtype=np.float32), top)
+    traj.unitcell_vectors = np.tile(cell, (n_frames, 1, 1)).astype(np.float32)
+    return traj
+
+
+@pytest.mark.parametrize("cell", [np.eye(3) * EDGE, CELL], ids=["cube", "dodecahedron"])
+def test_a_rigid_complex_far_from_its_first_alpha_carbon_has_a_still_ligand(cell):
+    """The first frame's minimum image is right only under half the box.
+
+    Anchored on the first alignment atom, 4.4 nm from the ligand in a
+    6.8 nm box, the first frame took the wrong copy and this read 13.3 nm.
+    """
+    from fastmdxplora.analysis.ligand_rmsd import LigandRMSD
+
+    traj = _a_rigid_complex_tumbling(cell)
+    result = LigandRMSD(ligand_resname="LIG", align_selection="name CA").compute(traj)
+
+    assert result.max() < 1e-3
+
+
+def test_a_bound_ligand_on_a_face_has_its_own_fluctuation():
+    """The ligand RMSF reads the same ligand the RMSD does.
+
+    A bound ligand atom on the +x face of a 5 nm box, stored on the far side
+    in some frames as an engine writes it. Fitted coordinates alone carry
+    the stored copy, and this read 1.80 nm against a true 0.035 nm.
+    """
+    from fastmdxplora.analysis.ligand_rmsf import LigandRMSF
+
+    box = 5.0
+    rng = np.random.default_rng(0)
+    top = md.Topology()
+    chain = top.add_chain()
+    protein = top.add_residue("ALA", chain)
+    for _ in range(12):
+        top.add_atom("CA", md.element.carbon, protein)
+    top.add_atom("C1", md.element.carbon, top.add_residue("LIG", chain))
+    alphas = rng.normal(0, 0.4, (12, 3)) + [4.6, 2.5, 2.5]
+    truth = np.array([4.98, 2.5, 2.5]) + rng.normal(0, 0.02, (200, 3))
+    stored = truth.copy()
+    stored[:, 0] %= box
+    assert (stored[:, 0] < 1.0).sum() > 10, "the fixture must cross the face"
+    xyz = np.concatenate([np.tile(alphas, (200, 1, 1)), stored[:, None, :]], axis=1)
+    traj = md.Trajectory(xyz.astype(np.float32), top)
+    traj.unitcell_vectors = np.tile(np.eye(3) * box, (200, 1, 1)).astype(np.float32)
+
+    result = LigandRMSF(ligand_resname="LIG", align_selection="name CA").compute(traj)
+
+    true_rmsf = np.sqrt(((truth - truth.mean(axis=0)) ** 2).sum(axis=1).mean())
+    assert result[0, 1] == pytest.approx(true_rmsf, abs=1e-4)

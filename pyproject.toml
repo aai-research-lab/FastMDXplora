@@ -132,6 +132,14 @@ amber = [
 umap = [
     "umap-learn>=0.5",
 ]
+# A movie made without the GUI open (`fastmdx movie`, `make_movie` from an
+# AI app) is rendered by the Viewer in a browser with no window, driven by
+# Playwright. Its browser comes apart from it (`playwright install
+# chromium`), or Chrome or Edge is used where installed; ffmpeg encodes the
+# movie, as it does in the GUI.
+movies = [
+    "playwright>=1.40",
+]
 # There is deliberately no `plumed` extra. Enhanced sampling needs
 # openmm-plumed, which has no PyPI distribution at all -- it is a conda-forge
 # package -- so naming it in an extra did not make it reachable: it made

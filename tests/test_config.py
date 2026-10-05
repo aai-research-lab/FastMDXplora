@@ -379,33 +379,52 @@ class TestOrchestrator:
 # End-to-end via the CLI
 # ===========================================================================
 class TestCLIConfig:
-    def test_init_config_writes_template(self, tmp_path):
+    def test_config_writes_template(self, tmp_path):
         out = tmp_path / "template.yml"
-        rc = cli_main(["init-config", "-o", str(out)])
+        rc = cli_main(["config", "-f", str(out)])
         assert rc == 0
         assert out.exists()
         # And it validates (systems is present and required)
         validate_config(load_config_file(out), require_systems=True)
 
-    def test_init_config_minimal(self, tmp_path):
+    def test_config_minimal(self, tmp_path):
         out = tmp_path / "min.yml"
-        rc = cli_main(["init-config", "-o", str(out), "--minimal"])
+        rc = cli_main(["config", "-f", str(out), "--minimal"])
         assert rc == 0
         assert "duration_ns" in out.read_text(encoding="utf-8")
         assert "systems:" in out.read_text(encoding="utf-8")
 
-    def test_init_config_refuses_overwrite(self, tmp_path):
+    def test_config_refuses_overwrite(self, tmp_path):
         out = tmp_path / "exists.yml"
         out.write_text("systems: []\n")
-        rc = cli_main(["init-config", "-o", str(out)])
+        rc = cli_main(["config", "-f", str(out)])
         assert rc == 2  # refuses without --force
+        assert out.read_text() == "systems: []\n"
 
-    def test_init_config_force_overwrites(self, tmp_path):
+    def test_config_force_overwrites(self, tmp_path):
         out = tmp_path / "exists.yml"
         out.write_text("old content\n")
-        rc = cli_main(["init-config", "-o", str(out), "--force"])
+        rc = cli_main(["config", "-f", str(out), "--force"])
         assert rc == 0
         assert "FastMDXplora configuration" in out.read_text(encoding="utf-8")
+
+    def test_config_writes_the_default_file_where_it_is_typed(
+            self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert cli_main(["config"]) == 0
+        assert (tmp_path / "fastmdxplora.yml").is_file()
+
+    def test_config_takes_its_file_by_its_long_name(self, tmp_path):
+        out = tmp_path / "long.yml"
+        assert cli_main(["config", "--file", str(out), "--minimal"]) == 0
+        assert out.is_file()
+
+    def test_the_old_name_says_where_the_command_went(self, tmp_path, capsys):
+        out = tmp_path / "old.yml"
+        assert cli_main(["init-config", "-o", str(out)]) == 2
+        assert not out.exists()
+        assert ("`fastmdx init-config` is now `fastmdx config` "
+                "(`-o FILE` is now `-f FILE`).") in capsys.readouterr().err
 
     def test_explore_with_config(self, tmp_path, stub_pdb):
         cfg = _write_yaml(tmp_path, f"""

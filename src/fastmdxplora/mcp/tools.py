@@ -466,6 +466,10 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
                          "FastMDXplora itself, with `fastmdx explore` or the GUI.")
         elif proposal.action == "stop":
             next_step = "stop_study stops a running study, once the person has agreed."
+        elif proposal.action in ("analyze again", "write the report again"):
+            named = (proposal.arguments or {}).get("analyses")
+            next_step = ("run_phases_again runs it on the study, once the person has agreed"
+                         + (f", with the analyses {', '.join(named)}." if named else "."))
         else:
             next_step = ("check_study shows the plan; start_study runs it once the person "
                          "has agreed to that plan.")
@@ -716,6 +720,51 @@ def _write_scene(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _make_movie(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.movie_maker import make_movie
+
+    folder = _study(ctx, args["study"])
+    changes = {key: args[key] for key in ("representation", "colour", "superposed")
+               if args.get(key) is not None}
+    made = make_movie(folder, name=args.get("name") or "movie", view=args.get("view"),
+                      changes=changes or None, first=args.get("from"), last=args.get("to"),
+                      every=args.get("every") or 1, between=args.get("between") or 0,
+                      fps=args.get("fps") or 24, size=args.get("size") or "1920x1080",
+                      turn=bool(args.get("turn")), time=args.get("time", True) is not False)
+    if not made.get("ok"):
+        raise ToolError(made.get("reason") or "The movie could not be made.")
+    where = ctx.workspace.shown(Path(made["path"]))
+    lines = [f"Made the movie {where}: {made['frames']} frames, {made['seconds']} s at "
+             f"{made['fps']} frames a second, {made['width']} x {made['height']}, "
+             f"{made['format'].upper()} ({made['codec']}), {made['bytes'] / 1e6:.1f} MB. "
+             "Tell the person where it is.",
+             f"Rendered by the study's Viewer in a browser with no window ({made['browser']}); "
+             f"encoded as {made['encoder']}."]
+    if made.get("between"):
+        lines.append(f"{made['between']} frame{'s were' if made['between'] > 1 else ' was'} "
+                     "put in between each two frames played, "
+                     "each atom moved in a straight line: a smoother movie, not more "
+                     "simulation. Say so where the movie is shown.")
+    return "\n".join(lines)
+
+
+def _tag_study(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.study_tags import add_tags
+
+    folder = _study(ctx, args["study"])
+    said = add_tags(folder, args.get("tags"))
+    if not said.get("ok"):
+        raise ToolError(said.get("reason") or "The tags could not be added.")
+    where = ctx.workspace.shown(folder)
+    added = said.get("added") or []
+    return "\n".join([
+        (f"Tagged {where} " + ", ".join(repr(t) for t in added) + "." if added
+         else f"{where} had those tags already."),
+        "Its tags now: " + ", ".join(said["tags"]) + ".",
+        "Kept in its study_tags.json; the person removes a tag, or writes the study's note, "
+        "on its card in the GUI's All studies."])
+
+
 def _view_said(view: dict[str, Any]) -> str:
     said = []
     if view.get("frame") is not None:
@@ -759,7 +808,11 @@ def _views_of_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
     cards, more = studies_here(ctx.workspace)
+    wanted = " ".join(str(args.get("tag") or "").split()).casefold()
+    if wanted:
+        cards = [c for c in cards if any(t.casefold() == wanted for t in c.get("tags") or [])]
     lines = [f"{len(cards)} stud{'y' if len(cards) == 1 else 'ies'} in {ctx.workspace.root}"
+             + (f" tagged {args['tag']!r}" if wanted else "")
              + (", newest first:" if cards else ".")]
     for card in cards:
         said = [str(card.get("system") or "no system"), str(card.get("kind") or "study"),
@@ -772,6 +825,10 @@ def _list_studies(ctx: Context, args: dict[str, Any]) -> str:
         if card.get("when"):
             said.append(str(card["when"])[:10])
         lines.append(f"- {ctx.workspace.shown(card['path'])}: " + ", ".join(s for s in said if s))
+        if card.get("tags"):
+            lines.append("    tagged: " + ", ".join(card["tags"]))
+        if card.get("note"):
+            lines.append(f"    the person's note: {card['note']}")
         for mean in card.get("means") or []:
             lines.append(f"    {mean.get('label') or mean['analysis']}: {_mean(mean)}")
     if more:
@@ -1052,6 +1109,77 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             f"{ctx.workspace.shown(folder / 'exploration.log')}.")
 
 
+def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
+    """A study's analysis or report run again in its folder, by the phase
+    command with ``--rerun`` (`fastmdxplora.again` names it), once the
+    person agrees."""
+    from fastmdxplora import again
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.refusals import refusal_of
+    from fastmdxplora.runs_here import StartRefused, starting_in
+
+    folder = _study(ctx, args["study"])
+    try:
+        planned = again.plan(folder, args.get("phases") or [], args.get("analyses"))
+    except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+        found = refusal_of(exc)
+        raise ToolError(found.message.replace(str(folder), ctx.workspace.shown(folder)),
+                        code=found.code) from None
+    _none_running(ctx)
+    shown = ctx.workspace.shown(folder)
+    message = f"Run {' and '.join(planned.phases)} again on {shown}? " + planned.said()
+    bound = f"run_phases_again:{folder}:{','.join(planned.phases)}:" + ",".join(
+        planned.analyses or ())
+    agreed = _went_ahead(ctx, "rerun", message, bound)
+    if agreed is False:
+        return "Not run: the person did not go ahead."
+    try:
+        with starting_in(ctx.workspace.root):
+            if ctx.call is not None and ctx.call.cancelled:
+                return "Not run: the call was cancelled."
+            _none_running(ctx)
+            runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
+                                       exploration_root=ctx.workspace.root,
+                                       hosting=_Inside(ctx.workspace),
+                                       started_by="by an AI app")
+            runtime.active_root = folder
+            started = runtime.run_again(planned.phases, planned.analyses)
+    except StartRefused as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+    if not started.get("ok"):
+        raise ToolError(str(started.get("error") or "It could not be started."),
+                        code=str(started.get("code") or ToolError.default_code))
+    ended = _ended_within(runtime.process, RECORDED_WITHIN_S)
+    if ended is None:
+        return (f"Started on {shown} (process {started['pid']}): {planned.said()} It runs on "
+                "its own: closing the AI app does not stop it. read_study says what it "
+                f"found once it ends; its log is {ctx.workspace.shown(folder / 'exploration.log')}.")
+    if ended != 0:
+        try:
+            lines = (folder / "exploration.log").read_text(
+                encoding="utf-8", errors="replace").strip().splitlines()
+        except OSError:
+            lines = []
+        raise ToolError(f"Running it again on {shown} failed. The end of its log:\n"
+                        + ("\n".join(lines[-12:]) or "It wrote nothing to its log."))
+    return (f"Done on {shown}: {' and '.join(planned.phases)} run again. "
+            f"What it replaced is in {ctx.workspace.shown(folder / again.PREVIOUS)}. "
+            "read_study says what the analyses found now.")
+
+
+def _ended_within(process: Any, seconds: float) -> int | None:
+    """The exit code of a run that ends within ``seconds``, or None."""
+    import time
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        code = process.poll() if process is not None else 0
+        if code is not None:
+            return code
+        time.sleep(0.25)
+    return None
+
+
 #: How long a run started here is watched for a record of itself, which it
 #: writes once its program has loaded (a study of several runs, and a
 #: continuation, in the folder of the run going): a run that ends before
@@ -1188,6 +1316,25 @@ TOOLS: tuple[Tool, ...] = (
          ("config", "plan_id"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": True}, _start_study, acts=True),
+    Tool("run_phases_again", "Run a study's analysis or report again",
+         "Run a study's analysis, its report or both again in its folder, from the "
+         "settings it recorded, simulating nothing, once the person agrees: to add an "
+         "analysis, or to analyse its frames with this release. An analysis run again "
+         "writes the report again too where the study has one. What is replaced is kept "
+         "in the study's previous/ folder. A study of several runs is run again run by "
+         "run, and the comparison of its runs built again. Setup and simulation are not "
+         "run again in place: a new study with simulation.setup_from or "
+         "simulation.resume_from does that.",
+         {"study": _STUDY,
+          "phases": {"type": "array", "items": {"type": "string",
+                                                "enum": ["analysis", "report"]},
+                     "description": "analysis, report, or both."},
+          "analyses": {"type": "array", "items": {"type": "string"}, "description": (
+              "The analyses to run, by name, such as rmsd, rg or pl_interactions "
+              "(default: those the study ran last).")}},
+         ("study", "phases"),
+         {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False,
+          "openWorldHint": False}, _run_phases_again, acts=True),
     Tool("stop_study", "Stop a study",
          "Stop a study running on this machine. A run in production stops at its next "
          "frame with a checkpoint there, so it can be carried on.",
@@ -1195,9 +1342,23 @@ TOOLS: tuple[Tool, ...] = (
          {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
           "openWorldHint": False}, _stop_study, acts=True),
     Tool("list_studies", "List the studies here",
-         "The studies in the workspace, newest first, each with its system, state and the "
-         "means it recorded with their errors; and the YAML files at its top.",
-         {}, (), _READS, _list_studies),
+         "The studies in the workspace, newest first, each with its system, state, the "
+         "means it recorded with their errors, and the tags and note the person gave it; "
+         "or only those with a tag. And the YAML files at its top.",
+         {"tag": {"type": "string", "description": (
+             "Only the studies with this tag, whatever its case.")}},
+         (), _READS, _list_studies),
+    Tool("tag_study", "Tag a study",
+         "Add tags to a study, as the person asks: short words of their own such as wild "
+         "type or JCIM Fig. 4, kept in the study's folder beside its records and shown on "
+         "its card in the GUI. Tags are only added; the person removes one, or writes the "
+         "study's note, in the GUI.",
+         {"study": _STUDY,
+          "tags": {"type": "array", "items": {"type": "string"}, "description": (
+              "The tags to add, each up to 40 characters on one line.")}},
+         ("study", "tags"),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+          "openWorldHint": False}, _tag_study, acts=True),
     Tool("read_study", "Read a study",
          "Where a study stands (running, with its step and time left, or finished) and "
          "what it recorded: its config, what its analyses found with errors and units, "
@@ -1257,6 +1418,46 @@ TOOLS: tuple[Tool, ...] = (
          ("study", "name"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
           "openWorldHint": False}, _write_scene),
+    Tool("make_movie", "Make a movie of a study",
+         "Make a movie of a study's frames as its Viewer in the GUI makes one, into its "
+         "movies folder: each frame rendered as a view the person saved shows it (or as "
+         "the Viewer opens), changed as asked, with its simulated time, and encoded by "
+         "ffmpeg on this computer. It takes a minute or more: a browser with no window "
+         "renders every frame. A study without frames gives its structure turned once. "
+         "A movie of the same name is replaced.",
+         {"study": _STUDY,
+          "name": {"type": "string", "description": (
+              "The movie's name: letters, digits, spaces, dots, dashes, underscores "
+              "(default movie).")},
+          "view": {"type": "string", "description": (
+              "A view the person saved with the study in the GUI, to show.")},
+          "representation": {"type": "string", "enum": [
+              "cartoon", "backbone", "sticks", "ballAndStick", "lines", "surface",
+              "spacefill"], "description": "How the protein is represented."},
+          "colour": {"type": "string", "description": (
+              "chain, spectrum, residue, element, secondary_structure, monochrome, or one "
+              "of the study's per-residue results as result:<analysis>.")},
+          "superposed": {"type": "string", "enum": ["none", "backbone", "pocket"],
+                         "description": "Frames fitted to the first frame, on this."},
+          "from": {"type": "integer", "description": "The first frame, from 0 (default 0)."},
+          "to": {"type": "integer", "description": (
+              "The last frame (default the last); before `from`, the movie plays "
+              "backwards.")},
+          "every": {"type": "integer", "description": "Every Nth frame (default 1)."},
+          "between": {"type": "integer", "enum": [0, 1, 3, 7], "description": (
+              "Frames put in between each two, each atom moved in a straight line: "
+              "smoother, not more simulation (default 0).")},
+          "fps": {"type": "integer", "enum": [10, 15, 24, 25, 30, 60],
+                  "description": "Frames a second (default 24)."},
+          "size": {"type": "string", "enum": ["1280x720", "1920x1080", "3840x2160"],
+                   "description": "Width x height in pixels (default 1920x1080)."},
+          "turn": {"type": "boolean", "description": (
+              "Turn the camera once about the screen's vertical over the movie.")},
+          "time": {"type": "boolean", "description": (
+              "Stamp each frame's simulated time (default true).")}},
+         ("study",),
+         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
+          "openWorldHint": False}, _make_movie, acts=True),
     Tool("ask_agent", "Ask the FastMDXplora Agent (optional; may use your API key)",
          "Optional: only when the person asks for FastMDXplora's own Agent. It writes "
          "with this AI app's model where the AI app lends it (the AI app may ask the "

@@ -8,14 +8,18 @@ one follows it, rather than the arrangement the rest of the report would
 naturally produce, where the corrected number appears in a section of its own
 and the uncorrected one sits under every analysis heading above it.
 
-The effective sample size is printed beside the number and not in a footnote.
-A reweighted mean over five hundred frames whose weight sits in seven of them
-is a mean over seven, and there is no arrangement of a document in which that
-should be readable without the seven.
+What the number rests on is printed beside it and not in a footnote: the
+weight-concentration effective frames (Kish's count, which says how evenly the
+weight is spread) and the independent samples (that count divided by the
+statistical inefficiency, since consecutive frames are correlated). A
+reweighted mean over five hundred frames whose weight sits in seven of them
+is a mean over seven, and 2445 such frames correlated over 91 frames are about
+27 independent samples. Neither should be readable apart from the number.
 """
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -23,6 +27,10 @@ from typing import Any
 #: Below this the correction is reported with the caution stated in the same
 #: breath as the number, rather than only in the notes underneath.
 THIN_EFFECTIVE_FRAMES = 50.0
+
+#: The same caution, on the independent samples where the record has them:
+#: the count below which `statistics.summarise` withholds a mean's error.
+THIN_INDEPENDENT_SAMPLES = 10.0
 
 
 def _record_path(project_root: Path) -> Path:
@@ -67,18 +75,51 @@ def _number(value: Any, digits: int = 4) -> str:
     return f"{number:.{digits}g}"
 
 
-def _with_spread(mean: Any, spread: Any) -> str:
-    """A mean and the standard deviation of what it averages, said as one.
+def _with_spread(mean: Any, spread: Any, error: Any = None) -> str:
+    """A mean, its standard error where one was computed, and the standard
+    deviation of what it averages, said as one.
 
-    Not as ``mean ± spread``: a ``±`` after a mean is read as its error, and
-    this spread is the width of the reweighted distribution, which does not
-    shrink with sampling. No error on a reweighted mean is computed here.
+    The spread is never put after a ``±``: a ``±`` after a mean is read as
+    its error, and the spread is the width of the reweighted distribution,
+    which does not shrink with sampling. The ``±`` is the paired block
+    bootstrap's standard error, where the analysis computed one.
     """
     text = _number(mean)
+    try:
+        number, err = float(mean), float(error)
+    except (TypeError, ValueError):
+        number, err = float("nan"), float("nan")
+    if math.isfinite(number) and math.isfinite(err) and err >= 0.0:
+        from fastmdxplora.statistics import with_its_error
+
+        text = with_its_error(number, err)
     spread_text = _number(spread, 2)
     if text == "—" or spread_text == "—":
         return text
     return f"{text} (s.d. {spread_text})"
+
+
+def _count(value: Any) -> str:
+    """A count of frames or samples: whole from ten up, one decimal below,
+    so 2445 does not print as 2.45e+03."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = float("nan")
+    if not math.isfinite(number):
+        return _number(None)
+    return f"{number:.0f}" if abs(number) >= 10 else f"{number:.1f}"
+
+
+def _rests_on(record: dict[str, Any]) -> str:
+    """What a reweighted mean rests on, in the words the record allows."""
+    ess = record.get("effective_sample_size")
+    frames = record.get("n_frames")
+    said = f"{_count(ess)} weight-concentration effective frames of {frames}"
+    independent = record.get("independent_samples")
+    if isinstance(independent, (int, float)):
+        said += f", about {_count(independent)} independent samples"
+    return said
 
 
 def reweighted_line(record: dict[str, Any] | None, analysis: str) -> str | None:
@@ -93,13 +134,13 @@ def reweighted_line(record: dict[str, Any] | None, analysis: str) -> str | None:
     for item in record.get("quantities") or []:
         if item.get("analysis") != analysis:
             continue
-        ess = record.get("effective_sample_size")
-        frames = record.get("n_frames")
+        withheld = item.get("not_a_measurement")
         return (
-            f"**Reweighted mean: {_with_spread(item.get('reweighted_mean'), item.get('reweighted_std'))}**"
+            f"**Reweighted mean: {_with_spread(item.get('reweighted_mean'), item.get('reweighted_std'), item.get('reweighted_standard_error'))}**"
             f" — the equilibrium average, recovered from the deposited bias on "
-            f"{_number(ess, 3)} effective frames of {frames}. "
-            f"The average over the biased frames themselves is "
+            f"{_rests_on(record)}. "
+            + (f"No error is given: {withheld} " if withheld else "")
+            + f"The average over the biased frames themselves is "
             f"{_number(item.get('raw_mean'))}"
             f" ({_signed(item.get('shift_percent'))})."
         )
@@ -161,7 +202,6 @@ def reweighted_section(project_root: Path,
         ])
 
     ess = record.get("effective_sample_size")
-    frames = record.get("n_frames")
     converged = bool(record.get("converged", record.get("settled")))
 
     lines = ["### Averages after reweighting", ""]
@@ -176,14 +216,23 @@ def reweighted_section(project_root: Path,
     lines.append("")
 
     caution = ""
-    if isinstance(ess, (int, float)) and ess < THIN_EFFECTIVE_FRAMES:
+    independent = record.get("independent_samples")
+    if ((isinstance(ess, (int, float)) and ess < THIN_EFFECTIVE_FRAMES)
+            or (isinstance(independent, (int, float))
+                and independent < THIN_INDEPENDENT_SAMPLES)):
         caution = (
             " These averages therefore rest on very few independent frames, "
             "and they and the standard deviations beside them are "
             "correspondingly uncertain.")
+    explained = ""
+    if isinstance(independent, (int, float)):
+        explained = (
+            " The first count says how evenly the weight is spread and treats "
+            "every frame as independent; consecutive frames are correlated, "
+            "so the second, the first divided by the statistical inefficiency "
+            "of the collective variable, is what the averages rest on.")
     lines.append(
-        f"The weights carry {_number(ess, 3)} effective frames of {frames}."
-        + caution)
+        f"The weights carry {_rests_on(record)}." + explained + caution)
     if not converged:
         lines.append("")
         lines.append(
@@ -193,13 +242,28 @@ def reweighted_section(project_root: Path,
 
     lines.append("| Quantity | Reweighted (equilibrium) | Biased trajectory | Change |")
     lines.append("| --- | --- | --- | --- |")
+    withheld: list[str] = []
     for item in record.get("quantities") or []:
         lines.append(
             f"| {item.get('label', item.get('analysis', '—'))} "
-            f"| {_with_spread(item.get('reweighted_mean'), item.get('reweighted_std'))} "
+            f"| {_with_spread(item.get('reweighted_mean'), item.get('reweighted_std'), item.get('reweighted_standard_error'))} "
             f"| {_with_spread(item.get('raw_mean'), item.get('raw_std'))} "
             f"| {_percent(item.get('shift_percent'))} |")
+        if item.get("not_a_measurement"):
+            label = item.get("label") or item.get("analysis") or "a quantity"
+            withheld.append(f"{label}: {item['not_a_measurement']}")
     lines.append("")
+    if any(item.get("reweighted_standard_error") is not None
+           for item in record.get("quantities") or []):
+        lines.append(
+            "The ± is the standard error of the reweighted mean from a "
+            "paired block bootstrap over values and weights; the s.d. is the "
+            "width of the reweighted distribution.")
+        lines.append("")
+    for line in withheld:
+        lines.append(f"- _No error on {line}_")
+    if withheld:
+        lines.append("")
 
     figure = (Path(project_root) / "analysis" / "reweighted"
               / "reweighted_averages.png")

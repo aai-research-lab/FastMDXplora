@@ -320,3 +320,36 @@ class TestTheGateFindsTheStudysOwnResult:
         assert "pmf" not in without and "pmf" in self._plan(analysis), (
             "the gate must distinguish a study that produced a PMF "
             "from one that did not")
+
+
+def test_the_marked_minimum_is_the_one_inside_the_windows(tmp_path) -> None:
+    """The grid runs past the last window into bins few samples reached. The
+    summary takes its minimum inside the covered range; the figure took it
+    over the whole grid and marked 2.2 nm on a profile whose well was at
+    0.5 nm inside a covered 0.35 to 1.6 nm."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    kT = 0.008314462618 * 300.0
+    r = np.linspace(0.3, 2.2, 96)
+    energy = -20.0 * np.exp(-((r - 0.5) / 0.12) ** 2) - 2.0 * kT * np.log(r)
+    energy[r > 1.9] -= 25.0
+    energy -= energy.min()
+    (tmp_path / "pmf.json").write_text(json.dumps({
+        "pmf": {"coordinate": r.tolist(),
+                "free_energy_kjmol": energy.tolist()},
+        "covered": [0.35, 1.6]}), encoding="utf-8")
+    (tmp_path / "analysis").mkdir()
+    analysis = PMF(output_dir=tmp_path / "analysis")
+    result = analysis.compute(None)
+    well = result["summary"]["minima"][0]["coordinate"]
+    assert well == pytest.approx(0.5, abs=0.03)
+
+    figure, ax = plt.subplots()
+    try:
+        analysis.plot(result, ax)
+        text = ax.get_legend().get_texts()[0].get_text()
+        assert text == f"minimum at {well:.3g}"
+    finally:
+        plt.close(figure)

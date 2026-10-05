@@ -30,8 +30,9 @@ remove any `X-FastMDX-Proxy-Secret` a caller sends before adding its own.
 
 A service shows its own name and its person. `--product-name` replaces the
 name at the top of the sidebar, on the loading screen and in the window's
-title, and `--product-tagline` the line under it (the citation and the links
-to this software stay). The proxy names
+title, `--product-tagline` the line under it (the citation and the links
+to this software stay), and `--product-logo` the lab's logo as the tab's
+icon and the avatar where nobody is signed in. The proxy names
 the person on each request in `X-FastMDX-Account-Name` (UTF-8,
 percent-encoded), shown with their initials at the foot of the sidebar; it
 must remove any copy a caller sends, as it does the secret's. Only a
@@ -72,6 +73,9 @@ ACCOUNT_HEADER = "X-FastMDX-Account-Name"
 #: is narrow.
 LONGEST_PRODUCT_NAME = 40
 LONGEST_PRODUCT_TAGLINE = 80
+#: The largest logo a service may give, read once when the GUI starts and
+#: put into every page it serves.
+LARGEST_PRODUCT_LOGO = 256 * 1024
 LONGEST_ACCOUNT_NAME = 80
 
 #: Control characters, read as a space in a person's name and refused in
@@ -112,6 +116,42 @@ def _same_site(value: str, flag: str, example: str) -> str:
     return value
 
 
+def _logo(path: str) -> str:
+    """The service's logo as a data address for the page, or empty for none.
+
+    PNG, JPEG, GIF, WebP, ICO or SVG, told by its content rather than its
+    name, at most `LARGEST_PRODUCT_LOGO` bytes. It is shown as a picture
+    (an `<img>` and the tab's icon), where an SVG's scripts do not run.
+    """
+    import base64
+
+    if not str(path or "").strip():
+        return ""
+    file = Path(path).expanduser()
+    try:
+        data = file.read_bytes()
+    except OSError as exc:
+        raise HostingError(f"--product-logo {file} cannot be read: {exc}.",
+                           code="environment.path.not_found", path=str(file)) from exc
+    if len(data) > LARGEST_PRODUCT_LOGO:
+        raise HostingError(
+            f"--product-logo {file} is {len(data):,} bytes; at most "
+            f"{LARGEST_PRODUCT_LOGO:,} are put into every page. A 128 px PNG is enough.",
+            code="config.option.not_permitted", setting="--product-logo")
+    kinds = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"),
+             (b"GIF8", "image/gif"), (b"\x00\x00\x01\x00", "image/x-icon"))
+    kind = next((name for start, name in kinds if data.startswith(start)), "")
+    if not kind and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        kind = "image/webp"
+    if not kind and b"<svg" in data[:2048].lower():
+        kind = "image/svg+xml"
+    if not kind:
+        raise HostingError(
+            f"--product-logo {file} is not a PNG, JPEG, GIF, WebP, ICO or SVG picture.",
+            code="config.option.not_permitted", setting="--product-logo")
+    return f"data:{kind};base64," + base64.b64encode(data).decode("ascii")
+
+
 def _one_line(value: str, flag: str, longest: int) -> str:
     """Text to show, with runs of white space as one space, or HostingError
     for one too long or holding a control character."""
@@ -145,12 +185,17 @@ class Hosting:
     #: The line under it. Empty with a product name shows none, since this
     #: software's tagline is not the service's.
     product_tagline: str = ""
+    #: The service's logo, as a data address, shown as the tab's icon and the
+    #: avatar where nobody is signed in, in place of the lab's; empty keeps
+    #: the lab's.
+    product_logo: str = ""
 
     @classmethod
     def from_environment(cls, workspace: str | Path,
                          allowed_hosts: list[str] | tuple[str, ...],
                          account_url: str = "", runs_url: str = "",
-                         product_name: str = "", product_tagline: str = "") -> Hosting:
+                         product_name: str = "", product_tagline: str = "",
+                         product_logo: str = "") -> Hosting:
         """Hosted mode as the command line starts it.
 
         Refuses to start rather than start open: without a secret the proxy
@@ -186,7 +231,7 @@ class Hosting:
                                     LONGEST_PRODUCT_TAGLINE)
         return cls(workspace=root, allowed_hosts=names, secret=secret,
                    account_url=account_url, runs_url=runs_url, product_name=product_name,
-                   product_tagline=product_tagline)
+                   product_tagline=product_tagline, product_logo=_logo(product_logo))
 
     # ---- who is shown ----
     @staticmethod

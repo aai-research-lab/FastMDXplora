@@ -13,7 +13,7 @@ Public API
 - :func:`validate_config` -- strict schema validation (raises ConfigError)
 - :func:`load_config_file` -- parse a YAML config to a dict
 - :func:`phase_options` -- extract per-phase option blocks
-- :func:`generate_template` -- the ``fastmdx init-config`` template
+- :func:`generate_template` -- the ``fastmdx config`` template
 - :func:`write_resolved_config` -- the reproducibility dump
 - :class:`ConfigError` -- raised on any config problem
 - :data:`PHASE_SCHEMAS` -- the schema registry (single source of truth)

@@ -62,6 +62,12 @@ recorded beside the results.
    scene file the person opens (the GUI, or molstar.org): a frame, a
    colouring such as `result:rmsf`, the atoms an answer is about
    highlighted. Say where it was written.
+7. **Ask it again.** To add an analysis, or to analyse its frames with
+   this release, `run_phases_again` runs its analysis, its report or both
+   again in its folder, once the person agrees; nothing is simulated, and
+   what it replaces is kept in its `previous/` folder. Setup and
+   simulation are run again only as a new study, from this one's prepared
+   system (`simulation.setup_from`) or production (`simulation.resume_from`).
 
 `ask_agent` is optional; use it only when the person asks for it. It is
 FastMDXplora's own Agent, writing with this AI app's model where the AI app

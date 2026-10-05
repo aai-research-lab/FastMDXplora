@@ -20,12 +20,18 @@ wrong early in a run, where the bias the frame actually experienced was much
 smaller. This uses the bias as it stood when each frame was written, summing
 only the hills deposited before it.
 
-**Well-tempered runs converge to a scaled free energy**, not to -F: the bias
-approaches -(1 - 1/gamma) F. Tiwary and Parrinello's estimator handles this
-with a time-dependent offset c(t); what is implemented here is the simpler
-form that holds once the bias has converged, and the caller is told when
-not. A surface still filling gives weights that are only approximately right,
-which is worth having and worth saying.
+**The bias grows everywhere, not only where the system is.** Weighted by
+exp(V/kT) alone, frames are ranked by when they were written, and a
+well-tempered run's bias approaches -(1 - 1/gamma) F rather than -F. Tiwary
+and Parrinello's time-dependent offset c(t) removes both, and PLUMED's stored
+hill heights carry a factor gamma/(gamma - 1) that has to be undone first.
+That is done in :mod:`fastmdxplora.analysis.reweighted_averages`, whose
+``weights_for_run`` is the one way the package weights a run's frames: it
+passes ``V - c(t)`` to :func:`weights_from_bias` here. This module holds the
+arithmetic that does not depend on PLUMED's conventions. (A second
+``weights_for_run`` here, with neither c(t) nor the gamma factor undone, read
+P(x < 0) as 0.965 against an exact 0.893 on a well-tempered test run, and
+nothing called it; it was removed.)
 
     Tiwary, P.; Parrinello, M. A time-independent free energy estimator for
     metadynamics. *J Phys Chem B* **2015**, 119, 736.
@@ -36,7 +42,7 @@ which is worth having and worth saying.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Any
 
 import numpy as np
 from fastmdxplora.refusals import StudyError
@@ -53,12 +59,16 @@ class Weights:
     """One weight per frame, normalised to sum to the frame count."""
 
     effective_sample_size: float
-    """How many independent frames the weighted average really rests on.
+    """Weight-concentration effective frames: Kish's (sum w)^2 / sum w^2.
 
-    The Kish estimate: (sum w)^2 / sum w^2. A weighted mean over a thousand
-    frames whose weight is concentrated in five of them is a mean over five,
-    and quoting it as a thousand overstates it by a factor of fourteen. This
-    is the number that says whether a reweighted average means anything.
+    A weighted mean over a thousand frames whose weight is concentrated in
+    five of them is a mean over five, and quoting it as a thousand overstates
+    it by a factor of fourteen. It counts frames as though each were
+    independent, which frames of a trajectory are not: on a well-tempered
+    metadynamics run with a bias factor of 8 it read 2445 of 6000 frames
+    while the collective variable's statistical inefficiency was 91, so the
+    average rested on about 27 independent samples. That count, this one
+    divided by the inefficiency, is :func:`independent_samples`.
     """
 
     converged: bool
@@ -171,6 +181,7 @@ def weighted_uncertainty(
     *,
     resamples: int = 200,
     seed: int = 0,
+    block_length: int | None = None,
 ) -> "dict[str, object]":
     """A standard error on a reweighted average, and whether to trust it.
 
@@ -184,7 +195,9 @@ def weighted_uncertainty(
     The estimate is a moving-block bootstrap over the frames, resampling
     values and weights together -- the pairing is the whole content of a
     reweighted average, and shuffling them apart would put one frame's
-    value with another's weight.
+    value with another's weight. The block length is taken from the values
+    unless ``block_length`` is given; a caller that knows the collective
+    variable decorrelates more slowly passes ``ceil(2 g)`` of it.
 
     **It is reported as a floor where the weights concentrate.** Against the
     spread of the estimator over 200 independent realisations it holds to
@@ -210,7 +223,8 @@ def weighted_uncertainty(
         return float(np.sum(a * b) / total) if total else float("nan")
 
     result = paired_block_bootstrap([v, w], _mean, resamples=resamples,
-                                    seed=seed).as_dict()
+                                    seed=seed,
+                                    block_length=block_length).as_dict()
     ess = float(weights.effective_sample_size)
     fraction = ess / float(v.size) if v.size else 0.0
     result["effective_sample_size"] = ess
@@ -230,6 +244,119 @@ def weighted_uncertainty(
     return result
 
 
+def independent_samples(
+    weights: Weights, *series: np.ndarray, inefficiency: float = 1.0,
+) -> tuple[float, float]:
+    """Independent samples a weighted average rests on, and the inefficiency
+    used to count them.
+
+    ``n_independent = n_Kish / g``, where ``n_Kish`` is the weights'
+    :attr:`Weights.effective_sample_size` and ``g`` the largest statistical
+    inefficiency among the given per-frame series and ``inefficiency``.
+    Kish's count says how evenly the weight is spread over the frames and
+    treats every frame as independent; consecutive frames are not, and a
+    weighted mean is correlated through both its values and its weights, so
+    the slower of the observable and the collective variable the weights
+    depend on sets ``g``. On a well-tempered run with a bias factor of 8,
+    2445 weight-concentration effective frames held about 27 independent
+    samples.
+    """
+    from fastmdxplora.statistics import statistical_inefficiency
+
+    g = float(inefficiency) if np.isfinite(inefficiency) else 1.0
+    for values in series:
+        array = np.asarray(values, dtype=float)
+        if array.ndim == 2:
+            columns = [array[:, k] for k in range(array.shape[1])]
+        else:
+            columns = [array.ravel()]
+        for column in columns:
+            column = column[np.isfinite(column)]
+            if column.size >= 3:
+                g = max(g, statistical_inefficiency(column))
+    g = max(g, 1.0)
+    return float(weights.effective_sample_size) / g, g
+
+
+def reweighted_estimate(
+    values: np.ndarray,
+    weights: Weights,
+    *,
+    inefficiency: float = 1.0,
+    resamples: int = 200,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """A reweighted mean with its standard error, or the reason it has none.
+
+    The error is :func:`weighted_uncertainty`'s paired block bootstrap. It is
+    withheld (``standard_error`` None, ``not_a_measurement`` the reason,
+    ``refusal`` its code) where the observable or the collective variable,
+    whose inefficiency is passed as ``inefficiency``, is not long against its
+    own correlation time (``analysis.sampling.correlation_unresolved``: at
+    least 25 inefficiencies, as :func:`fastmdxplora.statistics.summarise`
+    asks), or where :func:`independent_samples` is below
+    :data:`fastmdxplora.statistics.MINIMUM_EFFECTIVE_SAMPLES`
+    (``analysis.sampling.too_few_independent``).
+    """
+    from fastmdxplora.statistics import (
+        MINIMUM_EFFECTIVE_SAMPLES,
+        RESOLVED_SAMPLES,
+        Withholding,
+        correlation_is_resolved,
+    )
+
+    array = np.asarray(values, dtype=float).ravel()
+    independent, g = independent_samples(weights, array, inefficiency=inefficiency)
+    record: dict[str, Any] = {
+        "mean": weighted_mean(array, weights),
+        "standard_error": None,
+        "weight_concentration_effective_frames": float(weights.effective_sample_size),
+        "statistical_inefficiency": g,
+        "independent_samples": independent,
+    }
+    n = int(array.size)
+    cv_resolved = (not np.isfinite(inefficiency) or inefficiency < 2.0
+                   or n / float(inefficiency) >= RESOLVED_SAMPLES)
+    reason = None
+    if n < 3 or not (correlation_is_resolved(array) and cv_resolved):
+        reason = Withholding(
+            f"{n} frames are not long against their own correlation time "
+            f"(one independent sample every {g:.0f} frames, and "
+            f"{RESOLVED_SAMPLES:g} of them resolve it), so a resampling error "
+            "on this reweighted mean would be too small by an unknown factor. "
+            "The remedy is a longer run.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=n, independent=independent, statistical_inefficiency=g,
+            needed=float(RESOLVED_SAMPLES))
+    elif independent < MINIMUM_EFFECTIVE_SAMPLES:
+        reason = Withholding(
+            f"{weights.effective_sample_size:.0f} weight-concentration "
+            f"effective frames, correlated over {g:.0f} frames, hold "
+            f"{independent:.1f} independent samples. Below "
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} an error on a reweighted mean "
+            "describes how this run happened to go rather than the system. "
+            "The remedy is a longer run, or replicas.",
+            code="analysis.sampling.too_few_independent",
+            independent=independent, frames=n, statistical_inefficiency=g,
+            needed=float(MINIMUM_EFFECTIVE_SAMPLES))
+    if reason is not None:
+        record["not_a_measurement"] = str(reason)
+        record["refusal"] = reason.refusal.code
+        return record
+
+    # Blocks of 2g of the slower series, as `block_length_for` would choose
+    # from the values alone: the weights carry the collective variable's
+    # correlation, and blocks shorter than it break what is really there.
+    block = max(1, min(n, int(np.ceil(2.0 * g))))
+    bootstrap = weighted_uncertainty(array, weights, resamples=resamples,
+                                     seed=seed, block_length=block)
+    record["standard_error"] = float(bootstrap["standard_error"])
+    record["is_a_floor"] = bool(bootstrap["is_a_floor"])
+    if bootstrap.get("note"):
+        record["note"] = bootstrap["note"]
+    return record
+
+
 def weighted_standard_deviation(values: np.ndarray, weights: Weights) -> float:
     """The spread about the weighted mean, on the effective sample size.
 
@@ -245,61 +372,3 @@ def weighted_standard_deviation(values: np.ndarray, weights: Weights) -> float:
     correction = weights.effective_sample_size / (
         weights.effective_sample_size - 1.0)
     return float(np.sqrt(variance * correction))
-
-
-def read_colvar(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
-    """Times and collective-variable values, from a PLUMED COLVAR."""
-    columns = np.atleast_2d(np.loadtxt(path, comments="#"))
-    if columns.shape[1] < 2:
-        raise StudyError(
-            f"{Path(path).name} holds {columns.shape[1]} column(s); the "
-            "collective variable is the second, after the time.", code="simulation.bias.dimension_mismatch")
-    return columns[:, 0], columns[:, 1]
-
-
-def weights_for_run(
-    simulation_dir: str | Path,
-    frame_times_ps: np.ndarray,
-    *,
-    temperature_K: float = 300.0,
-) -> Weights | None:
-    """Weights for a run's trajectory frames, or None where there are none.
-
-    ``frame_times_ps`` are the trajectory's own times, which is what makes
-    this correct rather than approximately correct: the collective variable
-    is recorded on PLUMED's stride and the trajectory on its own, and the two
-    need not coincide. The variable is interpolated onto the frame times
-    rather than assumed to line up with them.
-    """
-    directory = Path(simulation_dir)
-    hills_path = directory / "HILLS"
-    colvar_path = directory / "COLVAR"
-    if not hills_path.is_file() or not colvar_path.is_file():
-        return None
-
-    from fastmdxplora.simulation.metad_surface import read_hills
-
-    hills = read_hills(hills_path)
-    if not len(hills.time_ps):
-        return None
-    colvar_times, colvar_values = read_colvar(colvar_path)
-    if not len(colvar_times):
-        return None
-
-    frames = np.asarray(frame_times_ps, dtype=float)
-    at_frames = np.interp(frames, colvar_times, colvar_values)
-
-    bias = bias_at_each_frame(
-        hills.time_ps, hills.centre, hills.sigma, hills.height,
-        frames, at_frames)
-
-    # Converged where the last hills are a small fraction of the first, the
-    # same test the surface uses to decide whether to report one.
-    from fastmdxplora.simulation.metad_surface import SETTLED_HEIGHT_FRACTION
-
-    first = float(np.mean(hills.height[:max(1, len(hills.height) // 20)]))
-    last = float(np.mean(hills.height[-max(1, len(hills.height) // 20):]))
-    converged = bool(first > 0 and last <= SETTLED_HEIGHT_FRACTION * first)
-
-    return weights_from_bias(
-        bias, temperature_K=temperature_K, converged=converged)

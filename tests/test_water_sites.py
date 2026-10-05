@@ -427,3 +427,23 @@ class TestARunTooShortToShowResidence:
         assert self._findings(10.0, tmp_path)["duration_ps"] == pytest.approx(10.0)
         assert self._findings(
             5000.0, tmp_path)["duration_ps"] == pytest.approx(5000.0)
+
+
+class TestEveryWaterNameIsWater:
+    @pytest.mark.parametrize("name", ["TIP4", "TIP2", "OH2", "HHO", "OHH"])
+    def test_water_under_another_name_is_found(self, name, tmp_path) -> None:
+        """MDTraj's `water` takes these names; the six this kept did not,
+        and a TIP4P run was refused as holding no water."""
+        top = _system()
+        for residue in top.residues:
+            if residue.name == "HOH":
+                residue.name = name
+        found = _sites(_trajectory(top, lambda frame: 0), tmp_path)
+        assert len(found) == 1
+
+    def test_the_set_covers_what_mdtraj_calls_water(self) -> None:
+        import mdtraj.core.residue_names as names
+
+        from fastmdxplora.analysis.water_names import WATER_RESIDUES
+
+        assert set(names._WATER_RESIDUES) <= WATER_RESIDUES

@@ -9,7 +9,7 @@ drives the [GUI](gui.md), the [CLI](cli.md) and the [API](api.md), and each of
 them can write one — as can the [Agent](agent.md).
 
 ```bash
-fastmdx init-config -o study.yml      # a commented template with every setting
+fastmdx config -f study.yml      # a commented template with every setting
 fastmdx explore --config study.yml
 ```
 
@@ -328,7 +328,7 @@ description of what it may write.
 Four generated views of the same declaration:
 
 ```bash
-fastmdx init-config -o study.yml   # every setting, with its help as a comment
+fastmdx config -f study.yml   # every setting, with its help as a comment
 fastmdx explore --help             # the same settings, as flags
 fastmdx gui                        # the same settings, as a form
 ```
@@ -344,11 +344,11 @@ are commented out, so the file is valid as written and defaults apply until you
 opt in.
 
 ```bash
-fastmdx init-config -o study.yml --minimal     # a short starter instead
+fastmdx config -f study.yml --minimal     # a short starter instead
 ```
 
-`init-config` refuses to overwrite an existing file; pass `--force` if you mean
-to.
+`config` refuses to overwrite an existing file; pass `--force-overwrite` if
+you mean to.
 
 ---
 

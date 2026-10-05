@@ -455,7 +455,7 @@ class TestTheDeclarationsAreWiredUp:
 
     @pytest.mark.parametrize("module,name,column", [
         ("rmsd", "RMSD", None),
-        ("rg", "RadiusOfGyration", None),
+        ("rg", "RadiusOfGyration", "total"),
         ("hbonds", "HBonds", "n_hbonds"),
         ("sasa", "SASA", "sasa_nm2"),
     ])
@@ -842,3 +842,113 @@ class TestAHillIsNotFeltAtTheInstantItIsLaid:
 
         hills = SimpleNamespace(time_ps=np.arange(10.0))
         assert before_deposition(hills, np.array([])).size == 0
+
+
+# ---------------------------------------------------------------------------
+class TestKishIsNotTheIndependentCount:
+    """Kish's (sum w)^2 / sum w^2 says how evenly the weight is spread over
+    the frames, as though each were independent. On a well-tempered run
+    with a bias factor of 8 it read 2445 of 6000 frames where the collective
+    variable decorrelated once every 91, about 27 independent samples, and
+    the report printed the 2445 as the frames the average rested on."""
+
+    def test_the_record_divides_by_the_correlation(self, tmp_path: Path) -> None:
+        analysis, times, n = (
+            TestTheWeightsMeasureTheCoordinateAndNotTheClock._well_tempered(
+                tmp_path))
+        frames = np.linspace(1.0, n, 3000)
+        colvar = read_colvar(analysis.parent / "simulation" / "COLVAR")
+        cv = np.interp(frames, colvar["time"], colvar["cv"])
+        record = reweight_results(
+            {"rmsd": _Result(cv + 2.0)}, {"rmsd": _Cls((None, "RMSD (nm)"))},
+            n_frames=3000, frame_times_ps=frames, output_dir=analysis)
+
+        kish = record["effective_sample_size"]
+        g = record["cv_statistical_inefficiency"]
+        assert g > 100.0
+        assert record["weight_concentration_effective_frames"] == kish
+        assert record["independent_samples"] == pytest.approx(kish / g)
+        assert record["independent_samples"] < 10.0 < kish
+        item = record["quantities"][0]
+        # Too few independent samples for an error, and it says so.
+        assert item["reweighted_standard_error"] is None
+        assert item["refusal"] in {"analysis.sampling.correlation_unresolved",
+                                   "analysis.sampling.too_few_independent"}
+        assert item["not_a_measurement"]
+
+    def test_a_run_long_against_its_correlation_gets_an_error(
+            self, tmp_path: Path) -> None:
+        """A coordinate that decorrelates in a few frames, under hills small
+        enough that the weights are nearly even: the error is given, and it
+        is the one an ordinary correlated mean would have. (The bootstrap
+        cannot see how the weights would differ in another run; that limit
+        is tested in test_a_free_energy_carries_an_error_bar.py.)"""
+        simulation = tmp_path / "simulation"
+        simulation.mkdir(parents=True)
+        rng = np.random.default_rng(4)
+        n = 4000
+        phi = 0.5
+        cv = np.empty(n)
+        cv[0] = 0.0
+        for i in range(1, n):
+            cv[i] = phi * cv[i - 1] + rng.normal(0.0, 0.3)
+        times = np.arange(1.0, n + 1.0)
+        hill_times = times[::10]
+        simulation.joinpath("HILLS").write_text(
+            "#! FIELDS time cv sigma_cv height biasf\n"
+            + "\n".join(f"{t:.4f} {c:.6f} 0.2 0.001 10.0"
+                        for t, c in zip(hill_times, cv[::10])) + "\n",
+            encoding="utf-8")
+        simulation.joinpath("COLVAR").write_text(
+            "#! FIELDS time cv\n"
+            + "\n".join(f"{t:.4f} {c:.6f}" for t, c in zip(times, cv)) + "\n",
+            encoding="utf-8")
+        simulation.joinpath("metadynamics_surface.json").write_text(
+            json.dumps({"provisional": False}), encoding="utf-8")
+        simulation.joinpath("simulation_parameters.json").write_text(
+            json.dumps({"temperature_K": 300.0}), encoding="utf-8")
+        analysis = tmp_path / "analysis"
+        analysis.mkdir()
+
+        values = cv + 2.0
+        record = reweight_results(
+            {"rmsd": _Result(values)}, {"rmsd": _Cls((None, "RMSD (nm)"))},
+            n_frames=n, frame_times_ps=times, output_dir=analysis)
+        item = record["quantities"][0]
+        assert record["independent_samples"] > 10.0
+        assert "not_a_measurement" not in item
+        error = item["reweighted_standard_error"]
+        # sd * sqrt(g / n) for a nearly even weighting, g = 3 for phi = 0.5.
+        sd = float(np.std(values))
+        g = (1 + phi) / (1 - phi)
+        assert error == pytest.approx(sd * np.sqrt(g / n), rel=0.25)
+        table = (analysis / "reweighted" / "reweighted_averages.dat").read_text()
+        assert "reweighted_standard_error" in table
+        assert "independent samples" in table
+
+
+class TestTheEstimateCountsTheSlowerSeries:
+    def test_independent_samples_take_the_larger_inefficiency(self) -> None:
+        from fastmdxplora.analysis.reweight import (
+            independent_samples, weights_from_bias)
+
+        rng = np.random.default_rng(0)
+        weights = weights_from_bias(rng.normal(0.0, 1.0, 2000))
+        fast = rng.normal(size=2000)
+        alone, g_alone = independent_samples(weights, fast)
+        slower, g_slow = independent_samples(weights, fast, inefficiency=40.0)
+        assert g_alone < 2.0 and g_slow == 40.0
+        assert slower == pytest.approx(weights.effective_sample_size / 40.0)
+        assert alone > slower
+
+    def test_a_non_finite_value_does_not_reset_the_count(self) -> None:
+        from fastmdxplora.analysis.reweight import (
+            independent_samples, weights_from_bias)
+
+        rng = np.random.default_rng(1)
+        weights = weights_from_bias(np.zeros(3000))
+        slow = np.convolve(rng.normal(size=3100), np.ones(100) / 100,
+                           mode="valid")[:3000]
+        slow[17] = np.nan
+        _count, g = independent_samples(weights, slow)
+        assert g > 20.0

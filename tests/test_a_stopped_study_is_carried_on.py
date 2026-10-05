@@ -137,6 +137,23 @@ class TestWhatIsLeftDecidesWhatRuns:
             study.resolve() / "simulation" / "production.dcd")
         assert call["config"]["analysis"]["topology"].endswith("trajectory_topology.pdb")
 
+    def test_a_moved_study_is_analysed_from_where_it_is(self, tmp_path, ran, monkeypatch) -> None:
+        # The record names the study's frames by the path it had when it
+        # ran; carried on after a move, it analysed what sat at the old one.
+        study = _study(tmp_path / "moved")
+        config = yaml.safe_load((study / "resolved_config.yml").read_text())
+        was = tmp_path / "was_here"
+        config.update(output=str(was), analysis={
+            "trajectory": str(was / "simulation" / "production.dcd"),
+            "topology": str(was / "simulation" / "trajectory_topology.pdb")})
+        (study / "resolved_config.yml").write_text(yaml.safe_dump(config))
+        _progress(monkeypatch, done=1.0, planned=1.0, refusal="production already reached")
+        assert resume_study(study)["did"] == "analysed"
+        (_, call), = ran
+        assert call["config"]["analysis"]["trajectory"] == str(
+            study.resolve() / "simulation" / "production.dcd")
+        assert "topology" not in call["config"]["analysis"]
+
     def test_production_not_begun_runs_the_study_from_its_start(self, tmp_path, ran, monkeypatch) -> None:
         study = _study(tmp_path / "s")
         _progress(monkeypatch, done=0.0, planned=1.0,

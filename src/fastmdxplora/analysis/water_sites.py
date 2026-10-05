@@ -46,10 +46,12 @@ from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
 
-__all__ = ["WaterSites"]
+# Residue names for water are the package's one set: TIP4, TIP2 and OH2
+# waters were missed by the six names this module kept, and the run was
+# refused as holding no water. Still importable from here.
+from fastmdxplora.analysis.water_names import WATER_RESIDUES
 
-#: Residue names for water across the force fields FastMDXplora uses.
-WATER_RESIDUES = ("HOH", "WAT", "TIP", "TIP3", "SOL", "H2O")
+__all__ = ["WaterSites", "WATER_RESIDUES"]
 
 
 def _into(points: np.ndarray, reference: np.ndarray, turned: bool) -> Any:

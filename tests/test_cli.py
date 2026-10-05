@@ -424,14 +424,15 @@ def test_cli_dashboard_uses_cli_output_path_for_other_phases(
     out = tmp_path / f"{command}_run"
     session = _FakeDashboardSession()
 
-    method_name = {"simulate": "simulate", "analyze": "analyze", "report": "report"}[command]
+    # A phase command runs through explore, which runs each phase by name.
+    phase = {"simulate": "simulation", "analyze": "analysis", "report": "report"}[command]
     with patch(
         "fastmdxplora.gui.server.start_dashboard_session",
         return_value=session,
     ) as start, patch.object(
         FastMDXplora,
-        method_name,
-        return_value=PhaseResult(name=command, status="ok"),
+        "_run_phase",
+        return_value=PhaseResult(name=phase, status="ok"),
     ):
         rc = main(
             [
@@ -501,7 +502,7 @@ def test_cli_dashboard_implies_live_telemetry_for_simulation(tmp_path: Path) -> 
         return_value=session,
     ), patch.object(
         FastMDXplora,
-        "simulate",
+        "_run_phase",
         return_value=PhaseResult(name="simulation", status="ok"),
     ) as simulate:
         rc = main(
@@ -517,5 +518,6 @@ def test_cli_dashboard_implies_live_telemetry_for_simulation(tmp_path: Path) -> 
         )
 
     assert rc == 0
-    assert simulate.call_args.kwargs["live_telemetry"] is True
+    phase, settings = simulate.call_args.args
+    assert phase == "simulation" and settings["live_telemetry"] is True
     assert session.stopped is True

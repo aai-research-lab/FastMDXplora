@@ -469,6 +469,7 @@ def _occupancy_from_residue_table(path: Path) -> dict[tuple[str, str], float]:
     import csv as _csv
 
     out: dict[tuple[str, str], float] = {}
+    shared: set[tuple[str, str]] = set()
     with path.open(encoding="utf-8", newline="") as handle:
         for row in _csv.DictReader(handle):
             family = our_kind_family(row.get("kind") or "")
@@ -476,9 +477,18 @@ def _occupancy_from_residue_table(path: Path) -> dict[tuple[str, str], float]:
             if not family or not residue:
                 continue
             try:
-                out[(residue, family)] = 100.0 * float(row["occupancy"])
+                value = 100.0 * float(row["occupancy"])
             except (KeyError, TypeError, ValueError):
                 continue
+            # Two kinds of one family (a hydrogen bond in each direction, a
+            # stack face to face and edge to face) are two rows, and their
+            # union is not in the table: the larger is a lower bound on it.
+            if (residue, family) in out:
+                shared.add((residue, family))
+            out[(residue, family)] = max(out.get((residue, family), 0.0), value)
+    if shared:
+        print(f"[fastmdx] {len(shared)} residue-family occupancies are the larger "
+              "of two kinds in one family, a lower bound on their union")
     if out:
         print(f"[fastmdx] exact residue table: {len(out)} residue-family "
               "occupancies, taken as the union of each residue's pairs")

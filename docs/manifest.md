@@ -131,8 +131,11 @@ fastmdx analyze  --output runs/trypsin
 ```
 
 leaves one `manifest.json` holding all three phases, each recording its own
-`produced_by`. Phase records are keyed by name, so a re-run replaces that phase
-in place and keeps the rest, in first-seen order.
+`produced_by`. Phase records are keyed by name, so a phase run again (with
+`--force-overwrite` or `--rerun`) replaces its record in place and keeps the
+rest, in first-seen order. A phase it leaves stale (the report, after the
+analysis runs again) has its record taken out until it runs again; with
+`--rerun` the record is kept beside its output in `previous/<phase>`.
 
 Where phases came from different versions, the top-level `version` is the
 session that wrote the file, `versions_seen` lists them all, and a

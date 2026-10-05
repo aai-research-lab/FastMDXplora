@@ -142,11 +142,100 @@
       });
   }
 
+  /* Writing the report again: the report phase alone on the study open,
+   * from its records and the report settings it recorded, as `fastmdx
+   * report --output <study> --rerun` does. Offered while a study is open and
+   * nothing runs (a study of several runs has each run's written again);
+   * pressing it asks once more, saying what is written again, what is
+   * kept aside and that nothing is simulated or analysed, and only a
+   * second press starts it. */
+  var writing = false;
+  var several = false;
+  var WRITE_TITLE = "Write the report again from this study's records, " +
+    "simulating and analysing nothing";
+
+  function node(tag, cls, text) {
+    var made = document.createElement(tag);
+    if (cls) made.className = cls;
+    if (text) made.textContent = text;
+    return made;
+  }
+
+  function say(text) {
+    var ask = el("report-write-ask");
+    if (!ask) return;
+    ask.innerHTML = "";
+    ask.appendChild(node("span", "fix-said", text));
+    ask.hidden = false;
+  }
+
+  function startWriting() {
+    say("Starting\u2026");
+    fetch("/api/report/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    }).then(function (res) { return res.json(); }).then(function (d) {
+      if (d && d.ok) {
+        writing = true;
+        say("Writing it again. Its log is in the side panel, and the report is shown here once written.");
+      } else {
+        say((d && d.error) || "Could not start it.");
+      }
+    }).catch(function () { say("Could not reach the server to start it."); });
+  }
+
+  function askFirst() {
+    var ask = el("report-write-ask");
+    if (!ask) return;
+    ask.innerHTML = "";
+    ask.appendChild(node("span", "fix-said",
+      "Write " + (several ? "each run's report" : "the report") + " again from " +
+      "this study's records? The report, its slides, PDF, dashboard.html and " +
+      "bundle are written again as the study's report settings ask. The report " +
+      "there now is kept in previous/, in place of what was kept there before. " +
+      "Nothing is simulated or analysed."));
+    var yes = node("button", "primary-btn fix-confirm", "Yes, write it");
+    yes.type = "button";
+    yes.addEventListener("click", startWriting);
+    var no = node("button", "ghost-btn fix-cancel", "Not now");
+    no.type = "button";
+    no.addEventListener("click", function () { ask.hidden = true; ask.innerHTML = ""; });
+    ask.appendChild(yes);
+    ask.appendChild(no);
+    ask.hidden = false;
+    yes.focus();
+  }
+
+  /* Shown while a study is open; held while anything runs. A writing
+   * started here that has ended reloads the report. */
+  function offerWriting(app) {
+    var button = el("report-write");
+    if (!button) return;
+    app = app || {};
+    several = Array.isArray(app.runs) && app.runs.length > 0;
+    var running = !!app.process_running;
+    button.hidden = !app.active_run;
+    button.disabled = running;
+    button.title = running
+      ? "A run is going. The report can be written again once it ends."
+      : WRITE_TITLE;
+    if (writing && !running) {
+      writing = false;
+      say("Written again.");
+      load();
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     if (!el("report-document")) return;
     load();
+    var write = el("report-write");
+    if (write) write.addEventListener("click", askFirst);
+    if (window.FastMDXDashboard) offerWriting((window.FastMDXDashboard.state || {}).appState);
     if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
-      window.FastMDXDashboard.on("app-state", function () {
+      window.FastMDXDashboard.on("app-state", function (app) {
+        offerWriting(app);
         // Reload only when the page is showing; the fetch is cheap but
         // rendering a 20 KB document every poll is not.
         var page = document.querySelector('.page[data-page="report"]');

@@ -59,12 +59,12 @@ class TestTheGuiDocsMatchTheFrame:
         assert "| **Builder** |" not in GUI
         assert "| **New Exploration** |" not in GUI
 
-    def test_the_study_block_and_load_available_study(self):
+    def test_the_study_card_and_its_menu(self):
         import fastmdxplora.gui as gui
 
         page = (Path(gui.__file__).parent / "templates" / "dashboard.html").read_text(encoding="utf-8")
-        assert ">Load available study<" in page
-        assert "Load available study" in GUI
+        assert ">Open another folder&hellip;<" in page and 'id="study-card"' in page
+        assert "**Open\nanother folder**" in GUI and "study card" in GUI
         assert "id=\"study-elsewhere\"" in page
         assert "RUNNING" in GUI
 

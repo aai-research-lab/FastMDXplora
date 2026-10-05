@@ -6,6 +6,13 @@ reports the ligand's internal flexibility in the pocket: which parts of the
 ligand are rigid and which sample multiple positions. Complements the ligand
 pose RMSD (overall displacement) with a per-atom flexibility profile.
 
+**The ligand is followed across periodic faces first**, the same way the
+ligand RMSD follows it (:func:`~fastmdxplora.analysis.ligand_rmsd.ligand_in_the_receptor_frame`),
+so the two read the same ligand. Fitted coordinates alone carry whichever
+copy of each atom the file stored: a bound ligand sitting on a face of a 5 nm
+box, its atom stored on the far side in 31 of 200 frames, read an RMSF of
+1.80 nm against a true 0.035 nm.
+
 Outputs ``ligand_rmsf.dat`` with columns (atom_serial, rmsf_nm) and a bar plot.
 """
 
@@ -18,7 +25,8 @@ import mdtraj as md
 import numpy as np
 
 from fastmdxplora.analysis.plotting import colour
-from fastmdxplora.analysis.base import Analysis, superposed
+from fastmdxplora.analysis.base import Analysis
+from fastmdxplora.analysis.ligand_rmsd import ligand_in_the_receptor_frame
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.rmsf import _atom_labels
 from fastmdxplora.refusals import StudyError
@@ -99,10 +107,9 @@ class LigandRMSF(Analysis):
                 f"with {n} frames."
             , code="analysis.option.out_of_range")
 
-        # Align on the protein, then measure ligand-atom fluctuations about
-        # their mean position on the aligned coordinates.
-        aligned = superposed(traj, frame=ref, atom_indices=align_idx)
-        xyz = aligned.xyz[:, ligand_idx, :]
+        # Follow the ligand across periodic faces, align on the protein, then
+        # take each ligand atom's fluctuation about its mean position.
+        xyz = ligand_in_the_receptor_frame(traj, ligand_idx, align_idx, ref)
         mean_xyz = xyz.mean(axis=0)
         disp = xyz - mean_xyz
         per_atom = np.sqrt(np.mean(np.sum(disp * disp, axis=2), axis=0))

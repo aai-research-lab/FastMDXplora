@@ -145,11 +145,13 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
+    "/api/analysis-overview", "/api/convergence",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
-    "/api/states", "/api/state-difference",
+    "/api/states", "/api/state-difference", "/api/backbone-angles",
+    "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream",
     "/analysis-figures-svg.zip",
@@ -169,7 +171,8 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
-    "/api/frames-pieces", "/structure/frames-piece.xtc",
+    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
+    "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
 })
 
 
@@ -299,6 +302,9 @@ PLOT_CATEGORY_BY_TITLE = {
 KEY_PLOT_TITLES = {"RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds", "PCA", "SASA"}
 
 DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("templates") / "dashboard.html"
+#: The AAi Research Lab's mark (its site's logo, scaled to 128 px), for the
+#: tab's icon and the sidebar's avatar; the standalone dashboard inlines it.
+LAB_LOGO = "lab-logo.png"
 
 
 @dataclass
@@ -376,6 +382,9 @@ def make_handler(
     )
     cfg = config or DashboardConfig()
     html = template_html if template_html is not None else _load_template()
+    from fastmdxplora.gui.sidebar_icons import with_icons
+
+    html = with_icons(html)
     refresh_seconds = min(60.0, max(1.0, float(cfg.refresh_seconds or 3.0)))
     html = html.replace("__FASTMDX_REFRESH_SECONDS__", f"{refresh_seconds:g}")
     # Injected rather than written into the template, so the citation cannot
@@ -417,9 +426,14 @@ def make_handler(
                     f"__FASTMDX_INITIALS_{mark}__": "initials"}
     for spot, which in person_marks.items():
         html = html.replace(f"__FASTMDX_ACCOUNT_{which.upper()}__", spot)
+    # The sidebar's line under the name is a service's own only: the
+    # product's expansion is on the Cite page and the loading screen.
+    brand_line = hosting.product_tagline if hosting is not None else ""
     shown = {"__FASTMDX_TITLE__": product or "FastMDXplora GUI",
              "__FASTMDX_PRODUCT__": product or "FastMDXplora",
-             "__FASTMDX_TAGLINE__": tagline}
+             "__FASTMDX_TAGLINE__": tagline,
+             "__FASTMDX_BRAND_LINE__": brand_line,
+             "__FASTMDX_EXPANSION__": __expansion__}
     html = _re.sub("|".join(shown), lambda m: _escape(shown[m.group(0)]), html)
     # The settings menu at the foot of the sidebar opens with the way back
     # to the service's own page for the person; the GUI has no other.
@@ -432,6 +446,17 @@ def make_handler(
             '<span class="mono settings-hint">runs, files, sign out</span></a>'
             '<div class="settings-divider"></div>')
     html = html.replace("<!--__FASTMDX_ACCOUNT_ITEM__-->", account_item)
+    # The logo as the tab's icon and as the avatar at the foot of the
+    # sidebar: the lab's, or a hosted service's own (--product-logo). The
+    # avatar is the person's initials where the proxy names somebody, so
+    # the logo goes in per request, below.
+    logo = (hosting.product_logo if hosting is not None and hosting.product_logo
+            else f"/static/{LAB_LOGO}")
+    html = html.replace("<!--__FASTMDX_LAB_ICON__-->",
+                        f'<link rel="icon" href="{_escape(logo)}">')
+    logo_mark = f'<img class="sidebar-account-logo" src="{_escape(logo)}" alt="">'
+    logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
+    html = html.replace("<!--__FASTMDX_LAB_MARK__-->", logo_spot)
 
     # And, when the service runs studies on its own compute, a way to send
     # one there: the service's page opens with the config, for the person to
@@ -461,7 +486,8 @@ def make_handler(
 
         name = _Hosting.account_name(account_header) if hosting is not None else ""
         said = {"name": name or product or "FastMDXplora", "initials": initials(name)}
-        return person_spots.sub(lambda m: _escape(said[person_marks[m.group(0)]]), html)
+        page = person_spots.sub(lambda m: _escape(said[person_marks[m.group(0)]]), html)
+        return page.replace(logo_spot, "" if said["initials"] else logo_mark)
 
     class LiveDashboardHandler(BaseHTTPRequestHandler):
         server_version = "FastMDXLive/1.0"
@@ -621,12 +647,22 @@ def make_handler(
                 # `is_study` is the module's: imported here, it would be a
                 # local of the whole handler, unbound on every other route.
                 figure = workspace.thumbnail_of(named) if is_study(Path(named)) else None
-                if figure is None:
-                    self.send_error(404, "Not found")
-                    return
-                data = figure.read_bytes()
+                kind = "image/png"
+                if figure is not None:
+                    data = figure.read_bytes()
+                else:
+                    # No figure yet: a picture of the study's backbone.
+                    from fastmdxplora.gui.backbone_picture import backbone_svg
+
+                    picture = backbone_svg(named) if is_study(Path(named)) else None
+                    if picture is None:
+                        self.send_error(404, "Not found")
+                        return
+                    data, kind = picture.encode("utf-8"), "image/svg+xml"
                 self.send_response(200)
-                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Type", kind)
+                if kind == "image/svg+xml":
+                    self.send_header("Content-Security-Policy", "default-src 'none'")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Content-Length", str(len(data)))
@@ -724,6 +760,18 @@ def make_handler(
                     return
                 self._send_json(series_payload(root, name))
                 return
+            if path == "/api/analysis-overview":
+                # What every analysis recorded, read together.
+                from fastmdxplora.gui.analysis_overview import overview_of
+
+                self._send_json(overview_of(root))
+                return
+            if path == "/api/convergence":
+                from fastmdxplora.gui.analysis_overview import convergence_payload
+
+                name = (parse_qs(parsed.query).get("analysis") or [""])[0]
+                self._send_json(convergence_payload(root, name))
+                return
             if path == "/api/selection":
                 from fastmdxplora.gui.selection import selection_for
 
@@ -771,6 +819,14 @@ def make_handler(
                 from fastmdxplora.gui.stopping_view import stopping_payload
 
                 self._send_json(stopping_payload(root))
+                return
+            if path == "/api/again":
+                # What can be run again on the study on screen, and why not,
+                # with the analyses it ran last and those this release has.
+                # Not answered beyond loopback, like the POST it offers.
+                from fastmdxplora.gui.again_view import again_payload
+
+                self._send_json(again_payload(root))
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its
@@ -826,6 +882,10 @@ def make_handler(
                     # of the person; the Files tab is how they reach it.
                     self._send_json({"opened": False, "path": str(root),
                                      "detail": "Not available in a hosted GUI."})
+                    return
+                if _no_study(root):
+                    self._send_json({"opened": False, "path": "",
+                                     "detail": "No study is open."})
                     return
                 opened, detail = _open_local_path(root)
                 self._send_json({
@@ -968,6 +1028,42 @@ def make_handler(
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if path in ("/api/pocket-volume", "/structure/pocket.dx"):
+                from fastmdxplora.gui.pocket_volume import pocket_points, pocket_volume
+
+                asked = parse_qs(parsed.query)
+                one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
+                if path == "/api/pocket-volume":
+                    self._send_json(pocket_volume(root, one("ligand"), one("cutoff") or 5.0))
+                    return
+                text, reason = pocket_points(root, one("ligand"), one("cutoff") or 5.0,
+                                             one("frame"))
+                if text is None:
+                    self.send_error(404, reason)
+                    return
+                data = text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path in ("/api/contact-map", "/api/contact-pair"):
+                from fastmdxplora.gui.contact_map import contact_map, contact_pair
+
+                asked = parse_qs(parsed.query)
+                one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
+                self._send_json(contact_pair(root, one("a"), one("b"))
+                                if path == "/api/contact-pair"
+                                else contact_map(root, one("first"), one("second"),
+                                                 one("method")))
+                return
+            if path == "/api/backbone-angles":
+                from fastmdxplora.gui.backbone_angles import backbone_angles
+
+                self._send_json(backbone_angles(root))
+                return
             if path == "/api/states":
                 from fastmdxplora.gui.states import states_of
 
@@ -1010,6 +1106,19 @@ def make_handler(
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
             payload = self._read_json_body()
+            if path == "/api/study-tags":
+                # A study's tags and note, as the person set them on its card,
+                # kept in its folder beside its records (study_tags.py).
+                from fastmdxplora.study_tags import set_tags
+
+                named = self._path_for(str(payload.get("path") or ""))
+                if named is None:
+                    return
+                if not is_study(Path(named)):
+                    self._send_json({"ok": False, "reason": f"{named} is not a study."})
+                    return
+                self._send_json(set_tags(named, payload.get("tags"), payload.get("note")))
+                return
             if path == "/api/movies":
                 # A movie of the study's frames started: ffmpeg on this
                 # computer encodes the frames the Viewer sends (movies.py).
@@ -1246,6 +1355,24 @@ def make_handler(
                     return
                 self._send_json(app_runtime.run_a_fix(
                     asked.get("index"), dashboard_url=self.headers.get("Origin")))
+                return
+            if path == "/api/again":
+                # A study's analysis or report run again in its folder
+                # (`fastmdxplora.again`). It starts work on this machine, so
+                # loopback only, like every route not listed open; the page
+                # asks the person first.
+                asked = payload if isinstance(payload, dict) else {}
+                self._send_json(app_runtime.run_again(
+                    asked.get("phases") or [], asked.get("analyses"),
+                    dashboard_url=self.headers.get("Origin")))
+                return
+            if path == "/api/report/write":
+                # The report phase alone on the study open, from its records.
+                # It starts work on this machine, so it needs the machine's
+                # trust, which it has only on loopback, like every route not
+                # listed open. The page asks the person first.
+                self._send_json(app_runtime.write_the_report_again(
+                    dashboard_url=self.headers.get("Origin")))
                 return
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import write_conversation
@@ -1783,6 +1910,17 @@ def make_handler(
                         self.send_error(404, said.get("reason"))
                         return
                 target = root / "simulation" / file
+            between = ((query or {}).get("between") or [""])[0]
+            if between and name.endswith(".dcd"):
+                # A movie's frames with frames in between them.
+                from fastmdxplora.gui.trajectory_frames import frames_between
+
+                tweened, reason = frames_between(
+                    target, ((query or {}).get("span") or [""])[0], between)
+                if tweened is None:
+                    self.send_error(404, reason)
+                    return
+                target = tweened
             if ((query or {}).get("as") or [""])[0] == "xtc" and name.endswith(".dcd"):
                 # As the frames were loaded in pieces: XTC, read in place of
                 # them without loading them again.
@@ -2199,6 +2337,7 @@ def _report_panels(root: Path) -> dict[str, Any]:
             {
                 "title": section.title,
                 "anchor": section.anchor,
+                "theme": section.theme,
                 "panels": [
                     {
                         "title": panel.title,
@@ -2271,8 +2410,10 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "refreshed_at": _iso_now(),
         "has_analysis": any(record["path"].startswith("analysis/") for record in artifacts),
         "has_report": any(record["path"].startswith("report/") for record in artifacts),
-        "output_dir": str(root),
-        "run_title": _run_title(root, manifest),
+        # No folder and no title where no study is open: the root is then a
+        # name that is never created, and it was shown as the study's.
+        "output_dir": "" if _no_study(root) else str(root),
+        "run_title": "" if _no_study(root) else _run_title(root, manifest),
         "summary": summary,
         "system": system,
         "setup": _setup_details(setup_manifest),
@@ -2568,6 +2709,8 @@ def _last_metric_value(root: Path, field: str) -> str | None:
 #: reader is shown without opening the analysis.
 _PANEL_INTERACTION_KINDS = {
     "hydrogen_bond": "hbonds",
+    "hydrogen_bond_ligand_donor": "hbonds",
+    "hydrogen_bond_protein_donor": "hbonds",
     "hydrophobic": "hydrophobic",
     "salt_bridge": "salt_bridges",
 }
@@ -2800,7 +2943,7 @@ def _system_info(
         # the manifest, which is written when the run ends, the top bar spent
         # the whole run showing the browser's placeholder label instead.
         "system": _system_name(root, manifest),
-        "output_folder": root.as_posix(),
+        "output_folder": "" if _no_study(root) else root.as_posix(),
         "atoms": _display_value(analysis_manifest.get("n_atoms")),
         "frames": _display_value(
             _first_present(
@@ -3133,8 +3276,18 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _no_study(root: Path) -> bool:
+    """Whether ``root`` is the name the runtime gives when no study is open."""
+    return Path(root).name == _NO_CURRENT_RUN
+
+
 def _open_local_path(path: Path) -> tuple[bool, str]:
     """Open ``path`` in the host file manager on a best-effort basis."""
+
+    # macOS's `open` said "The file ... does not exist." in the terminal
+    # the GUI runs in, for a folder that was never there.
+    if not os.path.exists(path):
+        return False, f"{path} does not exist."
 
     try:
         if os.name == "nt":

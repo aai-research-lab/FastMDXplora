@@ -41,7 +41,7 @@ class TestReadingTheColumn:
             "ATOM  99999  CA  ALA A   1     "
             "  1.000   2.000   3.000  1.0012.34           C\n",
             encoding="utf-8")
-        assert bfactors_from_pdb(path) == {(0, 1): 12.34}
+        assert bfactors_from_pdb(path) == {("A", 1, ""): 12.34}
 
     def test_alternate_locations_beyond_the_first_are_skipped(self, tmp_path):
         path = tmp_path / "alt.pdb"
@@ -51,7 +51,7 @@ class TestReadingTheColumn:
             "ATOM      2  CA BALA A   1       "
             "1.100   2.000   3.000  0.50 90.00           C\n",
             encoding="utf-8")
-        assert bfactors_from_pdb(path) == {(0, 1): 10.00}
+        assert bfactors_from_pdb(path) == {("A", 1, ""): 10.00}
 
     def test_a_file_of_zeros_does_not_count_as_having_them(self, tmp_path):
         """A minimised or generated structure writes zeros there.
@@ -210,3 +210,127 @@ class TestTheOutputsAndTheDiscovery:
             align_selection="resid 0 and name CA")
         with pytest.raises(ValueError, match="at least three"):
             analysis.compute(_traj(np.array([0.02] * 6)))
+
+
+class TestEachResidueIsItsOwn:
+    """Deposited structures, read as they are deposited."""
+
+    @staticmethod
+    def _deposited(tmp_path, entry):
+        import gzip
+        from pathlib import Path
+
+        path = tmp_path / f"{entry}.pdb"
+        path.write_bytes(gzip.decompress(
+            (Path(__file__).parent / "data" / "assemblies" / f"{entry}.pdb.gz").read_bytes()))
+        return path
+
+    @staticmethod
+    def _wobble(traj, frames=6, scale=0.01):
+        rng = np.random.default_rng(0)
+        xyz = traj.xyz + rng.normal(0.0, scale, (frames,) + traj.xyz.shape[1:])
+        return md.Trajectory(xyz.astype(np.float32), traj.topology)
+
+    @staticmethod
+    def _deposited_b(result):
+        implied = result["implied_nm"] if hasattr(result, "columns") else result[:, 2]
+        number = result["residue"] if hasattr(result, "columns") else result[:, 0]
+        return np.asarray(number), (np.asarray(implied) * 10.0) ** 2 / B_TO_MSF
+
+    def test_an_insertion_code_keeps_its_own_b_factor(self, tmp_path, monkeypatch):
+        """3PTB: GLY 184A has B 9.49 and TYR 184 has 20.72. Keyed by number
+        alone, both were compared with 20.72."""
+        from fastmdxplora.analysis import residues
+
+        monkeypatch.setattr(residues, "_INSERTION_CODES", {})
+        source = self._deposited(tmp_path, "3PTB")
+        structure = md.load(str(source))
+        traj = self._wobble(structure.atom_slice(structure.topology.select("protein")))
+
+        result = BFactorComparison(structure=str(source)).compute(traj)
+        number, b = self._deposited_b(result)
+
+        assert sorted(np.round(b[number == 184], 2)) == [9.49, 20.72]
+        assert sorted(np.round(b[number == 221], 2)) == [11.46, 18.73]
+
+    def test_and_where_the_trajectory_carries_the_codes(self, tmp_path, monkeypatch):
+        from fastmdxplora.analysis import residues
+        from fastmdxplora.analysis.loading import load_trajectory
+
+        monkeypatch.setattr(residues, "_INSERTION_CODES", {})
+        source = self._deposited(tmp_path, "3PTB")
+        structure = load_trajectory(str(source))
+        traj = self._wobble(structure.atom_slice(structure.topology.select("protein")))
+
+        result = BFactorComparison(structure=str(source)).compute(traj)
+        rows = {(int(n), c): b for n, c, b in zip(
+            result["residue"], result["insertion"],
+            (result["implied_nm"] * 10.0) ** 2 / B_TO_MSF)}
+
+        assert round(rows[(184, "A")], 2) == 9.49
+        assert round(rows[(184, "")], 2) == 20.72
+
+    def test_a_chain_is_compared_with_its_own_b_factors(self, tmp_path):
+        """1HHO's chain B alone: matched by order, VAL 1 was compared with
+        chain A's 70.91 rather than its own 25.93."""
+        source = self._deposited(tmp_path, "1HHO")
+        structure = md.load(str(source))
+        chain_b = structure.topology.select("protein and chainid 1")
+        sub = structure.atom_slice(chain_b)
+        if not getattr(sub.topology.chain(0), "chain_id", None):
+            # MDTraj before 1.11 drops the ID when it slices; setup's files
+            # carry it, so the trajectory is given it back as a load would.
+            sub.topology.chain(0).chain_id = "B"
+        traj = self._wobble(sub, scale=0.02)
+
+        analysis = BFactorComparison(structure=str(source))
+        result = analysis.compute(traj)
+        _number, b = self._deposited_b(result)
+
+        assert round(float(b[0]), 2) == 25.93
+        assert "chains_matched_by_order" not in analysis.findings
+
+    def test_without_chain_ids_order_is_used_and_said(self, tmp_path):
+        source = self._deposited(tmp_path, "1HHO")
+        structure = md.load(str(source))
+        sub = structure.atom_slice(structure.topology.select("protein and chainid 0"))
+        sub.topology.chain(0).chain_id = None
+        analysis = BFactorComparison(structure=str(source))
+        result = analysis.compute(self._wobble(sub, scale=0.02))
+        _number, b = self._deposited_b(result)
+
+        assert round(float(b[0]), 2) == 70.91  # chain A's VAL 1, first by order
+        assert "by order" in analysis.findings["chains_matched_by_order"]
+
+
+def test_one_chain_with_insertion_codes_is_plotted(tmp_path):
+    """Trypsin, one chain numbered with insertion codes (184 and 184A): its
+    table has no chain column, and the figure grouped by one and raised, so
+    a real 3PTB study recorded the analysis as an error."""
+    import gzip
+    from pathlib import Path
+
+    import mdtraj as md
+    import numpy as np
+
+    from fastmdxplora.analysis.bfactor_comparison import BFactorComparison
+
+    from fastmdxplora.analysis.loading import load_trajectory
+
+    deposited = tmp_path / "input.pdb"
+    text = gzip.decompress(
+        (Path(__file__).parent / "data" / "assemblies" / "3PTB.pdb.gz").read_bytes()).decode()
+    deposited.write_text(text)
+    # The protein's own lines, insertion codes and all, as a study's
+    # trajectory topology keeps them; loaded as a study is.
+    topology = tmp_path / "trajectory_topology.pdb"
+    topology.write_text("".join(line + "\n" for line in text.splitlines()
+                                if line.startswith("ATOM")) + "END\n")
+    protein = md.load_pdb(str(topology))
+    rng = np.random.default_rng(0)
+    frames = protein.xyz + rng.normal(scale=0.02, size=(40,) + protein.xyz.shape[1:])
+    md.Trajectory(frames.astype(np.float32), protein.topology).save_dcd(str(tmp_path / "p.dcd"))
+    traj = load_trajectory(str(tmp_path / "p.dcd"), top=str(topology))
+    result = BFactorComparison(structure=str(deposited), output_dir=str(tmp_path / "out")).run(traj)
+    assert result.status == "ok", result.message
+    assert (tmp_path / "out" / "bfactor_comparison" / "bfactor_comparison.png").is_file()

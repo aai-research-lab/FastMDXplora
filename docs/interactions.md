@@ -21,18 +21,39 @@ in the rule's own docstring.
 
 | Interaction | Criterion | Source |
 |---|---|---|
-| Hydrogen bond | H···A < 3.5 Å, D-H···A > 120° | Baker & Hubbard 1984; McDonald & Thornton 1994 |
+| Hydrogen bond | D···A < 3.5 Å, D-H···A > 120° | McDonald & Thornton 1994 |
 | Hydrophobic | C···C < 4.0 Å, both bonded only to carbon or hydrogen | PLIP |
 | Salt bridge | opposite charged groups < 4.5 Å, centre to centre | ProLIF |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |
 | π-cation | charge to ring centre < 6.0 Å, offset < 2.0 Å | PLIP |
-| Halogen bond | X···A < 3.5 Å, C-X···A between 130° and 180° | ProLIF |
-| Metal coordination | metal to donor < 3.0 Å | PLIP |
-| Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
+| Halogen bond | X···A < 3.5 Å, C-X···A between 130° and 180°, X···A-R between 80° and 140° for a heavy atom R bonded to the acceptor | ProLIF |
+| Metal coordination | metal to donor < 3.0 Å; the metal is the ligand or any single-atom metal residue in the system | PLIP |
+| Water bridge | one water 2.5 to 4.1 Å from an acceptor on one side and from a donor on the other, the donor's D-H···O above 100°, the angle at the water between the acceptor and the donor's H 71 to 140° | PLIP |
+
+A hydrogen bond is reported in the direction it was found, as
+`hydrogen_bond_ligand_donor` or `hydrogen_bond_protein_donor` in the `kind`
+column, so a ligand O-H donating to a serine and the serine's O-H donating
+back are two rows with their own occupancies rather than one. The `kinds`
+setting still names the rule `hydrogen_bond`, which finds both.
+
+An acceptor is an atom with a lone pair free to take the bond: every oxygen;
+a nitrogen with one or two neighbours, or an amine nitrogen whose neighbours
+are all sp3 carbons; a sulphur with at most two heavy neighbours and no
+hydrogen (Met SD, a disulfide or thiolate Cys SG). An ammonium or other
+four-bonded nitrogen, a charged protein group, the backbone N, Asn ND2,
+Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole
+nitrogens are not acceptors. The halogen bond takes its acceptors from the
+same rule.
 
 Every threshold is a setting, because the published values disagree and the
 disagreement is a real one rather than a rounding difference. PLIP allows a
 hydrogen bond at 4.1 Å and 100°; the literature standard is 3.5 Å and 120°.
+This is not the criterion of the `hbonds` analysis, which is Baker and
+Hubbard's 2.5 Å from the hydrogen to the acceptor, nor of `pl_hbonds`, which is
+Wernet and Nilsson's angle-dependent distance, and the three do not count the
+same bonds: an O-H···O 3.3 Å apart at 180° is a hydrogen bond here and not in
+`pl_hbonds`. Each analysis names its criterion in `options.json`
+(`hydrogen_bond_criterion` here, `criterion` in the other two) and on its axis.
 The stricter values are the default here, because a force field positions its
 hydrogens and a criterion written for structures with inferred hydrogens does
 not need to be as forgiving. PLIP's values remain reachable.
@@ -52,8 +73,24 @@ first of these that works:
 
 1. an SDF you supply with `ligand_chemistry`
 2. the run's own `setup/ligands/<resname>.sdf`, written when setup prepared it
-3. the Chemical Component Dictionary, by residue name
-4. inference from the coordinates with RDKit
+   from the Chemical Component Dictionary
+3. inference from the coordinates with RDKit
+
+A file is used only where its atoms are this ligand's: its graph of elements
+and bonds must match the topology's, and the match decides which file atom is
+which trajectory atom, so a file listing the hydrogens in another order is read
+correctly. Where the topology carries no bonds for the ligand the elements must
+agree atom by atom in order. A file that fails is not used, and the next route
+is tried.
+
+The protein's charges are read the same way, from what the topology says
+rather than from a residue name. OpenMM and PDBFixer name every protonation
+variant by its parent, so a histidine with both HD1 and HE2 is written HIS and
+a neutral lysine LYS. A histidine is a cation only with both HD1 and HE2, an
+aspartate or glutamate an anion only without a hydrogen on its carboxylate,
+a lysine a cation only with HZ1, HZ2 and HZ3, and an arginine a cation unless
+a guanidinium hydrogen is missing. A residue carrying no hydrogens at all
+falls back to its name.
 
 Which route succeeded is recorded in `options.json` and stated in the report,
 because an interaction computed from inferred bond orders is a weaker claim
@@ -61,6 +98,12 @@ than one computed from chemistry that was resolved. A wrong bond order moves a
 hydrogen, and a moved hydrogen invents or destroys a hydrogen bond.
 
 ## Some interactions are refused
+
+**A charged group carries a net charge.** A ligand's group is charged only
+where its atoms' formal charges sum to its sign, so cyanoguanidine (the
+cimetidine core) is not a cation for matching the guanidine pattern. A formal
+charge on one atom bonded to an atom of the opposite charge is a way of
+writing a neutral group, so a nitro group or an N-oxide forms no salt bridge.
 
 **Salt bridges and π-cation interactions are claims about charge.** A ligand's
 charge inferred from coordinates is ambiguous more often than not: for
@@ -92,9 +135,11 @@ So each interaction is reported with:
 
 - **occupancy** — the fraction of frames it was present
 - **episodes** — how many separate times it formed
-- **standard error** — computed from episodes, not frames, because
-  consecutive frames are correlated and using the frame count gives a number
-  several times too small
+- **standard error**: `sqrt(p(1 − p) g / N)` for occupancy `p` over `N`
+  frames, with `g` the statistical inefficiency of the present-or-absent
+  series: consecutive frames are correlated, and using the frame count alone
+  gives a number several times too small. Left empty where the contact formed
+  fewer than twice
 - **well sampled** — whether it rests on enough independent observation to
   average
 

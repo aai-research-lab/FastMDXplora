@@ -489,6 +489,7 @@ class FastMDXplora:
         exclude: list[str] | None = None,
         rerun_windows: list[int] | None = None,
         check: bool = False,
+        keep_previous: bool = False,
     ) -> list[RunResult]:
         """Run the full pipeline, end to end.
 
@@ -515,6 +516,15 @@ class FastMDXplora:
             spring, a longer run). Every other window is kept, and the free
             energy is recombined from the whole set. The earlier runs of the
             windows named are moved to ``superseded/``.
+        force : bool, default False
+            Run phases whose output the folder already holds: that output,
+            and the output of any phase after it this run does not do again
+            (it was written from what is being replaced), is removed first.
+            Without it such a run is refused.
+        keep_previous : bool, default False
+            As ``force``, keeping what is replaced in the study's
+            ``previous/<phase>`` (one copy of each, in place of the one kept
+            before) rather than removing it: ``--rerun``.
         check : bool, default False
             Raise :class:`~fastmdxplora.refusals.StudyFailed` if any run
             failed, rather than returning the failure in the results. The
@@ -540,13 +550,15 @@ class FastMDXplora:
             results = self.explore(
                 include_phase=include_phase, exclude_phase=exclude_phase,
                 options=options, report=report, dry_run=dry_run, force=force,
-                include=include, exclude=exclude, rerun_windows=rerun_windows)
+                include=include, exclude=exclude, rerun_windows=rerun_windows,
+                keep_previous=keep_previous)
             failure = StudyFailed.from_results(results)
             if failure is not None:
                 raise failure
             return results
         include, exclude = _phase_selection(
             include_phase, exclude_phase, include, exclude)
+        force = bool(force or keep_previous)
         # This call's results, and only this call's. `self.results` was set
         # in __init__ and appended to here, so a second explore() on the same
         # object inherited the first one's phase records -- and since the
@@ -565,7 +577,7 @@ class FastMDXplora:
         if self._config_path is not None or self._config_data is not None:
             return self._explore_config(
                 include=include, exclude=exclude, report=report, dry_run=dry_run,
-                force=force, rerun_windows=rerun_windows,
+                force=force, rerun_windows=rerun_windows, keep_previous=keep_previous,
             )
         if rerun_windows:
             raise StudyError(
@@ -606,6 +618,24 @@ class FastMDXplora:
 
         if not dry_run:
             self._refuse_to_overwrite(plan, force=force)
+            if force:
+                # What the plan writes, and what it leaves stale after it,
+                # cleared before the first phase: a phase written over in
+                # place kept the files a run before made and this one did
+                # not (an analysis left out stayed beside the new ones), and
+                # a report from the analyses before stayed beside new ones.
+                from fastmdxplora.replaced import make_way
+                from fastmdxplora.simulation.resume import _still_running
+
+                # Not while a run of the study is going: its phase would be
+                # moved from under it, or the stale ones written again after.
+                if _still_running(Path(self.output_dir)):
+                    raise StudyError(
+                        f"{self.output_dir} is still running. Run its phases "
+                        "again once it has stopped.",
+                        code="environment.workspace.run_going")
+                make_way(self.output_dir, plan, keep=keep_previous,
+                         say=self._presenter.info)
 
         merged_options = self._merge_options(options)
         dashboard_writer = self._dashboard_writer(merged_options, plan)
@@ -711,6 +741,7 @@ class FastMDXplora:
         dry_run: bool = False,
         force: bool = False,
         rerun_windows: list[int] | None = None,
+        keep_previous: bool = False,
     ) -> list[RunResult]:
         """Run a config-driven study through the internal batch machinery.
 
@@ -738,6 +769,7 @@ class FastMDXplora:
             verbose=self._deferred_verbose,
             force=force,
             **({"rerun_windows": rerun_windows} if rerun_windows else {}),
+            **({"keep_previous": True} if keep_previous else {}),
         )
         # explore()-level phase overrides win over the config file.
         if include is not None:
@@ -1155,7 +1187,8 @@ class FastMDXplora:
         raise OutputExistsError(
             f"{self.output_dir} already holds output from "
             f"{', '.join(occupied)}. Choose another --output directory, "
-            f"delete this one, or pass --force-overwrite to overwrite it."
+            f"delete this one, or pass --force-overwrite to overwrite it "
+            f"(--rerun keeps what it replaces in previous/)."
         , code="environment.path.exists")
 
     def _merge_options(

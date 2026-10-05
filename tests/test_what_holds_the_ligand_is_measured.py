@@ -113,7 +113,9 @@ def _ring(centre, normal, radius=0.14, n=6, start=0.0):
 # ---------------------------------------------------------------------------
 
 class TestDonorsAndAcceptors:
-    def test_an_no_s_with_hydrogen_donates_and_all_three_accept(self) -> None:
+    def test_an_no_s_with_hydrogen_donates_and_a_lone_pair_accepts(self) -> None:
+        """The backbone N-H donates and does not accept: its lone pair is in
+        the amide. The hydroxyl O and a sulphur with no hydrogen accept."""
         b = _Builder()
         idx = b.residue("SER", [
             ("N", "N", (0, 0, 0)), ("H", "H", (0.10, 0, 0)),
@@ -125,7 +127,7 @@ class TestDonorsAndAcceptors:
             b.bond(*pair)
         donors, acceptors = donors_and_acceptors(b.topology, idx)
         assert {d for d, _h in donors} == {idx[0], idx[2]}
-        assert set(acceptors) == {idx[0], idx[2], idx[4]}  # S accepts, C does not
+        assert set(acceptors) == {idx[2], idx[4]}  # S accepts, C and amide N do not
 
 
 class TestHydrogenBonds:
@@ -383,9 +385,15 @@ class TestHalogenBonds:
             ("H1", "H", (-0.25, 0.1, 0)), ("H2", "H", (-0.25, -0.1, 0)),
             ("H3", "H", (-0.25, 0, 0.1)),
         ])
-        pro = b.residue("ASN", [
-            ("OD1", "O", (gap_nm * np.cos(theta), gap_nm * np.sin(theta), 0)),
-        ], chain=True)
+        od1 = np.array([gap_nm * np.cos(theta), gap_nm * np.sin(theta), 0.0])
+        # The carbonyl carbon, placed so X...O=C is 120 degrees: inside the
+        # acceptor-side window, so these cases test the donor side alone.
+        back = -od1 / np.linalg.norm(od1)
+        cg = od1 + 0.123 * (np.cos(np.radians(120)) * back
+                            + np.sin(np.radians(120)) * np.array([0, 0, 1.0]))
+        pro = b.residue("ASN", [("OD1", "O", tuple(od1)), ("CG", "C", tuple(cg))],
+                        chain=True)
+        b.bond(pro[0], pro[1])
         return b.trajectory(), _chemistry(smiles), lig, pro
 
     def test_a_straight_close_contact_is_a_halogen_bond(self) -> None:
@@ -398,6 +406,27 @@ class TestHalogenBonds:
         """Same separation; the sigma-hole points elsewhere."""
         traj, chemistry, lig, pro = self._complex(angle_deg=90.0)
         assert halogen_bonds(traj, chemistry, lig, pro) == []
+
+    def test_an_approach_along_the_acceptor_axis_is_not_one(self) -> None:
+        """C-Cl...O=C all in line: the donor side is straight, and the
+        chlorine meets the oxygen from behind its C=O bond rather than at a
+        lone pair. ProLIF's X...A-R window is 80 to 140 degrees."""
+        b = _Builder()
+        lig = b.residue("LIG", [("C1", "C", (-0.18, 0, 0)), ("CL1", "Cl", (0, 0, 0))])
+        b.bond(lig[0], lig[1])
+        pro = b.residue("GLY", [("O", "O", (0.32, 0, 0)), ("C", "C", (0.443, 0, 0))],
+                        chain=True)
+        b.bond(pro[0], pro[1])
+        chemistry = ResolvedChemistry(mol=Chem.MolFromSmiles("CCl"), source="supplied",
+                                      detail="", resname="LIG", n_atoms=2)
+        traj = b.trajectory()
+        assert halogen_bonds(traj, chemistry, lig, pro, periodic=False) == []
+        # Turn the carbonyl to 120 degrees at the oxygen and it is one.
+        bent = traj.xyz.copy()
+        bent[0, pro[1]] = (0.32 + 0.123 * np.cos(np.radians(60)),
+                           0.123 * np.sin(np.radians(60)), 0)
+        traj.xyz = bent
+        assert len(halogen_bonds(traj, chemistry, lig, pro, periodic=False)) == 1
 
     def test_fluorine_does_not_count_unless_asked(self) -> None:
         """Politzer's case: C-F has no sigma-hole worth the name. PLIP counts
@@ -430,21 +459,40 @@ class TestMetalCoordination:
 
 
 class TestWaterBridges:
-    def _complex(self, *, water_at, ligand_gap=None):
+    """PLIP's first-degree water bridge: an acceptor on one side, a donor
+    D-H on the other, both 2.5 to 4.1 A from the water O, the donor's H
+    pointing at the water (theta > 100), and the angle at the water between
+    the acceptor and that H inside 71 to 140 degrees."""
+
+    def _complex(self, *, water_at, hydrogen_towards_water=True, donor=True):
         b = _Builder()
-        lig = b.residue("LIG", [("O1", "O", (0, 0, 0))])
-        pro = b.residue("SER", [("OG", "O", (0.60, 0, 0))], chain=True)
-        hoh = b.residue("HOH", [("O", "O", water_at),
-                                ("H1", "H", (water_at[0] + 0.1, water_at[1], 0)),
-                                ("H2", "H", (water_at[0] - 0.1, water_at[1], 0))],
-                        chain=True)
-        return b.trajectory(), lig, pro, [hoh[0]]
+        lig = b.residue("LIG", [("C1", "C", (-0.12, 0, 0)), ("O1", "O", (0, 0, 0))])
+        b.bond(lig[0], lig[1])
+        og = np.array([0.60, 0.0, 0.0])
+        towards = np.asarray(water_at, float) - og
+        towards /= np.linalg.norm(towards)
+        hg = og + 0.096 * (towards if hydrogen_towards_water else -towards)
+        atoms = [("CB", "C", (0.72, 0.05, 0)), ("OG", "O", tuple(og))]
+        if donor:
+            atoms.append(("HG", "H", tuple(hg)))
+        pro = b.residue("SER", atoms, chain=True)
+        b.bond(pro[0], pro[1])
+        if donor:
+            b.bond(pro[1], pro[2])
+        w = np.asarray(water_at, float)
+        hoh = b.residue("HOH", [("O", "O", tuple(w)),
+                                ("H1", "H", tuple(w + (0, 0, 0.096))),
+                                ("H2", "H", tuple(w + (0, 0.09, -0.03)))], chain=True)
+        b.bond(hoh[0], hoh[1]); b.bond(hoh[0], hoh[2])
+        return b.trajectory(), lig, pro, hoh
 
     def test_a_water_between_both_sides_bridges(self) -> None:
-        """Off the line, so the angle at the water sits inside 71-140."""
+        """Off the line, so omega at the water sits inside 71-140."""
         traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0))
         found = water_bridges(traj, lig, pro, water)
         assert len(found) == 1 and found[0].kind == "water_bridge"
+        assert (found[0].ligand_atom, found[0].protein_atom) == (lig[1], pro[1])
+        assert 71.0 < found[0].angle_deg < 140.0
 
     def test_a_water_in_line_is_between_not_bridging(self) -> None:
         """The lower angle bound is the point of the criterion: a water on
@@ -456,6 +504,49 @@ class TestWaterBridges:
         traj, lig, pro, water = self._complex(water_at=(0.02, 0.25, 0.0))
         assert water_bridges(traj, lig, pro, water) == []
 
+    def test_a_donor_whose_hydrogen_points_away_does_not_bridge(self) -> None:
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0),
+                                              hydrogen_towards_water=False)
+        assert water_bridges(traj, lig, pro, water) == []
+
+    def test_two_acceptors_are_not_a_bridge(self) -> None:
+        """A carbonyl on each side and no donor: PLIP pairs an acceptor with
+        a donor, and two lone pairs facing one water are not that."""
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0),
+                                              donor=False)
+        assert water_bridges(traj, lig, pro, water) == []
+
+    def test_only_the_waters_near_the_ligand_are_measured(self, monkeypatch) -> None:
+        """A box of water far from the ligand changes nothing and costs
+        nothing: the distances taken are those of the waters within reach,
+        not of every water against every polar atom (3.77 million pairs a
+        frame on a solvated 1BHL)."""
+        import fastmdxplora.analysis.interactions as rules
+
+        traj, lig, pro, water = self._complex(water_at=(0.30, 0.22, 0.0))
+        far = np.array([[2.0 + 0.3 * i, 2.0 + 0.3 * j, 2.0]
+                        for i in range(20) for j in range(20)])
+        top = traj.topology.copy()
+        chain = top.add_chain()
+        for _ in far:
+            residue = top.add_residue("HOH", chain)
+            top.add_atom("O", md.element.oxygen, residue)
+        xyz = np.concatenate([traj.xyz[0], far])[None]
+        big = md.Trajectory(xyz, top)
+        waters = list(water) + list(range(traj.n_atoms, big.n_atoms))
+
+        largest = []
+        real = rules._distances
+
+        def counted(t, pairs, periodic):
+            largest.append(len(pairs))
+            return real(t, pairs, periodic)
+
+        monkeypatch.setattr(rules, "_distances", counted)
+        found = water_bridges(big, lig, pro, waters)
+        assert len(found) == 1
+        assert max(largest) < len(far)
+
 
 class TestResiduesNotCovered:
     def test_a_modified_residue_is_named_rather_than_guessed_at(self) -> None:
@@ -464,3 +555,32 @@ class TestResiduesNotCovered:
         idx += b.residue("ALA", [("CA", "C", (1, 0, 0))])
         left_out = residues_not_covered(b.topology, idx)
         assert "MSE" in left_out and "ALA" not in left_out
+
+
+class TestTheDirectionOfAHydrogenBond:
+    def test_each_direction_is_its_own_interaction(self) -> None:
+        """Frame 0: the ligand O1-H1 donates to a serine OG. Frame 1: the
+        serine OG-HG donates to O1 and the ligand's hydrogen has turned
+        away. One kind for both made these one row present in both frames,
+        a bond held throughout where its direction had reversed."""
+        from fastmdxplora.analysis.interaction_summary import occupancies
+
+        b = _Builder()
+        lig = b.residue("LIG", [("C1", "C", (-0.14, 0, 0)), ("O1", "O", (0, 0, 0)),
+                                ("H1", "H", (0.097, 0, 0))])
+        b.bond(lig[0], lig[1]); b.bond(lig[1], lig[2])
+        ser = b.residue("SER", [("CB", "C", (0.42, 0, 0)), ("OG", "O", (0.28, 0, 0)),
+                                ("HG", "H", (0.38, 0.05, 0))], chain=True)
+        b.bond(ser[0], ser[1]); b.bond(ser[1], ser[2])
+        first = np.array(b._xyz, dtype=float)
+        second = first.copy()
+        second[lig[2]] = (-0.03, 0.093, 0)
+        second[ser[2]] = (0.183, 0, 0)
+        traj = md.Trajectory(np.stack([first, second]), b.topology)
+
+        found = hydrogen_bonds(traj, lig, ser, periodic=False)
+        assert {(c.frame, c.kind) for c in found} == {
+            (0, "hydrogen_bond_ligand_donor"), (1, "hydrogen_bond_protein_donor")}
+        table = occupancies(found, 2)
+        assert sorted((o.kind, o.fraction) for o in table) == [
+            ("hydrogen_bond_ligand_donor", 0.5), ("hydrogen_bond_protein_donor", 0.5)]

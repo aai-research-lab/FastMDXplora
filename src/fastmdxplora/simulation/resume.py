@@ -1279,6 +1279,12 @@ def resume_study(study: str | Path, *,
         whole["include_phase"] = ["analysis", "report"]
         whole.pop("exclude_phase", None)
         analysis = dict(whole.get("analysis") or {})
+        # Its own frames where the study is now, not at the path the record
+        # gave them when it ran: a study moved since would analyse whatever
+        # sits at its old place.
+        from fastmdxplora.config.recorded import leave_the_study_s_own_files
+
+        leave_the_study_s_own_files(analysis, config.get("output"), root)
         simulation_dir = root / "simulation"
         analysis.setdefault("trajectory", str(simulation_dir / "production.dcd"))
         topology = simulation_dir / "trajectory_topology.pdb"

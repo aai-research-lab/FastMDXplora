@@ -87,7 +87,7 @@ class TestWhatItSays:
         assert rmsd["version"] == rmsd["this_version"] == __version__
         assert rmsd["packages"]["mdtraj"] == md.__version__
         assert rmsd["frames"] == 30 and rmsd["stride"] == 2
-        assert rmsd["selection"] == "name CA"
+        assert rmsd["selection"] == "protein and name CA"
         assert rmsd["made"] and rmsd["command"].startswith("fastmdx explore ")
 
     def test_the_command_is_one_the_command_line_takes(self, study):
@@ -98,7 +98,7 @@ class TestWhatItSays:
         config = _build_explore_config(_build_parser().parse_args(shlex.split(command)[1:]))
         analysis = config["analysis"]
         assert analysis["include"] == ["rmsd"] and analysis["stride"] == 2
-        assert analysis["options"]["rmsd"]["selection"] == "name CA"
+        assert analysis["options"]["rmsd"]["selection"] == "protein and name CA"
         # Into a folder of its own, beside the study, never over it.
         assert Path(config["output"]) == study.parent / "study_rmsd_again"
 
