@@ -22,7 +22,7 @@ pytest.importorskip("playwright.sync_api")
 from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa: E402
 
 STUDY_NAV = ["overview", "viewer", "analysis", "report", "files"]
-NEW_NAV = ["agent", "run"]
+NEW_NAV = ["run", "agent"]
 
 
 def _status(root: Path, status: str) -> None:
@@ -81,18 +81,22 @@ def _open(browser, session, where="#overview", width=1440, height=900, stored=No
 
 class TestTheNavigation:
 
-    def test_the_study_then_the_ways_to_start_one(self, browser, studies) -> None:
+    def test_the_ways_to_begin_then_the_studies_then_the_one_open(self, browser, studies) -> None:
+        """New study and the Agent first, kept at the top;
+        then Recent, All studies, the active study and its pages. The Agent
+        was under New study, though it answers about the open study too."""
         page = _open(browser, studies["finished"])
-        order = page.evaluate(
-            "() => [...document.querySelectorAll('.sidebar-nav .nav-link')]"
-            ".map(a => a.dataset.viewLink)")
-        headings = page.evaluate(
-            "() => [...document.querySelectorAll('.sidebar-nav .nav-heading')]"
-            ".map(h => h.textContent)")
+        said = page.evaluate("""() => ({
+            order: [...document.querySelectorAll('.sidebar .nav-link')].map(a => a.dataset.viewLink),
+            headings: [...document.querySelectorAll('.sidebar .nav-heading')]
+                .map(h => h.textContent.trim()),
+            top: getComputedStyle(document.querySelector('.sidebar-top')).position,
+            begin: [...document.querySelectorAll('.sidebar-top .nav-link')].map(a => a.dataset.viewLink),
+        })""")
         page.context.close()
-        # Every study first, then the one on screen, then the ways to start one.
-        assert order == ["studies"] + STUDY_NAV + NEW_NAV
-        assert headings == ["This study", "New study"]
+        assert said == {"order": NEW_NAV + ["studies"] + STUDY_NAV,
+                        "headings": ["Recent", "Active study"],
+                        "top": "sticky", "begin": NEW_NAV}
 
     def test_every_entry_is_in_a_short_window(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], height=720)

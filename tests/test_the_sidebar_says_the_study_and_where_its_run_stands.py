@@ -50,9 +50,10 @@ def test_the_icons_are_written_into_the_page():
     page = with_icons(_load_template())
     assert "<!--icon:" not in page
     sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
-    for name in ("studies", "overview", "viewer", "analysis", "report", "files", "agent",
-                 "config"):
+    for name in ("new", "agent", "studies", "overview", "viewer", "analysis",
+                 "report", "files"):
         assert icon(name) in sidebar, name
+    assert icon("recent", "nav-icon recent-icon") in sidebar
     assert with_icons("<!--icon:gear:x y-->") == icon("gear", "x y")
     assert set(ICONS) >= {"chevron", "pause", "play", "refresh", "gear"}
 

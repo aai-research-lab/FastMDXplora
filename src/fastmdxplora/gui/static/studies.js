@@ -521,8 +521,14 @@
     }
   }
 
-  function askTheWorkspace() {
+  /* Asked once and kept, unless `fresh`: the sidebar's Recent asks again
+   * when another study is opened, and a while after it last asked, so a
+   * study's state and a study begun since are said. */
+  var askedAt = 0;
+  function askTheWorkspace(fresh) {
+    if (fresh) asked = null;
     if (asked) return asked;
+    askedAt = Date.now();
     asked = fetch("/api/studies")
       .then(function (r) { return r.json(); })
       .then(function (data) { counted(data); return workspace; })
@@ -562,9 +568,70 @@
     });
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
-  else attach();
-  setTimeout(askTheWorkspace, 1500);
+  /* The sidebar's Recent: the workspace's newest studies, the open one
+   * marked, each opened with a click. Folded or not as last left. */
+  var SHOWN_RECENT = 6;
 
-  window.FastMDXStudies = { load: load, narrowTo: narrowTo, offerRecent: offerRecent };
+  function showRecent(fresh) {
+    var list = el("sidebar-recent-list");
+    if (!list) return;
+    askTheWorkspace(fresh).then(function (data) {
+      // Not drawn again under somebody's keyboard.
+      if (list.contains(document.activeElement)) return;
+      var open = ((el("sidebar-output-folder") || {}).textContent || "").trim();
+      var recent = (data && data.studies || []).slice(0, SHOWN_RECENT);
+      if (!recent.length) {
+        list.replaceChildren(make("div", "sidebar-recent-empty",
+          data ? "No studies in this workspace yet." : "The studies could not be listed."));
+        return;
+      }
+      list.replaceChildren.apply(list, recent.map(function (study) {
+        var here = sameFolder(study.path, open);
+        var item = make("button", "sidebar-recent-item");
+        item.type = "button";
+        item.title = study.path + (study.state ? " (" + study.state + ")" : "");
+        item.dataset.path = study.path;
+        if (here) item.setAttribute("aria-current", "true");
+        item.append(make("span", "sidebar-recent-name", study.system || study.name),
+          make("span", "sidebar-recent-state", study.state || ""));
+        item.addEventListener("click", function () {
+          if (!here) openStudy(study.path, item);
+          else if (window.FastMDXDashboard) window.FastMDXDashboard.navigate("overview");
+        });
+        return item;
+      }));
+    });
+  }
+
+  function keepRecentFolded() {
+    var fold = el("sidebar-recent");
+    if (!fold) return;
+    try { if (localStorage.getItem("fmx.recentOpen") === "0") fold.open = false; } catch (e) {}
+    fold.addEventListener("toggle", function () {
+      try { localStorage.setItem("fmx.recentOpen", fold.open ? "1" : "0"); } catch (e) {}
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", attach);
+    document.addEventListener("DOMContentLoaded", keepRecentFolded);
+  } else {
+    attach();
+    keepRecentFolded();
+  }
+  setTimeout(showRecent, 1500);
+  // Again once the open study is known, or another is opened.
+  var recentFor = null;
+  var RECENT_AGAIN_MS = 30000;
+  window.addEventListener("dashboard:app-state", function () {
+    var open = ((el("sidebar-output-folder") || {}).textContent || "").trim();
+    var stale = Date.now() - askedAt > RECENT_AGAIN_MS;
+    if (open === recentFor && !stale) return;
+    var moved = open !== recentFor;
+    recentFor = open;
+    showRecent(moved || stale);
+  });
+
+  window.FastMDXStudies = { load: load, narrowTo: narrowTo, offerRecent: offerRecent,
+                            showRecent: showRecent };
 }());

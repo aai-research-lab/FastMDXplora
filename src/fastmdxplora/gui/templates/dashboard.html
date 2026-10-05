@@ -248,26 +248,62 @@
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
   </div>
   <div class="app-shell">
+    <!-- Over the folded sidebar's strip, its mark: pointed at, the sidebar
+         shows over the page; clicked, it stays. First, so it is the strip's
+         first stop for the keyboard as it is for the eye. -->
+    <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar"><!--__FASTMDX_STRIP_MARK__--><span class="sidebar-expand-chevron" aria-hidden="true">&#10095;</span></button>
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
-      <!-- The product's name, and the button that folds the sidebar away at
-           its end, as the side panel's folds it. A service's own line, where
-           it gives one, sits under its name. -->
-      <div class="sidebar-brand">
-        <div class="brand-text">
-          <div class="brand-product">__FASTMDX_PRODUCT__</div>
-          <div class="brand-tagline">__FASTMDX_BRAND_LINE__</div>
+      <!-- At the top and kept there as the rest scrolls: the product's name
+           and the button that folds the sidebar to a strip of icons, then
+           the two ways to begin, a new study and the Agent. The Agent was
+           under New study, but it answers about the open study, fixes,
+           runs again and compares as well. A service's own line, where it
+           gives one, sits under its name. -->
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <div class="brand-text">
+            <div class="brand-product">__FASTMDX_PRODUCT__</div>
+            <div class="brand-tagline">__FASTMDX_BRAND_LINE__</div>
+          </div>
+          <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
         </div>
-        <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
+        <nav class="sidebar-nav sidebar-start" aria-label="Begin">
+          <a href="#run" class="nav-link nav-start" data-view-link="run" title="New study">
+            <!--icon:new:nav-icon-->
+            <span>New study</span>
+          </a>
+          <a href="#agent" class="nav-link nav-start" data-view-link="agent" title="Agent">
+            <!--icon:agent:nav-icon-->
+            <span>Agent</span>
+          </a>
+        </nav>
       </div>
 
-      <!-- The study on screen as one card: its name and one line of where it
-           stands. A press opens the studies to switch to (the newest of the
-           workspace, All studies, another folder) and its folder. -->
+      <!-- The newest studies of the workspace, one click from each; folded
+           and kept so (studies.js). -->
+      <details class="sidebar-recent" id="sidebar-recent" open>
+        <summary class="nav-heading sidebar-recent-head" title="Recent studies">
+          <!--icon:recent:nav-icon recent-icon--><span>Recent</span><!--icon:chevron:recent-chevron-->
+        </summary>
+        <div class="sidebar-recent-list" id="sidebar-recent-list"></div>
+      </details>
+
+      <nav class="sidebar-nav sidebar-workspace" aria-label="Workspace">
+        <a href="#studies" class="nav-link" data-view-link="studies" title="All studies">
+          <!--icon:studies:nav-icon-->
+          <span>All studies</span><span class="nav-count mono" id="nav-studies-count"></span>
+        </a>
+      </nav>
+
+      <!-- The study on screen: its system large, where it stands, and its
+           folder, shortened in the middle to fit and copied on a click.
+           The card opens the studies to switch to and the study's own
+           settings. Then its pages. -->
       <div class="sidebar-study">
+        <div class="nav-heading" id="nav-heading-study">Active study</div>
         <button type="button" class="sidebar-study-card" id="study-card" aria-haspopup="true" aria-expanded="false" aria-controls="study-menu" title="Switch study">
           <span class="study-card-body">
-            <span class="study-kicker">Study</span>
             <span class="study-name" id="topbar-run-title">No active study</span>
             <span class="study-status" role="status" aria-live="polite">
               <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
@@ -278,6 +314,9 @@
             </span>
           </span>
           <!--icon:chevron:study-card-chevron-->
+        </button>
+        <button type="button" class="study-folder mono" id="study-folder" hidden title="Copy the folder's path">
+          <span class="study-folder-name" id="study-folder-name"></span>
         </button>
         <span class="mono" id="topbar-run-id" hidden>workspace</span>
         <span id="sidebar-status-dot" hidden></span>
@@ -291,7 +330,9 @@
           <input type="hidden" id="load-study-path">
           <div class="study-menu-divider"></div>
           <div class="study-menu-label">This study</div>
-          <div class="study-path mono" id="sidebar-output-folder" title="Output folder">&mdash;</div>
+          <!-- Its whole path, for the copy beside the card: shown there
+               shortened, not here. -->
+          <div class="study-path mono" id="sidebar-output-folder" title="Output folder" hidden>&mdash;</div>
           <button class="study-menu-item" type="button" role="menuitem" id="open-output" title="Open the output folder, and copy its path">Open the folder</button>
           <button class="study-menu-item" type="button" role="menuitem" data-study-field="name" aria-haspopup="dialog">Rename for display&hellip;</button>
           <button class="study-menu-item" type="button" role="menuitem" data-study-field="ligand" aria-haspopup="dialog">Ligand residue&hellip;</button>
@@ -322,41 +363,26 @@
         </div>
       </div>
 
-      <!-- The study's pages, then the two ways to start another. -->
-      <nav class="sidebar-nav" role="navigation" aria-label="Dashboard sections">
-        <a href="#studies" class="nav-link" data-view-link="studies">
-          <!--icon:studies:nav-icon-->
-          <span>All studies</span><span class="nav-count mono" id="nav-studies-count"></span>
-        </a>
-        <div class="nav-heading" id="nav-heading-study">This study</div>
-        <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true">
+      <nav class="sidebar-nav sidebar-pages" role="navigation" aria-label="This study's pages">
+        <a href="#" class="nav-link" data-view-link="overview" data-requires-run="true" title="Overview">
           <!--icon:overview:nav-icon-->
           <span>Overview</span>
         </a>
-        <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true">
+        <a href="#" class="nav-link" data-view-link="viewer" data-requires-run="true" title="Viewer">
           <!--icon:viewer:nav-icon-->
           <span>Viewer</span>
         </a>
-        <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true">
+        <a href="#" class="nav-link" data-view-link="analysis" data-requires-run="true" title="Analysis">
           <!--icon:analysis:nav-icon-->
           <span>Analysis</span>
         </a>
-        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true">
+        <a href="#" class="nav-link" data-view-link="report" data-requires-run="true" title="Report">
           <!--icon:report:nav-icon-->
           <span>Report</span>
         </a>
-        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true">
+        <a href="#" class="nav-link" data-view-link="files" data-requires-run="true" title="Files">
           <!--icon:files:nav-icon-->
           <span>Files</span>
-        </a>
-        <div class="nav-heading">New study</div>
-        <a href="#agent" class="nav-link" data-view-link="agent">
-          <!--icon:agent:nav-icon-->
-          <span>Agent</span>
-        </a>
-        <a href="#run" class="nav-link" data-view-link="run">
-          <!--icon:config:nav-icon-->
-          <span>Config</span>
         </a>
       </nav>
 
@@ -1663,7 +1689,6 @@
       </div>
     </aside>
     <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
-    <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar">&#10095;</button>
   </div>
 
   <!-- Live region for screen readers -->

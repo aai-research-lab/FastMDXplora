@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The sidebar begins with New study and the Agent, and folds to a strip
+
+**New study and the Agent come first, at the top, and stay there** as the
+rest of the sidebar scrolls; then **Recent**, the workspace's newest
+studies with the open one marked (folded, it stays folded); **All
+studies**; the **active study**, its system large, where it stands, and
+its folder by name, shortened in the middle to fit and copied on a click;
+and its pages. The Agent was under New study, though it also answers
+about the open study, fixes it, runs it again and compares it. The study
+menu no longer prints the folder's whole path, wrapped. **Folded, the
+sidebar is a strip of its icons under the lab's mark**, rather than
+nothing and a tab at the window's edge: the icons are used as they are,
+and pointing at the mark shows the whole sidebar over the page. On a phone
+the bar across the top carries the study, New study, the Agent and All
+studies, with the pages under it.
+
 ### The Log says what happened, and folds each explanation behind its line
 
 **Each stage's explanation and its citation are folded behind the line

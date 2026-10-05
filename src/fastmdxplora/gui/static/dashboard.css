@@ -5000,6 +5000,150 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 
 /* ===========================================================================
+   The sidebar as a study is begun and found from it, top to bottom: New
+   study and the Agent, kept at the top as the rest scrolls; Recent, folded
+   or not; All studies; the active study, its system large, where it
+   stands and its folder; its pages. Folded, it is a strip of icons under
+   the lab's mark, rather than nothing and a tab.
+   =========================================================================== */
+:root { --strip-width: 56px; }
+.sidebar-top {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--background-secondary);
+}
+.sidebar .sidebar-top .sidebar-brand { position: static; margin: 0; }
+@media (min-width: 801px) {
+    .sidebar .sidebar-top { margin: 0 -10px; padding: 0 10px 6px; }
+    .sidebar .sidebar-top .sidebar-brand { padding-left: 6px; padding-right: 6px; }
+}
+.sidebar .sidebar-start { padding: 0; }
+.sidebar-start .nav-link { font-weight: 500; color: var(--text-primary); }
+.sidebar-start .nav-link .nav-icon { color: var(--text-secondary); }
+
+.sidebar-recent > summary {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    margin: 12px 8px 4px; font-weight: 500; letter-spacing: .08em;
+}
+.sidebar-recent > summary::-webkit-details-marker { display: none; }
+.sidebar-recent > summary:hover { color: var(--text-secondary); }
+.sidebar-recent > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
+.sidebar-recent .recent-icon { display: none; }
+.sidebar-recent .recent-chevron {
+    width: 12px; height: 12px; transform: rotate(-90deg);
+    transition: transform var(--duration-fast) var(--ease);
+}
+.sidebar-recent[open] .recent-chevron { transform: none; }
+.sidebar-recent-list { display: flex; flex-direction: column; gap: 1px; }
+.sidebar-recent-item {
+    display: flex; align-items: baseline; gap: 8px; width: 100%;
+    padding: 5px 8px; border: none; border-radius: 7px; background: transparent;
+    font: inherit; font-size: var(--text-sm); color: var(--text-secondary);
+    text-align: left; cursor: pointer;
+}
+.sidebar-recent-item:hover, .sidebar-recent-item:focus-visible {
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary);
+}
+.sidebar-recent-item[aria-current="true"] { color: var(--text-primary); font-weight: 600; }
+.sidebar-recent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-recent-state { flex: none; font-size: var(--text-2xs); color: var(--text-muted); font-weight: 400; }
+.sidebar-recent-empty { padding: 4px 8px; font-size: var(--text-xs); color: var(--text-muted); }
+.sidebar .sidebar-workspace { padding: 6px 0 0; }
+
+.sidebar-study > .nav-heading { margin: 12px 8px 6px; font-weight: 500; letter-spacing: .08em; }
+.sidebar-study-card .study-name {
+    margin-top: 0; font-size: var(--text-lg); font-weight: 650; letter-spacing: -0.01em;
+}
+.study-folder {
+    display: block; width: 100%; margin: 3px 0 0; padding: 2px 10px;
+    border: none; border-radius: 6px; background: transparent;
+    font-size: var(--text-2xs); color: var(--text-muted); text-align: left; cursor: copy;
+}
+.study-folder:hover { color: var(--text-secondary); }
+.study-folder:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.study-folder-name { display: block; overflow: hidden; white-space: nowrap; }
+.sidebar .sidebar-pages { padding-top: 4px; }
+
+/* The mark over the strip, the lab's, where the edge's tab was. */
+.strip-mark { width: 26px; height: 26px; border-radius: 6px; display: block; }
+.sidebar-expand-chevron { display: none; }
+@media (min-width: 801px) {
+    body.sidebar-collapsed .app-shell {
+        grid-template-columns: var(--strip-width) 0 minmax(0, 1fr) var(--handle-width) var(--panel-width);
+    }
+    body.sidebar-collapsed.panel-collapsed .app-shell {
+        grid-template-columns: var(--strip-width) 0 minmax(0, 1fr) 0 0;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar {
+        visibility: visible; width: var(--strip-width); min-width: 0;
+        padding: 0 8px; border-right: 1px solid var(--border-subtle);
+        overflow-x: hidden;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar :is(.brand-text, .sidebar-collapse,
+        .sidebar-recent, .sidebar-study, .sidebar-progress, .nav-count,
+        .nav-link > span, .sidebar-account-text, .sidebar-account-gear) {
+        display: none;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-top { margin: 0 -8px; padding: 0 8px 6px; }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .nav-link {
+        justify-content: center; padding: 8px 0; gap: 0;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-pages {
+        margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-foot { margin: auto -8px 0; padding: 0 8px 8px; }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-account { justify-content: center; padding: 6px 0; }
+    .sidebar-expand {
+        top: 0; left: 0; transform: none;
+        width: var(--strip-width); height: var(--top-bar-height);
+        align-items: center; justify-content: center;
+        padding: 0; border: none; border-radius: 0; background: transparent;
+    }
+    .sidebar-expand:hover .strip-mark, .sidebar-expand:focus-visible .strip-mark {
+        box-shadow: 0 0 0 2px var(--accent-cyan);
+    }
+    /* Shown over the page, the mark stays where it is, as the button that
+       keeps the sidebar, a chevron: moved to the sidebar's edge, a click
+       where the mark had been landed on the product's name. The name moves
+       over for it. */
+    body.sidebar-collapsed.sidebar-peek .sidebar-expand { left: 0; z-index: 61; }
+    body.sidebar-peek .sidebar-expand .strip-mark { display: none; }
+    body.sidebar-peek .sidebar-expand-chevron {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 28px; height: 28px; border-radius: 6px;
+        border: 1px solid var(--border-primary); background: var(--background-elevated);
+        color: var(--text-secondary);
+    }
+    body.sidebar-peek .sidebar .sidebar-top .sidebar-brand { padding-left: calc(var(--strip-width) - 4px); }
+}
+
+/* On a phone the sidebar is the bar across the top: the name, the study,
+   New study, the Agent and All studies as icons, and the settings on one
+   line; the study's pages under it. Recent and the folder are left to a
+   wider screen. */
+@media (max-width: 800px) {
+    .sidebar .sidebar-top { display: contents; }
+    .sidebar-recent, .sidebar-study > .nav-heading, .study-folder { display: none !important; }
+    .sidebar .sidebar-brand { order: 1; }
+    .sidebar .sidebar-study { order: 2; }
+    .sidebar .sidebar-nav.sidebar-start, .sidebar .sidebar-nav.sidebar-workspace {
+        order: 3; flex: none; width: auto; padding: 0; gap: 0; overflow: visible;
+    }
+    .sidebar .sidebar-foot { order: 4; }
+    .sidebar .sidebar-nav.sidebar-pages { order: 10; }
+    .sidebar .sidebar-start .nav-link, .sidebar .sidebar-workspace .nav-link {
+        padding: 8px; border-bottom: none; border-radius: 7px;
+    }
+    .sidebar .sidebar-start .nav-link > span, .sidebar .sidebar-workspace .nav-link > span { display: none; }
+    .sidebar .sidebar-start .nav-icon, .sidebar .sidebar-workspace .nav-icon { display: block; }
+    .sidebar-study-card .study-name { font-size: var(--text-md); }
+    .sidebar .sidebar-study-card { padding: 2px 4px; border: none; background: transparent; }
+    .sidebar .sidebar-brand .brand-product { font-size: var(--text-lg); }
+    .sidebar .sidebar-account-gear { display: none; }
+    .sidebar .sidebar-foot .sidebar-account { padding: 4px; }
+}
+
+/* ===========================================================================
    Printed. The shell is the viewport, each column its own scroll container
    and the body unscrolled, so a page printed came out as one sheet: the
    sidebar, the first screen of the page and the Log, the rest cut off.

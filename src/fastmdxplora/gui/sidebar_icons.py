@@ -33,6 +33,8 @@ ICONS: dict[str, str] = {
     "config": ('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/>'
                '<circle cx="10" cy="17" r="2"/>'),
     "chevron": '<path d="M8 10l4 4 4-4"/>',
+    "new": '<path d="M12 5v14M5 12h14"/>',
+    "recent": '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
     "pause": '<path d="M9 6v12M15 6v12"/>',
     "play": '<path d="M8 5.5v13l10.5-6.5z"/>',
     "refresh": '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',

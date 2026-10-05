@@ -53,7 +53,7 @@ class TestTheGuiDocsMatchTheFrame:
         import fastmdxplora.gui as gui
 
         page = (Path(gui.__file__).parent / "templates" / "dashboard.html").read_text(encoding="utf-8")
-        for tab in ("Agent", "Config", "Overview", "Viewer", "Analysis", "Report", "Files"):
+        for tab in ("Agent", "New study", "Overview", "Viewer", "Analysis", "Report", "Files"):
             assert f"<span>{tab}</span>" in page, tab
             assert f"| **{tab}** |" in GUI, f"gui.md has no row for the {tab} tab"
         assert "| **Builder** |" not in GUI

@@ -190,6 +190,11 @@
       if (!state.paused) schedulePoll(0);
     });
     byId("refresh-now")?.addEventListener("click", () => schedulePoll(0));
+    byId("study-folder")?.addEventListener("click", copyTheFolder);
+    // Fitted again as the sidebar is dragged wider or narrower.
+    if (window.ResizeObserver && byId("study-folder")) {
+      new ResizeObserver(() => fitTheFolderName()).observe(byId("study-folder"));
+    }
     byId("open-output")?.addEventListener("click", async () => {
       try {
         const payload = await fetchJSON("/api/open-output");
@@ -498,10 +503,20 @@
    * open: with none, the runtime's root is a name never created. */
   function showTheStudyFolder() {
     setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
+    // Its folder under the card, by name, shortened in the middle to fit.
+    const folder = byId("study-folder");
+    if (folder) {
+      folder.hidden = !state.outputDir;
+      const name = String(state.outputDir || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+      folder.dataset.name = name;
+      folder.title = state.outputDir ? `${state.outputDir}\nClick to copy the path` : "";
+      fitTheFolderName();
+    }
     ["sidebar-output-folder", "open-output"].forEach((id) => {
       const node = byId(id);
       if (!node) return;
-      node.hidden = !state.outputDir;
+      // The whole path is copied from beside the card, not printed here.
+      node.hidden = id === "sidebar-output-folder" || !state.outputDir;
       // Its label, and the rule above that.
       const label = id === "sidebar-output-folder" ? node.previousElementSibling : null;
       if (label) label.hidden = !state.outputDir;
@@ -510,6 +525,37 @@
     });
     // The study's own words (preferences.js) are a study's, so none either.
     $$("#study-menu [data-study-field]").forEach((item) => { item.hidden = !state.outputDir; });
+  }
+
+  /* The folder's name in the width there is, with its middle given up
+   * first: fastmdxplora_output_20260919_021313 and its siblings differ at
+   * their ends. */
+  function fitTheFolderName() {
+    const folder = byId("study-folder");
+    const shown = byId("study-folder-name");
+    if (!folder || !shown || folder.hidden) return;
+    const name = folder.dataset.name || "";
+    const room = shown.getBoundingClientRect().width || folder.clientWidth - 16;
+    shown.textContent = name;
+    if (!(room > 0) || shown.scrollWidth <= room + 0.5) return;
+    let keep = name.length;
+    while (keep > 4) {
+      keep -= 1;
+      const head = Math.ceil(keep / 2);
+      shown.textContent = `${name.slice(0, head)}\u2026${name.slice(name.length - (keep - head))}`;
+      if (shown.scrollWidth <= room + 0.5) break;
+    }
+  }
+
+  /* Copied however the browser allows: the clipboard is offered only on
+   * a secure page, and a GUI served to another machine over http is not.
+   * Said either way. */
+  async function copyTheFolder() {
+    const shown = byId("study-folder-name");
+    if (!state.outputDir || !shown) return;
+    const copied = await copyText(state.outputDir);
+    shown.textContent = copied ? "Path copied" : "Could not copy; the path is in the tooltip";
+    setTimeout(fitTheFolderName, copied ? 1400 : 2600);
   }
 
   function resetRunDependentState() {

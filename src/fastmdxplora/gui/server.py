@@ -454,6 +454,8 @@ def make_handler(
             else f"/static/{LAB_LOGO}")
     html = html.replace("<!--__FASTMDX_LAB_ICON__-->",
                         f'<link rel="icon" href="{_escape(logo)}">')
+    html = html.replace("<!--__FASTMDX_STRIP_MARK__-->",
+                        f'<img class="strip-mark" src="{_escape(logo)}" alt="">')
     logo_mark = f'<img class="sidebar-account-logo" src="{_escape(logo)}" alt="">'
     logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
     html = html.replace("<!--__FASTMDX_LAB_MARK__-->", logo_spot)

@@ -183,12 +183,25 @@
     var enter = function () {
       if (document.body.classList.contains(cls)) peek(which, true);
     };
+    /* The column keeps a column shown, but does not show it: the folded
+     * sidebar is a strip of icons to be used as it is, and pointing at one
+     * opened the whole sidebar over the page. */
+    var stay = function () {
+      if (document.body.classList.contains(which + "-peek")) clearTimeout(peekTimers[which]);
+    };
     var leave = function () {
       clearTimeout(peekTimers[which]);
       peekTimers[which] = setTimeout(function () { peek(which, false); }, 250);
     };
+    /* Shown by the pointer moved onto the button, not by the button
+     * appearing under a pointer at rest: the folded sidebar's mark is in
+     * the window's corner, where a pointer often is as the Viewer opens,
+     * and the sidebar came over the page by itself. */
+    button.addEventListener("mousemove", function (e) {
+      if (e.movementX || e.movementY) enter();
+    });
+    column.addEventListener("mouseenter", stay);
     [button, column].forEach(function (node) {
-      node.addEventListener("mouseenter", enter);
       node.addEventListener("mouseleave", leave);
     });
   }

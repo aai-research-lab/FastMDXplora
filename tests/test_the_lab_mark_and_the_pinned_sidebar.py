@@ -130,12 +130,14 @@ def _what_shows_at_the_ends(page) -> list[str]:
       side.scrollTop = 140;
       const box = side.getBoundingClientRect(), found = [];
       // Along the top and bottom of each pinned end, however tall it is.
-      const brand = side.querySelector('.sidebar-brand').getBoundingClientRect();
+      // The GUI pins its name with New study and the Agent under it.
+      const brand = (side.querySelector('.sidebar-top') || side.querySelector('.sidebar-brand'))
+        .getBoundingClientRect();
       const foot = side.querySelector('.sidebar-foot').getBoundingClientRect();
       for (const y of [box.top + 3, brand.bottom - 4, box.bottom - 4, foot.top + 4])
         for (const x of [box.left + 3, box.left + box.width / 2, box.right - 4]) {
           const at = document.elementFromPoint(x, y);
-          found.push(!at ? 'nothing' : at.closest('.sidebar-brand') ? 'brand'
+          found.push(!at ? 'nothing' : at.closest('.sidebar-top, .sidebar-brand') ? 'brand'
                      : at.closest('.sidebar-foot') ? 'foot' : at.className || at.tagName);
         }
       return found; }""")
