@@ -484,8 +484,8 @@ class TestDashboard:
         # their own section now, rather than being pooled because they hold
         # a single figure apiece.
         assert text.count('class="analysis-grid"') == 3
-        for section in ("Solvent Accessible Surface Area", "Secondary Structure",
-                        "Dimensionality Reduction"):
+        for section in ("Solvent accessible surface area", "Secondary structure",
+                        "Dimensionality reduction"):
             assert section in text
         # Each analysis anchors its own section, whatever its figure count.
         assert 'id="solvent-accessible-surface-area"' in text
@@ -623,7 +623,7 @@ class TestDashboard:
             assert label in text
         assert "Core Metrics" not in text
         assert "SASA" in text
-        assert "Dimensionality Reduction" in text
+        assert "Dimensionality reduction" in text
         assert "Clustering" in text
 
 

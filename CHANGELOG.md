@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Each analysis is named in sentence case
+
+**The Analysis page, its index and the standalone dashboard
+name each analysis in sentence case** ("Radius of gyration", "Hydrogen
+bonds", "Solvent accessible surface area"), as the Overview and the rest of
+the page name things; the acronyms keep their capitals. Each section's
+anchor, made from its name in lower case, is the one it was, so a link to
+a section still opens it.
+
 ### The Report page prints the report, all of it
 
 **Printed from the browser, the Report page is the report alone, at its

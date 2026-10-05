@@ -46,8 +46,8 @@ def test_two_analyses_once_left_out_are_two_sections(tmp_path: Path) -> None:
     named = [(section.title, section.theme) for section in sections]
     assert named == [
         ("RMSD", "Structure and stability"),
-        ("End-to-end Distance", "Structure and stability"),
-        ("Radial Distribution Function", "Contacts and solvent"),
+        ("End-to-end distance", "Structure and stability"),
+        ("Radial distribution function", "Contacts and solvent"),
     ]
 
 

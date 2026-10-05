@@ -113,7 +113,7 @@ class TestWhatTheTableSays:
     def test_every_quantity_recorded_is_listed_by_its_name(self, study) -> None:
         quantities = _rows(study)["sasa"]["quantities"]
         assert [(q["key"], q["label"]) for q in quantities] == [
-            ("mean", "Solvent Accessible Surface Area"), ("hydrophobic_sasa", "Hydrophobic SASA")]
+            ("mean", "Solvent accessible surface area"), ("hydrophobic_sasa", "Hydrophobic SASA")]
         assert quantities[1]["unit"] == "nm²"
 
     def test_the_run_s_ensemble_is_read_from_its_own_record(self, study) -> None:

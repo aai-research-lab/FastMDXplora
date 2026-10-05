@@ -35,57 +35,57 @@ logger = get_logger("gui.report_dashboard")
 # left out: twelve of thirty, end-to-end distance beside lipid order.
 ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("The run's ensemble", (
-        ("thermodynamics", "Energy, Temperature and Density"),
+        ("thermodynamics", "Energy, temperature and density"),
     )),
     ("Structure and stability", (
         ("rmsd", "RMSD"),
-        ("rg", "Radius of Gyration"),
-        ("end_to_end", "End-to-end Distance"),
-        ("moments_of_inertia", "Moments of Inertia and Shape"),
+        ("rg", "Radius of gyration"),
+        ("end_to_end", "End-to-end distance"),
+        ("moments_of_inertia", "Moments of inertia and shape"),
         ("qvalue", "Q-value"),
     )),
     ("Flexibility", (
         ("rmsf", "RMSF"),
         ("bfactor_comparison", "Comparison with B-factors"),
-        ("order_parameters", "Backbone Order Parameters"),
+        ("order_parameters", "Backbone order parameters"),
     )),
     ("Secondary structure and backbone", (
-        ("ss", "Secondary Structure"),
+        ("ss", "Secondary structure"),
         ("dihedrals", "Dihedrals"),
     )),
     ("Contacts and solvent", (
-        ("hbonds", "Hydrogen Bonds"),
-        ("pair_distance", "Pair Distance"),
-        ("sasa", "Solvent Accessible Surface Area"),
-        ("rdf", "Radial Distribution Function"),
-        ("coordination_number", "Coordination Number"),
-        ("water_sites", "Water Sites"),
+        ("hbonds", "Hydrogen bonds"),
+        ("pair_distance", "Pair distance"),
+        ("sasa", "Solvent accessible surface area"),
+        ("rdf", "Radial distribution function"),
+        ("coordination_number", "Coordination number"),
+        ("water_sites", "Water sites"),
     )),
     ("Conformations", (
         ("cluster", "Clustering"),
-        ("dimred", "Dimensionality Reduction"),
+        ("dimred", "Dimensionality reduction"),
     )),
     ("The ligand", (
-        ("ligand_rmsd", "Ligand Pose RMSD"),
+        ("ligand_rmsd", "Ligand pose RMSD"),
         ("ligand_rmsf", "Ligand RMSF"),
-        ("pl_contacts", "Protein-Ligand Contacts"),
-        ("pl_hbonds", "Protein-Ligand Hydrogen Bonds"),
-        ("pl_interactions", "Protein-Ligand Interactions"),
+        ("pl_contacts", "Protein-ligand contacts"),
+        ("pl_hbonds", "Protein-ligand hydrogen bonds"),
+        ("pl_interactions", "Protein-ligand interactions"),
     )),
     ("The bilayer", (
-        ("area_per_lipid", "Area per Lipid"),
-        ("bilayer_thickness", "Bilayer Thickness"),
-        ("lipid_order", "Lipid Chain Order"),
+        ("area_per_lipid", "Area per lipid"),
+        ("bilayer_thickness", "Bilayer thickness"),
+        ("lipid_order", "Lipid chain order"),
     )),
     ("Free energy", (
-        ("pmf", "Potential of Mean Force"),
-        ("metad_surface", "Free-energy Surface"),
-        ("steered_work", "Steered Work"),
+        ("pmf", "Potential of mean force"),
+        ("metad_surface", "Free-energy surface"),
+        ("steered_work", "Steered work"),
     )),
 )
 
 #: Sections the report adds beside the analyses' own.
-_REPORT_SECTIONS: tuple[str, ...] = ("Region Highlights", "Apo/Holo Comparison", "Other")
+_REPORT_SECTIONS: tuple[str, ...] = ("Region highlights", "Apo/holo comparison", "Other")
 
 SECTION_ORDER: tuple[str, ...] = tuple(
     title for _, members in ANALYSIS_THEMES for _, title in members
@@ -100,8 +100,8 @@ ANALYSIS_SECTION_BY_FOLDER: dict[str, str] = {
     folder: title for _, members in ANALYSIS_THEMES for folder, title in members
 }
 # Studies analysed before the contacts analysis was named pl_contacts.
-ANALYSIS_SECTION_BY_FOLDER["contacts"] = "Protein-Ligand Contacts"
-ANALYSIS_SECTION_BY_FOLDER["apo_holo"] = "Apo/Holo Comparison"
+ANALYSIS_SECTION_BY_FOLDER["contacts"] = "Protein-ligand contacts"
+ANALYSIS_SECTION_BY_FOLDER["apo_holo"] = "Apo/holo comparison"
 
 #: The theme each section belongs to, for the page's index.
 SECTION_THEME: dict[str, str] = {
@@ -1049,9 +1049,9 @@ def _analysis_sections(
         seen_sources.add(rel)
         title = _figure_title_from_path(source)
         section = (
-            "Region Highlights"
+            "Region highlights"
             if "region" in source.stem.lower()
-            else "Apo/Holo Comparison"
+            else "Apo/holo comparison"
             if "apo" in source.stem.lower() or "holo" in source.stem.lower()
             else "Other"
         )
@@ -1185,7 +1185,7 @@ def _figure_title_from_path(path: Path) -> str:
         "hierarchical_dendrogram": "Hierarchical dendrogram",
         "region_highlight_summary": "Region highlights",
         "structure_region_highlights": "Structure region highlights",
-        "apo_holo_comparison": "Apo/Holo comparison",
+        "apo_holo_comparison": "Apo/holo comparison",
         "qvalue": "Fraction of native contacts",
         "dihedrals": "Dihedrals",
     }

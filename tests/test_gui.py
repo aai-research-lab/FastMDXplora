@@ -1451,7 +1451,7 @@ def test_results_payload_carries_categorised_sections(tmp_path: Path) -> None:
 
     titles = {section["title"] for section in sections}
     # Each analysis keeps its own heading rather than being pooled.
-    assert {"RMSD", "Clustering", "Dimensionality Reduction"} <= titles
+    assert {"RMSD", "Clustering", "Dimensionality reduction"} <= titles
 
     panels = [panel for section in sections for panel in section["panels"]]
     assert any(panel["title"] == "RMSD" for panel in panels)
@@ -1588,7 +1588,7 @@ def test_each_analysis_gets_its_own_section(tmp_path: Path) -> None:
     sections = {s["title"]: s for s in _results_payload(run)["analysis_sections"]}
 
     # A one-figure analysis keeps its own heading.
-    assert "Solvent Accessible Surface Area" in sections
+    assert "Solvent accessible surface area" in sections
     assert "RMSD" in sections
     assert "Clustering" in sections
     assert "Additional Analysis" not in sections
@@ -1599,7 +1599,7 @@ def test_each_analysis_gets_its_own_section(tmp_path: Path) -> None:
     assert len(sections["Clustering"]["panels"]) == 3
 
     # Anchors are derived from the title, so new analyses need no extra entry.
-    assert sections["Solvent Accessible Surface Area"]["anchor"] == (
+    assert sections["Solvent accessible surface area"]["anchor"] == (
         "solvent-accessible-surface-area"
     )
 
