@@ -64,6 +64,19 @@
       a.setAttribute("download", "");
       downloads.appendChild(a);
     });
+    /* Without a PDF (no WeasyPrint where the report was written), the
+     * browser prints the document, and saves it as a PDF from its dialog:
+     * the print stylesheet gives it alone, in black on white. */
+    if (!data.downloads || !data.downloads.pdf) {
+      var print = document.createElement("button");
+      print.type = "button";
+      print.className = "primary-btn";
+      print.id = "report-print";
+      print.textContent = "Print or save as PDF";
+      print.title = "Print the report, or choose Save as PDF in the print dialog";
+      print.addEventListener("click", function () { window.print(); });
+      downloads.insertBefore(print, downloads.firstChild);
+    }
 
     notices.innerHTML = "";
     var rows = data.not_produced || [];

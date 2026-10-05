@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Report page prints the report, all of it
+
+**Printed from the browser, the Report page is the report alone, at its
+full length, in black on white**, whatever the theme: no sidebar, Log,
+buttons or notices, and no section split from its heading or figure. A
+page printed came out as one sheet, the sidebar beside the first screen of
+the report, then blank sheets, since each column of the window scrolls on
+its own. Where the report phase wrote no PDF (no WeasyPrint), the page
+offers **Print or save as PDF**, which opens the browser's print dialog,
+where the report can be saved as a PDF.
+
 ### The Overview's table says each mean with its error, as the Analysis page does
 
 **The Overview's table of the study's main means reads the record the

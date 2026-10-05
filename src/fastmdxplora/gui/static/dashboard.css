@@ -5007,3 +5007,63 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     body.sidebar-collapsed.sidebar-peek .sidebar-expand { left: var(--sidebar-width); z-index: 61; }
     body.panel-collapsed.panel-peek .side-expand { right: var(--panel-width); z-index: 61; }
 }
+
+/* ===========================================================================
+   Printed. The shell is the viewport, each column its own scroll container
+   and the body unscrolled, so a page printed came out as one sheet: the
+   sidebar, the first screen of the page and the Log, the rest cut off.
+   Printed, the page is the open page alone, at its full length, in black on
+   white whatever the theme: the Report page's document, or any other page
+   as it stands. Saved as a PDF from the print dialog, it is the report for
+   a study whose report phase had no WeasyPrint to write one.
+   =========================================================================== */
+@media print {
+    @page { margin: 16mm 14mm; }
+    /* On :root as well as the body: the status tokens are declared on
+       :root from the accents, and resolve there. */
+    :root, :root body, :root body[data-theme] {
+        color-scheme: light;
+        --background-primary: #ffffff;
+        --background-secondary: #ffffff;
+        --background-elevated: #ffffff;
+        --background-soft: #f4f4f2;
+        --border-subtle: rgba(0, 0, 0, 0.12);
+        --border-primary: rgba(0, 0, 0, 0.2);
+        --text-primary: #000000;
+        --text-secondary: #1a1a1a;
+        --text-muted: #4a4a48;
+        --border-strong: rgba(0, 0, 0, 0.3);
+        --panel-glass: #ffffff;
+        --panel-hover: #ffffff;
+        --accent-white: #000000;
+        --accent-silver: #3a3a38;
+        --accent-cyan: #1f7c98;
+        --accent-blue: #1f5fa8;
+        --accent-violet: #6541c8;
+        --accent-green: #1b7a45;
+        --accent-orange: #a65300;
+        --accent-red: #c0262d;
+        --status-live: var(--accent-cyan);
+        --status-waiting: var(--accent-orange);
+        --status-error: var(--accent-red);
+        --status-completed: var(--accent-green);
+        --status-stale: var(--text-muted);
+    }
+    html, body { height: auto; overflow: visible; background: #ffffff; }
+    .app-shell { display: block; height: auto; min-height: 0; background: none; }
+    .main { height: auto; overflow: visible; }
+    .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
+    .agent-dialog, .page-header-actions, .report-notices, .report-write-ask,
+    .report-figure-made, .figure-provenance {
+        display: none !important;
+    }
+    .page-shell { padding: 0; max-width: none; }
+    .card { background: none; border: 0; box-shadow: none; }
+    /* The report's own title says what the page's does. */
+    .page[data-page="report"] .page-header { display: none; }
+    .report-document { padding: 0; max-width: none; font-size: var(--text-md); line-height: 1.5; }
+    .report-document a { color: inherit; text-decoration: underline; }
+    .report-document img, .report-document table, .report-document pre,
+    .report-document figure, .report-document blockquote { break-inside: avoid; }
+    .report-document h1, .report-document h2, .report-document h3 { break-after: avoid; }
+}
