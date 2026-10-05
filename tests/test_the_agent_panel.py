@@ -1702,17 +1702,16 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
 
         import importlib
 
-        # By the module itself: `fastmdxplora.cli.main` also names the
-        # function re-exported from the package, and a dotted patch target
-        # resolves to that on some Pythons.
-        cli_module = importlib.import_module("fastmdxplora.cli.main")
+        # The class `explore` runs a study with, from the package, patched by
+        # the module object: a dotted target resolves to the wrong one on
+        # some Pythons.
         staged = []
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fastmdxplora.agent.run_in_stages",
                            side_effect=lambda config, output, *, budget_hours: staged.append(
                                (config.get("budget_hours"), budget_hours, Path(output)))
                            or SimpleNamespace(notes=[], refusal=None, setup_done=True)), \
-                mock.patch.object(cli_module, "FastMDXplora",
+                mock.patch.object(importlib.import_module("fastmdxplora"), "FastMDXplora",
                                   side_effect=AssertionError("ran without the staged runner")):
             # From a config file, where a whole number of hours is an int:
             # the staged runner is handed hours as a number of hours, 2.0.

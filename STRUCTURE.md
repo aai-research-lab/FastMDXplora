@@ -18,6 +18,7 @@ FastMDXplora/
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
+│       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
 │       ├── advisories.py          # What is worth knowing before a run starts, not after
@@ -199,6 +200,7 @@ FastMDXplora/
 │       │   ├── describe.py        # The config language, described for an AI model
 │       │   ├── languages.py       # One study as a config file, a command and a script
 │       │   ├── diff.py            # What differs between two studies' settings
+│       │   ├── recorded.py        # A study's recorded settings, as the base for its phases run again
 │       │   ├── phase_settings.py, phase_settings_types.py  # Each phase's settings, from the schema
 │       │   └── agent_modes.py     # Which phases a model wrote, and which were checked
 │       ├── validation/            # Checks of the software against independent references

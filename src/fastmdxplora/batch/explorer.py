@@ -670,6 +670,7 @@ def _execute_run(
     quiet: bool = True,
     force: bool = False,
     resume: bool = False,
+    keep_previous: bool = False,
 ) -> "RunResult":
     """Run one study and return a RunResult. Safe to call in a subprocess.
 
@@ -822,7 +823,7 @@ def _execute_run(
             # RunResult; take its phases and re-stamp the run's identity.
             inner = fmdx.explore(
                 include_phase=include, exclude_phase=exclude, report=True,
-                force=force,
+                force=force, **({"keep_previous": True} if keep_previous else {}),
             )
         phases = inner[0].phases if inner else []
         status = "error" if any(p.status == "error" for p in phases) else "ok"
@@ -882,6 +883,42 @@ def _not_submitted(after: str, *, umbrella: bool) -> str:
 # A constant rather than a literal on both sides: a reworded message would
 # otherwise stop being recognised with nothing failing anywhere.
 ALREADY_HOLD_RESULTS = "These output directories already hold results:"
+
+
+def campaign_of(run: Path) -> Path | None:
+    """The study of several runs ``run`` is one of, or None."""
+    run = Path(run)
+    if run.parent.name == "runs" and (run.parent.parent / "batch_manifest.json").is_file():
+        return run.parent.parent
+    return None
+
+
+def compare_the_runs_again(campaign: Path) -> Path | None:
+    """A study of several runs' table of members and comparison, built
+    again from its runs' analyses as they are now, marked as the study
+    marks them. Best-effort, as after a campaign: the runs' own results
+    stand whether or not these are built."""
+    import yaml
+
+    explorer = BatchExplorer.__new__(BatchExplorer)
+    explorer.output_dir = Path(campaign)
+    try:
+        explorer._raw = yaml.safe_load(
+            (explorer.output_dir / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        explorer._raw = {}
+    explorer._maybe_aggregate_members()
+    try:
+        from fastmdxplora.batch.compare import build_comparison_report
+
+        with explorer._marking_for_comparison():
+            path = build_comparison_report(explorer.output_dir)
+    except Exception as exc:  # noqa: BLE001 -- never break the run
+        logger.warning("Comparison report failed (runs are unaffected): %s", exc)
+        return None
+    if path is not None:
+        print(f"Comparison:     {path / 'comparison_report.md'}")
+    return path
 
 
 def _say_if_the_replicas_will_not_share_water(run_specs) -> None:
@@ -1045,6 +1082,7 @@ class BatchExplorer:
         force: bool = False,
         resume: bool = False,
         rerun_windows: "list[int] | None" = None,
+        keep_previous: bool = False,
     ) -> None:
         if config is None and config_data is None:
             raise StudyError("BatchExplorer requires `config` (path) or `config_data` (dict).", code="config.option.missing_companion")
@@ -1057,7 +1095,10 @@ class BatchExplorer:
             raw = load_config_file(self.config_path)
         validate_config(raw, require_systems=True)
         self._raw = raw
-        self.force = bool(force)
+        # `--rerun` is `--force-overwrite` keeping what it replaces in each
+        # run's previous/ (`fastmdxplora.replaced`).
+        self.keep_previous = bool(keep_previous)
+        self.force = bool(force or keep_previous)
         # Carrying on a study that stopped: each run that started is resumed
         # from where it got to, and each that never started is run.
         self.resume = bool(resume)
@@ -1070,7 +1111,7 @@ class BatchExplorer:
         if self.rerun_windows and self.force:
             raise StudyError(
                 "--rerun-window keeps every window it does not name, and "
-                "--force-overwrite runs them all again. Choose one.",
+                "--force-overwrite or --rerun runs them all again. Choose one.",
                 code="config.option.conflicting")
 
         # Execution settings
@@ -1175,7 +1216,8 @@ class BatchExplorer:
                 f"{ALREADY_HOLD_RESULTS}\n  "
                 f"{listed}\n"
                 "Choose another output directory, delete these, or pass "
-                "--force-overwrite to overwrite them."
+                "--force-overwrite to overwrite them (--rerun keeps what it "
+                "replaces in previous/)."
             , code="environment.path.exists")
 
     def _make_way_for_the_windows_named(self) -> None:
@@ -1250,6 +1292,10 @@ class BatchExplorer:
             shutil.move(str(where), str(moved))
             print(f"Window {index} will run again; its earlier run is in "
                   f"{moved.relative_to(self.output_dir)}")
+
+    def _keeping(self) -> dict[str, bool]:
+        """``keep_previous`` for `_execute_run`, passed only when asked for."""
+        return {"keep_previous": True} if self.keep_previous else {}
 
     def _resuming(self) -> dict[str, bool]:
         """``resume`` for `_execute_run`, passed only when resuming, so a run
@@ -1388,6 +1434,16 @@ class BatchExplorer:
 
         if stopping is not None:
             self._run_until_known(stopping)
+
+        # One run of a study of several analysed again: the study's
+        # comparison of its runs read this run's analyses before.
+        campaign = campaign_of(self.output_dir) if self.is_single else None
+        if (campaign is not None and self.results and self.results[0].status == "ok"
+                and (not include or "analysis" in include)
+                and "analysis" not in (exclude or [])):
+            print(f"\nThe comparison of {campaign.name}'s runs, built again from "
+                  f"{self.output_dir.name}'s new analyses:")
+            compare_the_runs_again(campaign)
 
         # Only write a batch manifest when there's actually a batch.
         if not self.is_single:
@@ -2509,7 +2565,7 @@ class BatchExplorer:
             result = _execute_run(
                 spec.to_dict(), str(run_out), include, exclude,
                 self.verbose, device, quiet=not self.is_single,
-                force=self.force, **self._resuming(),
+                force=self.force, **self._resuming(), **self._keeping(),
             )
             results.append(result)
             if _was_stopped(result):
@@ -2569,6 +2625,7 @@ class BatchExplorer:
                 _execute_run,
                 spec.to_dict(), str(run_out), include, exclude,
                 self.verbose, device, force=self.force, **self._resuming(),
+                **self._keeping(),
             )
             futures[fut] = (next_index, spec)
             held[fut] = device

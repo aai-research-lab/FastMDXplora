@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from fastmdxplora.cli.main import main
 
 
@@ -32,14 +30,13 @@ def test_explore_shows_the_key_it_wants(tmp_path, capsys) -> None:
 
 
 def test_a_phase_command_shows_it_too(tmp_path, capsys) -> None:
+    # A phase command is explore with one phase, and says what explore says.
     config = _config(tmp_path, "system: 1afo.pdb\n")
-    with pytest.raises(SystemExit) as stopped:
-        main(["setup", "-c", str(config), "--output", str(tmp_path / "run")])
-    assert "    - system: 1afo.pdb" in str(stopped.value)
+    assert main(["setup", "-c", str(config), "--output", str(tmp_path / "run")]) == 2
+    assert "    - system: 1afo.pdb" in capsys.readouterr().err
 
 
-def test_a_config_with_neither_says_so(tmp_path) -> None:
+def test_a_config_with_neither_says_so(tmp_path, capsys) -> None:
     config = _config(tmp_path, "setup:\n  membrane: DMPC\n")
-    with pytest.raises(SystemExit) as stopped:
-        main(["setup", "-c", str(config), "--output", str(tmp_path / "run")])
-    assert "has no `systems:` list" in str(stopped.value)
+    assert main(["setup", "-c", str(config), "--output", str(tmp_path / "run")]) == 2
+    assert "has no `systems:` list" in capsys.readouterr().err

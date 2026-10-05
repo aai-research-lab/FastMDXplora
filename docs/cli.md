@@ -91,6 +91,17 @@ with its phase prefix.
 
 These five are on `explore` and on each of the four phase commands.
 
+Each phase command is `explore` with one phase: `fastmdx analyze` is
+`fastmdx explore --include-phase analysis`, its flags those of `explore`
+without the `--analyze-` prefix, run through the same code, by the same
+rules. Given an `--output` folder that holds a study and no system or
+Config, it runs on that study, from the settings the study recorded in its
+`resolved_config.yml` (a title, region highlights, which analyses and their
+options), the flags given laid over them. A setting left unset when the
+study ran was recorded with its default then. The study's own trajectory and
+structure are found where the study is now, not at the paths it recorded,
+so a study moved or extended since runs on its own frames.
+
 | Flag | What it does |
 |---|---|
 | `-s`, `-system`, `--system` | A `.pdb`/`.cif` path, or a 4-character PDB ID. The form is detected — there is no separate flag for an identifier |
@@ -121,14 +132,39 @@ Giving both `--include` and `--exclude` exits **2** with a message.
 | Flag | What it does |
 |---|---|
 | `--dry-run` | Validate everything, print the plan, run nothing. Creates no output directory |
-| `--force-overwrite`, `--force` | Run into an output directory that already holds results |
+| `--force-overwrite`, `--force` | Run phases whose output the folder already holds, removing that output first |
+| `--rerun` | As `--force-overwrite`, keeping what it replaces in the study's `previous/<phase>` |
 | `--rerun-window N [N ...]` | Umbrella studies: run these windows again in place, keep the rest, recombine |
 | `--rerun-force-constant K` | With `--rerun-window`: hold those windows at K (kJ/mol per unit of the variable squared); the others keep theirs |
 
-Without `--force`, a second run into an occupied directory is refused. The
-check looks only at the phases *this* run will produce, so running `analyze`
-into a directory that already holds a finished `simulation/` is the intended
-workflow and needs no flag.
+Without `--force-overwrite` or `--rerun`, a run is refused where the folder
+already holds output of a phase it would write. The check looks only at the
+phases *this* run will produce, so running `analyze` into a directory that
+already holds a finished `simulation/` is the intended workflow and needs no
+flag; into a new folder, nothing is needed either. These two flags are on
+the four phase commands too.
+
+With either, what the run writes is cleared first, and so is the output of
+any phase after it that this run does not do again, since it was written
+from what is being replaced: `fastmdx analyze --rerun` sets the report aside
+too, and says the command that writes it again. `--force-overwrite` removes
+them; `--rerun` keeps them in `previous/<phase>` (`previous/analysis`,
+`previous/report`), one copy of each, in place of what was kept there
+before, with the phase's record from the Manifest beside it. `previous/` is
+left out of the report's bundle. A study of several runs is run again run
+by run, and the comparison of its runs built again; so is that comparison
+when one run of it is analysed again on its own (`--output study/runs/a`).
+Neither is done while a run of the study is going.
+
+```bash
+fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
+fastmdx report --output runs/study --rerun
+fastmdx explore --output runs/study --include-phase analysis report --rerun
+```
+
+Setup or simulation run again this way sets aside everything after them; to
+keep a study and try another preparation or a longer run, start a new study
+from it with `simulation.setup_from` or `simulation.resume_from`.
 
 ### Scheduling
 
@@ -315,11 +351,12 @@ Anything else goes under `analysis.options` in a Config.
 --no-methods --no-reproducibility
 ```
 
-`report` does not need `--system`: it recovers it from the run's
-[Manifest](manifest.md).
+On a study, `report` needs no `--system`: it reads the study's record.
+Writing a report over one the study has needs `--force-overwrite` or
+`--rerun`.
 
 ```bash
-fastmdx report --output runs/study --no-slides --no-bundle
+fastmdx report --output runs/study --rerun --no-slides --no-bundle
 ```
 
 ---
@@ -708,8 +745,11 @@ fastmdx explore --config study.yml --exclude setup \
 fastmdx analyze --trajectory production.xtc --topology system.pdb \
   --output runs/analysis --analyses rmsd rmsf rg
 
-# Re-write the report over a finished run
-fastmdx report --output runs/study --no-slides --no-bundle
+# Re-write the report over a finished run, keeping the one before
+fastmdx report --output runs/study --rerun --no-slides --no-bundle
+
+# Add an analysis to a finished study; its report is set aside to write again
+fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
 
 # Watch a run in the browser while it happens
 fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete

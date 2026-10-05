@@ -7,6 +7,30 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A phase command is explore with one phase
+
+**`fastmdx setup`, `simulate`, `analyze` and `report` are `fastmdx explore
+--include-phase` with that one phase**, through the same code: what one
+does, the other does. Given an `--output` that holds a study and no system
+or config, a phase command runs on that study from the settings it recorded
+(`resolved_config.yml`), with the options given laid over them; a study
+moved since keeps reading its own frames. An outside trajectory and
+topology need no system.
+
+**A phase whose output is already in the folder runs again only when
+asked.** `--force-overwrite` removes what it wrote before; `--rerun` keeps
+it in the study's `previous/<phase>`, one copy of each phase, with its
+manifest record. Either way, the phases after it that read it (a report
+written from the analyses before, analyses of frames a simulation run
+again no longer has) are set aside the same way and named, with the
+command that writes them again, and their records leave the manifest until
+they do. A campaign is run again run by run and its comparison rebuilt,
+as it is when one of its runs is analysed again on its own. Neither is
+done while a run of the study is going. A study that stops before any
+phase runs now says why.
+From Python, `explore(..., keep_previous=True)`. A report bundle leaves
+`previous/` out.
+
 ### Tags and a note on a study
 
 **A study can carry tags and a note of the person's own** ("wild type",
