@@ -211,9 +211,9 @@
       '<th scope="row" class="analysis-results-name">' + label + "</th>" +
       '<td class="analysis-results-value mono">' + escapeHTML(quantity.said) +
         (quantity.reweighted ? ' <span class="analysis-results-note">reweighted</span>' : "") + "</td>" +
-      '<td class="analysis-results-frames mono">' + escapeHTML(frames) +
+      '<td class="analysis-results-frames mono" data-label="Frames averaged">' + escapeHTML(frames) +
         (from ? '<span class="analysis-results-from">' + escapeHTML(from) + "</span>" : "") + "</td>" +
-      '<td class="analysis-results-samples mono">' +
+      '<td class="analysis-results-samples mono" data-label="Independent samples">' +
         escapeHTML(quantity.samples === 0 ? "< 1" : count(quantity.samples)) + "</td>" +
       statusCell(status.key, status.said, quantity.why) + "</tr>";
   }

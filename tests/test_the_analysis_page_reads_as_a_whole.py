@@ -383,3 +383,45 @@ class TestThePage:
         assert lines[0].startswith("Analysis,Quantity,Mean,Standard error,Unit")
         assert lines[1].startswith("RMSD,Mean,")
         assert len(lines) == 3
+
+
+def test_on_a_phone_the_page_does_not_scroll_sideways(dashboard) -> None:
+    """At 390 pixels the table's five columns and the heading's buttons ran
+    past the screen's edge, and the whole page scrolled sideways. The table
+    is a list of rows there, each with what the columns said."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        opened = browser.new_page(viewport={"width": 390, "height": 844})
+        opened.goto(dashboard.url + "#analysis", wait_until="domcontentloaded")
+        opened.wait_for_selector("#analysis-results:not([hidden])", timeout=60000)
+        opened.wait_for_timeout(500)
+        facts = opened.evaluate("""() => {
+            const rmsd = document.querySelector('#analysis-results-table tr[data-analysis="rmsd"]');
+            const status = rmsd.querySelector('.analysis-results-status').getBoundingClientRect();
+            const page = document.querySelector('.page[data-page="analysis"]');
+            const heading = [...page.querySelectorAll('.page-header button, .page-header a')]
+                .map(b => Math.round(b.getBoundingClientRect().right));
+            return {wider: document.scrollingElement.scrollWidth - innerWidth,
+                    statusRight: Math.round(status.right),
+                    headingRight: Math.max(0, ...heading),
+                    width: innerWidth};
+        }""")
+        # A row's reason opened: the mean keeps its width, the reason goes
+        # under it (beside it, the paragraph took the row and left the mean
+        # 0 px).
+        opened.locator("#analysis-results-table details.analysis-results-why summary").first.click()
+        why = opened.evaluate("""() => {
+            const open = document.querySelector('#analysis-results-table details[open]');
+            const row = open.closest('tr');
+            return {value: Math.round(row.querySelector('.analysis-results-value')
+                                         .getBoundingClientRect().width),
+                    reason: Math.round(open.getBoundingClientRect().width),
+                    wider: document.scrollingElement.scrollWidth - innerWidth};
+        }""")
+        browser.close()
+    assert why["value"] >= 100 and why["reason"] >= 250 and why["wider"] <= 0, why
+    assert facts["wider"] <= 0, facts
+    assert facts["statusRight"] <= facts["width"], facts
+    assert facts["headingRight"] <= facts["width"], facts

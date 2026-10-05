@@ -250,6 +250,34 @@ class TestAPhone:
         assert facts["panel"] == 0
         assert facts["nav"] == len(["studies"] + STUDY_NAV + NEW_NAV)
 
+    @pytest.mark.parametrize("where", STUDY_NAV + NEW_NAV + ["studies"])
+    def test_every_page_keeps_the_navigation_and_the_screen(self, browser, studies, where) -> None:
+        """The Viewer folds the sidebar (1303), which on a phone is the bar
+        of navigation across the top: it went, and left an empty band 200
+        pixels high above the Viewer's heading. And the Analysis page's
+        table of what was determined pushed the page sideways."""
+        page = _open(browser, studies["finished"], width=390, height=844)
+        page.evaluate(f"() => window.FastMDXDashboard.navigate('{where}')")
+        page.wait_for_timeout(1500)
+        facts = page.evaluate(f"""() => {{
+            const title = document.querySelector('.page[data-page="{where}"] .page-title');
+            const r = title.getBoundingClientRect();
+            const bar = document.querySelector('.sidebar').getBoundingClientRect();
+            return {{
+                title: Math.round(r.top),
+                bar: getComputedStyle(document.querySelector('.sidebar')).visibility,
+                barBottom: Math.round(bar.bottom),
+                wider: document.scrollingElement.scrollWidth - innerWidth,
+                nav: [...document.querySelectorAll('.sidebar-nav .nav-link')]
+                    .filter(a => a.offsetWidth > 0 && getComputedStyle(a).visibility === 'visible').length,
+            }};
+        }}""")
+        page.context.close()
+        assert facts["bar"] == "visible" and facts["nav"] == len(["studies"] + STUDY_NAV + NEW_NAV), facts
+        # The heading follows the bar, with nothing empty between.
+        assert facts["title"] - facts["barBottom"] < 40, facts
+        assert facts["wider"] <= 0, facts
+
     def test_the_navigation_goes_where_it_says(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], width=390, height=844)
         page.locator('.sidebar-nav .nav-link[data-view-link="analysis"]').click()

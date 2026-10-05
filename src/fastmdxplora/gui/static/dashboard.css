@@ -4438,7 +4438,76 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .page-header { flex-wrap: wrap; gap: 8px; }
     .page-header > div:first-child > :not(.page-title) { display: none; }
     .page-header > .page-header-actions { width: auto; max-width: none; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
+    /* The actions take the line's room and wrap within it: sized to their
+       content, "Download all 16 SVG figures" and "Analyze again" ran past
+       the screen and the page scrolled sideways. */
+    .page-header > .page-header-actions { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+    .page-header > .page-header-actions > .muted { max-width: 100%; }
     .viewer-canvas-frame { height: auto; min-height: 0; }
+    /* The Viewer folds the sidebar (body.sidebar-collapsed), which here is
+       the bar of navigation across the top: the fold's own rule, more
+       specific than this block's, hid it and left an empty band where it
+       stood. Here it stays. */
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar,
+    body.sidebar-collapsed .sidebar {
+        visibility: visible;
+        width: auto;
+        min-width: 0;
+        overflow: visible;
+        padding: 10px 16px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+}
+
+/* What the analyses determined, on a phone: a list of rows, each with
+   what the columns said, rather than five columns that ran past the
+   screen's edge with the status out of sight. */
+@media (max-width: 600px) {
+    .analysis-results { padding: 14px 14px; }
+    .analysis-results-head { flex-wrap: wrap; }
+    .analysis-results-scroll { overflow-x: visible; }
+    .analysis-results-table thead {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+    .analysis-results-table,
+    .analysis-results-table tbody { display: block; width: 100%; }
+    .analysis-results-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 10px;
+        row-gap: 2px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .analysis-results-table tr.analysis-results-group { border-bottom: none; padding-bottom: 0; }
+    .analysis-results-table th,
+    .analysis-results-table td { display: block; padding: 0; border-bottom: none; }
+    .analysis-results-table tr > th.analysis-results-name { grid-column: 1 / -1; }
+    .analysis-results-table tr.is-quantity > th.analysis-results-name { padding-left: 12px; }
+    .analysis-results-table tr > .analysis-results-value { grid-column: 1; white-space: normal; }
+    .analysis-results-table tr > td:last-child { grid-column: 2; grid-row: 2; justify-self: end; }
+    .analysis-results-table tr > .analysis-results-other { grid-column: 1; }
+    .analysis-results-table tr > .analysis-results-frames,
+    .analysis-results-table tr > .analysis-results-samples {
+        grid-column: 1 / -1; white-space: normal; font-size: var(--text-2xs);
+    }
+    .analysis-results-table tr > .analysis-results-frames::before,
+    .analysis-results-table tr > .analysis-results-samples::before {
+        content: attr(data-label) " ";
+        font-family: var(--font-stack);
+        color: var(--text-muted);
+    }
+    .analysis-results-from { display: inline; margin-left: 4px; }
+    .analysis-results-table tr.analysis-results-theme-row { display: block; padding: 10px 0 2px; border-bottom: none; }
+    /* The status beside the mean, and, opened for its reason, on a line of
+       its own under it: beside it, the reason's paragraph took the row's
+       width and left the mean none. */
+    .analysis-results-table tr > td:last-child { max-width: 50vw; }
+    .analysis-results-table tr > td:last-child:has(details[open]) {
+        grid-column: 1 / -1; grid-row: auto; justify-self: stretch; max-width: none;
+    }
+    .analysis-results-why p { max-width: none; }
 }
 
 /* ===========================================================================

@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A phone keeps its navigation on the Viewer, and the Analysis table fits
+
+**Fixed:** on a phone, opening the Viewer took away the bar of pages across
+the top and left an empty band about 200 pixels high: the Viewer folds the
+sidebar, which on a phone is that bar. It stays now. And the Analysis
+page's table of what was determined ran past the screen's edge, its status
+out of sight, with the heading's buttons pushing the page sideways: below
+600 pixels each analysis is a row of its own, with what the columns said,
+and the buttons wrap.
+
 ### The B-factor comparison of a structure numbered with insertion codes
 
 **The comparison with B-factors is plotted for one chain numbered with
