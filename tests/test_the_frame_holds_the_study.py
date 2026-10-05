@@ -595,7 +595,7 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         self.assertIn('id="sidebar-collapse"', page)
         self.assertIn('id="sidebar-expand"', page)
         script = _script()
-        self.assertIn("function setSidebarCollapsed(yes)", script)
+        self.assertIn("function setSidebarCollapsed(yes, chosen)", script)
         self.assertIn("body.sidebar-collapsed .app-shell", _css())
 
     def test_the_explanations_reach_the_log(self):
@@ -664,12 +664,12 @@ class TestTheCentreSurvivesCollapse(unittest.TestCase):
     def test_collapsed_columns_are_not_display_none(self):
         css = self.css()
         # The rule that hides the panel keeps it in flow.
-        block = css[css.index('body.panel-collapsed .side-panel,'):]
+        block = css[css.index('body.panel-collapsed:not(.panel-peek) .side-panel,'):]
         block = block[:block.index("}")]
         self.assertNotIn("display: none", block)
         self.assertIn("width: 0", block)
         self.assertIn("visibility: hidden", block)
-        sb = css[css.index('body.sidebar-collapsed .sidebar,'):]
+        sb = css[css.index('body.sidebar-collapsed:not(.sidebar-peek) .sidebar,'):]
         sb = sb[:sb.index("}")]
         self.assertNotIn("display: none", sb)
         self.assertIn("width: 0", sb)

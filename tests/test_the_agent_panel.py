@@ -1929,10 +1929,12 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         return (pathlib.Path(gui.__file__).parent / "static"
                 / "dashboard.css").read_text(encoding="utf-8")
 
-    def test_the_centre_has_a_reading_width_except_the_viewer(self):
+    def test_the_centre_has_a_reading_width_and_the_viewer_a_wider_one(self):
+        # Centred either way: the Viewer's canvas keeps one shape and no
+        # longer takes every pixel of width.
         css = self.css()
         self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", css)
-        self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
+        self.assertIn('html[data-page="viewer"] .page-shell { max-width: 1480px; }', css)
 
     def test_the_panel_starts_at_a_width_that_leaves_the_page_the_most(self):
         # 560 left the page 640 pixels of a 1440 window, and the viewer's

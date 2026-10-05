@@ -146,6 +146,7 @@
     window.FastMDXDashboard?.on("settings-updated", onSettingsUpdated);
     window.addEventListener("resize", resizeViewers);
     document.addEventListener("fullscreenchange", () => requestAnimationFrame(resizeViewers));
+    wireFolds();
     const refreshSeconds = Number(document.body?.dataset.refreshSeconds || 3);
     window.setInterval(
       pollLiveFrame,
@@ -2790,17 +2791,95 @@
   /* ------------------------------------------------------------------ */
   /* Generic helpers                                                     */
   /* ------------------------------------------------------------------ */
-  /* The height the Viewer's two columns take: what the window leaves
-   * under the page's header, so the molecule and what plays it are in view
-   * together and the settings scroll beside them. */
+  /* The molecule's frame keeps one shape, 4 wide to 3 high: the shape a
+   * figure and a slide take, and a globular protein turned any way fits it
+   * with little to spare. It is as large as the window allows under the
+   * page's header with the sequence and the playback above and below it,
+   * so the three are in view together and the settings scroll beside
+   * them, and no wider: the page's spare width is left at its sides. */
+  const CANVAS_SHAPE = 4 / 3;
+  const SMALLEST_CANVAS = 280;
+
   function fitTheLayout() {
     const layout = document.querySelector(".viewer-layout");
     if (!layout || !isVisible(layout)) return;
     const page = layout.closest(".page");
     const header = page ? page.querySelector(".page-header") : null;
     const top = header ? header.getBoundingClientRect().bottom : layout.getBoundingClientRect().top;
-    const room = Math.floor(window.innerHeight - Math.max(0, top) - 20);
-    layout.style.setProperty("--viewer-height", `${Math.max(520, room)}px`);
+    const room = Math.max(520, Math.floor(window.innerHeight - Math.max(0, top) - 20));
+    layout.style.setProperty("--viewer-height", `${room}px`);
+    // Twice: the playback's rows wrap by the width the first pass gives.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const fitted = canvasWidth(layout, room);
+      if (fitted == null) {
+        layout.style.removeProperty("--viewer-canvas-width");
+        if (page) page.style.removeProperty("--viewer-content-width");
+        return;
+      }
+      layout.style.setProperty("--viewer-canvas-width", `${fitted.canvas}px`);
+      // The page's header as wide as what is under it, so the two line up.
+      if (page) page.style.setProperty("--viewer-content-width", `${fitted.whole}px`);
+    }
+  }
+
+  /* The canvas's width beside the settings, and theirs together; or null
+   * where the two stack (the canvas then takes the page's width, in the
+   * same shape). */
+  function canvasWidth(layout, room) {
+    const columns = getComputedStyle(layout).gridTemplateColumns.split(" ").filter(Boolean);
+    const wrap = layout.querySelector(".viewer-canvas-wrap");
+    const side = layout.querySelector(".viewer-side");
+    const frame = document.getElementById("viewer-canvas-frame");
+    if (columns.length < 2 || !wrap || !side || !frame) return null;
+    const gap = parseFloat(getComputedStyle(layout).columnGap) || 0;
+    const sideWidth = side.getBoundingClientRect().width;
+    // From the page's width: the layout itself is held to what it shows.
+    const page = layout.closest(".page") || layout;
+    const across = page.clientWidth - gap - sideWidth;
+    const between = parseFloat(getComputedStyle(wrap).rowGap) || 0;
+    let others = 0;
+    Array.from(wrap.children).forEach((child) => {
+      if (child === frame || !isVisible(child)) return;
+      // What it would take whole: the playback scrolls when squeezed.
+      others += Math.max(child.getBoundingClientRect().height, child.scrollHeight) + between;
+    });
+    const high = Math.max(SMALLEST_CANVAS, Math.min(room - others, across / CANVAS_SHAPE));
+    const canvas = Math.floor(Math.min(across, high * CANVAS_SHAPE));
+    return {canvas, whole: Math.ceil(canvas + gap + sideWidth)};
+  }
+
+  /* The sequence and the playback fold as the settings' sections do, and
+   * stay as they were left; the molecule is sized again when either opens,
+   * closes, appears or wraps. */
+  function wireFolds() {
+    [["sequence-strip", "viewerSequenceOpen"], ["viewer-under-fold", "viewerPlaybackOpen"]]
+      .forEach(([id, key]) => {
+        const fold = document.getElementById(id);
+        if (!fold) return;
+        try {
+          const kept = localStorage.getItem(`fmx.${key}`);
+          if (kept !== null) fold.open = kept === "1";
+        } catch (error) { /* private mode */ }
+        fold.addEventListener("toggle", () => {
+          try { localStorage.setItem(`fmx.${key}`, fold.open ? "1" : "0"); }
+          catch (error) { /* private mode */ }
+        });
+      });
+    if (typeof ResizeObserver !== "function") return;
+    let asked = false;
+    const again = () => {
+      if (asked) return;
+      asked = true;
+      requestAnimationFrame(() => { asked = false; resizeViewers(); });
+    };
+    const watched = new ResizeObserver(again);
+    ["sequence-strip", "viewer-under-fold"].forEach((id) => {
+      const node = document.getElementById(id);
+      if (node) watched.observe(node);
+    });
+    // The page's width changes as the columns beside it open and close.
+    const shell = document.querySelector(".page-shell");
+    if (shell) watched.observe(shell);
   }
 
   function resizeViewers() {

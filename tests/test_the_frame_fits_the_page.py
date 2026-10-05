@@ -160,12 +160,16 @@ class TestTheViewer:
         assert self._canvas(page) > 700
         page.context.close()
 
-    def test_beside_the_log_the_pane_goes_under_it(self, browser, studies) -> None:
+    def test_while_a_study_runs_the_log_gives_the_viewer_the_room(self, browser, studies) -> None:
+        # The log is open while a study runs; the Viewer closes it, and the
+        # settings stay beside the molecule.
         page = _open(browser, studies["running"])
         canvas = self._canvas(page)
-        main = page.evaluate("() => document.querySelector('.page-shell').offsetWidth")
+        closed = page.evaluate("() => document.body.classList.contains('panel-collapsed')")
+        beside = page.evaluate("""() => document.querySelector('.viewer-side').getBoundingClientRect().left
+            > document.getElementById('viewer-canvas-frame').getBoundingClientRect().right""")
         page.context.close()
-        assert canvas > 0.85 * (main - 64)
+        assert closed and beside and canvas > 700
 
     def test_a_finished_studys_frame_is_not_called_live(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], where="#viewer")

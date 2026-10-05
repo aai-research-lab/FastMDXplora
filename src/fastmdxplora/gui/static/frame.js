@@ -115,11 +115,72 @@
     if (name === "files") loadFiles();
   }
 
+  /* What each column is off the Viewer, and on it. The Viewer gives the
+   * molecule the window: both columns close as it opens, and come back as
+   * they were when another page opens. Brought back on the Viewer with
+   * their button, they stay there, on the Viewer, until closed again. */
+  var sidebarClosed = false;
+  var panelClosed = false;
+  var onTheViewer = false;
+  var keptOnTheViewer = { sidebar: false, panel: false };
+
+  function showTheColumns() {
+    var sidebar = onTheViewer ? !keptOnTheViewer.sidebar : sidebarClosed;
+    var panel = onTheViewer ? !keptOnTheViewer.panel : panelClosed;
+    document.body.classList.toggle("sidebar-collapsed", sidebar);
+    document.body.classList.toggle("panel-collapsed", panel);
+    var expand = el("sidebar-expand");
+    if (expand) expand.hidden = !sidebar;
+    expand = el("side-expand");
+    if (expand) expand.hidden = !panel;
+    if (!sidebar) peek("sidebar", false);
+    if (!panel) peek("panel", false);
+  }
+
   function setCollapsed(yes, chosen) {
-    document.body.classList.toggle("panel-collapsed", yes);
-    var expand = el("side-expand");
-    if (expand) expand.hidden = !yes;
-    if (chosen !== false) store.set("panelCollapsed", yes ? "1" : "0");
+    if (onTheViewer && chosen !== false) {
+      keptOnTheViewer.panel = !yes;
+      store.set("viewerPanelOpen", yes ? "0" : "1");
+    } else {
+      panelClosed = yes;
+      if (chosen !== false) store.set("panelCollapsed", yes ? "1" : "0");
+    }
+    showTheColumns();
+  }
+
+  /* Pointing at a closed column's button shows it over the page for as
+   * long as the pointer stays on the button or the column; a click on the
+   * button keeps it. Leaving it is given a moment, so the pointer can
+   * cross from the button to the column. */
+  var peekTimers = {};
+  function peek(which, on) {
+    clearTimeout(peekTimers[which]);
+    document.body.classList.toggle(which + "-peek", on);
+    var button = el(which === "sidebar" ? "sidebar-expand" : "side-expand");
+    var name = which === "sidebar" ? "sidebar" : "panel";
+    if (button) button.title = on ? "Keep the " + name + " open" : "Show " + name;
+  }
+  function peekWhilePointedAt(which, button, column) {
+    if (!button || !column) return;
+    var cls = which === "sidebar" ? "sidebar-collapsed" : "panel-collapsed";
+    var enter = function () {
+      if (document.body.classList.contains(cls)) peek(which, true);
+    };
+    var leave = function () {
+      clearTimeout(peekTimers[which]);
+      peekTimers[which] = setTimeout(function () { peek(which, false); }, 250);
+    };
+    [button, column].forEach(function (node) {
+      node.addEventListener("mouseenter", enter);
+      node.addEventListener("mouseleave", leave);
+    });
+  }
+
+  function followThePage() {
+    var viewer = document.documentElement.getAttribute("data-page") === "viewer";
+    if (viewer === onTheViewer) return;
+    onTheViewer = viewer;
+    showTheColumns();
   }
 
   /* Until someone opens or closes the log, it is open while a study runs,
@@ -134,11 +195,15 @@
     setCollapsed(!live, false);
   }
 
-  function setSidebarCollapsed(yes) {
-    document.body.classList.toggle("sidebar-collapsed", yes);
-    var expand = el("sidebar-expand");
-    if (expand) expand.hidden = !yes;
-    store.set("sidebarCollapsed", yes ? "1" : "0");
+  function setSidebarCollapsed(yes, chosen) {
+    if (onTheViewer && chosen !== false) {
+      keptOnTheViewer.sidebar = !yes;
+      store.set("viewerSidebarOpen", yes ? "0" : "1");
+    } else {
+      sidebarClosed = yes;
+      if (chosen !== false) store.set("sidebarCollapsed", yes ? "1" : "0");
+    }
+    showTheColumns();
   }
 
   /* ---- The log ------------------------------------------------------ */
@@ -734,6 +799,8 @@
     if (pw) setWidth("panel", pw);
     $$(".col-handle").forEach(wireHandle);
 
+    keptOnTheViewer.sidebar = store.get("viewerSidebarOpen", "0") === "1";
+    keptOnTheViewer.panel = store.get("viewerPanelOpen", "0") === "1";
     var remembered = store.get("panelCollapsed", null);
     panelChosen = remembered !== null;
     setCollapsed(remembered === "1", false);
@@ -757,9 +824,14 @@
         followTheStudy(processRunning || status === "running" || status === "starting");
       });
     }
-    setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1");
+    setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1", false);
     el("sidebar-collapse").addEventListener("click", function () { setSidebarCollapsed(true); });
     el("sidebar-expand").addEventListener("click", function () { setSidebarCollapsed(false); });
+    peekWhilePointedAt("sidebar", el("sidebar-expand"), document.querySelector(".sidebar"));
+    peekWhilePointedAt("panel", el("side-expand"), el("side-panel"));
+    followThePage();
+    new MutationObserver(followThePage).observe(document.documentElement,
+      { attributes: true, attributeFilter: ["data-page"] });
 
     $$(".side-tab").forEach(function (t) {
       t.addEventListener("click", function () { showTab(t.dataset.sideTab); });

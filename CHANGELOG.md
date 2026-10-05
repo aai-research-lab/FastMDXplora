@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer has the window, in one shape, and each page one band
+
+**Opening the Viewer folds the sidebar and the side panel**, and another
+page brings them back as they were. Pointing at a folded column's tab shows
+the column over the page for as long as the pointer stays on the tab or the
+column; a click on the tab, then at the column's edge, keeps it open, on the
+Viewer until it is folded there again. **The molecule is 4 wide to 3 high**,
+as large as the window allows with the sequence above it and the playback
+under it in view, and centred with its settings beside it, the page's
+header lined up over them; it took every pixel of width it was given. **The
+Sequence and the Playback fold** as the settings' sections do, and stay as
+they were left. **Each page's header is one band across the centre
+column**, its rule under it; it was the width of the page's text, a strip
+of another colour over the column's own ground.
+
 ### The Agent analyses a study again, when told
 
 **Told to add an analysis to the study open, to analyse it again or to

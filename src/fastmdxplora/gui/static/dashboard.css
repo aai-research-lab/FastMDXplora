@@ -389,8 +389,7 @@ button {
     flex-wrap: nowrap;
     margin-bottom: 12px;
     gap: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    padding-bottom: 6px;
+    padding-bottom: 7px;
     /* One height on every page, with actions or without: the shell's
        padding above, then 38px and the rule. */
     min-height: calc(var(--shell-pad-top, 0px) + 39px);
@@ -401,6 +400,14 @@ button {
     top: 0;
     z-index: 5;
     background: var(--background-primary);
+    /* One band across the whole column, its rule under it: the page is a
+       reading width in the middle, and a band of that width over the
+       column's own ground looked like a strip of another colour. Painted
+       past the header's sides as a border image, which the column clips
+       and which never scrolls the page sideways. */
+    border-image: linear-gradient(to bottom,
+        var(--background-primary) calc(100% - 1px),
+        var(--border-subtle) calc(100% - 1px)) fill 0 / 0 / 0 100vmax;
     /* Starting where it stays: placed under the shell's top padding, it
        first scrolled up by that much and then stopped, so it was seen to
        move with every page scrolled. */
@@ -2682,7 +2689,7 @@ body.state-ready .loading-screen {
 body.panel-collapsed .app-shell {
     grid-template-columns: var(--sidebar-width) var(--handle-width) minmax(0, 1fr) 0 0;
 }
-body.panel-collapsed .side-panel,
+body.panel-collapsed:not(.panel-peek) .side-panel,
 body.panel-collapsed .col-handle[data-handle="panel"] {
     overflow: hidden; visibility: hidden; width: 0; min-width: 0; padding: 0; border: 0;
 }
@@ -3075,7 +3082,9 @@ body { overflow: hidden; }
    viewer is the exception: a 3D canvas wants every pixel it can get,
    and its own right-hand info pane fills the width beside it. */
 .page-shell { max-width: 900px; margin: 0 auto; width: 100%; }
-html[data-page="viewer"] .page-shell { max-width: none; }
+/* The Viewer is wider, for the settings beside the molecule, and centred
+   as every page is. */
+html[data-page="viewer"] .page-shell { max-width: 1480px; }
 /* The side panel already lays its own scroll region out (.side-log,
    .side-files); the panel itself should not add a second one. */
 .side-panel { overflow: hidden; }
@@ -3320,7 +3329,7 @@ body.sidebar-collapsed .app-shell {
 body.sidebar-collapsed.panel-collapsed .app-shell {
     grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
 }
-body.sidebar-collapsed .sidebar,
+body.sidebar-collapsed:not(.sidebar-peek) .sidebar,
 body.sidebar-collapsed .col-handle[data-handle="sidebar"] {
     overflow: hidden; visibility: hidden; width: 0; min-width: 0; padding: 0; border: 0;
 }
@@ -3518,8 +3527,31 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .page[data-page="viewer"] { container-type: inline-size; container-name: viewerpage; }
 @container viewerpage (max-width: 900px) {
     .viewer-layout { grid-template-columns: minmax(0, 1fr); }
+    .viewer-canvas-frame { max-width: calc(68vh * 4 / 3); margin-inline: auto; }
 }
-.viewer-canvas-frame { height: clamp(420px, 68vh, 780px); }
+/* One shape, 4 wide to 3 high, sized by molecule-viewer.js
+   (--viewer-canvas-width) where the settings are beside it. */
+.viewer-canvas-frame { width: 100%; height: auto; aspect-ratio: 4 / 3; }
+
+/* The playback folds as the settings' sections do: its rows sit in the
+   section's box, not in a box of their own, and it is not shown at all
+   while there is nothing to play. */
+.viewer-under-fold { min-width: 0; }
+.viewer-under-fold > .viewer-controls {
+    border: none; background: none; padding: 0 0 12px; border-radius: 0;
+}
+.viewer-under-fold:not(:has(.control-row:not([hidden]))) { display: none; }
+/* The sequence's head is a row, which loses the marker a summary has: it
+   is given the sections' own, so it reads as one that folds. */
+.sequence-strip > .seq-head { list-style: none; }
+.sequence-strip > .seq-head::-webkit-details-marker { display: none; }
+.sequence-strip > .seq-head::before {
+    content: "\25B8";
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    margin-right: -6px;
+}
+.sequence-strip[open] > .seq-head::before { content: "\25BE"; }
 
 /* The molecule always in view: on a page wide enough for two columns, the
    canvas and what plays it fill the height the page leaves under its
@@ -3805,14 +3837,23 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sel-shape { flex: 1 1 auto; min-width: 0; font-size: var(--text-xs); }
 @container viewerpage (min-width: 901px) {
     .viewer-layout {
-        grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+        /* The canvas's column as wide as its shape and the window's height
+           allow, the settings beside it, the two centred on the page. */
+        grid-template-columns: var(--viewer-canvas-width, minmax(0, 1fr)) minmax(300px, 340px);
+        justify-content: center;
         /* Until the page has measured its header: about what it takes. */
         height: var(--viewer-height, calc(100vh - 150px));
         min-height: 520px;
     }
     .viewer-canvas-wrap { min-height: 0; }
-    .viewer-canvas-wrap .viewer-canvas-frame { flex: 1 1 auto; height: auto; min-height: 280px; }
-    .viewer-under { flex: 0 1 auto; max-height: 38%; overflow-y: auto; }
+    .viewer-canvas-wrap .viewer-canvas-frame { flex: none; }
+    /* The header lined up with the molecule and its settings, centred. */
+    .page[data-page="viewer"] > .page-header,
+    .page[data-page="viewer"] > .viewer-layout {
+        max-width: var(--viewer-content-width, none);
+        margin-inline: auto;
+    }
+    .viewer-under-fold { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
     .viewer-side { min-height: 0; overflow-y: auto; padding-right: 2px; }
 }
 
@@ -3894,7 +3935,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .page-header { flex-wrap: wrap; gap: 8px; }
     .page-header > div:first-child > :not(.page-title) { display: none; }
     .page-header > .page-header-actions { width: auto; max-width: none; flex-wrap: wrap; margin-left: auto; justify-content: flex-end; }
-    .viewer-canvas-frame { height: 62vh; min-height: 320px; }
+    .viewer-canvas-frame { height: auto; min-height: 0; }
 }
 
 /* ===========================================================================
@@ -4360,3 +4401,33 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .methods-text p { margin: 0 0 10px; }
 .methods-text p:last-child { margin-bottom: 0; }
 .methods-text strong { color: var(--text-primary); }
+
+/* ===========================================================================
+   A closed column shown while its button is pointed at (frame.js), over
+   the page, as long as the pointer stays on the button or the column; a
+   click on the button keeps it open.
+   =========================================================================== */
+@media (min-width: 801px) {
+    /* Each in its own column: a column shown over the page leaves the
+       grid's flow, and the page would otherwise move into its place. */
+    .app-shell > .sidebar { grid-column: 1; grid-row: 1; }
+    .app-shell > .col-handle[data-handle="sidebar"] { grid-column: 2; grid-row: 1; }
+    .app-shell > .main { grid-column: 3; grid-row: 1; }
+    .app-shell > .col-handle[data-handle="panel"] { grid-column: 4; grid-row: 1; }
+    .app-shell > .side-panel { grid-column: 5; grid-row: 1; }
+    body.sidebar-collapsed.sidebar-peek .sidebar,
+    body.panel-collapsed.panel-peek .side-panel {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        height: 100vh;
+        z-index: 60;
+        box-shadow: var(--shadow-modal);
+    }
+    body.sidebar-collapsed.sidebar-peek .sidebar { left: 0; width: var(--sidebar-width); }
+    body.panel-collapsed.panel-peek .side-panel { right: 0; width: var(--panel-width); }
+    /* The button moves to the column's edge, where the column shown would
+       otherwise cover it, so it can be clicked to keep the column. */
+    body.sidebar-collapsed.sidebar-peek .sidebar-expand { left: var(--sidebar-width); z-index: 61; }
+    body.panel-collapsed.panel-peek .side-expand { right: var(--panel-width); z-index: 61; }
+}
