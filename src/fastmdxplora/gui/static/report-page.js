@@ -85,7 +85,7 @@
       var block = document.createElement("div");
       block.className = "report-notice";
       var head = document.createElement("span");
-      head.className = "report-notice-kind mono";
+      head.className = "report-notice-kind";
       head.textContent = "not produced · " + row.artifact;
       block.appendChild(head);
       block.appendChild(document.createTextNode(row.reason || ""));

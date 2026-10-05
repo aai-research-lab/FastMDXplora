@@ -238,11 +238,11 @@
     </div>
     <div class="settings-divider"></div>
     <div class="settings-section">Agent</div>
-    <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
-    <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
+    <div class="settings-row"><span>Engine</span><span class="settings-value" id="settings-engine">none</span></div>
+    <div class="settings-row"><span>Mode</span><span class="settings-value" id="settings-mode">assisted</span></div>
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip;</a>
     <div class="settings-divider"></div>
-    <button type="button" class="settings-item" data-dialog-open="prefs-dialog" aria-haspopup="dialog">Preferences&hellip; <span class="mono settings-hint">viewer, time, charts</span></button>
+    <button type="button" class="settings-item" data-dialog-open="prefs-dialog" aria-haspopup="dialog">Preferences&hellip; <span class="settings-hint">viewer, time, charts</span></button>
     <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint" id="settings-version"></span></button>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
@@ -273,7 +273,7 @@
               <span class="status-dot status-dot-live" id="topbar-status-dot"></span>
               <span class="status-text" id="topbar-status-text">Ready</span>
               <span class="status-divider" aria-hidden="true">&middot;</span>
-              <span class="status-platform mono" id="sidebar-platform" title="Platform">&mdash;</span>
+              <span class="status-platform" id="sidebar-platform" title="Platform">&mdash;</span>
               <span class="status-connection" id="sidebar-connection-state" data-connection="live">live</span>
             </span>
           </span>
@@ -446,7 +446,7 @@
               <div class="page-subtitle">Select what you have, what should happen to it, and anything you want to change.</div>
             </div>
             <div class="page-header-actions">
-              <div class="muted small mono" id="run-summary"></div>
+              <div class="muted small" id="run-summary"></div>
               <button type="button" class="ghost-btn" id="run-reset">Reset to defaults</button>
             </div>
           </div>
@@ -1392,7 +1392,7 @@
               <div class="page-subtitle">Trajectory analyses and protein-ligand interactions</div>
             </div>
             <div class="page-header-actions">
-              <div class="muted small mono" id="analysis-meta">no analyses yet</div>
+              <div class="muted small" id="analysis-meta">no analyses yet</div>
               <a
                 class="ghost-btn"
                 id="download-all-svg"
@@ -1442,7 +1442,7 @@
           <section class="runs-compared" id="runs-compared" hidden>
             <div class="runs-compared-head">
               <h2 class="analysis-section-title">Runs compared</h2>
-              <span class="muted small mono" id="runs-compared-meta"></span>
+              <span class="muted small" id="runs-compared-meta"></span>
             </div>
             <div class="runs-compared-scroll">
               <table class="runs-compared-table" id="runs-compared-table"></table>
@@ -1485,7 +1485,7 @@
           <div id="report-notices" class="report-notices" hidden></div>
           <div class="empty-state" id="report-empty">
             <p>No report yet. The report phase writes one at the end of a run.</p>
-            <p class="mono" id="report-empty-reason"></p>
+            <p class="muted" id="report-empty-reason"></p>
           </div>
           <article class="card report-document" id="report-document" hidden></article>
         </section>

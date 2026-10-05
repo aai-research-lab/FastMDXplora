@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The interface brings its fonts, and keeps the fixed-width one for numbers
+
+**Inter and JetBrains Mono ship with the package** (Latin and Greek, about
+115 KB, SIL Open Font License 1.1, under `gui/static/fonts` with their
+licence texts) and are served with the GUI, so the page reads the same on
+any machine, a cluster's login node included; the standalone dashboard
+carries them in the page. The stylesheet named both and shipped neither,
+so the page read in whatever the machine had. **The fixed-width face is
+for numbers, paths and code:** the labels over the Overview's figures, the
+settings menu's words, the Log's filters, the analyses' status chips and
+the builder's labels are in the text face. The package's licence
+expression is `MIT AND Apache-2.0 AND ISC AND 0BSD AND OFL-1.1`, in
+`pyproject.toml` and the conda recipe.
+
 ### Themes are System, Light and Dark, with one cyan accent
 
 **The settings menu offers System, Light and Dark** in place of Graphite,

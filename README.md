@@ -183,7 +183,10 @@ follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
 ## License
 
-FastMDXplora is released under the MIT License. See [LICENSE](LICENSE).
+FastMDXplora is released under the MIT License. See [LICENSE](LICENSE). The
+interface's fonts, Inter and JetBrains Mono, ship under the SIL Open Font
+License 1.1, and the bundled Mol\* under its own licences (see
+`src/fastmdxplora/gui/static/fonts` and `src/fastmdxplora/gui/static/molstar`).
 
 ---
 

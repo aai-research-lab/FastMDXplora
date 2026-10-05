@@ -58,8 +58,12 @@ FINISHED = {"system": "1L2Y", "phases": [{"name": "analysis", "status": "ok"},
 def test_the_page_is_styled_by_the_gui_s_own_stylesheet(tmp_path: Path) -> None:
     html = _write(_study(tmp_path, manifest=FINISHED))
 
-    for sheet in ("theme.css", "dashboard.css"):
-        assert (STATIC / sheet).read_text(encoding="utf-8") in html
+    from fastmdxplora.gui.report_dashboard import _theme_tokens
+
+    # The tokens with their fonts carried in the page, and the sheet as it
+    # ships.
+    assert _theme_tokens() in html
+    assert (STATIC / "dashboard.css").read_text(encoding="utf-8") in html
     for shell in ('class="app-shell"', '<aside class="sidebar"', 'class="sidebar-nav"',
                   'class="sidebar-stages"', 'class="page-shell"'):
         assert shell in html
@@ -110,7 +114,7 @@ def test_the_page_written_during_a_run_reads_the_live_record(tmp_path: Path) -> 
     assert '<tr><td>Setup</td><td><span class="stage-pill">ok</span>' in html
     assert '<tr><td>Report</td><td><span class="stage-pill">running</span>' in html
     assert '<li class="stage-step" data-stage="report" data-state="current">' in html
-    assert '<span class="status-platform mono" title="Platform">CUDA</span>' in html
+    assert '<span class="status-platform" title="Platform">CUDA</span>' in html
     # A run going on when the page was written: its progress card, at the
     # stage it was in.
     assert '<div class="sidebar-progress" data-run="running">' in html

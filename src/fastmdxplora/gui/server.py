@@ -1993,9 +1993,11 @@ def make_handler(
             if not target.is_file():
                 self.send_error(404, "Static asset not found")
                 return
-            content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            # Python 3.10's table has no woff2.
+            content_type = ("font/woff2" if target.suffix == ".woff2"
+                            else mimetypes.guess_type(target.name)[0] or "application/octet-stream")
             data = target.read_bytes()
-            vendored = target.relative_to(static_root.resolve()).parts[0] == "molstar"
+            vendored = target.relative_to(static_root.resolve()).parts[0] in ("molstar", "fonts")
             compressed = None
             if "gzip" in (self.headers.get("Accept-Encoding") or "") and len(data) > 65536 \
                     and content_type.startswith(("text/", "application/javascript")):
@@ -2003,9 +2005,9 @@ def make_handler(
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             # The vendored Mol*, 5 MB, is named by its version in the page
-            # (`molstar.js?v=5.12.0`), so a browser keeps it until the
-            # version changes; FastMDXplora's own scripts are asked for
-            # afresh each time.
+            # (`molstar.js?v=5.12.0`), as the fonts are in theme.css, so a
+            # browser keeps them until the version changes; FastMDXplora's
+            # own scripts are asked for afresh each time.
             self.send_header("Cache-Control", "public, max-age=31536000, immutable"
                              if vendored else "no-store")
             if compressed is not None:

@@ -17,13 +17,16 @@ readme = "README.md"
 requires-python = ">=3.10, <3.14"
 # FastMDXplora's own code is MIT. The package also ships the viewer build of
 # Mol* (MIT), which bundles React, rxjs and others whose licences are MIT,
-# Apache-2.0, ISC and 0BSD, so the distribution is declared as all four, as
-# the conda recipe declares it, and their texts ship with it.
-license = "MIT AND Apache-2.0 AND ISC AND 0BSD"
+# Apache-2.0, ISC and 0BSD, and the interface's fonts, Inter and JetBrains
+# Mono (SIL OFL 1.1), so the distribution is declared as all five, as the
+# conda recipe declares it, and their texts ship with it.
+license = "MIT AND Apache-2.0 AND ISC AND 0BSD AND OFL-1.1"
 license-files = [
     "LICENSE",
     "src/fastmdxplora/gui/static/molstar/LICENSE",
     "src/fastmdxplora/gui/static/molstar/THIRD-PARTY-NOTICES.txt",
+    "src/fastmdxplora/gui/static/fonts/OFL-Inter.txt",
+    "src/fastmdxplora/gui/static/fonts/OFL-JetBrainsMono.txt",
 ]
 authors = [
     { name = "Adekunle Aina" },

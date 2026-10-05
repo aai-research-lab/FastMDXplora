@@ -1334,9 +1334,28 @@ def _theme_tokens() -> str:
     """
     theme = Path(__file__).resolve().parent / "static" / "theme.css"
     try:
-        return theme.read_text(encoding="utf-8")
+        tokens = theme.read_text(encoding="utf-8")
     except OSError:  # pragma: no cover - only if the installed package is incomplete
         return ":root { color-scheme: dark; }"
+    return _FONT_FILE.sub(_font_inlined, tokens)
+
+
+#: A font the stylesheet names by the GUI's address, which a page opened
+#: from a file cannot reach.
+_FONT_FILE = re.compile(r'url\("/static/fonts/([a-z0-9-]+\.woff2)(?:\?[^"]*)?"\)')
+
+
+def _font_inlined(found: "re.Match[str]") -> str:
+    """The font itself, so the page reads in the GUI's type away from it;
+    the address left as it was if the file is missing, which the browser
+    passes over to the next font of the stack."""
+    import base64
+
+    try:
+        data = (Path(__file__).resolve().parent / "static" / "fonts" / found.group(1)).read_bytes()
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return found.group(0)
+    return 'url("data:font/woff2;base64,' + base64.b64encode(data).decode("ascii") + '")'
 
 
 def _lab_logo_uri() -> str:
@@ -1775,7 +1794,7 @@ def _render_sidebar(
     said = {"completed": "Completed", "failed": "Failed", "recorded": "Recorded",
             "not run": "Not run"}.get(state, state[:1].upper() + state[1:])
     platform_line = (f'<span class="status-divider" aria-hidden="true">&middot;</span>'
-                     f'<span class="status-platform mono" title="Platform">{escape(platform)}</span>'
+                     f'<span class="status-platform" title="Platform">{escape(platform)}</span>'
                      if platform else "")
     return f"""<div class="sidebar-brand">
   <div class="brand-text">

@@ -5,6 +5,47 @@
  * it at generation time so a report stays a self-contained page. Change a
  * value here and both follow.
  */
+/* The interface's two typefaces, served with it (fonts/README.txt; SIL
+ * Open Font License 1.1): named first in the stacks below, they were
+ * installed on almost no machine, so the page read in whatever the system
+ * had. Latin and Greek; anything else falls through to the system's. */
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/static/fonts/inter-latin-wght-normal.woff2?v=5.3.0") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                   U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url("/static/fonts/inter-greek-wght-normal.woff2?v=5.3.0") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("/static/fonts/jetbrains-mono-latin-wght-normal.woff2?v=5.3.0") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                   U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url("/static/fonts/jetbrains-mono-greek-wght-normal.woff2?v=5.3.0") format("woff2");
+    unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+
 :root {
     color-scheme: dark;
 

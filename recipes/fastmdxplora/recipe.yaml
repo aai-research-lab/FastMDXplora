@@ -151,12 +151,15 @@ about:
     reviewing a run.
   # The package bundles the viewer build of Mol* (MIT; with React, rxjs and
   # others, whose licences are MIT, Apache-2.0, ISC and 0BSD) for the
-  # molecular viewer in the graphical interface, so their licenses ship too.
-  license: MIT AND Apache-2.0 AND ISC AND 0BSD
+  # molecular viewer in the graphical interface, and its fonts, Inter and
+  # JetBrains Mono (SIL OFL 1.1), so their licenses ship too.
+  license: MIT AND Apache-2.0 AND ISC AND 0BSD AND OFL-1.1
   license_file:
     - LICENSE
     - src/fastmdxplora/gui/static/molstar/LICENSE
     - src/fastmdxplora/gui/static/molstar/THIRD-PARTY-NOTICES.txt
+    - src/fastmdxplora/gui/static/fonts/OFL-Inter.txt
+    - src/fastmdxplora/gui/static/fonts/OFL-JetBrainsMono.txt
   documentation: https://fastmdxplora.readthedocs.io
   repository: https://github.com/aai-research-lab/FastMDXplora
 
