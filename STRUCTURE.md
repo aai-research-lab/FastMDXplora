@@ -32,7 +32,7 @@ FastMDXplora/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
-│       │                          #   analyze/report/gui/info/init-config/remote/mcp/scene)
+│       │                          #   analyze/report/gui/info/config/remote/mcp/scene)
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
 │       │   ├── app.py             # What `fastmdx mcp` offers an AI app
@@ -196,7 +196,7 @@ FastMDXplora/
 │       ├── config/
 │       │   ├── schema.py          # Config schema (single source of truth for options)
 │       │   ├── loader.py          # YAML load, merge, strict validation
-│       │   ├── generate.py        # `fastmdx init-config` templates
+│       │   ├── generate.py        # `fastmdx config` templates
 │       │   ├── describe.py        # The config language, described for an AI model
 │       │   ├── languages.py       # One study as a config file, a command and a script
 │       │   ├── diff.py            # What differs between two studies' settings

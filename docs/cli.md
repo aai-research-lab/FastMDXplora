@@ -28,7 +28,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
 | `fastmdx mcp` | Serve FastMDXplora to an AI app: [FastMDXplora from your AI app](mcp.md) |
-| `fastmdx init-config` | Write a commented Config template |
+| `fastmdx config` | Write a commented Config template |
 | `fastmdx select` | Show what a selection matches, before a run depends on it |
 | `fastmdx diff` | The settings two studies or Configs differ in |
 | `fastmdx scene` | Write a view of a study as a scene file (MolViewSpec) |
@@ -455,16 +455,17 @@ its own settings. See [FastMDXplora from your AI app](mcp.md).
 
 ---
 
-## `init-config`
+## `config`
 
 ```bash
-fastmdx init-config                        # writes fastmdxplora.yml
-fastmdx init-config -o study.yml
-fastmdx init-config -o study.yml --minimal # a short starter instead
-fastmdx init-config -o study.yml --force   # overwrite
+fastmdx config                                     # writes fastmdxplora.yml
+fastmdx config -f study.yml                        # or --file study.yml
+fastmdx config -f study.yml --minimal              # a short starter instead
+fastmdx config -f study.yml --force-overwrite      # overwrite
 ```
 
-Refuses an existing file with exit 2 unless `--force`.
+Refuses an existing file with exit 2 unless `--force-overwrite`. The old
+name, `fastmdx init-config`, stops with exit 2 and names this one.
 
 ---
 

@@ -688,7 +688,7 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         help=(
             "YAML config file capturing the whole run (system, output, "
             "phase selection, per-phase options). Command-line flags "
-            "override values in the file. See `fastmdx init-config`."
+            "override values in the file. See `fastmdx config`."
         ),
     )
     src.add_argument(
@@ -845,6 +845,10 @@ class _Accumulate(argparse.Action):
             if value not in current:
                 current.append(value)
         setattr(namespace, self.dest, current)
+
+
+#: The file `fastmdx config` writes when not told where.
+_CONFIG_FILE = "fastmdxplora.yml"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1473,34 +1477,33 @@ def _build_parser() -> argparse.ArgumentParser:
     forget.add_argument("forget_name", metavar="NAME",
                         help="The machine to forget.")
 
-    ic = sub.add_parser(
-        "init-config",
+    cf = sub.add_parser(
+        "config",
         help="Write a commented YAML config template to edit.",
         description=(
-            "Generate a FastMDXplora config template. By default writes a "
-            "comprehensive, fully-commented template with every option, its "
-            "default, and a description. Edit it and run with "
+            "Write a FastMDXplora config template: by default every setting, "
+            "its default and its help as a comment. Edit it and run it with "
             "`fastmdx explore --config <file>`."
         ),
     )
-    ic.add_argument(
-        "-o", "--output",
-        dest="config_output",
+    cf.add_argument(
+        "-f", "--file",
+        dest="config_file",
         metavar="FILE",
-        default="fastmdxplora.yml",
-        help="Where to write the template (default: fastmdxplora.yml).",
+        default=_CONFIG_FILE,
+        help=f"Where to write the template (default: {_CONFIG_FILE}).",
     )
-    ic.add_argument(
+    cf.add_argument(
         "--minimal",
         action="store_true",
         help="Write a short starter template with only the essentials.",
     )
-    ic.add_argument(
+    cf.add_argument(
         "--force-overwrite",
         "--force",
         dest="force",
         action="store_true",
-        help="Overwrite the output file if it already exists.",
+        help="Overwrite the file if it already exists.",
     )
 
     return parser
@@ -2655,14 +2658,14 @@ def _remote_job(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_init_config(args: argparse.Namespace) -> int:
+def _cmd_config(args: argparse.Namespace) -> int:
     from fastmdxplora.config import generate_template
 
-    out_path = Path(args.config_output)
+    out_path = Path(args.config_file)
     if out_path.exists() and not args.force:
         print(
             f"fastmdx: {out_path} already exists. Use --force-overwrite, "
-            f"or -o to choose a different path.",
+            f"or -f to choose a different file.",
             file=sys.stderr,
         )
         return 2
@@ -3120,6 +3123,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             dashboard_enabled=dashboard_enabled,
         )
 
+    if raw_argv[:1] == ["init-config"]:
+        # The old name wrote a template too. It stops rather than guesses
+        # what its -o meant now, and says where the command went.
+        print("fastmdx: `fastmdx init-config` is now `fastmdx config` "
+              "(`-o FILE` is now `-f FILE`).", file=sys.stderr)
+        return 2
+
     parser = _build_parser()
     args = parser.parse_args(raw_argv)
 
@@ -3151,8 +3161,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "agent":
         return _run_agent(args)
 
-    if args.command == "init-config":
-        return _cmd_init_config(args)
+    if args.command == "config":
+        return _cmd_config(args)
     if args.command == "gui":
         return _cmd_gui(args)
     if args.command == "resume":

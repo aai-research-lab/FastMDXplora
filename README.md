@@ -97,7 +97,7 @@ that one file.
 | | |
 |---|---|
 | **The GUI** | `fastmdx gui`. A form generated from the schema, so every setting is reachable. Worth using even for a command-line or Python workflow: build the study where the options are visible and explained, then take the file away. |
-| **The CLI** | `fastmdx explore --config study.yml`, or `fastmdx init-config` for a commented template, or a flag for any setting. |
+| **The CLI** | `fastmdx explore --config study.yml`, or `fastmdx config` for a commented template, or a flag for any setting. |
 | **The Python API** | `FastMDXplora(config="study.yml").explore()`, or the same blocks passed as options. |
 
 None of these is the primary interface and none is a subset of another —

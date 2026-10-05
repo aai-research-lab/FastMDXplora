@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### `fastmdx config` writes the template
+
+**`fastmdx init-config` is now `fastmdx config`**: with no file named it
+writes `fastmdxplora.yml` where it is typed, and `-f FILE` (`--file`) names
+another. `--minimal` and `--force-overwrite` are as before. The old name
+stops with exit 2 and says where the command went.
+
 ### A phase command is explore with one phase
 
 **`fastmdx setup`, `simulate`, `analyze` and `report` are `fastmdx explore
