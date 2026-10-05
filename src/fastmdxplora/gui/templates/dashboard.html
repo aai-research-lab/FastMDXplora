@@ -694,12 +694,13 @@
             <div class="viewer-canvas-wrap">
               <!-- The sequence, one line a chain, numbered every fifth
                    residue; a click or a drag selects (viewer-sequence.js). -->
-              <details class="sequence-strip" id="sequence-strip" open hidden>
-                <summary class="seq-head">
+              <!-- Closed until opened, as the person left it after that. -->
+              <details class="sequence-strip" id="sequence-strip" hidden>
+                <summary class="seq-head"><span class="seq-head-row">
                   <span class="seq-title">Sequence</span>
                   <span class="seq-key" aria-hidden="true"><span class="seq-key-h">helix</span><span class="seq-key-s">strand</span></span>
                   <span class="seq-said muted small" id="seq-said"></span>
-                </summary>
+                </span></summary>
                 <div class="seq-scroll" id="seq-scroll"></div>
                 <div class="seq-foot">
                   <span class="muted small" id="seq-note" hidden></span>

@@ -88,6 +88,9 @@ def _settled(tab):
 
 def test_the_title_band_spans_the_column(browser, session) -> None:
     tab = _open(browser, session, stored={"panelCollapsed": "1"})
+    # Once the page has loaded and its colours have stopped changing.
+    tab.wait_for_selector("body:not(.state-loading)")
+    tab.wait_for_timeout(1000)
     band = tab.evaluate("""() => {
         const header = document.querySelector('.page[data-page="overview"] .page-header');
         const main = document.querySelector('.main').getBoundingClientRect();
@@ -102,8 +105,11 @@ def test_the_title_band_spans_the_column(browser, session) -> None:
     picture = Image.open(BytesIO(tab.screenshot())).convert("RGB")
     tab.context.close()
     assert band["shell"] > 100   # the reading width leaves the column's sides
-    assert picture.getpixel((band["outside"], band["y"])) == picture.getpixel(
-        (band["inside"], band["y"]))
+    outside = picture.getpixel((band["outside"], band["y"]))
+    inside = picture.getpixel((band["inside"], band["y"]))
+    # One colour, give or take the rounding of a loaded machine's render;
+    # the column's own ground beside the old band was 10 or more away.
+    assert max(abs(a - b) for a, b in zip(outside, inside)) <= 3, (outside, inside)
 
 
 def test_the_viewer_closes_both_columns_and_gives_them_back(browser, session) -> None:
@@ -188,18 +194,44 @@ def test_the_molecule_keeps_its_shape_in_view(browser, session, width, height) -
 def test_the_sequence_and_the_playback_fold_and_stay_folded(browser, session) -> None:
     tab = _open(browser, session, page="viewer")
     before = _settled(tab)
+    # The sequence starts closed, the playback open.
+    started = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
+        document.getElementById('viewer-under-fold').open]""")
+    tab.click("#sequence-strip > summary")
+    tab.wait_for_timeout(800)
+    opened = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
+        document.getElementById('viewer-canvas-frame').getBoundingClientRect().height]""")
     tab.click("#sequence-strip > summary")
     tab.click("#viewer-under-fold > summary")
     tab.wait_for_timeout(800)
     folded = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open,
         document.getElementById('viewer-canvas-frame').getBoundingClientRect().height]""")
+    tab.click("#sequence-strip > summary")
+    tab.wait_for_timeout(300)
     tab.reload()
     tab.wait_for_function("() => window.FastMDXDashboard && window.FastMDXDashboard.navigate")
     _go(tab, "viewer")
     kept = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open]""")
     tab.context.close()
-    assert folded[:2] == [False, False] and kept == [False, False]
+    assert started == [False, True]
+    assert opened[0] and opened[1] < before["height"] - 50
+    assert folded[:2] == [False, False]
     # The room they gave back goes to the molecule.
     assert folded[2] > before["height"] + 50
+    # As each was left: the sequence opened again, the playback closed.
+    assert kept == [True, False]
+
+
+def test_the_sequence_folds_with_the_sections_own_marker(browser, session) -> None:
+    tab = _open(browser, session, page="viewer")
+    _settled(tab)
+    found = tab.evaluate("""() => {
+        const look = (el) => { const s = getComputedStyle(el);
+            return [s.display, s.listStylePosition, s.fontSize]; };
+        return [look(document.querySelector('#sequence-strip > summary')),
+                look(document.querySelector('.viewer-side > .side-section > summary'))];
+    }""")
+    tab.context.close()
+    assert found[0] == found[1] == ["list-item", "inside", found[1][2]]

@@ -3541,17 +3541,24 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     border: none; background: none; padding: 0 0 12px; border-radius: 0;
 }
 .viewer-under-fold:not(:has(.control-row:not([hidden]))) { display: none; }
-/* The sequence's head is a row, which loses the marker a summary has: it
-   is given the sections' own, so it reads as one that folds. */
-.sequence-strip > .seq-head { list-style: none; }
-.sequence-strip > .seq-head::-webkit-details-marker { display: none; }
-.sequence-strip > .seq-head::before {
-    content: "\25B8";
+/* The sequence's head keeps the marker every section's summary has, the
+   browser's own at the sections' size: its row sits inside the summary,
+   which stays a list item. A marker drawn as a character of the text
+   came out smaller than the sections'. */
+.sequence-strip > .seq-head {
+    display: list-item;
+    list-style-position: inside;
     color: var(--text-muted);
     font-size: var(--text-2xs);
-    margin-right: -6px;
 }
-.sequence-strip[open] > .seq-head::before { content: "\25BE"; }
+.seq-head-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    width: calc(100% - 1.5em);
+    min-width: 0;
+    vertical-align: middle;
+}
 
 /* The molecule always in view: on a page wide enough for two columns, the
    canvas and what plays it fill the height the page leaves under its
@@ -3610,9 +3617,6 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     min-width: 0;
 }
 .seq-head {
-    display: flex;
-    align-items: center;
-    gap: 12px;
     padding: 6px 0;
     cursor: pointer;
     min-width: 0;

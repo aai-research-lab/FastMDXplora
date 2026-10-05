@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Sequence folds as the settings' sections do, and starts closed
+
+**The Viewer's Sequence has the same marker as the settings' sections**,
+and starts closed until it is first opened, then stays as it was left. Its
+marker was a character of the text, smaller than theirs.
+
 ### The Viewer has the window, in one shape, and each page one band
 
 **Opening the Viewer folds the sidebar and the side panel**, and another
