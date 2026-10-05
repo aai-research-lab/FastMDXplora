@@ -73,15 +73,14 @@ which they have.
 ## When the trajectory came from somewhere else
 
 FastMDXplora also analyses trajectories it did not produce, where none of the
-above holds. Four routes are tried in order, and which one succeeded is
+above holds. Three routes are tried in order, and which one succeeded is
 recorded in `options.json`:
 
 1. an SDF supplied with `ligand_chemistry`
 2. the run's own `setup/ligands/<resname>.sdf`, if setup produced it
-3. the Chemical Component Dictionary, by residue name
-4. inference from the coordinates, with RDKit
+3. inference from the coordinates, with RDKit
 
-Route 4 is the general tool's only route. It is available and it is labelled.
+Route 3 is the general tool's only route. It is available and it is labelled.
 
 **Charge is refused rather than guessed.** Perceiving a formal charge from
 coordinates is ambiguous more often than not: for guanidinium both +1 and −1
@@ -105,7 +104,7 @@ interaction the result named would rest on a guess the caller could not see.
 
 | Interaction | Criterion | Source |
 |---|---|---|
-| Hydrogen bond | H···A < 3.5 Å, D-H···A > 120° | Baker & Hubbard (1984); McDonald & Thornton (1994) |
+| Hydrogen bond | D···A < 3.5 Å, D-H···A > 120° | McDonald & Thornton (1994) |
 | Hydrophobic | C···C < 4.0 Å, both bonded only to C or H | PLIP (Adasme et al. 2021) |
 | Salt bridge | charged group centres < 4.5 Å | ProLIF (Bouysset & Fiorucci 2021) |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |

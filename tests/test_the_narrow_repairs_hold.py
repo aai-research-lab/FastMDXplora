@@ -106,20 +106,35 @@ class TestEveryHistidineKeepsItsChemistry:
 
         assert resname in _AROMATIC_RINGS
 
+    @staticmethod
+    def _bare_imidazole(resname: str):
+        """The ring's heavy atoms only: no hydrogens, so the name is all
+        there is to go on."""
+        top = md.Topology()
+        residue = top.add_residue(resname, top.add_chain())
+        for name in ("CG", "ND1", "CD2", "CE1", "NE2"):
+            element = md.element.nitrogen if name.startswith("N") else md.element.carbon
+            top.add_atom(name, element, residue)
+        return top
+
     @pytest.mark.parametrize("resname", ["HIP", "HSP"])
     def test_the_doubly_protonated_ones_are_positive(self, resname) -> None:
-        """The residue name *is* the setup phase's protonation decision, so
-        leaving them out did not defer to it -- it discarded it."""
-        from fastmdxplora.analysis.interactions import _POSITIVE_GROUPS
+        """The residue name *is* the setup phase's protonation decision
+        where there are no hydrogens to read it from."""
+        from fastmdxplora.analysis.interactions import protein_charged_groups
 
-        assert resname in _POSITIVE_GROUPS
+        top = self._bare_imidazole(resname)
+        positive, _negative = protein_charged_groups(top, range(top.n_atoms))
+        assert len(positive) == 1
 
     @pytest.mark.parametrize("resname", ["HIS", "HIE", "HID", "HSD", "HSE"])
     def test_the_singly_protonated_ones_are_not(self, resname) -> None:
         """Still deferred to the setup phase, as the table's docstring says."""
-        from fastmdxplora.analysis.interactions import _POSITIVE_GROUPS
+        from fastmdxplora.analysis.interactions import protein_charged_groups
 
-        assert resname not in _POSITIVE_GROUPS
+        top = self._bare_imidazole(resname)
+        positive, _negative = protein_charged_groups(top, range(top.n_atoms))
+        assert positive == []
 
     @pytest.mark.parametrize("resname", ["HIE", "HID", "HIP"])
     def test_a_ring_is_found_on_a_real_topology(self, resname: str) -> None:
@@ -150,8 +165,10 @@ class TestEveryHistidineKeepsItsChemistry:
         assert residues_not_covered(top, range(top.n_atoms)) == {}
 
 
-class TestASelectionThatDropsProteinSaysSo:
-    """AUD9's other half: MDTraj's `protein` excludes HIE, HID and HSP."""
+class TestAProteinSelectionKeepsEveryAminoAcid:
+    """AUD9's other half: MDTraj's `protein` excluded HIE, HID and HSP. They
+    are now protein to it (protein_names.py), so nothing is left
+    out and there is nothing to say."""
 
     def _peptide(self, middle: str):
         top = md.Topology()
@@ -165,25 +182,14 @@ class TestASelectionThatDropsProteinSaysSo:
         xyz[:] = np.arange(top.n_atoms)[None, :, None] * 0.15
         return md.Trajectory(xyz, top)
 
-    @pytest.mark.parametrize("resname", ["HIE", "HID"])
-    def test_the_finding_names_the_residue(self, resname: str) -> None:
+    @pytest.mark.parametrize("resname", ["HIE", "HID", "HSP", "CYX", "ASH"])
+    def test_the_residue_is_selected(self, resname: str) -> None:
         from fastmdxplora.analysis.sasa import SASA
 
+        peptide = self._peptide(resname)
         analysis = SASA()
-        analysis.select_atoms(self._peptide(resname))
-
-        note = analysis.findings.get("selection_dropped_residues")
-        assert note is not None, (
-            f"{resname} is outside MDTraj's 'protein' and nothing said so"
-        )
-        assert resname in note
-
-    def test_nothing_is_said_when_nothing_is_dropped(self) -> None:
-        from fastmdxplora.analysis.sasa import SASA
-
-        analysis = SASA()
-        analysis.select_atoms(self._peptide("HIS"))
-        assert "selection_dropped_residues" not in analysis.findings
+        assert len(analysis.select_atoms(peptide)) == peptide.n_atoms
+        assert analysis.findings == {}
 
 
 class TestABondAngleIsNotACircle:

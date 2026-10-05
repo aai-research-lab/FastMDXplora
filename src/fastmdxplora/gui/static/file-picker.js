@@ -206,7 +206,7 @@
     // Where to start: what the field already holds, else the caller's
     // suggestion -- the Agent opens a study's own folder for a thread
     // about that study -- else the workspace, which the picker learns
-    // from the app state, so Load available study and every builder
+    // from the app state, so Open another folder and every builder
     // field start among the studies rather than at home.
     show((current && current.value.trim()) || options.start || state.workspace || "");
   }

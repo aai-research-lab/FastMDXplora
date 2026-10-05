@@ -17,6 +17,13 @@
   var lookedIn = "";
   var loading = null;
   var SHOWN_FIRST = 20;
+  // Tags: the one the cards are narrowed to, the card being tagged, and
+  // the tags the studies here carry (offered as one is typed).
+  var tagged = null;
+  var editing = null;
+  var tagsUsed = [];
+  var TAG_LENGTH = 40;
+  var NOTE_LENGTH = 200;
 
   function el(id) { return document.getElementById(id); }
 
@@ -53,8 +60,148 @@
   }
 
   function searchText(study) {
-    return [study.name, study.system, study.kind, study.state, study.forcefield || ""]
-      .join(" ").toLowerCase();
+    return [study.name, study.system, study.kind, study.state, study.forcefield || "",
+      (study.tags || []).join(" "), study.note || ""].join(" ").toLowerCase();
+  }
+
+  function hasTag(study, tag) {
+    var wanted = tag.toLowerCase();
+    return (study.tags || []).some(function (t) { return t.toLowerCase() === wanted; });
+  }
+
+  /* The tags a card carries, each narrowing the cards to it, and its note. */
+  function tagsShown(study) {
+    var holder = make("div", "study-tags");
+    (study.tags || []).forEach(function (tag) {
+      var chip = make("button", "study-tag", tag);
+      chip.type = "button";
+      chip.title = "Show only the studies tagged " + tag;
+      chip.addEventListener("click", function () { narrowTo(tag); });
+      holder.appendChild(chip);
+    });
+    return holder;
+  }
+
+  function narrowTo(tag) {
+    tagged = tag;
+    draw();
+  }
+
+  /* The card's tags and note, changed on it and kept in the study's folder. */
+  function tagEditor(study) {
+    var form = make("form", "study-tag-editor");
+    form.setAttribute("aria-label", "Tags of " + study.name);
+    var tags = (study.tags || []).slice();
+    var list = make("div", "study-tags");
+    function drawTags() {
+      list.replaceChildren.apply(list, tags.map(function (tag, i) {
+        var chip = make("span", "study-tag is-editing", tag);
+        var drop = make("button", "study-tag-drop", "\u00d7");
+        drop.type = "button";
+        drop.setAttribute("aria-label", "Remove the tag " + tag);
+        drop.addEventListener("click", function () {
+          tags.splice(i, 1);
+          drawTags();
+        });
+        chip.appendChild(drop);
+        return chip;
+      }));
+    }
+    drawTags();
+    var adding = make("input", "study-tag-input");
+    adding.type = "text";
+    adding.maxLength = TAG_LENGTH;
+    adding.setAttribute("list", "studies-tags-used");
+    adding.placeholder = "Add a tag";
+    adding.setAttribute("aria-label", "A tag to add");
+    function add() {
+      var tag = adding.value.replace(/\s+/g, " ").trim();
+      if (tag && !tags.some(function (t) { return t.toLowerCase() === tag.toLowerCase(); })) {
+        tags.push(tag);
+        drawTags();
+      }
+      adding.value = "";
+    }
+    adding.addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        add();
+      }
+    });
+    var addButton = make("button", "file-action", "Add");
+    addButton.type = "button";
+    addButton.addEventListener("click", add);
+    var note = make("input", "study-note-input");
+    note.type = "text";
+    note.maxLength = NOTE_LENGTH;
+    note.value = study.note || "";
+    note.placeholder = "A note: one line";
+    note.setAttribute("aria-label", "A note on the study");
+    var said = make("p", "muted small study-tag-said");
+    said.setAttribute("role", "status");
+    var save = make("button", "file-action", "Save");
+    save.type = "submit";
+    var cancel = make("button", "file-action", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", function () {
+      editing = null;
+      draw();
+    });
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (adding.value.trim()) add();
+      save.disabled = true;
+      fetch("/api/study-tags", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: study.path, tags: tags, note: note.value })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        save.disabled = false;
+        if (!d || !d.ok) {
+          said.textContent = (d && (d.reason || d.error)) || "The tags could not be kept.";
+          return;
+        }
+        study.tags = d.tags;
+        study.note = d.note;
+        editing = null;
+        tagsUsed = countTags();
+        offerTags();
+        draw();
+      }).catch(function () {
+        save.disabled = false;
+        said.textContent = "The server did not answer.";
+      });
+    });
+    var row = make("div", "study-tag-row");
+    row.append(adding, addButton);
+    var buttons = make("div", "study-tag-row");
+    buttons.append(save, cancel);
+    form.append(list, row, note, buttons, said);
+    return form;
+  }
+
+  function countTags() {
+    var counted = {};
+    studies.forEach(function (study) {
+      (study.tags || []).forEach(function (tag) {
+        var key = tag.toLowerCase();
+        if (!counted[key]) counted[key] = { tag: tag, studies: 0 };
+        counted[key].studies += 1;
+      });
+    });
+    return Object.keys(counted).map(function (key) { return counted[key]; })
+      .sort(function (a, b) { return b.studies - a.studies || a.tag.localeCompare(b.tag); });
+  }
+
+  /* The tags used here, offered as a tag is typed. */
+  function offerTags() {
+    var listed = el("studies-tags-used");
+    if (!listed) return;
+    listed.replaceChildren.apply(listed, tagsUsed.map(function (used) {
+      var option = make("option");
+      option.value = used.tag;
+      return option;
+    }));
   }
 
   function card(study) {
@@ -63,14 +210,25 @@
     item.dataset.path = study.path;
     item.dataset.state = study.state;
     var frame = make("div", "study-thumb");
+    var named = function () {
+      frame.replaceChildren(make("span", "study-thumb-none", study.system || study.name));
+    };
     if (study.thumbnail) {
+      // A figure the study plotted, else its backbone rendered from its
+      // structure; its name where neither can be had.
       var img = make("img");
       img.loading = "lazy";
       img.alt = "";
       img.src = "/api/study-thumbnail?" + new URLSearchParams({ path: study.path });
+      img.addEventListener("error", named);
+      frame.dataset.picture = study.thumbnail;
+      if (study.thumbnail === "backbone") {
+        frame.title = "No figure yet: the protein's backbone, coloured from its N terminus " +
+          "(purple) to its C terminus (green)";
+      }
       frame.appendChild(img);
     } else {
-      frame.appendChild(make("span", "study-thumb-none", study.system || study.name));
+      named();
     }
     item.appendChild(frame);
     var body = make("div", "study-body");
@@ -95,6 +253,12 @@
         study.free_energy.refused ? "Free energy refused: " + study.free_energy.refused
           : "Free energy recombined."));
     }
+    if (editing === study.path) {
+      body.appendChild(tagEditor(study));
+    } else {
+      if ((study.tags || []).length) body.appendChild(tagsShown(study));
+      if (study.note) body.appendChild(make("div", "study-note", study.note));
+    }
     var actions = make("div", "study-actions");
     var open = make("button", "file-action study-open", "Open");
     open.type = "button";
@@ -105,7 +269,17 @@
     box.checked = chosen.indexOf(study.path) >= 0;
     box.addEventListener("change", function () { choose(study.path, box.checked); });
     pick.append(box, document.createTextNode(" Compare"));
-    actions.append(open, pick);
+    var tag = make("button", "file-action study-tag-edit",
+      (study.tags || []).length || study.note ? "Tags" : "Tag");
+    tag.type = "button";
+    tag.title = "Tags and a note of your own, kept in the study's folder";
+    tag.addEventListener("click", function () {
+      editing = study.path;
+      draw();
+      var input = document.querySelector(".study-tag-editor .study-tag-input");
+      if (input) input.focus();
+    });
+    actions.append(open, tag, pick);
     body.appendChild(actions);
     item.appendChild(body);
     return item;
@@ -119,8 +293,14 @@
       .filter(Boolean);
     var shown = studies.filter(function (study) {
       var text = searchText(study);
-      return wanted.every(function (word) { return text.indexOf(word) >= 0; });
+      return (!tagged || hasTag(study, tagged))
+        && wanted.every(function (word) { return text.indexOf(word) >= 0; });
     });
+    var filter = el("studies-tag-filter");
+    if (filter) {
+      filter.hidden = !tagged;
+      el("studies-tag-filter-said").textContent = tagged ? "Tagged " + tagged : "";
+    }
     grid.replaceChildren.apply(grid, shown.map(card));
     empty.hidden = shown.length > 0;
     empty.textContent = studies.length
@@ -278,6 +458,10 @@
         }
         lookedIn = data.root;
         studies = data.studies || [];
+        if (!where) counted(data);
+        tagsUsed = data.tags_used || [];
+        offerTags();
+        if (tagged && !studies.some(function (s) { return hasTag(s, tagged); })) tagged = null;
         chosen = chosen.filter(function (path) {
           return studies.some(function (s) { return s.path === path; });
         });
@@ -296,6 +480,7 @@
   function attach() {
     if (!el("studies-grid")) return;
     el("studies-search").addEventListener("input", draw);
+    el("studies-tag-filter-clear").addEventListener("click", function () { narrowTo(null); });
     el("studies-compare").addEventListener("click", compare);
     el("studies-clear").addEventListener("click", function () {
       chosen = [];
@@ -319,8 +504,67 @@
     if (location.hash === "#studies") load();
   }
 
+  /* The sidebar's part: how many studies the workspace holds, beside All
+   * studies, and the newest of them in the study card's menu, to switch
+   * to. Asked once, a moment after the page opens, and again when the
+   * All studies page lists the workspace. */
+  var RECENT = 6;
+  var workspace = null;
+  var asked = null;
+
+  function counted(data) {
+    workspace = data && data.ok ? data : null;
+    var count = el("nav-studies-count");
+    if (count) {
+      count.textContent = workspace
+        ? String(workspace.studies.length) + (workspace.more ? "+" : "") : "";
+    }
+  }
+
+  function askTheWorkspace() {
+    if (asked) return asked;
+    asked = fetch("/api/studies")
+      .then(function (r) { return r.json(); })
+      .then(function (data) { counted(data); return workspace; })
+      .catch(function () { asked = null; return null; });
+    return asked;
+  }
+
+  function sameFolder(a, b) {
+    return String(a || "").replace(/\/+$/, "") === String(b || "").replace(/\/+$/, "");
+  }
+
+  function offerRecent() {
+    var list = el("study-menu-list");
+    if (!list) return;
+    askTheWorkspace().then(function (data) {
+      var open = (el("sidebar-output-folder") || {}).textContent || "";
+      var recent = (data && data.studies || []).filter(function (study) {
+        return !sameFolder(study.path, open.trim());
+      }).slice(0, RECENT);
+      if (!recent.length) {
+        list.replaceChildren(make("div", "study-menu-empty muted",
+          data ? "No other study in this workspace." : "The studies could not be listed."));
+        return;
+      }
+      list.replaceChildren.apply(list, recent.map(function (study) {
+        var item = make("button", "study-menu-item study-menu-study");
+        item.type = "button";
+        item.setAttribute("role", "menuitem");
+        item.title = study.path;
+        item.dataset.path = study.path;
+        item.append(make("span", "study-menu-name", study.name),
+          make("span", "study-menu-state", (study.system ? study.system + " \u00b7 " : "") +
+            (study.state || "")));
+        item.addEventListener("click", function () { openStudy(study.path, item); });
+        return item;
+      }));
+    });
+  }
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
   else attach();
+  setTimeout(askTheWorkspace, 1500);
 
-  window.FastMDXStudies = { load: load };
+  window.FastMDXStudies = { load: load, narrowTo: narrowTo, offerRecent: offerRecent };
 }());

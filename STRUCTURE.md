@@ -12,12 +12,17 @@ FastMDXplora/
 │       ├── dependencies.py        # Optional-backend detection (OpenMM, PDBFixer, …)
 │       ├── statistics.py          # Statistical inefficiency: how many independent samples a mean rests on
 │       ├── lipids.py              # Which residues are lipids, and how many make a bilayer
+│       ├── protein_names.py       # `protein` covers every amino acid a force field writes, from MDTraj's first import
 │       ├── provenance.py          # Which code a run was made from
 │       ├── user_dir.py            # Where per-user settings live, outside any study
 │       ├── own_programs.py        # Puts this environment's programs (AmberTools) on PATH
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
+│       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
+│       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
+│       ├── again.py               # What can be run again on a study, and the command that does it
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
+│       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
 │       ├── advisories.py          # What is worth knowing before a run starts, not after
 │       ├── cost.py                # How long a study will take, on this machine
 │       ├── naming.py              # One rule for the name of a study's output folder
@@ -29,7 +34,7 @@ FastMDXplora/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
-│       │                          #   analyze/report/gui/info/init-config/remote/mcp/scene)
+│       │                          #   analyze/report/gui/info/config/remote/mcp/scene)
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
 │       │   ├── app.py             # What `fastmdx mcp` offers an AI app
@@ -87,6 +92,8 @@ FastMDXplora/
 │       │   ├── base.py            # Analysis base class and shared I/O
 │       │   ├── loading.py         # Trajectory/topology loading, scope and selection
 │       │   ├── imaging.py         # Molecules made whole, MDTraj's imaging for every frame at once
+│       │   ├── water_names.py     # The one set of water residue names every module uses
+│       │   ├── starting_frame.py  # Which frames clustering and the projections read, and where the RMSD equilibrates
 │       │   ├── plotting.py        # Shared figure style
 │       │   ├── rmsd.py rmsf.py rg.py qvalue.py sasa.py ss.py
 │       │   ├── hbonds.py dihedrals.py cluster.py dimred.py water_sites.py
@@ -131,10 +138,16 @@ FastMDXplora/
 │       │   ├── interactions_over_frames.py  # What holds the ligand, frame by frame
 │       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
 │       │   ├── runs_compared.py   # The runs of a study side by side, resolved differences marked
+│       │   ├── analysis_overview.py  # What every analysis determined, read together, and how each series converged
 │       │   ├── runs_together.py   # The runs of a study played together in one Viewer
 │       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── motion.py          # A study's main motions, swung and shown as lines on the first frame
 │       │   ├── states.py          # The states the cluster analysis found, and two compared
+│       │   ├── backbone_angles.py # Each residue's φ and ψ in each frame played
+│       │   ├── backbone_picture.py # A study's backbone for its card, before any figure
+│       │   ├── sidebar_icons.py   # The sidebar's line icons, for the GUI and the standalone dashboard
+│       │   ├── contact_map.py     # Which residues touch which over the frames played
+│       │   ├── pocket_volume.py   # The room in a ligand's pocket, frame by frame (POVME's way)
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
@@ -143,6 +156,7 @@ FastMDXplora/
 │       │   ├── figure_provenance.py  # What made each figure, and the command that makes it again
 │       │   ├── report_page.py     # The report as a document, in the page
 │       │   ├── browse.py          # Walking the filesystem from the page; what is a study
+│       │   ├── again_view.py      # What the GUI offers to run again on the study on screen
 │       │   ├── directory_inspect.py  # What is in a folder, and what can be done with it
 │       │   ├── config_builder.py  # What the page holds as a config file, checked
 │       │   ├── run_from_config.py # Run what the page describes, from the file it would give
@@ -158,8 +172,9 @@ FastMDXplora/
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
 │       │   │                      #   frame.js (columns, side panel, theme), studies.js,
-│       │   │                      #   run-builder.js, file-picker.js, report-page.js,
-│       │   │                      #   series-chart.js, runs-compared.js, stopping.js,
+│       │   │                      #   preferences.js (the dialogs, preferences kept),
+│       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
+│       │   │                      #   series-chart.js, analysis-page.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, charts.js,
 │       │   │                      #   molecule-viewer.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
@@ -167,7 +182,9 @@ FastMDXplora/
 │       │   │                      #   viewer-views.js, viewer-movie.js, frame-series.js,
 │       │   │                      #   frame-interactions.js, chain-contacts.js,
 │       │   │                      #   viewer-occupancy.js, viewer-motion.js,
-│       │   │                      #   viewer-states.js, viewer-beside.js; scene-view.js
+│       │   │                      #   viewer-states.js, viewer-ramachandran.js,
+│       │   │                      #   viewer-contact-map.js, viewer-pocket.js,
+│       │   │                      #   viewer-beside.js; scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/
@@ -190,10 +207,11 @@ FastMDXplora/
 │       ├── config/
 │       │   ├── schema.py          # Config schema (single source of truth for options)
 │       │   ├── loader.py          # YAML load, merge, strict validation
-│       │   ├── generate.py        # `fastmdx init-config` templates
+│       │   ├── generate.py        # `fastmdx config` templates
 │       │   ├── describe.py        # The config language, described for an AI model
 │       │   ├── languages.py       # One study as a config file, a command and a script
 │       │   ├── diff.py            # What differs between two studies' settings
+│       │   ├── recorded.py        # A study's recorded settings, as the base for its phases run again
 │       │   ├── phase_settings.py, phase_settings_types.py  # Each phase's settings, from the schema
 │       │   └── agent_modes.py     # Which phases a model wrote, and which were checked
 │       ├── validation/            # Checks of the software against independent references

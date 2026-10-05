@@ -130,7 +130,10 @@
       yLow = Math.min(yLow, mean.value - reach);
       yHigh = Math.max(yHigh, mean.value + reach);
     }
-    if (data.kind === "residue" || yLow >= 0) yLow = Math.min(0, yLow);
+    // Zero on the axis where the values reach towards it (an RMSD, a
+    // profile), not under a series that varies by a few percent about a
+    // large value: Total SASA of 91 nm2 varying by 0.3 read as a flat line.
+    if (data.kind === "residue" || (yLow >= 0 && yLow <= 0.5 * yHigh)) yLow = Math.min(0, yLow);
     var pad = (yHigh - yLow) * 0.06 || Math.abs(yHigh) * 0.1 || 1;
     yHigh += pad;
     if (yLow < 0) yLow -= pad;

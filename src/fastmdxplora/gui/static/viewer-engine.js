@@ -444,6 +444,7 @@
       this.framesRef = null;
       this.framesBytes = null;
       this.framesWhole = false;
+      this.tween = null;
       await this.plugin.clear();
     }
 
@@ -975,10 +976,78 @@
       return this.lib.structure.Model.TrajectoryInfo.get(model.obj.data).size;
     }
 
+    /** The frame shown, numbered as the frames played are, also while a
+     * movie shows frames in between them (``tweenFrames``). */
     frame() {
       const model = this.trajectoryModelCell();
       if (!model || !model.obj) return 0;
-      return this.lib.structure.Model.TrajectoryInfo.get(model.obj.data).index;
+      const index = this.lib.structure.Model.TrajectoryInfo.get(model.obj.data).index;
+      return this.tween ? this.savedOf(index) : index;
+    }
+
+    /** The frame played a frame of the movie's trajectory falls in. */
+    savedOf(index) {
+      const tween = this.tween;
+      const position = Math.min(tween.saved.length - 1, Math.floor(index / (tween.between + 1)));
+      return tween.saved[Math.max(0, position)];
+    }
+
+    /** For a movie: the frames shown read from ``url``, the frames played
+     * ``saved`` with ``between`` frames interpolated after each but the
+     * last (`/structure/frames.dcd?...&span=&between=`). The frames go on
+     * being named by the frames played; ``setFrame(index, step)`` shows the
+     * step-th frame after one. False where it cannot be read, the frames
+     * played then read again from ``back``. */
+    async tweenFrames(url, saved, between, back) {
+      const cells = this.plugin.state.data.cells;
+      if (!this.framesRef || !cells.has(this.framesRef) || !saved.length) return false;
+      const shown = this.frame();
+      const atoms = this.atomCount();
+      const read = await this.readFramesFrom(url);
+      const expected = (saved.length - 1) * (between + 1) + 1;
+      this.tween = {saved: saved.slice(), between,
+        position: new Map(saved.map((frame, i) => [frame, i]))};
+      if (!read || this.atomCount() !== atoms || this.frameCount() !== expected) {
+        this.tween = null;
+        if (read && back) await this.readFramesFrom(back);
+        if (this.frame() !== shown) await this.setFrame(shown);
+        return false;
+      }
+      await this.setFrame(saved.includes(shown) ? shown : saved[0]);
+      return true;
+    }
+
+    /** The frames played shown again from ``url`` after a movie's frames in
+     * between. */
+    async untweenFrames(url) {
+      if (!this.tween) return true;
+      const shown = this.frame();
+      this.tween = null;
+      const read = await this.readFramesFrom(url);
+      this.framesWhole = true;
+      if (read) await this.setFrame(shown);
+      return read;
+    }
+
+    async readFramesFrom(url) {
+      try {
+        if (this.framesBytes) {
+          const asked = absolute(url);
+          const response = await fetch(asked + (asked.includes("?") ? "&" : "?")
+            + `as=${this.framesBytes}`, {cache: "no-store"});
+          if (!response.ok) return false;
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          await this.plugin.build().to(this.framesRef)
+            .update((old) => ({...old, data: bytes})).commit();
+        } else {
+          await this.plugin.build().to(this.framesRef)
+            .update((old) => ({...old, url: absolute(url)})).commit();
+        }
+        return true;
+      } catch (error) {
+        console.debug("frames not read", error);
+        return false;
+      }
     }
 
     trajectoryModelCell() {
@@ -994,15 +1063,29 @@
       return (moving || models[0] || {}).cell || null;
     }
 
-    async setFrame(index) {
+    async setFrame(index, step) {
       const cell = this.trajectoryModelCell();
       if (!cell) return;
       const total = this.frameCount();
-      const frame = Math.max(0, Math.min(total - 1, Math.round(index)));
+      let frame = Math.max(0, Math.min(total - 1, Math.round(index)));
+      let raw = frame;
+      if (this.tween) {
+        // A frame played, or a frame in between it and the next, of a movie.
+        const tween = this.tween;
+        let position = tween.position.get(Math.round(index));
+        if (position == null) {
+          position = tween.saved.reduce((best, saved, i) =>
+            (Math.abs(saved - index) < Math.abs(tween.saved[best] - index) ? i : best), 0);
+        }
+        const after = position < tween.saved.length - 1
+          ? Math.max(0, Math.min(tween.between, Math.round(step || 0))) : 0;
+        raw = Math.min(total - 1, position * (tween.between + 1) + after);
+        frame = tween.saved[position];
+      }
       // The other runs move in the same commit, so no frame is rendered
       // with them a step behind.
       const update = this.plugin.build();
-      update.to(cell.transform.ref).update((old) => ({...old, modelIndex: frame}));
+      update.to(cell.transform.ref).update((old) => ({...old, modelIndex: raw}));
       const ended = [];
       for (const run of this.runs || []) {
         if (run.frames > 0) {
@@ -1553,7 +1636,10 @@
     secondaryFor(structure) {
       const info = this.lib.structure.Model.TrajectoryInfo.get(structure.model);
       const said = this.secondary.said;
-      const codes = said.frames[said.frames.length === 1 ? 0 : info.index];
+      // A frame in between two of a movie's is given the first one's.
+      const played = this.tween && info.size === this.frameCount()
+        ? this.savedOf(info.index) : info.index;
+      const codes = said.frames[said.frames.length === 1 ? 0 : played];
       if (codes == null) return null;
       const index = this.secondary.index;
       const value = new Map();

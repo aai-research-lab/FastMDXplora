@@ -139,3 +139,17 @@ class TestItDoesNotOverflowOrLieWhenItCannot:
         assert weights.effective_sample_size == 0.0
         assert weighted_mean(np.array([]), weights) != weighted_mean(
             np.array([1.0]), weights)  # both nan-ish, neither a number
+
+
+def test_there_is_one_way_to_weight_a_run() -> None:
+    """A second `weights_for_run` sat here with neither the c(t) offset nor
+    PLUMED's gamma/(gamma - 1) height factor undone. On a well-tempered run
+    it read P(x < 0) as 0.965 against an exact 0.893, and nothing called it,
+    so the next caller to find it would have. The one that is right lives in
+    `reweighted_averages`."""
+    from fastmdxplora.analysis import reweight, reweighted_averages
+
+    assert getattr(reweight, "weights_for_run",
+                   reweighted_averages.weights_for_run) is (
+        reweighted_averages.weights_for_run)
+    assert "c(t)" in (reweight.__doc__ or "")

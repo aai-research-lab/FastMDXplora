@@ -14,6 +14,7 @@ otherwise.
 
 from __future__ import annotations
 
+from fastmdxplora.replaced import PREVIOUS
 from fastmdxplora.utils.logging import get_logger
 import zipfile
 from pathlib import Path
@@ -54,6 +55,10 @@ def _iter_project_files(root: Path, bundle_path: Path) -> list[Path]:
         if p.name in EXCLUDE_NAMES:
             continue
         if any(part in EXCLUDE_DIR_NAMES for part in p.relative_to(root).parts[:-1]):
+            continue
+        # What a phase run again replaced (`fastmdxplora.replaced`): kept in
+        # the study's folder, not in the archive of what the report describes.
+        if p.relative_to(root).parts[0] == PREVIOUS:
             continue
         if p.name.endswith(EXCLUDE_SUFFIXES):
             continue

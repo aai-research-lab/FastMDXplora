@@ -14,10 +14,12 @@ equilibrium ensemble at all, so there is no set of weights that turns it into
 one. Both are stated in the methods text and neither is fixable here.
 
 What comes out is both numbers side by side -- the raw average over the
-biased frames and the reweighted one -- with the effective sample size that
-says how much the second rests on. A reweighted mean over a thousand frames
-whose weight sits in five of them is a mean over five, and quoting it without
-that number is the failure mode this is built to avoid.
+biased frames and the reweighted one with its standard error -- with what the
+second rests on: Kish's weight-concentration effective frames, and the
+independent samples, that count divided by the statistical inefficiency of
+the collective variable. A reweighted mean over a thousand frames whose
+weight sits in five of them is a mean over five, and quoting it without that
+number is the failure mode this is built to avoid.
 """
 
 from __future__ import annotations
@@ -34,12 +36,14 @@ from fastmdxplora.analysis.reweight import (
     KB_KJ_PER_MOL_K,
     Weights,
     bias_at_each_frame,
+    reweighted_estimate,
     weighted_mean,
     weighted_standard_deviation,
     weights_from_bias,
 )
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
+from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
 from fastmdxplora.analysis.plotting import closes_what_it_opens as _closes_what_it_opens
 
 logger = get_logger("analysis.reweighted")
@@ -586,6 +590,12 @@ def weights_for_run(
     weights = weights_from_bias(
         corrected, temperature_K=temperature, converged=converged)
 
+    # The weights are a function of the collective variable, so they are
+    # correlated in time as it is, and Kish's count treats every frame as
+    # independent. Read on the frames, in frames; a torsion through its sine
+    # and cosine, so a crossing of +-180 degrees is not read as a jump.
+    cv_inefficiency = _cv_inefficiency(frame_cv, periodic)
+
     # PLUMED computed the same quantity as it went. Comparing against it is
     # the only independent check available on this reconstruction, and a
     # disagreement means the frames have been placed on the wrong coordinate.
@@ -623,10 +633,32 @@ def weights_for_run(
         "c_of_t_range_kjmol": [float(np.min(offset)), float(np.max(offset))],
         "effective_sample_size": weights.effective_sample_size,
         "usable_fraction": weights.usable_fraction,
+        "cv_statistical_inefficiency": cv_inefficiency,
+        "independent_samples": (weights.effective_sample_size
+                                / max(cv_inefficiency, 1.0)),
         "note": weights.note,
         "largest_disagreement_with_plumed": agreement,
     })
     return weights, provenance
+
+
+def _cv_inefficiency(frame_cv: Any, periodic: Any) -> float:
+    """The statistical inefficiency of the biased variable(s) on the frames:
+    the largest over its columns, a periodic column read through its sine and
+    cosine."""
+    from fastmdxplora.statistics import statistical_inefficiency
+
+    array = np.asarray(frame_cv, dtype=float)
+    columns = [array] if array.ndim == 1 else [array[:, k] for k in range(array.shape[1])]
+    wraps = ((bool(periodic),) * len(columns) if isinstance(periodic, bool)
+             else tuple(bool(p) for p in periodic))
+    g = 1.0
+    for column, wrap in zip(columns, wraps):
+        for series in ((np.sin(column), np.cos(column)) if wrap else (column,)):
+            series = series[np.isfinite(series)]
+            if series.size >= 3 and np.ptp(series) > 0.0:
+                g = max(g, statistical_inefficiency(series))
+    return float(g)
 
 
 # ---------------------------------------------------------------------------
@@ -817,17 +849,30 @@ def reweight_results(
 
         raw = float(np.mean(series))
         corrected = weighted_mean(series, weights)
-        quantities.append({
+        # The error on the reweighted mean, from a paired block bootstrap,
+        # or the reason there is none: too few independent samples once
+        # the frames' correlation is counted, not only the weights' spread.
+        estimate = reweighted_estimate(
+            series, weights,
+            inefficiency=float(provenance.get("cv_statistical_inefficiency", 1.0)))
+        item = {
             "analysis": name,
             "label": spec[1],
             "raw_mean": raw,
             "raw_std": float(np.std(series, ddof=1)) if series.size > 1 else float("nan"),
             "reweighted_mean": corrected,
+            "reweighted_standard_error": estimate["standard_error"],
             "reweighted_std": weighted_standard_deviation(series, weights),
+            "independent_samples": estimate["independent_samples"],
+            "statistical_inefficiency": estimate["statistical_inefficiency"],
             # The number a reader wants: how far the bias moved this.
             "shift_percent": (
                 100.0 * (corrected - raw) / raw if raw != 0 else float("nan")),
-        })
+        }
+        for key in ("not_a_measurement", "refusal", "is_a_floor", "note"):
+            if key in estimate:
+                item[key] = estimate[key]
+        quantities.append(item)
 
     occupancies: list[dict[str, Any]] = []
     for name, result in results.items():
@@ -853,12 +898,25 @@ def reweight_results(
         return None
 
     warnings: list[str] = []
+    independent = float(provenance.get("independent_samples",
+                                       weights.effective_sample_size))
     if weights.effective_sample_size < USABLE_EFFECTIVE_FRAMES:
         warnings.append(
             f"The weights concentrate into {weights.effective_sample_size:.0f} "
-            f"effective frames of {n_frames}. These reweighted averages rest "
-            "on that many, and they and the standard deviations beside them "
-            "are correspondingly uncertain; a longer run is what fixes it.")
+            f"weight-concentration effective frames of {n_frames}, about "
+            f"{independent:.0f} independent samples once their correlation in "
+            "time is counted. These reweighted averages rest on that many, "
+            "and they and the standard deviations beside them are "
+            "correspondingly uncertain; a longer run is what fixes it.")
+    elif independent < MINIMUM_EFFECTIVE_SAMPLES:
+        warnings.append(
+            f"{weights.effective_sample_size:.0f} weight-concentration "
+            f"effective frames of {n_frames}, but the collective variable "
+            f"decorrelates once every "
+            f"{provenance.get('cv_statistical_inefficiency', 1.0):.0f} frames, "
+            f"so they hold about {independent:.1f} independent samples. No "
+            "error is given on these reweighted averages; a longer run is "
+            "what fixes it.")
     if not weights.converged:
         warnings.append(
             "The bias had not converged when the run ended, so these averages "
@@ -882,7 +940,14 @@ def reweight_results(
 
     record = {
         "n_frames": int(n_frames),
+        # Kish's count, which says how evenly the weight is spread and
+        # treats the frames as independent. The key keeps its name for the
+        # readers that already have it.
         "effective_sample_size": weights.effective_sample_size,
+        "weight_concentration_effective_frames": weights.effective_sample_size,
+        "independent_samples": independent,
+        "cv_statistical_inefficiency": provenance.get(
+            "cv_statistical_inefficiency"),
         "usable_fraction": weights.usable_fraction,
         "converged": weights.converged,
         "settled": weights.converged,
@@ -902,7 +967,13 @@ def reweight_results(
             "Tiwary-Parrinello offset. Subtracting c(t) is what makes the "
             "weight depend on where the system was rather than on how late "
             "in the run the frame was written. This recovers the Boltzmann "
-            "ensemble for both standard and well-tempered metadynamics."),
+            "ensemble for both standard and well-tempered metadynamics. "
+            "Independent samples are Kish's weight-concentration effective "
+            "frames divided by the larger statistical inefficiency of the "
+            "collective variable and the quantity; the standard error is a "
+            "paired block bootstrap over values and weights, in blocks of "
+            "twice that inefficiency, and is withheld below 10 independent "
+            "samples or where the run is shorter than 25 inefficiencies."),
     }
 
     directory = Path(output_dir) / "reweighted"
@@ -922,18 +993,21 @@ def _write_table(record: dict[str, Any], path: Path) -> None:
     lines = [
         "# Averages over a metadynamics trajectory, before and after "
         "reweighting.",
-        f"# effective_sample_size {record['effective_sample_size']:.1f} "
-        f"of {record['n_frames']} frames",
+        f"# weight-concentration effective frames "
+        f"{record['effective_sample_size']:.1f} of {record['n_frames']}, "
+        f"independent samples {record.get('independent_samples', float('nan')):.1f}",
     ]
     if not record.get("converged", record.get("settled")):
         lines.append("# provisional: the bias had not converged")
     lines.append("# analysis raw_mean raw_std reweighted_mean "
-                 "reweighted_std shift_percent")
+                 "reweighted_std shift_percent reweighted_standard_error")
     for item in record["quantities"]:
+        error = item.get("reweighted_standard_error")
         lines.append(
             f"{item['analysis']} {item['raw_mean']:.6g} {item['raw_std']:.6g} "
             f"{item['reweighted_mean']:.6g} {item['reweighted_std']:.6g} "
-            f"{item['shift_percent']:.3f}")
+            f"{item['shift_percent']:.3f} "
+            f"{'nan' if error is None else f'{error:.6g}'}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -972,7 +1046,9 @@ def _plot(record: dict[str, Any], path: Path) -> None:
             fontsize=8, color=colour("ANNOTATION"))
 
     ess = record["effective_sample_size"]
-    caption = (f"{ess:.0f} effective frames of {record['n_frames']}")
+    caption = (f"{ess:.0f} weight-concentration effective frames of "
+               f"{record['n_frames']}, about "
+               f"{record.get('independent_samples', ess):.0f} independent")
     if not record.get("converged", record.get("settled")):
         caption += " — provisional, the bias had not converged"
     ax.set_xlabel(f"Change from the biased average (%)\n{caption}")

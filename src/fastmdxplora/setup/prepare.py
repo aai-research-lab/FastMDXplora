@@ -40,6 +40,7 @@ Outputs
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -998,8 +999,17 @@ def prepare_system(
 
     # ----- 5. Capture initial State -----
     # Use a no-op integrator just to obtain a Context for State serialization.
+    # On the Reference platform: nothing is integrated here, only the
+    # velocities drawn and the positions wrapped, and the CPU and GPU
+    # platforms do not draw the same velocities twice from one seed. On
+    # the CPU, one draw in four for a 729-atom peptide box differed in the
+    # last bits from the others, and every draw on its default threads; two
+    # preparations of a bilayer from one seed matched in every position and
+    # in no velocity (up to 8e-8 nm/ps apart). The Reference platform drew
+    # the same bytes every time.
     integrator = omm["openmm"].VerletIntegrator(0.001 * unit.picoseconds)
-    context = omm["openmm"].Context(system, integrator)
+    context = omm["openmm"].Context(
+        system, integrator, omm["openmm"].Platform.getPlatformByName("Reference"))
     context.setPositions(modeller.positions)
     # Drawn from Python's stream, which setup seeds (`setup.random_seed`),
     # so the velocities in `state.xml` repeat with the rest of the system.
@@ -1079,6 +1089,11 @@ def prepare_system(
 #: 2POR on a CPU is about 40 minutes.
 PACKING_ATTEMPTS = 3
 
+#: How a packing that ran away says so: OpenMM's NaN, or Python's on
+#: meeting it. The word is matched whole, so "nanometer" in a template's
+#: message is not a runaway.
+_RAN_AWAY = re.compile(r"\bNaN\b")
+
 
 def _seeded_packing(seed: int):
     """OpenMM's bilayer packing, with its dynamics on `seed`, while in use.
@@ -1148,10 +1163,15 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
         try:
             with _seeded_packing(seed) as made:
                 modeller.addMembrane(ff, lipidType=lipid, **packing)
-        except ValueError:
-            raise
         except Exception as exc:  # noqa: BLE001 - OpenMM's own exception type
-            if "nan" not in str(exc).lower():
+            # A runaway reaches the caller two ways: OpenMM's own "Particle
+            # coordinate is NaN" during the relaxation, or, where the
+            # relaxation ended on NaN positions without stopping, Python's
+            # "cannot convert float NaN to integer" as OpenMM then sorts
+            # those positions into cells to place the water. Both are the
+            # packing, and both are packed again; any other failure,
+            # a missing template included, is not.
+            if not _RAN_AWAY.search(str(exc)):
                 raise
             logger.warning(
                 "Packing the %s bilayer with seed %d failed (%s); %s", lipid, seed,

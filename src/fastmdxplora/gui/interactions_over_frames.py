@@ -32,7 +32,11 @@ MOST_PAIRS = 40
 #: Each kind as a person names it.
 KINDS_SAID = {
     "hydrogen_bond": "Hydrogen bond", "salt_bridge": "Salt bridge",
+    "hydrogen_bond_ligand_donor": "Hydrogen bond, ligand donates",
+    "hydrogen_bond_protein_donor": "Hydrogen bond, protein donates",
     "hydrophobic": "Hydrophobic", "pi_stacking": "π stacking",
+    "pi_stacking_face_to_face": "π stacking, face to face",
+    "pi_stacking_edge_to_face": "π stacking, edge to face",
     "pi_cation": "Cation-π", "halogen_bond": "Halogen bond",
     "metal_coordination": "Metal", "water_bridge": "Water bridge",
 }

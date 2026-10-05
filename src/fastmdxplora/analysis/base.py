@@ -531,6 +531,29 @@ class Analysis(ABC):
         except Exception:  # an analysis with an axis of its own
             self._x_for_overlay = None
 
+    def _withhold_the_error(self, traj: md.Trajectory, reason: str, *,
+                            because: str, record: dict[str, Any] | None = None) -> None:
+        """Put ``reason`` in the mean's record and take its error bar away.
+
+        For what the analysis found that the mean cannot carry: a chain
+        reaching its own periodic image, a molecule broken across the box.
+        Kept in a finding of its own, the reason reached no reader: the
+        report, the GUI and the Agent read why a mean is qualified from the
+        mean's record, and printed the mean with its error bar. ``because``
+        is a few words for the figure's legend. ``record`` is a record other
+        than ``findings["mean"]``, which is made where there is none.
+        """
+        if record is None:
+            record = self.findings.get("mean")
+            if not isinstance(record, dict):
+                record = {"n_frames": int(traj.n_frames)}
+                self.findings["mean"] = record
+        earlier = record.get("not_a_measurement")
+        record["not_a_measurement"] = f"{reason} {earlier}" if earlier else reason
+        record["error_withheld_because"] = because
+        if "standard_error" in record:
+            record["standard_error"] = float("nan")
+
     def _mark_what_the_mean_rests_on(self, ax: plt.Axes) -> None:
         """Draw the equilibrated region, its mean, and the error bar or its absence.
 
@@ -643,6 +666,9 @@ class Analysis(ABC):
         mean = record["mean"]
         unit = self._mean_unit()
         counted = self._independent_samples(record.get("effective_samples"))
+        if record.get("error_withheld_because"):
+            return (f"mean after equilibration {mean:.4g}{unit}\n"
+                    f"(no error bar: {record['error_withheld_because']})")
         if has_error:
             from fastmdxplora.statistics import with_its_error
 
@@ -694,54 +720,7 @@ class Analysis(ABC):
                 f"Atom selection {self.selection!r} matched zero atoms in "
                 f"this trajectory."
             , code="analysis.selection.empty")
-        self._note_residues_the_selection_dropped(traj, idx)
         return idx
-
-    #: Residue names this package treats as protein everywhere -- they are
-    #: written by the setup phase, read by pdbfix, heterogens and diagnose --
-    #: and which MDTraj's own `protein` keyword does not all recognise.
-    _PROTEIN_MDTRAJ_MISSES = frozenset({"HIE", "HID", "HSP"})
-
-    def _note_residues_the_selection_dropped(
-        self, traj: md.Trajectory, idx: np.ndarray
-    ) -> None:
-        """Say when `protein` quietly left part of the protein out.
-
-        MDTraj's `_PROTEIN_RESIDUES` contains HIS, HIP, HSD and HSE and does
-        not contain HIE, HID or HSP -- all of which this package writes,
-        reads and treats as protein everywhere else. So on an AMBER-prepared
-        system `topology.select("protein")` returns a protein with holes in
-        it, and every analysis whose selection is "protein" measures that:
-        sasa, qvalue, order parameters, the B-factor comparison, the protein
-        side of both ligand-interaction analyses, and the `scope="solute"`
-        default.
-
-        A hole in a selection is invisible from the number that comes out --
-        an SASA is still an SASA -- so it is recorded as a finding rather
-        than raised. The result is usable and the reader is told what it
-        covers.
-        """
-        if not self.selection or "protein" not in str(self.selection):
-            return
-        covered = set(int(i) for i in idx)
-        dropped: dict[str, int] = {}
-        for residue in traj.topology.residues:
-            name = residue.name.upper()
-            if name not in self._PROTEIN_MDTRAJ_MISSES:
-                continue
-            if any(atom.index in covered for atom in residue.atoms):
-                continue
-            dropped[residue.name] = dropped.get(residue.name, 0) + 1
-        if not dropped:
-            return
-        named = ", ".join(f"{n} x{c}" for n, c in sorted(dropped.items()))
-        self.findings["selection_dropped_residues"] = (
-            f"MDTraj's 'protein' keyword does not recognise {named}, so "
-            f"{sum(dropped.values())} residue(s) this package prepared as "
-            f"protein are outside this analysis's selection. The result "
-            f"covers the rest. Select them explicitly -- for example "
-            f"'protein or resname HIE HID' -- to include them."
-        )
 
     def frame_axis(self, traj: md.Trajectory) -> tuple[np.ndarray, str]:
         """Return ``(x_values, x_label)`` for a time-series plot.
@@ -882,6 +861,32 @@ class Analysis(ABC):
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2)
         return path
+
+
+def narrowest_width(traj) -> "np.ndarray | None":
+    """The cell's narrowest width in each frame, in nm, or None without a cell.
+
+    The perpendicular distance between the closest pair of opposite faces,
+    V / |b x c| and its two companions. A separation under half of it is
+    found exactly by the minimum-image convention in a cell of any shape,
+    however the images are searched, so a check against it never passes a
+    separation the convention folded. It is conservative, not exact: in a
+    reduced cell whose images are searched, as MDTraj searches them, a
+    separation is found exactly up to half the shortest lattice vector (in
+    the rhombic dodecahedron setup builds by default, half a box length
+    against 0.354 of one), so a check against the narrowest width flags some
+    separations that were in fact found exactly.
+    """
+    vectors = getattr(traj, "unitcell_vectors", None)
+    if vectors is None:
+        return None
+    box = np.asarray(vectors, dtype=np.float64)
+    a, b, c = box[:, 0], box[:, 1], box[:, 2]
+    volume = np.abs(np.einsum("fi,fi->f", a, np.cross(b, c)))
+    faces = np.stack([np.linalg.norm(np.cross(b, c), axis=1),
+                      np.linalg.norm(np.cross(c, a), axis=1),
+                      np.linalg.norm(np.cross(a, b), axis=1)], axis=1)
+    return volume / faces.max(axis=1)
 
 
 def superposed(traj, *, frame=0, atom_indices=None, reference=None, ref_atom_indices=None):

@@ -141,5 +141,4 @@ class TestTheRecordItself:
         flags = {source: ResolvedChemistry(
             mol=mol, source=source, detail="", resname="LIG",
             n_atoms=1).is_perceived for source in SOURCES}
-        assert flags == {"supplied": False, "run": False,
-                         "ccd": False, "perceived": True}
+        assert flags == {"supplied": False, "run": False, "perceived": True}

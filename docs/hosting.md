@@ -72,8 +72,14 @@ at most 80, each on one line.
 
 ```bash
 fastmdx gui --hosted ... --product-name "Example Lab MD" \
-    --product-tagline "Simulations for the Example Lab"
+    --product-tagline "Simulations for the Example Lab" \
+    --product-logo /srv/brand/logo.png
 ```
+
+`--product-logo` replaces the AAi Research Lab's logo, the tab's icon and the
+avatar at the foot of the sidebar where nobody is signed in: a PNG, JPEG,
+GIF, WebP, ICO or SVG picture (told by its content), at most 256 KB, read once
+when the GUI starts and put into each page it serves. A 128 px PNG is enough.
 
 The person is named at the foot of the sidebar, with their initials, from a
 header the proxy adds to each request: `X-FastMDX-Account-Name`, the name as
@@ -81,7 +87,7 @@ UTF-8, percent-encoded (`Ad%C3%A9%20Lovelace`). A name changed at the service
 shows on the next page load, with nothing restarted. Like the secret's, the
 proxy must remove any copy of this header a caller sends; only requests that
 carry the secret are read at all. Without the header the foot shows the
-product name.
+product name, with the logo as its avatar.
 
 ## Sending a study to the service's compute
 

@@ -104,8 +104,9 @@ class TestTheList:
         assert save["annotations"]["readOnlyHint"] is False
         assert save["annotations"]["destructiveHint"] is False
         listed = next(t for t in tools if t["name"] == "list_studies")
-        assert listed["inputSchema"] == {"type": "object", "properties": {},
-                                         "additionalProperties": False}
+        assert listed["inputSchema"] == {"type": "object", "properties": {
+            "tag": listed["inputSchema"]["properties"]["tag"]}, "additionalProperties": False}
+        assert listed["inputSchema"]["properties"]["tag"]["type"] == "string"
 
     def test_arguments_are_held_to_the_schema(self, wire):
         unknown = call(wire, "check_study", config="ghg.yml", force=True)

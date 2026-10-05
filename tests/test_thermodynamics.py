@@ -83,6 +83,29 @@ class TestWhatItReports:
         assert "constant the setup fixed" in density["not_a_measurement"]
         assert "standard_error" not in density
 
+    def test_a_fixed_box_is_not_called_too_short(self, tmp_path):
+        """A constant volume is one observation however long the run, so
+        `summarise` refused it as "not long against its own correlation
+        time" and named a longer run as the remedy. It is a value the
+        ensemble fixed, said as one, beside the density."""
+        analysis = Thermodynamics(
+            state_csv=str(_state(tmp_path, vary_volume=False)))
+        analysis.compute(None)
+        volume = analysis.findings["thermodynamics"]["volume"]
+
+        assert "correlation time" not in volume["not_a_measurement"]
+        assert "held it constant" in volume["not_a_measurement"]
+        assert volume["value"] == pytest.approx(64.0)
+        assert "standard_error" not in volume
+
+    def test_a_varying_box_does_give_a_volume(self, tmp_path):
+        analysis = Thermodynamics(state_csv=str(_state(tmp_path)))
+        analysis.compute(None)
+        volume = analysis.findings["thermodynamics"]["volume"]
+
+        assert volume["mean"] == pytest.approx(64.0, abs=0.01)
+        assert "standard_error" in volume
+
     def test_a_varying_box_does_give_a_density(self, tmp_path):
         analysis = Thermodynamics(state_csv=str(_state(tmp_path)))
         analysis.compute(None)

@@ -166,7 +166,7 @@ class EndToEndish(Analysis):
     description = "Distance between the first and last alpha carbon"
     time_series = True                              # one value per frame
     reweightable = (None, "Distance (nm)")          # a mean worth correcting
-    default_selection = "name CA"
+    default_selection = "protein and name CA"
 
     def __init__(self, *, squared: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)

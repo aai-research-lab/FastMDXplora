@@ -101,7 +101,7 @@ def test_the_service_is_named_where_this_software_was(workspace: Path) -> None:
     assert '<div class="loading-product">Example Lab MD</div>' in page
     assert '<div class="brand-tagline"></div>' in page, "no borrowed tagline"
     # The citation and the links to this software stay.
-    assert "Cite FastMDXplora" in page and "Citing FastMDXplora" in page
+    assert "Cite FastMDXplora&hellip;" in page and 'id="cite-title">Cite FastMDXplora<' in page
 
 
 def test_the_service_gives_its_own_line(workspace: Path) -> None:
@@ -227,7 +227,8 @@ def test_a_long_name_is_shortened(workspace: Path) -> None:
 def test_without_the_header_the_foot_names_the_product(workspace: Path) -> None:
     foot = _foot(_page(_hosting(workspace, product_name="MDXplora")))
     assert 'id="account-name">MDXplora<' in foot
-    assert 'aria-hidden="true"></span>' in foot, "no initials for nobody"
+    # No initials for nobody: the logo is the avatar.
+    assert '<span class="sidebar-account-avatar" aria-hidden="true"><img ' in foot
 
 
 def test_without_the_secret_the_header_is_not_read(workspace: Path) -> None:
@@ -253,7 +254,7 @@ def test_on_ones_own_machine_nothing_changes(tmp_path: Path) -> None:
     assert 'id="settings-account-link"' not in page
     assert '<div class="brand-product">FastMDXplora</div>' in page
     assert 'id="account-name">FastMDXplora<' in _foot(page)
-    assert 'aria-hidden="true"></span>' in _foot(page)
+    assert '<span class="sidebar-account-avatar" aria-hidden="true"><img ' in _foot(page)
 
 
 def test_on_ones_own_machine_the_header_is_not_read(tmp_path: Path) -> None:

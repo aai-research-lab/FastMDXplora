@@ -70,9 +70,15 @@ class HBonds(Analysis):
     angle_cutoff : float, default 120.0
         Donor-hydrogen-acceptor angle in degrees, for ``baker_hubbard``.
     sidechain_only : bool, default False
-        Count only bonds involving a side chain. A backbone hydrogen bond
-        holds the fold together; a side-chain one is what a substitution can
-        change, and mixing them answers neither question.
+        Count only bonds involving a side chain: the donor or the acceptor
+        heavy atom is a side-chain atom. A backbone hydrogen bond holds the
+        fold together; a side-chain one is what a substitution can change,
+        and mixing them answers neither question. MDTraj's own
+        ``sidechain_only`` keeps a bond only when donor, hydrogen and
+        acceptor are all side-chain atoms, which drops a serine OG-H
+        donating to a backbone carbonyl; on a solvated 1BHL run that left
+        about a third of the bonds involving a side chain. The bonds are
+        found over the whole selection and filtered here instead.
     exclude_water : bool, default True
         Leave out bonds to water. A solvated trajectory has far more of those
         than anything else, and counting them buries the protein's own.
@@ -166,11 +172,26 @@ class HBonds(Analysis):
             )
         self.options.update(
             method=self.method,
+            criterion=self._criterion(),
             periodic=self.periodic,
             freq=self.freq,
             candidate_freq=self.candidate_freq,
             count_multiplier=self.count_multiplier,
         )
+
+    def _criterion(self) -> str:
+        """The hydrogen-bond criterion applied, by name and numbers.
+
+        Three are in use across the analyses and they count different
+        bonds, so each says which it is: this one, Baker-Hubbard on the
+        hydrogen to acceptor distance or Wernet-Nilsson's angle-dependent
+        distance; ``pl_hbonds`` Wernet-Nilsson; ``pl_interactions`` the
+        donor to acceptor distance of 3.5 A.
+        """
+        if self.method == "wernet_nilsson":
+            return "Wernet-Nilsson (angle-dependent D...A distance)"
+        return (f"Baker-Hubbard: H...A < {self.distance_cutoff * 10:g} A, "
+                f"D-H...A > {self.angle_cutoff:g} deg")
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
         """Compute per-frame H-bond counts.
@@ -209,8 +230,10 @@ class HBonds(Analysis):
                 , code="analysis.option.inapplicable")
             per_frame = md.wernet_nilsson(
                 traj, periodic=self.periodic,
-                exclude_water=self.exclude_water,
-                sidechain_only=self.sidechain_only)
+                exclude_water=self.exclude_water)
+            if self.sidechain_only:
+                per_frame = [_involving_a_side_chain(traj.topology, bonds)
+                             for bonds in per_frame]
             counts = np.array([len(bonds) for bonds in per_frame], dtype=int)
         else:
             # Baker-Hubbard returns aggregated bonds present above `freq`
@@ -222,10 +245,11 @@ class HBonds(Analysis):
                 freq=self.candidate_freq,
                 exclude_water=self.exclude_water,
                 periodic=self.periodic,
-                sidechain_only=self.sidechain_only,
                 distance_cutoff=self.distance_cutoff,
                 angle_cutoff=self.angle_cutoff,
             )
+            if self.sidechain_only:
+                bonds = _involving_a_side_chain(traj.topology, bonds)
             counts, occupancy = _per_frame_baker_hubbard(
                 traj, bonds, periodic=self.periodic,
                 distance_cutoff=self.distance_cutoff,
@@ -275,7 +299,17 @@ class HBonds(Analysis):
         return label
 
     def default_ylabel(self) -> str | None:
-        return "Number of hydrogen bonds"
+        name = "Wernet-Nilsson" if self.method == "wernet_nilsson" else "Baker-Hubbard"
+        return f"Hydrogen bonds ({name})"
+
+
+def _involving_a_side_chain(topology: Any, bonds: np.ndarray) -> np.ndarray:
+    """The (donor, hydrogen, acceptor) triplets whose donor or acceptor is a
+    side-chain atom."""
+    bonds = np.asarray(bonds, dtype=int).reshape(-1, 3)
+    keep = [topology.atom(int(d)).is_sidechain or topology.atom(int(a)).is_sidechain
+            for d, _h, a in bonds]
+    return bonds[np.asarray(keep, dtype=bool)] if len(bonds) else bonds
 
 
 def _per_frame_baker_hubbard(

@@ -73,6 +73,8 @@ def _open(browser, study: Path):
         close()
         pytest.skip("this browser has no WebGL, so the viewer cannot render")
     page.wait_for_function(f"() => {SEQ} && {SEQ}.state.residues.length > 0")
+    # Closed until opened.
+    page.click("#sequence-strip > summary")
     return page, close
 
 

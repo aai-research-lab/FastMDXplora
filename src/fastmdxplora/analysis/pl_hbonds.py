@@ -9,6 +9,11 @@ bond has one partner in the protein and the other in the ligand.
 A per-frame H-bond list is computed with Wernet-Nilsson (which returns
 per-frame donor-H-acceptor triplets), and each triplet is kept only if it
 bridges protein and ligand. Outputs ``pl_hbonds.dat`` (frame, n_hbonds).
+
+This is one of three hydrogen-bond criteria in the package, and they count
+different bonds: ``hbonds`` uses Baker-Hubbard (H...A < 2.5 A) by default
+and ``pl_interactions`` the donor to acceptor distance of 3.5 A. Each names
+its criterion in its options and its axis label.
 """
 
 from __future__ import annotations
@@ -25,6 +30,13 @@ from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
+
+
+#: The criterion, by name. Wernet-Nilsson's distance cutoff depends on the
+#: angle, so it is not a pair of numbers like the others: an O-H...O at
+#: 3.3 A between the oxygens is a bond under ``pl_interactions``' 3.5 A and
+#: not here.
+CRITERION = "Wernet-Nilsson (angle-dependent D...A distance, Science 304:995, 2004)"
 
 
 class ProteinLigandHBonds(Analysis):
@@ -72,6 +84,9 @@ class ProteinLigandHBonds(Analysis):
         self.options.update(
             ligand_resname=self.ligand_resname,
             protein_selection=self.protein_selection,
+            # Named, because `hbonds` and `pl_interactions` count hydrogen
+            # bonds by other criteria and do not agree with this one.
+            criterion=CRITERION,
         )
 
     def compute(self, traj: md.Trajectory) -> pd.DataFrame:
@@ -170,7 +185,7 @@ class ProteinLigandHBonds(Analysis):
         ax.set_ylim(bottom=0)
 
     def default_ylabel(self) -> str | None:
-        return "Protein-ligand H-bonds"
+        return "Protein-ligand H-bonds (Wernet-Nilsson)"
 
     _traj_for_plot: md.Trajectory | None = None
 

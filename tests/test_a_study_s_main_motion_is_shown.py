@@ -95,7 +95,7 @@ def test_the_motion_is_the_hinge(hinge):
     assert said["from"] == "analysis" and said["frames"] == 40 and said["scale"] == 1
     assert said["said"].startswith("Motion 1: 9")
     assert said["said"].endswith("From the dimred analysis's principal components of "
-                                 "`name CA` over the 40 frames it analysed.")
+                                 "`protein and name CA` over the 40 frames it analysed.")
     starts, ends, numbers = _arrows(said)
     along = ends - starts
     lengths = np.linalg.norm(along, axis=1)
@@ -174,6 +174,8 @@ def test_the_viewer_swings_it(hinge):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(120000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))

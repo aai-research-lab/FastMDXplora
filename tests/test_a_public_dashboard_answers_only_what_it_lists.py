@@ -256,6 +256,7 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/file-text", "/api/protein-preview", "/api/structure-info",
             "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
             "/api/series", "/api/runs-compared", "/api/selection",
+            "/api/analysis-overview", "/api/convergence",
             # A command that measures two atoms over every frame: text built
             # from the study's records and two checked selections; it runs
             # nothing.
@@ -282,6 +283,14 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/motion",
             # The states the cluster analysis found, and two compared.
             "/api/states", "/api/state-difference",
+            # Each residue's backbone dihedrals over the frames played.
+            "/api/backbone-angles",
+            # Which residues touch which over the frames played, and one
+            # pair followed frame by frame.
+            "/api/contact-map", "/api/contact-pair",
+            # The room in the ligand's pocket, frame by frame, and its empty
+            # points in one frame.
+            "/api/pocket-volume", "/structure/pocket.dx",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

@@ -33,7 +33,7 @@ analysis:
 |---|---|
 | `rmsd` | How far the structure has moved from a reference frame |
 | `rg` | Radius of gyration — how compact it is |
-| `sasa` | Solvent-accessible surface area: total, per residue, or each residue's mean |
+| `sasa` | Solvent-accessible surface area: total and its hydrophobic and polar parts, per residue, or each residue's mean and relative SASA |
 | `ss` | Secondary structure per residue per frame, by DSSP |
 
 ### Flexibility
@@ -55,9 +55,9 @@ minimum in g(r) — never assumed, because the radius decides the number.
 
 | | |
 |---|---|
-| `pair_distance` | The separation of two selections, by centre of mass or closest approach, folded into the periodic cell |
+| `pair_distance` | The separation of two selections, by centre of mass or closest approach, by the minimum image in a periodic cell of any shape |
 | `end_to_end` | The distance between the two ends of a chain, the coarsest description of extension there is |
-| `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot |
+| `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot, and the asphericity, acylindricity and relative shape anisotropy of the gyration tensor |
 
 ### The bilayer
 
@@ -79,6 +79,34 @@ computes, and what to compare it with.
 |---|---|
 | `cluster` | k-means, hierarchical and DBSCAN over the trajectory |
 | `dimred` | PCA, MDS, t-SNE and UMAP projections |
+
+Both read every frame they are given by default, the run's relaxation from
+its starting structure included, and a relaxation can come out as a cluster
+or a principal component of its own. The default is kept so results already
+analysed stay as they were; `options.json` says how many frames were read
+and whether the equilibration detected in the RMSD of the selected atoms is
+among them (`findings.frames`). `start: equilibrated` begins after that
+equilibration, and `start: 5` at the first frame at or after 5 ns. The `frame`
+column of their data files is the frame of the trajectory analysed, so it
+begins where they began.
+
+`cluster` also writes, for each method, every cluster's share of the frames
+clustered and its medoid (the member with the least summed RMSD to the
+others) as `cluster_<method>_populations.csv`, and each medoid as a
+structure without its water (`cluster_<method>_medoid_<k>.pdb`); and the
+frame-to-frame RMSD it clustered on, with the frames' times, as
+`cluster_rmsd_matrix.npz` and as a map of time against time
+(`cluster_rmsd_matrix.png`).
+
+`dimred`, with PCA, writes the free-energy landscape on the first two
+components: G = -kT ln P, with P the histogram over `landscape_bins` bins
+each way normalised over the bin area, bins no frame visited left empty, and
+the lowest bin set to zero (`dimred_pca_landscape.npz` with the bin edges in
+nm, and `dimred_pca_landscape.png`). It is in kJ/mol at the production
+temperature the study recorded (`simulation/simulation_parameters.json`);
+where none is recorded, as for a trajectory brought from elsewhere, it is
+-ln P in units of kT and says so. On a biased run it is the landscape of the
+biased ensemble, and the record says that too.
 
 ### Folding
 
@@ -123,14 +151,14 @@ of the method rather than a threshold to tune.
 
 | | |
 |---|---|
-| `ligand_rmsd` | How far the ligand has moved, after aligning on the protein. Where it leaves the site it started in (no heavy atom within 0.6 nm of it), that is said, the frames are shaded, its distance to the site is written to `ligand_site_distance.dat`, and no mean is given |
-| `ligand_rmsf` | Which parts of the ligand move |
+| `ligand_rmsd` | How far the ligand has moved, after aligning on the protein: over its heavy atoms (`include_hydrogens: true` counts the hydrogens), each frame at the relabelling of a symmetric ligand that fits best, so a ring turned onto itself reads as unmoved (`symmetry_corrected: false` takes the atoms as labelled). Where it leaves the site it started in (no heavy atom within 0.6 nm of it), that is said, the frames are shaded, its distance to the site is written to `ligand_site_distance.dat`, and no mean is given |
+| `ligand_rmsf` | Which parts of the ligand move, after aligning on the protein, with the ligand followed across periodic faces as `ligand_rmsd` follows it |
 
 ### Protein and ligand together
 
 | | |
 |---|---|
-| `pl_contacts` | How much of the protein the ligand touches, with a per-residue fingerprint |
+| `pl_contacts` | How much of the protein the ligand touches, with a per-residue fingerprint: residues with a heavy atom within 0.4 nm of a ligand heavy atom |
 | `pl_hbonds` | Hydrogen bonds between them |
 | `pl_interactions` | What holds the ligand: eight interaction types, each against a published criterion |
 
@@ -199,18 +227,45 @@ against another tool.
 - **RMSD** superposes each frame on the reference before computing it, unless
   `align: false`.
 
+- **RMSF per residue** is the square root of the residue's mass-weighted mean
+  squared fluctuation, sqrt(Σ mᵢ MSFᵢ / Σ mᵢ), as GROMACS `gmx rmsf -res`
+  gives it. With the alpha-carbon default it is each alpha carbon's own RMSF.
+  A single frame is refused rather than reported as rigid.
+  It is computed over the equilibrated frames only: the start is found on the
+  RMSD of the fitted atoms by the same detection every per-frame mean uses,
+  recorded as `findings.frames` and said on the figure, and `start` sets it
+  as clustering and dimred take it (a time in ns, `0` for every frame,
+  `equilibrated` by default). A loop relaxing 0.4 nm
+  in the first fifth of a run read 0.082 nm averaged over every frame, against
+  0.052 nm once relaxed. Results change from earlier releases on any run that
+  relaxed.
+
 - **Radius of gyration** is mass-weighted by default, which is the physical
-  definition; `mass_weighted: false` gives the geometric one.
+  definition; `mass_weighted: false` gives the geometric one. A virtual site
+  (a TIP4P water's charge site, or any atom MDTraj reads without an element)
+  has no mass and no weight, and a finding names them. Where no atom has a
+  mass, or one carries no element, every atom is weighted equally and
+  `options.json` records `mass_weighted: false` with the reason. `by_chain`
+  writes a table with a `total` column and one `chain <ID>` column per chain.
 
 - **Hydrogen bonds** use Baker–Hubbard at 0.25 nm and 120° by default. Both are
   settings, because published criteria disagree — PLIP allows 4.1 Å and 100°.
+  `pl_hbonds` uses Wernet-Nilsson and `pl_interactions` a 3.5 Å donor to
+  acceptor distance, so the three count different bonds; each records its
+  criterion in `options.json` and names it on its axis.
   Bonds are counted in every frame they exist, including transient ones.
 
 - **Secondary structure** uses MDTraj's DSSP and excludes anything DSSP cannot
   assign, so a ligand does not appear as coil. There is no option to shell out
   to an external `mkdssp`: a system package is a poor dependency for something
   that already works, and where the two disagree that is a finding about DSSP
-  worth reporting rather than configuring around.
+  worth reporting rather than configuring around. Beside the code matrix it
+  writes the fraction of the frames each residue spent in helix (DSSP H, G, I),
+  strand (E, B) and coil (the rest), `ss_fractions_per_residue.csv`, and the
+  fraction of residues in each class in every frame, `ss_fractions.csv`. The
+  helix and strand fractions over time are given a mean after equilibration
+  with its error, as every series is, under `helix_fraction` and
+  `strand_fraction` in the findings.
 
 - **Q-value** uses a switching function rather than a hard cutoff, with β and λ
   exposed. Its contact set is over *pairs of heavy atoms*, which is the
@@ -226,10 +281,61 @@ against another tool.
 
 - **Clustering** seeds k-means at 42 by default. A clustering that survives a
   change of seed is a finding; one that does not is an artefact of where the
-  algorithm started, and the seed is a setting so that can be tested.
+  algorithm started, and the seed is a setting so that can be tested. The
+  seed and the number of starts are written to `options.json`. A Ward
+  hierarchy is built on the points its labels came from (the superposed
+  coordinates, or an MDS embedding of the pairwise RMSD), so its dendrogram
+  and `hierarchical_linkage.npy` cut to the same clusters.
+
+- **SASA per residue** gives each residue's mean and its spread over the
+  frames, and the spread is the sample standard deviation, dividing by the
+  number of frames less one, both in `average_residue` mode and in the
+  `sasa_average_per_residue.csv` written beside a `residue` run.
+
+- **Relative SASA** is written beside each residue's mean area in both
+  per-residue summaries, `mean_relative_sasa`: the mean over the residue's
+  theoretical maximum from Tien et al. 2013 (PLoS ONE 8, e80635), so 0 is
+  buried and 1 as exposed as the residue gets in a Gly-X-Gly tripeptide. Those
+  maxima were computed with a 1.4 Å probe, the default `probe_radius`. A
+  `total` run also writes `sasa_polar_split.csv`, the total of each frame
+  split into hydrophobic surface (carbon and sulfur atoms) and polar surface
+  (nitrogen and oxygen atoms), each hydrogen counted with the atom it is
+  bonded to, with their means after equilibration in the findings.
+
+- **SASA beside a ligand** is the protein's surface without it by default,
+  because the selection is the protein: residues lining the pocket read as
+  exposed, as in the apo protein held in the bound conformation. The findings
+  say so where a ligand is present. `with_ligand: true` computes the surface
+  in the presence of the ligand instead (Shrake-Rupley on protein and ligand
+  together, the protein's atoms reported). In trypsin with benzamidine bound,
+  SER190 reads 0.110 nm² without the ligand and 0.001 nm² with it.
 
 - **Contacts and hydrogen bonds** are computed across the periodic boundary where
   the trajectory carries a unit cell.
+
+- **End-to-end distance** is the length of the sum of the minimum-image steps
+  from one residue to the next along the chain, so it is the same whether the
+  chain was stored whole or wrapped into the cell, and it is not limited to
+  half the box. Taken between the two ends directly, a straight chain 3.42 nm
+  long in a 4.62 nm cube read 1.20 nm. Where an end comes within 1.0 nm of a
+  periodic image of the other end, the chain is interacting with its own copy;
+  the run is marked and the mean carries no error bar.
+
+- **Moments of inertia** are marked as describing a broken molecule only where a
+  bond of the selection is longer than half the cell's narrowest width, which a
+  whole molecule's bonds never are. The selection's extent against the box
+  marked whole proteins in the default dodecahedron, whose box vectors are all
+  longer than its narrowest width. Either marking is written into the record of
+  the mean (`findings.mean.not_a_measurement` in `options.json`), where the
+  report, the GUI and the Agent read it, and that mean then has no error bar.
+
+- **Shape descriptors** are written beside the moments, per frame, to
+  `moments_of_inertia_shape.dat`: from the eigenvalues λ₁ ≤ λ₂ ≤ λ₃ of the
+  mass-weighted gyration tensor, the asphericity b = λ₃ - (λ₁ + λ₂)/2, the
+  acylindricity c = λ₂ - λ₁ (both nm²) and the relative shape anisotropy
+  κ² = (b² + ¾c²)/(λ₁ + λ₂ + λ₃)², as Theodorou and Suter define them
+  (Macromolecules 18, 1206, 1985). κ² is 0 for a sphere and 1 for a rod. Each
+  one's mean after equilibration is recorded in `options.json` under its name.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy. The protein and nucleic chains are kept together, and every
@@ -242,7 +348,9 @@ against another tool.
   pairs' frames, written to `pl_interactions_by_residue.dat` beside the pair
   table. A residue is named by chain as well where the structure has several
   (`A:SER45`) and by insertion code where it has one (`GLY184A`), in this
-  table, the pair table and `pl_contacts` alike. It cannot be recovered from the pair table: pairs firing in the same
+  table, the pair table and `pl_contacts` alike. Insertion codes are read from
+  the file the topology came from, PDB or mmCIF, given as the topology or
+  loaded as the trajectory. It cannot be recovered from the pair table: pairs firing in the same
   frames give the largest single pair, pairs that never coincide give their
   sum, and every real case lies between.
 
@@ -258,18 +366,37 @@ against another tool.
   set is a choice that changes the answer and is recorded. A trajectory too
   short reports S² *too high* rather than too noisy, because motion it never
   saw is indistinguishable from rigidity — so the two halves are compared and
-  the values are called an upper bound where they disagree.
+  the values are called an upper bound where they disagree. Proline and every
+  N-terminal residue are left out: the first residue of each chain, a residue
+  whose nitrogen carries the terminal hydrogens H2 and H3, and one with no
+  peptide bond to the residue before it, since an NH3+ is not an amide.
 
 - **B-factor comparison** converts a refined B through B = (8π²/3)⟨u²⟩ and
   correlates it with the simulated RMSF. It is a correlation and **not an
   accuracy**: a B carries static disorder and refinement choices, and the
   lattice damps loop motion, so B-factors bound amplitudes from below. No
   regression slope is reported, because the two are not the same quantity.
+  Each residue is matched to its deposited B-factor by chain ID, number and
+  insertion code, so trypsin's GLY 184A and TYR 184 keep their own values and
+  a run of one chain is compared with that chain. Where the trajectory carries
+  no chain IDs (MDTraj before 1.11 drops them when it slices), chains are
+  matched by order and `findings.chains_matched_by_order` says so.
 
 - **Thermodynamics** reads the state record the simulation wrote and treats
-  each column as a correlated series. Density is reported only from a
-  constant-pressure run: at fixed volume it is a constant the setup chose, and
-  a mean with an error on it would describe arithmetic.
+  each column as a correlated series. Density and volume are reported as
+  means only from a constant-pressure run: at fixed volume each is a constant
+  the setup chose, recorded as its `value` with the reason, since a mean with
+  an error on it would describe arithmetic.
+
+- **Dihedrals** are not computed across a gap in a chain. MDTraj joins
+  consecutive residues of a chain without asking whether they are bonded, so
+  a phi, psi or omega whose C(i-1) and N(i) have no bond in the topology, or
+  sit more than 0.2 nm apart in the first frame, is left out and counted under
+  `chain_breaks` in the findings. Across trypsin's residues 50 to 54, deleted,
+  the residue after the gap had read a phi of -61.8 degrees through atoms
+  1.68 nm apart. The figure is the Ramachandran plot when `angles` includes
+  both phi and psi, and a histogram of each angle otherwise; the angles
+  chosen are written to `options.json`.
 
 - **g(r)** stops at half the smallest box dimension. Past that the
   minimum-image convention supplies only part of each shell, so the curve falls
@@ -301,6 +428,22 @@ of the correction stays visible, and the **effective sample size** is printed
 with it rather than in a footnote. A reweighted mean over a thousand frames
 whose weight sits in five of them is a mean over five, and there is no
 arrangement of a document in which that should be readable without the five.
+
+Two counts are given. **Weight-concentration effective frames** is Kish's
+`(sum w)^2 / sum w^2`: how evenly the weight is spread, counting every frame
+as independent. **Independent samples** is that count divided by the
+statistical inefficiency `g` of the collective variable (the larger of it and
+the quantity's own, per quantity), because consecutive frames are correlated:
+on a well-tempered run with a bias factor of 8, 2445 effective frames of 6000
+were about 27 independent samples at `g = 91`. Each reweighted mean carries a
+standard error (`reweighted_standard_error`) from a paired block bootstrap
+over values and weights in blocks of `2g`, withheld with its reason
+(`not_a_measurement`, `refusal`) below 10 independent samples or where the run
+is shorter than 25 inefficiencies. The bootstrap resamples one run's frames, so
+it cannot see how the deposited bias, and so the weights, would differ in
+another run; where the weights concentrate it is marked a floor, and
+independent replicas are the check on it. The `s.d.` beside the mean is the
+width of the reweighted distribution, not an error.
 
 **What is corrected:** the analyses reporting one value per frame — RMSD,
 radius of gyration, hydrogen bonds, SASA, the fraction of native contacts,

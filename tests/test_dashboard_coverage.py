@@ -680,3 +680,43 @@ def test_cli_dashboard_remaining_lifecycle_and_startup_branches(
         session, SimpleNamespace(dashboard_stop_on_complete=False)
     )
     assert waited and stopped[-1] == "after-wait"
+
+
+def test_the_live_temperature_counts_only_particles_with_mass():
+    """A virtual site has no mass and no kinetic energy. Counting the
+    TIP4P-Ew M site as three degrees of freedom read a 300 K box as 197.5 K
+    against OpenMM's 296.4 K, and the GUI flagged it as far from target."""
+    import io
+
+    mm = pytest.importorskip("openmm")
+    app = pytest.importorskip("openmm.app")
+    unit = pytest.importorskip("openmm.unit")
+
+    forcefield = app.ForceField("amber14-all.xml", "amber14/tip4pew.xml")
+    modeller = app.Modeller(app.Topology(), [])
+    modeller.addSolvent(forcefield, model="tip4pew",
+                        boxSize=mm.Vec3(1.6, 1.6, 1.6) * unit.nanometer)
+    system = forcefield.createSystem(
+        modeller.topology, nonbondedMethod=app.PME,
+        nonbondedCutoff=0.7 * unit.nanometer, constraints=app.HBonds,
+        rigidWater=True)
+    assert any(system.isVirtualSite(i) for i in range(system.getNumParticles()))
+    integrator = mm.LangevinMiddleIntegrator(
+        300 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
+    simulation = app.Simulation(modeller.topology, system, integrator,
+                                mm.Platform.getPlatformByName("Reference"))
+    simulation.context.setPositions(modeller.positions)
+    simulation.context.setVelocitiesToTemperature(300 * unit.kelvin, 1)
+    simulation.context.applyConstraints(1e-6)
+    simulation.context.applyVelocityConstraints(1e-6)
+
+    buffer = io.StringIO()
+    reporter = app.StateDataReporter(buffer, 1, temperature=True,
+                                     separator=",")
+    reporter.report(simulation, simulation.context.getState(getEnergy=True))
+    openmm_says = float(buffer.getvalue().splitlines()[-1])
+
+    kinetic = simulation.context.getState(getEnergy=True).getKineticEnergy()
+    ours = runner._temperature_from_kinetic_energy(
+        simulation, kinetic.value_in_unit(unit.kilojoule_per_mole))
+    assert ours == pytest.approx(openmm_says, rel=0.01)

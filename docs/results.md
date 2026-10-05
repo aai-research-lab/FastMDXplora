@@ -143,6 +143,31 @@ it is never less than as long again as the part of the run already averaged,
 since the independent samples the run appears to hold are themselves an upper
 bound. It is a planning figure. Run at least that much and analyse again.
 
+### Seeing how a series converged
+
+`convergence_of` gives, for one series, what the Analysis page's convergence
+view plots, from the same estimators the recorded mean uses, as plain lists
+ready for JSON (`None` where a value is withheld or not a number):
+
+```python
+from fastmdxplora.statistics import convergence_of
+
+view = convergence_of(rmsd_series, times=times_ns)
+view["equilibration"]   # the start summarise chose, its mean and error
+view["running_mean"]    # cumulative mean of what was kept, with an error per point
+view["blocking"]        # Flyvbjerg-Petersen block averaging, each error with its own uncertainty
+view["autocorrelation"] # C(t) to its first zero, and tau_int = (g - 1) / 2
+view["histogram"]       # what was kept, and what was discarded, apart
+```
+
+The running mean's error at each point is the one the package would record
+had the run ended there, from the same start, withheld where it would be
+withheld; the last point is the record itself. No plateau of the blocking
+curve is named: the first block length every longer one agrees with read the
+error low (0.81 to 0.86 of it, at the median, on correlated series), so the
+curve is read against the error the package records. Fewer than ten finite
+values give a reason and no numbers.
+
 Averages taken on a biased run are corrected back to equilibrium where the bias
 allows, and labelled as biased where it does not —
 [Averages on a biased run](analyses.md#averages-on-a-biased-run).
@@ -266,6 +291,15 @@ equilibrated  mean=10.005 het=0.7   drift_p=0.30   qualified=False
 scattered     mean=10.012 het=376   drift_p=0.69   qualified=True
 drifting      REFUSED -> analysis.sampling.drifting  (+1.75 first to last)
 ```
+
+**Every segment has to resolve its own correlation time.** A segment whose
+error was withheld holds an upper bound on its independent samples, so a
+pooled error built on it is too small (on joined AR(1) runs with g = 200 in
+segments of 400 frames it held the truth 21% of the time), and the drift test
+cannot be read from it. Where any contributing segment is in that state the
+pooled mean is withheld as `analysis.sampling.correlation_unresolved`, after
+the drift test has been run on the segments that can be read. The remedy is
+longer segments.
 
 One consequence worth knowing: any join offset large enough to fool the
 equilibration detector is also large enough to exceed what the per-segment

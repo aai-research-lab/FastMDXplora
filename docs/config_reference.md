@@ -9,7 +9,7 @@ arrangement.
 list is always generated:
 
 ```bash
-fastmdx init-config -o study.yml   # every setting, with its help, as a template
+fastmdx config -f study.yml   # every setting, with its help, as a template
 fastmdx explore --help             # every setting, as a flag
 fastmdx gui                        # every setting, as a form
 ```

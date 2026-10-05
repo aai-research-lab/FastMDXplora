@@ -61,6 +61,7 @@ __all__ = [
     "mean_record",
     "shared_start",
     "with_its_error",
+    "convergence_of",
 ]
 
 #: Below this many independent samples, a mean and its error describe the
@@ -154,8 +155,14 @@ def statistical_inefficiency(series: np.ndarray) -> float:
 
     A constant series has no fluctuations to correlate, so ``g`` is one: every
     frame agrees, and there is nothing for a correlation time to describe.
+
+    Values that are not finite are left out first. One NaN made every
+    correlation NaN, no pair of lags compared as non-positive, and
+    ``max(1.0, nan)`` returned 1.0: a series with a true ``g`` of 39 read as
+    independent frames, and the bootstrap block built on it was 2 frames
+    rather than 83.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 3:
         return 1.0
@@ -173,6 +180,12 @@ def statistical_inefficiency(series: np.ndarray) -> float:
     return _inefficiency_and_reach(fluctuation, variance, n)[0]
 
 
+def _finite(series: np.ndarray) -> np.ndarray:
+    """The series as floats, with values that are not finite left out."""
+    values = np.asarray(series, dtype=float).ravel()
+    return values[np.isfinite(values)]
+
+
 def _correlation(fluctuation: np.ndarray, variance: float) -> np.ndarray:
     """``C(t) = sum_i f[i] f[i+t] / (n var)`` at every lag, by Fourier
     transform: the numbers a sum over each lag gives, in ``n log n`` rather
@@ -188,12 +201,29 @@ def _correlation(fluctuation: np.ndarray, variance: float) -> np.ndarray:
 def _geyer(fluctuation: np.ndarray, variance: float, n: int) -> tuple[float, bool, int]:
     """The initial positive sequence: the inefficiency, whether a pair went
     non-positive before the run ran out, and how many pairs were summed."""
-    correlation = _correlation(fluctuation, variance)
-    pairs = np.arange((n - 1) // 2)
+    g, decayed, kept, _decided = _geyer_from(_correlation(fluctuation, variance), n)
+    return g, decayed, kept
+
+
+def _geyer_from(correlation: np.ndarray, n: int) -> tuple[float, bool, int, bool]:
+    """Geyer's initial positive sequence from the correlation at lags
+    ``0 .. len(correlation) - 1`` of a series of ``n`` frames.
+
+    Returns the inefficiency, whether a pair went non-positive, how many
+    pairs were summed, and whether the lags given were enough to decide: a
+    correlation cut short of the series, with every pair in it positive,
+    gives a lower bound and ``False``. Given every lag, it is always
+    decided, and the numbers are :func:`_geyer`'s.
+    """
+    total = (n - 1) // 2
+    available = min(total, len(correlation) // 2)
+    pairs = np.arange(available)
     summed = correlation[2 * pairs] + correlation[2 * pairs + 1]
     stops = np.flatnonzero(summed <= 0.0)
     kept = int(stops[0]) if stops.size else int(pairs.size)
-    return max(1.0, -1.0 + 2.0 * float(summed[:kept].sum())), bool(stops.size), kept
+    decided = bool(stops.size) or available == total
+    return (max(1.0, -1.0 + 2.0 * float(summed[:kept].sum())), bool(stops.size),
+            kept, decided)
 
 
 def _inefficiency_and_reach(
@@ -246,8 +276,10 @@ def _for_the_mean(series: np.ndarray) -> tuple[float, float]:
 
     The degrees of freedom are ``N / (2M + 1)``: the variance of a sum of
     ``2M + 1`` correlation estimates, each about as noisy as ``1 / N``.
+    Values that are not finite are left out first, as in
+    :func:`statistical_inefficiency`.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 3:
         return 1.0, float(max(n - 1, 1))
@@ -256,6 +288,12 @@ def _for_the_mean(series: np.ndarray) -> tuple[float, float]:
     if variance <= 0.0:
         return float(n), 1.0
     g, _decayed, pairs = _geyer(fluctuation, variance, n)
+    return _corrected_for_the_mean(g, pairs, n)
+
+
+def _corrected_for_the_mean(g: float, pairs: int, n: int) -> tuple[float, float]:
+    """:func:`_for_the_mean`'s correction and degrees of freedom, from the
+    inefficiency and the pairs of lags summed for it."""
     if pairs == 0:
         return g, float(n - 1)
     window = 4 * pairs - 1
@@ -290,7 +328,7 @@ def correlation_is_resolved(series: np.ndarray) -> bool:
     the real correlation there was still 0.7. Asking where the correlation
     decayed answers a question about the estimator rather than the run.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
 
     # Nothing to resolve. Frames this close to independent have no
     # correlation time for a longer run to pin down.
@@ -321,25 +359,35 @@ def detect_equilibration(
     the start that maximises it leaves the most of a relaxation in the
     average: on three replicas sharing one relaxation, their mean was biased
     by about its own error. Starting a little later costs at most a tenth of
-    the samples.
+    the samples. Values that are not finite are left out first.
     """
-    values = np.asarray(series, dtype=float)
+    values = _finite(series)
     n = values.size
     if n < 10:
         return 0, 1.0, float(n)
 
-    # Never past two thirds: an answer resting on the last third of a run is
-    # not an answer about the run.
-    candidates = np.unique(
-        np.linspace(0, int(n * 2 / 3), num=min(steps, n), dtype=int))
-
     counted = []
-    for start in candidates:
+    for start in _equilibration_candidates(n, steps):
         remaining = values[start:]
         if remaining.size < 3:
             continue
         g = statistical_inefficiency(remaining)
         counted.append((int(start), g, float(remaining.size / g)))
+    return _latest_within_tolerance(counted)
+
+
+def _equilibration_candidates(n: int, steps: int = 40) -> np.ndarray:
+    """The starts :func:`detect_equilibration` weighs. Never past two thirds:
+    an answer resting on the last third of a run is not an answer about the
+    run."""
+    return np.unique(np.linspace(0, int(n * 2 / 3), num=min(steps, n), dtype=int))
+
+
+def _latest_within_tolerance(
+    counted: "list[tuple[int, float, float]]",
+) -> tuple[int, float, float]:
+    """Of ``(start, g, independent samples)`` rows, the latest keeping within
+    :data:`EQUILIBRATION_TOLERANCE` of the most."""
     if not counted:
         return 0, 1.0, 0.0
     most = max(effective for _start, _g, effective in counted)
@@ -410,9 +458,24 @@ def summarise(
     later = min(int(start_at_least), int(values.size * 2 / 3))
     if later > discard:
         discard, raw = later, statistical_inefficiency(values[later:])
+    return _summary(values, discard, raw, _for_the_mean(values[discard:]),
+                    lambda: _for_the_mean(values), minimum_effective_samples)
+
+
+def _summary(
+    values: np.ndarray,
+    discard: int,
+    raw: float,
+    for_kept: tuple[float, float],
+    for_whole: "Any",
+    minimum_effective_samples: float,
+) -> tuple[Equilibrated, "Withholding | None"]:
+    """The rest of :func:`summarise`, once the start is chosen: ``raw`` is
+    the inefficiency of what is kept, ``for_kept`` its :func:`_for_the_mean`
+    and ``for_whole`` a callable giving the whole series'."""
     kept = values[discard:]
     spread = float(np.std(kept, ddof=1))
-    g, dof = _for_the_mean(kept)
+    g, dof = for_kept
     error = spread * float(np.sqrt(g / kept.size))
     if discard:
         # The start was chosen where the most independent samples remain,
@@ -420,7 +483,7 @@ def summarise(
         # mean after it is sound, the error from it is not. Unless the
         # discard removed a relaxation that dominated the run, the error is
         # the whole run's, scaled to the frames kept.
-        g_whole, dof_whole = _for_the_mean(values)
+        g_whole, dof_whole = for_whole()
         if kept.size / g < WHOLE_RUN_UNLESS_GAIN * values.size / g_whole:
             whole = float(np.std(values, ddof=1)) * float(np.sqrt(g_whole / kept.size))
             if whole > error:
@@ -779,8 +842,13 @@ def summarise_segments(
     Returns
     -------
     (Pooled, None) or (None, Withholding)
-        Withheld where no segment supported a mean, or where the pooled
-        effective count falls short. Pooling does not rescue a run that
+        Withheld where no segment supported a mean, where the segment means
+        move in order (``analysis.sampling.drifting``), where any segment
+        that supported a mean did not resolve its own correlation time
+        (``analysis.sampling.correlation_unresolved``: its independent-sample
+        count is an upper bound, so the pooled error would be a lower one),
+        or where the pooled effective count falls short. Pooling does not
+        rescue a run that
         was too short: ten segments of two independent samples each is
         twenty, and twenty is twenty however it was collected -- but ten
         segments that each support nothing support nothing together.
@@ -800,6 +868,7 @@ def summarise_segments(
 
     edges = [0, *boundaries, values.size]
     pieces: list[Equilibrated] = []
+    kept_at: list[int] = []
     withheld: list[tuple[int, str]] = []
     for index, (start, stop) in enumerate(zip(edges, edges[1:])):
         # Each segment is equilibrated on its own. A segment that begins
@@ -813,6 +882,7 @@ def summarise_segments(
             withheld.append((index, str(why)))
             continue
         pieces.append(piece)
+        kept_at.append(index)
 
     if not pieces:
         return None, Withholding(
@@ -824,8 +894,51 @@ def summarise_segments(
             needed=float(minimum_effective_samples),
         )
 
-    weights = np.array([p.effective_samples for p in pieces], dtype=float)
+    # A segment whose own error was withheld (its correlation time is not
+    # resolved, or it holds one independent sample) has an independent-sample
+    # count that is an upper bound. Pooled in, it made the pooled error too
+    # small, and its NaN error made the agreement test NaN, which no
+    # comparison passes: on joined AR(1) runs with g = 200 in segments of
+    # 400 frames the drift refusal never fired on a ramp of four standard
+    # deviations, and the pooled error held the truth 21% of the time.
+    errors = np.array([p.standard_error for p in pieces], dtype=float)
+    resolved = np.isfinite(errors) & (errors > 0.0)
     means = np.array([p.mean for p in pieces], dtype=float)
+
+    # Before anything is pooled: do these segments agree that they are
+    # measuring one thing? Pooling assumes they do, and pooling estimates of
+    # a moving target gives a confident number for a quantity that does not
+    # exist. Asked first, of the segments whose errors can be read, because
+    # a run still moving is the more useful thing to say: longer segments
+    # would not cure it.
+    scatter, drifting, refusal = _drift_test(
+        means[resolved], 1.0 / errors[resolved] ** 2)
+    if refusal is not None:
+        return None, refusal
+
+    if not resolved.all():
+        unresolved = [index for index, ok in zip(kept_at, resolved) if not ok]
+        worst = min((p for p, ok in zip(pieces, resolved) if not ok),
+                    key=lambda p: p.effective_samples)
+        return None, Withholding(
+            f"{len(unresolved)} of {len(pieces)} segments of this joined run "
+            f"are not long against their own correlation time (numbered "
+            f"{', '.join(str(i) for i in unresolved)} from zero; the least "
+            f"resolved holds {worst.effective_samples:.1f} independent "
+            f"samples by its own estimate, against the "
+            f"{RESOLVED_SAMPLES:g} that resolve it). "
+            "Their independent-sample counts are upper bounds, so a pooled "
+            "error built on them would be too small, and the test for drift "
+            "between segments cannot be read from them. The remedy is longer "
+            "segments.",
+            code="analysis.sampling.correlation_unresolved",
+            frames=int(values.size),
+            independent=float(worst.effective_samples),
+            statistical_inefficiency=float(worst.inefficiency),
+            needed=float(RESOLVED_SAMPLES),
+        )
+
+    weights = np.array([p.effective_samples for p in pieces], dtype=float)
     total = float(weights.sum())
 
     if total < minimum_effective_samples:
@@ -848,31 +961,6 @@ def summarise_segments(
     pooled_variance = float((weights * variances).sum() / total)
     standard_error = float(np.sqrt(pooled_variance / total))
 
-    # Before reporting it: do these segments agree that they are measuring
-    # one thing? Pooling assumes they do, and pooling estimates of a moving
-    # target gives a confident number for a quantity that does not exist.
-    precisions = np.array(
-        [1.0 / max(p.standard_error ** 2, 1e-300) for p in pieces])
-    scatter = heterogeneity_ratio(means, precisions)
-    drifting = drift_across_segments(means, precisions)
-
-    if drifting < DRIFT_SIGNIFICANT_BELOW and scatter > 1.0:
-        # Both conditions, because either alone is not drift. A low p on
-        # segments that agree is a trend of nothing, and scatter with no
-        # order is underestimated error rather than movement.
-        span = float(means[-1] - means[0])
-        return None, Withholding(
-            f"The segment means move in order across the run, by {span:+.4g} "
-            f"from first to last, and an ordering this clean arises by "
-            f"chance about {drifting:.1%} of the time. The system had not "
-            "equilibrated at the scale of the whole run, so a pooled mean would "
-            "be the mean of a moving target with a confident error bar on "
-            "it. The remedy is a longer run, not more pooling.",
-            code="analysis.sampling.drifting",
-            drift_p=float(drifting), heterogeneity=float(scatter),
-            span=span, segments=len(pieces),
-        )
-
     qualification = ""
     if scatter > HETEROGENEITY_QUALIFY_ABOVE:
         qualification = (
@@ -893,6 +981,37 @@ def summarise_segments(
         drift_p=float(drifting),
         qualification=qualification,
     ), None
+
+
+def _drift_test(means: np.ndarray, precisions: np.ndarray
+                ) -> "tuple[float, float, Withholding | None]":
+    """The heterogeneity, the drift p-value, and the refusal for segment
+    means that move in order (None where they do not).
+
+    Both an ordering (``drift_across_segments`` below 0.05) and a
+    disagreement (``heterogeneity_ratio`` above one) are needed, because
+    either alone is not drift: a low p on segments that agree is a trend of
+    nothing, and scatter with no order is underestimated error rather than
+    movement. A heterogeneity that is not a finite number counts as
+    disagreement rather than agreement, so a NaN cannot switch the test off.
+    """
+    scatter = heterogeneity_ratio(means, precisions)
+    drifting = drift_across_segments(means, precisions)
+    agree = bool(np.isfinite(scatter) and scatter <= 1.0)
+    if drifting >= DRIFT_SIGNIFICANT_BELOW or agree:
+        return scatter, drifting, None
+    span = float(means[-1] - means[0])
+    return scatter, drifting, Withholding(
+        f"The segment means move in order across the run, by {span:+.4g} "
+        f"from first to last, and an ordering this clean arises by "
+        f"chance about {drifting:.1%} of the time. The system had not "
+        "equilibrated at the scale of the whole run, so a pooled mean would "
+        "be the mean of a moving target with a confident error bar on "
+        "it. The remedy is a longer run, not more pooling.",
+        code="analysis.sampling.drifting",
+        drift_p=float(drifting), heterogeneity=float(scatter),
+        span=span, segments=int(means.size),
+    )
 
 
 #: Observed scatter of segment means over what their own standard errors
@@ -1005,3 +1124,442 @@ def with_its_error(value: float, error: float | None, *, sign: bool = False) -> 
         places = max(0, 1 - math.floor(math.log10(error)))
         said = f"{value:,.{places}f} \u00b1 {error:,.{places}f}"
     return f"+{said}" if sign and not said.startswith("-") else said
+
+
+# ---------------------------------------------------------------------------
+# How a series converged, for the page that shows it
+# ---------------------------------------------------------------------------
+#: Points on the running mean. Fifty shows its shape without a point per
+#: frame, and each costs a correlation estimate.
+RUNNING_POINTS = 50
+
+#: Most bins a histogram is given. Freedman-Diaconis on a million values
+#: asks for hundreds, finer than a figure can show.
+HISTOGRAM_BINS_AT_MOST = 60
+
+#: Fewest finite values :func:`convergence_of` reads. Below this the
+#: equilibration detector does not look (it needs ten), and a running mean,
+#: a blocking curve and a correlation function would each be a handful of
+#: points that say nothing about convergence.
+CONVERGENCE_FEWEST_VALUES = 10
+
+#: Lags of the first pass at the correlation of many suffixes at once. A
+#: series whose correlation has not decided by 16 times this is finished
+#: exactly, one suffix at a time.
+_FIRST_LAGS = 1024
+
+#: Shortest transform the pieces are computed in; each piece is as long as
+#: the transform less the lags, so little of it is padding.
+_TRANSFORM = 16384
+
+
+def _lagged_sums(x: np.ndarray, bounds: np.ndarray, lags: int) -> np.ndarray:
+    """``D[j, t] = sum x[i] x[i + t]`` over ``i`` in piece ``j``
+    (``bounds[j] <= i < bounds[j + 1]``) and ``i + t < n``, for
+    ``t < lags``: each piece's cross-correlation with what follows it, by
+    Fourier transform, so the sum over a suffix is a sum over pieces."""
+    n = x.size
+    pieces = bounds.size - 1
+    longest = int(np.max(np.diff(bounds)))
+    size = 1 << int(longest + lags).bit_length()
+    sums = np.empty((pieces, lags), dtype=float)
+    batch = max(1, (1 << 22) // size)
+    for first in range(0, pieces, batch):
+        rows = range(first, min(pieces, first + batch))
+        u = np.zeros((len(rows), size))
+        v = np.zeros((len(rows), size))
+        for row, j in enumerate(rows):
+            a, b = int(bounds[j]), int(bounds[j + 1])
+            u[row, :b - a] = x[a:b]
+            end = min(n, b + lags - 1)
+            v[row, :end - a] = x[a:end]
+        product = np.conj(np.fft.rfft(u, axis=1)) * np.fft.rfft(v, axis=1)
+        sums[first:first + len(rows)] = np.fft.irfft(product, size, axis=1)[:, :lags]
+    return sums
+
+
+def _suffix_correlations(x: np.ndarray, starts: "list[int]",
+                         lags: int) -> "dict[int, np.ndarray]":
+    """``C(t)`` of ``x[s:]`` about its own mean for each start ``s``, at lags
+    ``t < min(lags, n - s)``: the numbers :func:`_correlation` gives for that
+    suffix, from one pass over the series rather than one per start.
+
+    ``x`` is centred on its overall mean first, so the sums stay near the
+    size of the fluctuations. A suffix that is constant is left out.
+    """
+    n = x.size
+    x = x - x.mean()
+    lowest = min(starts)
+    piece = max(_TRANSFORM, 1 << int(4 * lags - 1).bit_length()) - lags
+    bounds = np.unique(np.concatenate([
+        np.asarray(starts, dtype=int), np.arange(lowest, n, piece), [n]]))
+    sums = _lagged_sums(x, bounds, lags)
+    from_here = np.cumsum(sums[::-1], axis=0)[::-1]
+    row_of = {int(b): j for j, b in enumerate(bounds[:-1])}
+    running = np.concatenate(([0.0], np.cumsum(x)))
+    changes = np.flatnonzero(x[1:] != x[:-1])
+    constant_from = int(changes[-1]) + 1 if changes.size else 0
+
+    out: dict[int, np.ndarray] = {}
+    for s in starts:
+        count = n - s
+        if count < 1 or s >= constant_from:
+            continue
+        t = np.arange(min(lags, count))
+        mean = (running[n] - running[s]) / count
+        covariance = (from_here[row_of[s], :t.size]
+                      - mean * ((running[n - t] - running[s])
+                                + (running[n] - running[s + t]))
+                      + mean ** 2 * (count - t))
+        if covariance[0] <= 0.0:
+            continue
+        correlation = covariance / covariance[0]
+        correlation[0] = 1.0
+        out[s] = correlation
+    return out
+
+
+def _suffix_inefficiencies(values: np.ndarray, starts: "list[int]",
+                           correlations_of: "dict[int, np.ndarray] | None" = None,
+                           *, first_lags: int = _FIRST_LAGS,
+                           ) -> "dict[int, tuple[float, int]]":
+    """For each start, :func:`statistical_inefficiency` of ``values[s:]``
+    and the pairs of lags :func:`_geyer` summed for it, which is what
+    :func:`_for_the_mean` corrects with. The same numbers, computed for
+    many suffixes together: lags are added until each suffix's sum of pairs
+    has stopped, and a suffix still undecided at 16384 lags is computed
+    on its own. ``correlations_of``, where given, receives each suffix's
+    correlation as far as it was computed; ``first_lags`` is where the
+    lags start."""
+    n = values.size
+    found: dict[int, tuple[float, int]] = {}
+    store = correlations_of if correlations_of is not None else {}
+    pending = []
+    for s in sorted({int(s) for s in starts}):
+        count = n - s
+        if count < 3:
+            found[s] = (1.0, 0)
+        else:
+            pending.append(s)
+    lags = int(first_lags)
+    while pending and lags <= 16 * _FIRST_LAGS:
+        correlations = _suffix_correlations(values, pending, lags)
+        still = []
+        for s in pending:
+            count = n - s
+            if s not in correlations:
+                # Constant from here: frames that never change are one
+                # observation, as `statistical_inefficiency` says.
+                found[s] = (float(count), 0)
+                continue
+            g, _decayed, pairs, decided = _geyer_from(correlations[s], count)
+            store[s] = correlations[s]
+            if decided:
+                found[s] = (g, pairs)
+            else:
+                still.append(s)
+        pending = still
+        lags *= 16
+    for s in pending:
+        kept = values[s:]
+        fluctuation = kept - kept.mean()
+        variance = float(np.mean(fluctuation ** 2))
+        correlation = _correlation(fluctuation, variance)
+        g, _decayed, pairs, _decided = _geyer_from(correlation, kept.size)
+        store[s] = correlation
+        found[s] = (g, pairs)
+    return found
+
+
+def _plain(value: Any) -> Any:
+    """A float for JSON: ``None`` for what is not a finite number."""
+    if value is None:
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _plain_list(values: Any) -> "list[float | None]":
+    return [_plain(v) for v in np.asarray(values, dtype=float).ravel()]
+
+
+def _histogram(values: np.ndarray) -> "dict[str, list[Any]] | None":
+    """Counts and edges, Freedman-Diaconis bins (width ``2 IQR / n^(1/3)``),
+    at most :data:`HISTOGRAM_BINS_AT_MOST` and at least one."""
+    if values.size == 0:
+        return None
+    low, high = float(values.min()), float(values.max())
+    q75, q25 = np.percentile(values, [75.0, 25.0])
+    width = 2.0 * float(q75 - q25) / values.size ** (1.0 / 3.0)
+    bins = (int(np.ceil((high - low) / width)) if width > 0.0 and high > low
+            else 1)
+    bins = max(1, min(HISTOGRAM_BINS_AT_MOST, bins))
+    counts, edges = np.histogram(values, bins=bins)
+    return {"edges": _plain_list(edges), "counts": [int(c) for c in counts]}
+
+
+def _blocking(values: np.ndarray) -> dict[str, Any]:
+    """Flyvbjerg-Petersen block averaging of ``values``.
+
+    For block lengths ``b = 1, 2, 4, ...`` up to ``n / 4``, the ``n_b =
+    floor(n / b)`` means of consecutive blocks of the first ``n_b b`` values
+    give the standard error of the mean ``sqrt(var(block means) / n_b)``
+    (``ddof = 1``), itself uncertain by ``SE / sqrt(2 (n_b - 1))``. Blocks
+    longer than the correlation make the error stop growing.
+
+    No plateau is named. The first block length every longer one agrees
+    with, within their uncertainties, was tried and read the error low: on
+    AR(1) series its median was 0.81 to 0.86 of the true error and its worst
+    half of it, since the long blocks' uncertainties are wide enough to agree
+    with blocks still too short. The curve is given, to be read beside the
+    error the package records, which is calibrated (statistics.summarise).
+    """
+    lengths, counts, errors, uncertainties = [], [], [], []
+    means = values.astype(float)
+    length = 1
+    while means.size >= 4:
+        nb = means.size
+        error = float(np.sqrt(np.var(means, ddof=1) / nb))
+        lengths.append(length)
+        counts.append(nb)
+        errors.append(error)
+        uncertainties.append(error / math.sqrt(2.0 * (nb - 1)))
+        pairs = nb // 2
+        means = 0.5 * (means[0:2 * pairs:2] + means[1:2 * pairs:2])
+        length *= 2
+    return {
+        "block_length": [int(b) for b in lengths],
+        "n_blocks": [int(c) for c in counts],
+        "standard_error": _plain_list(errors),
+        "standard_error_uncertainty": _plain_list(uncertainties),
+    }
+
+
+def _autocorrelation(kept: np.ndarray, inefficiency: float,
+                     interval: "float | None",
+                     known: "np.ndarray | None" = None) -> dict[str, Any]:
+    """``C(t)`` of the equilibrated part up to its first lag at or below
+    zero, or ``n / 4``; and the integrated correlation time from the
+    package's own inefficiency, ``tau_int = (g - 1) / 2``. ``known`` is the
+    correlation already computed for it, as far as it goes."""
+    n = kept.size
+    cap = max(1, n // 4)
+    correlation = np.ones(1)
+    crossed = None
+    if np.ptp(kept) > 0.0:
+        lags = min(_FIRST_LAGS, cap + 1)
+        while True:
+            if known is not None and known.size >= min(lags, n):
+                correlation = known
+            else:
+                correlation = _suffix_correlations(kept, [0], lags).get(
+                    0, np.ones(1))
+            below = np.flatnonzero(correlation[:cap + 1] <= 0.0)
+            if below.size:
+                crossed = int(below[0])
+                correlation = correlation[:crossed + 1]
+                break
+            if correlation.size > cap or correlation.size >= n:
+                correlation = correlation[:cap + 1]
+                break
+            lags = min(max(lags, correlation.size) * 16, cap + 1)
+    tau = (float(inefficiency) - 1.0) / 2.0
+    lag = np.arange(correlation.size)
+    return {
+        "lag_frames": [int(t) for t in lag],
+        "lag_time": None if interval is None else _plain_list(lag * interval),
+        "correlation": _plain_list(correlation),
+        "zero_crossing_frames": crossed,
+        "statistical_inefficiency": _plain(inefficiency),
+        "tau_int_frames": _plain(tau),
+        "tau_int_time": None if interval is None else _plain(tau * interval),
+    }
+
+
+def convergence_of(values: Any, times: Any = None) -> dict[str, Any]:
+    """How a series converged: what the GUI's convergence view plots.
+
+    Values that are not finite are left out first, with their times; frame
+    numbers below count the finite values, as :func:`summarise`'s do.
+    ``times``, where given, is one time per value in any unit; the frame
+    interval is the median step between them, and every ``*_time`` key is
+    in that unit. Without times those keys are ``None``.
+
+    Returns a JSON-ready dict (plain floats and ints, NaN as ``None``):
+
+    ``ok``, ``reason``
+        ``ok`` is False, with ``reason`` and nothing else computed, where
+        fewer than :data:`CONVERGENCE_FEWEST_VALUES` finite values remain.
+    ``n_values``, ``n_not_finite``, ``frame_interval``
+    ``equilibration``
+        What :func:`summarise` (and so :func:`mean_record`) gives for the
+        series: ``discard_frames`` and ``start_time`` (Chodera's start),
+        ``statistical_inefficiency``, ``effective_samples``, ``mean``,
+        ``standard_error`` (``None`` where withheld), ``standard_deviation``,
+        ``degrees_of_freedom``, and ``withheld`` and ``refusal`` (the reason
+        and its code) where it withholds.
+    ``running_mean``
+        The cumulative mean of the equilibrated part at ``frames`` (counted
+        from its start, about :data:`RUNNING_POINTS` evenly spaced) and
+        ``time``, with ``standard_error`` from the package's own estimator
+        applied to each prefix: ``sd sqrt(g / n)``, ``g`` from
+        :func:`_for_the_mean`, ``None`` where :func:`summarise` would
+        withhold it (fewer than :data:`RESOLVED_SAMPLES` independent samples
+        with ``g`` of 2 or more, or one sample or fewer).
+    ``blocking``
+        Flyvbjerg-Petersen block averaging of the equilibrated part; see
+        :func:`_blocking` for the keys.
+    ``autocorrelation``
+        The normalised autocorrelation of the equilibrated part (FFT based,
+        about its mean, divided by ``n var`` as the inefficiency uses it) at
+        ``lag_frames`` and ``lag_time``, up to the first lag where it is at
+        or below zero (``zero_crossing_frames``) or ``n / 4``; and
+        ``tau_int_frames`` and ``tau_int_time`` from
+        ``g = 1 + 2 tau_int``, ``g`` being ``equilibration``'s
+        ``statistical_inefficiency``.
+    ``histogram``
+        ``equilibrated`` and ``discarded`` (``None`` where nothing was
+        discarded), each ``edges`` and ``counts`` with its own
+        Freedman-Diaconis bins, at most :data:`HISTOGRAM_BINS_AT_MOST`.
+
+    The correlations are computed for many suffixes and prefixes in one
+    pass over the series, so a million values with a correlation time of
+    hundreds of frames take under a second. A series whose correlation has
+    not decayed within 16384 frames falls back to one transform per
+    suffix, and takes longer.
+
+        Flyvbjerg, H.; Petersen, H. G. Error estimates on averages of
+        correlated data. J. Chem. Phys. 1989, 91, 461-466.
+    """
+    raw = np.asarray(values, dtype=float).ravel()
+    finite = np.isfinite(raw)
+    clock = None
+    if times is not None:
+        clock = np.asarray(times, dtype=float).ravel()
+        if clock.size != raw.size:
+            from fastmdxplora.refusals import StudyError
+
+            raise StudyError(
+                f"{clock.size} times against {raw.size} values: a convergence "
+                "view needs one time per value.", code="config.option.wrong_type")
+        finite &= np.isfinite(clock)
+        clock = clock[finite]
+    series = raw[finite]
+    n = int(series.size)
+    record: dict[str, Any] = {
+        "ok": False, "reason": None, "n_values": n,
+        "n_not_finite": int(raw.size - n), "frame_interval": None,
+    }
+    if n < CONVERGENCE_FEWEST_VALUES:
+        record["reason"] = (
+            f"{n} finite value(s): convergence is not read from fewer than "
+            f"{CONVERGENCE_FEWEST_VALUES}, since the equilibration detector "
+            "needs that many and a running mean of fewer says nothing.")
+        return record
+    interval = (float(np.median(np.diff(clock))) if clock is not None and n > 1
+                else None)
+    record["frame_interval"] = _plain(interval)
+
+    # (a) The start summarise chooses, from the same numbers.
+    candidates = [int(s) for s in _equilibration_candidates(n)]
+    correlations: dict[int, np.ndarray] = {}
+    suffix = _suffix_inefficiencies(series, candidates, correlations)
+    counted = [(s, suffix[s][0], float((n - s) / suffix[s][0]))
+               for s in candidates if n - s >= 3]
+    discard, g_raw, _most = _latest_within_tolerance(counted)
+    kept = series[discard:]
+    g_kept, pairs_kept = suffix[discard]
+    g_whole, pairs_whole = suffix[0]
+    equilibrated, why = _summary(
+        series, discard, g_raw,
+        _corrected_for_the_mean(g_kept, pairs_kept, kept.size)
+        if kept.size >= 3 and np.ptp(kept) > 0 else _for_the_mean(kept),
+        lambda: (_corrected_for_the_mean(g_whole, pairs_whole, n)
+                 if np.ptp(series) > 0 else _for_the_mean(series)),
+        MINIMUM_EFFECTIVE_SAMPLES)
+    refusal = getattr(why, "refusal", None)
+    record["equilibration"] = {
+        "discard_frames": int(discard),
+        "start_time": None if clock is None else _plain(clock[discard]),
+        "statistical_inefficiency": _plain(equilibrated.inefficiency),
+        "effective_samples": _plain(equilibrated.effective_samples),
+        "mean": _plain(equilibrated.mean),
+        "standard_error": _plain(equilibrated.standard_error),
+        "standard_deviation": _plain(equilibrated.standard_deviation),
+        "degrees_of_freedom": _plain(equilibrated.degrees_of_freedom),
+        "withheld": None if why is None else str(why),
+        "refusal": None if refusal is None else refusal.code,
+    }
+
+    # (b) The running mean of the equilibrated part, prefix by prefix. A
+    # prefix of the series is a suffix of it reversed, with the same
+    # correlation, so the suffix machinery serves.
+    size = kept.size
+    ends = sorted({int(round(j * size / RUNNING_POINTS))
+                   for j in range(1, RUNNING_POINTS + 1)} - {0})
+    reversed_kept = kept[::-1].copy()
+    # Started at twice the lags the equilibrated part needed, which a
+    # prefix of it seldom exceeds, so one pass usually decides them all.
+    reach = 4 * pairs_kept + 4
+    prefix = _suffix_inefficiencies(
+        reversed_kept, [size - e for e in ends if e >= 3],
+        first_lags=min(16 * _FIRST_LAGS, max(_FIRST_LAGS, 2 * reach)))
+    # The whole run up to each point, for summarise's whole-run rule, in the
+    # same one pass over the series reversed.
+    whole_prefix = (_suffix_inefficiencies(
+        series[::-1].copy(), [n - (discard + e) for e in ends if e >= 3],
+        first_lags=min(16 * _FIRST_LAGS, max(_FIRST_LAGS, 2 * (4 * pairs_whole + 4))))
+        if discard else {})
+    total = np.concatenate(([0.0], np.cumsum(kept)))
+    running_means, running_errors = [], []
+    for end in ends:
+        mean = total[end] / end
+        running_means.append(mean)
+        if end == size:
+            # The whole equilibrated part: the record itself.
+            running_errors.append(_plain(equilibrated.standard_error))
+            continue
+        if end < 3:
+            running_errors.append(None)
+            continue
+        # What summarise would have recorded had the run ended here, from
+        # the same start: its own rule (_summary), the whole run's error
+        # substituted where the start gained too little, withheld where it
+        # would withhold. An error by a rule of the view's own gave a band
+        # where the record gave none (73 of 200 correlated runs).
+        g_prefix, pairs = prefix[size - end]
+        piece = kept[:end]
+        for_kept = (_corrected_for_the_mean(g_prefix, pairs, end)
+                    if g_prefix < end and np.ptp(piece) > 0 else _for_the_mean(piece))
+        def whole(end: int = end) -> tuple[float, float]:
+            run = series[:discard + end]
+            g_run, pairs_run = whole_prefix.get(n - (discard + end), (float(run.size), 0))
+            if g_run < run.size and np.ptp(run) > 0:
+                return _corrected_for_the_mean(g_run, pairs_run, run.size)
+            return _for_the_mean(run)
+
+        ended, _why = _summary(series[:discard + end], discard, g_prefix, for_kept,
+                               whole, MINIMUM_EFFECTIVE_SAMPLES)
+        running_errors.append(_plain(ended.standard_error))
+    record["running_mean"] = {
+        "frames": [int(e) for e in ends],
+        "time": (None if clock is None
+                 else _plain_list(clock[discard + np.asarray(ends) - 1])),
+        "mean": _plain_list(running_means),
+        "standard_error": [_plain(e) for e in running_errors],
+    }
+
+    # (c) Block averaging.
+    record["blocking"] = _blocking(kept)
+
+    # (d) The autocorrelation, and the correlation time the package uses.
+    record["autocorrelation"] = _autocorrelation(
+        kept, equilibrated.inefficiency, interval, correlations.get(discard))
+
+    # (e) What the equilibrated values and the discarded ones look like.
+    record["histogram"] = {
+        "equilibrated": _histogram(kept),
+        "discarded": _histogram(series[:discard]) if discard else None,
+    }
+    record["ok"] = True
+    return record

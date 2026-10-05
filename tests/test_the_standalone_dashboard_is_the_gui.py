@@ -110,7 +110,11 @@ def test_the_page_written_during_a_run_reads_the_live_record(tmp_path: Path) -> 
     assert '<tr><td>Setup</td><td><span class="stage-pill">ok</span>' in html
     assert '<tr><td>Report</td><td><span class="stage-pill">running</span>' in html
     assert '<li class="stage-step" data-stage="report" data-state="current">' in html
-    assert '<span class="mono" title="Platform">CUDA</span>' in html
+    assert '<span class="status-platform mono" title="Platform">CUDA</span>' in html
+    # A run going on when the page was written: its progress card, at the
+    # stage it was in.
+    assert '<div class="sidebar-progress" data-run="running">' in html
+    assert '<span class="progress-stage">Report</span>' in html
 
 
 def test_only_the_stages_the_study_reaches_are_listed(tmp_path: Path) -> None:

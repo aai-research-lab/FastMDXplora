@@ -150,3 +150,68 @@ class TestItJoinsTheRegisters:
 
     def test_it_declares_itself_a_time_series(self):
         assert PairDistance.time_series is True
+
+
+#: A rhombic dodecahedron as the setup builds it, cell vectors as rows.
+EDGE = 6.8
+DODECAHEDRON = np.array([[EDGE, 0.0, 0.0],
+                         [0.0, EDGE, 0.0],
+                         [EDGE / 2, EDGE / 2, EDGE * np.sqrt(2) / 2]])
+
+
+def _in_a_cell(a_positions, b_positions, cell):
+    """One atom in each group per frame, stored wrapped into ``cell``."""
+    top = md.Topology()
+    chain = top.add_chain()
+    for name in ("LGA", "LGB"):
+        top.add_atom("C", md.element.carbon, top.add_residue(name, chain))
+    xyz = np.stack([a_positions, b_positions], axis=1)
+    fractional = xyz @ np.linalg.inv(cell)
+    wrapped = (fractional - np.floor(fractional)) @ cell
+    traj = md.Trajectory(wrapped.astype(np.float32), top)
+    traj.unitcell_vectors = np.tile(cell, (len(xyz), 1, 1)).astype(np.float32)
+    return traj
+
+
+class TestATriclinicCell:
+    """Folding by box lengths is right only for a rectangular box."""
+
+    def test_a_pair_across_a_slanted_face_is_adjacent(self):
+        a = np.array([[0.2, 0.2, 0.2]])
+        traj = _in_a_cell(a, a - [0.0, 0.0, 0.5], DODECAHEDRON)
+
+        result = PairDistance(
+            selection_a="resname LGA", selection_b="resname LGB").compute(traj)
+
+        assert result[0] == pytest.approx(0.5, abs=1e-4)   # read 5.416
+
+    def test_every_pair_agrees_with_an_exhaustive_search(self):
+        rng = np.random.default_rng(0)
+        a = rng.random((2000, 3)) @ DODECAHEDRON
+        b = rng.random((2000, 3)) @ DODECAHEDRON
+        traj = _in_a_cell(a, b, DODECAHEDRON)
+        lattice = (np.array(list(np.ndindex(5, 5, 5))) - 2.0) @ DODECAHEDRON
+        stored = traj.xyz.astype(np.float64)
+        truth = np.linalg.norm(
+            (stored[:, 1] - stored[:, 0])[:, None, :] + lattice[None], axis=2).min(axis=1)
+
+        com = PairDistance(
+            selection_a="resname LGA", selection_b="resname LGB").compute(traj)
+
+        assert np.abs(com - truth).max() < 1e-4             # 28% were wrong
+
+    def test_the_warning_bound_is_half_the_shortest_repeat(self):
+        """An unreduced cell can have long vectors and a short repeat. The
+        bound is half the shortest lattice vector, 0.559 nm here, not half
+        the shortest stored vector, 1.82 nm."""
+        cell = np.array([[4.0, 0.0, 0.0], [3.5, 1.0, 0.0], [0.0, 0.0, 4.0]])
+        a = np.array([[1.0, 0.5, 1.0]])
+        traj = _in_a_cell(a, a + [0.0, 0.0, 0.5], cell)
+        analysis = PairDistance(
+            selection_a="resname LGA", selection_b="resname LGB")
+
+        result = analysis.compute(traj)
+
+        assert result[0] == pytest.approx(0.5, abs=1e-4)
+        assert "not_a_measurement" in analysis.findings
+        assert "0.559" in analysis.findings["not_a_measurement"]

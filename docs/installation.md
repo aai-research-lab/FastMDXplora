@@ -114,7 +114,10 @@ Linux and macOS, and `fastmdx info` says so when it runs on Windows.
 **Movies** in the GUI are encoded by ffmpeg, which is not installed with
 FastMDXplora: `conda install -c conda-forge ffmpeg`, `brew install ffmpeg`,
 or the system's package. The GUI uses the one on the PATH, or the one
-`FASTMDXPLORA_FFMPEG` names.
+`FASTMDXPLORA_FFMPEG` names. A movie made without the GUI open
+(`fastmdx movie`, or `make_movie` from an AI app) is rendered by the Viewer
+in a browser with no window as well: `pip install "fastmdxplora[movies]"` and
+`playwright install chromium`, or have Chrome or Edge installed.
 
 ---
 

@@ -1707,17 +1707,16 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
 
         import importlib
 
-        # By the module itself: `fastmdxplora.cli.main` also names the
-        # function re-exported from the package, and a dotted patch target
-        # resolves to that on some Pythons.
-        cli_module = importlib.import_module("fastmdxplora.cli.main")
+        # The class `explore` runs a study with, from the package, patched by
+        # the module object: a dotted target resolves to the wrong one on
+        # some Pythons.
         staged = []
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fastmdxplora.agent.run_in_stages",
                            side_effect=lambda config, output, *, budget_hours: staged.append(
                                (config.get("budget_hours"), budget_hours, Path(output)))
                            or SimpleNamespace(notes=[], refusal=None, setup_done=True)), \
-                mock.patch.object(cli_module, "FastMDXplora",
+                mock.patch.object(importlib.import_module("fastmdxplora"), "FastMDXplora",
                                   side_effect=AssertionError("ran without the staged runner")):
             # From a config file, where a whole number of hours is an int:
             # the staged runner is handed hours as a number of hours, 2.0.
@@ -1935,10 +1934,12 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         return (pathlib.Path(gui.__file__).parent / "static"
                 / "dashboard.css").read_text(encoding="utf-8")
 
-    def test_the_centre_has_a_reading_width_except_the_viewer(self):
+    def test_the_centre_has_a_reading_width_and_the_viewer_a_wider_one(self):
+        # Centred either way: the Viewer's canvas keeps one shape and no
+        # longer takes every pixel of width.
         css = self.css()
         self.assertIn(".page-shell { max-width: 900px; margin: 0 auto; width: 100%; }", css)
-        self.assertIn('html[data-page="viewer"] .page-shell { max-width: none; }', css)
+        self.assertIn('html[data-page="viewer"] .page-shell { max-width: 1480px; }', css)
 
     def test_the_panel_starts_at_a_width_that_leaves_the_page_the_most(self):
         # 560 left the page 640 pixels of a 1440 window, and the viewer's
@@ -2810,7 +2811,8 @@ class TestTheWordsAndTheRows(unittest.TestCase):
                / "dashboard.css").read_text(encoding="utf-8")
         rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
         self.assertIn("align-items: center", rule)
-        self.assertIn("min-height: 44px", rule)
+        self.assertIn("min-height: var(--top-bar-height)", rule)
+        self.assertIn("flex-wrap: nowrap", rule)
         self.assertIn(".page-subtitle {\n    display: inline;", css)
 
 

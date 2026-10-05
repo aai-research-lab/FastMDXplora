@@ -376,13 +376,14 @@ def test_the_sidebar_has_the_load_control():
     page = (pathlib.Path(gui.__file__).parent / "templates"
             / "dashboard.html").read_text(encoding="utf-8")
     assert 'id="load-study"' in page
-    # In the study block, not the controls row: which study this is, is
-    # that block's whole question, and the row holds three.
+    # In the study card's menu, not the progress card's row: which study
+    # this is, is the card's whole question, and the row holds two.
     study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
-    assert 'id="load-study"' in study
+    menu = study[study.index('id="study-menu"'):]
+    assert 'id="load-study"' in menu and 'id="open-output"' in menu
     row = page[page.index('class="sidebar-controls"'):]
     row = row[:row.index("</div>")]
-    assert row.count("<button") == 3
+    assert row.count("<button") == 2
     # No data-picks on the hidden input: the picker would attach a second
     # "Browse" button for the same action.
     assert 'id="load-study-path" data-picks' not in page
@@ -426,10 +427,11 @@ def test_the_sidebar_reads_top_down():
     page = (pathlib.Path(gui.__file__).parent / "templates"
             / "dashboard.html").read_text(encoding="utf-8")
     study = page[page.index('class="sidebar-study"'):page.index('class="sidebar-progress"')]
-    # Status row, then Running, then Load available study.
-    assert study.index('id="topbar-status-text"') < study.index('id="study-elsewhere"') < study.index('id="load-study"')
+    # The card with its status line, then its menu of studies to switch to,
+    # then what is running elsewhere.
+    assert study.index('id="topbar-status-text"') < study.index('id="load-study"') < study.index('id="study-elsewhere"')
     assert 'id="study-elsewhere-pct"' in study
-    assert ">Load available study<" in study
+    assert ">Open another folder&hellip;<" in study
 
 
 def test_the_run_outlives_the_server(tmp_path: Path) -> None:

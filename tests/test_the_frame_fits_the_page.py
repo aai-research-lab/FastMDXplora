@@ -60,6 +60,9 @@ def browser():
 
 def _open(browser, session, where="#overview", width=1440, height=900, stored=None):
     context = browser.new_context(viewport={"width": width, "height": height})
+    # The Playback starts closed; these read what is in it.
+    context.add_init_script(
+        "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
     if stored:
         context.add_init_script(
             "(() => {" + "".join(f"localStorage.setItem('fmx.{k}', '{v}');"
@@ -89,7 +92,7 @@ class TestTheNavigation:
         page.context.close()
         # Every study first, then the one on screen, then the ways to start one.
         assert order == ["studies"] + STUDY_NAV + NEW_NAV
-        assert headings == ["Study", "New study"]
+        assert headings == ["This study", "New study"]
 
     def test_every_entry_is_in_a_short_window(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], height=720)
@@ -160,12 +163,16 @@ class TestTheViewer:
         assert self._canvas(page) > 700
         page.context.close()
 
-    def test_beside_the_log_the_pane_goes_under_it(self, browser, studies) -> None:
+    def test_while_a_study_runs_the_log_gives_the_viewer_the_room(self, browser, studies) -> None:
+        # The log is open while a study runs; the Viewer closes it, and the
+        # settings stay beside the molecule.
         page = _open(browser, studies["running"])
         canvas = self._canvas(page)
-        main = page.evaluate("() => document.querySelector('.page-shell').offsetWidth")
+        closed = page.evaluate("() => document.body.classList.contains('panel-collapsed')")
+        beside = page.evaluate("""() => document.querySelector('.viewer-side').getBoundingClientRect().left
+            > document.getElementById('viewer-canvas-frame').getBoundingClientRect().right""")
         page.context.close()
-        assert canvas > 0.85 * (main - 64)
+        assert closed and beside and canvas > 700
 
     def test_a_finished_studys_frame_is_not_called_live(self, browser, studies) -> None:
         page = _open(browser, studies["finished"], where="#viewer")
@@ -264,8 +271,8 @@ class TestWhatIsNotSaid:
         assert all("—" not in text for text in shown), shown
 
     def test_the_citation_stays_in_its_card(self, browser, studies) -> None:
-        page = _open(browser, studies["finished"], where="#cite")
-        page.evaluate("() => window.FastMDXDashboard.navigate('cite')")
+        page = _open(browser, studies["finished"], where="#overview")
+        page.evaluate("() => window.FastMDXDialog.open('cite-dialog')")
         page.wait_for_timeout(300)
         widths = page.evaluate("() => { const b = document.getElementById('cite-bibtex');"
                                " return [b.scrollWidth, b.clientWidth]; }")

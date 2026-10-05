@@ -9,14 +9,14 @@ description.
 
 Four features read from this single registry, so they never drift apart:
 
-  1. **Validation** (:mod:`fastmdxplora.config.loader`) — unknown keys
+  1. **Validation** (:mod:`fastmdxplora.config.loader`): unknown keys
      are rejected with did-you-mean suggestions; values are type-checked.
-  2. **Template generation** (``fastmdx init-config``) — a fully-commented
+  2. **Template generation** (``fastmdx config``): a fully-commented
      YAML template is generated directly from the field descriptions and
      defaults.
-  3. **Resolved-config dump** — after a run, the merged configuration is
+  3. **Resolved-config dump**: after a run, the merged configuration is
      written to ``resolved_config.yml`` for reproducibility.
-  4. **Documentation** — the field help strings are the canonical
+  4. **Documentation**: the field help strings are the canonical
      descriptions used in the template and (eventually) the docs.
 
 The schema deliberately mirrors the keyword arguments accepted by each

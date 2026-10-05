@@ -24,8 +24,9 @@ pytest.importorskip("playwright.sync_api")
 
 from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa: E402
 
-PAGES = ("overview", "viewer", "analysis", "report", "files", "run", "agent",
-         "cite", "settings")
+PAGES = ("overview", "viewer", "analysis", "report", "files", "run", "agent")
+#: Preferences and the citation, which were pages, and the Agent's settings.
+DIALOGS = ("prefs-dialog", "cite-dialog", "agent-settings")
 SCHEMES = ("graphite", "ink", "paper")
 
 #: The text on the page measured against what is behind it; returns what
@@ -53,11 +54,21 @@ UNREADABLE = r"""
     const a = top.a;
     return {r: top.r * a + under.r * (1 - a), g: top.g * a + under.g * (1 - a), b: top.b * a + under.b * (1 - a), a: 1};
   }
-  function background(el) {
+  // What is behind an element, as the colours it may be: one, or each
+  // colour of a gradient under it (a primary button's), so text on a
+  // gradient is held to its worst colour rather than read over the card.
+  function backgrounds(el) {
     const stack = [];
+    let stops = null;
     for (let e = el; e; e = e.parentElement) {
       const cs = getComputedStyle(e);
       if (cs.backgroundImage && cs.backgroundImage.includes("url(")) return null;
+      if (cs.backgroundImage && cs.backgroundImage.includes("gradient(")) {
+        stops = (cs.backgroundImage.match(/rgba?\([^)]+\)|color\(srgb [^)]+\)/g) || [])
+          .map(parse).filter(Boolean);
+        if (stops.length && stops.every(c => c.a >= 1)) break;
+        stops = null;
+      }
       const c = parse(cs.backgroundColor);
       if (c && c.a > 0) { stack.push(c); if (c.a >= 1) break; }
     }
@@ -65,7 +76,7 @@ UNREADABLE = r"""
     const bodyBg = parse(getComputedStyle(document.body).backgroundColor);
     if (bodyBg && bodyBg.a > 0) base = over(bodyBg, base);
     for (let i = stack.length - 1; i >= 0; i--) base = over(stack[i], base);
-    return base;
+    return stops || [base];
   }
   const bad = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -85,13 +96,15 @@ UNREADABLE = r"""
     for (let e = el; e; e = e.parentElement) { if (getComputedStyle(e).display === "none") { hidden = true; break; } }
     if (hidden) continue;
     if (!/[A-Za-z0-9]/.test(t.textContent)) continue;
-    const bg = background(el); if (!bg) continue;
-    let fg = parse(cs.color); if (!fg) continue;
+    const bgs = backgrounds(el); if (!bgs) continue;
+    const ink = parse(cs.color); if (!ink) continue;
     let op = 1; for (let e = el; e; e = e.parentElement) op *= +getComputedStyle(e).opacity;
     if (op < 0.05) continue;
-    fg = over({...fg, a: fg.a * op}, bg);
-    const L1 = lum(fg), L2 = lum(bg);
-    const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+    const ratio = Math.min(...bgs.map((bg) => {
+      const fg = over({...ink, a: ink.a * op}, bg);
+      const L1 = lum(fg), L2 = lum(bg);
+      return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+    }));
     const size = parseFloat(cs.fontSize);
     const large = size >= 24 || (size >= 18.66 && +cs.fontWeight >= 700);
     if (ratio < (large ? 3 : 4.5)) bad.push({text: t.textContent.trim().slice(0, 40), ratio: Math.round(ratio * 100) / 100, cls: el.className && String(el.className).slice(0, 50), id: el.id, tag: el.tagName});
@@ -161,6 +174,12 @@ def test_every_page_can_be_read(browser, dashboard, scheme) -> None:
         _settled(page)
         unreadable += [(name, row["text"], row["ratio"], row["cls"])
                        for row in page.evaluate(UNREADABLE)]
+    for name in DIALOGS:
+        page.evaluate(f"() => window.FastMDXDialog.open('{name}')")
+        _settled(page)
+        unreadable += [(name, row["text"], row["ratio"], row["cls"])
+                       for row in page.evaluate(UNREADABLE)]
+        page.evaluate(f"() => window.FastMDXDialog.close('{name}')")
     page.context.close()
     assert unreadable == []
 

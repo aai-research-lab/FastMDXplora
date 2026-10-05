@@ -403,8 +403,16 @@
     }
   }
 
-  function openSettings() { el("agent-settings").hidden = false; }
-  function closeSettings() { el("agent-settings").hidden = true; }
+  // As the page's other dialogs (preferences.js): Escape and a click
+  // outside close it, focus stays in it and goes back to what opened it.
+  function openSettings() {
+    if (window.FastMDXDialog) window.FastMDXDialog.open("agent-settings");
+    else el("agent-settings").hidden = false;
+  }
+  function closeSettings() {
+    if (window.FastMDXDialog) window.FastMDXDialog.close("agent-settings");
+    else el("agent-settings").hidden = true;
+  }
 
   function loadEngine() {
     return post("/api/agent/model", {}).then(function (data) {
@@ -798,7 +806,8 @@
          * asked about first. The server says which from what they typed;
          * without its word, ask. */
         var confirmRunFirst = data.action === "run" && data.confirm !== false;
-        if (data.action === "run the fix" || data.action === "rerun windows") {
+        if (data.action === "run the fix" || data.action === "rerun windows" ||
+            data.action === "analyze again" || data.action === "write the report again") {
           /* Asked, not done, and not kept as waiting: a reloaded thread
            * asks the Agent again rather than run a fix it no longer shows. */
           transcript.push({ role: "agent", kind: "question",
@@ -999,6 +1008,17 @@
   }
 
   function act(action, where, box, r, confirmFirst, fix, refused) {
+    if (action === "analyze again" || action === "write the report again") {
+      /* The study's analyses or report run again in its folder, checked
+       * by the server against the study; asked, or said why not. */
+      if (!fix) {
+        note(box, refused || "This study cannot be run again here.");
+        return;
+      }
+      fixPending = fix;
+      note(box, fixQuestion(fix));
+      return;
+    }
     if (action === "rerun windows") {
       /* The windows and values the person named, checked by the server
        * against the study; asked with the price, or said why not. */
@@ -1098,7 +1118,7 @@
       persist();
       return;
     }
-    fetch("/api/fix", {
+    fetch(fix.route || "/api/fix", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fix.request || { index: fix.index })
@@ -1108,7 +1128,8 @@
       note(box, said, started);
       history.push({ role: "agent", text: said });
       transcript.push(started ? { role: "agent", kind: "action",
-                                  action: fix.request ? "rerun windows" : "run the fix", where: "" }
+                                  action: fix.action || (fix.request ? "rerun windows" : "run the fix"),
+                                  where: "" }
                               : { role: "agent", kind: "error", text: said });
       persist();
       if (started && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {

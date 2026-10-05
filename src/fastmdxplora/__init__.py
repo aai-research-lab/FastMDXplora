@@ -88,6 +88,13 @@ def python_range_string() -> str:
     )
 
 
+# `protein` covers every amino acid a force field writes, CYX and HIE among
+# them, from MDTraj's first import, whatever is imported first
+# (protein_names.py).
+from fastmdxplora.protein_names import recognise_from_the_first_import
+
+recognise_from_the_first_import()
+
 # Before anything imports the OpenFF toolkit, which decides once, on import,
 # whether AmberTools is there by looking on PATH: see own_programs.
 from fastmdxplora.own_programs import put_own_programs_on_path

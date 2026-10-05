@@ -11,6 +11,12 @@ Component Dictionary and determines its protonation against the pocket, then
 writes it to ``setup/ligands/<resname>.sdf``. Where that file exists the
 chemistry is not a guess.
 
+A file's atoms are matched to the trajectory's by their bonds, not by their
+position in the file. An SDF that lists the same atoms in another order is
+the usual case rather than the exception (RDKit and the dictionary put
+hydrogens where they please), and taken by position an acetate written
+C, H, H, H, C, O, O put its carboxylate on two methyl hydrogens.
+
 Where it does not -- a trajectory from GROMACS, from AMBER, from somebody
 else's script, which is most trajectories -- the routes are tried in order and
 **the one that worked is recorded**. A reader deserves to know whether an
@@ -33,13 +39,12 @@ __all__ = ["ResolvedChemistry", "resolve_ligand_chemistry",
 
 #: The routes, best first. Ordered by how much of the answer was decided by
 #: somebody who knew, rather than inferred from coordinates.
-SOURCES = ("supplied", "run", "ccd", "perceived")
+SOURCES = ("supplied", "run", "perceived")
 
 #: What each route means for a reader of the results.
 _CONFIDENCE = {
     "supplied": "stated by you",
     "run": "resolved during setup, at the pH simulated",
-    "ccd": "the Chemical Component Dictionary definition for this residue name",
     "perceived": "inferred from the coordinates -- bond orders are a guess",
 }
 
@@ -88,7 +93,75 @@ def _formal_charge(mol: Any) -> int | None:
         return None
 
 
-def _from_sdf(path: Path, resname: str, expected_atoms: int) -> ResolvedChemistry | None:
+def _graph(atomic_numbers: Any, bonds: Any) -> Any:
+    """A molecule made of elements and single bonds only, for matching."""
+    from rdkit import Chem
+
+    built = Chem.RWMol()
+    for number in atomic_numbers:
+        atom = Chem.Atom(int(number))
+        atom.SetNoImplicit(True)
+        built.AddAtom(atom)
+    for first, second in bonds:
+        built.AddBond(int(first), int(second), Chem.BondType.SINGLE)
+    graph = built.GetMol()
+    graph.UpdatePropertyCache(strict=False)
+    return graph
+
+
+def _topology_order(mol: Any, topology: Any, atom_indices: Any) -> list[int] | None:
+    """For each ligand atom in the trajectory, the file atom that is it.
+
+    Matched by the topology's bonds where it carries the ligand's bonds:
+    the file's graph of elements and bonds must be the topology's, and the
+    match says which file atom each trajectory atom is. Where the topology
+    has no bonds inside the ligand there is nothing to match, and the
+    elements must then agree one by one in the order given. None where
+    neither holds, which is a different molecule or one that cannot be
+    placed.
+    """
+    order = [int(i) for i in atom_indices]
+    if mol.GetNumAtoms() != len(order):
+        return None
+    where = {index: position for position, index in enumerate(order)}
+    numbers = []
+    for index in order:
+        element = topology.atom(index).element
+        numbers.append(int(element.atomic_number) if element is not None else 0)
+    bonds = {
+        tuple(sorted((where[b[0].index], where[b[1].index])))
+        for b in topology.bonds
+        if b[0].index in where and b[1].index in where
+    }
+    in_file = [a.GetAtomicNum() for a in mol.GetAtoms()]
+
+    if not bonds:
+        return list(range(len(order))) if in_file == numbers else None
+
+    file_bonds = {tuple(sorted((b.GetBeginAtomIdx(), b.GetEndAtomIdx())))
+                  for b in mol.GetBonds()}
+    if len(file_bonds) != len(bonds):
+        return None
+    # The file's own order where it is already the topology's; otherwise
+    # the first match, which for a symmetric molecule is one of several
+    # equivalent ones.
+    if in_file == numbers and file_bonds == bonds:
+        return list(range(len(order)))
+    match = _graph(numbers, bonds).GetSubstructMatch(_graph(in_file, file_bonds))
+    if len(match) != len(order):
+        return None
+    # match[file atom] = topology position; invert it.
+    inverse = [0] * len(order)
+    for file_atom, position in enumerate(match):
+        inverse[position] = file_atom
+    return inverse
+
+
+def _from_sdf(
+    path: Path, resname: str, topology: Any, atom_indices: Any
+) -> tuple[ResolvedChemistry, bool] | None:
+    """A file's molecule with its atoms in the trajectory's order, and
+    whether they had to be reordered; None where it is not this ligand."""
     from rdkit import Chem
 
     try:
@@ -99,12 +172,18 @@ def _from_sdf(path: Path, resname: str, expected_atoms: int) -> ResolvedChemistr
     if mol is None:
         return None
     # A definition of a different molecule is worse than no definition: it
-    # would put donors and rings on atoms that are not there.
-    if expected_atoms and mol.GetNumAtoms() != expected_atoms:
+    # would put donors and rings on atoms that are not there. So is the
+    # right molecule mapped onto the wrong atoms, which an atom count alone
+    # cannot tell apart from the right mapping.
+    order = _topology_order(mol, topology, atom_indices)
+    if order is None:
         return None
+    reordered = order != list(range(len(order)))
+    if reordered:
+        mol = Chem.RenumberAtoms(mol, order)
     return ResolvedChemistry(
         mol=mol, source="", detail="", resname=resname, n_atoms=mol.GetNumAtoms()
-    )
+    ), reordered
 
 
 #: Charges to try when nobody has said what the ligand's is. Ordered by how
@@ -283,47 +362,43 @@ def resolve_ligand_chemistry(
         gives a carboxylate no double bond, which is the group that forms salt
         bridges.
     allow_fetch : bool, default True
-        Whether the Chemical Component Dictionary may be consulted. Turned off
-        for offline work, where a network timeout is a worse answer than
-        falling through to perception.
+        Accepted so existing calls keep working, and has no effect: nothing
+        is fetched here. Looking a residue name up in the Chemical Component
+        Dictionary needs the deposited entry, chain and residue number the
+        setup phase has and a trajectory does not, and the call this made
+        without them failed every time.
 
     Raises
     ------
     ValueError
         Where no route works, saying which would.
     """
-    expected = len(atom_indices)
     tried: list[str] = []
+    # Read only where there is a file to match against it.
+    topology = traj.topology if (supplied or run_dir) else None
+
+    def described(where: str, reordered: bool) -> str:
+        return (f"{where} (atoms matched to the topology by their bonds)"
+                if reordered else where)
 
     if supplied:
-        found = _from_sdf(Path(supplied), resname, expected)
+        found = _from_sdf(Path(supplied), resname, topology, atom_indices)
         tried.append(f"the file you gave ({supplied})")
         if found:
-            return ResolvedChemistry(found.mol, "supplied", str(supplied),
-                                     resname, found.n_atoms)
+            chemistry, reordered = found
+            return ResolvedChemistry(chemistry.mol, "supplied",
+                                     described(str(supplied), reordered),
+                                     resname, chemistry.n_atoms)
 
     if run_dir:
         for candidate in sorted(Path(run_dir).glob(f"**/ligands/{resname}*.sdf")):
-            found = _from_sdf(candidate, resname, expected)
+            found = _from_sdf(candidate, resname, topology, atom_indices)
             tried.append(f"this run's setup ({candidate.name})")
             if found:
-                return ResolvedChemistry(found.mol, "run", str(candidate),
-                                         resname, found.n_atoms)
-
-    if allow_fetch:
-        try:
-            from fastmdxplora.setup.ccd import fetch_chemistry
-
-            chemistry = fetch_chemistry(resname)
-            found = _from_sdf(Path(chemistry.path), resname, expected)
-            tried.append(f"the Chemical Component Dictionary entry for {resname}")
-            if found:
-                return ResolvedChemistry(found.mol, "ccd", str(chemistry.path),
-                                         resname, found.n_atoms)
-        except Exception:  # noqa: BLE001 - offline, unknown code, changed API
-            tried.append(
-                f"the Chemical Component Dictionary (no usable entry for {resname})"
-            )
+                chemistry, reordered = found
+                return ResolvedChemistry(chemistry.mol, "run",
+                                         described(str(candidate), reordered),
+                                         resname, chemistry.n_atoms)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -353,6 +428,5 @@ def resolve_ligand_chemistry(
     raise StudyError(
         f"The chemistry of {resname!r} could not be established. Tried: "
         + "; ".join(tried)
-        + ". Supply an SDF for it, or use a residue name the Chemical "
-        "Component Dictionary knows."
+        + ". Supply an SDF for it whose atoms and bonds are this ligand's."
     , code="setup.chemistry.uninterpretable")

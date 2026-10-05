@@ -87,25 +87,6 @@
         setTimeout(() => { methodsCopy.textContent = "Copy"; }, 2000);
       });
     }
-    // The BibTeX entry is there to be taken, so make taking it one click.
-    const citeCopy = document.getElementById("cite-copy");
-    if (citeCopy) {
-      citeCopy.addEventListener("click", async () => {
-        const entry = document.getElementById("cite-bibtex");
-        if (!entry) return;
-        try {
-          await navigator.clipboard.writeText(entry.textContent.trim());
-          citeCopy.textContent = "Copied";
-        } catch (err) {
-          // Clipboard access needs a secure context, which http://127.0.0.1
-          // is but a remote http:// host is not. Say so rather than
-          // pretending it worked.
-          citeCopy.textContent = "Select and copy";
-        }
-        setTimeout(() => { citeCopy.textContent = "Copy"; }, 2000);
-      });
-    }
-
     $$('[data-view-link]').forEach((element) => {
       element.addEventListener("click", (event) => {
         event.preventDefault();
@@ -114,12 +95,22 @@
     });
     window.addEventListener("hashchange", () => {
       const page = location.hash.replace(/^#/, "");
-      if (state.pages.includes(page)) navigate(page, {updateHash: false});
+      if (state.pages.includes(page) || DIALOG_OF[page]) navigate(page, {updateHash: false});
     });
   }
 
+  /* Preferences and the citation were pages and are dialogs over the page
+   * shown; a link to either (#settings, #cite) opens it. */
+  const DIALOG_OF = {settings: "prefs-dialog", preferences: "prefs-dialog", cite: "cite-dialog"};
+
   function navigate(page, options) {
     const opts = options || {};
+    if (DIALOG_OF[page] && byId(DIALOG_OF[page])) {
+      if (!state.activePage) navigate("overview");
+      else history.replaceState(null, "", `#${state.activePage}`);
+      window.FastMDXDialog?.open(DIALOG_OF[page]);
+      return;
+    }
     if (!state.pages.includes(page)) page = "overview";
     state.activePage = page;
     $$('.page').forEach((element) => {
@@ -202,7 +193,9 @@
     byId("open-output")?.addEventListener("click", async () => {
       try {
         const payload = await fetchJSON("/api/open-output");
-        if (payload.opened) {
+        if (!payload.path) {
+          showToast("No study is open, so there is no folder to open.", "warning");
+        } else if (payload.opened) {
           showToast(`Opened output folder: ${payload.path}`);
         } else {
           await copyText(payload.path || state.outputDir || "");
@@ -263,15 +256,16 @@
   }
 
   function wireSettings() {
+    // The Preferences dialog's fields, and the study's own words from the
+    // study card's menu (preferences.js keeps both in the browser).
     const ids = [
-      "setting-protein-rep", "setting-ligand-rep", "setting-background",
-      "setting-show-water", "setting-show-ions", "setting-spin", "setting-fog",
-      "setting-preserve-camera", "setting-refresh-seconds", "setting-chart-history",
-      "setting-compact", "setting-reduced-motion", "setting-advanced-metrics",
-      "setting-time-format", "setting-run-name", "setting-ligand-resname",
-      "setting-pocket-cutoff", "setting-scinote",
+      "setting-protein-rep", "setting-ground", "setting-show-water", "setting-show-ions",
+      "setting-spin", "setting-preserve-camera", "setting-pocket-cutoff",
+      "setting-chart-history", "setting-time-format", "setting-run-name",
+      "setting-ligand-resname",
     ];
     ids.forEach((id) => byId(id)?.addEventListener("change", onSettingsChanged));
+    readSettings();
     byId("pocket-cutoff")?.addEventListener("change", (event) => {
       const value = clampFloat(parseFloat(event.target.value), 3, 15, 5);
       state.bindingPocketCutoff = value;
@@ -280,13 +274,9 @@
     });
   }
 
-  function onSettingsChanged() {
-    state.pollIntervalMs = clampInt(
-      parseFloat(byId("setting-refresh-seconds")?.value) * 1000,
-      1000,
-      60000,
-      3000
-    );
+  /* What the fields say, into the page's state; the Viewer asks for the
+   * same with settings() as it starts, and is told of each change. */
+  function readSettings() {
     state.bindingPocketCutoff = clampFloat(
       parseFloat(byId("setting-pocket-cutoff")?.value),
       3,
@@ -303,28 +293,26 @@
     );
     const customRunName = (byId("setting-run-name")?.value || "").trim();
     if (customRunName) state.runTitle = customRunName;
+  }
 
-    document.body.classList.toggle("compact-mode", !!byId("setting-compact")?.checked);
-    document.body.classList.toggle("reduced-motion", !!byId("setting-reduced-motion")?.checked);
-    document.body.classList.toggle(
-      "advanced-metrics",
-      !!byId("setting-advanced-metrics")?.checked
-    );
-
-    renderTopBar(state.status, state.health);
-    emit("settings-updated", {
+  function currentSettings() {
+    return {
       ligand: state.ligandResname,
       pocketCutoff: state.bindingPocketCutoff,
       chartHistory: chartHistorySamples,
       proteinRepresentation: byId("setting-protein-rep")?.value || "cartoon",
-      ligandRepresentation: byId("setting-ligand-rep")?.value || "sticks",
-      background: byId("setting-background")?.value || "matte-black",
+      ground: byId("setting-ground")?.value === "white" ? "white" : "dark",
       showWater: !!byId("setting-show-water")?.checked,
       showIons: !!byId("setting-show-ions")?.checked,
       spin: !!byId("setting-spin")?.checked,
-      fog: !!byId("setting-fog")?.checked,
       preserveCamera: byId("setting-preserve-camera")?.checked !== false,
-    });
+    };
+  }
+
+  function onSettingsChanged() {
+    readSettings();
+    renderTopBar(state.status, state.health);
+    emit("settings-updated", currentSettings());
     schedulePoll(0);
   }
 
@@ -469,7 +457,7 @@
     state.appState = payload || {};
     if (runChanged) {
       resetRunDependentState();
-      emit("run-changed", {previousRun, activeRun});
+      emit("run-changed", {previousRun, activeRun, first: firstAppState});
     }
     if (activeRun) state.outputDir = activeRun;
     // Why there is no live record follows the study's state, which changes
@@ -490,6 +478,7 @@
       setText("topbar-stage", "configure a simulation");
       setText("sidebar-run-name", "No active study");
       setText("sidebar-platform", "—");
+      showTheStudyFolder();
     }
     // Sections that only have content once a run exists are dimmed until one
     // does, so a fresh workspace points at the builder instead of offering
@@ -503,6 +492,24 @@
       }
     });
     emit("app-state", payload || {});
+  }
+
+  /* The study's folder in the study menu, offered only where a study is
+   * open: with none, the runtime's root is a name never created. */
+  function showTheStudyFolder() {
+    setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
+    ["sidebar-output-folder", "open-output"].forEach((id) => {
+      const node = byId(id);
+      if (!node) return;
+      node.hidden = !state.outputDir;
+      // Its label, and the rule above that.
+      const label = id === "sidebar-output-folder" ? node.previousElementSibling : null;
+      if (label) label.hidden = !state.outputDir;
+      const rule = label ? label.previousElementSibling : null;
+      if (rule && rule.classList.contains("study-menu-divider")) rule.hidden = !state.outputDir;
+    });
+    // The study's own words (preferences.js) are a study's, so none either.
+    $$("#study-menu [data-study-field]").forEach((item) => { item.hidden = !state.outputDir; });
   }
 
   function resetRunDependentState() {
@@ -555,6 +562,7 @@
       : (ageSeconds > 30 ? "lost" : "reconnecting");
 
     setText("sidebar-connection-state", connection);
+    byId("sidebar-connection-state")?.setAttribute("data-connection", connection);
     setClassName(
       "sidebar-status-dot",
       `status-dot ${connection === "live" ? "status-dot-live" : "status-dot-stale"}`
@@ -568,8 +576,9 @@
   function updateRefreshedAt() {
     const date = new Date(state.lastUpdateMs);
     const use24 = byId("setting-time-format")?.value !== "12h";
+    // A time is enough for "updated at": the page is open today.
     const text = use24
-      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour12: false})}`
+      ? date.toLocaleTimeString([], {hour12: false})
       : date.toLocaleTimeString();
     setText("refreshed-at", text);
   }
@@ -628,7 +637,8 @@
   function renderTopBar(status, health) {
     if (!state.appState?.active_run) {
       setClassName("topbar-status-dot", "status-dot status-dot-waiting");
-      setText("topbar-status-text", "ready");
+      setText("topbar-status-text", "Ready");
+      byId("sidebar-progress")?.setAttribute("data-run", "");
       setText("topbar-stage", "configure a simulation");
       setText("topbar-step", "—");
       setText("topbar-total", "—");
@@ -641,7 +651,18 @@
       setText("topbar-run-title", "No active study");
       return;
     }
-    const statusName = String(health.state || status.status || "waiting").toLowerCase();
+    let statusName = String(health.state || status.status || "waiting").toLowerCase();
+    // A study with no live record (finished before it kept one, or a study
+    // of several runs) is said from the phases it recorded.
+    const quiet = ["unknown", "waiting", "stale", ""];
+    if (quiet.includes(statusName) && quiet.includes(String(status.status || "").toLowerCase())) {
+      const phases = (state.results?.phases || []).map((p) => String(p.status || "").toLowerCase());
+      if (phases.some((s) => ["error", "failed"].includes(s))) statusName = "failed";
+      else if (phases.some((s) => ["ok", "complete", "completed"].includes(s))
+        && phases.every((s) => ["ok", "complete", "completed", "skipped", "not run", "not-run"].includes(s))) {
+        statusName = "completed";
+      }
+    }
     // Pausing the browser's updates means something only while there is
     // something to update: a finished study offered "Pause" beside its
     // results. Kept while paused, so there is a way to resume.
@@ -651,20 +672,42 @@
         || !!state.appState?.process_running;
       pause.hidden = !live && !state.paused;
     }
-    const dotClass = stateDotClass(statusName);
-    setClassName("topbar-status-dot", `status-dot ${dotClass}`);
-    setText("topbar-status-text", statusName);
+    // The progress card is for a run going on, or one that stopped short:
+    // where it is or where it stopped, and for the second, what would fix
+    // it. A finished study's card above says it finished.
+    const run = runState(status, statusName);
+    // The card's word is where the run is (running, stopped, failed);
+    // for a finished run, the health verdict's.
+    const word = run === "running" ? String(status.status || "running") : (run || statusName);
+    setText("topbar-status-text", statusWord(word));
+    // Its dot: live while it runs, green once it finished well, red when
+    // it failed, grey otherwise (stopped, waiting, no recent word).
+    const finished = !run && ["ok", "completed", "complete"].includes(statusName);
+    setClassName("topbar-status-dot", `status-dot ${run === "running" ? "status-dot-live"
+      : run === "failed" ? "status-dot-error"
+      : run === "stopped" ? "status-dot-waiting"
+      : finished ? "status-dot-completed" : stateDotClass(statusName)}`);
+    byId("sidebar-progress")?.setAttribute("data-run", run);
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.
-    setText("topbar-stage", status.stage || "starting");
+    const stage = stageWord(status.stage) || "Starting";
+    setText("topbar-stage", run === "stopped" ? `Stopped in ${stage}`
+      : run === "failed" ? `Failed in ${stage}` : stage);
     setText("topbar-step", valueOrDash(status.current_step));
     setText("topbar-total", valueOrDash(status.total_planned_steps));
     const pct = progressPercent(status);
     setText("topbar-progress", pct != null ? `${pct.toFixed(1)}%` : "—");
     setText("topbar-eta", computeETA(status));
 
-    setText("sidebar-platform", status.platform || state.simManifest.platform || "—");
-    setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
+    const platform = status.platform || state.simManifest.platform || "";
+    setText("sidebar-platform", platform || "\u2014");
+    // No platform recorded: the card's line ends at the state.
+    const said = byId("sidebar-platform");
+    if (said) {
+      said.hidden = !platform;
+      if (said.previousElementSibling) said.previousElementSibling.hidden = !platform;
+    }
+    showTheStudyFolder();
     byId("open-output")?.setAttribute(
       "title", state.outputDir ? `Open ${state.outputDir}` : "Open output folder"
     );
@@ -682,6 +725,41 @@
     setTextWithTooltip("topbar-run-title", name);
     const title = byId("topbar-run-title");
     if (title && state.runId && name !== state.runId) title.title = state.runId;
+  }
+
+  /* The run's state in a word a person reads: the health verdict for a
+   * finished run ("ok" read as a code), the status otherwise. */
+  function statusWord(name) {
+    const words = {
+      ok: "Completed", completed: "Completed", complete: "Completed",
+      running: "Running", starting: "Starting", paused: "Paused",
+      waiting: "Waiting", stale: "No recent updates", warning: "Running, with a warning",
+      failed: "Failed", error: "Failed", stopped: "Stopped", ready: "Ready",
+    };
+    const key = String(name || "").toLowerCase();
+    return words[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "Ready");
+  }
+
+  /* Whether the progress card shows, and how: a run going on, one that
+   * stopped, one that failed, or none (finished, or nothing open). */
+  function runState(status, statusName) {
+    const raw = String(status.status || "").toLowerCase();
+    if (["failed", "error"].includes(raw) || ["failed", "error"].includes(statusName)) return "failed";
+    if (raw === "stopped" || statusName === "stopped") return "stopped";
+    if (["running", "starting", "paused"].includes(raw) || state.appState?.process_running) {
+      return "running";
+    }
+    return "";
+  }
+
+  function stageWord(stage) {
+    const words = {
+      setup: "Setup", minimization: "Minimisation", minimisation: "Minimisation",
+      nvt: "NVT", npt: "NPT", production: "Production", analysis: "Analysis",
+      report: "Report",
+    };
+    const key = normaliseStage(stage);
+    return words[key] || (stage ? String(stage) : "");
   }
 
   /* A system given as a file is named by the file: the sidebar read
@@ -799,6 +877,16 @@
       }
       element.setAttribute("data-state", stageState);
     });
+    // "Stage 5 of 7" in the progress card: the stage reached among those
+    // this run can reach.
+    const shown = $$('.sidebar-stages .stage-step').filter((element) => !element.hidden);
+    const stateOf = (element) => element.getAttribute("data-state");
+    let at = shown.findIndex((element) => ["current", "failed"].includes(stateOf(element)));
+    if (at < 0) {
+      shown.forEach((element, index) => { if (stateOf(element) === "completed") at = index; });
+    }
+    setText("sidebar-stage-count", at >= 0 && shown.length
+      ? `Stage ${at + 1} of ${shown.length}` : "");
   }
 
   /* Why a study open here has no live record, said as what it is. Several
@@ -1008,7 +1096,7 @@
     const charted = new Set();
     const named = new Set();
 
-    host.innerHTML = sections.map((section) => {
+    const sectionHtml = (section) => {
       const panels = Array.isArray(section.panels) ? section.panels : [];
       // Reuse the same card structure the flat grid uses so both routes
       // through this view look identical.
@@ -1041,7 +1129,6 @@
         <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
-            <div class="ac-status">${escapeHTML(section.title || "")}</div>
           </div>
           <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
           <div class="ac-body">${escapeHTML(panel.summary || "")}</div>
@@ -1049,18 +1136,38 @@
           ${made ? '<div class="figure-provenance" hidden></div>' : ""}
         </article>`;
       }).join("");
+      // What the page's filter matches against: the section's title and
+      // theme, and its figures' titles and captions.
+      const search = [section.title, section.theme,
+        ...panels.map((panel) => `${panel.title || ""} ${panel.summary || ""}`)].join(" ");
       return `
-        <section class="analysis-section">
+        <section class="analysis-section" id="analysis-section-${escapeAttr(section.anchor || "")}"
+                 data-search="${escapeAttr(search)}">
           <div class="analysis-section-heading">
-            <h2 class="analysis-section-title">${escapeHTML(section.title || "")}</h2>
+            <h3 class="analysis-section-title">${escapeHTML(section.title || "")}</h3>
             <span class="analysis-section-count">${panels.length} figure${panels.length === 1 ? "" : "s"}</span>
           </div>
           <div class="analysis-grid">${cards}</div>
         </section>`;
-    }).join("");
+    };
+    // The sections under what they study (report_dashboard.ANALYSIS_THEMES),
+    // in the order the server gives them, which is that table's order.
+    const themes = [];
+    sections.forEach((section) => {
+      const theme = section.theme || "Other";
+      const last = themes[themes.length - 1];
+      if (last && last.theme === theme) last.sections.push(section);
+      else themes.push({ theme, sections: [section] });
+    });
+    host.innerHTML = themes.map(({ theme, sections: members }) => `
+      <div class="analysis-theme" data-theme="${escapeAttr(theme)}">
+        <h2 class="analysis-theme-title">${escapeHTML(theme)}</h2>
+        ${members.map(sectionHtml).join("")}
+      </div>`).join("");
 
     window.FastMDXSeries?.hydrate(host);
     listenForProvenance(host);
+    window.FastMDXAnalysisPage?.sectionsRendered(host, sections);
 
     const haveSections = sections.length > 0;
     host.hidden = !haveSections;
@@ -2032,6 +2139,8 @@
     /* A figure's chip, for the Report page's figures: the chip for a
      * record, and the listener that opens it, given how to find a record
      * by its analysis's name. */
+    /* The settings as the fields say them, as "settings-updated" sends. */
+    settings: () => currentSettings(),
     figureChip: (name, made) => provenanceChip(name, made),
     listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
   };

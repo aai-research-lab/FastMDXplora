@@ -54,6 +54,11 @@ OPTIONAL = {
     # together. Reachable as the `validation` extra.
     "MDAnalysis",
     "prolif",
+    # A movie made without the GUI open (`fastmdx movie`, `make_movie`) is
+    # rendered by the Viewer in a browser with no window; Playwright drives
+    # it, and its browser is installed apart from any package. The `movies`
+    # extra.
+    "playwright",
 }
 
 #: Imported, and deliberately absent from pyproject.toml because pip cannot

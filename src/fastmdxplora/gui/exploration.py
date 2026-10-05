@@ -1467,6 +1467,54 @@ class DashboardRuntime:
                                   study, dashboard_url)
             return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
 
+    def write_the_report_again(self, dashboard_url: str | None = None) -> dict[str, Any]:
+        """The report phase alone on the study on screen (`run_again`)."""
+        return self.run_again(["report"], dashboard_url=dashboard_url)
+
+    def run_again(self, phases: Any, analyses: Any = None, *,
+                  dashboard_url: str | None = None) -> dict[str, Any]:
+        """Run the study on screen's analysis or report again, in its folder.
+
+        By the phase command itself, with ``--rerun`` (`fastmdxplora.again`
+        names it): from the study's records and the settings it recorded,
+        simulating nothing, what it replaces kept in ``previous/``; a study
+        of several runs run by run, with the comparison of its runs built
+        again. Checked here first, so a refusal is said at once; started and
+        watched as any run here is, under the workspace's start rule. The
+        page asks first.
+        """
+        import sys
+
+        from fastmdxplora import again
+        from fastmdxplora.gui.browse import is_study
+        from fastmdxplora.refusals import refusal_of
+
+        with self.lock:
+            self._refresh_process()
+            if self.process is not None and self.process.poll() is None:
+                return {"ok": False,
+                        "error": "A FastMDXplora workflow is already running."}
+            refused = self._others_running()
+            if refused is not None:
+                return refused
+            # The folder open, not its campaign as for a fix: a run of a
+            # study of several is run again alone, and its study's
+            # comparison built again after it.
+            study = Path(self.active_root) if self.active_root else None
+            if study is None or not study.is_dir() or not is_study(study):
+                return {"ok": False, "error": "No study is open."}
+            try:
+                planned = again.plan(study, phases, analyses)
+            except Exception as exc:  # noqa: BLE001 - a refusal, said
+                found = refusal_of(exc)
+                return {"ok": False, "error": found.message, "code": found.code}
+            self.data_stale = False
+            started = self._spawn([sys.executable, "-m", "fastmdxplora", *planned.command()],
+                                  study, dashboard_url)
+            if started.get("ok") is False:
+                return started
+            return {"ok": True, "error": None, "said": planned.said(), **started}
+
     def stop(self) -> dict[str, Any]:
         with self.lock:
             self._refresh_process()

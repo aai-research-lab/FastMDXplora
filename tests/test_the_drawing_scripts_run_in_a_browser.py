@@ -116,6 +116,8 @@ def _open(dashboard, where: str):
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
         opened = browser.new_page(viewport={"width": 1400, "height": 900})
+        # The Playback starts closed; these drive what is in it.
+        opened.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
         errors: list[str] = []
         opened.on("pageerror", lambda error: errors.append(str(error)))
         opened.on("console", lambda message: errors.append(message.text)
@@ -192,6 +194,48 @@ def test_every_style_and_ligand_control_runs(page) -> None:
     assert page.errors == []
 
 
+def test_a_structure_asked_for_twice_while_it_loads_is_loaded_once(page) -> None:
+    """The structure's state comes twice as the page opens, and both asked
+    for the structure while the first load had not yet set the model: it
+    was loaded and rendered twice, the engine empty between the two, and a
+    test that read the atoms then found none (the pocket, the solvent-free
+    count; once in five or six openings here)."""
+    # The engine's loads counted (its own function, read past the queue
+    # that orders its calls), for the structure asked for once, then for it
+    # asked for twice at once.
+    loads = page.evaluate("""async () => {
+        const state = window.FastMDXMoleculeViewer.STATE;
+        const info = await (await fetch('/api/structure-info', {cache: 'no-store'})).json();
+        let holder = state.engine;
+        while (holder && !Object.getOwnPropertyDescriptor(holder, 'loadStructure')) {
+          holder = Object.getPrototypeOf(holder);
+        }
+        const own = Object.getOwnPropertyDescriptor(holder, 'loadStructure').value;
+        let loads = 0;
+        state.engine.loadStructure = function (...args) {
+          loads += 1;
+          return own.apply(this, args);
+        };
+        const askedFor = async (times) => {
+          loads = 0;
+          state.model = null;
+          for (let i = 0; i < times; i += 1) {
+            window.dispatchEvent(new CustomEvent('dashboard:structure-updated', {detail: info}));
+          }
+          const started = performance.now();
+          while (!state.model && performance.now() - started < 60000) {
+            await new Promise((done) => setTimeout(done, 20));
+          }
+          await new Promise((done) => setTimeout(done, 1500));
+          return loads;
+        };
+        return [await askedFor(1), await askedFor(2)];
+    }""")
+    assert loads == [1, 1]
+    assert page.evaluate(f"() => {ENGINE}.find({{resn: 'LIG'}}).length") == 4
+    assert page.errors == []
+
+
 def test_the_pocket_is_the_residues_within_the_cutoff(page, dashboard) -> None:
     """The residues with a heavy atom within the cutoff of the ligand's,
     centre to centre, as MDTraj finds them. Mol*'s own "within" took in
@@ -212,6 +256,10 @@ def test_the_pocket_is_the_residues_within_the_cutoff(page, dashboard) -> None:
         residues = {shown.topology.atom(int(i)).residue.index for i in near}
         expected = sorted(atom.index for atom in shown.topology.atoms
                           if atom.residue.index in residues)
+        # Asked once the atoms are there: in a full suite the structure was
+        # rendered again between two cutoffs, and the engine held none.
+        page.wait_for_function(f"(n) => {ENGINE}.find({{}}).length === n", arg=SOLUTE,
+                               timeout=60000)
         found = page.evaluate("(cutoff) => window.FastMDXMoleculeViewer.STATE.engine"
                               ".pocketAtoms(['LIG'], cutoff)", cutoff)
         assert found == expected, cutoff

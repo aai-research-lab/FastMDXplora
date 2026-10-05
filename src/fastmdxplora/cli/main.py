@@ -38,7 +38,6 @@ from fastmdxplora import (
     __expansion__,
     __version__,
 )
-from fastmdxplora.orchestrator import FastMDXplora
 from fastmdxplora.utils.logging import get_logger
 
 logger = get_logger("cli")
@@ -689,7 +688,7 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         help=(
             "YAML config file capturing the whole run (system, output, "
             "phase selection, per-phase options). Command-line flags "
-            "override values in the file. See `fastmdx init-config`."
+            "override values in the file. See `fastmdx config`."
         ),
     )
     src.add_argument(
@@ -797,6 +796,39 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _overwrite_args(p: argparse.ArgumentParser) -> None:
+    """How a command runs into a folder that holds what it would write.
+
+    Refused without one of these, and only then: a phase writes freely
+    into a new folder, or into a study whose phases before it have run.
+    With either, what the phases write and what they leave stale after
+    them (a report from the analyses before) is cleared first
+    (`fastmdxplora.replaced`).
+    """
+    group = p.add_mutually_exclusive_group()
+    group.add_argument(
+        "--force-overwrite",
+        "--force",
+        dest="force",
+        action="store_true",
+        help=(
+            "Run phases whose output the --output folder already holds: that "
+            "output, and the output after it that it was written from, is "
+            "removed first. Without this or --rerun such a run is refused."
+        ),
+    )
+    group.add_argument(
+        "--rerun",
+        dest="rerun",
+        action="store_true",
+        help=(
+            "As --force-overwrite, keeping what it replaces in the study's "
+            "previous/<phase> (in place of what was kept there before) "
+            "rather than removing it."
+        ),
+    )
+
+
 class _Accumulate(argparse.Action):
     """Add to what is there rather than replacing it.
 
@@ -813,6 +845,10 @@ class _Accumulate(argparse.Action):
             if value not in current:
                 current.append(value)
         setattr(namespace, self.dest, current)
+
+
+#: The file `fastmdx config` writes when not told where.
+_CONFIG_FILE = "fastmdxplora.yml"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -884,16 +920,7 @@ def _build_parser() -> argparse.ArgumentParser:
                 "--sweep 'setup.ligand=[\"a.sdf\", \"b.sdf\"]'."
             ),
         )
-        ep.add_argument(
-            "--force-overwrite",
-            "--force",
-            dest="force",
-            action="store_true",
-            help=(
-                "Run into an output directory that already holds results, "
-                "overwriting them. Without this a second run is refused."
-            ),
-        )
+        _overwrite_args(ep)
         ep.add_argument(
             "--rerun-window",
             dest="rerun_windows",
@@ -974,14 +1001,22 @@ def _build_parser() -> argparse.ArgumentParser:
             )
 
     # ---------- per-phase subcommands: phase-specific flags only ----------
+    # Each is `explore --include-phase <phase>` with that phase's flags
+    # unprefixed, and runs through it (`_cmd_phase`).
     for phase, (opts, _) in _PHASE_SPEC.items():
         pp = sub.add_parser(
             phase,
             help=f"Run only the {phase} phase.",
-            description=f"Run only the {phase} phase of the FastMDXplora pipeline.",
+            description=(
+                f"Run only the {phase} phase of the FastMDXplora pipeline: "
+                f"`fastmdx explore --include-phase {_PHASE_TO_ORCH[phase]}`, "
+                "with this phase's flags unprefixed. Given an --output folder "
+                "that holds a study and no system or config, it runs on that "
+                "study, from the settings the study recorded."),
             formatter_class=_PercentSafeHelp,
         )
         _common_input_args(pp)
+        _overwrite_args(pp)
         _attach_phase_options(pp, opts, group_title=f"{phase} options",
                               phase=phase)
 
@@ -1060,6 +1095,50 @@ def _build_parser() -> argparse.ArgumentParser:
     scn.add_argument("--no-selections", action="store_true",
                      help="Leave out the selections named in the GUI.")
 
+    mov = sub.add_parser(
+        "movie",
+        help="Make a movie of a study's frames, as the GUI's Viewer makes one.",
+        description=(
+            "Make a movie of a study's frames without opening the GUI: the "
+            "Viewer renders each frame in a browser with no window (Playwright's "
+            "Chromium, or Chrome or Edge), as a view saved with the study shows "
+            "it, and ffmpeg on this computer encodes the movie into the study's "
+            "movies folder (MP4, or WebM where ffmpeg has no H.264 encoder)."
+        ),
+    )
+    mov.add_argument("study", metavar="STUDY", help="The study's folder.")
+    mov.add_argument("--view", default=None, metavar="NAME",
+                     help="A view saved with the study in the GUI (default: the Viewer as "
+                          "it opens).")
+    mov.add_argument("--representation", default=None,
+                     choices=["cartoon", "backbone", "sticks", "ballAndStick", "lines",
+                              "surface", "spacefill"], help="How the protein is represented.")
+    mov.add_argument("--colour", "--color", default=None, metavar="COLOUR",
+                     help="chain, spectrum, residue, element, secondary_structure, "
+                          "monochrome, or a per-residue result as result:<analysis>.")
+    mov.add_argument("--superposed", default=None, choices=["none", "backbone", "pocket"],
+                     help="Fit the frames on this.")
+    mov.add_argument("--from", dest="first", type=int, default=None, metavar="N",
+                     help="The first frame, from 0 (default 0).")
+    mov.add_argument("--to", dest="last", type=int, default=None, metavar="N",
+                     help="The last frame (default the last); before --from, the movie "
+                          "plays backwards.")
+    mov.add_argument("--every", type=int, default=1, metavar="N",
+                     help="Every Nth frame (default 1).")
+    mov.add_argument("--between", type=int, default=0, choices=[0, 1, 3, 7],
+                     help="Frames put in between each two, each atom moved in a straight "
+                          "line: smoother, not more simulation (default 0).")
+    mov.add_argument("--fps", type=int, default=24, choices=[10, 15, 24, 25, 30, 60],
+                     help="Frames a second (default 24).")
+    mov.add_argument("--size", default="1920x1080",
+                     choices=["1280x720", "1920x1080", "3840x2160"],
+                     help="Width x height in pixels (default 1920x1080).")
+    mov.add_argument("--turn", action="store_true",
+                     help="Turn the camera once about the screen's vertical over the movie.")
+    mov.add_argument("--no-time", action="store_true",
+                     help="Leave out each frame's simulated time.")
+    mov.add_argument("--name", default="movie", help="The movie's name (default 'movie').")
+
     gui = sub.add_parser(
         "gui",
         help="Open the FastMDXplora graphical interface in a browser.",
@@ -1120,6 +1199,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="With --hosted: the line under the service's "
                              "name. Default: none with --product-name, "
                              "FastMDXplora's own without.")
+    hosted.add_argument("--product-logo", default="", metavar="FILE",
+                        help="With --hosted: the service's logo (PNG, JPEG, GIF, "
+                             "WebP, ICO or SVG, at most 256 KB), shown as the "
+                             "tab's icon and the avatar in place of the lab's.")
     hosted.add_argument("--runs-url", default="", metavar="PATH",
                         help="With --hosted: the service's page that runs a "
                              "study on its compute, as a path on the same "
@@ -1398,34 +1481,33 @@ def _build_parser() -> argparse.ArgumentParser:
     forget.add_argument("forget_name", metavar="NAME",
                         help="The machine to forget.")
 
-    ic = sub.add_parser(
-        "init-config",
+    cf = sub.add_parser(
+        "config",
         help="Write a commented YAML config template to edit.",
         description=(
-            "Generate a FastMDXplora config template. By default writes a "
-            "comprehensive, fully-commented template with every option, its "
-            "default, and a description. Edit it and run with "
+            "Write a FastMDXplora config template: by default every setting, "
+            "its default and its help as a comment. Edit it and run it with "
             "`fastmdx explore --config <file>`."
         ),
     )
-    ic.add_argument(
-        "-o", "--output",
-        dest="config_output",
+    cf.add_argument(
+        "-f", "--file",
+        dest="config_file",
         metavar="FILE",
-        default="fastmdxplora.yml",
-        help="Where to write the template (default: fastmdxplora.yml).",
+        default=_CONFIG_FILE,
+        help=f"Where to write the template (default: {_CONFIG_FILE}).",
     )
-    ic.add_argument(
+    cf.add_argument(
         "--minimal",
         action="store_true",
         help="Write a short starter template with only the essentials.",
     )
-    ic.add_argument(
+    cf.add_argument(
         "--force-overwrite",
         "--force",
         dest="force",
         action="store_true",
-        help="Overwrite the output file if it already exists.",
+        help="Overwrite the file if it already exists.",
     )
 
     return parser
@@ -1480,42 +1562,6 @@ def _no_systems_in(config: dict[str, Any], path: Any) -> str:
             f"  systems:\n    - system: {given}\n")
 
 
-def _make_orchestrator(args: argparse.Namespace, *, phase: str | None = None) -> FastMDXplora:
-    """Build a single-system orchestrator for the per-phase subcommands.
-
-    The per-phase commands (setup/simulate/analyze/report) operate on one
-    system directly, so they bypass the batch layer. `explore` always goes
-    through BatchExplorer instead.
-    """
-    config = getattr(args, "config", None)
-    inferred_system = (
-        _infer_system_from_output(args.output_dir)
-        if phase in {"analyze", "report"} else None
-    )
-    if not args.system and not config and not inferred_system:
-        raise SystemExit(
-            "fastmdx: this command requires a system input "
-            "(-s / -system / --system) or a --config file."
-        )
-    # For per-phase commands with a config file, pull the first system out.
-    if config and not args.system:
-        from fastmdxplora.config import load_config_file
-        from fastmdxplora.batch.sweep import normalize_systems
-
-        raw = load_config_file(config)
-        if not raw.get("systems"):
-            raise SystemExit(_no_systems_in(raw, config))
-        systems = normalize_systems(raw["systems"])
-        system = systems[0]["system"]
-    else:
-        system = args.system or inferred_system
-    return FastMDXplora(
-        system=system,
-        output_dir=args.output_dir,
-        verbose=args.verbose,
-    )
-
-
 def _sweep_from_flags(given: list[str]) -> dict[str, list[Any]]:
     """`--sweep AXIS=VALUES`, once per axis, as the config's `sweep` block.
 
@@ -1556,12 +1602,14 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
     one, written with the flat output layout).
     """
     from fastmdxplora.config import load_config_file
+    from fastmdxplora.config.recorded import laid_over
 
-    # Start from the file, if any.
+    # Start from the file, if any; else, given no system, from the study
+    # the --output folder holds, as it recorded itself.
     if getattr(args, "config", None):
         config = load_config_file(args.config)
     else:
-        config = {}
+        config = _the_study_s_config(args) or {}
 
     # The execution block, on the same terms: what the flag says beats what
     # the file says, and an unset flag leaves the file alone.
@@ -1579,9 +1627,7 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
             harvested = _normalize_analysis_options(harvested)
         if harvested:
             orch_phase = _PHASE_TO_ORCH[phase]
-            block = dict(config.get(orch_phase, {}))
-            block.update(harvested)
-            config[orch_phase] = block
+            config[orch_phase] = laid_over(dict(config.get(orch_phase) or {}), harvested)
 
     # The flat --simulate-plumed-script flag maps to the nested `plumed` dict.
     sim_block = config.get("simulation")
@@ -1621,10 +1667,19 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
     # explained, and the resolved config recorded that it did.
     if not wanted:
         config["explain"] = False
+    # The phases named replace those the file or the study gave, whichever
+    # way it gave them: the two together are refused.
     if args.include:
         config["include_phase"] = args.include
+        config.pop("exclude_phase", None)
     if args.exclude:
         config["exclude_phase"] = args.exclude
+        config.pop("include_phase", None)
+    # An analysis of a trajectory from elsewhere names its topology, which
+    # is the system; asked for it as well, the command was refused.
+    topology = (config.get("analysis") or {}).get("topology")
+    if not config.get("systems") and topology:
+        config["systems"] = [{"id": "s1", "system": str(topology)}]
 
     # Windows run again at a force constant of their own: the config's list
     # of constants with those windows changed, so the study records what
@@ -1643,6 +1698,40 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
         config = windows_held_at(config, args.rerun_windows, held)
 
     return config
+
+
+def _the_study_s_config(args: argparse.Namespace) -> dict[str, Any] | None:
+    """The config of the study the --output folder holds, where no system is
+    given: the one it recorded, or, for a study that recorded none, the
+    system its records name. None for a new folder or one given a system."""
+    output = getattr(args, "output_dir", None)
+    if getattr(args, "system", None) or not output:
+        return None
+    from fastmdxplora.config.recorded import RECORDED, study_config
+
+    study = Path(output).expanduser()
+    if (study / RECORDED).is_file():
+        config = study_config(study, getattr(args, "include", None))
+        if config is not None:
+            from fastmdxplora.config import ConfigError
+            from fastmdxplora.config.loader import validate_config
+
+            # Said as the record's, not as something typed: a record an
+            # older release wrote, or one edited by hand, is fixed there.
+            try:
+                validate_config(config)
+            except ConfigError as exc:
+                raise ConfigError(
+                    f"the settings {study / RECORDED} recorded cannot be used: {exc} "
+                    "Correct the record, or give the settings with -c FILE.",
+                    code=exc.code, **exc.refusal.details) from exc
+            # What the study runs, to put back once some of it ran again.
+            args.study_phases = (config.get("include_phase"),
+                                 config.get("exclude_phase"))
+            print(f"  From the study's record: {study / RECORDED}")
+            return config
+    inferred = _infer_system_from_output(output)
+    return {"systems": [{"id": "s1", "system": inferred}]} if inferred else None
 
 
 def _dashboard_requested(args: argparse.Namespace) -> bool:
@@ -1776,14 +1865,15 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         return 0
 
     if not config.get("systems"):
-        if "system" in config:
+        if "system" in config or getattr(args, "config", None):
             print(_no_systems_in(config, getattr(args, "config", None)),
                   file=sys.stderr)
             return 2
         print(
             "fastmdx: explore requires a system — pass -s/--system PATH, a "
-            "--config file with a `systems:` list, or "
-            "`simulation.resume_from` naming a study to carry on from.",
+            "--config file with a `systems:` list, --output naming a study "
+            "to run phases of again, or `simulation.resume_from` naming a "
+            "study to carry on from.",
             file=sys.stderr,
         )
         return 2
@@ -1837,6 +1927,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         results = fmdx.explore(
             dry_run=getattr(args, "dry_run", False),
             force=getattr(args, "force", False),
+            **({"keep_previous": True} if getattr(args, "rerun", False) else {}),
             # Passed only when given, so an explore that takes no such
             # argument is called as it always was.
             **({"rerun_windows": args.rerun_windows}
@@ -1855,9 +1946,21 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if getattr(args, "dry_run", False):
         return 0
 
+    # Some of a study's phases ran again: its record still runs it whole.
+    kept = getattr(args, "study_phases", None)
+    if kept is not None and config.get("include_phase") != kept[0]:
+        from fastmdxplora.config.recorded import keep_the_study_s_phases
+
+        keep_the_study_s_phases(Path(fmdx.output_dir), *kept)
+
     # Single run -> flat layout; point at the project manifest.
     rc = 0 if all(r.status == "ok" for r in results) else 1
     if len(results) == 1:
+        if rc and not results[0].phases and results[0].message:
+            # Stopped before any phase ran, which no phase has said.
+            said = results[0].message
+            prefix = f"{results[0].error_type}: "
+            print(f"fastmdx: {said.removeprefix(prefix)}", file=sys.stderr)
         if rc:
             # A study of several says this in its own summary.
             from fastmdxplora.batch.explorer import _what_would_fix_it
@@ -1874,64 +1977,22 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 
 def _cmd_phase(phase: str, args: argparse.Namespace) -> int:
-    fmdx = _make_orchestrator(args, phase=phase)
-    opts_list, _ = _PHASE_SPEC[phase]
-    kwargs = _harvest_phase_options(args, opts_list)
-    if phase == "analyze":
-        kwargs = _normalize_analysis_options(kwargs)
-    if _dashboard_requested(args) and phase == "simulate":
-        kwargs["live_telemetry"] = True
-        # Forward dashboard knobs when running live; ignored if the user
-        # did not opt in to live telemetry.
-        if getattr(args, "dashboard_frame_interval", None) is not None:
-            kwargs["telemetry_interval"] = int(args.dashboard_frame_interval)
-        if getattr(args, "dashboard_refresh_seconds", None) is not None:
-            # The same value is embedded into the served dashboard HTML.
-            print(
-                f"  dashboard polling: every {args.dashboard_refresh_seconds}s"
-            )
-
-    method = {
-        "setup":    fmdx.setup,
-        "simulate": fmdx.simulate,
-        "analyze":  fmdx.analyze,
-        "report":   fmdx.report,
-    }[phase]
-
-    # Bracket the single-phase invocation with presenter output so the
-    # user sees the same visual structure as during `fastmdx explore`.
-    session = None
-    if _dashboard_requested(args):
-        output_dir = _resolve_dashboard_output_dir(args)
-        if not getattr(args, "output_dir", None):
-            output_dir = Path(fmdx.output_dir).expanduser().resolve()
-        session = _start_dashboard_for_command(args, output_dir)
-    try:
-        fmdx._presenter.phase_start(phase)  # noqa: SLF001 -- internal hook
-        result = method(**kwargs)
-        fmdx.results.append(result)
-        from fastmdxplora.orchestrator import _how_it_ended
-
-        fmdx._presenter.phase_end(phase, **_how_it_ended(result))
-        fmdx._write_manifest()  # noqa: SLF001 -- single-phase still records
-    except KeyboardInterrupt:
-        if session is not None:
-            session.stop()
-        return 130
-    except Exception:
-        if session is not None:
-            session.stop()
-        raise
-    if result.status != "ok" and result.message:
-        # `explore` reports this through the orchestrator loop; a single-phase
-        # run has no such loop, so without this the reason for a refusal or a
-        # failure is discarded and the user sees only that it happened.
-        logger.error("Phase '%s' failed: %s", phase, result.message)
-    print()
-    print(f"Project output: {fmdx.output_dir}")
-    rc = 0 if result.status == "ok" else 1
-    _finish_dashboard_for_command(session, args)
-    return rc
+    """`fastmdx <phase>`: `fastmdx explore --include-phase <phase>`, run
+    through it. The phase's flags are its own unprefixed; they are read as
+    explore's prefixed ones, so a phase run alone and in a whole study is
+    one code path with one set of rules: the study a folder holds read from
+    its record, a folder that holds the phase's output written into only
+    with --force-overwrite or --rerun."""
+    explored = _build_parser().parse_args(["explore"])
+    for name, value in vars(args).items():
+        if hasattr(explored, name) and name not in ("command", "agent"):
+            setattr(explored, name, value)
+    opts, _ = _PHASE_SPEC[phase]
+    for _suffix, kwarg, _ in opts:
+        setattr(explored, f"{phase}__{kwarg}", getattr(args, kwarg, None))
+    explored.command = phase
+    explored.include = [_PHASE_TO_ORCH[phase]]
+    return _cmd_explore(explored)
 
 
 #: What each phase reaches for, and where to get it. Grouped because a
@@ -2196,6 +2257,29 @@ def _cmd_scene(args: argparse.Namespace) -> int:
     if args.output:
         shutil.copyfile(said["path"], args.output)
         print(f"Copied to {args.output}")
+    return 0
+
+
+def _cmd_movie(args: argparse.Namespace) -> int:
+    """A movie of a study's frames, rendered by its Viewer."""
+    from fastmdxplora.movie_maker import make_movie
+
+    changes = {key: getattr(args, key) for key in ("representation", "colour", "superposed")
+               if getattr(args, key) is not None}
+    made = make_movie(args.study, name=args.name, view=args.view, changes=changes or None,
+                      first=args.first, last=args.last, every=args.every,
+                      between=args.between, fps=args.fps, size=args.size, turn=args.turn,
+                      time=not args.no_time, said=lambda text: print(text, flush=True))
+    if not made.get("ok"):
+        print(f"fastmdx: {made.get('reason')}", file=sys.stderr)
+        return 1
+    print(f"Made {made['path']}: {made['frames']} frames, {made['seconds']} s, "
+          f"{made['width']} x {made['height']}, {made['format'].upper()} ({made['codec']}), "
+          f"{made['bytes'] / 1e6:.1f} MB"
+          + (f", {made['between']} frame{'s' if made['between'] > 1 else ''} in between "
+             "each two played, interpolated"
+             if made.get("between") else "") + ".")
+    print(f"  Rendered by the Viewer in {made['browser']}; encoded as {made['encoder']}.")
     return 0
 
 
@@ -2578,14 +2662,14 @@ def _remote_job(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_init_config(args: argparse.Namespace) -> int:
+def _cmd_config(args: argparse.Namespace) -> int:
     from fastmdxplora.config import generate_template
 
-    out_path = Path(args.config_output)
+    out_path = Path(args.config_file)
     if out_path.exists() and not args.force:
         print(
             f"fastmdx: {out_path} already exists. Use --force-overwrite, "
-            f"or -o to choose a different path.",
+            f"or -f to choose a different file.",
             file=sys.stderr,
         )
         return 2
@@ -2631,7 +2715,8 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
             hosting = Hosting.from_environment(
                 args.workspace or Path.cwd(), args.allowed_host,
                 getattr(args, "account_url", ""), getattr(args, "runs_url", ""),
-                getattr(args, "product_name", ""), getattr(args, "product_tagline", ""))
+                getattr(args, "product_name", ""), getattr(args, "product_tagline", ""),
+                getattr(args, "product_logo", ""))
         except HostingError as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)
             return 2
@@ -2642,9 +2727,11 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         args.no_browser = True
     elif (getattr(args, "workspace", None) or getattr(args, "allowed_host", None)
           or getattr(args, "account_url", None) or getattr(args, "runs_url", None)
-          or getattr(args, "product_name", None) or getattr(args, "product_tagline", None)):
+          or getattr(args, "product_name", None) or getattr(args, "product_tagline", None)
+          or getattr(args, "product_logo", None)):
         print("fastmdx gui: --workspace, --allowed-host, --account-url, --product-name, "
-              "--product-tagline and --runs-url apply only with --hosted.", file=sys.stderr)
+              "--product-tagline, --product-logo and --runs-url apply only with --hosted.",
+              file=sys.stderr)
         return 2
     config = DashboardConfig(
         ligand_resname=getattr(args, "ligand_resname", None),
@@ -3091,6 +3178,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             dashboard_enabled=dashboard_enabled,
         )
 
+    if raw_argv[:1] == ["init-config"]:
+        # The old name wrote a template too. It stops rather than guesses
+        # what its -o meant now, and says where the command went.
+        print("fastmdx: `fastmdx init-config` is now `fastmdx config` "
+              "(`-o FILE` is now `-f FILE`).", file=sys.stderr)
+        return 2
+
     parser = _build_parser()
     args = parser.parse_args(raw_argv)
 
@@ -3122,8 +3216,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "agent":
         return _run_agent(args)
 
-    if args.command == "init-config":
-        return _cmd_init_config(args)
+    if args.command == "config":
+        return _cmd_config(args)
     if args.command == "gui":
         return _cmd_gui(args)
     if args.command == "resume":
@@ -3148,6 +3242,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_diff(args)
         if args.command == "scene":
             return _cmd_scene(args)
+        if args.command == "movie":
+            return _cmd_movie(args)
         if args.command == "remote":
             return _cmd_remote(args)
     except ConfigError as exc:

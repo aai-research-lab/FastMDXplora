@@ -75,15 +75,69 @@ class TestTheDistance:
 
 
 class TestThePeriodicBoundary:
-    def test_a_chain_approaching_half_the_box_is_marked(self):
-        """Minimum image folds a longer chain back without saying so."""
-        analysis = EndToEndDistance()
-        # 5 * 0.38 = 1.9 nm against a half-box of 2.0 nm.
-        analysis.compute(_straight_chains(n_residues=6, spacing=0.38, box=4.0))
+    def test_a_chain_longer_than_half_the_box_reads_its_length(self):
+        """Minimum image between the ends folded it: 3.420 nm read 1.200.
 
+        A straight 10-residue chain, CA 0.38 nm apart, in a 4.62 nm cube as
+        the loader leaves it (made whole). Its length is 9 * 0.38 by
+        construction.
+        """
+        from fastmdxplora.analysis.loading import _made_whole
+
+        traj = _made_whole(_straight_chains(n_residues=10, spacing=0.38, box=4.62))
+        result = EndToEndDistance().compute(traj)
+
+        assert np.allclose(result, 9 * 0.38, atol=1e-5)
+
+    def test_a_chain_stored_wrapped_into_the_box_reads_the_same(self):
+        """Each atom wrapped into the cell, as an engine may write it."""
+        traj = _straight_chains(n_residues=10, spacing=0.38, box=4.62)
+        traj.xyz = np.mod(traj.xyz + 2.0, 4.62).astype(np.float32)
+        # The chain really is split: its last residues sit at the near face.
+        assert traj.xyz[0, -1, 0] < traj.xyz[0, 0, 0]
+
+        result = EndToEndDistance().compute(traj)
+
+        assert np.allclose(result, 9 * 0.38, atol=1e-5)
+
+    def test_in_a_dodecahedron_too(self):
+        """The cell setup builds by default, in OpenMM's reduced form."""
+        a = 4.62
+        traj = _straight_chains(n_residues=10, spacing=0.38)
+        traj.unitcell_vectors = np.tile(np.array(
+            [[a, 0, 0], [0, a, 0], [a / 2, a / 2, a * np.sqrt(2) / 2]],
+            dtype=np.float32), (traj.n_frames, 1, 1))
+        traj.xyz = traj.xyz + np.float32(3.0)  # off-centre, partly outside
+
+        analysis = EndToEndDistance()
+        result = analysis.compute(traj)
+
+        assert np.allclose(result, 9 * 0.38, atol=1e-5)
+        assert analysis.findings["periodic"]["narrowest_width_nm"] == pytest.approx(
+            a * np.sqrt(2) / 2, rel=1e-5)
+
+    def test_a_chain_reaching_its_own_image_is_marked(self):
+        """3.42 nm in a 4.0 nm cube puts the end 0.58 nm from the image of
+        the start: the chain is interacting with its own copy."""
+        analysis = EndToEndDistance()
+        result = analysis.compute(
+            _straight_chains(n_residues=10, spacing=0.38, box=4.0))
+
+        assert np.allclose(result, 9 * 0.38, atol=1e-5)
         assert "not_a_measurement" in analysis.findings
-        assert "shorter of the two ways round" in (
-            analysis.findings["not_a_measurement"])
+        assert "its own copy" in analysis.findings["not_a_measurement"]
+        assert analysis.findings["periodic"]["nearest_self_image_nm"] == pytest.approx(
+            4.0 - 9 * 0.38, abs=1e-4)
+
+    def test_a_chain_past_half_the_box_but_clear_of_its_image_is_not_marked(self):
+        """1.9 nm in a 4.0 nm cube: past half the box, which no longer
+        matters, and 2.1 nm from the image of its start."""
+        analysis = EndToEndDistance()
+        result = analysis.compute(
+            _straight_chains(n_residues=6, spacing=0.38, box=4.0))
+
+        assert np.allclose(result, 5 * 0.38, atol=1e-5)
+        assert "not_a_measurement" not in analysis.findings
 
     def test_a_short_chain_in_a_large_box_is_not_marked(self):
         analysis = EndToEndDistance()
@@ -164,3 +218,47 @@ class TestItJoinsTheRegisters:
     def test_it_leaves_the_solvent_out_by_default(self):
         """The ends of a water box are not a chain's ends."""
         assert EndToEndDistance.default_selection == "protein"
+
+
+class TestEveryReaderIsTold:
+    """The warning sat in a finding no reader opens, under a mean printed
+    with its error bar."""
+
+    def _reaching_its_image(self):
+        traj = _straight_chains(n_residues=10, spacing=0.38, box=4.0, frames=400)
+        rng = np.random.default_rng(0)
+        traj.xyz = (traj.xyz + rng.normal(0.0, 0.01, traj.xyz.shape)).astype(np.float32)
+        traj.time = np.arange(400) * 10.0
+        return traj
+
+    def test_the_mean_carries_the_reason_and_no_error_bar(self, tmp_path):
+        import json
+
+        analysis = EndToEndDistance(output_dir=tmp_path)
+        assert analysis.run(self._reaching_its_image()).status == "ok"
+        found = json.loads((tmp_path / "end_to_end" / "options.json").read_text())["findings"]
+
+        assert "its own copy" in found["mean"]["not_a_measurement"]
+        assert found["mean"]["mean"] == pytest.approx(9 * 0.38, abs=0.01)
+        assert not np.isfinite(found["mean"]["standard_error"])
+
+    def test_the_report_says_it(self, tmp_path):
+        import json
+
+        from fastmdxplora.report.document import _findings_notes
+
+        EndToEndDistance(output_dir=tmp_path).run(self._reaching_its_image())
+        found = json.loads((tmp_path / "end_to_end" / "options.json").read_text())["findings"]
+        notes = _findings_notes(found)
+
+        assert any("its own copy" in note for note in notes)
+        assert not any("±" in note or "+/-" in note for note in notes)
+
+    def test_a_chain_clear_of_its_image_keeps_its_record(self, tmp_path):
+        analysis = EndToEndDistance(output_dir=tmp_path)
+        traj = self._reaching_its_image()
+        traj.unitcell_lengths = np.full((traj.n_frames, 3), 8.0, dtype=np.float32)
+        analysis.run(traj)
+
+        assert "not_a_measurement" not in analysis.findings
+        assert "error_withheld_because" not in analysis.findings["mean"]

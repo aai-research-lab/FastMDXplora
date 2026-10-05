@@ -517,7 +517,7 @@ A reply is one of four things:
 | **A Config** | YAML. Validated, repaired if refused, shown with its actions. |
 | **A question** | When the request is short of something only you can supply, a structure most often. The Agent never invents one. Your next message answers it, and goes back with the request it answers. |
 | **An answer** | A paragraph, when you asked something rather than asked for something. No Config, no actions. Under it, each analysis the paragraph names, with the mean the study recorded for it (its error and unit, or that the mean is not determined); choosing one opens its figure on the Analysis page. The value is the record's, whatever the paragraph says, so a number can be checked where it is read. |
-| **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config; or `rerun windows` with the windows and the values you named. |
+| **An action** | One of: run, stop, run the fix, open viewer, open overview, open report, open builder, show config, download config; `rerun windows` with the windows and the values you named; `analyze again` with the analyses you named; or `write the report again`. |
 
 ### Looking before it answers
 
@@ -682,6 +682,18 @@ from the study's own record (`--rerun-window` with `--rerun-force-constant`
 or a length) and asks you, with the spring in its unit and the price at the
 study's speed. Every other window is kept. The Agent uses the values you gave;
 asked for a stiffer spring or a longer run without a number, it asks for one.
+
+Ask it to analyse the study open again, or to add an analysis to it (*add
+SASA and hydrogen bonds*, *analyse it again*), and it replies `analyze again`
+with the analyses by their names in the software (`analyze again rmsd rg
+sasa hbonds`), or alone for those the study ran last; ask for its report
+again and it replies `write the report again`. The software checks the
+names against its own, says what will be written again and that what it
+replaces is kept in the study's `previous/` folder, and runs the phase
+command with `--rerun` on the study when you say yes (`fastmdx analyze
+--output <study> --rerun`, or `fastmdx report` for the report). Nothing is simulated. Setup and simulation
+are not run again on a study that has them; the Agent writes a new study
+from it instead (`simulation.setup_from`, `simulation.resume_from`).
 
 ### Saying what "done" means before the run
 
