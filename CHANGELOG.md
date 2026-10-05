@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A capped chain's ends
+
+**A capped peptide's end-to-end distance runs between its first and last
+alpha carbons**: the ends are the first and last residues holding the named
+atom. With the NHE and NH2 caps counted as protein, a peptide ending in one
+had the cap as its last residue, with no alpha carbon, and the analysis
+refused it; an ACE or NME cap was refused before.
+
 ### The Analysis page read as a whole
 
 **The Analysis page opens with what the analyses determined**: one table

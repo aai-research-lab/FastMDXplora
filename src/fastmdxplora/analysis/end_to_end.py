@@ -57,12 +57,14 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
 
 
-def _terminal_atoms(
-    topology, atom_name: str | None, chain_index: int
-) -> tuple[int, int]:
-    """Indices of the two ends of one chain, by the stated convention."""
-    chain = topology.chain(chain_index)
-    residues = list(chain.residues)
+def _end_residues(topology, atom_name: str | None, chain_index: int) -> tuple[int, int]:
+    """Positions in the chain of its two end residues: the first and last
+    residue holding the named atom, or the chain's first and last residue
+    where no atom is named. A cap with no alpha carbon (ACE, NME, NHE,
+    NH2) is passed over, so the distance is between the chain's first and
+    last alpha carbons, as it was before the caps were counted as protein
+    (an NHE- or NH2-capped peptide was refused then)."""
+    residues = list(topology.chain(chain_index).residues)
     if len(residues) < 2:
         raise StudyError(
             f"Chain {chain_index} has {len(residues)} residue(s). An "
@@ -70,8 +72,33 @@ def _terminal_atoms(
             "one.",
             code="analysis.sampling.too_few_residues",
         )
+    if atom_name is None:
+        return 0, len(residues) - 1
+    holding = [i for i, residue in enumerate(residues)
+               if any(a.name == atom_name for a in residue.atoms)]
+    if len(holding) < 2:
+        residue = residues[0] if not holding or holding[0] != 0 else residues[-1]
+        present = sorted({a.name for a in residue.atoms})
+        said = (f"Chain {chain_index} has no atom named {atom_name!r}" if not holding
+                else f"Chain {chain_index} has one residue with an atom named {atom_name!r}")
+        raise StudyError(
+            f"{said}, and an end-to-end distance needs two ends. "
+            f"Residue {residue.name}{residue.resSeq} holds "
+            f"{', '.join(present[:8])}{' and others' if len(present) > 8 else ''}. "
+            "Set `atom` to one of those, or `atom: null` to measure between "
+            "the first and last atom of the terminal residues.",
+            code="analysis.selection.empty",
+        )
+    return holding[0], holding[-1]
 
-    first, last = residues[0], residues[-1]
+
+def _terminal_atoms(
+    topology, atom_name: str | None, chain_index: int
+) -> tuple[int, int]:
+    """Indices of the two ends of one chain, by the stated convention."""
+    residues = list(topology.chain(chain_index).residues)
+    start, end = _end_residues(topology, atom_name, chain_index)
+    first, last = residues[start], residues[end]
     if atom_name is None:
         first_atoms = list(first.atoms)
         last_atoms = list(last.atoms)
@@ -81,23 +108,8 @@ def _terminal_atoms(
                 code="analysis.selection.empty",
             )
         return int(first_atoms[0].index), int(last_atoms[-1].index)
-
-    ends: list[int] = []
-    for residue in (first, last):
-        named = [a for a in residue.atoms if a.name == atom_name]
-        if not named:
-            present = sorted({a.name for a in residue.atoms})
-            raise StudyError(
-                f"Residue {residue.name}{residue.resSeq} at the end of chain "
-                f"{chain_index} has no atom named {atom_name!r}. It holds "
-                f"{', '.join(present[:8])}"
-                f"{' and others' if len(present) > 8 else ''}. Set `atom` to "
-                "one of those, or `atom: null` to measure between the first "
-                "and last atom of the terminal residues.",
-                code="analysis.selection.empty",
-            )
-        ends.append(int(named[0].index))
-    return ends[0], ends[1]
+    return tuple(int(next(a for a in residue.atoms if a.name == atom_name).index)
+                 for residue in (first, last))  # type: ignore[return-value]
 
 
 #: How close an end may come to a periodic image of the other end before the
@@ -116,8 +128,9 @@ def _path(topology, atom_name: str | None, chain_index: int,
     the minimum-image convention's limit.
     """
     residues = list(topology.chain(chain_index).residues)
+    start, end = _end_residues(topology, atom_name, chain_index)
     path = [ends[0]]
-    for residue in residues[1:-1]:
+    for residue in residues[start + 1:end]:
         atoms = list(residue.atoms)
         if not atoms:
             continue
