@@ -125,6 +125,20 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
         if key != "mean" and _is_a_mean_record(other):
             row["quantities"].append({"key": key, "label": _label(key),
                                       **_recorded(root, name, other, biased)})
+        elif key != "mean" and isinstance(other, dict):
+            # A group of quantities read from another record than the
+            # trajectory (thermodynamics: the run's energy file), each with
+            # its `units` and over the group's `samples`, on that record's
+            # own clock, so no trajectory time is given for its start.
+            samples = _count(other.get("samples"))
+            for inner, quantity in other.items():
+                if isinstance(quantity, dict) and "mean" in quantity and (
+                        "units" in quantity or "discard" in quantity):
+                    record = {**quantity, "unit": quantity.get("units", quantity.get("unit")),
+                              "n_frames": quantity.get("n_frames", samples)}
+                    row["quantities"].append({
+                        "key": f"{key}.{inner}", "label": _label(inner),
+                        **_recorded(root, name, record, biased, timed=False)})
     if row["quantities"]:
         row["kind"] = "mean"
     return row
@@ -132,7 +146,7 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
 
 #: Words a quantity's key spells in lower case that are said otherwise.
 _SAID_AS = {"sasa": "SASA", "rmsd": "RMSD", "rmsf": "RMSF", "rg": "Rg", "pca": "PCA",
-            "nm2": "", "nm": ""}
+            "nm2": "", "nm": "", "ml": "mL"}
 
 
 def _label(key: str) -> str:
@@ -180,7 +194,8 @@ def _is_a_mean_record(value: Any) -> bool:
             and ("mean" in value or "not_a_measurement" in value))
 
 
-def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool) -> dict[str, Any]:
+def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
+              timed: bool = True) -> dict[str, Any]:
     from fastmdxplora.statistics import RESOLVED_SAMPLES, with_its_error
 
     unit = unit_of(name, found)
@@ -191,7 +206,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool) -> dic
     discard = _count(found.get("discard")) or 0
     why = found.get("not_a_measurement")
     why = str(why) if why else None
-    if biased:
+    if biased and timed:
         why = ("The run was biased, so this is an average over the ensemble the "
                "bias flattened, not the equilibrium one; no reweighted value was "
                "recovered for it.")
@@ -212,7 +227,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool) -> dic
     else:
         said = f"{value:.4g}{suffix}"
     from_ns = None
-    if n:
+    if n and timed:
         _, x, label = analysed_axis(root, n)
         if label == "Time (ns)" and discard < len(x):
             from_ns = x[discard]

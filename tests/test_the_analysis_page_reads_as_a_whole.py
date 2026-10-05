@@ -116,6 +116,26 @@ class TestWhatTheTableSays:
             ("mean", "Solvent Accessible Surface Area"), ("hydrophobic_sasa", "Hydrophobic SASA")]
         assert quantities[1]["unit"] == "nm²"
 
+    def test_the_run_s_ensemble_is_read_from_its_own_record(self, study) -> None:
+        """Thermodynamics records its quantities a level down, each with its
+        `units`, over the energy file's samples: on that file's clock, so no
+        trajectory time is given for where each started."""
+        folder = study / "analysis" / "thermodynamics"
+        folder.mkdir(parents=True)
+        (folder / "options.json").write_text(json.dumps({"findings": {"thermodynamics": {
+            "source": "simulation/energy.csv", "samples": 50, "ensemble": "constant pressure",
+            "temperature": {"units": "K", "discard": 5, "mean": 300.0656,
+                            "standard_error": 0.3093, "effective_samples": 43.0},
+            "density": {"units": "g/mL", "discard": 3, "mean": 1.05174,
+                        "standard_error": None, "effective_samples": 0.4}}}}))
+        quantities = {q["label"]: q for q in _rows(study)["thermodynamics"]["quantities"]}
+        temperature = quantities["Temperature"]
+        assert temperature["said"] == with_its_error(300.0656, 0.3093) + " K"
+        assert (temperature["of_frames"], temperature["from_frame"], temperature["from_ns"]) == (50, 5, None)
+        assert quantities["Density"]["determined"] is False
+        assert quantities["Density"]["samples"] == 0
+        assert _rows(study)["thermodynamics"]["theme"] == "The run's ensemble"
+
     def test_a_failure_says_its_reason_without_the_name_before_it(self, study) -> None:
         row = _rows(study)["order_parameters"]
         assert row["status"] == "failed"

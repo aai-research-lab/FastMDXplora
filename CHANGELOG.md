@@ -43,7 +43,8 @@ and polar SASA, the shape descriptors), the frames it rests on and from
 when, its independent samples, and **Determined** or **Not determined**,
 which opens to say why; a failed analysis gives its reason, and the table
 downloads as CSV. Each number is the analysis's own record, the one the
-report gives (`GET /api/analysis-overview`). What a study found, and which
+report gives (`GET /api/analysis-overview`), the run's own temperature,
+density, energies and volume among them, first. What a study found, and which
 of it holds, had to be read from every card's caption in turn, and a mean
 too short to determine looked, at a glance, like any other.
 

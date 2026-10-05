@@ -213,7 +213,8 @@
         (quantity.reweighted ? ' <span class="analysis-results-note">reweighted</span>' : "") + "</td>" +
       '<td class="analysis-results-frames mono">' + escapeHTML(frames) +
         (from ? '<span class="analysis-results-from">' + escapeHTML(from) + "</span>" : "") + "</td>" +
-      '<td class="analysis-results-samples mono">' + escapeHTML(count(quantity.samples)) + "</td>" +
+      '<td class="analysis-results-samples mono">' +
+        escapeHTML(quantity.samples === 0 ? "< 1" : count(quantity.samples)) + "</td>" +
       statusCell(status.key, status.said, quantity.why) + "</tr>";
   }
 
