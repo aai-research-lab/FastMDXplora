@@ -4061,15 +4061,17 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         height: var(--viewer-height, calc(100vh - 150px));
         min-height: 520px;
     }
-    .viewer-canvas-wrap { min-height: 0; }
-    .viewer-canvas-wrap .viewer-canvas-frame { flex: none; }
+    /* The molecule keeps its size as the sequence or the playback opens:
+       what they show pushes the rest down, and the column scrolls. The
+       gutter is kept, so a scroll bar coming never narrows the molecule. */
+    .viewer-canvas-wrap { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+    .viewer-canvas-wrap > * { flex: none; }
     /* The header lined up with the molecule and its settings, centred. */
     .page[data-page="viewer"] > .page-header,
     .page[data-page="viewer"] > .viewer-layout {
         max-width: var(--viewer-content-width, none);
         margin-inline: auto;
     }
-    .viewer-under-fold { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
     .viewer-side { min-height: 0; overflow-y: auto; padding-right: 2px; }
 }
 

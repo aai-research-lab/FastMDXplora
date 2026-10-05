@@ -201,12 +201,24 @@ def test_the_sequence_and_the_playback_fold_and_stay_folded(browser, session) ->
     started = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open,
         document.querySelector('.viewer-side > .side-section').open]""")
+    size = """() => { const r = document.getElementById('viewer-canvas-frame')
+        .getBoundingClientRect(); return [r.width, r.height]; }"""
     tab.click("#sequence-strip > summary")
+    tab.wait_for_timeout(800)
+    with_the_sequence = tab.evaluate(size)
     tab.click("#viewer-under-fold > summary")
     tab.wait_for_timeout(800)
     opened = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
-        document.getElementById('viewer-under-fold').open,
-        document.getElementById('viewer-canvas-frame').getBoundingClientRect().height]""")
+        document.getElementById('viewer-under-fold').open]""")
+    with_both = tab.evaluate(size)
+    # What no longer fits is reached by scrolling the column.
+    reached = tab.evaluate("""() => {
+        const wrap = document.querySelector('.viewer-canvas-wrap');
+        const scrolls = wrap.scrollHeight > wrap.clientHeight;
+        wrap.scrollTop = wrap.scrollHeight;
+        const fold = document.getElementById('viewer-under-fold').getBoundingClientRect();
+        return [scrolls, fold.bottom <= wrap.getBoundingClientRect().bottom + 1];
+    }""")
     tab.click("#viewer-under-fold > summary")
     tab.wait_for_timeout(300)
     tab.reload()
@@ -214,10 +226,17 @@ def test_the_sequence_and_the_playback_fold_and_stay_folded(browser, session) ->
     _go(tab, "viewer")
     kept = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open]""")
+    reopened = _settled(tab)
     tab.context.close()
     assert started == [False, False, True]
-    # The room they take is taken from the molecule, and given back.
-    assert opened[:2] == [True, True] and opened[2] < before["height"] - 50
+    assert opened == [True, True]
+    # The molecule keeps its size as each opens: the sequence took its
+    # lines from it, which shrank as it opened.
+    reopened = [reopened["width"], reopened["height"]]
+    for found in (with_the_sequence, with_both, reopened):
+        assert abs(found[0] - before["width"]) <= 1 and abs(found[1] - before["height"]) <= 1, (
+            before, found)
+    assert reached == [True, True]
     # As each was left: the sequence open, the playback closed again.
     assert kept == [True, False]
 

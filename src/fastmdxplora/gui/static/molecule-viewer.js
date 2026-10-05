@@ -2826,9 +2826,10 @@
   /* The molecule's frame keeps one shape, 4 wide to 3 high: the shape a
    * figure and a slide take, and a globular protein turned any way fits it
    * with little to spare. It is as large as the window allows under the
-   * page's header with the sequence and the playback above and below it,
-   * so the three are in view together and the settings scroll beside
-   * them, and no wider: the page's spare width is left at its sides. */
+   * page's header with the sequence's and the playback's heads above and
+   * below it, and no wider: the page's spare width is left at its sides.
+   * Opening either changes nothing of the molecule: what it shows pushes
+   * the rest down, and the column scrolls. */
   const CANVAS_SHAPE = 4 / 3;
   const SMALLEST_CANVAS = 280;
 
@@ -2867,22 +2868,42 @@
     const sideWidth = side.getBoundingClientRect().width;
     // From the page's width: the layout itself is held to what it shows.
     const page = layout.closest(".page") || layout;
-    const across = page.clientWidth - gap - sideWidth;
+    // The column's scroll bar has its place kept beside the molecule, so
+    // the molecule is as wide as fitted whether the bar shows or not.
+    const gutter = Math.max(0, wrap.offsetWidth - wrap.clientWidth);
+    const across = page.clientWidth - gap - sideWidth - gutter;
     const between = parseFloat(getComputedStyle(wrap).rowGap) || 0;
     let others = 0;
     Array.from(wrap.children).forEach((child) => {
       if (child === frame || !isVisible(child)) return;
-      // What it would take whole: the playback scrolls when squeezed.
-      others += Math.max(child.getBoundingClientRect().height, child.scrollHeight) + between;
+      others += closedHeight(child) + between;
     });
     const high = Math.max(SMALLEST_CANVAS, Math.min(room - others, across / CANVAS_SHAPE));
-    const canvas = Math.floor(Math.min(across, high * CANVAS_SHAPE));
+    const canvas = Math.floor(Math.min(across, high * CANVAS_SHAPE)) + gutter;
     return {canvas, whole: Math.ceil(canvas + gap + sideWidth)};
   }
 
+  /* The height a fold takes closed, its head and its own edges, whether it
+   * is open or not: opening the sequence took its lines from the molecule,
+   * which shrank as it opened. Anything else, as it stands. */
+  function closedHeight(node) {
+    const head = node.tagName === "DETAILS" ? node.querySelector(":scope > summary") : null;
+    if (!head) return node.getBoundingClientRect().height;
+    const style = getComputedStyle(node);
+    const edges = ["borderTopWidth", "borderBottomWidth", "paddingTop", "paddingBottom"]
+      .reduce((sum, key) => sum + (parseFloat(style[key]) || 0), 0);
+    // A head is padded alike above and below while closed; an open
+    // section's has less below (its body follows), which counted would
+    // move the molecule by those pixels as it opened.
+    const own = getComputedStyle(head);
+    const below = parseFloat(own.paddingBottom) || 0;
+    const above = parseFloat(own.paddingTop) || 0;
+    return head.getBoundingClientRect().height - below + above + edges;
+  }
+
   /* The sequence and the playback fold as the settings' sections do, and
-   * stay as they were left; the molecule is sized again when either opens,
-   * closes, appears or wraps. */
+   * stay as they were left; the molecule is sized again when either
+   * appears or its head wraps, and keeps its size as either opens. */
   function wireFolds() {
     [["sequence-strip", "viewerSequenceOpen"], ["viewer-under-fold", "viewerPlaybackOpen"]]
       .forEach(([id, key]) => {

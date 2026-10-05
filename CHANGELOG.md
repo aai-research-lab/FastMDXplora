@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The molecule keeps its size as the Sequence or the Playback opens
+
+**Fixed:** opening the Viewer's Sequence made the molecule narrower (about
+100 pixels in a window 900 high), its lines taken from the molecule's
+height, and opening the Playback did the same. The molecule is sized with both closed
+and keeps that size: what either shows pushes the rest down, and the column
+under the header scrolls to reach it.
+
 ### No folder named or opened where no study is open
 
 **Fixed:** `fastmdx gui` in a folder that holds no study printed "The file
