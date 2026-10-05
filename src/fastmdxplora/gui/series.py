@@ -144,6 +144,14 @@ def analysed_axis(root: Path, n: int) -> tuple[list[int], list[float], str]:
     stride = _positive_int(loaded.get("stride")) or 1
     first = _non_negative_int(loaded.get("first")) or 0
     interval = loaded.get("saving_interval_ps")
+    recorded = manifest.get("frame_times_ps")
+    if (isinstance(recorded, list) and len(recorded) == n and isinstance(interval, (int, float))
+            and interval > 0 and all(isinstance(t, (int, float)) for t in recorded)):
+        # Several files loaded at a stride are not evenly spaced (MDTraj
+        # strides each file on its own); the loader's own times, kept by
+        # the orchestrator, say where each frame was.
+        frames = [int(round(float(t) / float(interval))) - 1 for t in recorded]
+        return frames, [round(float(t) / 1000.0, 12) for t in recorded], "Time (ns)"
     frames = [(first + i) * stride for i in range(n)]
     if isinstance(interval, (int, float)) and interval > 0:
         # Rounded to well past the clock's own precision, so 0.0003 ns is

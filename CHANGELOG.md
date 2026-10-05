@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The times of several strided files, after the analysis
+
+**The GUI's axes give strided frames of several files the times they were
+written**, as the loader does: the analysis manifest keeps each analysed
+frame's time where several files were loaded at a stride
+(`frame_times_ps`), and the Analysis page's series, the convergence view
+and the results table read it. They assumed even spacing, so two files of
+five frames at stride 2, written every 10 ps, read 10 to 110 ps where the
+frames were written at 10 to 100.
+
 ### A capped chain's ends
 
 **A capped peptide's end-to-end distance runs between its first and last

@@ -58,3 +58,37 @@ def test_one_file_reads_as_before(tmp_path):
     loaded = load_trajectory(paths[0], top=top, stride=3, saving_interval_ps=5.0)
 
     assert np.allclose(loaded.time, [5.0, 20.0, 35.0])
+
+
+def test_what_reads_the_series_afterwards_reads_those_times(tmp_path):
+    """The manifest keeps the loader's times where several files were
+    strided, and the GUI's axes read them: they assumed even spacing, and
+    gave 10 to 110 ps where the frames were written at 10 to 100."""
+    import json
+
+    from fastmdxplora.analysis import AnalysisOrchestrator
+    from fastmdxplora.gui.series import analysed_axis
+
+    paths, top = _files(tmp_path, [5, 5])
+    out = tmp_path / "study"
+    AnalysisOrchestrator(paths, topology=top, output_dir=str(out / "analysis"), stride=2,
+                         saving_interval_ps=10.0).run(include=["rg"])
+    manifest = json.loads((out / "analysis" / "analysis_manifest.json").read_text())
+    assert manifest["frame_times_ps"] == [10.0, 30.0, 50.0, 60.0, 80.0, 100.0]
+    frames, x, label = analysed_axis(out, 6)
+    assert frames == [0, 2, 4, 5, 7, 9]
+    assert x == [0.01, 0.03, 0.05, 0.06, 0.08, 0.1]
+    assert label == "Time (ns)"
+
+
+def test_one_stream_keeps_its_manifest_small(tmp_path):
+    import json
+
+    from fastmdxplora.analysis import AnalysisOrchestrator
+
+    paths, top = _files(tmp_path, [7])
+    out = tmp_path / "study"
+    AnalysisOrchestrator(paths[0], topology=top, output_dir=str(out / "analysis"), stride=3,
+                         saving_interval_ps=5.0).run(include=["rg"])
+    manifest = json.loads((out / "analysis" / "analysis_manifest.json").read_text())
+    assert "frame_times_ps" not in manifest
