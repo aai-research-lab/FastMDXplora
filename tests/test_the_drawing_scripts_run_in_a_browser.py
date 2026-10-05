@@ -116,6 +116,8 @@ def _open(dashboard, where: str):
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
         opened = browser.new_page(viewport={"width": 1400, "height": 900})
+        # The Playback starts closed; these drive what is in it.
+        opened.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
         errors: list[str] = []
         opened.on("pageerror", lambda error: errors.append(str(error)))
         opened.on("console", lambda message: errors.append(message.text)

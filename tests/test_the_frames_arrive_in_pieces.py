@@ -112,6 +112,8 @@ def test_the_viewer_plays_from_the_first_piece(study, small_pieces):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(120000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
@@ -159,6 +161,8 @@ def test_frames_asked_for_before_the_structure_arrives_keep_the_canvas(study):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(120000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))

@@ -7,11 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-### The Sequence folds as the settings' sections do, and starts closed
+### The Sequence and the Playback start closed
 
 **The Viewer's Sequence has the same marker as the settings' sections**,
-and starts closed until it is first opened, then stays as it was left. Its
-marker was a character of the text, smaller than theirs.
+and it and the **Playback** start closed until first opened, then stay as
+they were left; the settings' sections are as they were. The keys play the
+frames with the Playback closed. The Sequence's marker was a character of
+the text, smaller than the sections'.
 
 ### The Viewer has the window, in one shape, and each page one band
 

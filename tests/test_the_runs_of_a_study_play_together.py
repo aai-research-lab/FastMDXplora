@@ -267,6 +267,8 @@ def test_the_viewer_renders_each_run_in_its_colour(replicas):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(120000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
@@ -411,6 +413,8 @@ def test_the_viewer_follows_a_run_still_running(replicas, tmp_path):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             page.set_default_timeout(120000)
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))

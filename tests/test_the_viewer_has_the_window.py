@@ -70,7 +70,7 @@ def _settled(tab):
     """The Viewer's frame once the sequence and the playback are shown and
     it has been sized for them."""
     tab.wait_for_selector("#sequence-strip:not([hidden])")
-    tab.wait_for_selector("#trajectory-row:not([hidden])")
+    tab.wait_for_selector("#trajectory-row:not([hidden])", state="attached")
     tab.wait_for_timeout(800)
     return tab.evaluate("""() => {
         const r = (n) => n.getBoundingClientRect();
@@ -197,20 +197,17 @@ def test_the_molecule_keeps_its_shape_in_view(browser, session, width, height) -
 def test_the_sequence_and_the_playback_fold_and_stay_folded(browser, session) -> None:
     tab = _open(browser, session, page="viewer")
     before = _settled(tab)
-    # The sequence starts closed, the playback open.
+    # Both start closed; the settings' sections are as they were.
     started = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
-        document.getElementById('viewer-under-fold').open]""")
-    tab.click("#sequence-strip > summary")
-    tab.wait_for_timeout(800)
-    opened = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
-        document.getElementById('viewer-canvas-frame').getBoundingClientRect().height]""")
+        document.getElementById('viewer-under-fold').open,
+        document.querySelector('.viewer-side > .side-section').open]""")
     tab.click("#sequence-strip > summary")
     tab.click("#viewer-under-fold > summary")
     tab.wait_for_timeout(800)
-    folded = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
+    opened = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open,
         document.getElementById('viewer-canvas-frame').getBoundingClientRect().height]""")
-    tab.click("#sequence-strip > summary")
+    tab.click("#viewer-under-fold > summary")
     tab.wait_for_timeout(300)
     tab.reload()
     tab.wait_for_function("() => window.FastMDXDashboard && window.FastMDXDashboard.navigate")
@@ -218,12 +215,10 @@ def test_the_sequence_and_the_playback_fold_and_stay_folded(browser, session) ->
     kept = tab.evaluate("""() => [document.getElementById('sequence-strip').open,
         document.getElementById('viewer-under-fold').open]""")
     tab.context.close()
-    assert started == [False, True]
-    assert opened[0] and opened[1] < before["height"] - 50
-    assert folded[:2] == [False, False]
-    # The room they gave back goes to the molecule.
-    assert folded[2] > before["height"] + 50
-    # As each was left: the sequence opened again, the playback closed.
+    assert started == [False, False, True]
+    # The room they take is taken from the molecule, and given back.
+    assert opened[:2] == [True, True] and opened[2] < before["height"] - 50
+    # As each was left: the sequence open, the playback closed again.
     assert kept == [True, False]
 
 

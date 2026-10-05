@@ -60,6 +60,9 @@ def browser():
 
 def _open(browser, session, where="#overview", width=1440, height=900, stored=None):
     context = browser.new_context(viewport={"width": width, "height": height})
+    # The Playback starts closed; these read what is in it.
+    context.add_init_script(
+        "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
     if stored:
         context.add_init_script(
             "(() => {" + "".join(f"localStorage.setItem('fmx.{k}', '{v}');"
