@@ -32,6 +32,10 @@ def _packed(values: Any) -> str:
     return base64.b64encode(np.ascontiguousarray(tenths, dtype="<i2").tobytes()).decode("ascii")
 
 
+def _said(residues: int, frames: int) -> str:
+    return f"φ and ψ of {residues:,} residues in each of the {frames:,} frames played, in degrees."
+
+
 def backbone_angles(root: str | Path) -> dict[str, Any]:
     """φ and ψ of each protein residue in each frame played, in degrees;
     or why there are none."""
@@ -47,7 +51,8 @@ def backbone_angles(root: str | Path) -> dict[str, Any]:
         return {"ok": False, "reason": "There are no frames to follow a residue's angles in yet."}
     kept = _load_json(simulation / ANGLES_FILE)
     if kept.get("signature") == index.get("signature") and kept.get("ok"):
-        return kept
+        # Said afresh: a file kept before said it in other words.
+        return {**kept, "said": _said(len(kept.get("atoms") or []), int(kept.get("frames") or 0))}
     with suppress_native_output():
         frames = md.load_dcd(str(simulation / FRAMES_FILE),
                              top=str(simulation / FRAMES_TOPOLOGY))
@@ -75,8 +80,7 @@ def backbone_angles(root: str | Path) -> dict[str, Any]:
     said = {"ok": True, "signature": index.get("signature"), "frames": int(frames.n_frames),
             "residues": residues, "atoms": [int(a) for a in alphas],
             "phi": _packed(phi), "psi": _packed(psi),
-            "said": (f"φ and ψ of {len(alphas):,} residues in each of the "
-                     f"{frames.n_frames:,} frames played, by MDTraj, in degrees.")}
+            "said": _said(len(alphas), int(frames.n_frames))}
     temporary = simulation / f".{ANGLES_FILE}.tmp"
     temporary.write_text(json.dumps(said), encoding="utf-8")
     temporary.replace(simulation / ANGLES_FILE)

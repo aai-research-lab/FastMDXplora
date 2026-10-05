@@ -87,6 +87,20 @@ def test_each_residue_s_angles_in_each_frame(study):
     assert backbone_angles(study) == said
 
 
+def test_the_line_under_the_plot_says_what_is_plotted(study):
+    from fastmdxplora.gui.backbone_angles import ANGLES_FILE, backbone_angles
+
+    said = backbone_angles(study)
+    assert said["said"] == (f"φ and ψ of {len(said['atoms']):,} residues in each of the "
+                            f"{FRAMES:,} frames played, in degrees.")
+    # A file kept with the words before is said in these.
+    kept = study / "simulation" / ANGLES_FILE
+    old = json.loads(kept.read_text())
+    old["said"] = old["said"].replace("played, in degrees", "played, by MDTraj, in degrees")
+    kept.write_text(json.dumps(old))
+    assert backbone_angles(study)["said"] == said["said"]
+
+
 def test_what_has_no_angles_says_so(tmp_path):
     from fastmdxplora.gui.backbone_angles import backbone_angles
 

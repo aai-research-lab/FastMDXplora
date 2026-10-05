@@ -22,6 +22,12 @@ they were left. **Each page's header is one band across the centre
 column**, its rule under it; it was the width of the page's text, a strip
 of another colour over the column's own ground.
 
+### Backbone angles says what is plotted
+
+The line under the plot gives the residues, the frames and the unit, and no
+longer names the program that computed them, in a study whose angles were
+kept before too.
+
 ### The Agent analyses a study again, when told
 
 **Told to add an analysis to the study open, to analyse it again or to
