@@ -238,34 +238,40 @@
     if (quantities.length === 1 && quantities[0].key === "mean") {
       return quantityRow(row, quantities[0], nameLink(row), false);
     }
-    // Several quantities: the analysis heads them, each on its own row.
+    // Several quantities: the analysis heads them, each on its own row,
+    // whose header names the analysis too for whoever reads it alone.
     return '<tr class="analysis-results-group" data-analysis="' + escapeHTML(row.analysis) + '">' +
-      '<th scope="rowgroup" colspan="5" class="analysis-results-name">' + nameLink(row) + "</th></tr>" +
+      '<th scope="row" colspan="5" class="analysis-results-name">' + nameLink(row) + "</th></tr>" +
       quantities.map(function (q) {
-        return quantityRow(row, q, escapeHTML(q.key === "mean" ? "Mean" : q.label), true);
+        return quantityRow(row, q, '<span class="sr-only">' + escapeHTML(row.title) + ": </span>" +
+          escapeHTML(q.key === "mean" ? "Mean" : q.label), true);
       }).join("");
   }
 
   function renderOverview(data) {
     var host = byId("analysis-results");
-    var body = byId("analysis-results-body");
-    if (!host || !body) return;
+    var table = byId("analysis-results-table");
+    if (!host || !table) return;
     var rows = data && data.ok && Array.isArray(data.rows) ? data.rows : [];
     if (!rows.length) { host.hidden = true; return; }
     var determined = 0;
     var undetermined = 0;
+    // One body per theme, headed by it.
     var theme = null;
     var html = "";
     rows.forEach(function (row) {
       if (row.theme !== theme) {
+        html += (theme === null ? "" : "</tbody>") + "<tbody>" +
+          '<tr class="analysis-results-theme-row"><th colspan="5" scope="rowgroup">' +
+          escapeHTML(row.theme) + "</th></tr>";
         theme = row.theme;
-        html += '<tr class="analysis-results-theme-row"><th colspan="5" scope="colgroup">' +
-          escapeHTML(theme) + "</th></tr>";
       }
       (row.quantities || []).forEach(function (q) { if (q.determined) determined += 1; else undetermined += 1; });
       html += rowsOf(row);
     });
-    body.innerHTML = html;
+    if (theme !== null) html += "</tbody>";
+    Array.prototype.slice.call(table.tBodies).forEach(function (old) { old.remove(); });
+    table.insertAdjacentHTML("beforeend", html);
     var failed = rows.filter(function (row) { return row.status === "failed"; }).length;
     var said = [];
     said.push(determined + " determined");

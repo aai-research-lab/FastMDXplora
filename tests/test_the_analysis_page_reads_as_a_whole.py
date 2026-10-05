@@ -304,7 +304,7 @@ def page(dashboard):
 class TestThePage:
 
     def test_the_table_says_what_each_analysis_determined(self, page) -> None:
-        body = page.locator("#analysis-results-body")
+        body = page.locator("#analysis-results-table")
         rmsd = body.locator('tr[data-analysis="rmsd"]')
         assert rmsd.locator(".analysis-results-status").text_content() == "Determined"
         rg = body.locator('tr[data-analysis="rg"]')
@@ -319,7 +319,7 @@ class TestThePage:
         assert page.errors == []
 
     def test_a_name_in_the_table_goes_to_its_section(self, page) -> None:
-        page.locator('#analysis-results-body tr[data-analysis="rg"] a').click()
+        page.locator('#analysis-results-table tr[data-analysis="rg"] a').click()
         page.wait_for_function(
             "() => document.activeElement && document.activeElement.closest('#analysis-section-radius-of-gyration')",
             timeout=10000)

@@ -1457,6 +1457,7 @@ button {
 }
 .analysis-section { scroll-margin-top: 96px; }
 .analysis-section-title:focus { outline: none; }
+.analysis-section-title:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 3px; border-radius: 3px; }
 
 /* How a series converged, under its card (analysis-page.js). */
 .convergence-panel { padding: 12px 14px; border-top: 1px solid var(--border-subtle); }
