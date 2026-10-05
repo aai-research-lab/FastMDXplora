@@ -202,7 +202,9 @@
     byId("open-output")?.addEventListener("click", async () => {
       try {
         const payload = await fetchJSON("/api/open-output");
-        if (payload.opened) {
+        if (!payload.path) {
+          showToast("No study is open, so there is no folder to open.", "warning");
+        } else if (payload.opened) {
           showToast(`Opened output folder: ${payload.path}`);
         } else {
           await copyText(payload.path || state.outputDir || "");
@@ -490,6 +492,7 @@
       setText("topbar-stage", "configure a simulation");
       setText("sidebar-run-name", "No active study");
       setText("sidebar-platform", "—");
+      showTheStudyFolder();
     }
     // Sections that only have content once a run exists are dimmed until one
     // does, so a fresh workspace points at the builder instead of offering
@@ -503,6 +506,22 @@
       }
     });
     emit("app-state", payload || {});
+  }
+
+  /* The study's folder in the study menu, offered only where a study is
+   * open: with none, the runtime's root is a name never created. */
+  function showTheStudyFolder() {
+    setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
+    ["sidebar-output-folder", "open-output"].forEach((id) => {
+      const node = byId(id);
+      if (!node) return;
+      node.hidden = !state.outputDir;
+      // Its label, and the rule above that.
+      const label = id === "sidebar-output-folder" ? node.previousElementSibling : null;
+      if (label) label.hidden = !state.outputDir;
+      const rule = label ? label.previousElementSibling : null;
+      if (rule && rule.classList.contains("study-menu-divider")) rule.hidden = !state.outputDir;
+    });
   }
 
   function resetRunDependentState() {
@@ -700,7 +719,7 @@
       said.hidden = !platform;
       if (said.previousElementSibling) said.previousElementSibling.hidden = !platform;
     }
-    setTextWithTooltip("sidebar-output-folder", state.outputDir || "—");
+    showTheStudyFolder();
     byId("open-output")?.setAttribute(
       "title", state.outputDir ? `Open ${state.outputDir}` : "Open output folder"
     );

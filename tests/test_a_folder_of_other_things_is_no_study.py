@@ -136,6 +136,34 @@ def test_a_folder_that_cannot_be_read_is_not_said_to_hold_none(tmp_path, monkeyp
     assert not holds_no_study(checkout)
 
 
+def test_no_folder_is_named_or_opened_for_no_study(tmp_path, monkeypatch):
+    """`fastmdx gui` in such a folder printed "The file .../.fastmdxplora-no-
+    current-run does not exist." twice on a Mac: the page named that never
+    made folder as the study's, and Open the folder asked `open` for it."""
+    pytest.importorskip("mdtraj")
+    from fastmdxplora.gui import server
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+    asked = []
+    monkeypatch.setattr(server.subprocess, "Popen", lambda argv, *a, **k: asked.append(argv))
+    checkout = _checkout(tmp_path / "checkout")
+    session = start_dashboard_session(output=str(checkout), host="127.0.0.1", port=0)
+    base = session.url.rstrip("/")
+    try:
+        results = json.loads(urllib.request.urlopen(base + "/api/results", timeout=30).read())
+        opened = json.loads(urllib.request.urlopen(base + "/api/open-output", timeout=30).read())
+    finally:
+        session.server.shutdown()
+    assert results["output_dir"] == "" and results["run_title"] == ""
+    assert results["system"]["output_folder"] == ""
+    assert opened == {"opened": False, "path": "", "detail": "No study is open."}
+    assert asked == []
+    # Nor anything that is not there, from any route.
+    assert server._open_local_path(tmp_path / "gone") == (False, f"{tmp_path / 'gone'} does not exist.")
+    assert asked == []
+
+
 def test_the_overview_says_there_is_no_study_here(tmp_path, monkeypatch):
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
@@ -155,9 +183,13 @@ def test_the_overview_says_there_is_no_study_here(tmp_path, monkeypatch):
                                    ".textContent === 'No study here'")
             body = page.text_content("#live-absent-body")
             offered = page.is_visible("#live-absent-actions")
+            # The study menu offers no folder to open.
+            folder = page.evaluate("""() => ['sidebar-output-folder', 'open-output']
+                .map((id) => document.getElementById(id).hidden)""")
             browser.close()
     finally:
         session.server.shutdown()
     assert body == ("checkout holds no study: nothing in it was written by FastMDXplora. "
                     "Open one under All studies, or start one.")
     assert offered
+    assert folder == [True, True]

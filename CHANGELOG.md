@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### No folder named or opened where no study is open
+
+**Fixed:** `fastmdx gui` in a folder that holds no study printed "The file
+.../.fastmdxplora-no-current-run does not exist." in its terminal on a Mac:
+the page took the name the GUI gives when no study is open (a folder never
+made) for the study's folder, and Open the folder asked `open` for it. That
+name is no longer shown as a folder or a title, the study menu offers no
+folder with no study open, and nothing that is not there is opened.
+
 ### The Sequence and the Playback start closed
 
 **The Viewer's Sequence has the same marker as the settings' sections**,

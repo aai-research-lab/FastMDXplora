@@ -874,6 +874,10 @@ def make_handler(
                     self._send_json({"opened": False, "path": str(root),
                                      "detail": "Not available in a hosted GUI."})
                     return
+                if _no_study(root):
+                    self._send_json({"opened": False, "path": "",
+                                     "detail": "No study is open."})
+                    return
                 opened, detail = _open_local_path(root)
                 self._send_json({
                     "opened": opened,
@@ -2396,8 +2400,10 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "refreshed_at": _iso_now(),
         "has_analysis": any(record["path"].startswith("analysis/") for record in artifacts),
         "has_report": any(record["path"].startswith("report/") for record in artifacts),
-        "output_dir": str(root),
-        "run_title": _run_title(root, manifest),
+        # No folder and no title where no study is open: the root is then a
+        # name that is never created, and it was shown as the study's.
+        "output_dir": "" if _no_study(root) else str(root),
+        "run_title": "" if _no_study(root) else _run_title(root, manifest),
         "summary": summary,
         "system": system,
         "setup": _setup_details(setup_manifest),
@@ -2925,7 +2931,7 @@ def _system_info(
         # the manifest, which is written when the run ends, the top bar spent
         # the whole run showing the browser's placeholder label instead.
         "system": _system_name(root, manifest),
-        "output_folder": root.as_posix(),
+        "output_folder": "" if _no_study(root) else root.as_posix(),
         "atoms": _display_value(analysis_manifest.get("n_atoms")),
         "frames": _display_value(
             _first_present(
@@ -3258,8 +3264,18 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _no_study(root: Path) -> bool:
+    """Whether ``root`` is the name the runtime gives when no study is open."""
+    return Path(root).name == _NO_CURRENT_RUN
+
+
 def _open_local_path(path: Path) -> tuple[bool, str]:
     """Open ``path`` in the host file manager on a best-effort basis."""
+
+    # macOS's `open` said "The file ... does not exist." in the terminal
+    # the GUI runs in, for a folder that was never there.
+    if not os.path.exists(path):
+        return False, f"{path} does not exist."
 
     try:
         if os.name == "nt":
