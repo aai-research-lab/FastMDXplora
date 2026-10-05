@@ -256,6 +256,10 @@ def test_the_pocket_is_the_residues_within_the_cutoff(page, dashboard) -> None:
         residues = {shown.topology.atom(int(i)).residue.index for i in near}
         expected = sorted(atom.index for atom in shown.topology.atoms
                           if atom.residue.index in residues)
+        # Asked once the atoms are there: in a full suite the structure was
+        # rendered again between two cutoffs, and the engine held none.
+        page.wait_for_function(f"(n) => {ENGINE}.find({{}}).length === n", arg=SOLUTE,
+                               timeout=60000)
         found = page.evaluate("(cutoff) => window.FastMDXMoleculeViewer.STATE.engine"
                               ".pocketAtoms(['LIG'], cutoff)", cutoff)
         assert found == expected, cutoff
