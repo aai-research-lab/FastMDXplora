@@ -2444,6 +2444,11 @@ def run_simulation(
             status="running",
             current_step=0,
             total_planned_steps=total_planned_steps,
+            # Each stage's steps, so the page can say how far production
+            # has run rather than the steps of every stage together.
+            nvt_steps_planned=int(plan["nvt_steps"]),
+            npt_steps_planned=int(plan["npt_steps"]),
+            production_steps_planned=int(plan["production_steps"]),
             current_checkpoint_path=(output_dir / "checkpoint.chk").as_posix(),
         )
 

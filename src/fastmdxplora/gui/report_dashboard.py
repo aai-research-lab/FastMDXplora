@@ -434,25 +434,32 @@ def _summary_cards(
 
     phase_context = load_phase_context(project_root)
     if phase_context.simulation_present:
-        from fastmdxplora.simulation.resume import extended_production
+        from fastmdxplora.gui.simulated_time import (
+            equilibration_said,
+            say_length,
+            simulated_times,
+        )
 
         sim_params = sim_manifest.get("parameters", {})
-        extended = extended_production(project_root)
-        if extended:
-            # The pieces' production, not the first piece's.
-            cards.append(DashboardCard("Simulation time",
-                                       f"{_format_number(extended[0])} ns",
-                                       f"production in {extended[1]} pieces"))
-        elif isinstance(sim_params, dict):
-            duration = sim_params.get("duration_ns")
-            if duration is not None:
-                cards.append(
-                    DashboardCard(
-                        "Simulation time",
-                        f"{_format_number(duration)} ns",
-                        "simulation parameters",
-                    )
-                )
+        # The production, which the analyses average, with its
+        # equilibration said beside it (or the pieces it ran in): what the
+        # run recorded it ran, else how far its live record says it got,
+        # else what it was asked to run, said as planned.
+        try:
+            live = json.loads((project_root / "simulation" / "live_status.json").read_text(
+                encoding="utf-8"))
+        except (OSError, ValueError):
+            live = {}
+        times = simulated_times(project_root, live if isinstance(live, dict) else {})
+        before = equilibration_said(times)
+        if times["production_ns"] is not None:
+            cards.append(DashboardCard("Production", say_length(times["production_ns"]),
+                                       before or "as the run recorded it"))
+        else:
+            planned = sim_params.get("duration_ns") if isinstance(sim_params, dict) else None
+            if isinstance(planned, (int, float)) and not isinstance(planned, bool):
+                cards.append(DashboardCard("Production", say_length(planned),
+                                           "planned; the run recorded none"))
         temperature = _average_temperature(project_root / "simulation" / "energy.csv")
         if temperature is not None:
             cards.append(
@@ -463,9 +470,9 @@ def _summary_cards(
                 )
             )
 
-    wall_time = _wall_time(phases)
+    wall_time = _wall_time(project_root, phases)
     if wall_time:
-        cards.append(DashboardCard("Wall time", wall_time, "recorded phase timestamps"))
+        cards.append(DashboardCard("Wall time", wall_time, "the phases' own times, added"))
 
     # No Output folder card. Every other card here is something measured
     # about the run -- frames, atoms, temperature, wall time -- and a
@@ -732,19 +739,12 @@ def _strip_comment_prefix(lines):
         yield line[1:] if line.startswith("#") else line
 
 
-def _wall_time(phases: list[dict[str, Any]]) -> str:
-    starts: list[datetime] = []
-    finishes: list[datetime] = []
-    for phase in phases:
-        start = _parse_datetime(phase.get("started_at"))
-        finish = _parse_datetime(phase.get("finished_at"))
-        if start:
-            starts.append(start)
-        if finish:
-            finishes.append(finish)
-    if not starts or not finishes:
+def _wall_time(project_root: Path, phases: list[dict[str, Any]]) -> str:
+    from fastmdxplora.gui.simulated_time import phases_wall_seconds
+
+    seconds = phases_wall_seconds(project_root, phases)
+    if seconds is None:
         return ""
-    seconds = max(0, int((max(finishes) - min(starts)).total_seconds()))
     if seconds < 60:
         return f"{seconds}s"
     minutes, rem = divmod(seconds, 60)
@@ -1736,7 +1736,7 @@ def _render_sidebar(
 
     by_label = {card.label: card for card in cards}
     facts = [("Written", f'<span data-when="{escape(generated_epoch)}">{escape(generated)}</span>')]
-    for label in ("Simulation time", "Wall time"):
+    for label in ("Production", "Wall time"):
         card = by_label.get(label)
         if card is not None:
             facts.append((label, escape(card.value)))

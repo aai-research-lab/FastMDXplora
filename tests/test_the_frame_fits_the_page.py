@@ -224,8 +224,11 @@ class TestTheControls:
     def test_simulated_time_has_no_empty_places(self, browser, studies) -> None:
         page = _open(browser, studies["finished"])
         text = page.locator("#live-simtime-cell").text_content()
+        label = page.locator("#live-simtime-label").text_content()
+        note = page.locator("#live-simtime-note").text_content()
         page.context.close()
-        assert text == "0.012 ns"
+        # A live record with no plan in it says its own total, as such.
+        assert (label, text, note) == ("Simulated", "12 ps", "equilibration included")
 
 
 class TestAPhone:

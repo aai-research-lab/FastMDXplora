@@ -452,11 +452,28 @@ def _run_status(runtime: Any) -> str | None:
             if isinstance(elapsed, (int, float)) and step > 0:
                 remaining = elapsed * (total / step - 1.0)
                 lines.append(f"elapsed: {_hms(elapsed)}; about {_hms(remaining)} left")
+        from fastmdxplora.gui.simulated_time import say_length, simulated_times
+
+        times = simulated_times(runtime.active_root, status)
         sim_ns = status.get("simulation_time_completed_ns")
-        if isinstance(sim_ns, (int, float)):
-            # Equilibration included. "0.7 ns" here was read back as a
-            # production length of 0.7 ns when the config said 0.5; the
-            # config below is where the production length lives.
+        if times["production_ns"] is not None or times["equilibrating"]:
+            # Production, as the page says it: the live record's own time
+            # has equilibration in it, and "0.7 ns" was read back as a
+            # production length of 0.7 ns when the config said 0.5.
+            done = times["production_ns"] or 0.0
+            planned = times["production_planned_ns"]
+            if times["pieces"] > 1:
+                lines.append(f"production: {say_length(done)} in {times['pieces']} pieces")
+            else:
+                lines.append(f"production so far: {say_length(done)}"
+                             + (f" of {say_length(planned)}" if planned else ""))
+            if times["equilibrating"] and times["equilibration_ns"] is not None:
+                lines.append(f"equilibrating ({times['stage']}): "
+                             f"{say_length(times['equilibration_ns'])} of "
+                             f"{say_length(times['equilibration_planned_ns'])}")
+        elif isinstance(sim_ns, (int, float)):
+            # Equilibration included; the config below is where the
+            # production length lives.
             lines.append(f"simulated so far, equilibration included: {sim_ns:.3f} ns")
         speed = status.get("ns_per_day") or status.get("speed")
         if isinstance(speed, (int, float)) and speed > 0:

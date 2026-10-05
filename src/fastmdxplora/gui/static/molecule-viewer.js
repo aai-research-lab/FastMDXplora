@@ -144,7 +144,7 @@
     wireKeys();
     tidyOverlay();
     window.FastMDXDashboard?.on("structure-updated", onStructureUpdated);
-    window.FastMDXDashboard?.on("status-updated", ({status}) => onStatusUpdated(status));
+    window.FastMDXDashboard?.on("status-updated", ({status, times}) => onStatusUpdated(status, times));
     window.FastMDXDashboard?.on("playback-ready", onPlaybackReady);
     window.FastMDXDashboard?.on("run-changed", onRunChanged);
     window.FastMDXDashboard?.on("viewer-page-opened", onViewerPageOpened);
@@ -2285,7 +2285,7 @@
     void restyleViewers();
   }
 
-  function onStatusUpdated(status) {
+  function onStatusUpdated(status, times) {
     STATE.runStatus = String(status?.status || "").toLowerCase();
     const running = STATE.runStatus === "running";
     // Following the run and taking its newest structure mean something only
@@ -2304,9 +2304,17 @@
         ? "The newest frame, as it is written."
         : "The last frame the run wrote.";
     }
+    // The frame's time in production, as the analyses' axes give it; the
+    // live record's own time has the equilibration in it, so the last frame
+    // of 100 ps after 10 of equilibration read 0.110 ns. Said with what it
+    // is the time of, since it starts again from zero with production.
+    const inProduction = times && times.production_ns != null && !times.equilibrating;
+    const equilibrating = Boolean(times && times.equilibrating && times.equilibration_ns != null);
     setOverlay(running, {
       stage: status?.stage || "\u2014",
-      simtime: status?.simulation_time_completed_ns,
+      simtime: inProduction ? times.production_ns
+        : (equilibrating ? times.equilibration_ns : status?.simulation_time_completed_ns),
+      simtimeOf: inProduction ? "production" : (equilibrating ? "equilibration" : ""),
     });
   }
 
@@ -2837,7 +2845,10 @@
     if (info?.step != null) setText("overlay-frame", `step ${Number(info.step).toLocaleString()}`);
     if (info?.frame != null) setText("overlay-frame", `frame ${info.frame}`);
     if (info?.age != null && !ended) setText("overlay-age", `age ${info.age}`);
-    if (info?.simtime != null) setText("overlay-simtime", `${Number(info.simtime).toFixed(3)} ns`);
+    if (info?.simtime != null) {
+      setText("overlay-simtime",
+        `${info.simtimeOf ? info.simtimeOf + " " : ""}${Number(info.simtime).toFixed(3)} ns`);
+    }
     tidyOverlay();
   }
 

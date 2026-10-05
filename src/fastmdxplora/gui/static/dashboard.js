@@ -623,6 +623,7 @@
     const health = payload.health || {};
     state.status = status;
     state.health = health;
+    state.times = payload.times || {};
     state.stages = Array.isArray(payload.stages) ? payload.stages : [];
     state.phases = Array.isArray(payload.phases) ? payload.phases : [];
     applyPhaseVisibility();
@@ -631,7 +632,7 @@
     renderHealth(health);
     renderStageTimeline(status);
     renderLiveProgress(status);
-    emit("status-updated", {status, health});
+    emit("status-updated", {status, health, times: state.times});
   }
 
   function renderTopBar(status, health) {
@@ -974,16 +975,20 @@
         ? `${status.current_frame_count}${status.planned_frame_count != null ? ` / ${status.planned_frame_count}` : ""}`
         : "—"
     );
-    setText(
-      "live-simtime-cell",
-      status.simulation_time_completed_ns != null
-        ? `${formatNanoseconds(status.simulation_time_completed_ns)} ns`
-        : "—"
-    );
-    setText(
-      "live-elapsed-cell",
-      status.elapsed_wall_time_s != null ? fmtDuration(status.elapsed_wall_time_s) : "—"
-    );
+    const length = productionSaid(state.times || {}, status);
+    setText("live-simtime-label", length.label);
+    setText("live-simtime-cell", length.value);
+    const note = byId("live-simtime-note");
+    if (note) {
+      note.textContent = length.note;
+      note.hidden = !length.note;
+    }
+    /* While it runs, the time since it began; once it has stopped, its
+     * phases' own times added, as the Wall time card gives them: counted
+     * from the run's start, a study analysed again hours later read the
+     * hours between. */
+    const wall = state.times?.wall_s ?? status.elapsed_wall_time_s;
+    setText("live-elapsed-cell", wall != null ? fmtDuration(wall) : "—");
     setText("live-eta-cell", computeETA(status));
     // Where the checkpoint is, from the study, and when the record was last
     // written, to the minute: the absolute path and the full date and time
@@ -1382,7 +1387,7 @@
     const card = byId("overview-methods-card");
     const host = byId("overview-methods-text");
     if (!card || !host) return;
-    const time = (payload.summary || []).find((row) => row.label === "Simulation time");
+    const time = (payload.summary || []).find((row) => row.label === "Production");
     const key = JSON.stringify([payload.output_dir || "", payload.phase_rows || [],
       (payload.analyses || []).length, time ? time.value : ""]);
     if (key === methodsKey) return;
@@ -1926,14 +1931,52 @@
       : date.toLocaleTimeString([], {hour12: !uses24Hours()});
   }
 
-  /* A simulated time to the femtosecond it can resolve and no further:
-   * "0.012000 ns" carried three zeros that said nothing, and a microsecond
-   * run read "1250.000000 ns". */
-  function formatNanoseconds(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return String(value ?? "—");
-    const text = number.toFixed(6).replace(/\.?0+$/, "");
-    return Math.abs(number) >= 1000 ? Number(text).toLocaleString() : text;
+  /* A simulated length in the unit it reads in: picoseconds under one
+   * nanosecond, nanoseconds from there, as simulated_time.say_length. */
+  function sayLength(ns) {
+    const value = Number(ns);
+    if (ns == null || !Number.isFinite(value)) return "—";
+    if (Math.abs(value) < 1) {
+      return `${String(Number((value * 1000).toFixed(1)))} ps`;
+    }
+    return `${String(Number(value.toFixed(4)))} ns`;
+  }
+
+  /* How long the study has sampled: its production, which the analyses
+   * average, with its equilibration beside it. The live record's own time
+   * has every stage in it ("0.11 ns" for 100 ps of production after 10 of
+   * equilibration); a study recorded before the plan was kept says that
+   * total, and that it includes equilibration. */
+  function productionSaid(times, status) {
+    const running = ["running", "starting", "paused"].includes(String(status.status || "").toLowerCase());
+    const planned = times.production_planned_ns;
+    const done = times.production_ns;
+    if (done == null && !times.equilibrating) {
+      const total = times.simulated_ns ?? status.simulation_time_completed_ns;
+      return {label: "Simulated", value: sayLength(total),
+        note: total != null ? "equilibration included" : ""};
+    }
+    if (times.equilibrating) {
+      const stage = String(times.stage || "").toUpperCase();
+      const where = ["NVT", "NPT"].includes(stage) ? `equilibrating (${stage})` : "equilibrating";
+      const eq = times.equilibration_ns != null && times.equilibration_planned_ns
+        ? `, ${sayLength(times.equilibration_ns)} of ${sayLength(times.equilibration_planned_ns)}` : "";
+      return {label: "Production",
+        value: planned != null ? `0 of ${sayLength(planned)}` : sayLength(0),
+        note: where + eq};
+    }
+    const value = running && planned != null && done < planned
+      ? `${sayLength(done)} of ${sayLength(planned)}` : sayLength(done);
+    const eqTotal = times.equilibration_planned_ns;
+    let note = "";
+    if ((times.pieces || 1) > 1) {
+      note = `in ${times.pieces} pieces`;
+    } else if (eqTotal) {
+      const parts = [["nvt_ns", "NVT"], ["npt_ns", "NPT"]]
+        .filter(([key]) => times[key]).map(([key, name]) => `${sayLength(times[key])} ${name}`);
+      note = `after ${sayLength(eqTotal)} of equilibration` + (parts.length > 1 ? ` (${parts.join(", ")})` : "");
+    }
+    return {label: "Production", value, note};
   }
 
   function formatNumber(value, digits) {

@@ -704,8 +704,13 @@ def make_handler(
             if path == "/api/status":
                 status = read_status(root)
                 metrics = read_metrics(root)
+                from fastmdxplora.gui.simulated_time import simulated_times
+
                 payload = {
                     "status": status,
+                    # Production first, equilibration beside it: the live
+                    # record's own time has every stage in it.
+                    "times": simulated_times(root, status),
                     "health": analyze_health(status, metrics, root=root),
                     # Which stages this run can actually reach. An
                     # analysis-only run has no minimization to wait for, and a
@@ -2670,7 +2675,8 @@ def _summary_records(
     sim_time = sim_manifest.get("duration_ns_actual")
     if extended:
         # The pieces' production, not the first piece's record of its own.
-        sim_time = f"{extended[0]:g}"
+        sim_time = extended[0]
+    from fastmdxplora.gui.simulated_time import say_length
     live_status = read_status(root)
     temperature = _first_present(
         live_status.get("target_temperature_K"),
@@ -2683,8 +2689,10 @@ def _summary_records(
         {"label": "Frames", "value": _display_value(frames)},
         {"label": "Atoms", "value": _display_value(atoms)},
         {
-            "label": "Simulation time",
-            "value": f"{sim_time} ns" if sim_time is not None else "—",
+            # The production, which the analyses average; the live record's
+            # simulated time has equilibration in it.
+            "label": "Production",
+            "value": say_length(float(sim_time)) if sim_time is not None else "—",
         },
         {
             "label": "Temperature",

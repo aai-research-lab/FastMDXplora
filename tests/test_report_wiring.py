@@ -423,6 +423,7 @@ class TestDashboard:
         assert "dashboard_assets" not in text
         assert 'data-page="files"' in text
         assert "Simulation time" not in text
+        assert '<span class="metric-label">Production</span>' not in text
         assert "Temperature" not in text
         assert "Production MD completed" not in text
         assert "../analysis/rmsd/rmsd.png" in text

@@ -7,6 +7,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### How long a study ran is said by its production
+
+**The Overview, its cards, the standalone dashboard and the Agent say a
+study's production**, which the analyses average, with its equilibration
+beside it ("100 ps, after 10 ps of equilibration (5 ps NVT, 5 ps NPT)"); a
+running study says how far production has run of what is planned, and,
+before it, that it is equilibrating and how far. Lengths under a nanosecond
+are said in picoseconds. The health card said "Simulation time 0.11 ns",
+equilibration included, above a card saying "0.1 ns". The run keeps each
+stage's planned steps in its live record (`nvt_steps_planned`,
+`npt_steps_planned`, `production_steps_planned`); a study recorded before
+says its own total, as such. A study carried on in pieces says their
+production together, "in 3 pieces"; a run that stopped says how far it got,
+and one that recorded nothing says its plan as planned. The Viewer's live
+frame gives its time in production, or in equilibration, and says which.
+
+**Fixed:** the Overview's Wall time card counted from the first phase's
+start to the last phase's finish, so a run of 18 minutes analysed again
+that evening read 2h 57m; it adds the phases' own times, a study's pieces
+included, and the health card's Wall time says the same once the run has
+stopped.
+
 ### A phone keeps its navigation on the Viewer, and the Analysis table fits
 
 **Fixed:** on a phone, opening the Viewer took away the bar of pages across

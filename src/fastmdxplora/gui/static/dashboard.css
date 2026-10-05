@@ -3396,6 +3396,10 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .overview-strip > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .overview-strip dt { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .overview-strip dd { margin: 0; font-size: var(--text-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What a value is said after: the production's equilibration, on a line of
+   its own and allowed to wrap. */
+.overview-strip .strip-note { display: block; margin-top: 2px; font-size: var(--text-2xs); color: var(--text-muted); white-space: normal; }
+.overview-strip .strip-note[hidden] { display: none; }
 /* One column, every panel the width of the charts. A structure card
    beside the charts made a second right-hand panel inside the centre,
    next to the real one -- two columns of side panel, and the charts

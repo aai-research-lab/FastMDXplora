@@ -64,7 +64,7 @@ def test_the_gui_summary_gives_the_whole_production():
 
     payload = _results_payload(_extended())
     said = {row["label"]: row["value"] for row in payload["summary"]}
-    assert said["Simulation time"] == "0.3 ns in 3 pieces"
+    assert said["Production"] == "300 ps in 3 pieces"
     assert payload["simulation"]["pieces"] == 3
 
 
@@ -77,8 +77,8 @@ def test_the_dashboard_card_gives_the_whole_production():
     cards = _summary_cards(project_root=root, manifest={"phases": [
         {"name": "simulation", "status": "ok"}]}, analysis_manifest={},
         sim_manifest={"parameters": {"duration_ns": 0.1}})
-    [card] = [c for c in cards if c.label == "Simulation time"]
-    assert (card.value, card.detail) == ("0.3 ns", "production in 3 pieces")
+    [card] = [c for c in cards if c.label == "Production"]
+    assert (card.value, card.detail) == ("300 ps", "in 3 pieces")
 
 
 def test_its_card_gives_the_whole_production():
@@ -88,3 +88,28 @@ def test_its_card_gives_the_whole_production():
     card = card_of(_extended())
     assert (card["production_ns"], card["pieces"]) == (0.3, 3)
     assert "pieces" not in card_of(_study())
+
+
+def test_its_times_are_the_pieces_production():
+    """The Overview's strip, the Agent and the Viewer read these: a study of
+    three pieces said 100 ps, its first piece's, beside a card saying 300."""
+    from fastmdxplora.gui.simulated_time import equilibration_said, simulated_times
+
+    times = simulated_times(_extended(), {"status": "completed", "stage": "report"})
+    assert abs(times["production_ns"] - 0.3) < 1e-9 and times["pieces"] == 3
+    assert equilibration_said(times) == "in 3 pieces"
+
+
+def test_its_wall_time_has_every_piece_in_it():
+    """Each piece is a run with its own Manifest; the study's own has the
+    first piece alone."""
+    from fastmdxplora.gui.simulated_time import phases_wall_seconds, simulated_times
+
+    root = _extended()
+    for folder, minutes in ((root, 10), (root / "segment-001", 7), (root / "segment-002", 5)):
+        (folder / "manifest.json").write_text(json.dumps({"phases": [
+            {"name": "simulation", "status": "ok", "started_at": "2026-10-05T10:00:00Z",
+             "finished_at": f"2026-10-05T10:{minutes:02d}:00Z"}]}), encoding="utf-8")
+    assert phases_wall_seconds(root) == 22 * 60
+    assert simulated_times(root, {"status": "completed"})["wall_s"] == 22 * 60
+    assert simulated_times(root, {"status": "running"})["wall_s"] is None
