@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent opens beside any page, and its suggestions send
+
+**⌘J (Ctrl+J), or the button beside Agent in the sidebar, opens the Agent
+beside whatever page is open**, in the side panel's place, the page left as
+it was; the same keys close it. It is the Agent page's own conversation,
+moved there and back, so a thread begun on the page goes on beside another
+page and the reverse, and **Open as a page** takes it to its page. Asking
+about the RMSD on the Analysis page took the Analysis page away. **A
+suggestion is sent as it is pressed**; it was written into the box and left
+there, so a question asked by a press read as not asked.
+
 ### The sidebar begins with New study and the Agent, and folds to a strip
 
 **New study and the Agent come first, at the top, and stay there** as the

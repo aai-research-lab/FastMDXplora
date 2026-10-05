@@ -5144,6 +5144,69 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 
 /* ===========================================================================
+   The Agent beside any page (agent-beside.js), in the side panel's place:
+   the page keeps its width where the window has room, and is covered by it
+   where it has not. The conversation is the Agent page's, moved here.
+   =========================================================================== */
+:root { --agent-width: 440px; }
+.agent-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.agent-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 45;
+    width: min(var(--agent-width), 100vw);
+    display: flex; flex-direction: column;
+    background: var(--background-primary);
+    border-left: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-modal);
+}
+.agent-drawer[hidden] { display: none; }
+.agent-drawer-head {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    min-height: var(--top-bar-height); padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.agent-drawer-title { font-weight: 600; font-size: var(--text-md); color: var(--text-primary); }
+.agent-drawer-keys {
+    font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted);
+    padding: 1px 5px; border: 1px solid var(--border-subtle); border-radius: 4px;
+}
+.agent-drawer-spacer { flex: 1; }
+.agent-drawer-head .ghost-btn { padding: 4px 9px; font-size: var(--text-xs); }
+.agent-drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 0 0 16px; }
+.agent-drawer .agent-thread { padding-right: 12px; }
+.agent-drawer .agent-start { margin: 16px 0 8px; padding-right: 12px; }
+.agent-drawer .agent-start-title { font-size: var(--text-lg); }
+.agent-drawer .agent-msg-user { max-width: 88%; }
+.agent-drawer .agent-composer { padding-right: 12px; background: var(--background-primary); }
+.agent-drawer .agent-conv-list { margin-right: 12px; }
+body.agent-beside { --panel-width: 0px; }
+body.agent-beside .side-panel,
+body.agent-beside .col-handle[data-handle="panel"],
+body.agent-beside .side-expand { visibility: hidden; overflow: hidden; }
+@media (min-width: 1100px) {
+    .agent-drawer { box-shadow: none; }
+    body.agent-beside .app-shell { padding-right: var(--agent-width); }
+}
+
+/* Beside Agent in the sidebar, the button that opens it beside the page. */
+.nav-start-row { display: flex; align-items: center; gap: 2px; }
+.nav-start-row > .nav-link { flex: 1; min-width: 0; }
+.nav-beside {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0; border: none; border-radius: 6px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.nav-beside .nav-icon { width: 16px; height: 16px; background: none; opacity: 1; border-radius: 0; }
+.nav-beside:hover, .nav-beside:focus-visible { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+body.agent-beside .nav-beside { color: var(--accent-text); }
+@media (min-width: 801px) {
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .nav-beside { display: none; }
+}
+@media (max-width: 800px) {
+    .nav-beside { display: none; }
+    .agent-drawer { width: 100vw; }
+}
+
+/* ===========================================================================
    Printed. The shell is the viewport, each column its own scroll container
    and the body unscrolled, so a page printed came out as one sheet: the
    sidebar, the first screen of the page and the Log, the rest cut off.
@@ -5189,7 +5252,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .app-shell { display: block; height: auto; min-height: 0; background: none; }
     .main { height: auto; overflow: visible; }
     .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
-    .agent-dialog, .page-header-actions, .report-notices, .report-write-ask,
+    .agent-dialog, .agent-drawer, .page-header-actions, .report-notices, .report-write-ask,
     .report-figure-made, .figure-provenance {
         display: none !important;
     }

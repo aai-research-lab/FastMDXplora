@@ -677,7 +677,7 @@
      * container, and when it was not, nothing moved. After a frame, so
      * the reply just appended has a height. */
     var thread = el("agent-thread");
-    var column = thread.closest(".main") || document.scrollingElement;
+    var column = thread.closest(".main, .agent-drawer-body") || document.scrollingElement;
     function toEnd() {
       /* Only while the conversation is the page shown. The later passes
        * outlived a move to another page: a cited figure opened from an
@@ -1607,14 +1607,25 @@
 
     Array.prototype.forEach.call(document.querySelectorAll(".agent-starter"), function (b) {
       b.addEventListener("click", function () {
+        // Not over a reply still being written.
+        if (writing) return;
         area.value = b.getAttribute("data-prompt") || b.textContent;
         /* A question about the study open, which its records answer where
          * no AI model is set: asked as it was offered, it says which. */
         fromStarter = b.getAttribute("data-records")
           ? { key: b.getAttribute("data-records"), prompt: area.value } : null;
         autosize(area);
-        area.focus();
-        area.setSelectionRange(area.value.length, area.value.length);
+        /* Sent as it is pressed. Written into the box to be changed
+         * first, a question asked by a press read as not asked, and the
+         * box sat waiting with the question in it. In autonomous mode a
+         * study the Agent writes is started without being shown, so there
+         * a suggestion waits in the box to be read and sent. */
+        if (el("agent-mode").value === "autonomous") {
+          area.focus();
+          area.setSelectionRange(area.value.length, area.value.length);
+        } else {
+          draft();
+        }
       });
     });
     var chooseEngine = el("agent-start-settings");

@@ -35,6 +35,7 @@ ICONS: dict[str, str] = {
     "chevron": '<path d="M8 10l4 4 4-4"/>',
     "new": '<path d="M12 5v14M5 12h14"/>',
     "recent": '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    "beside": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/>',
     "pause": '<path d="M9 6v12M15 6v12"/>',
     "play": '<path d="M8 5.5v13l10.5-6.5z"/>',
     "refresh": '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',

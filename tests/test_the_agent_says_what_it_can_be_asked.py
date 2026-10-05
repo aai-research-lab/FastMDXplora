@@ -5,7 +5,8 @@ run.", with no word of what the Agent can do, whether a model was set, or
 that it could be asked about the study already open. It now opens on
 questions about the open study and studies to start, a note of what the
 chosen mode does, and, where no model is set, the way to set one. A
-suggestion fills the composer rather than sending, so it can be changed.
+suggestion is sent as it is pressed: written into the box to be changed
+first, a question asked by a press read as not asked.
 """
 
 from __future__ import annotations
@@ -71,16 +72,16 @@ def test_with_no_study_only_studies_to_start(browser, tmp_path, no_model) -> Non
         session.server.shutdown()
 
 
-def test_a_suggestion_is_written_in_not_sent(browser, tmp_path, no_model) -> None:
+def test_a_suggestion_is_sent_as_it_is_pressed(browser, tmp_path, no_model) -> None:
     session, page = _agent(browser, _write_study(tmp_path / "study"))
     try:
         starter = page.locator(".agent-starter", has_text="Ubiquitin in water")
+        prompt = starter.get_attribute("data-prompt")
         starter.click()
-        text = page.locator("#agent-request").input_value()
-        assert text == starter.get_attribute("data-prompt")
-        assert "1UBQ" in text
-        assert page.evaluate("() => document.activeElement.id") == "agent-request"
-        assert page.locator("#agent-thread > *").count() == 0
+        page.wait_for_selector("#agent-thread .agent-msg-user")
+        said = page.locator("#agent-thread .agent-msg-user").first.inner_text()
+        assert prompt in said and "1UBQ" in said
+        assert page.locator("#agent-request").input_value() == ""
     finally:
         page.close()
         session.server.shutdown()

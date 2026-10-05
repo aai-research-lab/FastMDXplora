@@ -273,10 +273,13 @@
             <!--icon:new:nav-icon-->
             <span>New study</span>
           </a>
-          <a href="#agent" class="nav-link nav-start" data-view-link="agent" title="Agent">
-            <!--icon:agent:nav-icon-->
-            <span>Agent</span>
-          </a>
+          <div class="nav-start-row">
+            <a href="#agent" class="nav-link nav-start" data-view-link="agent" title="Agent">
+              <!--icon:agent:nav-icon-->
+              <span>Agent</span>
+            </a>
+            <button type="button" class="nav-beside" id="agent-beside-open" title="The Agent beside this page (Ctrl J)" aria-label="The Agent beside this page"><!--icon:beside:nav-icon--></button>
+          </div>
         </nav>
       </div>
 
@@ -1548,6 +1551,9 @@
             </div>
           </div>
 
+          <!-- Everything under the heading, as one, so it can be moved
+               beside another page and back (agent-beside.js). -->
+          <div class="agent-body" id="agent-body">
           <!-- Earlier conversations, newest first, to reopen or delete. -->
           <div class="agent-conv-list" id="agent-conv-list" hidden></div>
 
@@ -1555,9 +1561,8 @@
                came back: the refusals as it corrected itself, the config,
                the actions on it. Newest at the bottom, where the composer
                is. -->
-          <!-- What the Agent can be asked, until something has been. A
-               suggestion fills the composer rather than sending, so it can
-               be changed first. -->
+          <!-- What the Agent can be asked, until something has been; each
+               sent as it is pressed. -->
           <div class="agent-start" id="agent-start" hidden>
             <h2 class="agent-start-title">What would you like to study?</h2>
             <p class="agent-start-note" id="agent-start-note">Each config it writes is checked by the software, and nothing runs until you say so.</p>
@@ -1607,6 +1612,8 @@
               <span class="agent-footer-dot" aria-hidden="true">&middot;</span>
               <button id="agent-new" class="agent-footer-link" type="button" title="Start a fresh thread; this one is kept">New</button>
             </div>
+          </div>
+
           </div>
 
           <!-- One reply's worth of controls, cloned into each exchange. The
@@ -1689,6 +1696,20 @@
       </div>
     </aside>
     <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
+    <!-- The Agent beside whatever page is open, in the side panel's place:
+         ⌘J or Ctrl+J, or the button beside Agent in the sidebar. The
+         conversation is the Agent page's own, moved here and back. -->
+    <aside class="agent-drawer" id="agent-drawer" aria-label="Agent" hidden>
+      <div class="agent-drawer-head">
+        <span class="agent-drawer-title">Agent</span>
+        <kbd class="agent-drawer-keys" id="agent-drawer-keys">Ctrl J</kbd>
+        <span class="agent-drawer-spacer"></span>
+        <button type="button" class="ghost-btn" id="agent-drawer-page" title="Open the Agent as a page">Open as a page</button>
+        <button type="button" class="ghost-btn agent-drawer-close" id="agent-drawer-close" aria-label="Close the Agent" title="Close">&#10005;</button>
+      </div>
+      <div class="agent-drawer-body" id="agent-drawer-body"></div>
+    </aside>
+
   </div>
 
   <!-- Live region for screen readers -->
@@ -1697,6 +1718,7 @@
   <script src="/static/molstar/molstar.js?v=5.12.0"></script>
   <script src="/static/viewer-engine.js"></script>
   <script src="/static/agent-panel.js"></script>
+  <script src="/static/agent-beside.js"></script>
     <script src="/static/preferences.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>

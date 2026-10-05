@@ -175,7 +175,8 @@ FastMDXplora/
 │       │   │                      #   preferences.js (the dialogs, preferences kept),
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, analysis-page.js, runs-compared.js, stopping.js,
-│       │   │                      #   fixes.js, agent-panel.js, charts.js,
+│       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
+│       │   │                      #   beside any page), charts.js,
 │       │   │                      #   molecule-viewer.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),
 │       │   │                      #   viewer-sequence.js, viewer-selections.js,

@@ -154,8 +154,8 @@ def test_the_start_page_question_is_answered_in_the_page(tmp_path, monkeypatch):
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.wait_for_selector("#agent-start-study:not([hidden])")
             note = page.locator("#agent-start-records").is_visible()
+            # Sent as it is pressed.
             page.locator(".agent-starter[data-records='found']").click()
-            page.click("#agent-propose")
             answer = page.wait_for_selector(".agent-answer").inner_text()
             browser.close()
     finally:

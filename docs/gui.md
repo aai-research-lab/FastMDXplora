@@ -101,7 +101,11 @@ RUNNING  ● 1UBQ           50.0%  [View]
 ```
 
 **New study** opens the Config builder and **Agent** the Agent; both stay
-at the top as the rest scrolls. **Recent** lists the workspace's newest
+at the top as the rest scrolls. The button beside Agent, or ⌘J (Ctrl+J),
+opens the Agent beside whatever page is open, in the side panel's place,
+and closes it again; it is the Agent page's own conversation, so one begun
+on either goes on in the other, and **Open as a page** takes it there. A
+suggestion under the Agent is sent as it is pressed. **Recent** lists the workspace's newest
 studies, the open one marked, each opened with a click; folded, it stays
 folded. The study card says the study's name (its system), large, and one
 line: where it stands (running, completed, stopped, failed), the platform,
