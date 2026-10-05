@@ -472,8 +472,12 @@ def density_profile(traj: md.Trajectory, sides: Leaflets,
     vectors = box_vectors(traj)
     area = _area_xy(vectors)
     heights = vectors[:, 2, 2]
+    # Slabs centred on -half ... +half bins, so the edges reach past both
+    # faces: with one slab fewer above the centre than below, the atoms
+    # beyond the last edge were clipped into the last slab, which then read
+    # up to 1.47 times bulk water at the top of a 6.00 nm box.
     half = float(np.ceil(heights.max() / 2.0 / bin_nm - 1e-9))
-    edges = (np.arange(-half, half + 1) - 0.5) * bin_nm
+    edges = (np.arange(-half, half + 2) - 0.5) * bin_nm
     centres = 0.5 * (edges[:-1] + edges[1:])
     bins = len(centres)
     part = _component_of_each_atom(traj)

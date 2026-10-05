@@ -459,3 +459,31 @@ class TestTheMassDensityProfile:
         peak = abs(heads[heads.index > 0].idxmax())
         assert peak == pytest.approx(result.data[0] / 2, abs=0.35)
         assert table["protein_g_cm3"].max() == 0.0
+
+
+@pytest.mark.parametrize("height", [6.0, 6.14, 6.03])
+def test_uniform_water_reads_the_same_density_to_both_faces(height: float) -> None:
+    """The slabs reach past both faces of the box. With one slab fewer above
+    the centre than below, the water beyond the last edge was clipped into
+    the last slab, which read 1.47 times bulk at the top of a 6.00 nm box."""
+    import types
+
+    from fastmdxplora.analysis.bilayer import density_profile
+
+    rng = np.random.default_rng(0)
+    top = md.Topology()
+    chain = top.add_chain()
+    n, frames, side = 3000, 20, 4.0
+    for _ in range(n):
+        residue = top.add_residue("HOH", chain)
+        top.add_atom("O", md.element.oxygen, residue)
+    xyz = rng.uniform([0, 0, -height / 2], [side, side, height / 2], size=(frames, n, 3))
+    traj = md.Trajectory(xyz.astype(np.float32), top,
+                         unitcell_lengths=np.tile([side, side, height], (frames, 1)),
+                         unitcell_angles=np.full((frames, 3), 90.0))
+    profile = density_profile(traj, types.SimpleNamespace(centre=np.zeros(frames)))
+    water = profile["water_g_cm3"].to_numpy()
+    full = profile["width_nm"].to_numpy() > 0.04
+    bulk = np.median(water)
+    assert np.all(np.abs(water[full] / bulk - 1.0) < 0.2)
+    assert profile["z_nm"].iloc[0] == pytest.approx(-profile["z_nm"].iloc[-1])
