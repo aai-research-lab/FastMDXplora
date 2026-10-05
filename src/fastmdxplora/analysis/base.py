@@ -867,12 +867,15 @@ def narrowest_width(traj) -> "np.ndarray | None":
     """The cell's narrowest width in each frame, in nm, or None without a cell.
 
     The perpendicular distance between the closest pair of opposite faces,
-    V / |b x c| and its two companions, which is what bounds the minimum-image
-    convention: a separation under half of it is found exactly. The smallest
-    box vector length is not that bound for a triclinic cell. In the rhombic
-    dodecahedron setup builds by default all three vectors are a box length
-    long while the narrowest width is 0.707 of it, so a test against the
-    lengths passed separations the convention had already folded.
+    V / |b x c| and its two companions. A separation under half of it is
+    found exactly by the minimum-image convention in a cell of any shape,
+    however the images are searched, so a check against it never passes a
+    separation the convention folded. It is conservative, not exact: in a
+    reduced cell whose images are searched, as MDTraj searches them, a
+    separation is found exactly up to half the shortest lattice vector (in
+    the rhombic dodecahedron setup builds by default, half a box length
+    against 0.354 of one), so a check against the narrowest width flags some
+    separations that were in fact found exactly.
     """
     vectors = getattr(traj, "unitcell_vectors", None)
     if vectors is None:
