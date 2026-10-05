@@ -301,6 +301,9 @@ PLOT_CATEGORY_BY_TITLE = {
 KEY_PLOT_TITLES = {"RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds", "PCA", "SASA"}
 
 DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("templates") / "dashboard.html"
+#: The AAi Research Lab's mark (its site's logo, scaled to 128 px), for the
+#: tab's icon and the sidebar's avatar; the standalone dashboard inlines it.
+LAB_LOGO = "lab-logo.png"
 
 
 @dataclass
@@ -434,6 +437,17 @@ def make_handler(
             '<span class="mono settings-hint">runs, files, sign out</span></a>'
             '<div class="settings-divider"></div>')
     html = html.replace("<!--__FASTMDX_ACCOUNT_ITEM__-->", account_item)
+    # The logo as the tab's icon and as the avatar at the foot of the
+    # sidebar: the lab's, or a hosted service's own (--product-logo). The
+    # avatar is the person's initials where the proxy names somebody, so
+    # the logo goes in per request, below.
+    logo = (hosting.product_logo if hosting is not None and hosting.product_logo
+            else f"/static/{LAB_LOGO}")
+    html = html.replace("<!--__FASTMDX_LAB_ICON__-->",
+                        f'<link rel="icon" href="{_escape(logo)}">')
+    logo_mark = f'<img class="sidebar-account-logo" src="{_escape(logo)}" alt="">'
+    logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
+    html = html.replace("<!--__FASTMDX_LAB_MARK__-->", logo_spot)
 
     # And, when the service runs studies on its own compute, a way to send
     # one there: the service's page opens with the config, for the person to
@@ -463,7 +477,8 @@ def make_handler(
 
         name = _Hosting.account_name(account_header) if hosting is not None else ""
         said = {"name": name or product or "FastMDXplora", "initials": initials(name)}
-        return person_spots.sub(lambda m: _escape(said[person_marks[m.group(0)]]), html)
+        page = person_spots.sub(lambda m: _escape(said[person_marks[m.group(0)]]), html)
+        return page.replace(logo_spot, "" if said["initials"] else logo_mark)
 
     class LiveDashboardHandler(BaseHTTPRequestHandler):
         server_version = "FastMDXLive/1.0"

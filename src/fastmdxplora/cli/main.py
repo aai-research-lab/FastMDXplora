@@ -1199,6 +1199,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="With --hosted: the line under the service's "
                              "name. Default: none with --product-name, "
                              "FastMDXplora's own without.")
+    hosted.add_argument("--product-logo", default="", metavar="FILE",
+                        help="With --hosted: the service's logo (PNG, JPEG, GIF, "
+                             "WebP, ICO or SVG, at most 256 KB), shown as the "
+                             "tab's icon and the avatar in place of the lab's.")
     hosted.add_argument("--runs-url", default="", metavar="PATH",
                         help="With --hosted: the service's page that runs a "
                              "study on its compute, as a path on the same "
@@ -2711,7 +2715,8 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
             hosting = Hosting.from_environment(
                 args.workspace or Path.cwd(), args.allowed_host,
                 getattr(args, "account_url", ""), getattr(args, "runs_url", ""),
-                getattr(args, "product_name", ""), getattr(args, "product_tagline", ""))
+                getattr(args, "product_name", ""), getattr(args, "product_tagline", ""),
+                getattr(args, "product_logo", ""))
         except HostingError as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)
             return 2
@@ -2722,9 +2727,11 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         args.no_browser = True
     elif (getattr(args, "workspace", None) or getattr(args, "allowed_host", None)
           or getattr(args, "account_url", None) or getattr(args, "runs_url", None)
-          or getattr(args, "product_name", None) or getattr(args, "product_tagline", None)):
+          or getattr(args, "product_name", None) or getattr(args, "product_tagline", None)
+          or getattr(args, "product_logo", None)):
         print("fastmdx gui: --workspace, --allowed-host, --account-url, --product-name, "
-              "--product-tagline and --runs-url apply only with --hosted.", file=sys.stderr)
+              "--product-tagline, --product-logo and --runs-url apply only with --hosted.",
+              file=sys.stderr)
         return 2
     config = DashboardConfig(
         ligand_resname=getattr(args, "ligand_resname", None),

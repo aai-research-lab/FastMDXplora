@@ -3054,6 +3054,20 @@ body { overflow: hidden; }
 .sidebar-foot { margin-top: auto; position: sticky; bottom: 0; z-index: 2;
     background: var(--background-secondary); }
 .sidebar-foot .sidebar-account { width: 100%; margin-top: 0; }
+/* The two pinned ends reach the sidebar's edges. Each sat inside its
+   padding, 14px in from either side, and the foot 12px above the bottom,
+   so what scrolled under them showed through beside them and below the
+   foot. On a phone the sidebar is a bar across the top and pins nothing. */
+@media (min-width: 801px) {
+    .sidebar { padding-bottom: 0; }
+    .sidebar-brand, .sidebar-foot { margin-left: -14px; margin-right: -14px; z-index: 5; }
+    .sidebar-brand { padding-left: 20px; padding-right: 20px; }
+    .sidebar-foot { padding: 0 14px 12px; }
+}
+/* The lab's mark as the avatar, square as it is drawn, on a person's own
+   machine; hosted, the avatar is the person's initials. */
+.sidebar-account-logo { width: 28px; height: 28px; border-radius: 6px; display: block; }
+.sidebar-account-avatar:has(.sidebar-account-logo) { background: none; border-radius: 6px; }
 .main { display: flex; flex-direction: column; }
 .page-shell { flex: 1; }
 /* A reading width for the centre. With the side panel collapsed the

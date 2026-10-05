@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The lab's mark, and a sidebar that covers what scrolls under it
+
+**The AAi Research Lab's logo is the tab's icon and the avatar at the foot
+of the sidebar**, in the GUI on a person's own machine and in the standalone
+dashboard (inlined, so the page still stands alone). A hosted GUI gives
+its own with `--product-logo` (PNG, JPEG, GIF, WebP, ICO or SVG, at most
+256 KB); the avatar is the person's initials wherever the proxy names
+somebody. The tab had no icon, and the avatar was an empty grey circle.
+
+**Fixed:** the sidebar's name at the top and avatar at the foot sat inside
+its padding, so what scrolled under them showed through beside them and
+below the foot. They reach the sidebar's edges now.
+
 ### `fastmdx config` writes the template
 
 **`fastmdx init-config` is now `fastmdx config`**: with no file named it

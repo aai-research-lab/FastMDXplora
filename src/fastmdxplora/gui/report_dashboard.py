@@ -1293,6 +1293,20 @@ def _theme_tokens() -> str:
         return ":root { color-scheme: dark; }"
 
 
+def _lab_logo_uri() -> str:
+    """The lab's mark the GUI shows (``static/lab-logo.png``), inlined so the
+    page stands alone; empty if the file is missing."""
+    import base64
+
+    from fastmdxplora.gui.server import LAB_LOGO
+
+    try:
+        data = (Path(__file__).resolve().parent / "static" / LAB_LOGO).read_bytes()
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return ""
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
 def _gui_stylesheet() -> str:
     """The GUI's own stylesheet, for inlining after the tokens.
 
@@ -1626,11 +1640,13 @@ def _render_dashboard(
         _render_files_page(file_groups or [], output_folder),
         _render_cite_page(__citation__, __doi__, __version__, __bibtex__, __copyright__),
     ))
+    logo = _lab_logo_uri()
+    icon = f'<link rel="icon" type="image/png" href="{logo}">\n' if logo else ""
     sidebar = _render_sidebar(
         title=title, system_label=system_label, word=word, dot=dot, platform=platform,
         output_folder=output_folder, stages=stage_steps, cards=cards,
         generated=generated, generated_epoch=f"{generated_at.timestamp():.0f}",
-        expansion=__expansion__)
+        expansion=__expansion__, logo=logo)
     settings = _render_settings(__version__)
 
     return "".join((
@@ -1638,7 +1654,7 @@ def _render_dashboard(
         "<meta charset=\"utf-8\">\n",
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
         "<meta name=\"color-scheme\" content=\"dark light\">\n",
-        f"<title>{escape(title)} - FastMDXplora</title>\n",
+        f"<title>{escape(title)} - FastMDXplora</title>\n", icon,
         f"<script>{_THEME_FIRST_JS}</script>\n",
         "<style>\n", _theme_tokens(), "\n", _gui_stylesheet(), "\n",
         _STATIC_ONLY_CSS, "\n</style>\n</head>\n",
@@ -1668,6 +1684,7 @@ def _render_sidebar(
     generated: str,
     generated_epoch: str,
     expansion: str,
+    logo: str = "",
 ) -> str:
     by_label = {card.label: card for card in cards}
     facts = [("Written", f'<span data-when="{escape(generated_epoch)}">{escape(generated)}</span>')]
@@ -1686,6 +1703,7 @@ def _render_sidebar(
         f'data-state="{escape(step.state)}"{" hidden" if step.hidden else ""}>'
         f'<span class="stage-marker"></span><span class="stage-label">{escape(step.label)}</span></li>'
         for step in stages)
+    mark = f'<img class="sidebar-account-logo" src="{logo}" alt="">' if logo else ""
     metrics = "\n".join(
         f'<span class="metric-label">{escape(label)}</span>'
         f'<span class="metric-value mono">{value}</span>' for label, value in facts)
@@ -1726,7 +1744,7 @@ def _render_sidebar(
 </div>
 <div class="sidebar-foot">
   <button type="button" class="sidebar-account" id="settings-open" aria-haspopup="dialog" aria-expanded="false" title="Settings">
-    <span class="sidebar-account-avatar" aria-hidden="true"></span>
+    <span class="sidebar-account-avatar" aria-hidden="true">{mark}</span>
     <span class="sidebar-account-text"><span class="sidebar-account-name">FastMDXplora</span></span>
     <span class="sidebar-account-caret" aria-hidden="true">&#8963;</span>
   </button>
