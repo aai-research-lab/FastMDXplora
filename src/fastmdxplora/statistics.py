@@ -1298,7 +1298,7 @@ def _histogram(values: np.ndarray) -> "dict[str, list[Any]] | None":
     return {"edges": _plain_list(edges), "counts": [int(c) for c in counts]}
 
 
-def _blocking(values: np.ndarray, resolved: bool) -> dict[str, Any]:
+def _blocking(values: np.ndarray) -> dict[str, Any]:
     """Flyvbjerg-Petersen block averaging of ``values``.
 
     For block lengths ``b = 1, 2, 4, ...`` up to ``n / 4``, the ``n_b =
@@ -1307,13 +1307,12 @@ def _blocking(values: np.ndarray, resolved: bool) -> dict[str, Any]:
     (``ddof = 1``), itself uncertain by ``SE / sqrt(2 (n_b - 1))``. Blocks
     longer than the correlation make the error stop growing.
 
-    The plateau is the first block length whose standard error every longer
-    block's agrees with, within their combined uncertainty, with at least
-    two longer blocks to agree. It is given only where the package's rule
-    says the series resolves its own correlation time
-    (:func:`correlation_is_resolved`): shorter than that, the curve has not
-    reached the length at which it would level off, and a flat stretch of
-    it is not a plateau.
+    No plateau is named. The first block length every longer one agrees
+    with, within their uncertainties, was tried and read the error low: on
+    AR(1) series its median was 0.81 to 0.86 of the true error and its worst
+    half of it, since the long blocks' uncertainties are wide enough to agree
+    with blocks still too short. The curve is given, to be read beside the
+    error the package records, which is calibrated (statistics.summarise).
     """
     lengths, counts, errors, uncertainties = [], [], [], []
     means = values.astype(float)
@@ -1328,33 +1327,11 @@ def _blocking(values: np.ndarray, resolved: bool) -> dict[str, Any]:
         pairs = nb // 2
         means = 0.5 * (means[0:2 * pairs:2] + means[1:2 * pairs:2])
         length *= 2
-
-    plateau = None
-    reason = None
-    if not resolved:
-        reason = (
-            "The series is not long against its own correlation time (fewer "
-            f"than {RESOLVED_SAMPLES:g} independent samples by its own "
-            "estimate), so the blocks have not reached the length at which "
-            "the error stops growing.")
-    else:
-        e = np.asarray(errors)
-        s = np.asarray(uncertainties)
-        for k in range(len(e) - 2):
-            if np.all(np.abs(e[k + 1:] - e[k]) <= np.sqrt(s[k + 1:] ** 2 + s[k] ** 2)):
-                plateau = k
-                break
-        if plateau is None:
-            reason = ("No block length's error is matched by every longer "
-                      "block's within their uncertainty.")
     return {
         "block_length": [int(b) for b in lengths],
         "n_blocks": [int(c) for c in counts],
         "standard_error": _plain_list(errors),
         "standard_error_uncertainty": _plain_list(uncertainties),
-        "plateau_block_length": None if plateau is None else int(lengths[plateau]),
-        "plateau_standard_error": None if plateau is None else _plain(errors[plateau]),
-        "plateau_reason": reason,
     }
 
 
@@ -1431,7 +1408,7 @@ def convergence_of(values: Any, times: Any = None) -> dict[str, Any]:
         with ``g`` of 2 or more, or one sample or fewer).
     ``blocking``
         Flyvbjerg-Petersen block averaging of the equilibrated part; see
-        :func:`_blocking` for the keys and the plateau rule.
+        :func:`_blocking` for the keys.
     ``autocorrelation``
         The normalised autocorrelation of the equilibrated part (FFT based,
         about its mean, divided by ``n var`` as the inefficiency uses it) at
@@ -1527,27 +1504,43 @@ def convergence_of(values: Any, times: Any = None) -> dict[str, Any]:
     prefix = _suffix_inefficiencies(
         reversed_kept, [size - e for e in ends if e >= 3],
         first_lags=min(16 * _FIRST_LAGS, max(_FIRST_LAGS, 2 * reach)))
+    # The whole run up to each point, for summarise's whole-run rule, in the
+    # same one pass over the series reversed.
+    whole_prefix = (_suffix_inefficiencies(
+        series[::-1].copy(), [n - (discard + e) for e in ends if e >= 3],
+        first_lags=min(16 * _FIRST_LAGS, max(_FIRST_LAGS, 2 * (4 * pairs_whole + 4))))
+        if discard else {})
     total = np.concatenate(([0.0], np.cumsum(kept)))
-    centre = float(kept.mean())
-    squares = np.concatenate(([0.0], np.cumsum((kept - centre) ** 2)))
     running_means, running_errors = [], []
     for end in ends:
         mean = total[end] / end
         running_means.append(mean)
+        if end == size:
+            # The whole equilibrated part: the record itself.
+            running_errors.append(_plain(equilibrated.standard_error))
+            continue
         if end < 3:
             running_errors.append(None)
             continue
-        piece_mean = mean - centre
-        variance = max(0.0, (squares[end] - end * piece_mean ** 2) / (end - 1))
+        # What summarise would have recorded had the run ended here, from
+        # the same start: its own rule (_summary), the whole run's error
+        # substituted where the start gained too little, withheld where it
+        # would withhold. An error by a rule of the view's own gave a band
+        # where the record gave none (73 of 200 correlated runs).
         g_prefix, pairs = prefix[size - end]
-        if g_prefix >= end:
-            g_mean = float(end)
-        else:
-            g_mean, _dof = _corrected_for_the_mean(g_prefix, pairs, end)
-        error = math.sqrt(variance) * math.sqrt(g_mean / end)
-        effective = end / g_mean
-        resolved = g_prefix < 2.0 or effective >= RESOLVED_SAMPLES
-        running_errors.append(error if (effective > 1 and resolved) else None)
+        piece = kept[:end]
+        for_kept = (_corrected_for_the_mean(g_prefix, pairs, end)
+                    if g_prefix < end and np.ptp(piece) > 0 else _for_the_mean(piece))
+        def whole(end: int = end) -> tuple[float, float]:
+            run = series[:discard + end]
+            g_run, pairs_run = whole_prefix.get(n - (discard + end), (float(run.size), 0))
+            if g_run < run.size and np.ptp(run) > 0:
+                return _corrected_for_the_mean(g_run, pairs_run, run.size)
+            return _for_the_mean(run)
+
+        ended, _why = _summary(series[:discard + end], discard, g_prefix, for_kept,
+                               whole, MINIMUM_EFFECTIVE_SAMPLES)
+        running_errors.append(_plain(ended.standard_error))
     record["running_mean"] = {
         "frames": [int(e) for e in ends],
         "time": (None if clock is None
@@ -1556,10 +1549,8 @@ def convergence_of(values: Any, times: Any = None) -> dict[str, Any]:
         "standard_error": [_plain(e) for e in running_errors],
     }
 
-    # (c) Block averaging, its plateau only where the package's rule says
-    # the correlation is resolved.
-    resolved = bool(g_raw < 2.0 or equilibrated.effective_samples >= RESOLVED_SAMPLES)
-    record["blocking"] = _blocking(kept, resolved)
+    # (c) Block averaging.
+    record["blocking"] = _blocking(kept)
 
     # (d) The autocorrelation, and the correlation time the package uses.
     record["autocorrelation"] = _autocorrelation(

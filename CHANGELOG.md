@@ -39,8 +39,11 @@ error by block length (Flyvbjerg and Petersen), the autocorrelation with
 its integrated correlation time, and the distribution of the frames
 averaged beside those left out, computed by the estimator the recorded
 error comes from (`statistics.convergence_of`, `GET /api/convergence`) and
-said in a paragraph. Where the recorded mean began where a study's
-replicas equilibrate together, it says so rather than show a second start.
+said in a paragraph. The mean and error it states are the record's: an
+error the analysis withheld (a chain reaching its own periodic image, a
+molecule broken across the box) is withheld here too, with no band drawn.
+Where the recorded mean began where a study's replicas equilibrate
+together, it says so rather than show a second start.
 
 **Fixed:** a series about a large value (Total SASA of 91 nm² varying by
 0.3) was plotted from zero and read as a flat line; zero is on the axis
@@ -104,7 +107,7 @@ out is recorded as `findings["frames"]`, as for the others.
 
 ### How a series converged, in one call
 
-**`statistics.convergence_of(values, times=None)` returns what a convergence view plots, from the estimators the recorded mean uses, as plain lists ready for JSON.** It gives the equilibration start `summarise` chooses with its mean and error; the running mean of the equilibrated part at about 50 points, each with the error the package would record for the frames up to it, withheld where it would be; Flyvbjerg-Petersen block averaging with each error's own uncertainty, SE / sqrt(2(n_b - 1)), and a plateau named only where the series resolves its own correlation time; the autocorrelation to its first zero or a quarter of the series, with tau_int = (g - 1) / 2 in frames and time; and Freedman-Diaconis histograms of the kept and discarded values, at most 60 bins. Fewer than ten finite values give a reason and no numbers. The correlations of every candidate start and prefix come from one Fourier pass, so a million values take about half a second of processor time. `summarise` was split into pieces this shares, and gives the same records as before.
+**`statistics.convergence_of(values, times=None)` returns what a convergence view plots, from the estimators the recorded mean uses, as plain lists ready for JSON.** It gives the equilibration start `summarise` chooses with its mean and error; the running mean of the equilibrated part at about 50 points, each with the error the package would record had the run ended there (`summarise`'s own rule, from the same start), withheld where it would be, the last point the record itself; Flyvbjerg-Petersen block averaging with each error's own uncertainty, SE / sqrt(2(n_b - 1)), with no plateau named (the first agreement of the blocks read the error 14 to 19% low); the autocorrelation to its first zero or a quarter of the series, with tau_int = (g - 1) / 2 in frames and time; and Freedman-Diaconis histograms of the kept and discarded values, at most 60 bins. Fewer than ten finite values give a reason and no numbers. The correlations of every candidate start and prefix come from one Fourier pass, so a million values take about half a second of processor time, a second and a half where a transient is discarded. `summarise` was split into pieces this shares, and gives the same records as before.
 
 ### A constant-volume run's volume is said as fixed
 

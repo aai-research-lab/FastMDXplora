@@ -15,10 +15,8 @@ import numpy as np
 import pytest
 
 from fastmdxplora.statistics import (
-    _for_the_mean,
     convergence_of,
     mean_record,
-    statistical_inefficiency,
     summarise,
 )
 
@@ -63,28 +61,47 @@ class TestItAgreesWithWhatThePackageRecords:
         assert mean_record(series)["discard"] == said["discard_frames"]
         _json_ready(record)
 
-    def test_each_running_error_is_the_estimator_on_its_prefix(self) -> None:
-        series = _ar1(6000, 0.9, seed=5)
-        record = convergence_of(series)
-        kept = series[record["equilibration"]["discard_frames"]:]
-        running = record["running_mean"]
-        assert 45 <= len(running["frames"]) <= 50
-        for end, mean, error in zip(running["frames"], running["mean"],
-                                    running["standard_error"]):
-            prefix = kept[:end]
-            assert mean == pytest.approx(prefix.mean(), rel=1e-9)
-            g, _dof = _for_the_mean(prefix)
-            effective = end / g
-            resolved = statistical_inefficiency(prefix) < 2.0 or effective >= 25.0
-            if effective > 1 and resolved:
-                assert error == pytest.approx(
-                    np.std(prefix, ddof=1) * np.sqrt(g / end), rel=1e-6)
-            else:
-                assert error is None
-        # Early prefixes are too short to resolve g = 19 and are withheld;
-        # the whole is not.
-        assert running["standard_error"][0] is None
-        assert running["standard_error"][-1] is not None
+    def test_each_running_error_is_what_the_record_would_say_ended_there(self) -> None:
+        """Each point's error is summarise's on the run ended at it, from the
+        same start; the last is the record itself. A rule of the view's own
+        gave a band in 73 of 200 correlated runs whose record gave none."""
+        checked = 0
+        for seed in range(6):
+            series = _ar1(3000, 0.97, seed=seed) + 8.0 * np.exp(-np.arange(3000) / 200.0)
+            record = convergence_of(series)
+            start = record["equilibration"]["discard_frames"]
+            kept = series[start:]
+            running = record["running_mean"]
+            assert 45 <= len(running["frames"]) <= 50
+            for end, mean, error in zip(running["frames"], running["mean"],
+                                        running["standard_error"]):
+                assert mean == pytest.approx(kept[:end].mean(), rel=1e-9)
+                ended, _why = summarise(series[:start + end], start_at_least=start)
+                if ended is None or ended.discard != start:
+                    continue
+                checked += 1
+                expected = ended.standard_error if np.isfinite(ended.standard_error) else None
+                if expected is None:
+                    assert error is None
+                else:
+                    assert error == pytest.approx(expected, rel=1e-6)
+            whole, _why = summarise(series)
+            last = running["standard_error"][-1]
+            assert (last is None) == (not np.isfinite(whole.standard_error))
+            if last is not None:
+                assert last == pytest.approx(whole.standard_error, rel=1e-12)
+        assert checked > 150
+
+    def test_a_record_that_withholds_has_no_last_error(self) -> None:
+        withheld = 0
+        for seed in range(30):
+            series = _ar1(4000, 0.98, seed=seed) + 10.0 * np.exp(-np.arange(4000) / 200.0)
+            whole, _why = summarise(series)
+            if np.isfinite(whole.standard_error):
+                continue
+            withheld += 1
+            assert convergence_of(series)["running_mean"]["standard_error"][-1] is None
+        assert withheld > 3
 
 
 class TestAKnownCorrelation:
@@ -108,7 +125,7 @@ class TestAKnownCorrelation:
         assert auto["zero_crossing_frames"] == len(auto["correlation"]) - 1
         assert auto["lag_time"][1] == 2.0
 
-    def test_the_blocking_plateau_is_the_error_of_the_mean(self) -> None:
+    def test_the_blocks_reach_the_error_of_the_mean(self) -> None:
         phi = 0.9
         series = _ar1(100000, phi, seed=7)
         record = convergence_of(series)
@@ -123,9 +140,11 @@ class TestAKnownCorrelation:
         assert blocking["standard_error_uncertainty"][0] == pytest.approx(
             blocking["standard_error"][0] / np.sqrt(2 * (kept - 1)), rel=1e-6)
         truth = sd * np.sqrt(((1 + phi) / (1 - phi)) / kept)
-        assert blocking["plateau_block_length"] >= 16
-        assert blocking["plateau_standard_error"] == pytest.approx(truth, rel=0.25)
-        assert blocking["plateau_reason"] is None
+        # Long blocks reach the true error, within their own uncertainty.
+        k = blocking["block_length"].index(256)
+        assert abs(blocking["standard_error"][k] - truth) < 3 * blocking["standard_error_uncertainty"][k]
+        # No plateau is named: the first agreement read the error low.
+        assert not any(key.startswith("plateau") for key in blocking)
 
     def test_independent_values_have_no_correlation_to_speak_of(self) -> None:
         series = np.random.default_rng(8).normal(size=20000)
@@ -133,8 +152,7 @@ class TestAKnownCorrelation:
         assert record["equilibration"]["statistical_inefficiency"] < 1.2
         assert record["autocorrelation"]["tau_int_frames"] < 0.1
         assert record["autocorrelation"]["zero_crossing_frames"] <= 3
-        assert record["blocking"]["plateau_block_length"] is not None
-        assert record["blocking"]["plateau_standard_error"] == pytest.approx(
+        assert record["blocking"]["standard_error"][0] == pytest.approx(
             record["equilibration"]["standard_error"], rel=0.2)
 
 
@@ -181,7 +199,6 @@ class TestWhatCannotBeRead:
         assert said["standard_error"] is None
         assert said["refusal"] == "analysis.sampling.correlation_unresolved"
         assert record["autocorrelation"]["correlation"] == [1.0]
-        assert record["blocking"]["plateau_block_length"] is None
         assert all(e is None for e in record["running_mean"]["standard_error"])
         assert record["histogram"]["equilibrated"]["counts"] == [
             500 - said["discard_frames"]]

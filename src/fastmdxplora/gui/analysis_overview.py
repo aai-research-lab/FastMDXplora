@@ -243,9 +243,12 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
     The series is the column the figure plots (:func:`series_column`), on
     the axis the analysis loaded it with; the result is
     :func:`fastmdxplora.statistics.convergence_of`'s, with ``label``,
-    ``unit``, ``x_label`` and ``recorded``: the mean the analysis recorded,
-    which is the one the report gives, and ``same_start`` saying whether it
-    began where this view's does.
+    ``unit``, ``x_label`` and ``recorded``: the mean and error the analysis
+    recorded, which are the ones the report gives, the reason it withheld
+    the error where it did (an analysis can withhold for a reason the series
+    cannot show, a chain reaching its own periodic image), and
+    ``same_start`` saying whether it began where this view's does. The page
+    states the record's mean and error, never the view's own.
     """
     from fastmdxplora.statistics import convergence_of
 
@@ -259,9 +262,15 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
     record = _json(folder / "options.json")
     findings = record.get("findings") if isinstance(record.get("findings"), dict) else {}
     found = findings.get("mean") if isinstance(findings.get("mean"), dict) else None
-    if found is None:
+    if found is None or _finite(found.get("mean")) is None:
+        # A record holding only a reason (the moments of a molecule broken
+        # across the box) has no series of its own: the last column of its
+        # file was I3, which nothing recorded a mean of.
         return {"ok": False, "reason": f"{analysis} recorded no mean over its frames, "
                                        "so it has no series to converge"}
+    if _columns(data) > 2:
+        return {"ok": False, "reason": f"{analysis}'s data file holds several quantities "
+                                       "a frame, and its mean is of none of them alone"}
     values = series_column(data)
     if not values:
         return {"ok": False, "reason": f"{analysis}'s data file holds no numbers"}
@@ -281,12 +290,22 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
         "recorded": {
             "mean": _finite(found.get("mean")),
             "standard_error": _finite(found.get("standard_error")),
+            "not_a_measurement": str(found["not_a_measurement"])
+            if found.get("not_a_measurement") else None,
+            "error_withheld_because": found.get("error_withheld_because") or None,
             "discard_frames": recorded_start,
             "same_start": recorded_start is None or recorded_start == start,
             "start_shared_with_replicas": bool(found.get("start_shared_with_replicas")),
         },
     })
     return result
+
+
+def _columns(path: Path) -> int:
+    """The most numbers on one data line of ``path``."""
+    from fastmdxplora.gui.series import _rows
+
+    return max((len(numbers) for _, numbers in _rows(path)), default=0)
 
 
 def _json(path: Path) -> dict[str, Any]:

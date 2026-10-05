@@ -155,16 +155,18 @@ from fastmdxplora.statistics import convergence_of
 view = convergence_of(rmsd_series, times=times_ns)
 view["equilibration"]   # the start summarise chose, its mean and error
 view["running_mean"]    # cumulative mean of what was kept, with an error per point
-view["blocking"]        # Flyvbjerg-Petersen block averaging, and its plateau
+view["blocking"]        # Flyvbjerg-Petersen block averaging, each error with its own uncertainty
 view["autocorrelation"] # C(t) to its first zero, and tau_int = (g - 1) / 2
 view["histogram"]       # what was kept, and what was discarded, apart
 ```
 
 The running mean's error at each point is the one the package would record
-for the frames up to it, withheld where it would be withheld. The blocking
-curve's plateau is named only where the series resolves its own correlation
-time; shorter than that, its blocks never reach the length at which the error
-stops growing. Fewer than ten finite values give a reason and no numbers.
+had the run ended there, from the same start, withheld where it would be
+withheld; the last point is the record itself. No plateau of the blocking
+curve is named: the first block length every longer one agrees with read the
+error low (0.81 to 0.86 of it, at the median, on correlated series), so the
+curve is read against the error the package records. Fewer than ten finite
+values give a reason and no numbers.
 
 Averages taken on a biased run are corrected back to equilibrium where the bias
 allows, and labelled as biased where it does not —

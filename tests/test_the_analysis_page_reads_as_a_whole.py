@@ -177,6 +177,38 @@ class TestTheConvergence:
         assert recorded["same_start"] is False
         assert recorded["start_shared_with_replicas"] is True
 
+    def test_an_error_the_analysis_withheld_stays_withheld(self, study) -> None:
+        """end_to_end withholds the error of a chain reaching its own
+        periodic image, which the series alone cannot show; the view gave
+        it back as 3.421 +/- 0.0015 nm."""
+        options = study / "analysis/rmsd/options.json"
+        record = json.loads(options.read_text())
+        mean = record["findings"]["mean"]
+        mean["not_a_measurement"] = "The chain comes within 1.0 nm of its own periodic image."
+        mean["error_withheld_because"] = "chain reaches its periodic image"
+        mean["standard_error"] = float("nan")
+        options.write_text(json.dumps(record), encoding="utf-8")
+        recorded = convergence_payload(study, "rmsd")["recorded"]
+        assert recorded["standard_error"] is None
+        assert recorded["error_withheld_because"] == "chain reaches its periodic image"
+        assert recorded["not_a_measurement"].startswith("The chain comes within")
+
+    def test_a_record_with_no_mean_has_no_series(self, study) -> None:
+        """The moments of a molecule broken across the box keep only a
+        reason under `mean`; the last column of their file is I3."""
+        folder = study / "analysis" / "moments_of_inertia"
+        folder.mkdir(parents=True)
+        (folder / "moments_of_inertia.dat").write_text(
+            "".join(f"{60 + i % 3} {65 + i % 5} {70 + i % 7}\n" for i in range(200)))
+        (folder / "options.json").write_text(json.dumps({"findings": {"mean": {
+            "n_frames": 200, "not_a_measurement": "The molecule is broken across the box."}}}))
+        assert convergence_payload(study, "moments_of_inertia")["ok"] is False
+        record = json.loads((folder / "options.json").read_text())
+        record["findings"]["mean"]["mean"] = 65.0
+        (folder / "options.json").write_text(json.dumps(record))
+        said = convergence_payload(study, "moments_of_inertia")
+        assert said["ok"] is False and "several quantities" in said["reason"]
+
     def test_what_has_no_series_says_so(self, study) -> None:
         assert convergence_payload(study, "rmsf")["ok"] is False
         assert "no mean" in convergence_payload(study, "rmsf")["reason"]

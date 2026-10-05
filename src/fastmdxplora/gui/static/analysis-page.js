@@ -414,8 +414,19 @@
     });
   }
 
+  function firstSentence(text) {
+    var reason = String(text || "");
+    var cut = reason.search(/[.:]\s/);
+    return cut > 0 ? reason.slice(0, cut) : reason.replace(/\.$/, "");
+  }
+
+  /* What the plots show, in words. The mean and its error are the record's,
+   * the ones the report and the table give: an analysis can withhold its
+   * error for a reason the series cannot show (a chain reaching its own
+   * periodic image), and the view does not give one the record does not. */
   function said(data) {
     var eq = data.equilibration || {};
+    var recorded = data.recorded || {};
     var unit = data.unit ? " " + data.unit : "";
     var timed = data.time_unit === "ns";
     var parts = [];
@@ -433,29 +444,21 @@
         (auto.tau_int_time != null && timed ? " (integrated correlation time " + format(auto.tau_int_time) + " ns)" : "") +
         ", so about " + count(Math.round(eq.effective_samples || 0)) + " independent samples.");
     }
-    if (eq.standard_error != null) {
-      parts.push("Mean " + format(eq.mean) + " ± " + format(eq.standard_error) + unit + ".");
-    } else if (eq.withheld) {
-      // The reason's first sentence; the table's chip holds the rest.
-      var reason = String(eq.withheld);
-      var cut = reason.search(/[.:]\s/);
-      parts.push("Mean " + format(eq.mean) + unit + ", no error bar: " +
-        (cut > 0 ? reason.slice(0, cut) : reason.replace(/\.$/, "")) + ".");
+    if (recorded.mean != null && recorded.standard_error != null) {
+      parts.push("Recorded mean " + format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit + ".");
+    } else if (recorded.mean != null) {
+      var why = recorded.not_a_measurement || eq.withheld;
+      parts.push("Recorded mean " + format(recorded.mean) + unit + ", no error bar" +
+        (why ? ": " + firstSentence(why) : "") + ".");
     }
-    var block = data.blocking || {};
-    if (block.plateau_standard_error != null) {
-      parts.push("The block averages level off at blocks of " + count(block.plateau_block_length) +
-        " frames, at " + format(block.plateau_standard_error) + unit + ".");
-    } else if (block.plateau_reason) {
-      parts.push("The block averages have not levelled off.");
-    }
-    var recorded = data.recorded || {};
     if (recorded.start_shared_with_replicas) {
       parts.push("The recorded mean starts where the study's replicas equilibrate together, at frame " +
         count(recorded.discard_frames) + ", not where this run alone does.");
     } else if (recorded.same_start === false) {
       parts.push("The recorded mean starts at frame " + count(recorded.discard_frames) + ".");
     }
+    parts.push("Block averages longer than the correlation time reach the error of the mean; " +
+      "the recorded error is the line to read them against.");
     return parts.join(" ");
   }
 
@@ -478,7 +481,10 @@
     chart(panel.querySelector('[data-plot="running"] .convergence-canvas'), {
       x: rx || [], xLabel: timed ? "Time (ns)" : "Frames after equilibration",
       yLabel: (data.label || "") + unit,
-      lines: [{ y: running.mean || [], colour: c.line, band: running.standard_error || [] }],
+      // No band where the record gives no error: the view does not give
+      // one the record withholds.
+      lines: [{ y: running.mean || [], colour: c.line,
+                band: recorded.standard_error != null ? (running.standard_error || []) : [] }],
       level: recorded.mean != null ? { y: recorded.mean, colour: c.mean, label: "recorded mean" } : null,
       describe: "Running mean of " + (data.label || "the series"),
     });
@@ -487,8 +493,8 @@
       x: block.block_length || [], logX: true, xLabel: "Block length (frames)",
       yLabel: "Standard error" + unit, points: true,
       lines: [{ y: block.standard_error || [], colour: c.line, bars: block.standard_error_uncertainty || [] }],
-      level: block.plateau_standard_error != null
-        ? { y: block.plateau_standard_error, colour: c.mean, label: "plateau" } : null,
+      level: recorded.standard_error != null
+        ? { y: recorded.standard_error, colour: c.mean, label: "recorded error" } : null,
       zero: true,
       describe: "Standard error of the mean by block length",
     });
