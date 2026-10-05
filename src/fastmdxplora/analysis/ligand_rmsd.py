@@ -194,21 +194,42 @@ MAX_AUTOMORPHISMS = 10_000
 def _bond_graph(topology, atoms) -> list[set[int]] | None:
     """Neighbours of each of ``atoms``, by position in ``atoms``, from the
     topology's bonds among them; None where none of them is bonded."""
+    graph = _bonds_with_orders(topology, atoms)
+    return None if graph is None else graph[0]
+
+
+def _bonds_with_orders(topology, atoms):
+    """``(neighbours, orders, hydrogens)`` for ``atoms``, by position:
+    each one's bonded positions, each bond's order where the topology
+    records one (0 where it does not), and how many hydrogens each is bonded
+    to anywhere in the topology, so a heavy-atom graph still tells a CH from
+    a CH2. None where none of ``atoms`` is bonded to another."""
     position = {int(a): k for k, a in enumerate(atoms)}
     neighbours: list[set[int]] = [set() for _ in atoms]
+    orders: dict[tuple[int, int], int] = {}
+    hydrogens = [0] * len(atoms)
     any_bond = False
-    for first, second in topology.bonds:
+    for bond in topology.bonds:
+        first, second = bond[0], bond[1]
         i, j = position.get(first.index), position.get(second.index)
+        for here, other in ((i, second), (j, first)):
+            if here is not None and getattr(other.element, "symbol", "") == "H" \
+                    and other.index not in position:
+                hydrogens[here] += 1
         if i is None or j is None or i == j:
             continue
         neighbours[i].add(j)
         neighbours[j].add(i)
+        order = int(getattr(bond, "order", None) or 0)
+        orders[(i, j)] = orders[(j, i)] = order
         any_bond = True
-    return neighbours if any_bond else None
+    return (neighbours, orders, hydrogens) if any_bond else None
 
 
 def automorphisms(topology, atoms, limit: int = MAX_AUTOMORPHISMS) -> tuple[np.ndarray, bool] | None:
-    """The permutations of ``atoms`` that preserve elements and bonds.
+    """The permutations of ``atoms`` that preserve elements and bonds, the
+    hydrogens each atom carries, and each bond's order where the topology
+    records one.
 
     Returns ``(permutations, capped)``: an array of shape (n_found, n_atoms)
     whose rows map position i to position ``row[i]``, the identity first,
@@ -216,8 +237,9 @@ def automorphisms(topology, atoms, limit: int = MAX_AUTOMORPHISMS) -> tuple[np.n
     candidates tried). None where the atoms carry
     no bonds, since every relabelling of an unbonded set would then count.
 
-    Atoms are first given classes by colour refinement (element, then the
-    multiset of the neighbours' classes, until nothing splits), which an
+    Atoms are first given classes by colour refinement (element and
+    hydrogens carried, then the multiset of the neighbours' classes with the
+    bonds' orders, until nothing splits), which an
     automorphism must preserve; a backtracking search then extends a partial
     map one atom at a time, in breadth-first order so each new atom has a
     mapped neighbour, keeping only maps under which every pair of mapped
@@ -225,18 +247,25 @@ def automorphisms(topology, atoms, limit: int = MAX_AUTOMORPHISMS) -> tuple[np.n
     """
     atoms = [int(a) for a in atoms]
     n = len(atoms)
-    neighbours = _bond_graph(topology, atoms)
-    if neighbours is None:
+    graph = _bonds_with_orders(topology, atoms)
+    if graph is None:
         return None
+    neighbours, orders, hydrogens = graph
     elements = []
-    for a in atoms:
+    for k, a in enumerate(atoms):
         element = topology.atom(a).element
-        elements.append(getattr(element, "symbol", None) or topology.atom(a).name)
+        symbol = getattr(element, "symbol", None) or topology.atom(a).name
+        # The element with the hydrogens it carries: a ring's sp2 carbons
+        # (one H) are not its sp3 ones (two), which on the heavy atoms alone
+        # read as twelve symmetries of cyclohexene where it has two.
+        elements.append((symbol, hydrogens[k]))
 
     names = {name: k for k, name in enumerate(sorted(set(elements)))}
     colour = [names[e] for e in elements]
     while True:
-        signature = [(colour[i], tuple(sorted(colour[j] for j in neighbours[i])))
+        # Each neighbour with the order of the bond to it, where recorded.
+        signature = [(colour[i], tuple(sorted((colour[j], orders[(i, j)])
+                                              for j in neighbours[i])))
                      for i in range(n)]
         relabel = {sig: k for k, sig in enumerate(sorted(set(signature)))}
         refined = [relabel[sig] for sig in signature]
@@ -293,6 +322,10 @@ def automorphisms(topology, atoms, limit: int = MAX_AUTOMORPHISMS) -> tuple[np.n
                 capped = True
                 return False
             if {k for k in neighbours[candidate] if used[k]} != wanted:
+                continue
+            # And each bond keeps its order, where the topology records one.
+            if any(orders[(i, j)] != orders[(candidate, image[j])]
+                   for j in neighbours[i] if image[j] >= 0):
                 continue
             image[i] = candidate
             used[candidate] = True

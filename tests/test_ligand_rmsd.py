@@ -335,7 +335,7 @@ class TestTheLigandsAtomsAndSymmetry:
 
         assert result[1] == pytest.approx(2 * 0.139 * np.sin(np.deg2rad(15.0)), abs=1e-3)
 
-    def test_a_ligand_without_bonds_is_measured_as_labelled_and_said_to_be(self, tmp_path):
+    def test_a_ligand_without_bonds_is_taken_as_labelled_and_said_to_be(self, tmp_path):
         analysis = LigandRMSD(ligand_resname="BNZ", align_selection="name CA",
                               output_dir=tmp_path)
         result = analysis.compute(_benzene_beside_a_receptor(60.0, bonds=False))
@@ -370,3 +370,41 @@ class TestTheAutomorphisms:
         assert capped and len(everything) == 10_000
         assert np.array_equal(everything[0], np.arange(top.n_atoms))
         assert not heavy_capped and len(heavy) == 24
+
+
+class TestASymmetryKeepsHydrogensAndBondOrders:
+    """On the heavy atoms alone, cyclohexene read twelve symmetries where it
+    has two, so a ring turned 60 degrees in place, its double bond moved,
+    read an RMSD of zero. The hydrogens each atom carries, and each bond's
+    order where the topology records one, now count."""
+
+    @staticmethod
+    def _ring(double: bool, hydrogens: bool):
+        import mdtraj as md
+
+        top = md.Topology()
+        residue = top.add_residue("LIG", top.add_chain())
+        carbons = [top.add_atom(f"C{i}", md.element.carbon, residue) for i in range(6)]
+        for i in range(6):
+            order = 2 if (double and i == 0) else (1 if double else None)
+            top.add_bond(carbons[i], carbons[(i + 1) % 6], order=order)
+        if hydrogens:
+            for i, carbon in enumerate(carbons):
+                for k in range(1 if i in (0, 1) else 2):
+                    hydrogen = top.add_atom(f"H{i}{k}", md.element.hydrogen, residue)
+                    top.add_bond(carbon, hydrogen)
+        return top, [a.index for a in carbons]
+
+    @pytest.mark.parametrize("double,hydrogens", [(True, False), (False, True), (True, True)])
+    def test_cyclohexene_has_two(self, double, hydrogens) -> None:
+        from fastmdxplora.analysis.ligand_rmsd import automorphisms
+
+        top, heavy = self._ring(double, hydrogens)
+        permutations, capped = automorphisms(top, heavy)
+        assert (len(permutations), capped) == (2, False)
+
+    def test_a_ring_with_nothing_to_tell_its_atoms_apart_keeps_twelve(self) -> None:
+        from fastmdxplora.analysis.ligand_rmsd import automorphisms
+
+        top, heavy = self._ring(False, False)
+        assert len(automorphisms(top, heavy)[0]) == 12
