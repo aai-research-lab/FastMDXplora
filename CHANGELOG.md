@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The B-factor comparison of a structure numbered with insertion codes
+
+**The comparison with B-factors is plotted for one chain numbered with
+insertion codes**, each residue at its own place and ticked with its number
+and code. Its table has no chain column there, and the figure grouped by
+one, so a study of trypsin (3PTB, 184 beside 184A) recorded the analysis as
+an error, `'chain'`, with no figure.
+
 ### The times of several strided files, after the analysis
 
 **The GUI's axes give strided frames of several files the times they were

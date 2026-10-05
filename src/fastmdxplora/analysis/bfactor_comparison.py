@@ -336,17 +336,37 @@ class BFactorComparison(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         if hasattr(result, "columns"):
-            for name, rows in result.groupby("chain", sort=False):
-                line, = ax.plot(rows["residue"], rows["simulated_nm"], linewidth=1.2,
-                                label=f"chain {name}, simulated")
-                ax.plot(rows["residue"], rows["implied_nm"], linewidth=1.2, linestyle="--",
-                        color=line.get_color(), label=f"chain {name}, from B-factors")
-            ax.legend(loc="best", fontsize="small", ncol=2)
+            # A table names each residue's chain where there are several, and
+            # its insertion code where any has one; one chain with insertion
+            # codes (trypsin's 184 and 184A) has no chain column, and the
+            # figure raised on it.
+            several = "chain" in result
+            groups = result.groupby("chain", sort=False) if several else [("", result)]
+            for name, rows in groups:
+                said = f"chain {name}, " if several else ""
+                x = np.arange(len(rows)) if not several else rows["residue"]
+                line, = ax.plot(x, rows["simulated_nm"], linewidth=1.2,
+                                label=f"{said}simulated")
+                ax.plot(x, rows["implied_nm"], linewidth=1.2, linestyle="--",
+                        color=line.get_color(), label=f"{said}from B-factors")
+                if not several:
+                    self._label_by_residue(ax, rows)
+            ax.legend(loc="best", fontsize="small", ncol=2 if several else 1)
             return
         ax.plot(result[:, 0], result[:, 1], linewidth=1.2, label="simulated")
         ax.plot(result[:, 0], result[:, 2], linewidth=1.2,
                 linestyle="--", label="from B-factors")
         ax.legend(loc="best", fontsize="small")
+
+    @staticmethod
+    def _label_by_residue(ax: plt.Axes, rows: Any) -> None:
+        """Residues by position, ticked with their numbers and codes: 184 and
+        184A at one x drew one over the other."""
+        labels = [f"{int(n)}{code or ''}" for n, code in
+                  zip(rows["residue"], rows.get("insertion", [""] * len(rows)))]
+        step = max(1, len(labels) // 12)
+        ax.set_xticks(np.arange(0, len(labels), step))
+        ax.set_xticklabels(labels[::step])
 
     def default_xlabel(self) -> str | None:
         return "Residue"

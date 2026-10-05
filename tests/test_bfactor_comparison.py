@@ -301,3 +301,36 @@ class TestEachResidueIsItsOwn:
 
         assert round(float(b[0]), 2) == 70.91  # chain A's VAL 1, first by order
         assert "by order" in analysis.findings["chains_matched_by_order"]
+
+
+def test_one_chain_with_insertion_codes_is_plotted(tmp_path):
+    """Trypsin, one chain numbered with insertion codes (184 and 184A): its
+    table has no chain column, and the figure grouped by one and raised, so
+    a real 3PTB study recorded the analysis as an error."""
+    import gzip
+    from pathlib import Path
+
+    import mdtraj as md
+    import numpy as np
+
+    from fastmdxplora.analysis.bfactor_comparison import BFactorComparison
+
+    from fastmdxplora.analysis.loading import load_trajectory
+
+    deposited = tmp_path / "input.pdb"
+    text = gzip.decompress(
+        (Path(__file__).parent / "data" / "assemblies" / "3PTB.pdb.gz").read_bytes()).decode()
+    deposited.write_text(text)
+    # The protein's own lines, insertion codes and all, as a study's
+    # trajectory topology keeps them; loaded as a study is.
+    topology = tmp_path / "trajectory_topology.pdb"
+    topology.write_text("".join(line + "\n" for line in text.splitlines()
+                                if line.startswith("ATOM")) + "END\n")
+    protein = md.load_pdb(str(topology))
+    rng = np.random.default_rng(0)
+    frames = protein.xyz + rng.normal(scale=0.02, size=(40,) + protein.xyz.shape[1:])
+    md.Trajectory(frames.astype(np.float32), protein.topology).save_dcd(str(tmp_path / "p.dcd"))
+    traj = load_trajectory(str(tmp_path / "p.dcd"), top=str(topology))
+    result = BFactorComparison(structure=str(deposited), output_dir=str(tmp_path / "out")).run(traj)
+    assert result.status == "ok", result.message
+    assert (tmp_path / "out" / "bfactor_comparison" / "bfactor_comparison.png").is_file()
