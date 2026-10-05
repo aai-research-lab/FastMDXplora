@@ -43,7 +43,8 @@ _STATUS_SAID = {"ok": "done", "completed": "done", "complete": "done",
 
 def overview_of(root: str | Path) -> dict[str, Any]:
     """Every analysis of the study, in the page's order, with what it
-    determined: ``{"ok", "rows", "biased"}``.
+    determined: ``{"ok", "rows", "biased", "complete"}``, ``complete`` once
+    the analysis phase has recorded every analysis it ran.
 
     A row is ``analysis``, ``title``, ``theme``, ``anchor``, ``status``
     (done, failed, skipped), ``message`` (a failure's reason), ``kind``
@@ -77,18 +78,25 @@ def overview_of(root: str | Path) -> dict[str, Any]:
                  for item in ((biased or {}).get("quantities") or [])
                  if isinstance(item, dict)}
 
-    rows = [_row(root, name, results.get(name), corrected, biased is not None)
+    # The manifest's results are written once every analysis has run
+    # (analysis/orchestrator.py); until then a folder holds an analysis
+    # still computing or one finished, told apart by what it recorded.
+    complete = bool(results)
+    rows = [_row(root, name, results.get(name), corrected, biased is not None, complete)
             for name in names]
     order = {title: index for index, title in enumerate(SECTION_ORDER)}
     rows.sort(key=lambda row: (order.get(row["title"], len(order)), row["analysis"]))
-    return {"ok": True, "rows": rows, "biased": biased is not None}
+    return {"ok": True, "rows": rows, "biased": biased is not None, "complete": complete}
 
 
 def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
-         biased: bool) -> dict[str, Any]:
+         biased: bool, complete: bool = True) -> dict[str, Any]:
     title = ANALYSIS_SECTION_BY_FOLDER.get(name) or name.replace("_", " ").capitalize()
     entry = result if isinstance(result, dict) else {}
     status = str(entry.get("status") or "done").lower()
+    if not entry and not complete and not _has_its_figure(root, name):
+        # Its options are written before it computes and its figure after.
+        status = "running"
     row: dict[str, Any] = {
         "analysis": name,
         "title": title,
@@ -150,6 +158,11 @@ def _data_files(root: Path, name: str) -> list[dict[str, str]]:
         return []
     return [{"name": p.name, "href": f"/artifacts/analysis/{name}/{p.name}"}
             for p in files[:12]]
+
+
+def _has_its_figure(root: Path, name: str) -> bool:
+    folder = root / "analysis" / name
+    return any((folder / f"{name}{suffix}").is_file() for suffix in (".png", ".svg"))
 
 
 def _said(name: str, message: Any) -> str:

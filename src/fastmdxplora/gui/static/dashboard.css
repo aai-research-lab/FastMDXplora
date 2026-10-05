@@ -1399,6 +1399,10 @@ button {
     border-color: color-mix(in srgb, var(--accent-orange) 45%, transparent);
     background: color-mix(in srgb, var(--accent-orange) 8%, transparent);
 }
+.analysis-results-status[data-status="running"] {
+    color: var(--accent-cyan);
+    border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent);
+}
 .analysis-results-status[data-status="failed"] {
     color: var(--accent-red);
     border-color: color-mix(in srgb, var(--accent-red) 45%, transparent);

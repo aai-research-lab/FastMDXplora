@@ -220,13 +220,16 @@
   function rowsOf(row) {
     var quantities = Array.isArray(row.quantities) ? row.quantities : [];
     if (!quantities.length) {
-      var key = row.status === "failed" ? "failed" : row.status === "skipped" ? "skipped" : "result";
-      var said = key === "failed" ? "Failed" : key === "skipped" ? "Skipped" : "In its section";
-      var what = key === "result" ? "A profile, map or table" : (row.message || "");
+      var key = row.status === "failed" ? "failed" : row.status === "skipped" ? "skipped"
+        : row.status === "running" ? "running" : "result";
+      var said = { failed: "Failed", skipped: "Skipped", running: "Running", result: "In its section" }[key];
+      var what = key === "result" ? "A profile, map or table"
+        : key === "running" ? "Being analysed" : (row.message || "");
       // A failure's first sentence in the row; the chip opens to the rest.
       var cut = what.search(/[.:]\s/);
-      var head = key === "result" || cut < 0 ? what : what.slice(0, cut + 1);
-      var rest = key === "result" || cut < 0 ? "" : what.slice(cut + 1).trim();
+      var plain = key === "result" || key === "running";
+      var head = plain || cut < 0 ? what : what.slice(0, cut + 1);
+      var rest = plain || cut < 0 ? "" : what.slice(cut + 1).trim();
       return '<tr data-analysis="' + escapeHTML(row.analysis) + '" data-status="' + key + '">' +
         '<th scope="row" class="analysis-results-name">' + nameLink(row) + "</th>" +
         '<td colspan="3" class="analysis-results-other">' + escapeHTML(head) + "</td>" +
@@ -342,7 +345,10 @@
     var key = JSON.stringify([payload && payload.output_dir, analyses.map(function (a) {
       return [a.name, a.status, a.finished_at];
     }), payload && payload.figure_provenance ? Object.keys(payload.figure_provenance).length : 0]);
-    if (key === overviewKey && overview) { linkData(overview.rows); return; }
+    // Asked again on every update until the analysis phase has recorded
+    // every analysis: until then they arrive one by one, and nothing in
+    // the results says which have.
+    if (key === overviewKey && overview && overview.complete) { linkData(overview.rows); return; }
     overviewKey = key;
     convergence = {};
     fetch("/api/analysis-overview", { cache: "no-store" })

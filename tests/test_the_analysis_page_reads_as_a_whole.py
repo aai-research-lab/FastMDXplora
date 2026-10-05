@@ -152,6 +152,30 @@ class TestWhatTheTableSays:
         assert "biased" in rows["rg"]["mean"]["why"]
 
 
+class TestWhileAnalysesArrive:
+
+    def test_one_still_computing_is_said_to_be(self, tmp_path) -> None:
+        """Before the analysis phase records its results, a folder holds an
+        analysis finished or one still computing: its options are written
+        before it computes, its figure after."""
+        root = tmp_path / "running"
+        (root / "analysis").mkdir(parents=True)
+        (root / "analysis" / "analysis_manifest.json").write_text(json.dumps(
+            {"load_kwargs": {"saving_interval_ps": INTERVAL_PS}}))
+        _analysis(root, "rmsd", 0.3 + 0.002 * _ar1(2000, 0.5, 1))
+        (root / "analysis" / "rmsd" / "rmsd.png").write_bytes(b"\x89PNG")
+        _analysis(root, "sasa", None)
+        data = overview_of(root)
+        rows = {row["analysis"]: row for row in data["rows"]}
+        assert data["complete"] is False
+        assert rows["rmsd"]["status"] == "done"
+        assert rows["sasa"]["status"] == "running"
+
+    def test_once_recorded_every_analysis_is_what_the_manifest_says(self, study) -> None:
+        assert overview_of(study)["complete"] is True
+        assert {row["status"] for row in overview_of(study)["rows"]} == {"done", "failed"}
+
+
 class TestTheConvergence:
 
     def test_it_reads_the_series_as_the_record_was_made(self, study) -> None:
