@@ -1105,6 +1105,77 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             f"{ctx.workspace.shown(folder / 'exploration.log')}.")
 
 
+def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
+    """A study's analysis or report run again in its folder, by the phase
+    command with ``--rerun`` (`fastmdxplora.again` names it), once the
+    person agrees."""
+    from fastmdxplora import again
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.refusals import refusal_of
+    from fastmdxplora.runs_here import StartRefused, starting_in
+
+    folder = _study(ctx, args["study"])
+    try:
+        planned = again.plan(folder, args.get("phases") or [], args.get("analyses"))
+    except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+        found = refusal_of(exc)
+        raise ToolError(found.message.replace(str(folder), ctx.workspace.shown(folder)),
+                        code=found.code) from None
+    _none_running(ctx)
+    shown = ctx.workspace.shown(folder)
+    message = f"Run {' and '.join(planned.phases)} again on {shown}? " + planned.said()
+    bound = f"run_phases_again:{folder}:{','.join(planned.phases)}:" + ",".join(
+        planned.analyses or ())
+    agreed = _went_ahead(ctx, "rerun", message, bound)
+    if agreed is False:
+        return "Not run: the person did not go ahead."
+    try:
+        with starting_in(ctx.workspace.root):
+            if ctx.call is not None and ctx.call.cancelled:
+                return "Not run: the call was cancelled."
+            _none_running(ctx)
+            runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
+                                       exploration_root=ctx.workspace.root,
+                                       hosting=_Inside(ctx.workspace),
+                                       started_by="by an AI app")
+            runtime.active_root = folder
+            started = runtime.run_again(planned.phases, planned.analyses)
+    except StartRefused as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+    if not started.get("ok"):
+        raise ToolError(str(started.get("error") or "It could not be started."),
+                        code=str(started.get("code") or ToolError.default_code))
+    ended = _ended_within(runtime.process, RECORDED_WITHIN_S)
+    if ended is None:
+        return (f"Started on {shown} (process {started['pid']}): {planned.said()} It runs on "
+                "its own: closing the AI app does not stop it. read_study says what it "
+                f"found once it ends; its log is {ctx.workspace.shown(folder / 'exploration.log')}.")
+    if ended != 0:
+        try:
+            lines = (folder / "exploration.log").read_text(
+                encoding="utf-8", errors="replace").strip().splitlines()
+        except OSError:
+            lines = []
+        raise ToolError(f"Running it again on {shown} failed. The end of its log:\n"
+                        + ("\n".join(lines[-12:]) or "It wrote nothing to its log."))
+    return (f"Done on {shown}: {' and '.join(planned.phases)} run again. "
+            f"What it replaced is in {ctx.workspace.shown(folder / again.PREVIOUS)}. "
+            "read_study says what the analyses found now.")
+
+
+def _ended_within(process: Any, seconds: float) -> int | None:
+    """The exit code of a run that ends within ``seconds``, or None."""
+    import time
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        code = process.poll() if process is not None else 0
+        if code is not None:
+            return code
+        time.sleep(0.25)
+    return None
+
+
 #: How long a run started here is watched for a record of itself, which it
 #: writes once its program has loaded (a study of several runs, and a
 #: continuation, in the folder of the run going): a run that ends before
@@ -1241,6 +1312,25 @@ TOOLS: tuple[Tool, ...] = (
          ("config", "plan_id"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": True}, _start_study, acts=True),
+    Tool("run_phases_again", "Run a study's analysis or report again",
+         "Run a study's analysis, its report or both again in its folder, from the "
+         "settings it recorded, simulating nothing, once the person agrees: to add an "
+         "analysis, or to analyse its frames with this release. An analysis run again "
+         "writes the report again too where the study has one. What is replaced is kept "
+         "in the study's previous/ folder. A study of several runs is run again run by "
+         "run, and the comparison of its runs built again. Setup and simulation are not "
+         "run again in place: a new study with simulation.setup_from or "
+         "simulation.resume_from does that.",
+         {"study": _STUDY,
+          "phases": {"type": "array", "items": {"type": "string",
+                                                "enum": ["analysis", "report"]},
+                     "description": "analysis, report, or both."},
+          "analyses": {"type": "array", "items": {"type": "string"}, "description": (
+              "The analyses to run, by name, such as rmsd, rg or pl_interactions "
+              "(default: those the study ran last).")}},
+         ("study", "phases"),
+         {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False,
+          "openWorldHint": False}, _run_phases_again, acts=True),
     Tool("stop_study", "Stop a study",
          "Stop a study running on this machine. A run in production stops at its next "
          "frame with a checkpoint there, so it can be carried on.",

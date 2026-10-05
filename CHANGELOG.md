@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An AI app runs a study's analysis or report again
+
+**`run_phases_again` in `fastmdx mcp`** runs a study's analysis, its report
+or both again in its folder, by the phase command with `--rerun`, once
+the person agrees: the analyses named (by default those it ran last), what
+is replaced kept in `previous/`, under the workspace's one-study-at-a-time
+rule. A quick one says it is done; a longer one runs on after the AI app
+closes. Not offered by a read-only server. An AI app could start a study
+only in a folder never used.
+
 ### Analyze again and Write it again, from the GUI
 
 **The Analysis page's Analyze again** runs the study open's analyses again
