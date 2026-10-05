@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent analyses a study again, when told
+
+**Told to add an analysis to the study open, to analyse it again or to
+write its report again**, the Agent replies `DO: analyze again rmsd sasa`
+or `DO: write the report again`, read from that one line by a strict
+pattern. The analyses named are checked against the software's own, the
+person is asked what will run and what is kept aside, and the phase
+command runs with `--rerun` on a yes; a name the software does not have is said, and nothing
+runs. Through an AI app, `ask_agent` says `run_phases_again` does it.
+
 ### An AI app runs a study's analysis or report again
 
 **`run_phases_again` in `fastmdx mcp`** runs a study's analysis, its report

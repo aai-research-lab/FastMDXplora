@@ -466,6 +466,10 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
                          "FastMDXplora itself, with `fastmdx explore` or the GUI.")
         elif proposal.action == "stop":
             next_step = "stop_study stops a running study, once the person has agreed."
+        elif proposal.action in ("analyze again", "write the report again"):
+            named = (proposal.arguments or {}).get("analyses")
+            next_step = ("run_phases_again runs it on the study, once the person has agreed"
+                         + (f", with the analyses {', '.join(named)}." if named else "."))
         else:
             next_step = ("check_study shows the plan; start_study runs it once the person "
                          "has agreed to that plan.")

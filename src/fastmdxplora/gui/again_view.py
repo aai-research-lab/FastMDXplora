@@ -31,3 +31,36 @@ def again_payload(root: Any) -> dict[str, Any]:
         catalogue = []
     return {"available": True, **offered, "catalogue": catalogue,
             "previous": again.PREVIOUS}
+
+
+def again_fix(root: Any, action: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
+    """What the Agent's `DO: analyze again` or `DO: write the report again`
+    would run on the study on screen, for the person to confirm; or why it
+    cannot. Checked here, from the study, before the person is asked: the
+    analyses come from the reply's one line, read by a strict pattern."""
+    from fastmdxplora import again
+    from fastmdxplora.gui.browse import is_study
+    from fastmdxplora.refusals import refusal_of
+
+    study = Path(root) if root else None
+    if study is None or not study.is_dir() or not is_study(study):
+        return {"reason": "No study is open to run again."}
+    phases = ["report"] if action == "write the report again" else ["analysis"]
+    named = (arguments or {}).get("analyses")
+    try:
+        planned = again.plan(study, phases, named)
+    except Exception as exc:  # noqa: BLE001 - said, and nothing runs
+        return {"reason": refusal_of(exc).message}
+    if planned.phases == ("report",):
+        question = ("Write the report again from this study's records, keeping the report "
+                    "there now in previous/")
+    else:
+        chosen = planned.analyses or tuple(again.recorded_analyses(study))
+        listed = ", ".join(chosen) if chosen else "the analyses it ran last"
+        question = (f"Analyze this study again with {listed}"
+                    + (", writing its report again too" if planned.report_added else "")
+                    + ", keeping what they replace in previous/")
+    return {"fix": {"action": action, "route": "/api/again", "fix": question,
+                    "command": " ".join(["fastmdx", *planned.command()]),
+                    "request": {"phases": list(planned.phases),
+                                "analyses": list(planned.analyses) if planned.analyses else None}}}

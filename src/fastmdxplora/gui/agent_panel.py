@@ -239,6 +239,17 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
             # Always asked: it starts work on this machine.
             answer["fix"] = _first_fix(runtime)
             answer["confirm"] = True
+        if proposal.action in ("analyze again", "write the report again"):
+            # The study open's analyses or report run again in its folder,
+            # the analyses named checked against the software's own; asked
+            # with what is replaced, or said why not.
+            from fastmdxplora.gui.again_view import again_fix
+
+            said = again_fix(getattr(runtime, "active_root", None), proposal.action,
+                             proposal.arguments)
+            answer["fix"] = said.get("fix")
+            answer["refused"] = said.get("reason")
+            answer["confirm"] = True
         if proposal.action == "rerun windows":
             # The windows and values the person named, read by a strict
             # pattern and checked here against the study; the command is
