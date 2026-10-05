@@ -64,12 +64,15 @@ pointer stays on the tab or the column, the tab then at the column's edge;
 a click on it keeps the column open. Opening the Viewer folds both, and
 another page brings them back as they were; a column kept open on the
 Viewer stays open there. Every page's header is one band across the
-centre column, and stays put while the page scrolls.
+centre column, and stays put while the page scrolls. The three columns'
+top bars are one height, their rules on one line: the product's name at
+the top of the sidebar, each page's title, centred, and the side panel's
+tabs.
 
 **The sidebar** reads top-down:
 
 ```
-⬡ FastMDXplora                        [⇤]
+FastMDXplora                           [‹]
 ┌───────────────────────────────────────┐
 │ STUDY                                 │
 │ 1UAO                               ⌄  │

@@ -49,10 +49,9 @@ of another colour over the column's own ground.
 
 ### The sidebar, rebuilt
 
-**The sidebar reads top-down and fits a laptop's screen.** The lab's logo
-(or a hosted service's own, `--product-logo`) and the product's name on one
-line (the product's expansion is on the Cite page now; a hosted service's
-own line still shows under its name). The study on screen as a
+**The sidebar reads top-down and fits a laptop's screen.** The product's
+name alone at the top (the product's expansion is on the Cite page now; a
+hosted service's own line still shows under its name). The study on screen as a
 card: its name and one line of where it stands (Running, Completed,
 Stopped, Failed) with the platform, and, when the page stops hearing from
 the server, that too; pressed, it opens the workspace's newest studies to
@@ -68,6 +67,13 @@ failed run **What would fix it**, which opens the Overview at that card. A
 finished study has no card. At 900 pixels the old sidebar ran past the
 window, its foot over the stage list and its buttons out of reach. The
 standalone dashboard has the same sidebar.
+
+### The top bars are one height
+
+**Each page's title bar is the side panel's tab bar's height**, its title
+centred in it and its rule on the same line; it was 11 pixels taller, the
+title near its foot. The sidebar's name sits on the same line, and folds
+with the side panel's own button.
 
 ### Backbone angles says what is plotted
 

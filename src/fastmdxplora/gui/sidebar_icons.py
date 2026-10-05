@@ -32,8 +32,6 @@ ICONS: dict[str, str] = {
               '<path d="M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>'),
     "config": ('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/>'
                '<circle cx="10" cy="17" r="2"/>'),
-    "collapse": ('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>'
-                 '<path d="M15 10l-2 2 2 2"/>'),
     "chevron": '<path d="M8 10l4 4 4-4"/>',
     "pause": '<path d="M9 6v12M15 6v12"/>',
     "play": '<path d="M8 5.5v13l10.5-6.5z"/>',

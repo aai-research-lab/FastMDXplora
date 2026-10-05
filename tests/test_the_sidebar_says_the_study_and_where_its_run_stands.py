@@ -54,7 +54,7 @@ def test_the_icons_are_written_into_the_page():
                  "config"):
         assert icon(name) in sidebar, name
     assert with_icons("<!--icon:gear:x y-->") == icon("gear", "x y")
-    assert set(ICONS) >= {"collapse", "chevron", "pause", "play", "refresh", "gear"}
+    assert set(ICONS) >= {"chevron", "pause", "play", "refresh", "gear"}
 
 
 @contextmanager

@@ -1731,7 +1731,6 @@ def _render_sidebar(
                      f'<span class="status-platform mono" title="Platform">{escape(platform)}</span>'
                      if platform else "")
     return f"""<div class="sidebar-brand">
-  {f'<img class="brand-mark" src="{logo}" alt="" width="22" height="22">' if logo else ""}
   <div class="brand-text">
     <div class="brand-product" title="{escape(expansion)}">FastMDXplora</div>
   </div>

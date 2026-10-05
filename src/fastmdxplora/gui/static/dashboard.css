@@ -389,10 +389,11 @@ button {
     flex-wrap: nowrap;
     margin-bottom: 12px;
     gap: 12px;
-    padding-bottom: 7px;
-    /* One height on every page, with actions or without: the shell's
-       padding above, then 38px and the rule. */
-    min-height: calc(var(--shell-pad-top, 0px) + 39px);
+    padding-bottom: 0;
+    /* One height on every page, with actions or without, and the side
+       panel's tab bar's (`--top-bar-height`), its rule on the same line;
+       the title centred in it. */
+    min-height: var(--top-bar-height);
     /* Fixed while the page scrolls under it. The centre column is the
        scroll container, so sticky at its top is fixed to the eye; the
        background stops the content showing through. */
@@ -412,7 +413,7 @@ button {
        first scrolled up by that much and then stopped, so it was seen to
        move with every page scrolled. */
     margin-top: calc(-1 * var(--shell-pad-top, 0px));
-    padding-top: calc(var(--shell-pad-top, 0px) + 6px);
+    padding-top: 0;
 }
 .page-header > div:first-child {
     display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 auto;
@@ -2679,6 +2680,9 @@ body.state-ready .loading-screen {
     --sidebar-width: 232px;
     --panel-width: 420px;
     --handle-width: 6px;
+    /* The bars along the top of the three columns, one height: each page's
+       title bar, the side panel's tabs, and the sidebar's name. */
+    --top-bar-height: 52px;
 }
 .app-shell {
     grid-template-columns:
@@ -2804,7 +2808,8 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
 }
 .side-panel-tabs {
     display: flex; align-items: center; gap: 4px;
-    padding: 10px 12px; border-bottom: 1px solid var(--border-subtle);
+    min-height: var(--top-bar-height);
+    padding: 0 12px; border-bottom: 1px solid var(--border-subtle);
 }
 .side-tab {
     padding: 6px 12px; border-radius: 5px; border: none; background: transparent;
@@ -3529,10 +3534,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar { padding: 0 10px 0; gap: 0; }
 .sidebar-brand {
     display: flex; align-items: center; gap: 8px;
-    padding: 14px 6px 12px; border-bottom: none;
+    padding: 0 6px; border-bottom: none;
+    /* The name on the line the pages' titles and the side panel's tabs
+       are centred on. */
+    min-height: var(--top-bar-height);
 }
-/* The lab's logo (or a hosted service's own), as the tab's icon is. */
-.brand-mark { display: block; flex: none; width: 22px; height: 22px; border-radius: 5px; }
 /* The pinned ends reach the sidebar's edges, as they do at its old 14px
    padding (above), at this one. */
 @media (min-width: 801px) {
@@ -3550,13 +3556,15 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     margin-top: 1px; font-size: var(--text-2xs); letter-spacing: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.sidebar-collapse, .sidebar-tool {
+/* Folds the sidebar as the side panel's button folds the panel. */
+.sidebar .sidebar-collapse { flex: none; margin: 0; padding: 4px 8px; font-size: var(--text-2xs); }
+.sidebar-tool {
     display: inline-flex; align-items: center; justify-content: center;
     flex: none; width: 28px; height: 28px; padding: 0; margin: 0; order: 0;
     border: none; border-radius: 6px; background: transparent;
     color: var(--text-muted); cursor: pointer;
 }
-.sidebar-collapse:hover, .sidebar-tool:hover {
+.sidebar-tool:hover {
     color: var(--text-primary);
     background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }

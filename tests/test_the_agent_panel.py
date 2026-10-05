@@ -2806,7 +2806,7 @@ class TestTheWordsAndTheRows(unittest.TestCase):
                / "dashboard.css").read_text(encoding="utf-8")
         rule = css[css.index(".page-header {"):css.index("}", css.index(".page-header {"))]
         self.assertIn("align-items: center", rule)
-        self.assertIn("min-height: calc(var(--shell-pad-top, 0px) + 39px)", rule)
+        self.assertIn("min-height: var(--top-bar-height)", rule)
         self.assertIn("flex-wrap: nowrap", rule)
         self.assertIn(".page-subtitle {\n    display: inline;", css)
 
