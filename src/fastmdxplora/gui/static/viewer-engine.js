@@ -932,6 +932,29 @@
       canvas.requestDraw();
     }
 
+    /** The centre of the protein in the frame shown, in Mol*'s angstroms.
+     * This is read-only: movie export moves the camera, never these atoms. */
+    proteinCentroid() {
+      const SP = this.lib.structure.StructureProperties;
+      const sum = [0, 0, 0];
+      let count = 0;
+      this.forEachAtom((location) => {
+        if (SP.entity.type(location) !== "polymer") return;
+        sum[0] += SP.atom.x(location);
+        sum[1] += SP.atom.y(location);
+        sum[2] += SP.atom.z(location);
+        count += 1;
+      });
+      return count ? sum.map((value) => value / count) : null;
+    }
+
+    /** A camera translated without changing its view angle or zoom. */
+    translatedCamera(snapshot, translation) {
+      if (!snapshot || !translation) return snapshot;
+      const shift = (values) => values.map((value, axis) => value + translation[axis]);
+      return {...snapshot, position: shift(snapshot.position), target: shift(snapshot.target)};
+    }
+
     /** Each atom of the structure shown, as a location. */
     forEachAtom(visit) {
       const structure = this.structure();

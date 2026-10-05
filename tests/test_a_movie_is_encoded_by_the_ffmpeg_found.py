@@ -99,7 +99,8 @@ def test_a_movie_is_made_through_the_command_given(stand_in, tmp_path):
     for frame in _frames(3):
         assert add_frame(started["id"], frame)["ok"]
     done = finish_movie(started["id"])
-    assert done["ok"] and (done["frames"], done["seconds"], done["codec"]) == (3, 0.1, "H.264")
+    assert done["ok"] and (done["frames"], done["seconds"], done["fps"], done["codec"]) \
+        == (3, 1.5, 2, "H.264")
     assert (tmp_path / done["file"]).read_bytes() == b"STAND-IN libx264 frames=3"
     command = (tmp_path / "command.txt").read_text(encoding="utf-8").splitlines()
 
@@ -107,10 +108,10 @@ def test_a_movie_is_made_through_the_command_given(stand_in, tmp_path):
         return command[command.index(flag, start) + 1]
 
     # The frames as they arrive, then the encoding of the movie.
-    assert (given("-f"), given("-framerate"), given("-c:v")) == ("image2pipe", "30", "png")
+    assert (given("-f"), given("-framerate"), given("-c:v")) == ("image2pipe", "2", "png")
     encoded = command.index("-i")
     for flag, value in (("-c:v", "libx264"), ("-crf", "18"), ("-colorspace", "bt709"),
-                        ("-color_range", "tv"), ("-r", "30"), ("-movflags", "+faststart"),
+                        ("-color_range", "tv"), ("-r", "2"), ("-movflags", "+faststart"),
                         ("-f", "mp4")):
         assert given(flag, encoded) == value, flag
     assert "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" in command
@@ -118,6 +119,22 @@ def test_a_movie_is_made_through_the_command_given(stand_in, tmp_path):
     assert any(arg.startswith("comment=Made with FastMDXplora ")
                and arg.endswith(": frames 0 to 2, 30 frames a second") for arg in command)
     assert [p.name for p in (tmp_path / "movies").iterdir()] == ["made.mp4"]
+
+
+def test_webm_keeps_requested_timing(stand_in, tmp_path, monkeypatch):
+    monkeypatch.setenv("STAND_IN_ENCODERS", "libvpx-vp9")
+    monkeypatch.setattr(movies, "_CHOSEN", {})
+    started = start_movie(tmp_path, "webm", fps=30, width=64, height=48)
+    assert started["ok"] and started["file"] == "movies/webm.webm"
+    for frame in _frames(3):
+        assert add_frame(started["id"], frame)["ok"]
+    done = finish_movie(started["id"])
+    assert done["ok"] and (done["frames"], done["seconds"], done["fps"], done["format"]) \
+        == (3, 0.1, 30, "webm")
+    command = (tmp_path / "command.txt").read_text(encoding="utf-8").splitlines()
+    assert command[command.index("-framerate") + 1] == "30"
+    encoded = command.index("-i")
+    assert command[command.index("-r", encoded) + 1] == "30"
 
 
 def test_what_ffmpeg_says_when_it_fails_is_passed_on(stand_in, tmp_path, monkeypatch):

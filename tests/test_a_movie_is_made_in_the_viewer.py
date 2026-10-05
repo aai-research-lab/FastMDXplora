@@ -95,12 +95,19 @@ def test_the_movie_is_of_the_frames_shown_and_the_view_is_put_back(page, study):
         engine.restoreCamera({{...now, position}});
         return engine.cameraSnapshot();
     }}""")
+    source_before = page.evaluate(f"""() => {{
+        const engine = {VIEWER}.STATE.engine;
+        return engine.atoms(Array.from({{length: engine.atomCount()}}, (_, i) => i))
+            .map((atom) => [atom.x, atom.y, atom.z]);
+    }}""")
     page.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
     page.fill("#movie-from", "0")
     page.fill("#movie-to", "3")
     page.fill("#movie-name", "first four")
     page.dispatch_event("#movie-to", "change")
-    assert page.text_content("#movie-length") == f"4 frames, 0.2 s, {WIDTH} × {HEIGHT}"
+    output_fps = 2 if page.text_content("#movie-by").startswith("MP4") else 24
+    assert page.text_content("#movie-length") == (
+        f"4 frames, {4 / output_fps:.1f} s, {WIDTH} × {HEIGHT}")
     with page.expect_download(timeout=600000) as caught:
         page.click("#movie-make")
     page.wait_for_function("() => !document.getElementById('movie-settings').disabled")
@@ -108,11 +115,36 @@ def test_the_movie_is_of_the_frames_shown_and_the_view_is_put_back(page, study):
     assert made.is_file() and made.stem == "first four"
     assert Path(caught.value.path()).read_bytes() == made.read_bytes()
     said = page.text_content("#movie-said")
-    assert said.startswith(f"Made movies/{made.name}: 4 frames, 0.17 s, {WIDTH} × {HEIGHT}")
+    assert said.startswith(f"Made movies/{made.name}: 4 frames, 2 s, {WIDTH} × {HEIGHT}")
+    camera_path = page.evaluate(f"""async () => {{
+        const engine = {VIEWER}.STATE.engine;
+        const centers = [];
+        for (const frame of [0, 1, 2, 3]) {{
+            await {VIEWER}.movie.showFrame(frame);
+            centers.push(engine.proteinCentroid());
+        }}
+        await {VIEWER}.movie.showFrame(5);
+        return {{path: window.FastMDXViewerMovie.lastCameraPath, centers}};
+    }}""")
+    assert len(camera_path["path"]) == 4
+    reference = camera_path["centers"][0]
+    for rendered, center in zip(camera_path["path"], camera_path["centers"]):
+        translation = [reference[axis] - center[axis] for axis in range(3)]
+        assert rendered["position"] == pytest.approx(
+            [before["position"][axis] + translation[axis] for axis in range(3)], abs=1e-5)
+        assert rendered["target"] == pytest.approx(
+            [before["target"][axis] + translation[axis] for axis in range(3)], abs=1e-5)
+        assert rendered["up"] == pytest.approx(before["up"], abs=1e-6)
+    source_after = page.evaluate(f"""() => {{
+        const engine = {VIEWER}.STATE.engine;
+        return engine.atoms(Array.from({{length: engine.atomCount()}}, (_, i) => i))
+            .map((atom) => [atom.x, atom.y, atom.z]);
+    }}""")
+    np.testing.assert_allclose(source_after, source_before, atol=1e-7, rtol=0)
     probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json",
                                        str(made)], capture_output=True, text=True,
                                       check=True).stdout)["streams"][0]
-    assert (probe["width"], probe["height"], probe["r_frame_rate"]) == (WIDTH, HEIGHT, "24/1")
+    assert (probe["width"], probe["height"], probe["r_frame_rate"]) == (WIDTH, HEIGHT, "2/1")
 
     # The frame and the camera shown before are put back.
     assert page.evaluate(f"() => {VIEWER}.movie.shownFrame()") == 5

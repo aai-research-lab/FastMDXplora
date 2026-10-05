@@ -174,7 +174,7 @@ def test_the_frames_in_between_lie_between_the_frames_played(page):
     page.dispatch_event("#movie-between", "change")
     page.select_option("#movie-size", "shown")
     assert page.text_content("#movie-length").startswith(
-        "5 frames (2 played, 3 in between each two), 0.2 s")
+        "5 frames (2 played, 3 in between each two), 2.5 s")
     made = page.evaluate(f"""() => window.FastMDXViewerMovie.make({{
         name: "between", size: "{WIDTH}x{HEIGHT}", keep: true, time: false}})""")
     assert made["ok"] and made["frames"] == 5 and made["between"] == 3

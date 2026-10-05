@@ -86,7 +86,7 @@ def test_fastmdx_movie_makes_the_viewer_s_movie(study, capsys):
     told = lines.index("Opening the study's Viewer…")
     assert lines[told + 1:told + 3] == ["Showing the view…", "Rendering the frames…"]
     assert len(lines) == told + 5
-    assert lines[-2] == (f"Made {made}: 5 frames, 0.5 s, 1280 x 720, MP4 (H.264), "
+    assert lines[-2] == (f"Made {made}: 5 frames, 2.5 s, 1280 x 720, MP4 (H.264), "
                          f"{made.stat().st_size / 1e6:.1f} MB, 1 frame in between each two "
                          "played, interpolated.")
     assert lines[-1].startswith("  Rendered by the Viewer in chromium; encoded as MP4 (H.264), "

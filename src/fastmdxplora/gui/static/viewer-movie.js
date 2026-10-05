@@ -14,6 +14,8 @@
   "use strict";
 
   var making = null;
+  var lastCameraPath = [];
+  var encodingInfo = null;
   // Without frames, a movie is the structure shown turned once, in this long.
   var settings = { turnSeconds: 6 };
 
@@ -138,6 +140,10 @@
     return n + (n === 1 ? " frame" : " frames") + " in between each two";
   }
 
+  function effectiveFps(fps) {
+    return encodingInfo && encodingInfo.format === "mp4" ? Math.min(fps, 2) : fps;
+  }
+
   function about(frames, times, fps, between) {
     var first = frames[0];
     var last = frames[frames.length - 1];
@@ -183,6 +189,7 @@
     var given = Object.assign(fromTheForm(), asked || {});
     var name = String(given.name || "").trim();
     var fps = Math.round(Number(given.fps) || 24);
+    var outputFps = effectiveFps(fps);
     var turn = !!given.turn;
     var stamp = !!given.time;
     var between = [1, 3, 7].indexOf(Math.round(Number(given.between) || 0)) >= 0
@@ -200,6 +207,8 @@
     var outcome = null;
     var result = null;
     var tweenedFrom = null;
+    var referenceCenter = null;
+    lastCameraPath.length = 0;
     var fail = function (text) {
       say(text);
       result = { ok: false, reason: text };
@@ -253,8 +262,8 @@
       var total = (frames.length - 1) * (between + 1) + 1;
       var started = await post("/api/movies", {
         name: name, fps: fps, width: dims[0], height: dims[1],
-        about: still ? "the structure turned once, " + fps + " frames a second"
-          : about(frames, loaded.times, fps, between),
+        about: still ? "the structure turned once, " + outputFps + " frames a second"
+          : about(frames, loaded.times, outputFps, between),
       });
       if (!started.ok) return fail("The movie was not made: " + (started.reason || "no reason given"));
       id = started.id;
@@ -281,9 +290,26 @@
             outcome = "The structure shown changed while the movie was made, so it was stopped.";
             break;
           }
-          // One turn over the movie, the last frame a step short of the
-          // first so that the movie loops without a pause.
+          // Start every frame from the person's camera. Translate only the
+          // camera and target so the first exported protein centroid stays in
+          // the same place without changing zoom, orientation, or coordinates.
           if (turn) engine.turnCamera(camera, 2 * Math.PI * m / total);
+          else engine.restoreCamera(camera);
+          if (!still) {
+            var center = engine.proteinCentroid();
+            if (center && !referenceCenter) referenceCenter = center;
+            if (referenceCenter && center) {
+              var translation = referenceCenter.map(function (value, axis) {
+                return value - center[axis];
+              });
+              engine.restoreCamera(engine.translatedCamera(engine.cameraSnapshot(), translation));
+            }
+          }
+          var renderedCamera = engine.cameraSnapshot();
+          if (renderedCamera) {
+            lastCameraPath.push({position: Array.from(renderedCamera.position),
+              target: Array.from(renderedCamera.target), up: Array.from(renderedCamera.up)});
+          }
           var rendered = await engine.still(dims[0], dims[1]);
           if (!rendered) {
             outcome = "The frame could not be rendered.";
@@ -372,7 +398,8 @@
     var count = state ? state.playbackFrames : 0;
     var length = byId("movie-length");
     if (!length) return;
-    var fps = whole("movie-fps", 24);
+    var requestedFps = whole("movie-fps", 24);
+    var fps = effectiveFps(requestedFps);
     var dims = size();
     // Known to have no frames: the structure, turned once.
     var still = !count && !!state && !!state.model && !!state.playbackPayload
@@ -382,7 +409,7 @@
       if (input) input.disabled = still;
     });
     if (still) {
-      length.textContent = "No frames: the structure turned once, " + Math.round(fps * settings.turnSeconds)
+      length.textContent = "No frames: the structure turned once, " + Math.round(requestedFps * settings.turnSeconds)
         + " frames, " + settings.turnSeconds.toFixed(1) + " s, " + dims[0] + " × " + dims[1];
       return;
     }
@@ -408,6 +435,7 @@
       })
       .catch(function () { return { ok: false, reason: "The server did not answer." }; })
       .then(function (said) {
+        encodingInfo = said;
         var make = byId("movie-make");
         if (make) make.disabled = !said.ok;
         var by = byId("movie-by");
@@ -439,5 +467,5 @@
   else wire();
 
   window.FastMDXViewerMovie = { make: make, size: size, framesOf: framesOf, timeSaid: timeSaid,
-    settings: settings, encoding: loadEncoding };
+    settings: settings, encoding: loadEncoding, lastCameraPath: lastCameraPath };
 }());

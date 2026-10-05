@@ -292,6 +292,9 @@ def start_movie(root: str | Path, name: Any, *, fps: Any, width: Any, height: An
     if not known["ok"]:
         return known
     encoder = next(e for e in _ENCODERS if e.name == known["encoder"])
+    # MP4 downloads are deliberately bounded to two frames a second. WebM
+    # keeps the requested timing; do not change the source frame sequence.
+    effective_fps = min(fps, 2) if encoder.container == "mp4" else fps
     with _MOVIES_LOCK:
         if len(_MOVIES) >= MOST_AT_ONCE:
             return {"ok": False, "reason": f"{MOST_AT_ONCE} movies are being made already; "
@@ -309,12 +312,13 @@ def start_movie(root: str | Path, name: Any, *, fps: Any, width: Any, height: An
     errors = tempfile.TemporaryFile(prefix="fastmdx-movie-")
     try:
         process = subprocess.Popen(
-            _command(known["ffmpeg"], encoder, fps, width, height, partial, metadata),
+            _command(known["ffmpeg"], encoder, effective_fps, width, height, partial, metadata),
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
     except OSError as exc:
         errors.close()
         return {"ok": False, "reason": f"ffmpeg could not be started: {exc}"}
-    movie = _Movie(root, name, fps, width, height, encoder, process, errors, partial, target)
+    movie = _Movie(root, name, effective_fps, width, height, encoder, process, errors, partial,
+                   target)
     key = secrets.token_hex(8)
     with _MOVIES_LOCK:
         _MOVIES[key] = movie
