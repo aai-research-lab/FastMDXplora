@@ -316,10 +316,14 @@
   function fillModels(spec, chosen) {
     var select = el("agent-model");
     select.innerHTML = "";
-    (spec.models || []).forEach(function (name) {
+    var metadata = spec.model_metadata || [];
+    var rows = metadata.length ? metadata : (spec.models || []).map(function (name) {
+      return { id: name, label: name };
+    });
+    rows.forEach(function (row) {
       var option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
+      option.value = row.id;
+      option.textContent = row.label || row.id;
       select.appendChild(option);
     });
     var other = document.createElement("option");
@@ -331,8 +335,9 @@
     other.textContent = "Type an AI model name\u2026";
     select.appendChild(other);
 
-    var known = (spec.models || []).indexOf(chosen) !== -1;
-    select.value = known ? chosen : OTHER;
+    var names = rows.map(function (row) { return row.id; });
+    var known = names.indexOf(chosen) !== -1;
+    select.value = known ? chosen : (names[0] || OTHER);
     if (!known && chosen) el("agent-model-other").value = chosen;
     modelChanged();
   }
@@ -364,6 +369,8 @@
       (spec.examples || []).map(function (e) {
         return e.label + " \u2014 " + e.url;
       }).join("  \u00b7  ");
+    var signIn = el("agent-chatgpt-sign-in");
+    if (signIn) signIn.hidden = id !== "openai-chatgpt";
   }
 
   function engineIsSet(current) {
@@ -406,6 +413,9 @@
       var select = el("agent-provider");
       select.innerHTML = "";
       providers.forEach(function (spec) {
+        if (spec.model_metadata && spec.model_metadata.length) {
+          spec.models = spec.model_metadata.map(function (row) { return row.id; });
+        }
         var option = document.createElement("option");
         option.value = spec.id;
         option.textContent = spec.label;
@@ -417,6 +427,28 @@
       }
       showProvider(select.value, data.current && data.current.model);
       engineIsSet(data.current);
+    });
+  }
+
+  function signInWithChatGPT() {
+    var button = el("agent-chatgpt-sign-in");
+    button.disabled = true;
+    post("/api/agent/sign-in", {}).then(function (data) {
+      button.disabled = false;
+      if (!data.ok) {
+        el("agent-model-current").textContent = data.error;
+        return;
+      }
+      window.open(data.url, "fastmdxplora-chatgpt-sign-in", "noopener");
+      el("agent-model-current").textContent =
+        "Complete sign-in in the new window. Models will appear here when it finishes.";
+      var tries = 0;
+      var refresh = function () {
+        tries += 1;
+        loadEngine();
+        if (tries < 30) window.setTimeout(refresh, 1000);
+      };
+      window.setTimeout(refresh, 1000);
     });
   }
 
@@ -1535,6 +1567,7 @@
     el("agent-save-model").addEventListener("click", saveEngine);
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
+    el("agent-chatgpt-sign-in").addEventListener("click", signInWithChatGPT);
     el("agent-propose").addEventListener("click", function () {
       if (writing) writing.abort();
       else draft();

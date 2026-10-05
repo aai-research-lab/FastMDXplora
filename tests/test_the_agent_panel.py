@@ -899,6 +899,11 @@ class TestTheModelFollowsTheProvider(unittest.TestCase):
                     # Whatever the local server happens to serve. A list
                     # here would be a guess about somebody else's machine.
                     self.assertEqual(provider["models"], [])
+                elif provider["id"] == "openai-chatgpt":
+                    # ChatGPT subscription models are returned after local
+                    # sign-in, including their provider-owned metadata.
+                    self.assertEqual(provider["models"], [])
+                    self.assertEqual(provider["model_metadata"], [])
                 else:
                     self.assertIn(provider["default_model"],
                                   provider["models"])

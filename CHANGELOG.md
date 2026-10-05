@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Local ChatGPT subscription sign-in
+
+The Agent can use the local ChatGPT subscription through the published Codex
+client OAuth contract: a fixed client registration, PKCE, loopback callback
+ports 1455 and 1457, state validation, owner-only token storage outside study
+directories, and provider-supplied model and reasoning metadata. Hosted GUI
+authentication routes refuse the flow. The provider does not use dynamic
+client registration or accept a callback-issued client ID.
+
 ### Opt-in preparation audit
 
 Setup accepts `preparation_audit: true` to record bounded observational

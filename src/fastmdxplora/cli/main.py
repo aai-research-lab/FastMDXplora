@@ -2954,6 +2954,7 @@ def _choose_model() -> int:
     from fastmdxplora.agent import (
         PROVIDERS, ModelChoice, describe_choice, load_choice, save_choice,
     )
+    from fastmdxplora.refusals import StudyError, refusal_of
 
     # What is in use first, so a look at the choice is not a change to it:
     # nothing is saved unless an AI model is picked below.
@@ -2972,6 +2973,53 @@ def _choose_model() -> int:
         return 1
 
     base_url = ""
+    if picked == "openai-chatgpt":
+        from fastmdxplora.agent.chatgpt import (
+            begin_sign_in,
+            list_model_metadata,
+            load_tokens,
+        )
+
+        if load_tokens() is None:
+            try:
+                request = begin_sign_in()
+            except StudyError as exc:
+                print(refusal_of(exc).message)
+                return 1
+            print("Open this URL in your browser to sign in with ChatGPT:")
+            print(request.url)
+            try:
+                import webbrowser
+
+                webbrowser.open(request.url)
+                input("After sign-in completes, press Enter here. ")
+            except (EOFError, KeyboardInterrupt):
+                print("Sign-in was not completed.")
+                return 1
+        try:
+            available = list_model_metadata()
+        except StudyError as exc:
+            print(refusal_of(exc).message)
+            return 1
+        if not available:
+            print("ChatGPT returned no models available to this account.")
+            return 1
+        print("\nModels returned by ChatGPT:")
+        for index, model_info in enumerate(available, 1):
+            levels = ", ".join(model_info.get("reasoning_levels", ()))
+            suffix = f"; reasoning: {levels}" if levels else ""
+            print(f"  [{index}] {model_info['label']} ({model_info['id']}){suffix}")
+        try:
+            picked_model = available[int(input("> ").strip()) - 1]["id"]
+        except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+            print("Nothing chosen.")
+            return 1
+        from fastmdxplora.agent import ModelChoice, save_choice
+
+        where = save_choice(ModelChoice(picked, str(picked_model)))
+        print(f"\n  ✓ Saved to {where}")
+        print("  ✓ ChatGPT session stored outside the study.")
+        return 0
     if picked == "compatible":
         print("\nAnything speaking the OpenAI chat shape. For example:")
         for label, url, model in PROVIDERS[picked].get("examples", ()):

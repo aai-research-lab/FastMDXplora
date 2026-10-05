@@ -61,6 +61,14 @@ from fastmdxplora.refusals import BackendUnavailable
 
 logger = logging.getLogger("fastmdxplora.gui.server")
 
+# A subscription session belongs to the person's local browser and machine.
+# A hosted GUI must never proxy or originate these routes.
+HOSTED_AUTH_ROUTES = frozenset({
+    "/api/agent/sign-in",
+    "/api/agent/session",
+    "/auth/callback",
+})
+
 
 def _imported_by_the_routes() -> tuple[str, ...]:
     """Every module of the package the routes can reach (route_imports.py),
@@ -500,6 +508,13 @@ def make_handler(
         def _dispatch(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if hosting is not None and path in HOSTED_AUTH_ROUTES:
+                self._send_json({
+                    "ok": False,
+                    "error": "ChatGPT sign-in is available only in the local GUI.",
+                    "code": "environment.hosted_auth_refused",
+                }, status=403)
+                return
             if self._refused_as_not_through_the_proxy():
                 return
             if self._refused_as_from_elsewhere(api=path.startswith("/api/")):
@@ -997,6 +1012,13 @@ def make_handler(
         def _dispatch_post(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            if hosting is not None and path in HOSTED_AUTH_ROUTES:
+                self._send_json({
+                    "ok": False,
+                    "error": "ChatGPT sign-in is available only in the local GUI.",
+                    "code": "environment.hosted_auth_refused",
+                }, status=403)
+                return
             if self._refused_as_not_through_the_proxy(posting=True):
                 return
             if self._refused_as_from_elsewhere(api=True, posting=True):
@@ -1010,6 +1032,11 @@ def make_handler(
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
             payload = self._read_json_body()
+            if path == "/api/agent/sign-in":
+                from fastmdxplora.gui.agent_panel import sign_in_endpoint
+
+                self._send_json(sign_in_endpoint(payload or {}))
+                return
             if path == "/api/movies":
                 # A movie of the study's frames started: ffmpeg on this
                 # computer encodes the frames the Viewer sends (movies.py).

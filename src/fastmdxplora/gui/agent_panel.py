@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-__all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
+__all__ = ["model_endpoint", "propose_endpoint", "run_endpoint", "sign_in_endpoint"]
 
 
 def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
@@ -40,6 +40,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         # Settings showed the written fallback and an AI model chosen from it
         # could 404 -- which is how `claude-opus-4-1` reached somebody.
         live: dict[str, list] = {}
+        metadata: dict[str, list] = {}
         if current is not None:
             from fastmdxplora.agent.models import list_models
 
@@ -49,12 +50,20 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                 found = []
             if found:
                 live[current.provider] = found
+            if current.provider == "openai-chatgpt":
+                from fastmdxplora.agent.chatgpt import list_model_metadata
+
+                try:
+                    metadata[current.provider] = list_model_metadata()
+                except Exception:  # noqa: BLE001 - the picker remains usable offline
+                    metadata[current.provider] = []
         return {
             "ok": True,
             "providers": [
                 {"id": name, "label": spec["label"],
                  "default_model": spec["default_model"],
                  "models": live.get(name) or list(spec.get("models") or ()),
+                 "model_metadata": metadata.get(name) or [],
                  "environment_variable": spec["env"],
                  "needs_url": not spec["url"],
                  "examples": [
@@ -82,6 +91,22 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                 "code": "config.option.missing_companion"}
 
     model = str(payload.get("model") or PROVIDERS[provider]["default_model"])
+    if provider == "openai-chatgpt" and not model:
+        from fastmdxplora.agent.chatgpt import list_model_metadata
+
+        try:
+            available = list_model_metadata()
+        except Exception:  # noqa: BLE001 - sign-in and network errors are user-facing
+            available = []
+        if len(available) == 1:
+            model = str(available[0]["id"])
+        else:
+            return {
+                "ok": False,
+                "error": "Sign in with ChatGPT and choose one of its available models.",
+                "code": "config.option.missing_companion",
+                "model_metadata": available,
+            }
     if not model:
         return {"ok": False, "error": "An AI model name is needed.",
                 "code": "config.option.missing_companion"}
@@ -98,8 +123,36 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
         offered = list(PROVIDERS[provider].get("models") or ())
     # The choice, not the key. A browser that never receives one cannot
     # leak one.
-    return {"ok": True, "models": offered,
-            "current": ModelChoice(provider, model, base_url).as_record()}
+    answer = {"ok": True, "models": offered,
+              "current": ModelChoice(provider, model, base_url).as_record()}
+    if provider == "openai-chatgpt":
+        from fastmdxplora.agent.chatgpt import list_model_metadata
+
+        try:
+            answer["model_metadata"] = list_model_metadata()
+        except Exception:  # noqa: BLE001 - saving the choice still succeeded
+            answer["model_metadata"] = []
+    return answer
+
+
+def sign_in_endpoint(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Start the local ChatGPT OAuth flow and return its browser URL."""
+    from fastmdxplora.agent import ModelChoice, save_choice
+    from fastmdxplora.agent.chatgpt import begin_sign_in
+
+    def selected_session(_tokens: Any) -> None:
+        # Persist the shared provider immediately. The model stays empty until
+        # the provider catalog is fetched and the person selects one.
+        save_choice(ModelChoice("openai-chatgpt", ""))
+
+    try:
+        request = begin_sign_in(on_complete=selected_session)
+    except Exception as exc:  # noqa: BLE001 - return a coded UI refusal
+        from fastmdxplora.refusals import refusal_of
+
+        found = refusal_of(exc)
+        return {"ok": False, "error": found.message, "code": found.code}
+    return {"ok": True, "url": request.url, "provider": "openai-chatgpt"}
 
 
 def propose_endpoint(payload: dict[str, Any],

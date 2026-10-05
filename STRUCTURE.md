@@ -40,6 +40,7 @@ FastMDXplora/
 │       │   ├── propose.py         # Propose a study, have it refused, repair it, try again
 │       │   ├── receipt.py         # Bounded prompt and tool-output receipts for Agent rounds
 │       │   ├── tools.py           # What the Agent looks at with the software's own tools
+│       │   ├── chatgpt.py         # Local ChatGPT subscription OAuth and Codex transport
 │       │   ├── models.py          # A stored provider choice, as the function the Agent calls
 │       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks
 │       │   ├── queue.py           # A waiting line for one card, and a budget it keeps to

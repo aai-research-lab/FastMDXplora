@@ -88,6 +88,15 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "env": "OPENAI_API_KEY",
         "auth": "bearer",
     },
+    "openai-chatgpt": {
+        "label": "ChatGPT subscription",
+        "url": "https://chatgpt.com/backend-api/codex/responses",
+        "default_model": "",
+        "models": (),
+        "models_url": "",
+        "env": "",
+        "auth": "chatgpt",
+    },
     "compatible": {
         # DeepSeek, vLLM, Ollama, OpenRouter, and anything else speaking
         # the OpenAI chat shape. One entry rather than one per vendor,
@@ -242,6 +251,14 @@ def list_models(choice: ModelChoice | None = None, *,
     spec = PROVIDERS.get(chosen.provider) or {}
     fallback = tuple(spec.get("models") or ())
 
+    if chosen.provider == "openai-chatgpt":
+        from fastmdxplora.agent.chatgpt import list_models as list_chatgpt_models
+
+        try:
+            return list_chatgpt_models(path=path, timeout=timeout)
+        except StudyError:
+            return fallback
+
     url = spec.get("models_url")
     if not url and chosen.base_url:
         url = chosen.base_url.rstrip("/") + "/models"
@@ -300,6 +317,12 @@ def completion_for(choice: ModelChoice | None = None, *,
         stream and handed to ``on_text`` piece by piece as it is written;
         the whole reply is returned either way. An exception from
         ``on_text`` (the page that asked has gone) ends the request."""
+        if settled.provider == "openai-chatgpt":
+            from fastmdxplora.agent.chatgpt import complete as complete_chatgpt
+
+            return complete_chatgpt(
+                settled, prompt, path=path, on_text=on_text, timeout=timeout)
+
         key = _key_for(settled, path)
         if settled.auth_style == "x-api-key":
             headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -399,6 +422,11 @@ def describe_choice(path: Path | None = None) -> str:
     settled = load_choice(path)
     if settled is None:
         return "No AI model chosen. Run `fastmdx agent model` to pick one."
+    if settled.provider == "openai-chatgpt":
+        from fastmdxplora.agent.chatgpt import load_tokens
+
+        where = "the ChatGPT subscription session" if load_tokens() else "nowhere"
+        return f"{settled}\nSession read from: {where}"
     env_name = str(PROVIDERS[settled.provider]["env"])
     where = ("the environment" if os.environ.get(env_name)
              else "the stored file" if _has_stored_key(path) else "nowhere")
