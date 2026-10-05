@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An entry typed into the builder is fetched once, and read only whole
+
+**Fixed:** the builder's preview and its estimate ask for a structure
+together as its identifier is typed, and each found it missing from the
+cache and fetched it from RCSB (5O3L twice in a second); the second could
+read the first's file half written, since it was written where it is
+read. One fetch of an entry runs at a time, into a file beside it that is
+moved into place whole.
+
 ### The Agent opens beside any page, and its suggestions send
 
 **⌘J (Ctrl+J), or the button beside Agent in the sidebar, opens the Agent

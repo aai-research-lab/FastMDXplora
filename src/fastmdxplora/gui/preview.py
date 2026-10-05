@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import os
 import re
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -187,12 +189,32 @@ def _cache() -> Path:
     return target
 
 
+#: One fetch of an entry at a time. The builder's preview and its estimate
+#: ask for the structure together as an identifier is typed, and each found
+#: it missing and fetched it (5O3L twice in a second); the second could read
+#: the first's file half written, since it was written where it is read.
+_FETCHING: dict[str, threading.Lock] = {}
+_FETCHING_GUARD = threading.Lock()
+
+
 def _fetched(pdb_id: str) -> Path:
     from fastmdxplora.setup.pipeline import _fetch_pdb_from_rcsb
 
     target = _cache() / f"{pdb_id}.pdb"
-    if not target.is_file():
-        _fetch_pdb_from_rcsb(pdb_id, target)
+    if target.is_file():
+        return target
+    with _FETCHING_GUARD:
+        lock = _FETCHING.setdefault(pdb_id, threading.Lock())
+    with lock:
+        if not target.is_file():
+            # Written beside it and moved into place whole.
+            partial = target.with_name(f".{pdb_id}.{os.getpid()}.{threading.get_ident()}.part")
+            try:
+                _fetch_pdb_from_rcsb(pdb_id, partial)
+                os.replace(partial, target)
+            finally:
+                partial.unlink(missing_ok=True)
+                partial.with_suffix(".cif").unlink(missing_ok=True)
     return target
 
 

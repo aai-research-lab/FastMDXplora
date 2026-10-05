@@ -126,7 +126,9 @@ def _fetch_pdb_from_rcsb(pdb_id: str, dest: Path) -> Path:
         # Entries too large for the PDB format are deposited as mmCIF only.
         cif_url = f"https://files.rcsb.org/download/{pdb_id.upper()}.cif"
         logger.info("RCSB has no PDB-format file for %s; fetching %s", pdb_id.upper(), cif_url)
-        cif = dest.with_name("input.cif")
+        # Beside the file asked for, by its name (input.cif for setup's
+        # input.pdb), so two entries fetched at once keep apart.
+        cif = dest.with_suffix(".cif")
         try:
             urllib.request.urlretrieve(cif_url, cif)  # noqa: S310 -- trusted URL
         except OSError as cif_exc:
