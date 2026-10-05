@@ -119,6 +119,8 @@ def page(study):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             opened = browser.new_page(viewport={"width": 1440, "height": 900})
+            # The Playback starts closed; these drive what is in it.
+            opened.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
             opened.set_default_timeout(60000)
             opened.errors = []
             opened.on("pageerror", lambda error: opened.errors.append(str(error)))
