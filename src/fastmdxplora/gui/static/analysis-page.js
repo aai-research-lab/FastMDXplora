@@ -453,8 +453,9 @@
     }
     if (eq.statistical_inefficiency != null) {
       var auto = data.autocorrelation || {};
-      parts.push("Statistical inefficiency " + format(eq.statistical_inefficiency) + " frames" +
-        (auto.tau_int_time != null && timed ? " (integrated correlation time " + format(auto.tau_int_time) + " ns)" : "") +
+      parts.push("Statistical inefficiency " + Number(eq.statistical_inefficiency).toPrecision(3) + " frames" +
+        (auto.tau_int_time != null && timed ? " (integrated correlation time " +
+          Number(auto.tau_int_time).toPrecision(2) + " ns)" : "") +
         ", so about " + count(Math.round(eq.effective_samples || 0)) + " independent samples.");
     }
     if (recorded.mean != null && recorded.standard_error != null) {
