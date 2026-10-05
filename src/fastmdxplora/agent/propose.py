@@ -646,7 +646,7 @@ def _parse(raw: str) -> dict[str, Any] | None:
 
     text = raw.strip()
     if text.startswith("```"):
-        lines = [l for l in text.splitlines() if not l.strip().startswith("```")]
+        lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
         text = "\n".join(lines)
     try:
         parsed = yaml.safe_load(text)
