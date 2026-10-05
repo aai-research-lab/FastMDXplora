@@ -505,8 +505,10 @@ def test_dashboard_html_has_aai_branding(tmp_path: Path) -> None:
 
     # Pages
     # "live" was a page of its own; its panels are on the overview now.
-    for page in ("overview", "viewer", "analysis", "files", "settings", "cite"):
+    for page in ("overview", "viewer", "analysis", "files"):
         assert f'data-page="{page}"' in html
+    # Preferences and the citation are dialogs over any page.
+    assert 'id="prefs-dialog"' in html and 'id="cite-dialog"' in html
 
     # Loading screen + branded particles
     assert "loading-screen" in html
@@ -1052,8 +1054,10 @@ def test_dashboard_refresh_seconds_are_injected_into_html(tmp_path: Path) -> Non
     finally:
         server.shutdown()
         server.server_close()
+    # The poll the page falls back to where it is not told of changes; no
+    # longer a preference, since the page follows a run as it changes.
     assert 'data-refresh-seconds="1.5"' in html
-    assert 'id="setting-refresh-seconds" min="1" max="60" step="1" value="1.5"' in html
+    assert "setting-refresh-seconds" not in html
 
 
 def test_runner_live_frame_helper_calls_writer_with_valid_keyword(
@@ -4370,7 +4374,7 @@ class TestTheGUICitesTheSoftware:
             server.shutdown()
             server.server_close()
 
-        assert 'data-page="cite"' in html
+        assert 'id="cite-dialog"' in html
         assert __doi__ in html
         assert __citation__.split(".")[0] in html
 
@@ -4411,7 +4415,7 @@ class TestTheGUICitesTheSoftware:
 
         template = _load_template()
         assert "__FASTMDX_BIBTEX__" in template
-        assert 'id="cite-copy"' in template
+        assert 'data-copy-from="cite-bibtex"' in template
 
     def test_one_bibtex_entry_serves_every_surface(self) -> None:
         """There were two copies, in the report and in the GUI, and a third
@@ -4479,7 +4483,7 @@ class TestTheGUIAsksToBeCited:
         # The popup is on every page, and Cite is in it, one click away.
         markup = self._markup()
         popup = markup[markup.index('id="settings-popup"'):markup.index('<div class="app-shell">')]
-        assert 'data-view-link="cite">Cite FastMDXplora' in popup
+        assert 'data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora' in popup
 
     def test_the_page_itself_carries_the_reference_and_the_doi(self) -> None:
         markup = self._markup()

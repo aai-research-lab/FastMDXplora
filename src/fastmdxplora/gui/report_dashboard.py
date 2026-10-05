@@ -1638,7 +1638,6 @@ def _render_dashboard(
         _render_analysis_page(sections, series or {}),
         _render_report_page(report or {"ok": False}),
         _render_files_page(file_groups or [], output_folder),
-        _render_cite_page(__citation__, __doi__, __version__, __bibtex__, __copyright__),
     ))
     logo = _lab_logo_uri()
     icon = f'<link rel="icon" type="image/png" href="{logo}">\n' if logo else ""
@@ -1647,7 +1646,9 @@ def _render_dashboard(
         output_folder=output_folder, stages=stage_steps, cards=cards,
         generated=generated, generated_epoch=f"{generated_at.timestamp():.0f}",
         expansion=__expansion__, logo=logo)
-    settings = _render_settings(__version__)
+    settings = (_render_settings(__version__) + "\n"
+                + _render_cite_dialog(__citation__, __doi__, __version__, __bibtex__,
+                                      __copyright__, __expansion__))
 
     return "".join((
         "<!doctype html>\n<html lang=\"en\" data-page=\"overview\">\n<head>\n",
@@ -1789,7 +1790,7 @@ def _render_settings(version: str) -> str:
     </div>
   </div>
   <div class="settings-divider"></div>
-  <a href="#cite" class="settings-item" data-view-link="cite">Cite FastMDXplora <span class="mono settings-hint">{escape(version)}</span></a>
+  <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint">{escape(version)}</span></button>
   <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
   <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
 </div>"""
@@ -1980,22 +1981,36 @@ def _render_file_row(record: dict[str, Any], output_folder: str) -> str:
     )
 
 
-def _render_cite_page(citation: str, doi: str, version: str, bibtex: str, copyright_: str) -> str:
-    # If this software contributed to your work, please cite it: the report,
-    # the slides and the GUI all say so, from the same constants.
-    return ('<section class="page" data-page="cite" hidden>'
-            + _page_header("Citing FastMDXplora",
-                           "If this software contributed to your work, please cite it")
-            + '<div class="card"><div class="card-header"><h2 class="card-title">Reference</h2>'
-            f'</div><div class="card-body"><p id="cite-reference">{escape(citation)}</p>'
-            f'<p class="subtle">DOI: <a href="https://doi.org/{escape(doi)}" target="_blank" '
-            f'rel="noopener">{escape(doi)}</a> &nbsp;·&nbsp; version '
-            f'<span id="cite-version">{escape(version)}</span></p>'
-            f'<p class="subtle">&copy; Copyright {escape(copyright_)}.</p></div></div>'
-            '<div class="card"><div class="card-header"><h2 class="card-title">BibTeX</h2>'
-            '<button class="btn btn-small" type="button" data-copy-from="cite-bibtex">Copy</button>'
-            f'</div><div class="card-body"><pre class="mono" id="cite-bibtex">{escape(bibtex)}</pre>'
-            "</div></div></section>")
+def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
+                        copyright_: str, expansion: str) -> str:
+    """The citation as the GUI gives it: a dialog over the page, the
+    reference and its BibTeX each copied in one click. The report, the
+    slides and the GUI all say it, from the same constants."""
+    return f"""<div id="cite-dialog" class="agent-dialog" hidden>
+  <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true" aria-labelledby="cite-title">
+    <div class="agent-dialog-head">
+      <div>
+        <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
+        <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
+      </div>
+      <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+    </div>
+    <div class="agent-dialog-body cite-body">
+      <p class="cite-name"><strong>FastMDXplora</strong>: {escape(expansion)}</p>
+      <div class="cite-block">
+        <p id="cite-reference">{escape(citation)}</p>
+        <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+      </div>
+      <p class="subtle">DOI: <a href="https://doi.org/{escape(doi)}" target="_blank" rel="noopener">{escape(doi)}</a> &nbsp;&middot;&nbsp; version <span id="cite-version">{escape(version)}</span></p>
+      <div class="cite-bibtex-head">
+        <span class="builder-label">BibTeX</span>
+        <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+      </div>
+      <pre class="mono" id="cite-bibtex">{escape(bibtex)}</pre>
+      <p class="subtle">&copy; Copyright {escape(copyright_)}.</p>
+    </div>
+  </div>
+</div>"""
 
 
 def _render_card(card: DashboardCard) -> str:
@@ -2209,7 +2224,7 @@ _SERIES_FROM_THE_PAGE_JS = """
 _PAGE_JS = """
 (function () {
   "use strict";
-  var PAGES = ["overview", "analysis", "report", "files", "cite"];
+  var PAGES = ["overview", "analysis", "report", "files"];
   function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
   function applyTheme(name, chosen) {
@@ -2238,9 +2253,45 @@ _PAGE_JS = """
     }
     if (target) target.scrollIntoView(); else window.scrollTo(0, 0);
   }
+  /* Dialogs over the page, as in the GUI: Escape, Close or a click on the
+   * dimmed page closes one, and focus goes back to what opened it. */
+  var opener = null;
+  function openDialog(id, from) {
+    var dialog = document.getElementById(id);
+    if (!dialog) return;
+    opener = from || document.activeElement;
+    dialog.hidden = false;
+    var first = dialog.querySelector("button, [href]");
+    if (first) first.focus();
+  }
+  function closeDialogs() {
+    var open = $$(".agent-dialog").filter(function (d) { return !d.hidden; });
+    open.forEach(function (d) { d.hidden = true; });
+    if (open.length && opener && opener.offsetParent !== null) opener.focus();
+    return open.length > 0;
+  }
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (target.classList.contains("agent-dialog") || target.closest("[data-dialog-close]")) {
+      closeDialogs();
+      return;
+    }
+    var trigger = target.closest("[data-dialog-open]");
+    if (trigger) {
+      var gear = document.getElementById("settings-open");
+      if (popup && popup.contains(trigger)) closeSettings();
+      openDialog(trigger.getAttribute("data-dialog-open"), popup && popup.contains(trigger) ? gear : trigger);
+    }
+  }, true);
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && closeDialogs()) event.stopImmediatePropagation();
+  }, true);
+
   function route() {
     var id = "";
     try { id = decodeURIComponent((location.hash || "").slice(1)); } catch (e) {}
+    // A link to the citation, which was a page, opens its dialog.
+    if (id === "cite") { show("overview"); openDialog("cite-dialog"); return; }
     if (!id || PAGES.indexOf(id) >= 0) { show(id || "overview"); return; }
     var target = document.getElementById(id);
     var page = target && target.closest("section.page");

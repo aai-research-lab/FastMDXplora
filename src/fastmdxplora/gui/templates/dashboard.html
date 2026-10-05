@@ -101,6 +101,130 @@
       </div>
     </div>
   </div>
+  <!-- Preferences: how this browser shows things, kept in it and applied
+       as they change. Nothing here changes a study or its files. -->
+  <div id="prefs-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="prefs-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="prefs-title">Preferences</div>
+          <div class="builder-card-note">Kept in this browser. They change how
+            studies are shown, never a study or its files.</div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <div class="pref-group">
+          <div class="pref-group-title">The Viewer, as it opens</div>
+          <div class="pref-rows">
+            <label class="pref-row"><span>Representation</span>
+              <select id="setting-protein-rep">
+                <option value="cartoon" selected>Cartoon</option>
+                <option value="backbone">Backbone</option>
+                <option value="sticks">Sticks</option>
+                <option value="ballAndStick">Ball and stick</option>
+                <option value="surface">Surface</option>
+                <option value="lines">Lines</option>
+                <option value="spacefill">Spheres</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Ground</span>
+              <select id="setting-ground">
+                <option value="dark" selected>Dark</option>
+                <option value="white">White</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Water</span><input type="checkbox" id="setting-show-water"></label>
+            <label class="pref-row"><span>Ions</span><input type="checkbox" id="setting-show-ions"></label>
+            <label class="pref-row"><span>Spin</span><input type="checkbox" id="setting-spin"></label>
+            <label class="pref-row"><span>Keep the camera as frames change<small>Off, each frame is fitted to the view</small></span><input type="checkbox" id="setting-preserve-camera" checked></label>
+            <label class="pref-row"><span>Pocket cutoff (&Aring;)<small>Residues this close to the ligand</small></span>
+              <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
+            </label>
+          </div>
+        </div>
+        <div class="pref-group">
+          <div class="pref-group-title">Display</div>
+          <div class="pref-rows">
+            <label class="pref-row"><span>Time</span>
+              <select id="setting-time-format">
+                <option value="24h" selected>24-hour</option>
+                <option value="12h">12-hour</option>
+              </select>
+            </label>
+            <label class="pref-row"><span>Chart history<small>Samples a live chart keeps</small></span>
+              <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="agent-dialog-foot">
+        <button type="button" class="ghost-btn" id="prefs-restore">Restore defaults</button>
+      </div>
+    </div>
+  </div>
+  <!-- The citation, and its BibTeX, each taken in one click. The report,
+       the slides and `fastmdx info` print it too; filled by the server from
+       the same constant, so it cannot drift from the others. -->
+  <div id="cite-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="cite-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
+          <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body cite-body">
+        <p class="cite-name"><strong>FastMDXplora</strong>: __FASTMDX_EXPANSION__</p>
+        <div class="cite-block">
+          <p id="cite-reference">__FASTMDX_CITATION__</p>
+          <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+        </div>
+        <p class="subtle">DOI: <a href="https://doi.org/__FASTMDX_DOI__"
+           target="_blank" rel="noopener">__FASTMDX_DOI__</a>
+           &nbsp;&middot;&nbsp; version <span id="cite-version">__FASTMDX_VERSION__</span></p>
+        <div class="cite-bibtex-head">
+          <span class="builder-label">BibTeX</span>
+          <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+        </div>
+        <pre class="mono" id="cite-bibtex">__FASTMDX_BIBTEX__</pre>
+        <p class="subtle">&copy; Copyright __FASTMDX_COPYRIGHT__.</p>
+      </div>
+    </div>
+  </div>
+  <!-- One of the study's own words for this browser: the name it is shown
+       under, or the ligand the Viewer centres on. Kept by the study's
+       folder; the study is not changed. -->
+  <div id="study-field-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="study-field-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="study-field-title">Name for display</div>
+          <div class="builder-card-note" id="study-field-note"></div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <label class="builder-field">
+          <span class="builder-label" id="study-field-label">Name</span>
+          <input type="text" id="study-field-input" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="builder-card-note study-field-refused" id="study-field-refused" role="alert" hidden></p>
+      </div>
+      <div class="agent-dialog-foot">
+        <button type="button" class="ghost-btn" id="study-field-clear">Use the default</button>
+        <button type="button" class="primary-btn" id="study-field-save">Save</button>
+      </div>
+    </div>
+  </div>
+  <!-- The study's own words, read by the page as they were when they were
+       settings of the page; written by the dialog above. -->
+  <input type="hidden" id="setting-run-name">
+  <input type="hidden" id="setting-ligand-resname">
   <div class="settings-popup" id="settings-popup" hidden role="dialog" aria-label="Settings">
     <!--__FASTMDX_ACCOUNT_ITEM__-->
     <div class="settings-section">Appearance</div>
@@ -116,10 +240,10 @@
     <div class="settings-section">Agent</div>
     <div class="settings-row"><span>Engine</span><span class="mono settings-value" id="settings-engine">none</span></div>
     <div class="settings-row"><span>Mode</span><span class="mono settings-value" id="settings-mode">assisted</span></div>
-    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip; <span class="mono settings-hint">engine, key, mode, ceiling</span></a>
+    <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip;</a>
     <div class="settings-divider"></div>
-    <a href="#settings" class="settings-item" data-view-link="settings">Display preferences <span class="mono settings-hint">viewer, dashboard</span></a>
-    <a href="#cite" class="settings-item" data-view-link="cite">Cite FastMDXplora <span class="mono settings-hint" id="settings-version"></span></a>
+    <button type="button" class="settings-item" data-dialog-open="prefs-dialog" aria-haspopup="dialog">Preferences&hellip; <span class="mono settings-hint">viewer, time, charts</span></button>
+    <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint" id="settings-version"></span></button>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
   </div>
@@ -166,9 +290,11 @@
           <button class="study-menu-item" type="button" role="menuitem" id="load-study" title="Open a study from another folder">Open another folder&hellip;</button>
           <input type="hidden" id="load-study-path">
           <div class="study-menu-divider"></div>
-          <div class="study-menu-label">This study's folder</div>
+          <div class="study-menu-label">This study</div>
           <div class="study-path mono" id="sidebar-output-folder" title="Output folder">&mdash;</div>
           <button class="study-menu-item" type="button" role="menuitem" id="open-output" title="Open the output folder, and copy its path">Open the folder</button>
+          <button class="study-menu-item" type="button" role="menuitem" data-study-field="name" aria-haspopup="dialog">Rename for display&hellip;</button>
+          <button class="study-menu-item" type="button" role="menuitem" data-study-field="ligand" aria-haspopup="dialog">Ligand residue&hellip;</button>
         </div>
         <!-- What is running elsewhere, when something is; a study of several
              runs, each with where it stands; a run inside one, and the way
@@ -1360,39 +1486,6 @@
           </div>
         </section>
 
-        <!-- The report, the slides and `fastmdx info` all print this and the
-             GUI printed none, which made it the one interface that never told
-             a new user how to cite the software. Filled by the server from
-             the same constant, so it cannot drift from the others. -->
-        <section class="page" data-page="cite" hidden>
-          <div class="page-header">
-            <div>
-              <h1 class="page-title">Citing FastMDXplora</h1>
-              <div class="page-subtitle">If this software contributed to your work, please cite it</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Reference</h2></div>
-            <div class="card-body">
-              <p class="cite-name"><strong>FastMDXplora</strong>: __FASTMDX_EXPANSION__</p>
-              <p id="cite-reference">__FASTMDX_CITATION__</p>
-              <p class="subtle">DOI: <a href="https://doi.org/__FASTMDX_DOI__"
-                 target="_blank" rel="noopener">__FASTMDX_DOI__</a>
-                 &nbsp;·&nbsp; version <span id="cite-version">__FASTMDX_VERSION__</span></p>
-              <p class="subtle">&copy; Copyright __FASTMDX_COPYRIGHT__.</p>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">
-              <h2 class="card-title">BibTeX</h2>
-              <button class="btn btn-small" id="cite-copy">Copy</button>
-            </div>
-            <div class="card-body">
-              <pre class="mono" id="cite-bibtex">__FASTMDX_BIBTEX__</pre>
-            </div>
-          </div>
-        </section>
-
         <section class="page" data-page="agent" hidden>
           <div class="page-header">
             <div>
@@ -1493,91 +1586,6 @@
             </div>
           </template>
         </section>
-
-        <section class="page" data-page="settings" hidden>
-          <div class="page-header">
-            <div>
-              <h1 class="page-title">Settings</h1>
-              <div class="page-subtitle">Browser-side preferences. Existing simulations cannot be modified here.</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Viewer</h2></div>
-            <div class="kv-form mono">
-              <label>Default protein representation
-                <select id="setting-protein-rep">
-                  <option value="cartoon" selected>Cartoon</option>
-                  <option value="backbone">Backbone</option>
-                  <option value="sticks">Sticks</option>
-                  <option value="ballAndStick">Ball and Stick</option>
-                  <option value="surface">Surface</option>
-                  <option value="lines">Lines</option>
-                </select>
-              </label>
-              <label>Default ligand representation
-                <select id="setting-ligand-rep">
-                  <option value="sticks" selected>Sticks</option>
-                  <option value="ballAndStick">Ball and Stick</option>
-                  <option value="cartoon">Cartoon</option>
-                  <option value="lines">Lines</option>
-                </select>
-              </label>
-              <label>Background
-                <select id="setting-background">
-                  <option value="matte-black" selected>Matte black</option>
-                  <option value="deepest-night">Deepest night</option>
-                  <option value="charcoal">Charcoal</option>
-                </select>
-              </label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-show-water"> Show water</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-show-ions"> Show ions</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-spin"> Spin structures by default</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-fog"> Subtle depth fog</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-preserve-camera" checked> Preserve camera between frames</label>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Dashboard</h2></div>
-            <div class="kv-form mono">
-              <label>Telemetry polling (s)
-                <input type="number" id="setting-refresh-seconds" min="1" max="60" step="1" value="__FASTMDX_REFRESH_SECONDS__">
-              </label>
-              <label>Chart history (samples)
-                <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
-              </label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-compact"> Compact mode</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-reduced-motion"> Reduced motion</label>
-              <label class="checkbox-row"><input type="checkbox" id="setting-advanced-metrics"> Show advanced metrics</label>
-              <label>Time
-                <select id="setting-time-format">
-                  <option value="24h" selected>24-hour</option>
-                  <option value="12h">12-hour</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header"><h2 class="card-title">Exploration display</h2></div>
-            <div class="kv-form mono">
-              <label>Custom run display name
-                <input type="text" id="setting-run-name" placeholder="(auto from manifest)">
-              </label>
-              <label>Explicit ligand residue name
-                <input type="text" id="setting-ligand-resname" placeholder="(auto-detected)">
-              </label>
-              <label>Binding-pocket cutoff (Å)
-                <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
-              </label>
-              <label>Scientific notation threshold
-                <input type="number" id="setting-scinote" min="0" max="20" step="1" value="5">
-              </label>
-            </div>
-            <p class="muted small">
-              These preferences affect only how the dashboard renders this run.
-              They do not modify the OpenMM simulation or any output files.
-            </p>
-          </div>
-        </section>
       </main>
     </div>
     <div class="col-handle" data-handle="panel" role="separator" aria-orientation="vertical" aria-label="Resize side panel"></div>
@@ -1636,6 +1644,7 @@
   <script src="/static/molstar/molstar.js?v=5.12.0"></script>
   <script src="/static/viewer-engine.js"></script>
   <script src="/static/agent-panel.js"></script>
+    <script src="/static/preferences.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>
     <script src="/static/analyze-again.js"></script>

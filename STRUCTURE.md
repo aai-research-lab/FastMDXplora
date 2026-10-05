@@ -165,6 +165,7 @@ FastMDXplora/
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
 │       │   │                      #   frame.js (columns, side panel, theme), studies.js,
+│       │   │                      #   preferences.js (the dialogs, preferences kept),
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, charts.js,

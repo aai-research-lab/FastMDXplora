@@ -50,7 +50,7 @@ of another colour over the column's own ground.
 ### The sidebar, rebuilt
 
 **The sidebar reads top-down and fits a laptop's screen.** The product's
-name alone at the top (the product's expansion is on the Cite page now; a
+name alone at the top (the product's expansion is with the citation now; a
 hosted service's own line still shows under its name). The study on screen as a
 card: its name and one line of where it stands (Running, Completed,
 Stopped, Failed) with the platform, and, when the page stops hearing from
@@ -67,6 +67,24 @@ failed run **What would fix it**, which opens the Overview at that card. A
 finished study has no card. At 900 pixels the old sidebar ran past the
 window, its foot over the stage list and its buttons out of reach. The
 standalone dashboard has the same sidebar.
+
+### Preferences and the citation are dialogs
+
+**Preferences** and **Cite FastMDXplora**, in the settings menu, open as
+dialogs over the page shown, as Agent settings does; they were pages.
+Escape, Close or a click outside closes any of the three, and focus goes
+back to the gear. Preferences are kept in the browser and applied as they
+change, with **Restore defaults**; a reload lost every one of them. Six
+that changed nothing are gone (ligand representation, depth fog, compact
+mode, reduced motion, which the page takes from the system, advanced
+metrics and the scientific notation threshold), as is the telemetry
+polling interval: the page is told of changes as they happen, and falls
+back to its own poll where a proxy holds them. The Viewer's background is
+**Ground**, dark or white, as its button says; two of its three blacks were
+one colour. **Rename for display** and **Ligand residue** moved to the
+study card's menu, kept for each study by its folder. The citation's
+reference and its BibTeX each copy in one click, in the standalone
+dashboard too.
 
 ### The top bars are one height
 

@@ -12,8 +12,7 @@ import pytest
 
 from tests.test_the_workspace_says_its_studies import _study
 
-PAGES = ("studies", "run", "overview", "viewer", "analysis", "report", "files", "cite",
-         "agent", "settings")
+PAGES = ("studies", "run", "overview", "viewer", "analysis", "report", "files", "agent")
 
 _MEASURED = """() => {
     const header = document.querySelector('.page:not([hidden]) .page-header');

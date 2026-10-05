@@ -857,7 +857,7 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") setPopup(false);
     });
-    /* The version is on the Cite page, filled in by the server. Read it
+    /* The version is in the Cite dialog, filled in by the server. Read it
      * from there rather than asking for a second copy. */
     /* One button. Open opens the folder where the browser can, and the
      * path goes to the clipboard either way, so the button is useful on
@@ -1143,7 +1143,10 @@
 
     var version = el("settings-version");
     var cite = el("cite-version");
-    if (version && cite) version.textContent = cite.textContent.trim();
+    if (version && cite) {
+      version.textContent = cite.textContent.trim();
+      version.title = version.textContent;
+    }
 
     /* "Agent settings…" opens the Agent's own dialog. Landing on the page
      * and leaving somebody to find the button was the same as not
@@ -1153,6 +1156,8 @@
       agentLink.addEventListener("click", function (e) {
         e.preventDefault();
         setPopup(false);
+        // Focus goes back to the gear when the dialog closes.
+        el("settings-open").focus();
         /* No navigation. The dialog is at body level and opens over
          * whatever page is showing; changing the page to open a
          * settings dialog is a detour nobody asked for. */
@@ -1161,10 +1166,6 @@
         }
       });
     }
-    /* The other popup items navigate; close the popup when they do. */
-    $$(".settings-item[data-view-link]").forEach(function (a) {
-      a.addEventListener("click", function () { setPopup(false); });
-    });
 
     loadLog();
     loadAgentStatus();

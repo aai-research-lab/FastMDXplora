@@ -101,7 +101,7 @@ def test_the_service_is_named_where_this_software_was(workspace: Path) -> None:
     assert '<div class="loading-product">Example Lab MD</div>' in page
     assert '<div class="brand-tagline"></div>' in page, "no borrowed tagline"
     # The citation and the links to this software stay.
-    assert "Cite FastMDXplora" in page and "Citing FastMDXplora" in page
+    assert "Cite FastMDXplora&hellip;" in page and 'id="cite-title">Cite FastMDXplora<' in page
 
 
 def test_the_service_gives_its_own_line(workspace: Path) -> None:

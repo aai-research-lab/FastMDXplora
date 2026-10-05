@@ -395,8 +395,16 @@
     }
   }
 
-  function openSettings() { el("agent-settings").hidden = false; }
-  function closeSettings() { el("agent-settings").hidden = true; }
+  // As the page's other dialogs (preferences.js): Escape and a click
+  // outside close it, focus stays in it and goes back to what opened it.
+  function openSettings() {
+    if (window.FastMDXDialog) window.FastMDXDialog.open("agent-settings");
+    else el("agent-settings").hidden = false;
+  }
+  function closeSettings() {
+    if (window.FastMDXDialog) window.FastMDXDialog.close("agent-settings");
+    else el("agent-settings").hidden = true;
+  }
 
   function loadEngine() {
     return post("/api/agent/model", {}).then(function (data) {

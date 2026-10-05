@@ -204,7 +204,7 @@ class TestTheSettingsPopup(unittest.TestCase):
         # the sidebar had grown crowded. That is his call to make.
         page = _page()
         popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
-        self.assertIn('data-view-link="cite">Cite FastMDXplora', popup)
+        self.assertIn('data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora', popup)
         self.assertIn('id="settings-version"', popup)
         self.assertNotIn("About FastMDXplora", popup)
         sidebar = page[page.index('<aside class="sidebar"'):page.index("</aside>")]
@@ -413,28 +413,28 @@ class TestThePopupItemsAct(unittest.TestCase):
         script = _script()
         self.assertIn('el("settings-agent-link")', script)
         self.assertIn("window.FastMDXAgent.openSettings()", script)
-        handler = script[script.index('el("settings-agent-link")'):script.index("The other popup items navigate")]
+        handler = script[script.index('el("settings-agent-link")'):script.index("loadLog();", script.index('el("settings-agent-link")'))]
         self.assertNotIn('navigate("agent")', handler)
         page = _page()
         self.assertLess(page.index('id="agent-settings"'), page.index('<div class="app-shell">'))
         agent = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn("window.FastMDXAgent = { openSettings: openSettings", agent)
 
-    def test_cite_in_the_popup_goes_to_the_cite_page(self):
+    def test_cite_in_the_popup_opens_its_dialog(self):
         page = _page()
         popup = page[page.index('id="settings-popup"'):page.index('<div class="app-shell">')]
         item = popup[popup.index("Cite FastMDXplora") - 120:popup.index("Cite FastMDXplora")]
-        self.assertIn('href="#cite"', item)
+        self.assertIn('data-dialog-open="cite-dialog"', item)
 
-    def test_the_version_comes_from_the_cite_page(self):
+    def test_the_version_comes_from_the_cite_dialog(self):
         # One copy, filled in by the server, rather than a second
         # placeholder to keep in step.
         self.assertIn('el("cite-version")', _script())
 
-    def test_the_settings_page_is_named_for_what_it_holds(self):
-        # "Browser settings" read as configuring the browser. The page is
-        # viewer and dashboard preferences.
-        self.assertIn("Display preferences", _page())
+    def test_the_preferences_are_named_for_what_they_hold(self):
+        # "Browser settings" read as configuring the browser. They are how
+        # studies are shown, in this browser.
+        self.assertIn("Preferences&hellip;", _page())
 
     def test_pause_is_one_word(self):
         # "Pause updates" overlapped Refresh in a 232px sidebar; now an

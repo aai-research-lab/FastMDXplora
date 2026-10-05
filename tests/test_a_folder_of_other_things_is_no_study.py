@@ -183,13 +183,16 @@ def test_the_overview_says_there_is_no_study_here(tmp_path, monkeypatch):
                                    ".textContent === 'No study here'")
             body = page.text_content("#live-absent-body")
             offered = page.is_visible("#live-absent-actions")
-            # The study menu offers no folder to open.
+            # The study menu offers no folder to open, and no study's own
+            # name or ligand to set.
             folder = page.evaluate("""() => ['sidebar-output-folder', 'open-output']
-                .map((id) => document.getElementById(id).hidden)""")
+                .map((id) => document.getElementById(id).hidden).concat(
+                [...document.querySelectorAll('#study-menu [data-study-field]')]
+                .map((item) => item.hidden))""")
             browser.close()
     finally:
         session.server.shutdown()
     assert body == ("checkout holds no study: nothing in it was written by FastMDXplora. "
                     "Open one under All studies, or start one.")
     assert offered
-    assert folder == [True, True]
+    assert folder == [True, True, True, True]

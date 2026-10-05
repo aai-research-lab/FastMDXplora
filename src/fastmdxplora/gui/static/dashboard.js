@@ -87,25 +87,6 @@
         setTimeout(() => { methodsCopy.textContent = "Copy"; }, 2000);
       });
     }
-    // The BibTeX entry is there to be taken, so make taking it one click.
-    const citeCopy = document.getElementById("cite-copy");
-    if (citeCopy) {
-      citeCopy.addEventListener("click", async () => {
-        const entry = document.getElementById("cite-bibtex");
-        if (!entry) return;
-        try {
-          await navigator.clipboard.writeText(entry.textContent.trim());
-          citeCopy.textContent = "Copied";
-        } catch (err) {
-          // Clipboard access needs a secure context, which http://127.0.0.1
-          // is but a remote http:// host is not. Say so rather than
-          // pretending it worked.
-          citeCopy.textContent = "Select and copy";
-        }
-        setTimeout(() => { citeCopy.textContent = "Copy"; }, 2000);
-      });
-    }
-
     $$('[data-view-link]').forEach((element) => {
       element.addEventListener("click", (event) => {
         event.preventDefault();
@@ -114,12 +95,22 @@
     });
     window.addEventListener("hashchange", () => {
       const page = location.hash.replace(/^#/, "");
-      if (state.pages.includes(page)) navigate(page, {updateHash: false});
+      if (state.pages.includes(page) || DIALOG_OF[page]) navigate(page, {updateHash: false});
     });
   }
 
+  /* Preferences and the citation were pages and are dialogs over the page
+   * shown; a link to either (#settings, #cite) opens it. */
+  const DIALOG_OF = {settings: "prefs-dialog", preferences: "prefs-dialog", cite: "cite-dialog"};
+
   function navigate(page, options) {
     const opts = options || {};
+    if (DIALOG_OF[page] && byId(DIALOG_OF[page])) {
+      if (!state.activePage) navigate("overview");
+      else history.replaceState(null, "", `#${state.activePage}`);
+      window.FastMDXDialog?.open(DIALOG_OF[page]);
+      return;
+    }
     if (!state.pages.includes(page)) page = "overview";
     state.activePage = page;
     $$('.page').forEach((element) => {
@@ -265,15 +256,16 @@
   }
 
   function wireSettings() {
+    // The Preferences dialog's fields, and the study's own words from the
+    // study card's menu (preferences.js keeps both in the browser).
     const ids = [
-      "setting-protein-rep", "setting-ligand-rep", "setting-background",
-      "setting-show-water", "setting-show-ions", "setting-spin", "setting-fog",
-      "setting-preserve-camera", "setting-refresh-seconds", "setting-chart-history",
-      "setting-compact", "setting-reduced-motion", "setting-advanced-metrics",
-      "setting-time-format", "setting-run-name", "setting-ligand-resname",
-      "setting-pocket-cutoff", "setting-scinote",
+      "setting-protein-rep", "setting-ground", "setting-show-water", "setting-show-ions",
+      "setting-spin", "setting-preserve-camera", "setting-pocket-cutoff",
+      "setting-chart-history", "setting-time-format", "setting-run-name",
+      "setting-ligand-resname",
     ];
     ids.forEach((id) => byId(id)?.addEventListener("change", onSettingsChanged));
+    readSettings();
     byId("pocket-cutoff")?.addEventListener("change", (event) => {
       const value = clampFloat(parseFloat(event.target.value), 3, 15, 5);
       state.bindingPocketCutoff = value;
@@ -282,13 +274,9 @@
     });
   }
 
-  function onSettingsChanged() {
-    state.pollIntervalMs = clampInt(
-      parseFloat(byId("setting-refresh-seconds")?.value) * 1000,
-      1000,
-      60000,
-      3000
-    );
+  /* What the fields say, into the page's state; the Viewer asks for the
+   * same with settings() as it starts, and is told of each change. */
+  function readSettings() {
     state.bindingPocketCutoff = clampFloat(
       parseFloat(byId("setting-pocket-cutoff")?.value),
       3,
@@ -305,28 +293,26 @@
     );
     const customRunName = (byId("setting-run-name")?.value || "").trim();
     if (customRunName) state.runTitle = customRunName;
+  }
 
-    document.body.classList.toggle("compact-mode", !!byId("setting-compact")?.checked);
-    document.body.classList.toggle("reduced-motion", !!byId("setting-reduced-motion")?.checked);
-    document.body.classList.toggle(
-      "advanced-metrics",
-      !!byId("setting-advanced-metrics")?.checked
-    );
-
-    renderTopBar(state.status, state.health);
-    emit("settings-updated", {
+  function currentSettings() {
+    return {
       ligand: state.ligandResname,
       pocketCutoff: state.bindingPocketCutoff,
       chartHistory: chartHistorySamples,
       proteinRepresentation: byId("setting-protein-rep")?.value || "cartoon",
-      ligandRepresentation: byId("setting-ligand-rep")?.value || "sticks",
-      background: byId("setting-background")?.value || "matte-black",
+      ground: byId("setting-ground")?.value === "white" ? "white" : "dark",
       showWater: !!byId("setting-show-water")?.checked,
       showIons: !!byId("setting-show-ions")?.checked,
       spin: !!byId("setting-spin")?.checked,
-      fog: !!byId("setting-fog")?.checked,
       preserveCamera: byId("setting-preserve-camera")?.checked !== false,
-    });
+    };
+  }
+
+  function onSettingsChanged() {
+    readSettings();
+    renderTopBar(state.status, state.health);
+    emit("settings-updated", currentSettings());
     schedulePoll(0);
   }
 
@@ -522,6 +508,8 @@
       const rule = label ? label.previousElementSibling : null;
       if (rule && rule.classList.contains("study-menu-divider")) rule.hidden = !state.outputDir;
     });
+    // The study's own words (preferences.js) are a study's, so none either.
+    $$("#study-menu [data-study-field]").forEach((item) => { item.hidden = !state.outputDir; });
   }
 
   function resetRunDependentState() {
@@ -2132,6 +2120,8 @@
     /* A figure's chip, for the Report page's figures: the chip for a
      * record, and the listener that opens it, given how to find a record
      * by its analysis's name. */
+    /* The settings as the fields say them, as "settings-updated" sends. */
+    settings: () => currentSettings(),
     figureChip: (name, made) => provenanceChip(name, made),
     listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
   };

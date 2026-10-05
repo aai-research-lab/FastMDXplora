@@ -321,8 +321,10 @@ class TestDashboard:
         assert sheet in text
         assert '<aside class="sidebar"' in text
         assert 'class="sidebar-stages"' in text
-        for page in ("overview", "analysis", "report", "files", "cite"):
+        for page in ("overview", "analysis", "report", "files"):
             assert f'data-page="{page}"' in text
+        # The citation is a dialog, as in the GUI.
+        assert 'id="cite-dialog"' in text
         assert "Study Overview" in text
         # No simulation ran in this workflow and none left a live record,
         # so the health card, which is about a simulation, is not shown,

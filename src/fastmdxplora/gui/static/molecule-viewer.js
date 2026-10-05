@@ -23,7 +23,6 @@
     white: "#ffffff",
     violet: "#a78bfa",
     black: "#050505",
-    charcoal: "#101012",
     green: "#67e8a3",
     orange: "#ffb86b",
   };
@@ -83,8 +82,12 @@
     superposedUrl: null,
     // A white ground and the highest quality, for a figure.
     publication: false,
-    // "dark" (the settings' black or charcoal) or "white".
+    // "dark" (black) or "white".
     ground: "dark",
+    // What Preferences last said of the ground, spin and the ligand.
+    groundChosen: "",
+    spinChosen: false,
+    ligandChosen: false,
     framesCoordinatesUrl: null,
     pocketSurface: false,
     pocketOnly: false,
@@ -147,6 +150,9 @@
     window.FastMDXDashboard?.on("viewer-page-opened", onViewerPageOpened);
     window.FastMDXDashboard?.on("live-page-opened", onLivePageOpened);
     window.FastMDXDashboard?.on("settings-updated", onSettingsUpdated);
+    // The settings kept in this browser, before anything is rendered.
+    const settings = window.FastMDXDashboard?.settings?.();
+    if (settings) onSettingsUpdated(settings);
     window.addEventListener("resize", resizeViewers);
     document.addEventListener("fullscreenchange", () => requestAnimationFrame(resizeViewers));
     wireFolds();
@@ -253,6 +259,7 @@
         engine.on("hover", onHoverAtom);
         engine.on("click", onClickAtom);
         STATE.engine = engine;
+        if (STATE.spinChosen) setSpinning(engine, true);
         return engine;
       } catch (error) {
         STATE.viewerUnavailable = true;
@@ -1153,8 +1160,7 @@
   /** The look a figure is made in: a white ground, and the outlines and
    * shading of the highest quality, wherever the page is rendered; off,
    * the ground and quality as set. */
-  /** The ground the molecule is shown on: "white", or "dark" (black or
-   * charcoal, as the settings say). */
+  /** The ground the molecule is shown on: "white", or "dark" (black). */
   function setGround(ground) {
     STATE.ground = ground === "white" ? "white" : "dark";
     if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
@@ -2240,8 +2246,19 @@
   /* ------------------------------------------------------------------ */
   /* Settings, status, selections                                        */
   /* ------------------------------------------------------------------ */
+  /* The Preferences dialog's settings, as the Viewer starts and as they
+   * change. The ground and spin follow a preference only when it changes,
+   * so the ground button and the spin button keep what they were last
+   * set to otherwise. */
   function onSettingsUpdated(settings) {
-    if (settings.ligand) STATE.ligandResname = String(settings.ligand).toUpperCase();
+    if (settings.ligand) {
+      STATE.ligandResname = String(settings.ligand).toUpperCase();
+      STATE.ligandChosen = true;
+    } else if (STATE.ligandChosen) {
+      // Back to the first ligand the structure has, as at the start.
+      STATE.ligandChosen = false;
+      STATE.ligandResname = (STATE.structureInfo?.ligand_resnames || []).filter(Boolean)[0] || null;
+    }
     if (Number.isFinite(settings.pocketCutoff)) STATE.pocketCutoff = settings.pocketCutoff;
     if (settings.proteinRepresentation) {
       STATE.representation = settings.proteinRepresentation;
@@ -2254,10 +2271,14 @@
     STATE.visibility.water = !!settings.showWater;
     STATE.visibility.ions = !!settings.showIons;
     STATE.preservingCamera = settings.preserveCamera !== false;
-    STATE.background = settings.background === "charcoal" ? COLORS.charcoal : COLORS.black;
-    // The publication look and a white ground keep theirs.
-    if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
-    if (settings.spin && STATE.engine) setSpinning(STATE.engine, true);
+    if (settings.ground && settings.ground !== STATE.groundChosen) {
+      STATE.groundChosen = settings.ground;
+      setGround(settings.ground);
+    }
+    if (!!settings.spin !== STATE.spinChosen) {
+      STATE.spinChosen = !!settings.spin;
+      if (STATE.engine) setSpinning(STATE.engine, STATE.spinChosen);
+    }
     if (STATE.mode === "playback" && needsFullTopology()) void ensurePlaybackEnvironment();
     const cutoff = document.getElementById("pocket-cutoff");
     if (cutoff) cutoff.value = String(STATE.pocketCutoff);

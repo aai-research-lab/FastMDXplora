@@ -271,8 +271,8 @@ class TestWhatIsNotSaid:
         assert all("—" not in text for text in shown), shown
 
     def test_the_citation_stays_in_its_card(self, browser, studies) -> None:
-        page = _open(browser, studies["finished"], where="#cite")
-        page.evaluate("() => window.FastMDXDashboard.navigate('cite')")
+        page = _open(browser, studies["finished"], where="#overview")
+        page.evaluate("() => window.FastMDXDialog.open('cite-dialog')")
         page.wait_for_timeout(300)
         widths = page.evaluate("() => { const b = document.getElementById('cite-bibtex');"
                                " return [b.scrollWidth, b.clientWidth]; }")

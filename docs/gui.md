@@ -101,7 +101,11 @@ page has stopped hearing from the server, that too. Pressed, it opens the
 studies to switch to: the newest of the workspace, **All studies**, **Open
 another folder** (a picker on any folder), and the study's own folder with
 **Open the folder** (where it cannot be opened from here, its path is
-copied). The *Running* line appears only when a run is going in a study
+copied), **Rename for display** (the name the GUI shows the study under
+here; its folder and records keep theirs) and **Ligand residue** (the
+ligand the Viewer centres on and finds the pocket around, for a structure
+with more than one; the analyses are not changed). Both are kept on this
+computer by the study's folder, as Preferences are. The *Running* line appears only when a run is going in a study
 other than the one on screen (from this GUI at most one study runs at a
 time), with its fraction complete read from its own telemetry and a *View*
 button back to it; a study of several runs lists them there, and a run of
@@ -132,8 +136,22 @@ process in the folder; a stale record left by a crash is checked against
 the live process before anything is believed, and a process that is not
 FastMDXplora running that study is never adopted.
 
-Three schemes, from the settings popup: Graphite, Ink and Paper. Green done,
-amber qualified and red refused mean the same in all three.
+**The settings**, from the gear at the sidebar's foot: the scheme
+(Graphite, Ink or Paper), the Agent's AI model and mode with **Agent
+settings**, **Preferences**, **Cite FastMDXplora**, the documentation and
+the repository. Each of the three opens as a dialog over the page shown;
+Escape, Close or a click outside closes it, and `#settings` or `#cite` in
+the address opens it. **Preferences** are how the Viewer opens
+(representation, a dark or white ground, water, ions, spin, the camera kept
+as frames change, the pocket cutoff), the time in 24 or 12 hours, and how
+many samples a live chart keeps; they apply as they change and are kept on
+this computer, in the browser tab's storage for the GUI's address
+(**Restore defaults** puts the release's back). Nothing in them
+changes a study or its files. **Cite FastMDXplora** gives the reference and
+its BibTeX, each copied with one click.
+
+Green done, amber qualified and red refused mean the same in all three
+schemes.
 
 Every page, in every scheme, is held to WCAG 2.1 AA's contrast: 4.5 to 1 for
 text, 3 to 1 for large text, measured against what is behind it by a test
@@ -612,8 +630,9 @@ software automatically.
 ## Not the same thing: `report/dashboard.html`
 
 The report phase writes a **static** `dashboard.html` into the run directory.
-It is laid out as the GUI is: the same sidebar and settings menu, the
-Overview, Analysis, Report and Files pages, the three schemes, and each
+It is laid out as the GUI is: the same sidebar and settings menu (with the
+citation's dialog), the Overview, Analysis, Report and Files pages, the
+three schemes, and each
 series plotted from its numbers as the Analysis page plots it. It is the
 study as the report phase found it, and does not update. It opens in a
 browser tab with no server running, and travels inside `project_bundle.zip`:
