@@ -106,22 +106,44 @@ class TestTheCaption:
 
 class TestTheTable:
 
-    def test_the_frames_the_analysis_kept(self, tmp_path) -> None:
+    def test_the_mean_with_its_error_as_the_analysis_page_gives_it(self, tmp_path) -> None:
+        """It gave the mean and the standard deviation over the frames,
+        0.0095, where the Analysis page gave the standard error, 0.0021."""
         _analysis(tmp_path, "rmsd", RMSD, _measured())
         row = _row(tmp_path, "RMSD")
-        assert (row.metric, row.average, row.stddev) == (
-            "RMSD (after equilibration)", "0.0130", "0.0095")
+        assert (row.metric, row.average, row.samples, row.status) == (
+            "RMSD", "0.0130 ± 0.0021 nm", "21", "Determined")
+        from fastmdxplora.gui.analysis_overview import overview_of
+
+        [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
+        assert row.average == page["mean"]["said"]
+
+    def test_a_profile_is_said_over_its_residues(self, tmp_path) -> None:
+        """One value per residue, not a series: no error, and its range."""
+        _analysis(tmp_path, "rmsf", [0.1, 0.2, 0.3], None)
+        row = _row(tmp_path, "RMSF")
+        assert row.average == "0.2000 nm over 3 residues (0.1000 to 0.3000)"
+        assert "±" not in row.average and row.status == "per residue"
+
+    def test_a_profile_over_atoms_is_said_over_its_atoms(self, tmp_path) -> None:
+        _analysis(tmp_path, "rmsf", [0.1, 0.2, 0.3, 0.4], None)
+        (tmp_path / "analysis" / "rmsf" / "options.json").write_text(json.dumps(
+            {"analysis": "rmsf", "options": {"per_residue": False}}), encoding="utf-8")
+        row = _row(tmp_path, "RMSF")
+        assert row.average == "0.2500 nm over 4 atoms (0.1000 to 0.4000)"
+        assert row.status == "per atom"
 
     def test_a_series_too_short_says_so(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(not_a_measurement="too short"))
         row = _row(tmp_path, "Radius of gyration")
-        assert row.metric == "Radius of gyration (all frames, too short to determine)"
-        assert row.average == "0.2600"
+        assert (row.status, row.why) == ("Not determined", "too short")
+        assert "±" not in row.average
 
     def test_an_older_study_is_as_it_was(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsd", RMSD, None)
         row = _row(tmp_path, "RMSD")
-        assert (row.metric, row.average) == ("RMSD", "0.2600")
+        assert (row.metric, row.average, row.status) == (
+            "RMSD", "0.2600 nm over all frames", "Not determined")
 
 
 def test_the_gui_card_carries_the_same_caption(tmp_path) -> None:
@@ -158,5 +180,6 @@ class TestTheCounts:
         assert (card.value, card.detail) == ("47", "in the trajectory")
 
     def test_the_table_names_whose_count_it_is(self, tmp_path) -> None:
+        # The counts are the cards' (above); the table is what was determined.
         rows = {r.metric for r in _metric_rows(tmp_path, {"n_atoms": 47})}
-        assert "Atoms in the trajectory" in rows
+        assert "Atoms in the trajectory" not in rows

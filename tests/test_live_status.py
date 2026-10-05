@@ -665,13 +665,13 @@ class TestInapplicableIsNotUnavailable:
     def test_a_count_has_no_standard_deviation(self, tmp_path: Path) -> None:
         from fastmdxplora.gui.report_dashboard import _metric_rows
 
+        # The counts are the summary cards'; the table of what the analyses
+        # determined has none, so none has an error column to leave empty.
         rows = {
             row.metric: row
             for row in _metric_rows(tmp_path, {"n_frames": 200, "n_atoms": 36_843})
         }
-        assert rows["Frame count"].average == "200"
-        assert rows["Frame count"].stddev == "—"
-        assert rows["Atoms in the trajectory"].stddev == "—"
+        assert "Frame count" not in rows and "Atoms in the trajectory" not in rows
 
     def test_an_empty_table_says_what_is_missing(self) -> None:
         from fastmdxplora.gui import report_dashboard

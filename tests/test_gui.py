@@ -1370,8 +1370,9 @@ def test_results_payload_carries_report_panels(tmp_path: Path) -> None:
     assert phases["Setup"] == "ok"
     assert phases["Analysis"] == "not-run"
 
+    # The counts are the cards'; the table is what the analyses determined.
     metrics = {row["metric"] for row in payload["metric_rows"]}
-    assert "Frame count" in metrics
+    assert "Frame count" not in metrics
 
 
 def test_report_panels_never_break_the_dashboard(tmp_path: Path) -> None:
@@ -1409,9 +1410,10 @@ def test_overview_hosts_the_report_panels(tmp_path: Path) -> None:
     ):
         assert container in html
 
-    # Both tables carry the statistics columns the report shows.
-    assert "Std. dev." in html
-    assert "Trajectory statistics" in html
+    # The means with their standard errors, as the Analysis page gives them,
+    # not a spread over the frames.
+    assert "Mean ± standard error" in html and "Std. dev." not in html
+    assert "What the analyses determined" in html
     # Renamed when the live panels joined this page: one card is a bar for the
     # running stage and the other a table of phases, and both were "progress".
     assert "Phases" in html
@@ -4568,7 +4570,7 @@ class TestOnePageForOneRun:
         # still comes before what was recorded.
         assert cards.index("Structure") < cards.index("Live charts")
         assert cards.index("Live charts") < cards.index("Phases")
-        assert cards.index("Live charts") < cards.index("Trajectory statistics")
+        assert cards.index("Live charts") < cards.index("What the analyses determined")
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.

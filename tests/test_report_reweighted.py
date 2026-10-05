@@ -246,7 +246,7 @@ class TestTheDashboardTableIsCorrectedToo:
         rows = _metric_rows(self._dashboard_project(tmp_path, _record()), {})
         rmsd = next(r for r in rows if r.metric.startswith("RMSD"))
         assert "reweighted" in rmsd.metric
-        assert rmsd.average == "0.2813"
+        assert rmsd.average.startswith("0.2813")
 
     def test_a_metric_with_no_correction_is_labelled_biased(
             self, tmp_path: Path) -> None:
@@ -263,7 +263,7 @@ class TestTheDashboardTableIsCorrectedToo:
 
         rows = _metric_rows(self._dashboard_project(tmp_path, _record()), {})
         row = next(r for r in rows if "Effective frames" in r.metric)
-        assert row.unit == "of 500"
+        assert row.average.endswith("of 500")
 
     def test_an_unbiased_run_keeps_its_plain_labels(
             self, tmp_path: Path) -> None:
@@ -286,7 +286,7 @@ class TestTheDashboardTableIsCorrectedToo:
              "shift_percent": 40.0}])
         rows = _metric_rows(self._dashboard_project(tmp_path, record), {})
         rmsd = next(r for r in rows if r.metric.startswith("RMSD"))
-        assert rmsd.stddev == "—"
+        assert "±" not in rmsd.average and "nan" not in rmsd.average
 
 
 def _with_populations(**overrides):

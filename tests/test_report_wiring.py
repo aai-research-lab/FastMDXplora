@@ -340,8 +340,8 @@ class TestDashboard:
         assert "Live telemetry is on by default" in panel
         assert "<code>live_telemetry: false</code>" in panel
         assert "off by default" not in panel and "--live-telemetry" not in panel
-        assert "Trajectory statistics" in text
-        assert "Std. dev." in text
+        assert "What the analyses determined" in text
+        assert "Mean ± standard error" in text and "Std. dev." not in text
         # The figures as the GUI's Analysis page shows them; the resizable
         # cards of the old page are not the GUI's and are gone.
         assert '<article class="analysis-card"' in text

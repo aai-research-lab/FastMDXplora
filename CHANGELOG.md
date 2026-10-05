@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Overview's table says each mean with its error, as the Analysis page does
+
+**The Overview's table of the study's main means reads the record the
+Analysis page reads**: each mean after equilibration with its standard
+error, the independent samples behind it, and Determined or Not determined
+(with why, on pointing). It gave the mean and the standard deviation over
+the frames ("RMSD 0.0988, std. dev. 0.0095") where the Analysis page gave
+"0.0988 ± 0.0017 nm", so the same page read two errors for one mean. RMSF,
+one value per residue, is said over its residues with their range and no
+error. The frame and atom counts, which the cards above give, left the
+table. The standalone dashboard's table is the same.
+
 ### How long a study ran is said by its production
 
 **The Overview, its cards, the standalone dashboard and the Agent say a

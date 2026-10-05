@@ -1370,8 +1370,8 @@
         <tr>
           <td>${escapeHTML(row.metric || "")}</td>
           <td class="mono">${escapeHTML(row.average || "—")}</td>
-          <td class="mono">${escapeHTML(row.stddev || "—")}</td>
-          <td class="muted">${escapeHTML(row.unit || "")}</td>
+          <td class="mono">${escapeHTML(row.samples || "—")}</td>
+          <td class="muted"${row.why ? ` title="${escapeHTML(row.why)}"` : ""}>${escapeHTML(row.status || "")}</td>
         </tr>`).join("");
     }
     if (statCard) statCard.hidden = stats.length === 0;

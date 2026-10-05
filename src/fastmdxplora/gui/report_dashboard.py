@@ -206,10 +206,17 @@ class PhaseRow:
 
 @dataclass(frozen=True)
 class MetricRow:
+    """One line of the Overview's table of what the analyses determined."""
+
     metric: str
+    #: The mean to the place its error allows, with its unit and error.
     average: str
-    stddev: str
-    unit: str
+    #: Independent samples behind the mean.
+    samples: str
+    #: Determined, Not determined, or what kind of result it is.
+    status: str
+    #: Why a mean was not determined.
+    why: str = ""
 
 
 def _system_label(system: object) -> str:
@@ -560,105 +567,102 @@ def _phase_rows(
 
 
 def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[MetricRow]:
-    specs: tuple[tuple[str, str, str, str], ...] = (
-        ("RMSD", "analysis/rmsd/rmsd.dat", "nm", "rmsd"),
-        ("RMSF", "analysis/rmsf/rmsf.dat", "nm", "rmsf"),
-        ("Radius of gyration", "analysis/rg/rg.dat", "nm", "rg"),
-        ("H-bonds", "analysis/hbonds/hbonds.dat", "count", "hbonds"),
-        ("SASA", "analysis/sasa/sasa.dat", "nm^2", "sasa"),
-    )
+    """The study's main means, as the Analysis page's table gives them.
 
-    # On a biased run the mean of a .dat file is an average over a
-    # distribution the bias flattened, and this table is the first thing a
-    # reader looks at. Where the analysis phase recovered the equilibrium
-    # value, that is the one shown, and where it could not the row says so
-    # rather than presenting a biased average as a measurement.
+    Read from the record the Analysis page reads (`analysis_overview`): each
+    mean after equilibration with its standard error, the independent
+    samples behind it, and whether it was determined. The table computed its
+    own mean and standard deviation over the frames, so the Overview said
+    "RMSD 0.0988, std. dev. 0.0095" where the Analysis page said
+    "0.0988 ± 0.0017 nm": a spread over the frames where the reader looks
+    for the mean's error. RMSF is one value per residue, not a series over
+    time, so it is said over its residues, with their range, and no error.
+    """
+    from fastmdxplora.gui.analysis_overview import _reweighted, overview_of
     from fastmdxplora.report.reweighted import load_reweighted
 
+    specs: tuple[tuple[str, str, str], ...] = (
+        ("RMSD", "rmsd", "nm"),
+        ("RMSF", "rmsf", "nm"),
+        ("Radius of gyration", "rg", "nm"),
+        ("Hydrogen bonds", "hbonds", ""),
+        ("SASA", "sasa", "nm²"),
+    )
+    overview = overview_of(project_root)
+    by_name = {row["analysis"]: row for row in overview.get("rows", [])}
+    biased = bool(overview.get("biased"))
     reweighted = load_reweighted(project_root)
-    corrected = {
-        item.get("analysis"): item
-        for item in ((reweighted or {}).get("quantities") or [])
-    }
-
-    def formatted(value: Any) -> str:
-        """A dash where there is no number, rather than a crash or a 'nan'.
-
-        The weighted spread is nan when the weights carry one effective
-        frame, which is a real outcome of a badly converged run and not an
-        error to raise in the middle of building a page.
-        """
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return "—"
-        if number != number:
-            return "—"
-        return _format_metric_value(number)
-
+    corrected = {item.get("analysis"): item
+                 for item in ((reweighted or {}).get("quantities") or [])
+                 if isinstance(item, dict)}
     rows: list[MetricRow] = []
-    for label, rel, unit, name in specs:
-        values = _numeric_series(project_root / rel)
-        if not values:
+    for label, name, unit in specs:
+        if name == "rmsf":
+            values = _numeric_series(project_root / "analysis" / "rmsf" / "rmsf.dat")
+            # One value a residue, or one an atom where the analysis was
+            # asked for atoms.
+            try:
+                options = json.loads((project_root / "analysis" / "rmsf" / "options.json")
+                                     .read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                options = {}
+            asked = (options.get("options") if isinstance(options, dict) else None) or {}
+            each = "residue" if not isinstance(asked, dict) or asked.get(
+                "per_residue", True) else "atom"
+            if values:
+                rows.append(MetricRow(
+                    metric=f"{label} (biased ensemble)" if biased else label,
+                    average=(f"{_format_metric_value(_mean(values))} nm over "
+                             f"{len(values):,} {each}s ({_format_metric_value(min(values))} "
+                             f"to {_format_metric_value(max(values))})"),
+                    samples="—",
+                    status=f"per {each}",
+                ))
             continue
-        item = corrected.get(name)
-        if item is not None:
-            rows.append(
-                MetricRow(
-                    metric=f"{label} (reweighted)",
-                    average=formatted(item.get("reweighted_mean")),
-                    stddev=formatted(item.get("reweighted_std")),
-                    unit=unit,
-                )
-            )
+        row = by_name.get(name)
+        quantity = next((q for q in (row or {}).get("quantities", []) if q.get("key") == "mean"),
+                        None)
+        if quantity is None and name in corrected:
+            # Reweighted, with no record of the analysis's own beside it.
+            quantity = {"key": "mean", **_reweighted(name, corrected[name], None)}
+        if quantity is None:
+            # Analysed before a mean and its error were recorded: the mean of
+            # every frame, said as such, and no error.
+            values = _numeric_series(project_root / "analysis" / name / f"{name}.dat")
+            if values:
+                rows.append(MetricRow(
+                    metric=f"{label} (biased ensemble)" if biased else label,
+                    average=f"{_format_metric_value(_mean(values))}{f' {unit}' if unit else ''}"
+                            " over all frames",
+                    samples="—",
+                    status="Not determined",
+                    why=("Analysed before the mean's error was recorded; analyse the "
+                         "study again for it."),
+                ))
             continue
-        # The frames the analysis kept, as its figure and caption give them;
-        # the whole series only where the analysis recorded no mean.
-        kept = None if reweighted else _recorded_mean(project_root, name)
-        if kept is not None and kept.get("not_a_measurement"):
-            label = f"{label} (all frames, too short to determine)"
-        elif (kept is not None and _finite(kept.get("mean"))
-              and _finite(kept.get("standard_deviation"))):
-            rows.append(
-                MetricRow(
-                    metric=(f"{label} (after equilibration)"
-                            if int(kept.get("discard") or 0) > 0 else label),
-                    average=_format_metric_value(kept["mean"]),
-                    stddev=_format_metric_value(kept["standard_deviation"]),
-                    unit=unit,
-                )
-            )
-            continue
-        rows.append(
-            MetricRow(
-                metric=f"{label} (biased ensemble)" if reweighted else label,
-                average=_format_metric_value(_mean(values)),
-                stddev=_format_metric_value(_stddev(values)),
-                unit=unit,
-            )
-        )
+        suffix = (" (reweighted)" if quantity.get("reweighted")
+                  else " (biased ensemble)" if biased else "")
+        samples = quantity.get("samples")
+        rows.append(MetricRow(
+            metric=label + suffix,
+            average=str(quantity.get("said") or "—"),
+            samples="< 1" if samples == 0 else (f"{samples:,}" if isinstance(samples, int) else "—"),
+            status="Determined" if quantity.get("determined") else "Not determined",
+            why=str(quantity.get("why") or ""),
+        ))
 
     if reweighted and reweighted.get("applies", True):
-        rows.append(
-            MetricRow(
-                metric="Effective frames after reweighting",
-                average=formatted(reweighted.get("effective_sample_size")),
-                stddev="—",
-                unit=f"of {reweighted.get('n_frames')}",
-            )
-        )
-
-    # A count is one number, not a sample: there is no standard deviation to
-    # report, which is a different thing from one that could not be obtained. The
-    # column said "not available", which reads as a measurement that failed.
-    n_frames = analysis_manifest.get("n_frames")
-    if n_frames is not None:
-        rows.append(MetricRow("Frame count", _format_number(n_frames), "—", "frames"))
-    n_atoms = analysis_manifest.get("n_atoms")
-    if n_atoms is not None:
-        # The trajectory's, which is not the system's where solvent was not
-        # saved; the summary card gives both.
-        rows.append(MetricRow("Atoms in the trajectory", _format_number(n_atoms), "—", "atoms"))
+        effective = reweighted.get("effective_sample_size")
+        try:
+            frames = _format_metric_value(float(effective))
+        except (TypeError, ValueError):
+            frames = "—"
+        rows.append(MetricRow(
+            metric="Effective frames after reweighting",
+            average=f"{frames} of {reweighted.get('n_frames')}",
+            samples="—",
+            status="",
+        ))
     return rows
 
 
@@ -1887,8 +1891,9 @@ def _render_overview(
             + "".join(_render_phase_row(row) for row in phase_rows) + "</tbody></table></div>")
     parts.append(
         '<div class="card" id="overview-stats-card"><div class="card-header">'
-        '<h2 class="card-title">Trajectory statistics</h2></div><table class="phase-table">'
-        "<thead><tr><th>Metric</th><th>Average</th><th>Std. dev.</th><th>Unit</th></tr></thead>"
+        '<h2 class="card-title">What the analyses determined</h2></div><table class="phase-table">'
+        "<thead><tr><th>Analysis</th><th>Mean ± standard error</th>"
+        "<th>Independent samples</th><th>Status</th></tr></thead>"
         '<tbody id="overview-stat-rows">'
         + ("".join(_render_metric_row(row) for row in metrics) or
            # What is absent, not the fact of absence: the table is filled
@@ -2184,12 +2189,13 @@ def _render_phase_row(row: PhaseRow) -> str:
 
 
 def _render_metric_row(row: MetricRow) -> str:
+    why = f' title="{escape(row.why)}"' if row.why else ""
     return (
         "<tr>"
         f"<td>{escape(row.metric)}</td>"
         f'<td class="mono">{escape(row.average)}</td>'
-        f'<td class="mono">{escape(row.stddev)}</td>'
-        f'<td class="muted">{escape(row.unit)}</td>'
+        f'<td class="mono">{escape(row.samples)}</td>'
+        f'<td class="muted"{why}>{escape(row.status)}</td>'
         "</tr>"
     )
 
