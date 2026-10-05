@@ -135,6 +135,7 @@ FastMDXplora/
 │       │   ├── interactions_over_frames.py  # What holds the ligand, frame by frame
 │       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
 │       │   ├── runs_compared.py   # The runs of a study side by side, resolved differences marked
+│       │   ├── analysis_overview.py  # What every analysis determined, read together, and how each series converged
 │       │   ├── runs_together.py   # The runs of a study played together in one Viewer
 │       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── motion.py          # A study's main motions, swung and shown as lines on the first frame
@@ -170,7 +171,7 @@ FastMDXplora/
 │       │   │                      #   frame.js (columns, side panel, theme), studies.js,
 │       │   │                      #   preferences.js (the dialogs, preferences kept),
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
-│       │   │                      #   series-chart.js, runs-compared.js, stopping.js,
+│       │   │                      #   series-chart.js, analysis-page.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, charts.js,
 │       │   │                      #   molecule-viewer.js, and the viewer:
 │       │   │                      #   viewer-engine.js and molstar/ (Mol* 5.12.0),

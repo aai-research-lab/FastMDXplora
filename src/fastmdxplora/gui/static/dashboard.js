@@ -1096,7 +1096,7 @@
     const charted = new Set();
     const named = new Set();
 
-    host.innerHTML = sections.map((section) => {
+    const sectionHtml = (section) => {
       const panels = Array.isArray(section.panels) ? section.panels : [];
       // Reuse the same card structure the flat grid uses so both routes
       // through this view look identical.
@@ -1129,7 +1129,6 @@
         <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
-            <div class="ac-status">${escapeHTML(section.title || "")}</div>
           </div>
           <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
           <div class="ac-body">${escapeHTML(panel.summary || "")}</div>
@@ -1137,18 +1136,38 @@
           ${made ? '<div class="figure-provenance" hidden></div>' : ""}
         </article>`;
       }).join("");
+      // What the page's filter matches against: the section's title and
+      // theme, and its figures' titles and captions.
+      const search = [section.title, section.theme,
+        ...panels.map((panel) => `${panel.title || ""} ${panel.summary || ""}`)].join(" ");
       return `
-        <section class="analysis-section">
+        <section class="analysis-section" id="analysis-section-${escapeAttr(section.anchor || "")}"
+                 data-search="${escapeAttr(search)}">
           <div class="analysis-section-heading">
-            <h2 class="analysis-section-title">${escapeHTML(section.title || "")}</h2>
+            <h3 class="analysis-section-title">${escapeHTML(section.title || "")}</h3>
             <span class="analysis-section-count">${panels.length} figure${panels.length === 1 ? "" : "s"}</span>
           </div>
           <div class="analysis-grid">${cards}</div>
         </section>`;
-    }).join("");
+    };
+    // The sections under what they study (report_dashboard.ANALYSIS_THEMES),
+    // in the order the server gives them, which is that table's order.
+    const themes = [];
+    sections.forEach((section) => {
+      const theme = section.theme || "Other";
+      const last = themes[themes.length - 1];
+      if (last && last.theme === theme) last.sections.push(section);
+      else themes.push({ theme, sections: [section] });
+    });
+    host.innerHTML = themes.map(({ theme, sections: members }) => `
+      <div class="analysis-theme" data-theme="${escapeAttr(theme)}">
+        <h2 class="analysis-theme-title">${escapeHTML(theme)}</h2>
+        ${members.map(sectionHtml).join("")}
+      </div>`).join("");
 
     window.FastMDXSeries?.hydrate(host);
     listenForProvenance(host);
+    window.FastMDXAnalysisPage?.sectionsRendered(host, sections);
 
     const haveSections = sections.length > 0;
     host.hidden = !haveSections;

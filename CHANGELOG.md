@@ -7,6 +7,38 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Analysis page read as a whole
+
+**The Analysis page opens with what the analyses determined**: one table
+of every analysis, under what it studies, with the mean it recorded over
+its equilibrated frames to the place its error allows (and every other
+quantity it recorded a mean of: helix and strand fractions, hydrophobic
+and polar SASA, the shape descriptors), the frames it rests on and from
+when, its independent samples, and **Determined** or **Not determined**,
+which opens to say why; a failed analysis gives its reason, and the table
+downloads as CSV. Each number is the analysis's own record, the one the
+report gives (`GET /api/analysis-overview`). What a study found, and which
+of it holds, had to be read from every card's caption in turn, and a mean
+too short to determine looked, at a glance, like any other.
+
+**An index of the sections by what they study, and a filter** (Find an
+analysis), above the figures; each card links the data its figure is
+plotted from.
+
+**Convergence, under any series over time**: the running mean of its
+equilibrated frames with its error beside the recorded mean, the standard
+error by block length (Flyvbjerg and Petersen), the autocorrelation with
+its integrated correlation time, and the distribution of the frames
+averaged beside those left out, computed by the estimator the recorded
+error comes from (`statistics.convergence_of`, `GET /api/convergence`) and
+said in a paragraph. Where the recorded mean began where a study's
+replicas equilibrate together, it says so rather than show a second start.
+
+**Fixed:** a series about a large value (Total SASA of 91 nm² varying by
+0.3) was plotted from zero and read as a flat line; zero is on the axis
+only where the values reach towards it. A card no longer repeats its
+section's name as a status.
+
 ### Every analysis has its own section
 
 **Every analysis has its own section on the Analysis page and in the

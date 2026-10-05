@@ -1409,6 +1409,35 @@
           </div>
           <section class="card again-ask" id="analysis-again-ask" aria-label="Analyze again" hidden></section>
           <div class="quick-actions" id="analysis-quick-actions" hidden></div>
+          <!-- What every analysis recorded, read together
+               (analysis-page.js, analysis_overview.py). -->
+          <section class="card analysis-results" id="analysis-results" hidden aria-labelledby="analysis-results-title">
+            <div class="analysis-results-head">
+              <div>
+                <h2 class="analysis-results-title" id="analysis-results-title">What the analyses determined</h2>
+                <p class="analysis-results-summary muted small" id="analysis-results-summary"></p>
+              </div>
+              <button type="button" class="file-action" data-results-download title="Every quantity in this table, with its standard error and unit, as CSV">Download CSV</button>
+            </div>
+            <div class="analysis-results-scroll">
+              <table class="analysis-results-table">
+                <caption class="sr-only">Each analysis's mean over its equilibrated frames, the frames and independent samples it rests on, and whether it was determined</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Analysis</th>
+                    <th scope="col">Mean ± standard error</th>
+                    <th scope="col">Frames averaged</th>
+                    <th scope="col" title="Frames averaged over the statistical inefficiency">Independent samples</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="analysis-results-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <!-- The sections by what they study, with a filter. -->
+          <nav class="analysis-index" id="analysis-index" aria-label="Analyses on this page" hidden></nav>
+          <p class="muted small analysis-filter-none" id="analysis-filter-none" hidden>No analysis matches. Clear the filter to see them all.</p>
           <!-- A study of several runs: the runs side by side
                (runs-compared.js). Hidden for a study of one run. -->
           <section class="runs-compared" id="runs-compared" hidden>
@@ -1653,6 +1682,7 @@
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/series-chart.js"></script>
+  <script src="/static/analysis-page.js"></script>
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
   <script src="/static/fixes.js"></script>

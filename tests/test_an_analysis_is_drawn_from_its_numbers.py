@@ -230,7 +230,11 @@ def page(dashboard):
 
 
 def _point_at(page, analysis: str, share: float) -> None:
-    box = page.locator(f'.series-chart[data-analysis="{analysis}"] svg').bounding_box()
+    # Scrolled to first, as a reader would: the page opens with the results
+    # table and the index above the figures.
+    chart = page.locator(f'.series-chart[data-analysis="{analysis}"] svg')
+    chart.scroll_into_view_if_needed()
+    box = chart.bounding_box()
     # Inside the plotting area, which starts after the y axis's labels.
     x = box["x"] + 64 + (box["width"] - 64 - 28) * share
     page.mouse.move(x, box["y"] + box["height"] / 2)

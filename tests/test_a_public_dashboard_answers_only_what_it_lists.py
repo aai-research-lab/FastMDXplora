@@ -256,6 +256,7 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/file-text", "/api/protein-preview", "/api/structure-info",
             "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
             "/api/series", "/api/runs-compared", "/api/selection",
+            "/api/analysis-overview", "/api/convergence",
             # A command that measures two atoms over every frame: text built
             # from the study's records and two checked selections; it runs
             # nothing.

@@ -145,6 +145,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
+    "/api/analysis-overview", "/api/convergence",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
@@ -758,6 +759,18 @@ def make_handler(
                                     else {"ok": False, "reason": "no such run in this study"})
                     return
                 self._send_json(series_payload(root, name))
+                return
+            if path == "/api/analysis-overview":
+                # What every analysis recorded, read together.
+                from fastmdxplora.gui.analysis_overview import overview_of
+
+                self._send_json(overview_of(root))
+                return
+            if path == "/api/convergence":
+                from fastmdxplora.gui.analysis_overview import convergence_payload
+
+                name = (parse_qs(parsed.query).get("analysis") or [""])[0]
+                self._send_json(convergence_payload(root, name))
                 return
             if path == "/api/selection":
                 from fastmdxplora.gui.selection import selection_for
@@ -2324,6 +2337,7 @@ def _report_panels(root: Path) -> dict[str, Any]:
             {
                 "title": section.title,
                 "anchor": section.anchor,
+                "theme": section.theme,
                 "panels": [
                     {
                         "title": panel.title,

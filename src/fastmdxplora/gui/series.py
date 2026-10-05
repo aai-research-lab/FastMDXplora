@@ -40,7 +40,8 @@ SERIES: dict[str, tuple[str, str]] = {
 #: evenly, and says so.
 MOST_POINTS = 4000
 
-_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_NAME = NAME
 
 
 def series_over_time(root: Path) -> dict[str, Any]:
@@ -89,6 +90,15 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     if kind == "residue":
         return _residues(analysis, label, unit, rows)
     return _over_time(Path(root), analysis, label, unit, rows, found)
+
+
+def series_column(path: Path) -> list[float]:
+    """The values a time series' figure plots and its mean was recorded
+    from: the last number of each data line. An analysis records a mean
+    over its frames only where its result is one value a frame, written
+    alone or after the frame number (``Analysis._record_what_the_mean_is_worth``),
+    so that number is the series."""
+    return [numbers[-1] for _, numbers in _rows(path)]
 
 
 def _over_time(root: Path, analysis: str, label: str, unit: str,
