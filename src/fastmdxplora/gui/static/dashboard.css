@@ -5630,3 +5630,51 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .studies-mean { text-align: right; }
 .studies-tags .study-tag { margin-right: 4px; }
 .studies-view { flex: none; }
+
+/* The buttons that fold and show the sidebar and the side panel: line
+   icons the size of the sidebar's, with no box; the text chevrons in
+   bordered boxes were the largest marks in their rows. */
+.fold-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 28px; height: 28px; padding: 0; margin: 0;
+    border: none; border-radius: 6px; background: transparent;
+    color: var(--text-muted); cursor: pointer;
+}
+.fold-btn:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.fold-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.sidebar .sidebar-collapse.fold-btn { padding: 0; }
+.side-collapse.fold-btn { padding: 0; margin-right: 4px; }
+.fold-icon { width: 16px; height: 16px; display: block; }
+.side-expand { padding: 8px 5px; color: var(--text-muted); }
+.side-expand:hover { color: var(--text-primary); }
+
+/* FastMDXplora's mark over the folded strip, in the text's colour
+   and at the size of the strip's other icons; a service's own logo, an
+   image, keeps its size. */
+.sidebar-expand svg.strip-mark { width: 18px; height: 18px; border-radius: 0; color: var(--text-secondary); }
+.sidebar-expand:hover svg.strip-mark { color: var(--text-primary); }
+@media (min-width: 801px) {
+    .sidebar-expand:hover svg.strip-mark, .sidebar-expand:focus-visible svg.strip-mark { box-shadow: none; }
+    body.sidebar-peek .sidebar-expand-chevron {
+        width: 28px; height: 28px; border: none; background: transparent; color: var(--text-muted);
+    }
+    body.sidebar-peek .sidebar-expand:hover .sidebar-expand-chevron {
+        color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    }
+}
+
+/* A line icon lifts a little under the pointer, as a sign that it is a
+   button; not where the person has asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+    .nav-icon, .fold-icon, .sidebar-account-gear, .strip-mark, .sidebar-tool svg,
+    .icon-btn .icon, .rail-btn .icon, .line-btn svg {
+        transition: transform var(--duration-fast) var(--ease);
+    }
+    .nav-link:hover .nav-icon, .nav-beside:hover .nav-icon, .fold-btn:hover .fold-icon,
+    .sidebar-expand:hover .strip-mark, .sidebar-expand:hover .fold-icon,
+    .sidebar-tool:hover svg, .icon-btn:hover .icon, .rail-btn:hover .icon,
+    .line-btn:hover svg, summary:hover > .nav-icon {
+        transform: scale(1.12);
+    }
+    .sidebar-account:hover .sidebar-account-gear { transform: rotate(45deg); }
+}

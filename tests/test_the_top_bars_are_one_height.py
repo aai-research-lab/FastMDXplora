@@ -64,7 +64,7 @@ def test_the_three_bars_are_one_height_on_every_page(tmp_path):
             collapse = page.evaluate("""() => {
                 const a = document.getElementById('sidebar-collapse');
                 const b = document.getElementById('side-collapse');
-                return [a.className, a.textContent, b.className,
+                return [a.className, !!a.querySelector('svg.fold-icon'), b.className,
                         a.getBoundingClientRect().height, b.getBoundingClientRect().height];
             }""")
             brand = page.inner_html(".sidebar-brand")
@@ -75,10 +75,12 @@ def test_the_three_bars_are_one_height_on_every_page(tmp_path):
         assert bars["header"] == bars["tabs"] == bars["brand"], (name, bars)
         assert bars["header"][1] - bars["header"][0] == 52, (name, bars)
         assert abs(bars["offCentre"]) <= 1, (name, bars)
-    # Folded by a button like the side panel's, the name alone above it.
-    assert collapse[0] == "ghost-btn sidebar-collapse" and collapse[1] == "❮"
-    assert "ghost-btn side-collapse" in collapse[2] and collapse[3] == collapse[4]
-    assert "<img" not in brand and "<svg" not in brand
+    # Folded by a button like the side panel's, a line icon, the name alone
+    # above it.
+    assert collapse[0] == "fold-btn sidebar-collapse" and collapse[1]
+    assert "fold-btn side-collapse" in collapse[2] and collapse[3] == collapse[4]
+    name = brand[brand.index('class="brand-text"'):brand.index('id="sidebar-collapse"')]
+    assert "<img" not in name and "<svg" not in name
 
 
 def test_the_standalone_dashboard_has_the_name_alone(tmp_path):

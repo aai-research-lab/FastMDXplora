@@ -301,7 +301,7 @@
     <!-- Over the folded sidebar's strip, its mark: pointed at, the sidebar
          shows over the page; clicked, it stays. First, so it is the strip's
          first stop for the keyboard as it is for the eye. -->
-    <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar"><!--__FASTMDX_STRIP_MARK__--><span class="sidebar-expand-chevron" aria-hidden="true">&#10095;</span></button>
+    <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar"><!--__FASTMDX_STRIP_MARK__--><span class="sidebar-expand-chevron" aria-hidden="true"><!--icon:sidebar:fold-icon--></span></button>
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
       <!-- At the top and kept there as the rest scrolls: the product's name
@@ -316,7 +316,7 @@
             <div class="brand-product">__FASTMDX_PRODUCT__</div>
             <div class="brand-tagline">__FASTMDX_BRAND_LINE__</div>
           </div>
-          <button type="button" class="ghost-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar">&#10094;</button>
+          <button type="button" class="fold-btn sidebar-collapse" id="sidebar-collapse" title="Collapse sidebar" aria-label="Collapse sidebar"><!--icon:sidebar:fold-icon--></button>
         </div>
         <nav class="sidebar-nav sidebar-start" aria-label="Begin">
           <a href="#run" class="nav-link nav-start" data-view-link="run" title="New study">
@@ -1749,7 +1749,7 @@
         <button type="button" class="side-tab active" role="tab" data-side-tab="log" aria-selected="true">Log</button>
         <button type="button" class="side-tab" role="tab" data-side-tab="files" aria-selected="false">Files</button>
         <span class="side-panel-spacer"></span>
-        <button type="button" class="ghost-btn side-collapse" id="side-collapse" title="Collapse panel" aria-label="Collapse side panel">&#10095;</button>
+        <button type="button" class="fold-btn side-collapse" id="side-collapse" title="Collapse panel" aria-label="Collapse side panel"><!--icon:panel:fold-icon--></button>
       </div>
 
       <div class="side-pane" data-side-pane="log" role="tabpanel">
@@ -1787,7 +1787,7 @@
         </div>
       </div>
     </aside>
-    <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel">&#10094;</button>
+    <button type="button" class="side-expand" id="side-expand" hidden title="Show panel" aria-label="Show side panel"><!--icon:panel:fold-icon--></button>
     <!-- The Agent beside whatever page is open, in the side panel's place:
          ⌘J or Ctrl+J, or the button beside Agent in the sidebar. The
          conversation is the Agent page's own, moved here and back. -->

@@ -28,8 +28,10 @@ ICONS: dict[str, str] = {
                '<path d="M10 12h5M10 16h5"/>'),
     "files": ('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5'
               'a2 2 0 0 1-2-2z"/>'),
-    "agent": ('<path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z"/>'
-              '<path d="M18 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>'),
+    # A robot's head, its antenna up: the Agent, not a sparkle.
+    "agent": ('<rect x="4.5" y="8" width="15" height="11" rx="3"/><path d="M12 8V5"/>'
+              '<circle cx="12" cy="4" r="1.2"/><path d="M9.5 12.5v1.5M14.5 12.5v1.5"/>'
+              '<path d="M2.5 12.5v3M21.5 12.5v3"/>'),
     "config": ('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/>'
                '<circle cx="10" cy="17" r="2"/>'),
     "chevron": '<path d="M8 10l4 4 4-4"/>',
@@ -39,8 +41,11 @@ ICONS: dict[str, str] = {
     "pause": '<path d="M9 6v12M15 6v12"/>',
     "play": '<path d="M8 5.5v13l10.5-6.5z"/>',
     "refresh": '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
-    "gear": ('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1'
-             'M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>'),
+    # A gear of eight teeth around its hub, the usual sign of settings.
+    "gear": ('<path d="M19.2 10.3l2.3.4v2.6l-2.3.4-.9 2.2 1.4 1.9-1.9 1.9-1.9-1.4-2.2.9-.4 2.3'
+             'h-2.6l-.4-2.3-2.2-.9-1.9 1.4-1.9-1.9 1.4-1.9-.9-2.2-2.3-.4v-2.6l2.3-.4.9-2.2'
+             '-1.4-1.9 1.9-1.9 1.9 1.4 2.2-.9.4-2.3h2.6l.4 2.3 2.2.9 1.9-1.4 1.9 1.9-1.4 1.9z"/>'
+             '<circle cx="12" cy="12" r="3"/>'),
     # FastMDXplora's own mark: a three-atom molecule going right, each atom
     # leaving its trail, as a trajectory is the path of each atom in time.
     # Made by scripts/make_mark.py, which also writes the tab's icon.
@@ -48,6 +53,21 @@ ICONS: dict[str, str] = {
              '<circle cx="11" cy="16.5" r="2"/>'
              '<path d="M13.91 6.41L16.02 8.52M12.52 15.2L15.87 12.32"/>'
              '<path d="M2 5h6.1M2 16.5h4.6M5.5 10.5h7.3"/>'),
+    # The sidebar, folded or shown: a window with its left column.
+    "sidebar": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+    "panel": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+    "close": '<path d="M6 6l12 12M18 6L6 18"/>',
+    "search": '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+    "download": '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>',
+    "chat": ('<path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5V17H5a2 2 0 0 1-2-2V7'
+             'a2 2 0 0 1 2-2z"/>'),
+    "cards": ('<rect x="3.5" y="4" width="7" height="7" rx="1.5"/><rect x="13.5" y="4" width="7" '
+              'height="7" rx="1.5"/><rect x="3.5" y="14" width="7" height="6" rx="1.5"/>'
+              '<rect x="13.5" y="14" width="7" height="6" rx="1.5"/>'),
+    "table": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 14.8h18M9 9.5V20"/>',
+    "tag": '<path d="M3.5 12.2V4h8.2l8.8 8.8-8.2 8.2z"/><circle cx="8" cy="8.5" r="1.4"/>',
+    "erase": ('<path d="M8.5 20H20M4.6 15.4l9.9-9.9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 18'
+              'H7.2z"/><path d="M9.5 10.5l5 5"/>'),
     "copy": ('<rect x="8" y="8" width="12" height="12" rx="2"/>'
              '<path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),
 }
