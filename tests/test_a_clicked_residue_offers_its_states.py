@@ -136,6 +136,7 @@ def test_the_viewer_offers_them(tmp_path) -> None:
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {viewer}.model")
+            hooks.tool(page, "side-info")
             page.click('.info-tab[data-tab="selection"]')
             hooks.click(page, resi=3, atom="CA")
             page.wait_for_selector(".residue-states [data-state='HIE']")

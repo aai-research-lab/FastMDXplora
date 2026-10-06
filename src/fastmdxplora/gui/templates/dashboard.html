@@ -112,7 +112,7 @@
       <div class="palette-foot muted small"><kbd>&uarr;</kbd><kbd>&darr;</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close</div>
     </div>
   </div>
-  <!-- The Viewer's keys, opened by ? on the Viewer or its Keys button. -->
+  <!-- The Viewer's keys, opened by ? on the Viewer or the last button of its rail. -->
   <div id="viewer-help" class="agent-dialog" hidden>
     <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
          aria-labelledby="viewer-help-title">
@@ -943,10 +943,6 @@
               <h1 class="page-title">Molecular Viewer</h1>
               <div class="page-subtitle">Live molecular canvas, ligand tools, trajectory playback</div>
             </div>
-            <div class="page-header-actions">
-              <button type="button" class="ghost-btn viewer-help-open" data-dialog-open="viewer-help"
-                      aria-keyshortcuts="Shift+/" title="The Viewer's keys (?)"><kbd>?</kbd> Keys</button>
-            </div>
           </div>
           <div class="viewer-layout">
             <div class="viewer-canvas-wrap">
@@ -1077,8 +1073,13 @@
             <aside class="viewer-side" aria-label="Viewer settings">
               <!-- One tool at a time, chosen on the rail (viewer-rail.js),
                    which is built from the sections below. -->
-              <div class="viewer-rail" id="viewer-rail" role="tablist" aria-orientation="vertical"
-                   aria-label="Viewer tools" hidden></div>
+              <div class="viewer-rail" id="viewer-rail" hidden>
+                <div class="viewer-rail-tools" id="viewer-rail-tools" role="tablist"
+                     aria-orientation="vertical" aria-label="Viewer tools"></div>
+                <button type="button" class="rail-btn rail-keys" id="viewer-keys-open" data-dialog-open="viewer-help"
+                        aria-haspopup="dialog" aria-keyshortcuts="Shift+/" aria-label="The Viewer's keys"
+                        title="The Viewer's keys (?)"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg></button>
+              </div>
               <details class="side-section" id="side-view" open>
                 <summary>View</summary>
                   <div class="control-row view-tools">
@@ -1438,10 +1439,10 @@
                   <p class="muted small" id="movie-by"></p>
                 </form>
               </details>
-              <!-- What is picked and measured, and the structure: shown under
-                   whichever tool is chosen, so a measurement made with the
-                   View tool is read beside it. -->
-              <details class="side-section" id="side-info" data-rail="pinned" open>
+              <!-- The structure, the run, and what is picked: a tool of the
+                   rail, its button marked when something is picked while
+                   another tool is shown. -->
+              <details class="side-section" id="side-info" open>
                 <summary>Information</summary>
                 <div class="info-panel">
                   <div class="info-tabs" role="tablist" aria-label="Molecular information">

@@ -25,6 +25,7 @@ md = pytest.importorskip("mdtraj")
 
 from fastmdxplora.gui.selection import selection_for  # noqa: E402
 from fastmdxplora.gui.trajectory_frames import frames_info  # noqa: E402
+from tests import viewer_hooks as hooks  # noqa: E402
 
 
 def _atom(serial, name, resname, chain, number, code, x, record="ATOM  "):
@@ -186,6 +187,7 @@ def test_the_server_and_a_click_in_the_frames_send_it(study):
             page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
                           "await (await fetch('/api/frames-info')).json())")
             page.wait_for_function(f"() => {state}.model && {state}.model.of === 'frames'")
+            hooks.tool(page, "side-info")
             page.click('.info-tab[data-tab="selection"]')
             page.evaluate(f"() => {state}.engine.click(5)")
             page.wait_for_selector('#selection-strings .selection-string[data-of="atom"]')

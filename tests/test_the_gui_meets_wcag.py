@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests import viewer_hooks as hooks
+
 TEMPLATE = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
             / "templates" / "dashboard.html")
 
@@ -82,6 +84,7 @@ def test_the_tabs_are_used_from_the_keyboard(tmp_path):
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#viewer", wait_until="domcontentloaded")
             page.wait_for_function("() => window.FastMDXDashboard")
+            hooks.tool(page, "side-info")
             page.focus("#info-tab-structure")
 
             def chosen():

@@ -8,7 +8,9 @@
  * button while it is hidden. The tool chosen is kept in this browser.
  * Opening a section from elsewhere in the page (a residue clicked, a saved
  * view shown) chooses it. `[` and `]` choose the tool above or below.
- * What is picked and measured (Information) is shown under every tool.
+ * Information (the structure, the run, what is picked) is a tool as the
+ * rest are; what is picked while another is shown marks its button. The
+ * Viewer's keys are the rail's last button, under its tools.
  */
 (function () {
   "use strict";
@@ -38,17 +40,19 @@
 
   var side = null;
   var rail = null;
+  /* The tools' buttons, a list of tabs, inside the rail. */
+  var tabs = null;
+  var INFO = "side-info";
   var chosen = "";
   var settled = false;
   /* Whether the person has chosen a tool in this page: until then, the one
    * kept is chosen as soon as the study shows it. */
   var picked = false;
 
-  /* The tools: each section but what is shown under every tool (what is
-   * picked and measured). */
+  /* The tools: each section of the column. */
   function sections() {
     return side ? Array.prototype.filter.call(side.children, function (node) {
-      return node.matches && node.matches('details.side-section[id]:not([data-rail="pinned"])');
+      return node.matches && node.matches("details.side-section[id]");
     }) : [];
   }
 
@@ -66,7 +70,7 @@
   }
 
   function build() {
-    rail.replaceChildren();
+    tabs.replaceChildren();
     sections().forEach(function (section) {
       // A tool's panel, named by its button; its head is a title, not a
       // fold (it opens and closes nothing on the rail).
@@ -85,15 +89,26 @@
       button.title = titleOf(section);
       button.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">' +
         (ICONS[section.id] || FALLBACK) + "</svg>";
-      rail.appendChild(button);
+      tabs.appendChild(button);
     });
+  }
+
+  /* What is picked while another tool is shown marks Information's
+   * button, until it is chosen. */
+  function markWhatIsPicked() {
+    var picked = document.getElementById("info-pane-selection");
+    if (!picked || !window.MutationObserver) return;
+    new MutationObserver(function () {
+      var button = tabs.querySelector('[data-tool="' + INFO + '"]');
+      if (button && chosen !== INFO) button.dataset.fresh = "1";
+    }).observe(picked, { childList: true, subtree: true, characterData: true });
   }
 
   /* The rail as the sections stand: a hidden section has no button. */
   function mirror() {
     var shown = [];
     sections().forEach(function (section) {
-      var button = rail.querySelector('[data-tool="' + section.id + '"]');
+      var button = tabs.querySelector('[data-tool="' + section.id + '"]');
       if (!button) return;
       // A section is hidden by its attribute, or by a rule of its own
       // (the ligand's, without a ligand); not by the rail.
@@ -123,10 +138,11 @@
       node.classList.toggle("is-chosen", node === section);
     });
     if (!section.open) section.open = true;
-    Array.prototype.forEach.call(rail.querySelectorAll(".rail-btn"), function (button) {
+    Array.prototype.forEach.call(tabs.querySelectorAll(".rail-btn"), function (button) {
       var on = button.dataset.tool === id;
       button.setAttribute("aria-selected", String(on));
       button.tabIndex = on ? 0 : -1;
+      if (on) delete button.dataset.fresh;
     });
     side.scrollTop = 0;
     if (remember) keep(id);
@@ -139,7 +155,7 @@
   }
 
   function step(by) {
-    var shown = Array.prototype.filter.call(rail.querySelectorAll(".rail-btn"), function (b) {
+    var shown = Array.prototype.filter.call(tabs.querySelectorAll(".rail-btn"), function (b) {
       return !b.hidden;
     });
     if (!shown.length) return;
@@ -154,25 +170,27 @@
    * where the Viewer's columns stack. */
   function orient() {
     var row = getComputedStyle(rail).flexDirection === "row";
-    rail.setAttribute("aria-orientation", row ? "horizontal" : "vertical");
+    tabs.setAttribute("aria-orientation", row ? "horizontal" : "vertical");
   }
 
   function init() {
     side = document.querySelector(".viewer-side");
     rail = document.getElementById("viewer-rail");
-    if (!side || !rail) return;
+    tabs = document.getElementById("viewer-rail-tools");
+    if (!side || !rail || !tabs) return;
     build();
+    markWhatIsPicked();
     rail.hidden = false;
     side.classList.add("has-rail");
     mirror();
     orient();
     window.addEventListener("resize", orient);
-    rail.addEventListener("click", function (event) {
+    tabs.addEventListener("click", function (event) {
       var button = event.target.closest(".rail-btn");
       if (button) choosing(button.dataset.tool);
     });
     // The arrows move along the rail, as along any list of tabs.
-    rail.addEventListener("keydown", function (event) {
+    tabs.addEventListener("keydown", function (event) {
       var by = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1,
                  Home: "first", End: "last" }[event.key];
       if (!by) return;

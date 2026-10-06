@@ -5522,7 +5522,6 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     row-gap: 0;
     align-content: start;
 }
-.viewer-side.has-rail > [data-rail="pinned"] { margin-top: 10px; }
 .viewer-side.has-rail > .viewer-rail {
     grid-column: 1;
     grid-row: 1 / span 40;
@@ -5538,7 +5537,7 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     background: var(--panel-glass);
 }
 .viewer-side.has-rail > .side-section { grid-column: 2; }
-.viewer-side.has-rail > .side-section:not(.is-chosen):not([data-rail="pinned"]) { display: none; }
+.viewer-side.has-rail > .side-section:not(.is-chosen) { display: none; }
 .viewer-side.has-rail > .side-section.is-chosen > summary { cursor: default; pointer-events: none; list-style: none; }
 .viewer-side.has-rail > .side-section.is-chosen > summary::-webkit-details-marker { display: none; }
 .rail-btn {
@@ -5567,12 +5566,11 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 }
 
 /* The Viewer's keys (viewer-help). */
-.viewer-help-open kbd { font-family: var(--font-mono); font-size: var(--text-2xs); }
 .keys-list { display: grid; gap: 8px; margin: 0 0 12px; }
 .keys-list > div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: baseline; }
 .keys-list dt { margin: 0; white-space: nowrap; }
 .keys-list dd { margin: 0; color: var(--text-secondary); }
-.keys-list kbd, .viewer-help-open kbd {
+.keys-list kbd {
     display: inline-block; min-width: 1.6em; padding: 1px 6px; text-align: center;
     border: 1px solid var(--border-primary); border-bottom-width: 2px; border-radius: 6px;
     background: var(--background-elevated); color: var(--text-primary);
@@ -5735,3 +5733,25 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .search-field.palette-field { display: flex; width: 100%; }
 .search-field.palette-field > .search-icon { left: 16px; width: 16px; height: 16px; }
 .search-field.palette-field > .palette-input { padding-left: 42px; }
+
+/* The rail holds the tools, a list of tabs, and under them the Viewer's
+   keys; Information's button is marked when something is picked while
+   another tool is shown. */
+.viewer-rail-tools { display: flex; flex-direction: inherit; gap: 4px; }
+.viewer-rail .rail-keys { margin-top: 6px; padding-top: 0; position: relative; }
+.viewer-rail .rail-keys::before {
+    content: ""; position: absolute; top: -5px; left: 6px; right: 6px;
+    border-top: 1px solid var(--border-subtle);
+}
+.rail-btn[data-fresh] { position: relative; }
+.rail-btn[data-fresh]::after {
+    content: ""; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--accent-cyan);
+}
+@container viewerpage (max-width: 900px) {
+    .viewer-rail .rail-keys { margin: 0 0 0 6px; }
+    .viewer-rail .rail-keys::before { top: 6px; bottom: 6px; left: -5px; right: auto; border-top: none;
+                                      border-left: 1px solid var(--border-subtle); }
+}
+/* The View tool's icons wrap in a narrow column, not past its edge. */
+.view-tools > .icon-group { flex-wrap: wrap; max-width: 100%; }

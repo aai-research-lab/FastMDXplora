@@ -2557,8 +2557,12 @@
     const host = document.getElementById("measure-said");
     if (!host) return;
     host.replaceChildren();
+    const wasHidden = host.hidden;
     host.hidden = !STATE.measuring && !STATE.picks.length;
     if (host.hidden) return;
+    // A measurement is read in Information: shown as measuring begins.
+    const rail = window.FastMDXViewerRail;
+    if (wasHidden && rail && rail.chosen !== "side-info") rail.choose("side-info");
     const add = (tag, className, text) => {
       const node = document.createElement(tag);
       if (className) node.className = className;

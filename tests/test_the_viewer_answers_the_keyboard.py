@@ -99,7 +99,7 @@ def test_only_on_the_viewers_page(page) -> None:
 
 def test_the_keys_are_said(page) -> None:
     """They were a line under the title, read by nobody; ? lists them, as
-    the Keys button beside the title does."""
+    the last button of the tools' rail does."""
     keys = page.locator("#viewer-keys")
     assert not keys.is_visible()
     page.keyboard.press("?")
@@ -107,5 +107,5 @@ def test_the_keys_are_said(page) -> None:
     assert keys.is_visible() and "Space" in keys.text_content()
     page.keyboard.press("Escape")
     page.wait_for_selector("#viewer-help", state="hidden")
-    page.click(".viewer-help-open")
+    page.click("#viewer-keys-open")
     page.wait_for_selector("#viewer-help:not([hidden])")

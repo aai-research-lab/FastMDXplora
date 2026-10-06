@@ -61,7 +61,7 @@
       found.push({ group: "Analysis", label: title.trim(),
                    run: function () { if (dashboard()) dashboard().showAnalysis(name); } });
     });
-    Array.prototype.forEach.call(document.querySelectorAll("#viewer-rail .rail-btn"), function (button) {
+    Array.prototype.forEach.call(document.querySelectorAll("#viewer-rail-tools .rail-btn"), function (button) {
       if (button.hidden) return;
       found.push({ group: "Viewer tool", label: button.getAttribute("aria-label"), run: function () {
         if (dashboard()) dashboard().navigate("viewer");

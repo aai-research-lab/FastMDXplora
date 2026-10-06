@@ -36,11 +36,9 @@ def page(dashboard):
 
 
 def _shown(page) -> list[str]:
-    """The tools shown; what is picked and measured is under each."""
-    shown = page.evaluate("""() => [...document.querySelectorAll('.viewer-side > .side-section')]
+    """The tools shown: one, Information as much a tool as the rest."""
+    return page.evaluate("""() => [...document.querySelectorAll('.viewer-side > .side-section')]
         .filter((s) => getComputedStyle(s).display !== 'none').map((s) => s.id)""")
-    assert shown[-1] == "side-info"
-    return shown[:-1]
 
 
 def test_one_tool_is_shown_and_its_button_says_so(page) -> None:
@@ -86,8 +84,32 @@ def test_the_tool_chosen_is_kept(page) -> None:
     page.reload(wait_until="domcontentloaded")
     page.wait_for_selector("#viewer-rail:not([hidden]) .rail-btn")
     page.wait_for_function("() => window.FastMDXViewerRail.chosen === 'side-movie'")
-    # What is picked and measured is no tool: it is under each.
-    assert page.locator('[data-tool="side-info"]').count() == 0
+
+
+def test_information_is_a_tool_marked_when_something_is_picked(page) -> None:
+    """Information was under every tool, always taking room. It is a tool
+    of the rail; what is picked while another is shown marks its button."""
+    page.click('[data-tool="side-display"]')
+    assert _shown(page) == ["side-display"]
+    page.evaluate("""() => document.getElementById('info-pane-selection')
+        .appendChild(document.createElement('p'))""")
+    page.wait_for_selector('[data-tool="side-info"][data-fresh]')
+    page.click('[data-tool="side-info"]')
+    assert _shown(page) == ["side-info"]
+    assert page.get_attribute('[data-tool="side-info"]', "data-fresh") is None
+
+
+def test_the_keys_are_the_rail_s_last_button_and_no_tool(page) -> None:
+    rail = page.evaluate("""() => {
+        const keys = document.getElementById('viewer-keys-open');
+        const tools = document.getElementById('viewer-rail-tools');
+        return {last: keys === document.getElementById('viewer-rail').lastElementChild,
+                tab: tools.contains(keys), role: tools.getAttribute('role'),
+                header: !!document.querySelector('.page[data-page="viewer"] .page-header button')};
+    }""")
+    page.click("#viewer-keys-open")
+    page.wait_for_selector("#viewer-help:not([hidden])")
+    assert rail == {"last": True, "tab": False, "role": "tablist", "header": False}
 
 
 def test_the_keys_move_along_the_rail(page) -> None:
