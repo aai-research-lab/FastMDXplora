@@ -35,3 +35,10 @@ def atoms(page, **selection) -> list[dict]:
 
 def click(page, **selection) -> dict | None:
     return page.evaluate(CLICK, selection)
+
+
+def tool(page, section: str) -> None:
+    """The Viewer's tool whose section is ``section`` (``side-ligand``),
+    chosen on its rail: one is shown at a time."""
+    page.wait_for_function("() => !!window.FastMDXViewerRail")
+    page.evaluate("(id) => window.FastMDXViewerRail.choose(id)", section)

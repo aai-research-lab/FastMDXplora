@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from fastmdxplora.gui.saved_views import MOST_VIEWS, delete_view, save_view, views_of
+from tests import viewer_hooks as hooks
 
 CAMERA = {"position": [1.0, 2.0, 30.0], "target": [1.0, 2.0, 3.0], "up": [0.0, 1.0, 0.0],
           "radius": 12.5, "fov": 0.785, "mode": "perspective"}
@@ -165,23 +166,28 @@ def test_a_view_is_saved_and_shown_again_in_the_viewer(study):
                           "'dashboard:trajectory-seek', {detail: {frame: 4}}))")
             page.wait_for_function(f"() => {state}.engine.frame() === 4")
             page.select_option("#viewer-rep", "sticks")
+            hooks.tool(page, "side-view")
             page.click('[data-action="publication"]')
             page.evaluate(f"() => {state}.engine.restoreCamera({{position: [30, 30, 140],"
                           " target: [30, 32, 12], up: [0, 1, 0]})")
             page.wait_for_timeout(400)
+            hooks.tool(page, "side-saved")
             page.click("#viewer-view-save")
             page.fill("#viewer-view-name", "Frame four, sticks")
             page.press("#viewer-view-name", "Enter")
             page.wait_for_function("() => document.getElementById('viewer-views').value"
                                    " === 'Frame four, sticks'")
             # Everything changed back.
+            hooks.tool(page, "side-display")
             page.select_option("#viewer-rep", "cartoon")
+            hooks.tool(page, "side-view")
             page.click('[data-action="publication"]')
             page.evaluate("() => window.dispatchEvent(new CustomEvent("
                           "'dashboard:trajectory-seek', {detail: {frame: 1}}))")
             page.wait_for_function(f"() => {state}.engine.frame() === 1")
             page.click('[data-action="reset-view"]')
             page.wait_for_timeout(600)
+            hooks.tool(page, "side-saved")
             page.select_option("#viewer-views", "")
             page.select_option("#viewer-views", "Frame four, sticks")
             # Shown once it is said: the camera is set last.

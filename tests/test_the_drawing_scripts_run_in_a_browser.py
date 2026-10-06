@@ -180,11 +180,14 @@ def test_every_style_and_ligand_control_runs(page) -> None:
     for listed in ("#viewer-rep", "#viewer-color"):
         for value in page.eval_on_selector_all(f"{listed} option", "os => os.map(o => o.value)"):
             page.select_option(listed, value)
-    for selector in (".chip-btn[data-cam]", ".chip-btn[data-ligand]"):
+    for selector, tool in ((".chip-btn[data-cam]", "side-view"),
+                           (".chip-btn[data-ligand]", "side-ligand")):
+        hooks.tool(page, tool)
         for button in page.query_selector_all(selector):
             if button.is_visible():
                 button.click()
     # Spin is one button: pressed once above, so spinning; pressed again, not.
+    hooks.tool(page, "side-view")
     spin = page.locator('[data-cam="spin"]')
     assert spin.get_attribute("aria-pressed") == "true"
     spin.click()
@@ -264,6 +267,7 @@ def test_the_pocket_is_the_residues_within_the_cutoff(page, dashboard) -> None:
                               ".pocketAtoms(['LIG'], cutoff)", cutoff)
         assert found == expected, cutoff
     # One that takes in a residue is rendered, and follows the cutoff asked.
+    hooks.tool(page, "side-ligand")
     page.fill("#pocket-cutoff", "7.5")
     page.dispatch_event("#pocket-cutoff", "change")
     page.wait_for_function(f"() => ({ENGINE}.rendered || []).includes('pocket')")

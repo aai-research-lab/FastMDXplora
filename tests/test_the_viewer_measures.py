@@ -130,6 +130,7 @@ def test_the_viewer_measures(study) -> None:
             geometry = page.evaluate(f"""() => {viewer}.measurements([
                 {{x: 1, y: 0, z: 0}}, {{x: 0, y: 0, z: 0}}, {{x: 0, y: 1, z: 0}},
                 {{x: 0, y: 1, z: 1}}])""")
+            hooks.tool(page, "side-view")
             page.click('[data-action="measure"]')
             pressed = page.get_attribute('[data-action="measure"]', "aria-pressed")
             page.wait_for_selector("#measure-said:not([hidden])")

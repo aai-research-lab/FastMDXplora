@@ -83,7 +83,8 @@
     // A white ground and the highest quality, for a figure.
     publication: false,
     // "dark" (black) or "white".
-    ground: "dark",
+    // The page's scheme's (--viewer-ground), unless white or dark is chosen.
+    ground: "scheme",
     // What Preferences last said of the ground, spin and the ligand.
     groundChosen: "",
     spinChosen: false,
@@ -1154,25 +1155,50 @@
     if (action === "screenshot") await takeScreenshot();
     if (action === "measure") toggleMeasuring(button);
     if (action === "publication") setPublication(!STATE.publication);
-    if (action === "background") setGround(STATE.ground === "white" ? "dark" : "white");
+    if (action === "background") setGround(groundIsWhite() ? "dark" : "white");
   }
 
   /** The look a figure is made in: a white ground, and the outlines and
    * shading of the highest quality, wherever the page is rendered; off,
    * the ground and quality as set. */
-  /** The ground the molecule is shown on: "white", or "dark" (black). */
+  /** The ground the molecule is shown on: "white", "dark" (black), or
+   * "scheme", the page's own (dark on Dark, white on Light). */
   function setGround(ground) {
-    STATE.ground = ground === "white" ? "white" : "dark";
+    STATE.ground = ground === "white" || ground === "scheme" ? ground : "dark";
     if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
+    const white = groundIsWhite();
     document.querySelectorAll('[data-action="background"]').forEach((button) => {
-      button.setAttribute("aria-pressed", String(STATE.ground === "white"));
-      button.classList.toggle("active", STATE.ground === "white");
+      button.setAttribute("aria-pressed", String(white));
+      button.classList.toggle("active", white);
     });
+    const frame = document.getElementById("viewer-canvas-frame");
+    if (frame) frame.dataset.ground = white ? "light" : "dark";
   }
 
   function groundColour() {
-    return STATE.ground === "white" ? 0xffffff : colourNumber(STATE.background);
+    if (STATE.ground === "white") return 0xffffff;
+    if (STATE.ground === "scheme") {
+      let token = "";
+      try {
+        token = getComputedStyle(document.documentElement).getPropertyValue("--viewer-ground").trim();
+      } catch (error) { /* no styles yet */ }
+      if (/^#[0-9a-f]{6}$/i.test(token)) return colourNumber(token);
+    }
+    return colourNumber(STATE.background);
   }
+
+  /* Whether the molecule is on a light ground: what the overlays over it,
+   * and the ground button, are set for. */
+  function groundIsWhite() {
+    const ground = groundColour();
+    const r = (ground >> 16) & 255, g = (ground >> 8) & 255, b = ground & 255;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 140;
+  }
+
+  // The scheme's ground follows the scheme as it changes.
+  document.addEventListener("fmx:theme", () => {
+    if (STATE.ground === "scheme") setGround("scheme");
+  });
 
   function setPublication(on) {
     STATE.publication = !!on;
@@ -1200,7 +1226,9 @@
       shown: Object.assign({}, STATE.visibility), superposed: STATE.superposed,
       superposed_to: STATE.superposedTo, smoothed_over: STATE.smoothedOver,
       pocket_cutoff: STATE.pocketCutoff, publication: !!STATE.publication,
-      ground: STATE.ground,
+      // The ground in effect: a view or scene shown elsewhere has no
+      // scheme of this page's to follow.
+      ground: groundIsWhite() ? "white" : "dark",
     };
     if (STATE.mode === "playback" && STATE.framesRendered) view.frame = engine.frame();
     return view;

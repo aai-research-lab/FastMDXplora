@@ -208,6 +208,7 @@ def test_they_are_plotted_under_the_frames_and_shown_in_the_structure(study):
             rows = page.eval_on_selector_all(".frame-interactions-svg .frame-interactions-kind",
                                              "(all) => all.length")
             # A measurement of the person's, which the contacts leave alone.
+            hooks.tool(page, "side-view")
             page.click('[data-action="measure"]')
             assert hooks.click(page, resi=189, atom="CA")
             assert hooks.click(page, resi=195, atom="CA")

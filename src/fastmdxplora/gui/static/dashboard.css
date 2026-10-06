@@ -4339,7 +4339,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     .viewer-layout {
         /* The canvas's column as wide as its shape and the window's height
            allow, the settings beside it, the two centred on the page. */
-        grid-template-columns: var(--viewer-canvas-width, minmax(0, 1fr)) minmax(300px, 340px);
+        /* The settings' column holds the tools' rail beside the tool. */
+        grid-template-columns: var(--viewer-canvas-width, minmax(0, 1fr)) minmax(350px, 390px);
         justify-content: center;
         /* Until the page has measured its header: about what it takes. */
         height: var(--viewer-height, calc(100vh - 150px));
@@ -5507,3 +5508,72 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .overview-methods:not([open]) > summary { margin-bottom: 0; }
 .overview-methods[hidden] { display: none; }
 .overview-methods .methods-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+
+/* ===========================================================================
+   The Viewer's tools on a rail, one shown at a time (viewer-rail.js): the
+   rail at the column's edge, the tool chosen beside it. Where the columns
+   stack, the rail is a row above the tool.
+   =========================================================================== */
+.viewer-side.has-rail {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 10px;
+    /* No gap between rows: the rail spans many, empty ones included. */
+    row-gap: 0;
+    align-content: start;
+}
+.viewer-side.has-rail > [data-rail="pinned"] { margin-top: 10px; }
+.viewer-side.has-rail > .viewer-rail {
+    grid-column: 1;
+    grid-row: 1 / span 40;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 4px;
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    background: var(--panel-glass);
+}
+.viewer-side.has-rail > .side-section { grid-column: 2; }
+.viewer-side.has-rail > .side-section:not(.is-chosen):not([data-rail="pinned"]) { display: none; }
+.viewer-side.has-rail > .side-section.is-chosen > summary { cursor: default; pointer-events: none; list-style: none; }
+.viewer-side.has-rail > .side-section.is-chosen > summary::-webkit-details-marker { display: none; }
+.rail-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0;
+    border: 1px solid transparent; border-radius: 8px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.rail-btn[hidden] { display: none; }
+.rail-btn .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6;
+                  stroke-linecap: round; stroke-linejoin: round; }
+.rail-btn:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.rail-btn[aria-selected="true"] {
+    color: var(--accent-text, var(--accent-cyan));
+    background: color-mix(in srgb, var(--accent-cyan) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent-cyan) 35%, transparent);
+}
+.rail-btn:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 1px; }
+@container viewerpage (max-width: 900px) {
+    .viewer-side.has-rail { grid-template-columns: minmax(0, 1fr); }
+    .viewer-side.has-rail > .viewer-rail {
+        grid-row: auto; position: static; flex-direction: row; overflow-x: auto;
+        margin-bottom: 10px;
+    }
+    .viewer-side.has-rail > .side-section { grid-column: 1; }
+}
+
+/* The Viewer's keys (viewer-help). */
+.viewer-help-open kbd { font-family: var(--font-mono); font-size: var(--text-2xs); }
+.keys-list { display: grid; gap: 8px; margin: 0 0 12px; }
+.keys-list > div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; align-items: baseline; }
+.keys-list dt { margin: 0; white-space: nowrap; }
+.keys-list dd { margin: 0; color: var(--text-secondary); }
+.keys-list kbd, .viewer-help-open kbd {
+    display: inline-block; min-width: 1.6em; padding: 1px 6px; text-align: center;
+    border: 1px solid var(--border-primary); border-bottom-width: 2px; border-radius: 6px;
+    background: var(--background-elevated); color: var(--text-primary);
+}

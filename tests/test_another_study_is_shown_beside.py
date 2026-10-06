@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -197,6 +198,7 @@ def test_the_viewer_plays_them_together(pair):
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function("() => !document.getElementById('side-beside').hidden")
+            hooks.tool(page, "side-beside")
             offered = page.locator("#beside-study option").all_inner_texts()
             page.click("#beside-show")
             page.wait_for_function(f"() => {state}.engine.runsShown('beside').length === 1"

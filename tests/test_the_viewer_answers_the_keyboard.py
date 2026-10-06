@@ -15,6 +15,7 @@ pytest.importorskip("playwright.sync_api")
 pytest.importorskip("mdtraj")
 
 from tests.test_the_drawing_scripts_run_in_a_browser import FRAMES, _write_study  # noqa: E402
+from tests import viewer_hooks as hooks
 
 VIEWER = "window.FastMDXMoleculeViewer.STATE"
 
@@ -79,6 +80,7 @@ def test_space_plays_and_pauses(page) -> None:
 
 
 def test_typing_is_typing(page) -> None:
+    hooks.tool(page, "side-ligand")
     field = page.locator("#pocket-cutoff")
     page.evaluate("() => document.getElementById('ligand-tools').hidden = false")
     field.focus()
@@ -96,5 +98,14 @@ def test_only_on_the_viewers_page(page) -> None:
 
 
 def test_the_keys_are_said(page) -> None:
+    """They were a line under the title, read by nobody; ? lists them, as
+    the Keys button beside the title does."""
     keys = page.locator("#viewer-keys")
+    assert not keys.is_visible()
+    page.keyboard.press("?")
+    page.wait_for_selector("#viewer-help:not([hidden])")
     assert keys.is_visible() and "Space" in keys.text_content()
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#viewer-help", state="hidden")
+    page.click(".viewer-help-open")
+    page.wait_for_selector("#viewer-help:not([hidden])")

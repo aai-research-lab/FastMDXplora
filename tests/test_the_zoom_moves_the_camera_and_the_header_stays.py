@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests import viewer_hooks as hooks
+
 pytest.importorskip("playwright.sync_api")
 
 STATE = "window.FastMDXMoleculeViewer.STATE"
@@ -67,6 +69,7 @@ def _distance(camera) -> float:
 
 def test_zooming_in_brings_the_camera_nearer(page):
     before = _at_rest(page)
+    hooks.tool(page, "side-view")
     page.click('[data-cam="zoom-in"]')
     nearer = _at_rest(page)
     page.click('[data-cam="zoom-out"]')
@@ -91,6 +94,9 @@ def test_a_distance_is_labelled_beside_its_line(page):
 
 
 def test_the_molecule_is_shown_on_white_and_back(page):
+    # On the dark scheme, whose ground is dark until white is chosen.
+    page.evaluate("() => window.FastMDXFrame.applyTheme('dark', false)")
+    hooks.tool(page, "side-view")
     page.click('[data-action="background"]')
     white = page.evaluate(f"() => [{STATE}.engine.background, {STATE}.ground]")
     pressed = page.get_attribute('[data-action="background"]', "aria-pressed")

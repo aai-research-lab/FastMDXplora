@@ -20,6 +20,7 @@ import pytest
 
 from fastmdxplora.gui.by_residue import values_by_residue
 from tests.test_the_cartoon_is_dssp_of_each_frame import _helical_study
+from tests import viewer_hooks as hooks
 
 
 def _analysis(root: Path, name: str, files: dict[str, str], *, options=None,
@@ -187,8 +188,10 @@ def test_the_protein_is_coloured_by_its_rmsf(study):
             "#selection-tab-tbody tr",
             "rows => rows.map((r) => [r.cells[0].textContent, r.cells[1].textContent])")
         with page.expect_download() as download:
+            hooks.tool(page, "side-view")
             page.click('[data-action="screenshot"]')
         said["picture"] = download.value.path().read_bytes()
+        hooks.tool(page, "side-display")
         page.select_option("#viewer-color", "spectrum")
         said["after"] = page.evaluate(
             "() => document.getElementById('viewer-legend').hidden")

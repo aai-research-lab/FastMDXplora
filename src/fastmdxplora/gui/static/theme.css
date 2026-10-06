@@ -47,6 +47,8 @@
 }
 
 :root {
+    /* The Viewer's ground, as the scheme's (molecule-viewer.js). */
+    --viewer-ground: #0c0c0d;
     color-scheme: dark;
 
     /* Dark, the default: a neutral ground, as the lab's website has it
@@ -157,6 +159,7 @@
    --------------------------------------------------------------------------- */
 :root[data-theme="light"],
 body[data-theme="light"] {
+    --viewer-ground: #ffffff;
     color-scheme: light;
     --background-primary: #faf9f5;
     --background-secondary: #f3f2ed;

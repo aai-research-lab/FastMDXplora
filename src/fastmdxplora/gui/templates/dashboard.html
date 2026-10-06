@@ -101,6 +101,34 @@
       </div>
     </div>
   </div>
+  <!-- The Viewer's keys, opened by ? on the Viewer or its Keys button. -->
+  <div id="viewer-help" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
+         aria-labelledby="viewer-help-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="viewer-help-title">The Viewer's keys</div>
+          <div class="builder-card-note">On the Viewer, and never while typing in a field.</div>
+        </div>
+        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      </div>
+      <div class="agent-dialog-body">
+        <dl class="keys-list" id="viewer-keys">
+          <div><dt><kbd>Space</kbd></dt><dd>Play or pause</dd></div>
+          <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>A frame back or on; with <kbd>Shift</kbd>, ten</dd></div>
+          <div><dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>The first frame, the last</dd></div>
+          <div><dt><kbd>R</kbd></dt><dd>Centre the structure</dd></div>
+          <div><dt><kbd>F</kbd></dt><dd>Full screen</dd></div>
+          <div><dt><kbd>M</kbd></dt><dd>Measure: click two to four atoms</dd></div>
+          <div><dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>The tool above or below on the rail</dd></div>
+          <div><dt><kbd>Esc</kbd></dt><dd>Clear a measurement; close this list</dd></div>
+          <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
+        </dl>
+        <p class="builder-card-note">On the molecule: drag to turn, scroll to zoom, right-drag to move,
+          click an atom to select it.</p>
+      </div>
+    </div>
+  </div>
   <!-- Preferences: how this browser shows things, kept in it and applied
        as they change. Nothing here changes a study or its files. -->
   <div id="prefs-dialog" class="agent-dialog" hidden>
@@ -131,7 +159,8 @@
             </label>
             <label class="pref-row"><span>Ground</span>
               <select id="setting-ground">
-                <option value="dark" selected>Dark</option>
+                <option value="scheme" selected>As the scheme</option>
+                <option value="dark">Dark</option>
                 <option value="white">White</option>
               </select>
             </label>
@@ -158,6 +187,7 @@
             </label>
           </div>
         </div>
+
       </div>
       <div class="agent-dialog-foot">
         <button type="button" class="ghost-btn" id="prefs-restore">Restore defaults</button>
@@ -879,7 +909,10 @@
             <div>
               <h1 class="page-title">Molecular Viewer</h1>
               <div class="page-subtitle">Live molecular canvas, ligand tools, trajectory playback</div>
-              <div class="viewer-keys muted small" id="viewer-keys"><kbd>Space</kbd> play or pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> a frame, with <kbd>Shift</kbd> ten · <kbd>Home</kbd><kbd>End</kbd> the ends · <kbd>R</kbd> centre · <kbd>F</kbd> full screen · <kbd>M</kbd> measure</div>
+            </div>
+            <div class="page-header-actions">
+              <button type="button" class="ghost-btn viewer-help-open" data-dialog-open="viewer-help"
+                      aria-keyshortcuts="Shift+/" title="The Viewer's keys (?)"><kbd>?</kbd> Keys</button>
             </div>
           </div>
           <div class="viewer-layout">
@@ -1009,7 +1042,11 @@
                  the selections, the ligand, the views saved and what is
                  known of it. -->
             <aside class="viewer-side" aria-label="Viewer settings">
-              <details class="side-section" open>
+              <!-- One tool at a time, chosen on the rail (viewer-rail.js),
+                   which is built from the sections below. -->
+              <div class="viewer-rail" id="viewer-rail" role="tablist" aria-orientation="vertical"
+                   aria-label="Viewer tools" hidden></div>
+              <details class="side-section" id="side-view" open>
                 <summary>View</summary>
                   <div class="control-row view-tools">
                     <div class="icon-group" role="group" aria-label="View">
@@ -1047,7 +1084,7 @@
                     </div>
                   </div>
               </details>
-              <details class="side-section" open>
+              <details class="side-section" id="side-display" open>
                 <summary>Display</summary>
                   <div class="control-row display-tools">
                     <label class="select-field">Representation
@@ -1278,7 +1315,7 @@
                 <ul class="chain-contacts" id="chain-contacts-list" aria-label="Contacts between chains"></ul>
                 <p class="muted small" id="chain-contacts-note"></p>
               </details>
-              <details class="side-section" open>
+              <details class="side-section" id="side-saved" open>
                 <summary>Saved views</summary>
                 <div class="control-row">
                     <!-- Views saved with the study: the camera, the frame and how
@@ -1360,7 +1397,10 @@
                   <p class="muted small" id="movie-by"></p>
                 </form>
               </details>
-              <details class="side-section" open>
+              <!-- What is picked and measured, and the structure: shown under
+                   whichever tool is chosen, so a measurement made with the
+                   View tool is read beside it. -->
+              <details class="side-section" id="side-info" data-rail="pinned" open>
                 <summary>Information</summary>
                 <div class="info-panel">
                   <div class="info-tabs" role="tablist" aria-label="Molecular information">
@@ -1758,6 +1798,7 @@
   <script src="/static/fixes.js"></script>
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
+  <script src="/static/viewer-rail.js"></script>
   <script src="/static/viewer-sequence.js"></script>
   <script src="/static/viewer-selections.js"></script>
   <script src="/static/frame-series.js"></script>

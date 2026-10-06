@@ -40,6 +40,8 @@ from fastmdxplora.scenes import (  # noqa: E402
     write_scene,
 )
 
+from tests import viewer_hooks as hooks  # noqa: E402
+
 DATA = Path(__file__).parent / "data" / "assemblies"
 CAMERA = {"position": [12.0, -4.0, 90.0], "target": [2.0, 1.0, -3.0], "up": [0.0, 1.0, 0.0],
           "fov": math.pi / 4, "mode": "perspective"}
@@ -556,6 +558,7 @@ def test_a_scene_written_from_the_viewer_opens_in_mol_star_as_it_was(helical):
             page.select_option("#viewer-color", "chain")
             page.wait_for_function(f"() => {state}.colorMode === 'chain'")
             before = page.evaluate(f"() => {state}.engine.cameraSnapshot()")
+            hooks.tool(page, "side-saved")
             page.click("#viewer-scene-save")
             page.fill("#viewer-view-name", "late frame")
             with page.expect_download() as caught:

@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer's tools on a rail, its keys on ?, its ground the scheme's
+
+**Changed:** the settings beside the molecule were sixteen sections one
+under the other. Each is now a button on a rail at the column's edge,
+named on hover, and the column shows the one chosen, kept in the browser;
+a section the study has nothing for has no button, and what is picked and
+measured is shown under every tool. `[` and `]` choose the tool above or
+below, and the arrows move along the rail. The keys, a line under the
+title, are listed by **?** or the **Keys** button. The molecule was on
+black on the Light scheme too: it is on the scheme's ground now, white on
+Light, unless a ground is chosen (Preferences, **As the scheme** by
+default, or the ground button).
+
 ### A study's card is plotted in the page's colours
 
 **Changed:** each card on All studies showed the first figure its study

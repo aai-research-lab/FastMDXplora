@@ -306,7 +306,8 @@
       pocketCutoff: state.bindingPocketCutoff,
       chartHistory: chartHistorySamples,
       proteinRepresentation: byId("setting-protein-rep")?.value || "cartoon",
-      ground: byId("setting-ground")?.value === "white" ? "white" : "dark",
+      ground: ["white", "dark"].includes(byId("setting-ground")?.value)
+        ? byId("setting-ground").value : "scheme",
       showWater: !!byId("setting-show-water")?.checked,
       showIons: !!byId("setting-show-ions")?.checked,
       spin: !!byId("setting-spin")?.checked,

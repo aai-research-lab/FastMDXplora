@@ -20,6 +20,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests import viewer_hooks as hooks
 
 pytest.importorskip("mdtraj")
 pytest.importorskip("playwright.sync_api")
@@ -80,6 +81,7 @@ def test_the_movie_is_of_the_frames_shown_and_the_view_is_put_back(page, study):
     import numpy as np
     from PIL import Image
 
+    hooks.tool(page, "side-movie")
     assert page.text_content("#movie-by").startswith(("MP4 (H.264), by ffmpeg",
                                                       "WEBM (VP9), by ffmpeg",
                                                       "WEBM (VP8), by ffmpeg"))
@@ -147,6 +149,7 @@ def test_the_movie_is_of_the_frames_shown_and_the_view_is_put_back(page, study):
 
 
 def test_a_movie_cancelled_leaves_nothing(page, study):
+    hooks.tool(page, "side-movie")
     page.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
     page.fill("#movie-from", "0")
     page.fill("#movie-to", "")
@@ -252,6 +255,7 @@ def test_a_structure_without_frames_is_turned_once(tmp_path, study, page):
         other.wait_for_function(f"() => {VIEWER} && {VIEWER}.STATE.model")
         other.wait_for_function("() => document.getElementById('movie-by').textContent")
         other.evaluate("() => { window.FastMDXViewerMovie.settings.turnSeconds = 0.4; }")
+        hooks.tool(other, "side-movie")
         other.select_option("#movie-fps", "10")
         other.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
         other.wait_for_function("() => document.getElementById('movie-length').textContent"

@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests import viewer_hooks as hooks
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "src" / "fastmdxplora" / "gui" / \
     "templates" / "dashboard.html"
@@ -141,6 +142,7 @@ def test_the_lists_draw_and_colour(page) -> None:
 def test_the_pocket_cutoff_is_said_in_nanometres_too(page) -> None:
     if not page.is_visible("#pocket-cutoff"):
         pytest.skip("no ligand tools for this structure")
+    hooks.tool(page, "side-ligand")
     assert page.text_content("#pocket-cutoff-nm") == "(0.50 nm)"
     page.fill("#pocket-cutoff", "7.5")
     page.dispatch_event("#pocket-cutoff", "change")
@@ -163,6 +165,7 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     before = page.evaluate(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
                            "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
     with page.expect_download() as caught:
+        hooks.tool(page, "side-view")
         page.click('[data-action="screenshot"]')
     saved = Path(caught.value.path()).read_bytes()
     assert saved[:8] == b"\x89PNG\r\n\x1a\n"
@@ -184,6 +187,7 @@ def test_a_picture_is_as_wide_as_chosen_and_on_no_ground_if_asked(page) -> None:
 
     from PIL import Image
 
+    hooks.tool(page, "side-view")
     page.select_option("#picture-width", "1200")
     page.check("#picture-transparent")
     with page.expect_download() as caught:

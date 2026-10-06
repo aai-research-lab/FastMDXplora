@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -130,7 +131,7 @@ def test_the_viewer_follows_a_residue_over_the_frames(study):
                                    f" && {VIEWER}.STATE.playbackPayload")
             page.evaluate(f"async () => {{ await {VIEWER}.movie.frames(); }}")
             page.wait_for_function("() => !document.getElementById('side-rama').hidden")
-            page.click("#side-rama > summary")
+            hooks.tool(page, "side-rama")
             page.wait_for_function(f"() => {rama}.state.data")
             page.wait_for_function("() => document.getElementById('rama-note')"
                                    ".textContent.startsWith('φ and ψ of')")

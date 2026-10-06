@@ -31,6 +31,8 @@ from fastmdxplora.gui.viewer_selections import (  # noqa: E402
     selections_of,
 )
 
+from tests import viewer_hooks as hooks  # noqa: E402
+
 DATA = Path(__file__).parent / "data" / "assemblies"
 STATE = "window.FastMDXMoleculeViewer.STATE"
 SELECTIONS = "window.FastMDXSelections"
@@ -220,6 +222,7 @@ def page(study):
 
 
 def _type(page, expression: str) -> None:
+    hooks.tool(page, "side-selections")
     page.fill("#sel-expression", expression)
     page.click("#sel-form button[type=submit]")
 
@@ -268,6 +271,7 @@ def test_a_typed_selection_selects_the_atoms_shown(page, study):
     assert page.evaluate(f"() => {STATE}.engine.atoms({STATE}.selection.atoms)"
                          ".map((a) => a.atom)") \
         == ["CA"] * len(expected)
+    hooks.tool(page, "side-selections")
     assert page.text_content("#sel-said") == (
         f"Selected by resSeq 189 to 195 and name CA: {len(expected)} atoms "
         f"in {len(expected)} residues.")
@@ -289,6 +293,7 @@ def test_a_selection_named_is_listed_kept_and_rendered(page, study):
     page.wait_for_function(f"() => {STATE}.selection"
                            f" && {STATE}.selection.expression === 'resname BEN'")
     ligand = page.evaluate(f"() => {STATE}.selection.atoms.length")
+    hooks.tool(page, "side-selections")
     page.fill("#sel-name", "ligand")
     page.click("#sel-keep")
     page.wait_for_selector('.sel-item[data-name="ligand"]')
@@ -310,6 +315,7 @@ def test_a_selection_named_is_listed_kept_and_rendered(page, study):
 def test_residues_from_the_sequence_are_named_and_hidden(page, study):
     page.evaluate("() => window.FastMDXSequence.select([10, 11, 12, 13, 14])")
     page.wait_for_function(f"() => {STATE}.selection && {STATE}.selection.residues.length === 5")
+    hooks.tool(page, "side-selections")
     page.click("#sel-keep")
     page.wait_for_selector('.sel-item[data-name="sele1"]')
     page.wait_for_function(f"() => {SELECTIONS}.state.atoms.get('sele1')")
@@ -387,8 +393,6 @@ def test_a_named_selection_is_picked_centred_and_forgotten(page, study):
 
 
 def test_a_ligand_clicked_is_selected_though_not_in_the_sequence(page):
-    from tests import viewer_hooks as hooks
-
     atom = hooks.click(page, resn="BEN", atom="C1")
     assert atom
     page.wait_for_function(f"() => {STATE}.selection && {STATE}.selection.residues.length === 1"

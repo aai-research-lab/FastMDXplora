@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -148,6 +149,7 @@ def test_the_viewer_compares_them(study):
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function("() => !document.getElementById('side-states').hidden")
+            hooks.tool(page, "side-states")
             rows = page.locator("#states-list li").all_inner_texts()
             later = page.locator("#states-list li").nth(1)
             frame = int(later.get_attribute("data-state") or 0)

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -183,6 +184,7 @@ def test_the_viewer_swings_it(hinge):
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function("() => !document.getElementById('side-motion').hidden")
+            hooks.tool(page, "side-motion")
             page.check("#motion-swing")
             page.wait_for_function(f"() => {state}.engine.motionShown()"
                                    f" && {state}.engine.motionShown().frame > 2")

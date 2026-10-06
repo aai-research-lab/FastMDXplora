@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -168,6 +169,7 @@ def test_the_frames_in_between_lie_between_the_frames_played(page):
                   f"await {VIEWER}.movie.showFrame(1); }}")
     assert page.evaluate(f"() => {VIEWER}.STATE.superposed") == "none"
     count = page.evaluate(f"() => {VIEWER}.STATE.engine.frameCount()")
+    hooks.tool(page, "side-movie")
     page.fill("#movie-from", "2")
     page.fill("#movie-to", "3")
     page.select_option("#movie-between", "3")

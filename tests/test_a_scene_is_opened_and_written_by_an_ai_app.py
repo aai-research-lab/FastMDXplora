@@ -23,6 +23,7 @@ pytest.importorskip("mdtraj")
 from fastmdxplora.mcp import App, Workspace  # noqa: E402
 from fastmdxplora.scenes import write_scene  # noqa: E402
 from tests._mcp_wire import Wire  # noqa: E402
+from tests import viewer_hooks as hooks
 
 
 @pytest.fixture(scope="module")
@@ -132,6 +133,7 @@ def test_a_scene_opens_on_a_page_of_its_own(workspace):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function("() => document.querySelectorAll('#viewer-scenes option')"
                                    ".length > 1")
+            hooks.tool(page, "side-saved")
             page.select_option("#viewer-scenes", "page one")
             with context.expect_page() as opened:
                 page.click("#viewer-scene-open")
@@ -189,6 +191,7 @@ def test_a_scene_is_shown_in_the_viewer_again(workspace):
             page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {state}.model")
             page.wait_for_function("() => document.querySelectorAll('#viewer-scenes option')"
                                    ".length > 2")
+            hooks.tool(page, "side-saved")
             assert page.is_disabled("#viewer-scene-show")
             page.select_option("#viewer-scenes", "back again")
             page.click("#viewer-scene-show")

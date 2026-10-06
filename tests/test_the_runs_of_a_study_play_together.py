@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -277,6 +278,7 @@ def test_the_viewer_renders_each_run_in_its_colour(replicas):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function(f"() => {state}.model")
             page.wait_for_function("() => !document.getElementById('side-runs').hidden")
+            hooks.tool(page, "side-runs")
             before = page.locator("#viewer-runs-note").inner_text()
             colour = page.evaluate("() => document.getElementById('viewer-color').value")
             page.evaluate("() => window.dispatchEvent(new CustomEvent("
@@ -426,6 +428,7 @@ def test_the_viewer_follows_a_run_still_running(replicas, tmp_path):
                           "'dashboard:trajectory-seek', {detail: {frame: 0}}))")
             page.wait_for_function(f"() => {state}.engine.runsShown().length === 2")
             before = page.evaluate(f"() => {state}.engine.runsShown().map((r) => r.frames)")
+            hooks.tool(page, "side-runs")
             said = page.locator('#viewer-runs-list li[data-run="s1__random-seed-2"]').inner_text()
             written(3)
             page.wait_for_function(f"() => {state}.engine.runsShown().length === 2"

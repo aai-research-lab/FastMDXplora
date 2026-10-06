@@ -134,6 +134,7 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
                                    f" && {live}.liveCoordinates && {live}.liveFrameIndex === 6000")
             # Each structure loaded is rendered as a model of its own.
             page.evaluate(f"() => {{ window.shown = {live}.model; }}")
+            hooks.tool(page, "side-view")
             page.click('[data-action="measure"]')
             assert hooks.click(page, resi=3, atom="CA")
             assert hooks.click(page, resi=9, atom="CA")

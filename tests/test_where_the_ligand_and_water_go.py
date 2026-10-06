@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -263,6 +264,7 @@ def test_the_viewer_shows_them_on_the_first_frame(trypsin):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function("() => !document.getElementById('side-occupancy').hidden"
                                    " && !document.getElementById('occ-sites-row').hidden")
+            hooks.tool(page, "side-occupancy")
             page.check("#occ-ligand")
             page.check("#occ-water")
             page.check("#occ-sites")

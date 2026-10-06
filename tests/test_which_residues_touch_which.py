@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -137,7 +138,7 @@ def test_the_viewer_maps_them_and_follows_a_pair(study):
                                    f" && {VIEWER}.STATE.playbackPayload")
             page.evaluate(f"async () => {{ await {VIEWER}.movie.frames(); }}")
             page.wait_for_function("() => !document.getElementById('side-cmap').hidden")
-            page.click("#side-cmap > summary")
+            hooks.tool(page, "side-cmap")
             page.wait_for_function(f"() => {CMAP}.state.data")
             page.wait_for_function("() => !document.getElementById('cmap-states-row').hidden")
             # Large enough that a cell is several pixels across.

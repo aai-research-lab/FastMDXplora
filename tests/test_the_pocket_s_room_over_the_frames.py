@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from tests import viewer_hooks as hooks
 
 md = pytest.importorskip("mdtraj")
 
@@ -148,7 +149,7 @@ def test_the_viewer_plots_it_and_renders_the_pocket(study):
             page.evaluate(f"async () => {{ await {VIEWER}.movie.frames(); }}")
             page.evaluate(f"() => {{ {VIEWER}.STATE.pocketCutoff = 10; }}")
             page.wait_for_function("() => !document.getElementById('side-pocket').hidden")
-            page.click("#side-pocket > summary")
+            hooks.tool(page, "side-pocket")
             page.wait_for_function(f"() => {pocket}.state.data")
             page.check("#pocket-shown")
             page.wait_for_function(f"() => {VIEWER}.STATE.engine.volumesShown()"

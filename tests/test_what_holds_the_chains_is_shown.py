@@ -28,6 +28,7 @@ md = pytest.importorskip("mdtraj")
 
 from fastmdxplora.gui.chain_contacts import chain_contacts  # noqa: E402
 from fastmdxplora.gui.trajectory_frames import frames_info  # noqa: E402
+from tests import viewer_hooks as hooks
 
 ATOMS = {
     # chain, residue, number: the atoms and where they are in frame 0 (nm)
@@ -232,9 +233,11 @@ def test_the_viewer_lists_them_and_shows_those_of_the_frame(built):
                 }
             rows = page.eval_on_selector_all("#chain-contacts-list .chain-contact",
                                               "rows => rows.map(r => r.textContent)")
-            visible = page.is_visible("#side-chains")
+            # Its tool is offered on the rail.
+            visible = page.is_visible('[data-tool="side-chains"]')
             # Taken out of the structure, and the ligand's lines are kept apart.
             page.evaluate("() => window.FastMDXMoleculeViewer.movie.showFrame(0)")
+            hooks.tool(page, "side-chains")
             page.uncheck("#chain-contacts-shown")
             page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.engine"
                                    ".interactionsHeld('chains') === 0")

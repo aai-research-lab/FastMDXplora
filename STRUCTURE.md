@@ -189,7 +189,8 @@ FastMDXplora/
 │       │   │                      #   viewer-occupancy.js, viewer-motion.js,
 │       │   │                      #   viewer-states.js, viewer-ramachandran.js,
 │       │   │                      #   viewer-contact-map.js, viewer-pocket.js,
-│       │   │                      #   viewer-beside.js; scene-view.js
+│       │   │                      #   viewer-beside.js, viewer-rail.js (one tool at a time);
+│       │   │                      #   scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
 │       ├── remote/

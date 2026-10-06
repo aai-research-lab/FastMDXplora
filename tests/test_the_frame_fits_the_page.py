@@ -198,6 +198,8 @@ class TestTheViewer:
             " && window.FastMDXMoleculeViewer.STATE.runStatus === 'completed'",
             timeout=60000)
         tag = page.locator("#overlay-tag").text_content()
+        # Looked for in the View tool, where it is when there is a run.
+        page.evaluate("() => window.FastMDXViewerRail.choose('side-view')")
         age = page.locator("#overlay-age").is_visible()
         follow = page.locator("label:has(#traj-follow)").is_visible()
         live = page.locator('[aria-label="Live structure"]').is_visible()
@@ -208,6 +210,8 @@ class TestTheViewer:
     def test_a_running_study_has_them(self, browser, studies) -> None:
         page = _open(browser, studies["running"], where="#viewer")
         page.wait_for_selector("label:has(#traj-follow)", state="visible", timeout=60000)
+        # In the View tool, one of the Viewer's tools on its rail.
+        page.evaluate("() => window.FastMDXViewerRail.choose('side-view')")
         live = page.locator('[aria-label="Live structure"]').is_visible()
         page.context.close()
         assert live

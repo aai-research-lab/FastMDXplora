@@ -143,7 +143,7 @@
   // Each preference: its field, how the field holds it, and its default.
   var PREFERENCES = {
     representation: ["setting-protein-rep", "value", "cartoon"],
-    ground: ["setting-ground", "value", "dark"],
+    ground: ["setting-ground", "value", "scheme"],
     water: ["setting-show-water", "checked", false],
     ions: ["setting-show-ions", "checked", false],
     spin: ["setting-spin", "checked", false],
