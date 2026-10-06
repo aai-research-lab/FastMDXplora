@@ -540,7 +540,7 @@ def run_stages(project_root: str | Path) -> list[str]:
     ]
 
 
-def read_metrics(project_root: str | Path, *, limit: int = 500) -> list[dict[str, Any]]:
+def read_metrics(project_root: str | Path, *, limit: int | None = 500) -> list[dict[str, Any]]:
     """Read dashboard metrics, enriching them from OpenMM's ``energy.csv``.
 
     Older runs and very short smoke tests may have only one of the two files.
@@ -579,7 +579,7 @@ def read_metrics(project_root: str | Path, *, limit: int = 500) -> list[dict[str
         frame_count = status.get("current_frame_count")
         if frame_count is not None and rows[-1].get("current_frame_count") in (None, ""):
             rows[-1]["current_frame_count"] = str(frame_count)
-    return rows[-limit:]
+    return rows if limit is None else rows[-limit:]
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:

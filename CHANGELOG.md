@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The live charts show the whole run
+
+**Fixed:** the Overview's charts were given the newest 500 samples of the
+live record, so a long run's charts showed its last stretch, without its
+equilibration or most of its production. They are now given the whole run,
+thinned evenly to the samples the Chart history setting keeps (600 unless
+changed), keeping its first and last samples and each change of stage.
+
 ### Hints are shown in the page's own style
 
 **Changed:** every hint in the GUI was the browser's own box, square and in

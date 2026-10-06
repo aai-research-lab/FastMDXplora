@@ -144,6 +144,7 @@ FastMDXplora/
 │       │   ├── backbone_picture.py # A study's backbone for its card, before any figure
 │       │   ├── sidebar_icons.py   # The sidebar's line icons, for the GUI and the standalone dashboard
 │       │   ├── simulated_time.py  # How long a study ran: its production first, equilibration beside, wall time
+│       │   ├── overview_view.py   # What the Overview leads with: the means, the production's clock, the phases
 │       │   ├── contact_map.py     # Which residues touch which over the frames played
 │       │   ├── pocket_volume.py   # The room in a ligand's pocket, frame by frame (POVME's way)
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed

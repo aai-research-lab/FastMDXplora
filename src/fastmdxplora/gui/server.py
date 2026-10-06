@@ -146,7 +146,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
-    "/api/analysis-overview", "/api/convergence",
+    "/api/analysis-overview", "/api/convergence", "/api/overview",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
@@ -303,6 +303,9 @@ PLOT_CATEGORY_BY_TITLE = {
 KEY_PLOT_TITLES = {"RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds", "PCA", "SASA"}
 
 DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("templates") / "dashboard.html"
+#: The most rows of the live record the charts are sent: the whole run,
+#: thinned evenly (overview_view.thinned_metrics).
+MOST_CHART_SAMPLES = 600
 #: The AAi Research Lab's logo (its site's, scaled to 128 px), the avatar
 #: at the foot of the sidebar; the standalone dashboard inlines it.
 LAB_LOGO = "lab-logo.png"
@@ -735,7 +738,25 @@ def make_handler(
                 self._send_json(payload)
                 return
             if path == "/api/metrics":
-                self._send_json({"metrics": read_metrics(root)})
+                # The whole run, thinned evenly, for the charts: the newest
+                # 500 samples alone left a long run's charts its last
+                # stretch, without its equilibration or most of production.
+                # As many as the person's setting keeps (Chart history).
+                from fastmdxplora.gui.overview_view import thinned_metrics
+
+                try:
+                    most = int((parse_qs(parsed.query).get("most") or [""])[0])
+                except ValueError:
+                    most = MOST_CHART_SAMPLES
+                most = max(60, min(most, 5000))
+                self._send_json({"metrics": thinned_metrics(
+                    read_metrics(root, limit=None), most)})
+                return
+            if path == "/api/overview":
+                # What the Overview leads with (overview_view.py).
+                from fastmdxplora.gui.overview_view import overview_payload
+
+                self._send_json(overview_payload(root))
                 return
             if path == "/api/events":
                 self._send_json({"events": read_events(root)})

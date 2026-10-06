@@ -422,7 +422,8 @@
   async function pollOnce() {
     const names = ["app", "status", "metrics", "events", "results", "structure", "playback"];
     const urls = [
-      "/api/app-state", "/api/status", "/api/metrics", "/api/events", "/api/results",
+      "/api/app-state", "/api/status", `/api/metrics?most=${chartHistorySamples}`,
+      "/api/events", "/api/results",
       "/api/structure-info", "/api/frames-info",
     ];
     const settled = await Promise.allSettled(urls.map(fetchJSON));
@@ -1067,11 +1068,28 @@
   /* Metrics and events                                                  */
   /* ------------------------------------------------------------------ */
   function applyMetrics(metrics) {
-    state.metrics = (Array.isArray(metrics) ? metrics : [])
-      .map(normaliseMetricRow)
-      .slice(-chartHistorySamples);
+    state.metrics = thinned((Array.isArray(metrics) ? metrics : [])
+      .map(normaliseMetricRow), chartHistorySamples);
     if (window.FastMDXCharts) window.FastMDXCharts.update(state.metrics);
     emit("metrics-updated", {metrics: state.metrics});
+  }
+
+  /* The record thinned evenly over the whole run to about `most` rows, its
+   * first, its last and each change of stage kept, as the server thins it
+   * (overview_view.thinned_metrics): the newest rows alone lost the
+   * equilibration and the start of production. */
+  function thinned(rows, most) {
+    const n = rows.length;
+    if (n <= most || most < 2) return rows;
+    const keep = new Set();
+    for (let i = 0; i < most; i += 1) keep.add(Math.round(i * (n - 1) / (most - 1)));
+    for (let i = 1; i < n; i += 1) {
+      if (String(rows[i].stage || "") !== String(rows[i - 1].stage || "")) {
+        keep.add(i - 1);
+        keep.add(i);
+      }
+    }
+    return Array.from(keep).sort((a, b) => a - b).map((i) => rows[i]);
   }
 
   function normaliseMetricRow(row) {

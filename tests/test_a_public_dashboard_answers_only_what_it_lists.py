@@ -257,6 +257,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
             "/api/series", "/api/runs-compared", "/api/selection",
             "/api/analysis-overview", "/api/convergence",
+            # What the Overview leads with, read from the same records as
+            # the Analysis page and the live record.
+            "/api/overview",
             # A command that measures two atoms over every frame: text built
             # from the study's records and two checked selections; it runs
             # nothing.
