@@ -46,7 +46,7 @@
           <div class="builder-label">Agent settings</div>
           <div class="builder-card-note" id="agent-model-current"></div>
         </div>
-        <button id="agent-settings-close" class="ghost-btn">Close</button>
+        <button type="button" id="agent-settings-close" class="line-btn dialog-x" aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-dialog-body">
         <div class="builder-grid builder-grid-2">
@@ -104,9 +104,10 @@
   <!-- Everything to go to or do, found by typing (palette.js, Cmd+K). -->
   <div id="palette" class="agent-dialog palette" hidden>
     <div class="agent-dialog-panel palette-panel" role="dialog" aria-modal="true" aria-label="Go to anything">
+      <span class="search-field palette-field"><!--icon:search:search-icon-->
       <input id="palette-input" class="palette-input" type="text" autocomplete="off" spellcheck="false"
              role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list"
-             placeholder="Go to a page, a study, an analysis, a tool...">
+             placeholder="Go to a page, a study, an analysis, a tool..."></span>
       <ul id="palette-list" class="palette-list" role="listbox" aria-label="Found"></ul>
       <div class="palette-foot muted small"><kbd>&uarr;</kbd><kbd>&darr;</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close</div>
     </div>
@@ -120,7 +121,7 @@
           <div class="builder-label" id="viewer-help-title">The Viewer's keys</div>
           <div class="builder-card-note">On the Viewer, and never while typing in a field.</div>
         </div>
-        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-dialog-body">
         <dl class="keys-list" id="viewer-keys">
@@ -151,7 +152,7 @@
           <div class="builder-card-note">Kept in this browser. They change how
             studies are shown, never a study or its files.</div>
         </div>
-        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-dialog-body">
         <div class="pref-group">
@@ -225,7 +226,7 @@
           <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
           <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
         </div>
-        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-dialog-body cite-body">
         <p class="cite-name"><strong>FastMDXplora</strong>: __FASTMDX_EXPANSION__</p>
@@ -256,7 +257,7 @@
           <div class="builder-label" id="study-field-title">Name for display</div>
           <div class="builder-card-note" id="study-field-note"></div>
         </div>
-        <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-dialog-body">
         <label class="builder-field">
@@ -497,11 +498,12 @@
               <div class="page-subtitle" id="studies-where">The studies in your workspace.</div>
             </div>
             <div class="page-header-actions">
+              <span class="search-field"><!--icon:search:search-icon-->
               <input type="search" class="studies-search" id="studies-search" autocomplete="off"
-                     placeholder="Search by name, structure, kind, state, tag or note" aria-label="Search the studies">
+                     placeholder="Search by name, structure, kind, state, tag or note" aria-label="Search the studies"></span>
               <div class="seg studies-view" role="group" aria-label="Show the studies as">
-                <button type="button" class="seg-btn active" data-studies-view="cards" aria-pressed="true">Cards</button>
-                <button type="button" class="seg-btn" data-studies-view="table" aria-pressed="false">Table</button>
+                <button type="button" class="seg-btn seg-icon active" data-studies-view="cards" aria-pressed="true" aria-label="Cards" title="As cards"><!--icon:cards:line-icon--></button>
+                <button type="button" class="seg-btn seg-icon" data-studies-view="table" aria-pressed="false" aria-label="Table" title="As a table"><!--icon:table:line-icon--></button>
               </div>
               <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
               <input type="hidden" id="studies-path">
@@ -956,11 +958,11 @@
                   <span class="seq-title">Sequence</span>
                   <span class="seq-key" aria-hidden="true"><span class="seq-key-h">helix</span><span class="seq-key-s">strand</span></span>
                   <span class="seq-said muted small" id="seq-said"></span>
+                  <button type="button" class="line-btn seq-clear" id="seq-clear" hidden aria-label="Clear selection" title="Clear selection"><!--icon:erase:line-icon--></button>
                 </span></summary>
                 <div class="seq-scroll" id="seq-scroll"></div>
                 <div class="seq-foot">
                   <span class="muted small" id="seq-note" hidden></span>
-                  <button type="button" class="file-action micro" id="seq-clear">Clear selection</button>
                 </div>
               </details>
               <div class="viewer-canvas-frame" id="viewer-canvas-frame">
@@ -1797,7 +1799,7 @@
         <kbd class="agent-drawer-keys" id="agent-drawer-keys">Ctrl J</kbd>
         <span class="agent-drawer-spacer"></span>
         <button type="button" class="ghost-btn" id="agent-drawer-page" title="Open the Agent as a page">Open as a page</button>
-        <button type="button" class="ghost-btn agent-drawer-close" id="agent-drawer-close" aria-label="Close the Agent" title="Close">&#10005;</button>
+        <button type="button" class="line-btn agent-drawer-close" id="agent-drawer-close" aria-label="Close the Agent" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-drawer-body" id="agent-drawer-body"></div>
     </aside>

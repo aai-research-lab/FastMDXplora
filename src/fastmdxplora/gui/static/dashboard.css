@@ -5701,3 +5701,37 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
         background: var(--background-elevated); box-shadow: 0 12px 32px var(--shadow-color);
     }
 }
+
+/* A button that is its line icon alone, named on hover: Close in a
+   dialog's top right corner, Clear selection beside the sequence's words,
+   the views of All studies. */
+.line-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 28px; height: 28px; padding: 0; margin: 0;
+    border: none; border-radius: 6px; background: transparent;
+    color: var(--text-muted); cursor: pointer;
+}
+.line-btn:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.line-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.line-btn[hidden] { display: none; }
+.line-icon { width: 16px; height: 16px; display: block; }
+.agent-dialog-head .dialog-x { margin: -4px -6px 0 0; }
+.again-ask { position: relative; }
+.again-ask .panel-x { position: absolute; top: 8px; right: 8px; }
+.again-ask .panel-x + .again-said { padding-right: 32px; }
+.seq-head-row .seq-clear { width: 22px; height: 22px; margin: -3px 0 -3px 2px; }
+.seq-head-row .seq-clear .line-icon { width: 14px; height: 14px; }
+.seq-foot:not(:has(> :not([hidden]))) { display: none; }
+.seg-btn.seg-icon { display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; }
+.agent-drawer-close.line-btn { width: 28px; height: 28px; }
+
+/* A search field shows a magnifier inside it, on the left. */
+.search-field { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.search-field > .search-icon {
+    position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+}
+.search-field > input { padding-left: 30px; }
+.search-field.palette-field { display: flex; width: 100%; }
+.search-field.palette-field > .search-icon { left: 16px; width: 16px; height: 16px; }
+.search-field.palette-field > .palette-input { padding-left: 42px; }

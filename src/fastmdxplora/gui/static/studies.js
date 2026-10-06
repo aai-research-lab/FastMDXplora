@@ -13,6 +13,10 @@
   "use strict";
 
   var studies = [];
+  /* The sidebar's close icon (sidebar_icons.py "close"). */
+  var CLOSE_ICON = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+    + '<path d="M6 6l12 12M18 6L6 18"/></svg>';
   var chosen = [];
   var lookedIn = "";
   var loading = null;
@@ -623,8 +627,11 @@
     }
     var head = make("div", "card-header");
     head.appendChild(make("h2", "card-title", data.first.name + " and " + data.second.name));
-    var close = make("button", "ghost-btn", "Close");
+    var close = make("button", "line-btn");
     close.type = "button";
+    close.title = "Close";
+    close.setAttribute("aria-label", "Close");
+    close.innerHTML = CLOSE_ICON;
     close.addEventListener("click", function () { host.hidden = true; });
     head.appendChild(close);
     host.appendChild(head);

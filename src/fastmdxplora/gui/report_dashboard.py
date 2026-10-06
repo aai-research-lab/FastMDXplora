@@ -2076,6 +2076,8 @@ def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
     """The citation as the GUI gives it: a dialog over the page, the
     reference and its BibTeX each copied in one click. The report, the
     slides and the GUI all say it, from the same constants."""
+    from fastmdxplora.gui.sidebar_icons import icon
+
     return f"""<div id="cite-dialog" class="agent-dialog" hidden>
   <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true" aria-labelledby="cite-title">
     <div class="agent-dialog-head">
@@ -2083,7 +2085,7 @@ def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
         <div class="builder-label" id="cite-title">Cite FastMDXplora</div>
         <div class="builder-card-note">If this software contributed to your work, please cite it.</div>
       </div>
-      <button type="button" class="ghost-btn" data-dialog-close>Close</button>
+      <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close">{icon("close", "line-icon")}</button>
     </div>
     <div class="agent-dialog-body cite-body">
       <p class="cite-name"><strong>FastMDXplora</strong>: {escape(expansion)}</p>

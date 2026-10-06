@@ -39,13 +39,17 @@
     var box = panel();
     if (!box) return;
     box.innerHTML = "";
-    box.appendChild(node("p", "again-said", text));
-    var shut = node("button", "ghost-btn fix-cancel", "Close");
+    // Closed from its top right corner, as a dialog is.
+    var shut = node("button", "line-btn panel-x");
     shut.type = "button";
+    shut.title = "Close";
+    shut.setAttribute("aria-label", "Close");
+    shut.innerHTML = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
+      + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
+      + '<path d="M6 6l12 12M18 6L6 18"/></svg>';
     shut.addEventListener("click", close);
-    var row = node("div", "fix-actions");
-    row.appendChild(shut);
-    box.appendChild(row);
+    box.appendChild(shut);
+    box.appendChild(node("p", "again-said", text));
     box.hidden = false;
   }
 

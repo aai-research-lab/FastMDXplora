@@ -258,6 +258,8 @@
     if (!said) return;
     if (text != null) { said.textContent = text; return; }
     var ks = sorted();
+    var clearer = byId("seq-clear");
+    if (clearer) clearer.hidden = !ks.length;
     if (!ks.length) {
       said.textContent = state.residues.length
         ? "Click or drag to select; double click to centre." : "";
@@ -537,7 +539,12 @@
     box.addEventListener("keydown", onKey);
     window.addEventListener("mouseup", onUp);
     var clearer = byId("seq-clear");
-    if (clearer) clearer.addEventListener("click", clear);
+    // In the strip's head: a click clears and does not fold the strip.
+    if (clearer) clearer.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      clear();
+    });
     window.addEventListener("dashboard:viewer-rendered", refresh);
     window.addEventListener("dashboard:frame-shown", shadeSoon);
     window.addEventListener("dashboard:run-changed", function () {
