@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Recent keeps each name's ends and shows each study's state as a light
+
+**Changed:** a long name under Recent was cut at its end, where studies of
+one system differ, while the active study's folder below it gave up its
+middle; each name now gives up its middle too, fitted again as the sidebar
+is widened or narrowed. Each study's state, a grey word beside its name, is
+now a light: green completed, amber stopped, red failed, an amber ring for
+interrupted or incomplete, a grey ring for not started, and the accent,
+pulsing, while it runs. The word is on hover, with the study's folder, and
+is read out with the name.
+
 ### A run that ended without saying so is interrupted, not running
 
 **Fixed:** a run whose live record still said it was running, because it

@@ -527,24 +527,32 @@
     $$("#study-menu [data-study-field]").forEach((item) => { item.hidden = !state.outputDir; });
   }
 
-  /* The folder's name in the width there is, with its middle given up
-   * first: fastmdxplora_output_20260919_021313 and its siblings differ at
-   * their ends. */
+  /* A name in the width there is, with its middle given up first:
+   * fastmdxplora_output_20260919_021313 and its siblings differ at their
+   * ends. The most of it that fits is found by halving, a handful of
+   * measurements rather than one per letter. */
+  function fitInTheMiddle(shown, name, room) {
+    shown.textContent = name;
+    if (!(room > 0) || name.length < 4 || shown.scrollWidth <= room + 0.5) return;
+    const cut = (keep) => {
+      const head = Math.ceil(keep / 2);
+      return `${name.slice(0, head)}\u2026${name.slice(name.length - (keep - head))}`;
+    };
+    let fits = 2, over = name.length;
+    while (over - fits > 1) {
+      const keep = Math.floor((fits + over) / 2);
+      shown.textContent = cut(keep);
+      if (shown.scrollWidth <= room + 0.5) fits = keep; else over = keep;
+    }
+    shown.textContent = cut(fits);
+  }
+
   function fitTheFolderName() {
     const folder = byId("study-folder");
     const shown = byId("study-folder-name");
     if (!folder || !shown || folder.hidden) return;
-    const name = folder.dataset.name || "";
     const room = shown.getBoundingClientRect().width || folder.clientWidth - 16;
-    shown.textContent = name;
-    if (!(room > 0) || shown.scrollWidth <= room + 0.5) return;
-    let keep = name.length;
-    while (keep > 4) {
-      keep -= 1;
-      const head = Math.ceil(keep / 2);
-      shown.textContent = `${name.slice(0, head)}\u2026${name.slice(name.length - (keep - head))}`;
-      if (shown.scrollWidth <= room + 0.5) break;
-    }
+    fitInTheMiddle(shown, folder.dataset.name || "", room);
   }
 
   /* Copied however the browser allows: the clipboard is offered only on
@@ -2240,5 +2248,7 @@
     settings: () => currentSettings(),
     figureChip: (name, made) => provenanceChip(name, made),
     listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
+    /* A name shortened in its middle to the width given (studies.js). */
+    fitInTheMiddle,
   };
 }());

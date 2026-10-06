@@ -538,15 +538,38 @@
   }
 
   /* The sidebar's Recent: the workspace's newest studies, the open one
-   * marked, each opened with a click. Folded or not as last left. */
+   * marked, each opened with a click. Folded or not as last left. Each
+   * name is shortened in its middle to the width there is, as the active
+   * study's folder is, and its state is a light: the word is on hover and
+   * read out with the name. */
   var SHOWN_RECENT = 6;
+  var STATE_WORDS = { running: "Running", completed: "Completed", stopped: "Stopped",
+                      failed: "Failed", interrupted: "Interrupted",
+                      incomplete: "Incomplete", "not started": "Not started" };
 
-  function showRecent(fresh) {
+  function stateWord(state) {
+    var key = String(state || "").toLowerCase();
+    return STATE_WORDS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "");
+  }
+
+  function fitRecentNames() {
+    var dashboard = window.FastMDXDashboard;
+    if (!dashboard || !dashboard.fitInTheMiddle) return;
+    Array.prototype.forEach.call(document.querySelectorAll(".sidebar-recent-name"),
+      function (shown) {
+        var room = shown.getBoundingClientRect().width;
+        if (room > 0) dashboard.fitInTheMiddle(shown, shown.dataset.name || "", room);
+      });
+  }
+
+  function showRecent(fresh, evenUnderThePointer) {
     var list = el("sidebar-recent-list");
     if (!list) return;
     askTheWorkspace(fresh).then(function (data) {
-      // Not drawn again under somebody's keyboard.
+      // Not built again under somebody's keyboard, nor, unless another
+      // study was opened, under their pointer.
       if (list.contains(document.activeElement)) return;
+      if (!evenUnderThePointer && list.matches(":hover")) return;
       var open = ((el("sidebar-output-folder") || {}).textContent || "").trim();
       var recent = (data && data.studies || []).slice(0, SHOWN_RECENT);
       if (!recent.length) {
@@ -556,20 +579,46 @@
       }
       list.replaceChildren.apply(list, recent.map(function (study) {
         var here = sameFolder(study.path, open);
+        var word = stateWord(study.state);
+        var name = study.system || study.name;
         var item = make("button", "sidebar-recent-item");
         item.type = "button";
-        item.title = study.path + (study.state ? " (" + study.state + ")" : "");
+        item.title = (word ? word + "\n" : "") + study.path;
         item.dataset.path = study.path;
         if (here) item.setAttribute("aria-current", "true");
-        item.append(make("span", "sidebar-recent-name", study.system || study.name),
-          make("span", "sidebar-recent-state", study.state || ""));
+        var light = make("span", "recent-light");
+        light.dataset.state = String(study.state || "").toLowerCase();
+        light.setAttribute("aria-hidden", "true");
+        var shown = make("span", "sidebar-recent-name", name);
+        shown.dataset.name = name;
+        item.append(shown, light);
+        // Named in full, as the shortened name on screen is not.
+        item.setAttribute("aria-label", name + (word ? ", " + word : ""));
         item.addEventListener("click", function () {
           if (!here) openStudy(study.path, item);
           else if (window.FastMDXDashboard) window.FastMDXDashboard.navigate("overview");
         });
         return item;
       }));
+      fitRecentNames();
     });
+  }
+
+  /* Fitted again as the sidebar's width changes, and once its typeface
+   * has come. */
+  function fitRecentAsTheSidebarChanges() {
+    var list = el("sidebar-recent-list");
+    if (!list) return;
+    var width = 0;
+    if (window.ResizeObserver) {
+      new ResizeObserver(function (seen) {
+        var now = seen[0] ? seen[0].contentRect.width : 0;
+        // Hidden, nothing is fitted; shown again, it is, at whatever width.
+        if (!now) { width = 0; return; }
+        if (Math.abs(now - width) > 0.5) { width = now; fitRecentNames(); }
+      }).observe(list);
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitRecentNames);
   }
 
   function keepRecentFolded() {
@@ -584,9 +633,11 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", attach);
     document.addEventListener("DOMContentLoaded", keepRecentFolded);
+    document.addEventListener("DOMContentLoaded", fitRecentAsTheSidebarChanges);
   } else {
     attach();
     keepRecentFolded();
+    fitRecentAsTheSidebarChanges();
   }
   setTimeout(showRecent, 1500);
   // Again once the open study is known, or another is opened.
@@ -598,7 +649,7 @@
     if (open === recentFor && !stale) return;
     var moved = open !== recentFor;
     recentFor = open;
-    showRecent(moved || stale);
+    showRecent(moved || stale, moved);
   });
 
   window.FastMDXStudies = { load: load, narrowTo: narrowTo,

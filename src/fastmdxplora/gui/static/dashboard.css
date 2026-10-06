@@ -5054,7 +5054,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar-recent[open] .recent-chevron { transform: none; }
 .sidebar-recent-list { display: flex; flex-direction: column; gap: 1px; padding-left: 26px; }
 .sidebar-recent-item {
-    display: flex; align-items: baseline; gap: 8px; width: 100%;
+    position: relative;
+    display: flex; align-items: center; gap: 8px; width: 100%;
     padding: 5px 8px; border: none; border-radius: 7px; background: transparent;
     font: inherit; font-size: var(--text-sm); color: var(--text-secondary);
     text-align: left; cursor: pointer;
@@ -5064,7 +5065,29 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .sidebar-recent-item[aria-current="true"] { color: var(--text-primary); font-weight: 600; }
 .sidebar-recent-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-recent-state { flex: none; font-size: var(--text-2xs); color: var(--text-muted); font-weight: 400; }
+/* Each study's state as a light where its word was, the word on hover:
+   filled for an end it recorded (green completed, amber stopped, red
+   failed), a ring for one it did not reach (amber interrupted or
+   incomplete, grey not started), and the accent, pulsing, while it runs. */
+.recent-light {
+    flex: none; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--status-stale); box-sizing: border-box;
+}
+.recent-light[data-state="running"] {
+    background: var(--status-live);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-cyan) 50%, transparent);
+    animation: pulse-live 2.4s var(--ease) infinite;
+}
+.recent-light[data-state="completed"] { background: var(--status-completed); }
+.recent-light[data-state="stopped"] { background: var(--status-waiting); }
+.recent-light[data-state="failed"] { background: var(--status-error); }
+.recent-light:is([data-state="interrupted"], [data-state="incomplete"]) {
+    background: transparent; border: 1.5px solid var(--status-waiting);
+}
+.recent-light[data-state="not started"] {
+    background: transparent; border: 1.5px solid var(--status-stale);
+}
+@media (prefers-reduced-motion: reduce) { .recent-light[data-state="running"] { animation: none; } }
 .sidebar-recent-empty { padding: 4px 8px; font-size: var(--text-xs); color: var(--text-muted); }
 .sidebar .sidebar-workspace { padding: 6px 0 0; }
 
