@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### FastMDXplora has its own mark
+
+**Changed:** the tab's icon and the mark over the folded sidebar were the
+AAi Research Lab's logo, a picture of the lab rather than of the software.
+They are now FastMDXplora's own line mark, a three-atom molecule going
+right with each atom's trail behind it: white on a black tile as the tab's
+icon, and in the accent over the folded sidebar. The lab's logo stays the
+avatar at the foot of the sidebar. `scripts/make_mark.py` makes the mark
+from its atoms, bonds and trails, writes the tab's icon and checks that
+what ships matches it. A hosted GUI's `--product-logo` still replaces all
+three.
+
 ### The Viewer's column no longer scrolls onto the ground
 
 **Fixed:** with the sidebar folded and the side panel closed, the Viewer's

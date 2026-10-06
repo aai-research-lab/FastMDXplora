@@ -3,7 +3,7 @@
 New study and the Agent first, kept at the top, then the workspace's newest
 studies, All studies, and the study on screen: its system large, where it
 stands, and its folder, shortened in the middle to fit and copied on a
-click. Folded, the sidebar is a strip of icons under the lab's mark; it
+click. Folded, the sidebar is a strip of icons under FastMDXplora's mark; it
 was nothing and a tab at the window's edge.
 """
 

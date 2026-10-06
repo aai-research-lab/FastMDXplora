@@ -31,8 +31,9 @@ remove any `X-FastMDX-Proxy-Secret` a caller sends before adding its own.
 A service shows its own name and its person. `--product-name` replaces the
 name at the top of the sidebar, on the loading screen and in the window's
 title, `--product-tagline` the line under it (the citation and the links
-to this software stay), and `--product-logo` the lab's logo as the tab's
-icon and the avatar where nobody is signed in. The proxy names
+to this software stay), and `--product-logo` FastMDXplora's mark as the
+tab's icon and over the folded sidebar, and the lab's logo as the avatar
+where nobody is signed in. The proxy names
 the person on each request in `X-FastMDX-Account-Name` (UTF-8,
 percent-encoded), shown with their initials at the foot of the sidebar; it
 must remove any copy a caller sends, as it does the secret's. Only a

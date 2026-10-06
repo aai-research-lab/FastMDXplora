@@ -3349,6 +3349,7 @@ body { overflow: hidden; }
 /* The lab's mark as the avatar, square as it is drawn, on a person's own
    machine; hosted, the avatar is the person's initials. */
 .sidebar-account-logo { width: 28px; height: 28px; border-radius: 6px; display: block; }
+svg.strip-mark { color: var(--accent-text); }
 .sidebar-account-avatar:has(.sidebar-account-logo) { background: none; border-radius: 6px; }
 .main { display: flex; flex-direction: column; }
 .page-shell { flex: 1; }
@@ -5008,7 +5009,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
    study and the Agent, kept at the top as the rest scrolls; Recent, folded
    or not; All studies; the active study, its system large, where it
    stands and its folder; its pages. Folded, it is a strip of icons under
-   the lab's mark, rather than nothing and a tab.
+   FastMDXplora's mark, rather than nothing and a tab.
    =========================================================================== */
 :root { --strip-width: 56px; }
 .sidebar-top {
@@ -5087,7 +5088,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-folder-name { display: block; overflow: hidden; white-space: nowrap; }
 .sidebar .sidebar-pages { padding-top: 4px; }
 
-/* The mark over the strip, the lab's, where the edge's tab was. */
+/* The mark over the strip, FastMDXplora's or a service's own, where the
+   edge's tab was. */
 .strip-mark { width: 26px; height: 26px; border-radius: 6px; display: block; }
 .sidebar-expand-chevron { display: none; }
 @media (min-width: 801px) {

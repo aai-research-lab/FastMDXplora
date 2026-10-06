@@ -58,8 +58,8 @@ a *Log* tab, which is what the command line prints, sorted so a refusal is a
 red-edged block and the explain text a quiet one, with filters and a
 scroll-to-newest toggle; and a *Files* tab, which opens any of the run's
 files in place. And two **seams** between the columns that drag, with a
-double-click to reset; the sidebar folds to a strip of its icons under the
-lab's mark, the side panel to a tab at its edge, and the centre stays
+double-click to reset; the sidebar folds to a strip of its icons under
+FastMDXplora's mark, the side panel to a tab at its edge, and the centre stays
 centred at a reading width whatever is folded. Pointing at the strip's
 mark, or the panel's tab, shows the column over the page for as long as
 the pointer stays on it or the column, with one button that keeps it; a

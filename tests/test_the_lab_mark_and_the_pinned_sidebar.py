@@ -1,11 +1,12 @@
-"""The lab's mark is the tab's icon and the avatar, and the sidebar's ends cover what scrolls.
+"""The lab's mark is the avatar, and the sidebar's ends cover what scrolls.
 
 On a person's own machine the GUI had no icon for its tab and an empty grey
 circle at the foot of the sidebar. The AAi Research Lab's logo (from its
-site, scaled to 128 px) is now both, in the GUI and in the standalone
-dashboard. A hosted GUI shows it too unless the service gives its own with
-`--product-logo`, and the avatar is the person's initials wherever the proxy
-names somebody.
+site, scaled to 128 px) is now the avatar, in the GUI and in the standalone
+dashboard; the tab's icon is FastMDXplora's own mark
+(test_fastmdxplora_has_its_own_mark.py). A hosted GUI shows them too unless
+the service gives its own logo with `--product-logo`, and the avatar is the
+person's initials wherever the proxy names somebody.
 
 The sidebar's two pinned ends, the name at the top and the avatar at the
 foot, sat inside its padding: 14px in from either side and, at the foot,
@@ -28,10 +29,10 @@ from tests.test_a_hosted_gui_shows_its_service import (
 from fastmdxplora.gui.hosting import ACCOUNT_HEADER, Hosting, HostingError
 
 import fastmdxplora.gui as gui_pkg
-from fastmdxplora.gui.server import LAB_LOGO
+from fastmdxplora.gui.server import LAB_LOGO, PRODUCT_MARK
 
 LOGO = Path(gui_pkg.__file__).with_name("static") / LAB_LOGO
-ICON = f'<link rel="icon" href="/static/{LAB_LOGO}">'
+ICON = f'<link rel="icon" type="image/svg+xml" href="/static/{PRODUCT_MARK}">'
 MARK = f'<img class="sidebar-account-logo" src="/static/{LAB_LOGO}" alt="">'
 
 
@@ -41,7 +42,7 @@ def test_the_mark_ships_as_a_small_png() -> None:
     assert len(data) < 20_000
 
 
-def test_on_ones_own_machine_it_is_the_icon_and_the_avatar(tmp_path: Path) -> None:
+def test_on_ones_own_machine_it_is_the_avatar_beside_the_marks_icon(tmp_path: Path) -> None:
     page = _on_ones_own_machine(tmp_path)
     head = page[:page.index("</head>")]
     assert ICON in head
@@ -64,8 +65,9 @@ def test_hosted_it_is_the_labs_unless_the_service_gives_its_own(workspace, tmp_p
     own = Hosting.from_environment(workspace, [NAME], product_logo=str(_service_logo(tmp_path)))
     assert own.product_logo.startswith("data:image/svg+xml;base64,")
     page = _page(own)
-    assert LAB_LOGO not in page
+    assert LAB_LOGO not in page and PRODUCT_MARK not in page
     assert f'<link rel="icon" href="{own.product_logo}">' in page
+    assert f'<img class="strip-mark" src="{own.product_logo}" alt="">' in page
     assert f'<img class="sidebar-account-logo" src="{own.product_logo}" alt="">' in _foot(page)
 
 
@@ -118,7 +120,6 @@ def test_the_standalone_dashboard_carries_the_same_mark(tmp_path: Path) -> None:
                     output_dir=tmp_path / "report", title="A study")
     html = (tmp_path / "report" / "dashboard.html").read_text(encoding="utf-8")
     inline = "data:image/png;base64," + base64.b64encode(LOGO.read_bytes()).decode("ascii")
-    assert f'<link rel="icon" type="image/png" href="{inline}">' in html
     assert f'<img class="sidebar-account-logo" src="{inline}" alt="">' in html
 
 

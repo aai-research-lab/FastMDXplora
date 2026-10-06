@@ -41,6 +41,13 @@ ICONS: dict[str, str] = {
     "refresh": '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>',
     "gear": ('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1'
              'M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>'),
+    # FastMDXplora's own mark: a three-atom molecule going right, each atom
+    # leaving its trail, as a trajectory is the path of each atom in time.
+    # Made by scripts/make_mark.py, which also writes the tab's icon.
+    "mark": ('<circle cx="18" cy="10.5" r="2.8"/><circle cx="12.5" cy="5" r="2"/>'
+             '<circle cx="11" cy="16.5" r="2"/>'
+             '<path d="M13.91 6.41L16.02 8.52M12.52 15.2L15.87 12.32"/>'
+             '<path d="M2 5h6.1M2 16.5h4.6M5.5 10.5h7.3"/>'),
     "copy": ('<rect x="8" y="8" width="12" height="12" rx="2"/>'
              '<path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),
 }

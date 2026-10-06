@@ -76,8 +76,9 @@ fastmdx gui --hosted ... --product-name "Example Lab MD" \
     --product-logo /srv/brand/logo.png
 ```
 
-`--product-logo` replaces the AAi Research Lab's logo, the tab's icon and the
-avatar at the foot of the sidebar where nobody is signed in: a PNG, JPEG,
+`--product-logo` replaces FastMDXplora's mark, as the tab's icon and over the
+folded sidebar, and the AAi Research Lab's logo, the avatar at the foot of the
+sidebar where nobody is signed in: a PNG, JPEG,
 GIF, WebP, ICO or SVG picture (told by its content), at most 256 KB, read once
 when the GUI starts and put into each page it serves. A 128 px PNG is enough.
 

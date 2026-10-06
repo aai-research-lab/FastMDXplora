@@ -302,9 +302,14 @@ PLOT_CATEGORY_BY_TITLE = {
 KEY_PLOT_TITLES = {"RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds", "PCA", "SASA"}
 
 DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("templates") / "dashboard.html"
-#: The AAi Research Lab's mark (its site's logo, scaled to 128 px), for the
-#: tab's icon and the sidebar's avatar; the standalone dashboard inlines it.
+#: The AAi Research Lab's logo (its site's, scaled to 128 px), the avatar
+#: at the foot of the sidebar; the standalone dashboard inlines it.
 LAB_LOGO = "lab-logo.png"
+#: FastMDXplora's mark, white on black, as the tab's icon (made by
+#: scripts/make_mark.py). Over the folded sidebar it is written inline, in the
+#: accent (``sidebar_icons.ICONS["mark"]``); the standalone dashboard
+#: inlines the icon as well.
+PRODUCT_MARK = "fastmdx-mark.svg"
 
 
 @dataclass
@@ -446,17 +451,22 @@ def make_handler(
             '<span class="mono settings-hint">runs, files, sign out</span></a>'
             '<div class="settings-divider"></div>')
     html = html.replace("<!--__FASTMDX_ACCOUNT_ITEM__-->", account_item)
-    # The logo as the tab's icon and as the avatar at the foot of the
-    # sidebar: the lab's, or a hosted service's own (--product-logo). The
-    # avatar is the person's initials where the proxy names somebody, so
-    # the logo goes in per request, below.
-    logo = (hosting.product_logo if hosting is not None and hosting.product_logo
-            else f"/static/{LAB_LOGO}")
-    html = html.replace("<!--__FASTMDX_LAB_ICON__-->",
-                        f'<link rel="icon" href="{_escape(logo)}">')
-    html = html.replace("<!--__FASTMDX_STRIP_MARK__-->",
-                        f'<img class="strip-mark" src="{_escape(logo)}" alt="">')
-    logo_mark = f'<img class="sidebar-account-logo" src="{_escape(logo)}" alt="">'
+    # FastMDXplora's mark as the tab's icon and over the folded sidebar, and
+    # the lab's logo as the avatar at the foot of the sidebar; a hosted
+    # service's own logo (--product-logo) is all three. The avatar is the
+    # person's initials where the proxy names somebody, so the logo goes in
+    # per request, below.
+    from fastmdxplora.gui.sidebar_icons import icon as _icon
+
+    own_logo = hosting.product_logo if hosting is not None else ""
+    html = html.replace("<!--__FASTMDX_LAB_ICON__-->", (
+        f'<link rel="icon" href="{_escape(own_logo)}">' if own_logo
+        else f'<link rel="icon" type="image/svg+xml" href="/static/{PRODUCT_MARK}">'))
+    html = html.replace("<!--__FASTMDX_STRIP_MARK__-->", (
+        f'<img class="strip-mark" src="{_escape(own_logo)}" alt="">' if own_logo
+        else _icon("mark", "strip-mark")))
+    avatar = own_logo or f"/static/{LAB_LOGO}"
+    logo_mark = f'<img class="sidebar-account-logo" src="{_escape(avatar)}" alt="">'
     logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
     html = html.replace("<!--__FASTMDX_LAB_MARK__-->", logo_spot)
 

@@ -232,6 +232,7 @@ FastMDXplora/
 ├── scripts/                       # Development, benchmarking and release helpers (README.md)
 │   ├── run_pdb_smoke_campaign.py  # Multi-PDB smoke campaign
 │   ├── gpu_shakedown.py           # What only a real GPU can answer: cost, segments, resuming
+│   ├── make_mark.py               # FastMDXplora's mark: the tab's icon and ICONS["mark"]
 │   └── make_benzene.py, compare_*.py, name_refusal*.py, measure_nli.py
 ├── container/                     # Apptainer definition, and Docker made from it
 ├── preregistration/               # Validation plans written before their results

@@ -1359,8 +1359,8 @@ def _font_inlined(found: "re.Match[str]") -> str:
 
 
 def _lab_logo_uri() -> str:
-    """The lab's mark the GUI shows (``static/lab-logo.png``), inlined so the
-    page stands alone; empty if the file is missing."""
+    """The lab's logo the GUI shows as its avatar (``static/lab-logo.png``),
+    inlined so the page stands alone; empty if the file is missing."""
     import base64
 
     from fastmdxplora.gui.server import LAB_LOGO
@@ -1370,6 +1370,20 @@ def _lab_logo_uri() -> str:
     except OSError:  # pragma: no cover - only if the installed package is incomplete
         return ""
     return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
+def _product_mark_uri() -> str:
+    """FastMDXplora's mark as the tab's icon (``static/fastmdx-mark.svg``),
+    inlined so the page stands alone; empty if the file is missing."""
+    import base64
+
+    from fastmdxplora.gui.server import PRODUCT_MARK
+
+    try:
+        data = (Path(__file__).resolve().parent / "static" / PRODUCT_MARK).read_bytes()
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return ""
+    return "data:image/svg+xml;base64," + base64.b64encode(data).decode("ascii")
 
 
 def _gui_stylesheet() -> str:
@@ -1704,13 +1718,13 @@ def _render_dashboard(
         _render_report_page(report or {"ok": False}),
         _render_files_page(file_groups or [], output_folder),
     ))
-    logo = _lab_logo_uri()
-    icon = f'<link rel="icon" type="image/png" href="{logo}">\n' if logo else ""
+    mark = _product_mark_uri()
+    icon = f'<link rel="icon" type="image/svg+xml" href="{mark}">\n' if mark else ""
     sidebar = _render_sidebar(
         title=title, system_label=system_label, word=word, dot=dot, platform=platform,
         output_folder=output_folder, stages=stage_steps, cards=cards,
         generated=generated, generated_epoch=f"{generated_at.timestamp():.0f}",
-        expansion=__expansion__, logo=logo)
+        expansion=__expansion__, logo=_lab_logo_uri())
     settings = (_render_settings(__version__) + "\n"
                 + _render_cite_dialog(__citation__, __doi__, __version__, __bibtex__,
                                       __copyright__, __expansion__))
