@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The window no longer scrolls past its columns
+
+**Fixed:** on the Viewer the whole window scrolled on past the page by
+about 200 pixels, onto nothing but the ground: a screen-reader legend at
+the foot of the settings column was placed outside the column. Each
+column now holds what is in it, and on a desk the window itself does not
+scroll.
+
 ### The active study is a part of the sidebar, and a column shown over the page has one button
 
 **The active study is no longer a box in the sidebar, and its menu no

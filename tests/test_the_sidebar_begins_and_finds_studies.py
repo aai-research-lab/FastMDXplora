@@ -184,3 +184,22 @@ def test_shown_over_the_page_it_has_one_button_and_a_click_keeps_it(browser, ses
             f"() => !document.body.classList.contains('{which}' === 'sidebar' ? 'sidebar-collapsed' : 'panel-collapsed')")]
     tab.context.close()
     assert said == {"folds": "none", "sidebar": [True, True], "panel": [True, True]}
+
+
+@pytest.mark.parametrize("width,height", [(1440, 900), (1280, 800)])
+def test_the_window_does_not_scroll_past_its_columns(browser, session, width, height) -> None:
+    """A screen-reader legend at the foot of the Viewer's settings sat
+    outside its column, and the whole window scrolled on past it, 200
+    pixels of nothing but the ground."""
+    context = browser.new_context(viewport={"width": width, "height": height})
+    tab = context.new_page()
+    tab.set_default_timeout(60000)
+    tab.goto(session.url + "#overview", wait_until="domcontentloaded")
+    tab.wait_for_function("() => document.body.classList.contains('state-ready')")
+    tall = {}
+    for page in ("overview", "viewer", "analysis", "report", "files", "run", "agent", "studies"):
+        tab.evaluate(f"() => window.FastMDXDashboard.navigate('{page}')")
+        tab.wait_for_timeout(400)
+        tall[page] = tab.evaluate("() => document.scrollingElement.scrollHeight - innerHeight")
+    context.close()
+    assert all(over <= 0 for over in tall.values()), tall

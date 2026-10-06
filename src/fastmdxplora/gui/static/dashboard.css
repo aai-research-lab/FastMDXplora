@@ -5139,6 +5139,16 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     body.sidebar-peek .sidebar .sidebar-collapse { display: none; }
 }
 
+/* On a desk the window is the shell, each column scrolling by itself: a
+   piece of the page placed outside its column (a screen-reader legend at
+   the foot of the Viewer's settings) let the whole window scroll on past
+   it, onto nothing but the ground. Each column holds its own. */
+@media (min-width: 801px) {
+    html { overflow: hidden; }
+    .main, .side-panel { position: relative; }
+    .sidebar { position: relative; }
+}
+
 /* On a phone the sidebar is the bar across the top: the name, the study,
    New study, the Agent and All studies as icons, and the settings on one
    line; the study's pages under it. Recent and the folder are left to a
