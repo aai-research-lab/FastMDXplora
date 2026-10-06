@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from fastmdxplora.refusals import StudyError
 from fastmdxplora.utils.logging import get_logger
 
 logger = get_logger("setup.audit")
@@ -72,7 +73,10 @@ class PreparationRecorder:
     def _folder(self):
         folder = self.root / "audit" / self.run_id
         if not folder.resolve().is_relative_to(self.root.resolve()):
-            raise ValueError("Audit snapshots must stay inside setup")
+            raise StudyError(
+                "Audit snapshots must stay inside setup",
+                code="setup.audit.outside_setup",
+            )
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
@@ -80,7 +84,7 @@ class PreparationRecorder:
         self._folder()
         raw = json.dumps(self.record, ensure_ascii=False, indent=2).encode("utf-8")
         if len(raw) > 2_000_000:
-            raise ValueError("Audit record size limit")
+            raise StudyError("Audit record size limit", code="setup.audit.record_too_large")
         descriptor, name = tempfile.mkstemp(prefix=".preparation-audit-", dir=self.root)
         try:
             with os.fdopen(descriptor, "wb") as stream:
@@ -120,7 +124,10 @@ class PreparationRecorder:
             suffix = ".cif" if format == "mmcif" else ".pdb" if format == "pdb" else ".txt"
             snapshot = self._folder() / (identity + suffix)
             if snapshot.exists():
-                raise ValueError("Existing audit snapshot would be overwritten")
+                raise StudyError(
+                    "Existing audit snapshot would be overwritten",
+                    code="setup.audit.snapshot_exists",
+                )
             with snapshot.open("xb") as stream:
                 stream.write(raw)
             self.bytes += len(raw)
@@ -133,7 +140,7 @@ class PreparationRecorder:
 
     def _event(self, operation, after=None, details=None, *, reason=None):
         if len(self.record["events"]) >= 500:
-            raise ValueError("Audit event count limit")
+            raise StudyError("Audit event count limit", code="setup.audit.event_limit")
         raw = json.dumps(details or {}, default=str, ensure_ascii=False)
         if len(raw.encode("utf-8")) > 200_000:
             details = {"unavailable": "Operation details exceed the record limit."}
@@ -187,7 +194,10 @@ class PreparationRecorder:
                 after.st_mtime_ns,
                 after.st_ctime_ns,
             ):
-                raise ValueError("Source changed during capture")
+                raise StudyError(
+                    "Source changed during capture",
+                    code="setup.audit.source_changed",
+                )
             return self._event(operation, identity, details, reason=reason)
 
         return self._safe(operation, capture)

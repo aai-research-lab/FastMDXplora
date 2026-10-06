@@ -444,6 +444,23 @@ CODES: tuple[Code, ...] = (
          Kind.SEMANTIC, Disclosure.NOTHING,
          detail_keys=("given", "chains")),
 
+    # -- setup: preparation audit -------------------------------------------
+    Code("setup.audit.event_limit",
+         "The preparation audit has reached its event limit.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("setup.audit.outside_setup",
+         "An audit snapshot path would leave the setup directory.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("setup.audit.record_too_large",
+         "The preparation audit record exceeds its size limit.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("setup.audit.snapshot_exists",
+         "A preparation audit snapshot would overwrite an existing file.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("setup.audit.source_changed",
+         "A source changed while the preparation audit captured it.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+
     # -- setup: chemistry ---------------------------------------------------
     Code("setup.chemistry.unavailable",
          "The chemistry needed to parameterize a component was not obtained.",

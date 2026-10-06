@@ -27,6 +27,7 @@ class SetupSettings(TypedDict, total=False):
     keep_heterogens: bool
     keep_water: bool
     fixed_pdb: str
+    preparation_audit: bool
     forcefield: Literal['auto', 'amber-fb15', 'amber-openff', 'amber14', 'charmm36']
     force_field: list[Any]
     water_model: str

@@ -198,7 +198,7 @@
     document.addEventListener("change", function (e) {
       var id = e.target && e.target.id;
       if (ownFields().indexOf(id) >= 0 || id === "pocket-cutoff") {
-        setTimeout(function () { store.write(KEY, taken()); }, 0);
+        store.write(KEY, taken());
       }
     });
 
