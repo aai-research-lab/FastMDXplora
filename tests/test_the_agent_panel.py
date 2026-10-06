@@ -2443,8 +2443,9 @@ class TestConversationsBelongToStudies(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('post("/api/agent/conversation/open", { id: c.id, study: g.study })', script)
-        self.assertIn("if (o.loaded_study && !g.loaded) {", script)
+        self.assertIn('post("/api/agent/conversation/open", { id: id, study: study })', script)
+        self.assertIn("openConversation(c.id, g.study, g.loaded || g.chats);", script)
+        self.assertIn("if (o.loaded_study && !loaded) {", script)
         self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
         # Saved before the launch, so the move carries the last exchange.
         run = script[script.index("runBtn.onclick = function () {"):]

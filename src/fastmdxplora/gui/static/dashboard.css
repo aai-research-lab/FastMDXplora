@@ -5150,7 +5150,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         overflow-x: hidden;
     }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar :is(.brand-text, .sidebar-collapse,
-        .sidebar-study, .sidebar-progress, .nav-count,
+        .sidebar-study, .sidebar-progress, .nav-count, .sidebar-convs, .sidebar-chats,
         .nav-link > span, .sidebar-account-text, .sidebar-account-gear) {
         display: none;
     }
@@ -5797,3 +5797,78 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 }
 .studies-table .studies-editing td { position: static; box-shadow: none; }
 .studies-editing .study-tag-editor { max-width: 560px; padding: 6px 2px; }
+
+/* The Agent's conversations in the sidebar (chats.js): the open study's
+   under its pages, then Chats, the conversations of no study. */
+.sidebar-convs { margin: 8px 0 0; }
+.sidebar-convs[hidden] { display: none; }
+.sidebar-convs-head { display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 8px; }
+.sidebar-convs-title {
+    font-size: var(--text-2xs); font-weight: 500; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--text-muted);
+}
+.sidebar-convs-head .line-btn, .sidebar-chats-head .line-btn { width: 22px; height: 22px; }
+.sidebar-convs-head .line-icon, .sidebar-chats-head .line-btn .line-icon { width: 14px; height: 14px; }
+.sidebar-convs-list { display: flex; flex-direction: column; gap: 1px; }
+.sidebar-chats .sidebar-convs-list { padding-left: 26px; }
+.sidebar-conv {
+    display: flex; align-items: baseline; gap: 8px; width: 100%;
+    padding: 5px 8px; border: none; border-radius: 7px; background: transparent;
+    font: inherit; font-size: var(--text-sm); color: var(--text-secondary); text-align: left; cursor: pointer;
+}
+.sidebar-conv:hover, .sidebar-conv:focus-visible {
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary);
+}
+.sidebar-conv:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.sidebar-conv[aria-current="true"] { color: var(--text-primary); font-weight: 600; }
+.sidebar-conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-conv-when { flex: none; font-size: var(--text-2xs); color: var(--text-muted); font-weight: 400; }
+.sidebar-conv-more { color: var(--text-muted); font-size: var(--text-xs); }
+.sidebar .sidebar-chats > summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+    margin: 10px 0 2px; padding: 6px 8px; border-radius: 7px;
+    font-size: var(--text-sm); color: var(--text-secondary);
+}
+.sidebar-chats > summary::-webkit-details-marker { display: none; }
+.sidebar .sidebar-chats > summary:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
+.sidebar-chats > summary > span { flex: 1; min-width: 0; }
+.sidebar .sidebar-chats .chats-icon {
+    width: 16px; height: 16px; flex: none; color: var(--text-muted);
+    background: none; opacity: 1; border-radius: 0;
+}
+.sidebar-chats .recent-chevron {
+    width: 14px; height: 14px; flex: none; color: var(--text-muted);
+    transform: rotate(-90deg); transition: transform var(--duration-fast) var(--ease);
+}
+.sidebar-chats[open] .recent-chevron { transform: none; }
+
+/* The Agent's Conversations: found by typing, this study's and the chats
+   first, each other study folded under its ID. */
+.agent-conv-list .conv-search { display: flex; margin: 2px 2px 6px; }
+.agent-conv-list .conv-search input {
+    width: 100%; min-height: 28px; padding: 4px 10px 4px 30px; border-radius: 8px;
+    border: 1px solid var(--border-primary); background: transparent; color: var(--text-primary);
+    font: inherit; font-size: var(--text-sm);
+}
+.agent-conv-row .title {
+    border: none; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left;
+}
+.agent-conv-row .title[aria-current="true"] { font-weight: 600; }
+.agent-conv-row .line-btn { width: 24px; height: 24px; opacity: 0; }
+.agent-conv-row:hover .line-btn, .agent-conv-row:focus-within .line-btn { opacity: 1; }
+.agent-conv-row .conv-delete:hover { color: var(--status-error); }
+.agent-conv-row .conv-name {
+    flex: 1; min-width: 0; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border-primary);
+    background: var(--background-primary); color: var(--text-primary); font: inherit;
+}
+.agent-conv-study > summary {
+    display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 6px;
+    cursor: pointer; list-style: none; font-size: var(--text-sm);
+}
+.agent-conv-study > summary::-webkit-details-marker { display: none; }
+.agent-conv-study > summary:hover { background: var(--background-secondary); }
+.conv-study-id { font-weight: 600; color: var(--text-primary); }
+.conv-study-folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                     color: var(--text-muted); font-size: var(--text-xs); }
+.conv-study-count { font-size: var(--text-2xs); color: var(--text-muted); }
+.agent-conv-study > .agent-conv-row { margin-left: 12px; }

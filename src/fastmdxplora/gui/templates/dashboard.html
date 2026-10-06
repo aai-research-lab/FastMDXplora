@@ -440,6 +440,27 @@
         </a>
       </nav>
 
+      <!-- The open study's conversations with the Agent, the one talked in
+           last first; then the chats of no study. Each opens in the Agent
+           beside the page (chats.js). -->
+      <div class="sidebar-convs" id="sidebar-study-convs" hidden>
+        <div class="sidebar-convs-head">
+          <span class="sidebar-convs-title">Conversations</span>
+          <button type="button" class="line-btn" id="sidebar-study-new" title="A new conversation about this study"
+                  aria-label="A new conversation about this study"><!--icon:new:line-icon--></button>
+        </div>
+        <div class="sidebar-convs-list" id="sidebar-study-convs-list"></div>
+      </div>
+      <details class="sidebar-chats" id="sidebar-chats" open>
+        <summary class="nav-link sidebar-chats-head" title="Chats about no study">
+          <!--icon:chat:nav-icon chats-icon--><span>Chats</span>
+          <button type="button" class="line-btn" id="sidebar-chat-new" title="A new chat, about no study"
+                  aria-label="A new chat, about no study"><!--icon:new:line-icon--></button>
+          <!--icon:chevron:recent-chevron-->
+        </summary>
+        <div class="sidebar-convs-list" id="sidebar-chats-list"></div>
+      </details>
+
       <!-- Where a run stands, while it runs, or where it stopped and what
            would fix it. Gone once it has finished: the card above says so. -->
       <div class="sidebar-progress" id="sidebar-progress" data-run="">
@@ -1823,6 +1844,7 @@
   <script src="/static/tooltips.js"></script>
   <script src="/static/agent-panel.js"></script>
   <script src="/static/agent-beside.js"></script>
+  <script src="/static/chats.js"></script>
     <script src="/static/preferences.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-page.js"></script>

@@ -871,7 +871,16 @@ def _new_id() -> str:
     return datetime.now(timezone.utc).strftime("conv-%Y%m%d-%H%M%S-%f")
 
 
-def _title_of(entries: list) -> str:
+#: The longest name a person can give a conversation.
+TITLE_LENGTH = 80
+#: Not given: the conversation's own place is meant.
+_HERE: Any = object()
+
+
+def _title_of(entries: list, named: Any = None) -> str:
+    """The name the person gave it, else its first question's first line."""
+    if isinstance(named, str) and named.strip():
+        return named.strip()[:TITLE_LENGTH]
     for e in entries:
         if isinstance(e, dict) and e.get("role") == "user" and e.get("text"):
             text = str(e["text"]).strip().splitlines()[0]
@@ -879,28 +888,38 @@ def _title_of(entries: list) -> str:
     return "New conversation"
 
 
-def _read_one(store: Path, cid: str) -> list:
+def _read_record(store: Path, cid: str) -> dict:
     import json
 
     try:
         data = json.loads((store / f"{cid}.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
-    entries = data.get("entries") if isinstance(data, dict) else None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read_one(store: Path, cid: str) -> list:
+    entries = _read_record(store, cid).get("entries")
     return entries[-CONVERSATION_KEEP:] if isinstance(entries, list) else []
 
 
-def _write_one(store: Path, cid: str, entries: list) -> None:
+def _write_one(store: Path, cid: str, entries: list, title: Any = _HERE) -> None:
+    """The conversation written whole; the name given to it kept unless
+    another is given (``title``, '' for none)."""
     import json
     import os
 
     clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
     clean = clean[-CONVERSATION_KEEP:]
+    if title is _HERE:
+        title = _read_record(store, cid).get("title")
+    record: dict[str, Any] = {"version": 3, "id": cid, "entries": clean}
+    if isinstance(title, str) and title.strip():
+        record["title"] = title.strip()[:TITLE_LENGTH]
     store.mkdir(parents=True, exist_ok=True)
     path = store / f"{cid}.json"
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": 3, "id": cid, "entries": clean}, indent=1),
-                   encoding="utf-8")
+    tmp.write_text(json.dumps(record, indent=1), encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -918,16 +937,21 @@ def _valid_id(cid: Any) -> bool:
 
 
 def _study_label(study: Path) -> str:
-    """The study's system name if the manifest has it, else the folder;
-    and, for a continuation, whose."""
+    """The study's system ID (fastmdxplora.system_id) if the manifest
+    names its system, else the folder; and, for a continuation, whose."""
     import json
+
+    from fastmdxplora.system_id import system_id
 
     label = study.name
     try:
         manifest = json.loads((study / "manifest.json").read_text(encoding="utf-8"))
-        system = (manifest.get("system") or {}).get("system") or manifest.get("system_input")
+        system = manifest.get("system")
+        if isinstance(system, dict):
+            system = system.get("system")
+        system = system or manifest.get("system_input")
         if system:
-            label = str(Path(str(system)).stem)
+            label = system_id(system) or label
     except (OSError, ValueError, AttributeError):
         pass
     from fastmdxplora.gui.browse import continuation_of
@@ -953,12 +977,42 @@ def read_conversation(runtime: Any) -> dict[str, Any]:
     return {"ok": True, "id": cid, "entries": _read_one(store, cid), **scope}
 
 
-def write_conversation(runtime: Any, entries: Any) -> dict[str, Any]:
-    """Replace the current conversation with what the browser holds."""
+def _named_place(runtime: Any, study: Any) -> tuple[Path | None, Path] | None:
+    """The study named and where its conversations are kept: ``None`` for
+    the workspace's own (Chats), or a study's folder. None if that is no
+    study."""
+    workspace, _ = _scope(runtime)
+    target = Path(study) if study else None
+    if target is not None and not _is_study(target):
+        return None
+    return target, _store_for(workspace, target)
+
+
+def write_conversation(runtime: Any, entries: Any, cid: Any = None,
+                       study: Any = _HERE) -> dict[str, Any]:
+    """Replace a conversation with what the browser holds: the one it names
+    (``cid`` in ``study``, None for a chat of no study), else the current
+    one where the GUI is. A chat of no study stays one while a study is
+    open."""
     if not isinstance(entries, list):
         return {"ok": False, "error": "entries must be a list"}
-    workspace, study = _scope(runtime)
+    workspace, study_open = _scope(runtime)
     _migrate_single_file(workspace)
+    if cid is not None and study is not _HERE:
+        if not _valid_id(cid):
+            return {"ok": False, "error": "No such conversation."}
+        place = _named_place(runtime, study)
+        if place is None:
+            return {"ok": False, "error": "No such study."}
+        named, store = place
+        try:
+            _write_one(store, str(cid), entries)
+            (store / "current").write_text(str(cid), encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": f"Could not save the conversation: {exc}"}
+        return {"ok": True, "id": str(cid), "entries": _read_one(store, str(cid)),
+                "study": str(named) if named else None}
+    study = study_open
     store = _store_for(workspace, study)
     try:
         cid = _current_in(store)
@@ -973,17 +1027,48 @@ def write_conversation(runtime: Any, entries: Any) -> dict[str, Any]:
             "study": str(study) if study else None}
 
 
-def new_conversation(runtime: Any) -> dict[str, Any]:
-    """A fresh thread in the current scope. The last one stays."""
-    workspace, study = _scope(runtime)
-    store = _store_for(workspace, study)
+def new_conversation(runtime: Any, study: Any = _HERE) -> dict[str, Any]:
+    """A fresh thread where the GUI is, or in ``study`` (None: a chat of no
+    study, whatever is open). The last one stays."""
+    workspace, study_open = _scope(runtime)
+    if study is _HERE:
+        study, store = study_open, _store_for(workspace, study_open)
+    else:
+        place = _named_place(runtime, study)
+        if place is None:
+            return {"ok": False, "error": "No such study."}
+        study, store = place
     try:
         cid = _new_id()
         _write_one(store, cid, [])
         (store / "current").write_text(cid, encoding="utf-8")
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "id": cid, "entries": []}
+    return {"ok": True, "id": cid, "entries": [], "study": str(study) if study else None}
+
+
+def rename_conversation(runtime: Any, cid: Any, study: Any = None,
+                        title: Any = "") -> dict[str, Any]:
+    """A name of the person's own for a conversation; '' gives it back its
+    first question's first line."""
+    if not _valid_id(cid):
+        return {"ok": False, "error": "No such conversation."}
+    place = _named_place(runtime, study)
+    if place is None:
+        return {"ok": False, "error": "No such study."}
+    _, store = place
+    if not (store / f"{cid}.json").is_file():
+        return {"ok": False, "error": "No such conversation."}
+    text = " ".join(str(title or "").split())
+    if len(text) > TITLE_LENGTH:
+        return {"ok": False, "error": f"A name is at most {TITLE_LENGTH} characters."}
+    try:
+        _write_one(store, str(cid), _read_one(store, str(cid)), title=text)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}
+    record = _read_record(store, str(cid))
+    return {"ok": True, "id": str(cid),
+            "title": _title_of(record.get("entries") or [], record.get("title"))}
 
 
 def list_conversations(runtime: Any) -> dict[str, Any]:
@@ -996,37 +1081,56 @@ def list_conversations(runtime: Any) -> dict[str, Any]:
     workspace, study = _scope(runtime)
     _migrate_single_file(workspace)
 
+    from datetime import datetime, timezone
+
     def rows_in(store: Path, study_path: Path | None) -> list[dict[str, Any]]:
         if not store.is_dir():
             return []
         current = _current_in(store)
         out = []
-        for path in sorted(store.glob("conv-*.json"), reverse=True):
+        for path in store.glob("conv-*.json"):
             cid = path.stem
-            entries = _read_one(store, cid)
-            out.append({"id": cid, "title": _title_of(entries), "entries": len(entries),
+            record = _read_record(store, cid)
+            entries = record.get("entries") if isinstance(record.get("entries"), list) else []
+            try:
+                updated = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            except OSError:
+                continue
+            out.append({"id": cid, "title": _title_of(entries, record.get("title")),
+                        "named": bool(record.get("title")), "entries": len(entries),
                         "current": cid == current,
                         "study": str(study_path) if study_path else None,
                         "study_label": _study_label(study_path) if study_path else None,
-                        "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18]})
+                        "started": cid[5:13] + " " + cid[14:16] + ":" + cid[16:18],
+                        "updated": updated.isoformat(timespec="seconds")})
+        # The one talked in last first.
+        out.sort(key=lambda row: (row["updated"], row["id"]), reverse=True)
         return out
+
+    def group(folder: Path, loaded: bool, rows: list) -> dict[str, Any]:
+        return {"study": str(folder), "label": _study_label(folder), "folder": folder.name,
+                "loaded": loaded, "conversations": rows,
+                "updated": rows[0]["updated"] if rows else ""}
 
     groups: list[dict[str, Any]] = []
     if study is not None:
-        groups.append({"study": str(study), "label": _study_label(study), "loaded": True,
-                       "conversations": rows_in(_store_for(workspace, study), study)})
+        groups.append(group(study, True, rows_in(_store_for(workspace, study), study)))
+    others = []
     for folder in sorted(workspace.iterdir() if workspace.is_dir() else [], reverse=True):
         if study is not None and folder.resolve() == study.resolve():
             continue
         if _is_study(folder):
             rows = rows_in(folder / CONVERSATIONS_SUBDIR, folder)
             if rows:
-                groups.append({"study": str(folder), "label": _study_label(folder),
-                               "loaded": False, "conversations": rows})
+                others.append(group(folder, False, rows))
+    # The study talked about last first.
+    others.sort(key=lambda g: g["updated"], reverse=True)
+    groups.extend(others)
+    # The chats of no study: the workspace's own.
     ws_rows = rows_in(workspace / WORKSPACE_CONVERSATIONS_DIR, None)
-    if ws_rows or study is None:
-        groups.append({"study": None, "label": "No study", "loaded": study is None,
-                       "conversations": ws_rows})
+    groups.append({"study": None, "label": "Chats", "folder": "", "loaded": study is None,
+                   "chats": True, "conversations": ws_rows,
+                   "updated": ws_rows[0]["updated"] if ws_rows else ""})
     return {"ok": True, "groups": groups}
 
 

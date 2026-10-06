@@ -518,11 +518,16 @@
     }).catch(function () { window.alert("Could not reach the server."); });
   }
 
+  /* Saved where it lives: a chat of no study stays one while a study is
+   * open, and a study's conversation stays its study's. */
   function persist() {
-    return post("/api/agent/conversation", { entries: transcript }).then(function (d) {
+    var body = convId ? { entries: transcript, id: convId, study: convStudy || null }
+      : { entries: transcript };
+    return post("/api/agent/conversation", body).then(function (d) {
       if (d && d.ok) {
         convId = d.id || convId;
         if (d.study !== undefined) convStudy = d.study;
+        window.dispatchEvent(new CustomEvent("fmx:conversation-saved"));
       }
       return d;
     }).catch(function () {});
@@ -1453,88 +1458,209 @@
       history = []; transcript = []; currentConfig = null; pending = null;
       stopPending = null; runPending = null; fixPending = null; lastReply = null;
     }
+    /* A fresh thread: where the GUI is, or, given `study` (null for a
+     * chat of no study), there. */
+    function freshConversation(study) {
+      var body = study === undefined ? {} : { study: study };
+      return post("/api/agent/conversation/new", body).then(function (d) {
+        if (d && d.ok) {
+          convId = d.id || null;
+          convStudy = d.study === undefined ? convStudy : d.study;
+        }
+        resetThread();
+        hideList();
+        told();
+        return d;
+      });
+    }
     var fresh = el("agent-new");
     if (fresh) {
       fresh.addEventListener("click", function () {
-        post("/api/agent/conversation/new", {}).then(function (d) {
-          if (d && d.ok) convId = d.id || null;
-          resetThread();
-          hideList();
-          el("agent-request").focus();
-        }).catch(function () {});
+        freshConversation().then(function () { el("agent-request").focus(); })
+          .catch(function () {});
       });
     }
 
-    /* The list of conversations, newest first. Click a title to reopen
-     * it; the cross deletes that one, and only that one, after asking. */
+    /* One conversation opened, from the list or the sidebar. Another
+     * study's loads that study: the page reloads so every panel reads it,
+     * and the conversation is current there on return. */
+    function openConversation(id, study, loaded) {
+      return post("/api/agent/conversation/open", { id: id, study: study }).then(function (o) {
+        if (!o || !o.ok) { window.alert((o && o.error) || "Could not open it."); return o; }
+        if (o.loaded_study && !loaded) {
+          location.reload();
+          return o;
+        }
+        convId = o.id || null; convStudy = o.study || null;
+        resetThread();
+        hideList();
+        replay(o.entries || []);
+        told();
+        return o;
+      });
+    }
+
+    /* The list of conversations: this study's, the chats of no study, and
+     * each other study's folded under its ID; found by typing, the one
+     * talked in last first. A title opens it; the pencil names it; the bin
+     * deletes it, and only it, after asking. */
     var list = el("agent-conv-list");
     function hideList() { if (list) list.hidden = true; }
-    function showList() {
-      fetch("/api/agent/conversations").then(function (r) { return r.json(); }).then(function (d) {
-        list.innerHTML = "";
-        var groups = (d && d.groups) || [];
-        var any = false;
-        groups.forEach(function (g) {
-          if (!g.conversations.length && !g.loaded) return;
-          var head = document.createElement("div");
-          head.className = "agent-conv-group" + (g.loaded ? " loaded" : "");
-          head.textContent = g.label + (g.loaded ? "  \u00b7 loaded" : "");
-          list.appendChild(head);
-          if (!g.conversations.length) {
-            var e = document.createElement("div");
-            e.className = "agent-conv-empty";
-            e.textContent = "No conversations yet.";
-            list.appendChild(e);
-          }
-          g.conversations.forEach(function (c) {
-            any = true;
-            var row = document.createElement("div");
-            row.className = "agent-conv-row" + (c.current && g.loaded ? " current" : "");
-            var title = document.createElement("span");
-            title.className = "title";
-            title.textContent = c.title + (c.current && g.loaded ? "  (open)" : "");
-            title.title = c.entries + " messages" + (g.loaded ? "" : " \u00b7 opens this study");
-            title.addEventListener("click", function () {
-              post("/api/agent/conversation/open", { id: c.id, study: g.study }).then(function (o) {
-                if (!o || !o.ok) { window.alert((o && o.error) || "Could not open it."); return; }
-                if (o.loaded_study && !g.loaded) {
-                  /* Another study: the page reloads so every panel reads it,
-                   * and the conversation is current there on return. */
-                  location.reload();
-                  return;
-                }
-                convId = o.id || null; convStudy = o.study || null;
-                resetThread();
-                hideList();
-                replay(o.entries || []);
-              });
-            });
-            var when = document.createElement("span");
-            when.className = "when";
-            when.textContent = c.started;
-            var del = document.createElement("button");
-            del.className = "del";
-            del.type = "button";
-            del.title = "Delete this conversation";
-            del.textContent = "\u2715";
-            del.addEventListener("click", function () {
-              if (!window.confirm("Delete \u201c" + c.title + "\u201d? This cannot be undone.")) return;
-              post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function () {
-                if (c.current && g.loaded) resetThread();
-                showList();
-              });
-            });
-            row.appendChild(title); row.appendChild(when); row.appendChild(del);
-            list.appendChild(row);
-          });
+    var LINE = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
+      + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
+      + 'aria-hidden="true">';
+    var PENCIL = LINE + '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+    var BIN = LINE + '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
+    var SEARCH = LINE + '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>';
+
+    function node(tag, cls, text) {
+      var made = document.createElement(tag);
+      if (cls) made.className = cls;
+      if (text != null) made.textContent = text;
+      return made;
+    }
+
+    function ago(when) {
+      var t = new Date(when).getTime();
+      if (isNaN(t)) return "";
+      var minutes = Math.round((Date.now() - t) / 60000);
+      if (minutes < 1) return "just now";
+      if (minutes < 60) return minutes + " min ago";
+      if (minutes < 24 * 60) return Math.round(minutes / 60) + " h ago";
+      return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function row(c, g) {
+      var here = c.id === convId && (c.study || null) === (convStudy || null);
+      var line = node("div", "agent-conv-row" + (here ? " current" : ""));
+      line.dataset.id = c.id;
+      var title = node("button", "title", c.title);
+      title.type = "button";
+      title.title = c.entries + (c.entries === 1 ? " message" : " messages")
+        + (g.loaded || g.chats ? "" : " · opens this study");
+      if (here) title.setAttribute("aria-current", "true");
+      title.addEventListener("click", function () {
+        openConversation(c.id, g.study, g.loaded || g.chats);
+      });
+      var meta = node("span", "when", ago(c.updated) || c.started);
+      var name = node("button", "line-btn conv-rename");
+      name.type = "button";
+      name.title = "Name it";
+      name.setAttribute("aria-label", "Name “" + c.title + "”");
+      name.innerHTML = PENCIL;
+      name.addEventListener("click", function () { renaming(line, title, c, g); });
+      var del = node("button", "line-btn conv-delete");
+      del.type = "button";
+      del.title = "Delete it";
+      del.setAttribute("aria-label", "Delete “" + c.title + "”");
+      del.innerHTML = BIN;
+      del.addEventListener("click", function () {
+        if (!window.confirm("Delete “" + c.title + "”? This cannot be undone.")) return;
+        post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function () {
+          if (here) { convId = null; resetThread(); }
+          told();
+          showList();
         });
-        if (!any && !groups.length) {
-          var none = document.createElement("div");
-          none.className = "agent-conv-empty";
-          none.textContent = "No conversations yet.";
-          list.appendChild(none);
+      });
+      line.append(title, meta, name, del);
+      return line;
+    }
+
+    /* Named in place: Enter keeps it, Escape leaves it as it was; empty,
+     * it is its first question again. */
+    function renaming(line, title, c, g) {
+      var input = node("input", "conv-name");
+      input.value = c.named ? c.title : "";
+      input.placeholder = c.title;
+      input.maxLength = 80;
+      input.setAttribute("aria-label", "A name for this conversation");
+      title.replaceWith(input);
+      input.focus();
+      var done = false;
+      function finish(keep) {
+        if (done) return;
+        done = true;
+        if (!keep) { showList(); return; }
+        post("/api/agent/conversation/rename", { id: c.id, study: g.study, title: input.value })
+          .then(function (d) {
+            if (!d || !d.ok) window.alert((d && d.error) || "Could not name it.");
+            told();
+            showList();
+          });
+      }
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); finish(true); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+      });
+      input.addEventListener("blur", function () { finish(true); });
+    }
+
+    function showList() {
+      return fetch("/api/agent/conversations").then(function (r) { return r.json(); }).then(function (d) {
+        var groups = (d && d.groups) || [];
+        var wanted = list.querySelector(".conv-search input");
+        var typed = wanted ? wanted.value : "";
+        list.replaceChildren();
+        var search = node("label", "search-field conv-search");
+        search.innerHTML = SEARCH.replace('class="line-icon"', 'class="search-icon"');
+        var box = node("input");
+        box.type = "search";
+        box.placeholder = "Find a conversation";
+        box.setAttribute("aria-label", "Find a conversation");
+        box.value = typed;
+        search.appendChild(box);
+        list.appendChild(search);
+        var body = node("div", "conv-groups");
+        list.appendChild(body);
+
+        function fill() {
+          var words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+          var hits = function (c, g) {
+            var text = (c.title + " " + (g.label || "") + " " + (g.folder || "")).toLowerCase();
+            return words.every(function (w) { return text.indexOf(w) >= 0; });
+          };
+          body.replaceChildren();
+          var shown = 0;
+          var others = groups.filter(function (g) { return !g.loaded && !g.chats; });
+          groups.filter(function (g) { return g.loaded || g.chats; })
+            .sort(function (a, b) { return a.loaded === b.loaded ? 0 : a.loaded ? -1 : 1; })
+            .forEach(function (g) {
+              var rows = g.conversations.filter(function (c) { return hits(c, g); });
+              var head = node("div", "agent-conv-group" + (g.loaded ? " loaded" : ""));
+              head.textContent = g.chats ? "Chats · no study"
+                : "This study · " + g.label;
+              if (!g.chats && g.folder && g.folder !== g.label) head.title = g.folder;
+              body.appendChild(head);
+              if (!rows.length) {
+                body.appendChild(node("div", "agent-conv-empty",
+                  words.length ? "None by that name." : g.chats ? "No chats yet."
+                    : "No conversations about this study yet."));
+              }
+              rows.forEach(function (c) { body.appendChild(row(c, g)); shown += 1; });
+            });
+          if (others.length) {
+            body.appendChild(node("div", "agent-conv-group", "Other studies"));
+            others.forEach(function (g) {
+              var rows = g.conversations.filter(function (c) { return hits(c, g); });
+              if (!rows.length) return;
+              var fold = node("details", "agent-conv-study");
+              // Folded, unless what is typed found something in it.
+              fold.open = words.length > 0;
+              var head = node("summary", "", "");
+              head.appendChild(node("span", "conv-study-id", g.label));
+              head.appendChild(node("span", "conv-study-folder", g.folder));
+              head.appendChild(node("span", "conv-study-count", String(rows.length)));
+              fold.appendChild(head);
+              rows.forEach(function (c) { fold.appendChild(row(c, g)); shown += 1; });
+              body.appendChild(fold);
+            });
+          }
+          return shown;
         }
+        fill();
+        box.addEventListener("input", fill);
         list.hidden = false;
+        if (typed) box.focus();
       }).catch(function () {});
     }
     var convs = el("agent-conversations");
@@ -1542,7 +1668,41 @@
       convs.addEventListener("click", function () {
         if (list.hidden) showList(); else hideList();
       });
+      list.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !list.hidden && e.target.className !== "conv-name") {
+          hideList();
+          convs.focus();
+        }
+      });
     }
+
+    /* The sidebar's lists are told when a conversation is begun, opened,
+     * written, named or deleted (chats.js). */
+    function told() {
+      window.dispatchEvent(new CustomEvent("fmx:conversations", {
+        detail: { id: convId, study: convStudy } }));
+    }
+    window.addEventListener("fmx:conversation-saved", told);
+
+    /* Another study opened: its own conversation is shown, as the page
+     * opened on it would show it. A chat of no study goes on as it is. */
+    window.addEventListener("dashboard:run-changed", function (event) {
+      var detail = event.detail || {};
+      if (detail.first || !convStudy) return;
+      if (String(detail.activeRun || "") === String(convStudy)) return;
+      resetThread();
+      hideList();
+      restore();
+      told();
+    });
+
+    window.FastMDXAgentPanel = {
+      open: function (id, study, loaded) { return openConversation(id, study, loaded); },
+      fresh: freshConversation,
+      list: function () { return showList(); },
+      get current() { return { id: convId, study: convStudy }; },
+    };
+
     if (!el("agent-provider")) return;
     loadEngine();
 

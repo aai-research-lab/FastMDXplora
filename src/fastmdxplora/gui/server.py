@@ -1432,8 +1432,17 @@ def make_handler(
             if path == "/api/agent/conversation":
                 from fastmdxplora.gui.agent_panel import write_conversation
 
-                self._send_json(write_conversation(
-                    app_runtime, (payload or {}).get("entries")))
+                asked = payload or {}
+                # Named, the conversation is written where it lives, a chat
+                # of no study (study null) included; else where the GUI is.
+                if asked.get("id") and "study" in asked:
+                    study = self._optional_path_for(asked.get("study"))
+                    if study is False:
+                        return
+                    self._send_json(write_conversation(
+                        app_runtime, asked.get("entries"), asked.get("id"), study))
+                    return
+                self._send_json(write_conversation(app_runtime, asked.get("entries")))
                 return
             if path == "/api/agent/conversation/clear":
                 from fastmdxplora.gui.agent_panel import clear_conversation
@@ -1443,7 +1452,23 @@ def make_handler(
             if path == "/api/agent/conversation/new":
                 from fastmdxplora.gui.agent_panel import new_conversation
 
+                asked = payload or {}
+                if "study" in asked:
+                    study = self._optional_path_for(asked.get("study"))
+                    if study is False:
+                        return
+                    self._send_json(new_conversation(app_runtime, study))
+                    return
                 self._send_json(new_conversation(app_runtime))
+                return
+            if path == "/api/agent/conversation/rename":
+                from fastmdxplora.gui.agent_panel import rename_conversation
+
+                study = self._optional_path_for((payload or {}).get("study"))
+                if study is False:
+                    return
+                self._send_json(rename_conversation(app_runtime, (payload or {}).get("id"),
+                                                    study, (payload or {}).get("title")))
                 return
             if path == "/api/agent/conversation/open":
                 from fastmdxplora.gui.agent_panel import open_conversation

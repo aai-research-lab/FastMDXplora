@@ -194,6 +194,7 @@ FastMDXplora/
 │       │   │                      #   viewer-beside.js, viewer-rail.js (one tool at a time);
 │       │   │                      #   palette.js (go to anything, Cmd+K), run-notice.js
 │       │   │                      #   (progress in the tab's title, a notice at the end);
+│       │   │                      #   chats.js (the study's conversations and Chats in the sidebar);
 │       │   │                      #   scene-view.js
 │       │   │                      #   (a scene on a page of its own)
 │       │   └── templates/         # dashboard.html, scene.html
