@@ -55,6 +55,7 @@ from fastmdxplora.gui.telemetry import (
     read_status,
     run_phases,
     run_stages,
+    status_as_it_stands,
 )
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
@@ -714,7 +715,8 @@ def make_handler(
                 self._send_json(payload)
                 return
             if path == "/api/status":
-                status = read_status(root)
+                # A run that ended without saying so is said to have.
+                status = status_as_it_stands(root)
                 metrics = read_metrics(root)
                 from fastmdxplora.gui.simulated_time import simulated_times
 
@@ -2677,8 +2679,9 @@ def _summary_records(
     elif read_status(root):
         # No manifest yet, but telemetry says a run is going. The manifest is
         # written when the run ends, so its absence is not a fact about the
-        # run.
-        status = "in progress"
+        # run. Unless the run ended without saying so.
+        status = ("interrupted" if status_as_it_stands(root).get("status") == "interrupted"
+                  else "in progress")
     else:
         status = "not run"
     frames = _first_present(
@@ -2691,7 +2694,7 @@ def _summary_records(
         # The pieces' production, not the first piece's record of its own.
         sim_time = extended[0]
     from fastmdxplora.gui.simulated_time import say_length
-    live_status = read_status(root)
+    live_status = status_as_it_stands(root)
     temperature = _first_present(
         live_status.get("target_temperature_K"),
         _last_metric_value(root, "temperature"),

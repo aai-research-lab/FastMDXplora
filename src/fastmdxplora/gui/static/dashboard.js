@@ -732,19 +732,23 @@
     const finished = !run && ["ok", "completed", "complete"].includes(statusName);
     setClassName("topbar-status-dot", `status-dot ${run === "running" ? "status-dot-live"
       : run === "failed" ? "status-dot-error"
-      : run === "stopped" ? "status-dot-waiting"
+      : run === "stopped" || run === "interrupted" ? "status-dot-waiting"
       : finished ? "status-dot-completed" : stateDotClass(statusName)}`);
     byId("sidebar-progress")?.setAttribute("data-run", run);
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.
     const stage = stageWord(status.stage) || "Starting";
     setText("topbar-stage", run === "stopped" ? `Stopped in ${stage}`
-      : run === "failed" ? `Failed in ${stage}` : stage);
+      : run === "failed" ? `Failed in ${stage}`
+      : run === "interrupted" ? (status.last_update_timestamp
+        ? `${stage}, last update ${formatWhen(status.last_update_timestamp)}` : stage)
+      : stage);
     setText("topbar-step", valueOrDash(status.current_step));
     setText("topbar-total", valueOrDash(status.total_planned_steps));
     const pct = progressPercent(status);
     setText("topbar-progress", pct != null ? `${pct.toFixed(1)}%` : "—");
-    setText("topbar-eta", computeETA(status));
+    // A run that has ended has no time left, whatever its last step.
+    setText("topbar-eta", run === "interrupted" ? "\u2014" : computeETA(status));
 
     const platform = status.platform || state.simManifest.platform || "";
     setText("sidebar-platform", platform || "\u2014");
@@ -782,6 +786,7 @@
       running: "Running", starting: "Starting", paused: "Paused",
       waiting: "Waiting", stale: "No recent updates", warning: "Running, with a warning",
       failed: "Failed", error: "Failed", stopped: "Stopped", ready: "Ready",
+      interrupted: "Interrupted",
     };
     const key = String(name || "").toLowerCase();
     return words[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "Ready");
@@ -793,6 +798,9 @@
     const raw = String(status.status || "").toLowerCase();
     if (["failed", "error"].includes(raw) || ["failed", "error"].includes(statusName)) return "failed";
     if (raw === "stopped" || statusName === "stopped") return "stopped";
+    // Ended without saying so (telemetry.status_as_it_stands): its record
+    // still said it was going, weeks after the run had gone.
+    if (raw === "interrupted" && !state.appState?.process_running) return "interrupted";
     if (["running", "starting", "paused"].includes(raw) || state.appState?.process_running) {
       return "running";
     }

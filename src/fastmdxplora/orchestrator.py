@@ -1687,15 +1687,21 @@ RUN_PROCESS_FILE = ".fastmdxplora_run.json"
 
 def this_machine() -> dict[str, str]:
     """What a run record says about where it was written: the host's name
-    and, on Linux, which boot. A process number means something only on the
-    machine, and in the boot, that gave it out."""
+    and, on Linux, which boot and which process namespace. A process number
+    means something only on the machine, in the boot and in the namespace
+    (a container's own) that gave it out."""
+    import os
     import socket
 
     try:
         boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
     except OSError:
         boot = ""
-    return {"host": socket.gethostname(), "boot": boot}
+    try:
+        space = os.readlink("/proc/self/ns/pid")
+    except (OSError, AttributeError):
+        space = ""
+    return {"host": socket.gethostname(), "boot": boot, "pidns": space}
 
 
 def record_is_from_elsewhere(record: dict) -> bool:

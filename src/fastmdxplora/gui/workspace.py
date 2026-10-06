@@ -298,6 +298,21 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
             return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
+    if not isinstance(batch, dict):
+        # The live record, before the manifest: the manifest is written when
+        # a run ends, so a run cut short has none, or the one before it. A
+        # record still saying the run goes on is believed unless the run has
+        # ended without saying so (telemetry.status_as_it_stands).
+        from fastmdxplora.gui.telemetry import status_as_it_stands
+
+        status = status_as_it_stands(base)
+        if status.get("recorded_status") and status.get("status") == "completed":
+            return "completed"
+        said = str(status.get("status") or "").lower()
+        if said == "interrupted":
+            return "interrupted"
+        if said in ("running", "starting", "paused"):
+            return "running"
     if isinstance(batch, dict):
         from fastmdxplora.gui.exploration import runs_of_a_study
 

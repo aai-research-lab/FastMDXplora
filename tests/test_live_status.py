@@ -636,7 +636,7 @@ class TestTheTopBarCarriesProgressNotTrivia:
         js = self._text("dashboard.js")
         assert 'id="topbar-progress"' in html
         assert 'id="topbar-eta"' in html
-        assert 'setText("topbar-eta", computeETA(status))' in js
+        assert 'setText("topbar-eta", run === "interrupted" ? "\\u2014" : computeETA(status))' in js
 
     def test_the_output_folder_is_where_the_run_is_identified(self) -> None:
         """It is navigation, not a measurement, so it left the grid of things

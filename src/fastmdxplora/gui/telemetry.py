@@ -59,6 +59,21 @@ TEMPERATURE_EXPLANATION = (
     "Temperature is outside the expected range. Consider a smaller timestep, stronger "
     "friction, gentler heating, or checking the input structure."
 )
+INTERRUPTED_EXPLANATION = (
+    "Its last update said it was still going, and the process that ran it is "
+    "gone: the machine restarted, or its job was ended by a scheduler or by "
+    "hand. What it wrote up to then is kept, and the command fastmdx resume "
+    "says whether it can be carried on from its last checkpoint."
+)
+
+SILENT_EXPLANATION = (
+    "Its last update said it was still going, and no process on this machine "
+    "runs it. If it runs on another machine or under a scheduler, look there "
+    "first: a job that is held, or an analysis of a long trajectory, can be "
+    "quiet this long. Carry it on with fastmdx resume only once it is "
+    "certainly not running, or two runs will write to the same study."
+)
+
 STALE_EXPLANATION = (
     "No telemetry update has been seen recently. The simulation may be slow, paused, "
     "or crashed."
@@ -275,6 +290,162 @@ def read_status(project_root: str | Path) -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+#: What a run's record says while the run goes on. A record a run left
+#: saying so when it ended without writing its end (the machine restarted,
+#: or its job was ended by a scheduler or by hand) is not taken at its word.
+_GOING_STATUSES = frozenset({"running", "starting", "paused"})
+
+#: The stages whose steps the record counts: a run that ended in one of
+#: them with every planned step taken finished its simulation.
+_STEPPED_STAGES = frozenset({"minimization", "nvt", "npt", "production"})
+
+#: How long a run's record may go unwritten, with no process on this machine
+#: to ask (it runs on another machine or in a container, or kept no record
+#: of its process), before it is taken to have ended. The record is written
+#: every 1,000 steps unless asked otherwise, which at 2 fs and 0.1 ns a day
+#: is under half an hour; setup, analysis and report write at their start
+#: and end only, and an analysis of a long trajectory on a cluster node can
+#: be quiet for hours. A day says nothing wrong of any of them.
+SILENT_RUN_ENDED_AFTER_SECONDS = 24 * 3600
+
+#: What its process was found to be, kept a few seconds: the page asks
+#: every few seconds, and asking means starting `ps` (PowerShell on Windows).
+_ASKED: dict[tuple[str, int, str], tuple[float, str | None]] = {}
+_ASKED_FOR_SECONDS = 10.0
+
+
+def _process_started_at(pid: int) -> float | None:
+    """When a process started, as a Unix time, where the system says (Linux);
+    None elsewhere."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+        ticks = int(stat.rsplit(")", 1)[1].split()[19])
+        booted = next(int(line.split()[1]) for line in
+                      Path("/proc/stat").read_text(encoding="utf-8").splitlines()
+                      if line.startswith("btime "))
+        return booted + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration, AttributeError):
+        return None
+
+
+def _this_pid_space() -> str:
+    try:
+        return os.readlink("/proc/self/ns/pid")
+    except (OSError, AttributeError):
+        return ""
+
+
+def _what_its_process_says(root: Path, record: dict[str, Any]) -> str | None:
+    """"gone" where the record's process has certainly ended, "running"
+    where it is this study's run, None where it cannot be told here (and
+    the record's silence decides).
+
+    Asked only where its number means the same process here: the same host,
+    the same boot and, where both say, the same process namespace (a
+    container sharing the host's name and boot numbers its processes on its
+    own). The same host restarted since is certainly gone. A process alive
+    whose command line is not a run's is not taken for gone: a run started
+    from a script, a notebook or a pool's worker has such a command line.
+    Only one that began after the record was written is another process
+    given the number, and the run gone.
+    """
+    from fastmdxplora.orchestrator import this_machine
+    from fastmdxplora.simulation.resume import _this_process_and_its_parents
+
+    pid = record.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return None
+    here = this_machine()
+    if not record.get("host") or record.get("host") != here.get("host"):
+        return None
+    there_boot, here_boot = record.get("boot") or "", here.get("boot") or ""
+    if there_boot and here_boot and there_boot != here_boot:
+        return "gone"
+    if bool(there_boot) != bool(here_boot):
+        # One side says which boot and the other cannot (Windows beside WSL).
+        return None
+    if record.get("pidns") and _this_pid_space() and record["pidns"] != _this_pid_space():
+        return None
+    if pid in _this_process_and_its_parents():
+        return "running"
+    key = (str(root), pid, str(record.get("started_at") or ""))
+    now = datetime.now(timezone.utc).timestamp()
+    kept = _ASKED.get(key)
+    if kept and now - kept[0] < _ASKED_FOR_SECONDS:
+        return kept[1]
+    from fastmdxplora.gui.exploration import _identify_run, _process_alive
+
+    try:
+        if not _process_alive(pid):
+            said: str | None = "gone"
+        elif _identify_run(pid, root, record.get("argv")) is True:
+            said = "running"
+        else:
+            began = _process_started_at(pid)
+            written = _parse_iso_datetime(record.get("started_at"))
+            said = ("gone" if began is not None and written is not None
+                    and began > written.timestamp() + 5 else None)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        said = None
+    if len(_ASKED) > 256:
+        _ASKED.clear()
+    _ASKED[key] = (now, said)
+    return said
+
+
+def how_the_run_ended(project_root: str | Path,
+                      status: dict[str, Any] | None = None) -> str | None:
+    """How the run whose record says it is going is known to have ended
+    without saying so: "process" (its process is gone), "silence" (no
+    process here to ask, and nothing written for
+    `SILENT_RUN_ENDED_AFTER_SECONDS`), or None while it may still be going.
+    Never for the process asking, or what started it: a run reads its own
+    record while it runs."""
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    root = Path(project_root)
+    status = read_status(root) if status is None else status
+    if str(status.get("status") or "").lower() not in _GOING_STATUSES:
+        return None
+    try:
+        record = json.loads((root / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = None
+    said = _what_its_process_says(root, record) if isinstance(record, dict) else None
+    if said == "gone":
+        return "process"
+    if said == "running":
+        return None
+    age = _timestamp_age_seconds(str(status.get("last_update_timestamp") or ""))
+    return "silence" if age is not None and age > SILENT_RUN_ENDED_AFTER_SECONDS else None
+
+
+def run_ended_unsaid(project_root: str | Path, status: dict[str, Any] | None = None) -> bool:
+    """Whether the run whose record says it is going has ended without
+    saying so (`how_the_run_ended`)."""
+    return how_the_run_ended(project_root, status) is not None
+
+
+def status_as_it_stands(project_root: str | Path) -> dict[str, Any]:
+    """The run's record as the GUI shows it: as written, except for a run
+    that ended without saying so. One that had taken every step it planned
+    in a stage of the simulation finished it (the Python API's `simulate`
+    writes no end of its own); any other is `interrupted`, with how that is
+    known as `ended_by`. What the record said is kept as `recorded_status`.
+    For the GUI's own process only; a run reads its record with
+    `read_status`."""
+    status = read_status(project_root)
+    ended = how_the_run_ended(project_root, status) if status else None
+    if ended is None:
+        return status
+    step, total = status.get("current_step"), status.get("total_planned_steps")
+    finished = (str(status.get("stage") or "").lower() in _STEPPED_STAGES
+                and isinstance(step, (int, float)) and isinstance(total, (int, float))
+                and 0 < total <= step)
+    return {**status, "status": "completed" if finished else "interrupted",
+            "ended_by": ended, "recorded_status": status.get("status")}
 
 
 #: The files a run leaves behind that say what it was asked to do. The first
@@ -567,6 +738,16 @@ def analyze_health(
                 "message": "Telemetry is stale.",
                 "explanation": STALE_EXPLANATION,
             }
+
+    if str(status.get("status", "")).lower() == "interrupted":
+        silent = status.get("ended_by") == "silence"
+        return {
+            "state": "interrupted",
+            "headline": "Interrupted",
+            "message": ("The run has not written a word for over a day."
+                        if silent else "The run ended without recording why."),
+            "explanation": SILENT_EXPLANATION if silent else INTERRUPTED_EXPLANATION,
+        }
 
     if str(status.get("status", "")).lower() in _FINISHED_STATUSES:
         # A run that has stopped is not progressing. Every check above still

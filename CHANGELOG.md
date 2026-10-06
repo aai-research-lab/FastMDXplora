@@ -7,6 +7,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A run that ended without saying so is interrupted, not running
+
+**Fixed:** a run whose live record still said it was running, because it
+ended without writing its end (the machine restarted, or its job was ended
+by a scheduler or by hand), was shown as running for as long as the record
+stayed: weeks later the active study read *Running* with time left, and All
+studies said running or, with no manifest written yet, not started. Where
+the run's process record was written in this machine's boot and process
+namespace its process is now asked: gone, or its number given to a process
+begun since, the run has ended. A live process is never taken for gone
+because its command line is not `fastmdx`'s, as a run started from a script,
+a notebook or a pool's worker has such a command line. With no process here
+to ask, a day without a word from the run decides, and the page says that
+is all it knows. Such a study reads *Interrupted*, with the stage it was in
+and its last update, in the sidebar, on the Overview, on All studies and
+to the Agent. A run of the Python API that had taken every step it planned,
+which writes no end of its own, reads *Completed*.
+
 ### FastMDXplora has its own mark
 
 **Changed:** the tab's icon and the mark over the folded sidebar were the

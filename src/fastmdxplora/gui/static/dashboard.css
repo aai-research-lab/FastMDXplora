@@ -3948,7 +3948,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 }
 .progress-pct { font-size: var(--text-xs); color: var(--text-secondary); }
 .sidebar-progress[data-run="failed"] .progress-stage { color: var(--status-error, var(--accent-red)); }
-.sidebar-progress[data-run="stopped"] .progress-stage { color: var(--status-stale); }
+.sidebar-progress[data-run="stopped"] .progress-stage,
+.sidebar-progress[data-run="interrupted"] .progress-stage { color: var(--status-stale); }
 /* The stages as one bar, a part each, coloured as the list was; each
    named when pointed at. */
 .sidebar .sidebar-stages { flex-direction: row; gap: 3px; }
@@ -3962,7 +3963,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar .sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-cyan); box-shadow: none; }
 .sidebar .sidebar-stages .stage-step[data-state="failed"] .stage-marker { background: var(--accent-red, #e06c6c); }
 /* A run stopped short stopped in a stage, not running one. */
-.sidebar-progress[data-run="stopped"] .sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-orange); }
+.sidebar-progress:is([data-run="stopped"], [data-run="interrupted"]) .sidebar-stages .stage-step[data-state="current"] .stage-marker { background: var(--accent-orange); }
 .sidebar-study-card .status-platform[hidden], .sidebar-study-card .status-divider[hidden] { display: none; }
 .sidebar .sidebar-stages .stage-label {
     position: absolute; width: 1px; height: 1px; overflow: hidden;
@@ -4919,6 +4920,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-card[data-state="running"] .study-state { color: var(--status-live); border-color: color-mix(in srgb, var(--status-live) 45%, transparent); }
 .study-card[data-state="failed"] .study-state { color: var(--status-error); border-color: color-mix(in srgb, var(--status-error) 45%, transparent); }
 .study-card[data-state="stopped"] .study-state,
+.study-card[data-state="interrupted"] .study-state,
 .study-card[data-state="incomplete"] .study-state { color: var(--status-stale); border-color: color-mix(in srgb, var(--status-stale) 45%, transparent); }
 .study-what { color: var(--text-secondary); }
 .study-means { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; margin: 2px 0 0; }

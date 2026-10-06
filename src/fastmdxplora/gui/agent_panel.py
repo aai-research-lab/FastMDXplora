@@ -435,11 +435,17 @@ def _run_status(runtime: Any) -> str | None:
     if snap.get("error"):
         lines.append(f"last error: {str(snap['error'])[:400]}")
     try:
-        from fastmdxplora.gui.telemetry import analyze_health, read_status
+        from fastmdxplora.gui.telemetry import analyze_health, status_as_it_stands
 
-        status = read_status(runtime.active_root) or {}
+        status = status_as_it_stands(runtime.active_root) or {}
         if status.get("stage"):
             lines.append(f"stage: {status['stage']}")
+        # A record left saying the run goes on, by a run that has ended: the
+        # time it had left is not said, as the page does not say it.
+        ended = status.get("status") == "interrupted"
+        if ended:
+            lines.append("state: interrupted: the run ended without recording why; its "
+                         f"last update was {status.get('last_update_timestamp') or 'not recorded'}")
         # The numbers the sidebar shows, so "how far along?" is answered
         # with a step and a time rather than "I have only the stage". The
         # Agent said exactly that while the sidebar read 334,000 of
@@ -449,7 +455,7 @@ def _run_status(runtime: Any) -> str | None:
             lines.append(f"step: {int(step):,} of {int(total):,} "
                          f"({100.0 * step / total:.1f}% complete)")
             elapsed = status.get("elapsed_wall_time_s")
-            if isinstance(elapsed, (int, float)) and step > 0:
+            if isinstance(elapsed, (int, float)) and step > 0 and not ended:
                 remaining = elapsed * (total / step - 1.0)
                 lines.append(f"elapsed: {_hms(elapsed)}; about {_hms(remaining)} left")
         from fastmdxplora.gui.simulated_time import say_length, simulated_times
