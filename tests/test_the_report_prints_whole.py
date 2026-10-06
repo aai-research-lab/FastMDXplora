@@ -75,9 +75,14 @@ def _report(browser, session, scheme="light"):
 def test_without_a_pdf_the_page_offers_to_print_one(browser, sessions) -> None:
     page = _report(browser, sessions["without"])
     try:
+        # The downloads are one button's menu.
+        assert page.locator("#report-downloads > *").count() == 1
+        page.click("#report-download > summary")
         button = page.locator("#report-downloads #report-print")
         assert button.is_visible()
-        assert button.inner_text() == "Print or save as PDF"
+        assert button.locator(".menu-item-name").inner_text() == "Print or save as PDF"
+        page.keyboard.press("Escape")
+        assert not button.is_visible()
     finally:
         page.close()
 
@@ -86,7 +91,11 @@ def test_with_a_pdf_its_download_is_the_one_offered(browser, sessions) -> None:
     page = _report(browser, sessions["with"])
     try:
         assert page.locator("#report-print").count() == 0
-        assert page.locator("#report-downloads a", has_text="PDF").is_visible()
+        page.click("#report-download > summary")
+        assert page.locator("#report-downloads a[data-download='pdf']").is_visible()
+        # A click elsewhere puts the menu away.
+        page.click("#report-document h2")
+        assert not page.locator("#report-downloads a[data-download='pdf']").is_visible()
     finally:
         page.close()
 

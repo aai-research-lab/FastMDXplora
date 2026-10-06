@@ -13,6 +13,91 @@
 
   var LABELS = { pdf: "PDF", slides: "Slides", bundle: "Bundle",
                  markdown: "Markdown", summary: "Summary figure" };
+  /* What each download is, said beside its name. */
+  var KINDS = { pdf: "the report, to read or print", slides: "a deck to present",
+                bundle: "the report, its figures and data, zipped",
+                markdown: "the report as text, to edit", summary: "one figure of the whole study" };
+  var DOWNLOAD_ICON = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
+    + 'aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/></svg>';
+
+  function item(tag, label, kind) {
+    var line = document.createElement(tag);
+    line.className = "menu-item";
+    line.setAttribute("role", "menuitem");
+    var name = document.createElement("span");
+    name.className = "menu-item-name";
+    name.textContent = label;
+    line.appendChild(name);
+    if (kind) {
+      var said = document.createElement("span");
+      said.className = "menu-item-kind";
+      said.textContent = kind;
+      line.appendChild(said);
+    }
+    return line;
+  }
+
+  /* The downloads behind one button: each was a button of its own along
+   * the page's head. Without a PDF (no WeasyPrint where the report was
+   * written), the browser prints the document, and saves it as a PDF from
+   * its dialog: the print stylesheet gives it alone, in black on white. */
+  function downloadMenu(offered) {
+    var menu = document.createElement("details");
+    menu.className = "menu-btn report-download";
+    menu.id = "report-download";
+    var head = document.createElement("summary");
+    head.className = "primary-btn";
+    head.setAttribute("aria-haspopup", "menu");
+    head.innerHTML = DOWNLOAD_ICON + "<span>Download</span>";
+    menu.appendChild(head);
+    var list = document.createElement("div");
+    list.className = "menu-list";
+    list.setAttribute("role", "menu");
+    list.setAttribute("aria-label", "Download");
+    if (!offered.pdf) {
+      var print = item("button", "Print or save as PDF", "the browser's print dialog");
+      print.type = "button";
+      print.id = "report-print";
+      print.title = "Print the report, or choose Save as PDF in the print dialog";
+      print.addEventListener("click", function () { menu.open = false; window.print(); });
+      list.appendChild(print);
+    }
+    Object.keys(LABELS).forEach(function (key) {
+      if (!offered[key]) return;
+      var a = item("a", LABELS[key], KINDS[key]);
+      a.href = offered[key];
+      a.setAttribute("download", "");
+      a.dataset.download = key;
+      a.addEventListener("click", function () { menu.open = false; });
+      list.appendChild(a);
+    });
+    menu.appendChild(list);
+    menu.addEventListener("toggle", function () {
+      if (!menu.open) return;
+      var first = list.querySelector(".menu-item");
+      if (first && document.activeElement === head) first.focus();
+    });
+    menu.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && menu.open) {
+        menu.open = false;
+        head.focus();
+      } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && menu.open) {
+        event.preventDefault();
+        var all = Array.prototype.slice.call(list.querySelectorAll(".menu-item"));
+        var at = all.indexOf(document.activeElement);
+        var next = all[(at + (event.key === "ArrowDown" ? 1 : -1) + all.length) % all.length];
+        if (next) next.focus();
+      }
+    });
+    return menu;
+  }
+
+  // Open, the menu closes on a click anywhere else.
+  document.addEventListener("click", function (event) {
+    var open = document.querySelector("#report-download[open]");
+    if (open && !open.contains(event.target)) open.open = false;
+  });
 
   function render(data) {
     var doc = el("report-document");
@@ -55,28 +140,7 @@
     if (sub) sub.textContent = data.generated ? "Generated " + data.generated : "The study, written up.";
 
     downloads.innerHTML = "";
-    Object.keys(LABELS).forEach(function (key) {
-      if (!data.downloads || !data.downloads[key]) return;
-      var a = document.createElement("a");
-      a.className = key === "pdf" ? "primary-btn" : "ghost-btn";
-      a.href = data.downloads[key];
-      a.textContent = LABELS[key];
-      a.setAttribute("download", "");
-      downloads.appendChild(a);
-    });
-    /* Without a PDF (no WeasyPrint where the report was written), the
-     * browser prints the document, and saves it as a PDF from its dialog:
-     * the print stylesheet gives it alone, in black on white. */
-    if (!data.downloads || !data.downloads.pdf) {
-      var print = document.createElement("button");
-      print.type = "button";
-      print.className = "primary-btn";
-      print.id = "report-print";
-      print.textContent = "Print or save as PDF";
-      print.title = "Print the report, or choose Save as PDF in the print dialog";
-      print.addEventListener("click", function () { window.print(); });
-      downloads.insertBefore(print, downloads.firstChild);
-    }
+    downloads.appendChild(downloadMenu(data.downloads || {}));
 
     notices.innerHTML = "";
     var rows = data.not_produced || [];

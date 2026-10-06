@@ -5755,3 +5755,31 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 }
 /* The View tool's icons wrap in a narrow column, not past its edge. */
 .view-tools > .icon-group { flex-wrap: wrap; max-width: 100%; }
+
+/* One Download button on the Report page, its downloads a menu under it
+   (report-page.js), each named with what it is. */
+.menu-btn { position: relative; }
+.menu-btn > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.menu-btn > summary::-webkit-details-marker { display: none; }
+.menu-btn > summary::after {
+    content: ""; width: 6px; height: 6px; margin: -3px 0 0 2px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg);
+}
+.menu-btn[open] > summary::after { margin-top: 3px; transform: rotate(-135deg); }
+.menu-list {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+    min-width: 260px; padding: 6px; display: flex; flex-direction: column; gap: 1px;
+    border: 1px solid var(--border-primary); border-radius: 10px;
+    background: var(--background-elevated); box-shadow: 0 12px 32px var(--shadow-color);
+}
+.menu-item {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+    padding: 7px 10px; border: none; border-radius: 7px; background: transparent;
+    color: var(--text-primary); font: inherit; font-size: var(--text-sm); text-align: left;
+    text-decoration: none; cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible {
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent); outline: none;
+}
+.menu-item-name { font-weight: 500; }
+.menu-item-kind { font-size: var(--text-2xs); color: var(--text-muted); }
