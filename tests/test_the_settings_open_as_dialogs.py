@@ -143,7 +143,7 @@ def test_the_preferences_are_kept_and_put_back(browser, session):
         document.getElementById('setting-ground').value,
         document.getElementById('setting-show-water').checked,
         document.getElementById('setting-pocket-cutoff').value,
-        document.querySelector('[data-action="background"]').getAttribute('aria-pressed')]""")
+        document.getElementById('viewer-ground').value]""")
     # Restore defaults puts the release's back and keeps nothing.
     page.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
     page.click("#prefs-restore")
@@ -158,8 +158,8 @@ def test_the_preferences_are_kept_and_put_back(browser, session):
     assert set(told) == {"ligand", "pocketCutoff", "chartHistory", "proteinRepresentation",
                          "ground", "showWater", "showIons", "spin", "preserveCamera"}
     assert told["ground"] == "white" and told["showWater"] and told["pocketCutoff"] == 7.5
-    # The Viewer's ground button says white as it opens.
-    assert after == ["12h", "white", True, "7.5", "true"]
+    # The Viewer's ground says white as it opens.
+    assert after == ["12h", "white", True, "7.5", "white"]
     # The release's ground is the scheme's own.
     assert restored == ["24h", "scheme", False, None]
 

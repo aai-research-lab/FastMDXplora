@@ -1155,7 +1155,6 @@
     if (action === "screenshot") await takeScreenshot();
     if (action === "measure") toggleMeasuring(button);
     if (action === "publication") setPublication(!STATE.publication);
-    if (action === "background") setGround(groundIsWhite() ? "dark" : "white");
   }
 
   /** The look a figure is made in: a white ground, and the outlines and
@@ -1166,13 +1165,16 @@
   function setGround(ground) {
     STATE.ground = ground === "white" || ground === "scheme" ? ground : "dark";
     if (STATE.engine && !STATE.publication) STATE.engine.setBackground(groundColour());
-    const white = groundIsWhite();
-    document.querySelectorAll('[data-action="background"]').forEach((button) => {
-      button.setAttribute("aria-pressed", String(white));
-      button.classList.toggle("active", white);
-    });
+    const chosen = document.getElementById("viewer-ground");
+    if (chosen && chosen.value !== STATE.ground) chosen.value = STATE.ground;
+    sayTheGround();
+  }
+
+  /* The overlays over the molecule are set for the ground it is on: the
+   * one chosen, or white in the publication look. */
+  function sayTheGround() {
     const frame = document.getElementById("viewer-canvas-frame");
-    if (frame) frame.dataset.ground = white ? "light" : "dark";
+    if (frame) frame.dataset.ground = STATE.publication || groundIsWhite() ? "light" : "dark";
   }
 
   function groundColour() {
@@ -1211,7 +1213,13 @@
       button.setAttribute("aria-pressed", String(STATE.publication));
       button.classList.toggle("active", STATE.publication);
     });
+    sayTheGround();
   }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const chosen = document.getElementById("viewer-ground");
+    if (chosen) chosen.addEventListener("change", () => setGround(chosen.value));
+  });
 
   /* A view: the camera, the frame shown and how the molecule is shown, to
    * be saved with the study (viewer-views.js) and shown again. */

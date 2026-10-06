@@ -124,7 +124,7 @@ def test_the_ground_follows_the_scheme(page) -> None:
     # Chosen, it stays: the white ground on the dark scheme.
     page.evaluate("() => window.FastMDXFrame.applyTheme('dark', false)")
     page.click('[data-tool="side-view"]')
-    page.click('[data-action="background"]')
+    page.select_option("#viewer-ground", "white")
     assert ground() == "light"
     page.evaluate("() => window.FastMDXFrame.applyTheme('light', false)")
     page.evaluate("() => window.FastMDXFrame.applyTheme('dark', false)")

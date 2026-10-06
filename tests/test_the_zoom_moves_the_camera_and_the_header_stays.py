@@ -97,13 +97,31 @@ def test_the_molecule_is_shown_on_white_and_back(page):
     # On the dark scheme, whose ground is dark until white is chosen.
     page.evaluate("() => window.FastMDXFrame.applyTheme('dark', false)")
     hooks.tool(page, "side-view")
-    page.click('[data-action="background"]')
+    page.select_option("#viewer-ground", "white")
     white = page.evaluate(f"() => [{STATE}.engine.background, {STATE}.ground]")
-    pressed = page.get_attribute('[data-action="background"]', "aria-pressed")
-    page.click('[data-action="background"]')
+    framed = page.get_attribute("#viewer-canvas-frame", "data-ground")
+    page.select_option("#viewer-ground", "dark")
     dark = page.evaluate(f"() => [{STATE}.engine.background, {STATE}.ground]")
-    assert white == [0xFFFFFF, "white"] and pressed == "true"
+    assert white == [0xFFFFFF, "white"] and framed == "light"
     assert dark[1] == "dark" and dark[0] != 0xFFFFFF
+
+
+def test_the_publication_look_is_its_own_and_gives_the_ground_back(page):
+    """The ground and the publication look were two buttons that both
+    made the ground white. The ground is chosen in one place; the look
+    adds outlines and shading on white, and gives the ground back."""
+    page.evaluate("() => window.FastMDXFrame.applyTheme('dark', false)")
+    hooks.tool(page, "side-view")
+    assert page.locator('[data-action="background"]').count() == 0
+    page.select_option("#viewer-ground", "dark")
+    page.click('[data-action="publication"]')
+    on = page.evaluate(f"() => [{STATE}.engine.background, {STATE}.ground]")
+    framed = page.get_attribute("#viewer-canvas-frame", "data-ground")
+    page.click('[data-action="publication"]')
+    off = page.evaluate(f"() => [{STATE}.engine.background, {STATE}.ground]")
+    assert on == [0xFFFFFF, "dark"] and framed == "light"
+    assert off[1] == "dark" and off[0] != 0xFFFFFF
+    assert page.get_attribute("#viewer-canvas-frame", "data-ground") == "dark"
 
 
 def test_a_view_keeps_its_ground():
