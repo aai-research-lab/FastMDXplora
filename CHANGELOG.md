@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study's card is plotted in the page's colours
+
+**Changed:** each card on All studies showed the first figure its study
+plotted, white on the dark scheme, and a study with no figure its backbone
+on white. A card now plots its first measure's series from its numbers in
+the scheme's colours, with the part its mean is taken over shaded and the
+mean dashed; the backbone is rendered for the scheme, on the dark one with
+no white behind it. Both follow a change of scheme. A study whose figure has
+no numbers beside it keeps its figure.
+
 ### An analysis's other figures are plotted in the page's colours
 
 **Changed:** on the Analysis page only an analysis's own series was plotted

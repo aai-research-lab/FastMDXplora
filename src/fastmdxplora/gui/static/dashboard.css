@@ -4923,6 +4923,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-card { display: flex; flex-direction: column; border: 1px solid var(--border-primary); border-radius: 12px; overflow: hidden; background: var(--panel-glass); box-shadow: var(--shadow-card); }
 .study-thumb { height: 180px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text-primary) 4%, transparent); border-bottom: 1px solid var(--border-subtle); }
 .study-thumb img { width: 100%; height: 100%; object-fit: contain; background: #ffffff; }
+/* A backbone made for the scheme, and a series plotted in it, show the page
+   through; only a figure the analysis wrote is white. */
+.study-thumb[data-picture="backbone"] img { background: transparent; }
+.study-thumb .study-series { width: 100%; height: 100%; display: block; }
+.study-thumb .study-series text { font-family: var(--font-mono); }
 .study-thumb-none { font-family: var(--font-stack); font-size: var(--text-lg); color: var(--text-muted); }
 .study-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; font-size: var(--text-xs); }
 .study-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

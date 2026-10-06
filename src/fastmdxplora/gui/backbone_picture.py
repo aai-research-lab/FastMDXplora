@@ -32,12 +32,17 @@ _GAP = {"CA": 4.3, "P": 8.0}
 MOST_POINTS = 1500
 #: Files larger than this are not read for a card.
 MOST_BYTES = 200 * 1024 * 1024
-#: Viridis from 0 to 0.8.
+#: Viridis.
 _STOPS = ((0.0, (0x44, 0x01, 0x54)), (0.2, (0x41, 0x44, 0x87)), (0.4, (0x2A, 0x78, 0x8E)),
-          (0.6, (0x22, 0xA8, 0x84)), (0.8, (0x7A, 0xD1, 0x51)))
+          (0.6, (0x22, 0xA8, 0x84)), (0.8, (0x7A, 0xD1, 0x51)), (1.0, (0xFD, 0xE7, 0x25)))
+#: Each scheme's part of viridis, its background and the colour of N and C:
+#: on paper its lightest fifth is left out, to read on white; on the dark
+#: scheme its darkest, to read on the page, which shows through.
+SCHEMES = {"light": ((0.0, 0.8), "#ffffff", "#444444"),
+           "dark": ((0.2, 1.0), "none", "#c8c8c8")}
 #: Pictures kept in memory, the oldest let go first.
 MOST_KEPT = 256
-_KEPT: OrderedDict[tuple[str, int, int], str | None] = OrderedDict()
+_KEPT: OrderedDict[tuple[str, int, int, str], str | None] = OrderedDict()
 _LOCK = threading.Lock()
 
 
@@ -95,14 +100,15 @@ def _pieces(path: Path) -> tuple[list[np.ndarray], str]:
     return [np.array(piece) for piece in pieces], kind
 
 
-def _colour(t: float) -> str:
-    t = min(max(t, 0.0), 1.0) * 0.8
+def _colour(t: float, scheme: str = "light") -> str:
+    low_end, high_end = SCHEMES[scheme][0]
+    t = low_end + min(max(t, 0.0), 1.0) * (high_end - low_end)
     (a, low), (b, high) = next(pair for pair in zip(_STOPS, _STOPS[1:]) if t <= pair[1][0])
     f = (t - a) / (b - a)
     return "#%02x%02x%02x" % tuple(round(lo + f * (hi - lo)) for lo, hi in zip(low, high))
 
 
-def _rendered(path: Path) -> str | None:
+def _rendered(path: Path, scheme: str = "light") -> str | None:
     pieces, kind = _pieces(path)
     count = sum(len(piece) for piece in pieces)
     if count < 3:
@@ -138,15 +144,17 @@ def _rendered(path: Path) -> str | None:
         done += len(piece)
     segments.sort(key=lambda kept: kept[0])
     title = (f"The backbone of {count:,} residues ({'Cα' if kind == 'CA' else 'phosphorus'} "
-             "trace), coloured from the N terminus (purple) to the C terminus (green), the "
-             "nearer part darker")
+             "trace), coloured from the N terminus (purple) to the C terminus "
+             f"({'green' if scheme == 'light' else 'yellow'}), the nearer part "
+             f"{'darker' if scheme == 'light' else 'brighter'}")
+    _, background, ink = SCHEMES[scheme]
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" '
            f'width="{WIDTH}" height="{HEIGHT}" role="img"><title>{escape(title)}</title>',
-           f'<rect width="{WIDTH}" height="{HEIGHT}" fill="#ffffff"/>',
+           f'<rect width="{WIDTH}" height="{HEIGHT}" fill="{background}"/>',
            '<g fill="none" stroke-linecap="round">']
     for depth, (x1, y1, x2, y2), t in segments:
         out.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-                   f'stroke="{_colour(t)}" stroke-opacity="{0.35 + 0.65 * depth:.2f}" '
+                   f'stroke="{_colour(t, scheme)}" stroke-opacity="{0.35 + 0.65 * depth:.2f}" '
                    f'stroke-width="{width * (0.7 + 0.5 * depth):.2f}"/>')
     out.append("</g>")
     first = (flat[0][0, :2] - low[:2]) * scale + offset
@@ -154,14 +162,15 @@ def _rendered(path: Path) -> str | None:
     for (x, y), label in ((first, "N"), (last, "C")):
         out.append(f'<text x="{min(max(x, 8), WIDTH - 8):.1f}" '
                    f'y="{min(max(y - 6, 11), HEIGHT - 3):.1f}" font-family="sans-serif" '
-                   f'font-size="11" text-anchor="middle" fill="#444444">{label}</text>')
+                   f'font-size="11" text-anchor="middle" fill="{ink}">{label}</text>')
     out.append("</svg>")
     return "".join(out)
 
 
-def backbone_svg(folder: str | Path) -> str | None:
-    """The card's picture of the study's backbone as SVG, or None where
-    the study has no structure with a backbone to show."""
+def backbone_svg(folder: str | Path, scheme: str = "light") -> str | None:
+    """The card's picture of the study's backbone as SVG, in the scheme
+    given, or None where the study has no structure with a backbone to show."""
+    scheme = scheme if scheme in SCHEMES else "light"
     path = structure_for_picture(folder)
     if path is None:
         return None
@@ -171,13 +180,13 @@ def backbone_svg(folder: str | Path) -> str | None:
         return None
     if stat.st_size > MOST_BYTES:
         return None
-    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, scheme)
     with _LOCK:
         if key in _KEPT:
             _KEPT.move_to_end(key)
             return _KEPT[key]
     try:
-        picture = _rendered(path)
+        picture = _rendered(path, scheme)
     except (OSError, ValueError, np.linalg.LinAlgError):
         picture = None
     with _LOCK:

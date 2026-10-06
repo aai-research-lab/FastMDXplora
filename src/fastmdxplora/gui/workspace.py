@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-__all__ = ["studies_in", "card_of", "studies_compared", "tags_used", "thumbnail_of"]
+__all__ = ["studies_in", "card_of", "studies_compared", "tags_used", "thumbnail_of",
+           "thumbnail_series"]
 
 #: A difference is marked past this many combined standard errors.
 RESOLVED_AT = 2.0
@@ -113,6 +114,9 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         "means": [],
         # A figure it plotted, else a picture of its backbone, else none.
         "thumbnail": _picture_of(base),
+        # The measure whose series the card plots in the page's colours,
+        # where it has one: its figure is white on any scheme.
+        "series": _series_of(base),
     }
     from fastmdxplora.study_tags import tags_of
 
@@ -150,6 +154,42 @@ def _picture_of(base: Path) -> str | None:
     from fastmdxplora.gui.backbone_picture import structure_for_picture
 
     return "backbone" if structure_for_picture(base) is not None else None
+
+
+def _series_of(base: Path) -> str | None:
+    """The first of the card's measures with a series to plot (series.py)."""
+    from fastmdxplora.gui.series import SERIES
+
+    for name in _FIRST:
+        if name in SERIES and (base / "analysis" / name / f"{name}.dat").is_file():
+            return name
+    return None
+
+
+#: The most points a card's series is sent: a card is 300 px across.
+CARD_POINTS = 240
+
+
+def thumbnail_series(folder: Path | str) -> dict[str, Any]:
+    """The series a card plots, thinned to what a card can show."""
+    from fastmdxplora.gui.series import series_payload
+
+    base = Path(folder)
+    name = _series_of(base)
+    if name is None:
+        return {"ok": False, "reason": "no series to plot"}
+    found = series_payload(base, name)
+    if not found.get("ok"):
+        return found
+    n = len(found["y"])
+    every = max(1, -(-n // CARD_POINTS))
+    mean = found.get("mean") or {}
+    return {
+        "ok": True, "analysis": name, "label": found["label"], "unit": found["unit"],
+        "kind": found["kind"], "x_label": found.get("x_label") or "",
+        "x": found["x"][::every], "y": found["y"][::every],
+        "mean": mean.get("value"), "from_x": mean.get("from_x"),
+    }
 
 
 def thumbnail_of(folder: Path | str) -> Path | None:

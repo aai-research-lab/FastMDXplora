@@ -204,6 +204,124 @@
     }));
   }
 
+  /* A figure the study plotted, else its backbone rendered from its
+   * structure, in the page's scheme; its name where neither can be had. */
+  function picture(frame, study, named) {
+    var img = make("img");
+    img.loading = "lazy";
+    img.alt = "";
+    var asked = { path: study.path };
+    if (study.thumbnail === "backbone") asked.scheme = scheme();
+    img.src = "/api/study-thumbnail?" + new URLSearchParams(asked);
+    img.addEventListener("error", named);
+    frame.dataset.picture = study.thumbnail;
+    if (study.thumbnail === "backbone") frame.title = backboneSaid();
+    frame.replaceChildren(img);
+  }
+
+  function backboneSaid() {
+    return "No figure yet: the protein's backbone, coloured from its N terminus " +
+      "(purple) to its C terminus (" + (scheme() === "light" ? "green" : "yellow") + ")";
+  }
+
+  /* The page's scheme, for a picture made for it. */
+  function scheme() {
+    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  }
+
+  function token(name, fallback) {
+    var value = "";
+    try {
+      value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    } catch (e) { /* no styles yet */ }
+    return value || fallback;
+  }
+
+  var SVG = "http://www.w3.org/2000/svg";
+  function svg(tag, attrs, parent) {
+    var node = document.createElementNS(SVG, tag);
+    Object.keys(attrs).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+
+  /* A card's series in the page's colours: the line, the part its mean is
+   * taken over shaded, the mean dashed, and what it is in a corner. Its
+   * figure was the analysis's, white on any scheme. */
+  var seriesOf = {};
+  function plotSeries(frame, data) {
+    var width = 480, height = 180, pad = { left: 10, right: 10, top: 26, bottom: 12 };
+    var xs = data.x, ys = data.y;
+    // A frame an analysis could not measure is a gap, not a zero.
+    var known = ys.filter(function (y) { return y != null && isFinite(y); });
+    if (known.length < 2) return false;
+    var lo = Math.min.apply(null, known), hi = Math.max.apply(null, known);
+    if (data.mean != null) { lo = Math.min(lo, data.mean); hi = Math.max(hi, data.mean); }
+    var room = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+    lo -= room; hi += room;
+    var x0 = xs[0], x1 = xs[xs.length - 1] > x0 ? xs[xs.length - 1] : x0 + 1;
+    var px = function (x) { return pad.left + (x - x0) / (x1 - x0) * (width - pad.left - pad.right); };
+    var py = function (y) { return pad.top + (1 - (y - lo) / (hi - lo)) * (height - pad.top - pad.bottom); };
+    var line = token("--accent-cyan", "#2698ba");
+    var muted = token("--text-muted", "#9a9ca1");
+    var plot = svg("svg", { viewBox: "0 0 " + width + " " + height, class: "study-series",
+                            role: "img", "aria-label": data.label + " over the run" }, null);
+    if (data.from_x != null && data.kind === "time") {
+      svg("rect", { x: px(data.from_x), y: pad.top, width: Math.max(0, px(x1) - px(data.from_x)),
+                    height: height - pad.top - pad.bottom, fill: line, "fill-opacity": 0.08 }, plot);
+    }
+    var d = "", gap = true;
+    xs.forEach(function (x, i) {
+      if (ys[i] == null || !isFinite(ys[i])) { gap = true; return; }
+      d += (gap ? "M" : "L") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+      gap = false;
+    });
+    svg("path", { d: d, fill: "none", stroke: line, "stroke-width": 1.6,
+                  "stroke-linejoin": "round" }, plot);
+    if (data.mean != null) {
+      svg("line", { x1: px(data.from_x != null ? data.from_x : x0), x2: px(x1),
+                    y1: py(data.mean), y2: py(data.mean), stroke: token("--accent-orange", "#ffb86b"),
+                    "stroke-width": 1.2, "stroke-dasharray": "5 4" }, plot);
+    }
+    var said = svg("text", { x: pad.left, y: 16, fill: muted, "font-size": 12 }, plot);
+    said.textContent = data.label + (data.unit ? " (" + data.unit + ")" : "") +
+      (data.kind === "residue" ? " by residue" : "");
+    frame.replaceChildren(plot);
+    return true;
+  }
+
+  function cardSeries(frame, study, named) {
+    var key = study.path;
+    if (!seriesOf[key]) {
+      seriesOf[key] = fetch("/api/study-thumbnail?" + new URLSearchParams({ path: study.path, series: "1" }))
+        .then(function (r) { return r.json(); })
+        .catch(function () { return null; });
+    }
+    seriesOf[key].then(function (data) {
+      if (data && data.ok && data.y && data.y.length > 1 && plotSeries(frame, data)) {
+        frame.dataset.picture = "series";
+      } else {
+        named();
+      }
+    });
+  }
+
+  /* Plotted again, and the backbone fetched again, in the new scheme. */
+  document.addEventListener("fmx:theme", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".study-thumb"), function (frame) {
+      var card = frame.closest(".study-card");
+      var path = card && card.dataset.path;
+      if (!path) return;
+      if (frame.dataset.picture === "series" && seriesOf[path]) {
+        seriesOf[path].then(function (data) { if (data && data.ok) plotSeries(frame, data); });
+      } else if (frame.dataset.picture === "backbone") {
+        var img = frame.querySelector("img");
+        if (img) img.src = "/api/study-thumbnail?" + new URLSearchParams({ path: path, scheme: scheme() });
+        frame.title = backboneSaid();
+      }
+    });
+  });
+
   function card(study) {
     var item = make("article", "study-card");
     item.setAttribute("role", "listitem");
@@ -213,20 +331,11 @@
     var named = function () {
       frame.replaceChildren(make("span", "study-thumb-none", study.system || study.name));
     };
-    if (study.thumbnail) {
-      // A figure the study plotted, else its backbone rendered from its
-      // structure; its name where neither can be had.
-      var img = make("img");
-      img.loading = "lazy";
-      img.alt = "";
-      img.src = "/api/study-thumbnail?" + new URLSearchParams({ path: study.path });
-      img.addEventListener("error", named);
-      frame.dataset.picture = study.thumbnail;
-      if (study.thumbnail === "backbone") {
-        frame.title = "No figure yet: the protein's backbone, coloured from its N terminus " +
-          "(purple) to its C terminus (green)";
-      }
-      frame.appendChild(img);
+    if (study.series) {
+      // Its first measure's series, plotted in the page's colours.
+      cardSeries(frame, study, study.thumbnail ? function () { picture(frame, study, named); } : named);
+    } else if (study.thumbnail) {
+      picture(frame, study, named);
     } else {
       named();
     }
@@ -458,6 +567,8 @@
         }
         lookedIn = data.root;
         studies = data.studies || [];
+        // Listed again: a study may have new numbers since.
+        seriesOf = {};
         if (!where) counted(data);
         tagsUsed = data.tags_used || [];
         offerTags();

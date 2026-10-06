@@ -660,6 +660,12 @@ def make_handler(
                 named = self._path_for(one("path"))
                 if named is None:
                     return
+                if one("series"):
+                    # The numbers of the card's series, for the card to plot
+                    # in the page's colours.
+                    self._send_json(workspace.thumbnail_series(named) if is_study(Path(named))
+                                    else {"ok": False, "reason": "not a study"})
+                    return
                 # `is_study` is the module's: imported here, it would be a
                 # local of the whole handler, unbound on every other route.
                 figure = workspace.thumbnail_of(named) if is_study(Path(named)) else None
@@ -670,7 +676,8 @@ def make_handler(
                     # No figure yet: a picture of the study's backbone.
                     from fastmdxplora.gui.backbone_picture import backbone_svg
 
-                    picture = backbone_svg(named) if is_study(Path(named)) else None
+                    picture = backbone_svg(named, one("scheme") or "light") \
+                        if is_study(Path(named)) else None
                     if picture is None:
                         self.send_error(404, "Not found")
                         return
