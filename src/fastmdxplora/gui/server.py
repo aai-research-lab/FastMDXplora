@@ -1484,6 +1484,11 @@ def make_handler(
                                                     (payload or {}).get("id"),
                                                     study))
                 return
+            if path == "/api/demo":
+                # The demo study, copied into the workspace and opened
+                # (fastmdxplora.demo); loopback only, as switching is.
+                self._send_json(app_runtime.open_the_demo())
+                return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()
                 if not folder:

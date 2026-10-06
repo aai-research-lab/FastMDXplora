@@ -1158,6 +1158,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "which is the right choice when you are designing a new study."
         ),
     )
+    gui.add_argument("--demo", nargs="?", const=".", default=None, metavar="DIR",
+                     help="Copy the demo study, trypsin with benzamidine (3PTB), "
+                          "finished, into DIR (default: the current folder) and "
+                          "open it.")
     gui.add_argument("--host", default="127.0.0.1",
                      help="Bind address (default: 127.0.0.1).")
     gui.add_argument("--port", type=int, default=8765,
@@ -2693,6 +2697,23 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     """
     from fastmdxplora.gui.server import DashboardConfig, serve_dashboard
 
+    if getattr(args, "demo", None) is not None:
+        if getattr(args, "hosted", False) or getattr(args, "output", None):
+            print("fastmdx gui: --demo opens the demo study; it does not go with "
+                  "--output or --hosted.", file=sys.stderr)
+            return 2
+        from fastmdxplora.demo import DemoMissing, copy_demo
+
+        try:
+            copied = copy_demo(args.demo)
+        except DemoMissing as exc:
+            print(f"fastmdx gui: {exc}", file=sys.stderr)
+            return 2
+        except OSError as exc:
+            print(f"fastmdx gui: the demo study could not be copied: {exc}", file=sys.stderr)
+            return 2
+        print(f"The demo study is in {copied}.")
+        args.output = str(copied)
     # Without --output there is no run to watch: the working directory is
     # merely where the command was typed. Treating it as an active run made
     # the GUI open on the overview of that run -- an overview of nothing.

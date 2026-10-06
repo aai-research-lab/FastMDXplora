@@ -23,6 +23,7 @@ FastMDXplora/
 │       ├── again.py               # What can be run again on a study, and the command that does it
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
+│       ├── demo/                  # The demo study (3PTB, trypsin with benzamidine): 3ptb.yml, copy_demo
 │       ├── advisories.py          # What is worth knowing before a run starts, not after
 │       ├── cost.py                # How long a study will take, on this machine
 │       ├── naming.py              # One rule for the name of a study's output folder
@@ -240,6 +241,7 @@ FastMDXplora/
 │   ├── run_pdb_smoke_campaign.py  # Multi-PDB smoke campaign
 │   ├── gpu_shakedown.py           # What only a real GPU can answer: cost, segments, resuming
 │   ├── make_mark.py               # FastMDXplora's mark: the tab's icon and ICONS["mark"]
+│   ├── make_demo.py               # A finished 3PTB study packaged as the demo study
 │   └── make_benzene.py, compare_*.py, name_refusal*.py, measure_nli.py
 ├── container/                     # Apptainer definition, and Docker made from it
 ├── preregistration/               # Validation plans written before their results

@@ -44,6 +44,18 @@ began, its first means and its tags, sorted by any column's head (a study
 without the value last either way), narrowed by the search as the cards
 are, and kept as chosen.
 
+### The demo study opens before any study is run
+
+**Added:** `fastmdx gui --demo [DIR]` copies the demo study, trypsin with
+benzamidine (3PTB) run for 10 ns, into DIR (the current folder by default)
+and opens it, and **Open the demo study** on an empty Overview does the
+same in the folder the GUI puts new studies in; a copy never goes over
+anything there, and the paths its records hold are made the copy's.
+`src/fastmdxplora/demo/3ptb.yml` is the study it is made from on a GPU, and
+`scripts/make_demo.py` packages the finished study (without what only a
+run needs, recording the release and the run). Until a release carries
+the study, both say the installation has none.
+
 ### A study's card is plotted in the page's colours
 
 **Changed:** each card on All studies showed the first figure its study

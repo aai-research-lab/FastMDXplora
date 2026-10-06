@@ -78,6 +78,29 @@
     state.pages = $$('.page')
       .map((element) => element.getAttribute("data-page"))
       .filter(Boolean);
+    // The demo study, copied into the folder the GUI was started in, then
+    // opened as any study is.
+    const demoButton = byId("open-demo");
+    if (demoButton) {
+      demoButton.addEventListener("click", async () => {
+        demoButton.disabled = true;
+        try {
+          const response = await fetch("/api/demo", {
+            method: "POST", headers: {"content-type": "application/json"}, body: "{}",
+          });
+          const answer = await response.json();
+          if (answer && answer.ok) {
+            location.hash = "#overview";
+            location.reload();
+            return;
+          }
+          demoButton.textContent = (answer && answer.error) || "Could not open it.";
+        } catch (error) {
+          demoButton.textContent = "The server did not answer.";
+        }
+        demoButton.disabled = false;
+      });
+    }
     // The methods are there to be pasted into a manuscript.
     const methodsCopy = document.getElementById("overview-methods-copy");
     if (methodsCopy) {
@@ -462,6 +485,9 @@
     const firstAppState = Object.keys(state.appState || {}).length === 0;
     const runChanged = firstAppState || previousRun !== activeRun;
     state.appState = payload || {};
+    // The demo study, offered where this installation carries it.
+    const demo = byId("open-demo");
+    if (demo) demo.hidden = !state.appState.demo_available;
     if (runChanged) {
       resetRunDependentState();
       emit("run-changed", {previousRun, activeRun, first: firstAppState});

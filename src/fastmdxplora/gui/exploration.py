@@ -847,6 +847,8 @@ class DashboardRuntime:
                 "run_of": study_a_run_belongs_to(open_root) if open_root else None,
                 "command": list(self.command),
                 "can_launch": not running,
+                # Whether this installation carries the demo study to open.
+                "demo_available": _demo_available() and self.hosting is None,
             }
 
     def _spawn(
@@ -1334,6 +1336,27 @@ class DashboardRuntime:
         logger.warning("Process for %s stayed unidentifiable for %.0f s; not adopting it. "
                        "Reopen the study to try again.", root, ADOPTION_RETRY_SECONDS)
 
+    def open_the_demo(self) -> dict[str, Any]:
+        """The demo study copied into the workspace and opened: a finished
+        study to look at before running one (fastmdxplora.demo)."""
+        from fastmdxplora.demo import DemoMissing, copy_demo
+
+        if self.hosting is not None:
+            # A service's workspace is the person's; the demo is for a GUI
+            # on their own machine.
+            return {"ok": False, "error": "The demo study opens only in a GUI on your own "
+                    "computer.", "state": self.snapshot()}
+        try:
+            copied = copy_demo(self.exploration_root)
+        except DemoMissing as exc:
+            return {"ok": False, "error": str(exc), "state": self.snapshot()}
+        except OSError as exc:
+            return {"ok": False, "error": f"The demo study could not be copied: {exc}",
+                    "state": self.snapshot()}
+        answer = self.switch_to(copied)
+        answer["folder"] = str(copied)
+        return answer
+
     def switch_to(self, folder: str | Path) -> dict[str, Any]:
         """Watch a different output folder without relaunching.
 
@@ -1548,3 +1571,9 @@ class DashboardRuntime:
                            "carries it on."),
                 "state": self.snapshot(),
             }
+
+
+def _demo_available() -> bool:
+    from fastmdxplora.demo import packaged
+
+    return packaged() is not None
