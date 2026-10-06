@@ -173,7 +173,8 @@ class TestEveryKindAndState:
             yaml.safe_dump({"systems": [{"system": "/data/protein.pdb"}], **config}),
             encoding="utf-8")
         card = card_of(study)
-        assert card["kind"] == kind and card["system"] == "protein.pdb"
+        assert card["kind"] == kind and card["system"] == "PROT"
+        assert card["structure"] == "protein.pdb"
 
     def test_campaigns_that_did_not_finish(self, tmp_path):
         planned = [{"run_id": "a"}, {"run_id": "b"}]
@@ -199,7 +200,7 @@ class TestEveryKindAndState:
         (study / "manifest.json").write_text(json.dumps({"system": "/x/1abc.pdb"}),
                                              encoding="utf-8")
         (study / "resolved_config.yml").write_text("{: not yaml", encoding="utf-8")
-        assert card_of(study)["system"] == "1abc.pdb"
+        assert card_of(study)["system"] == "1ABC"
 
     def test_the_figures_a_card_falls_back_to(self, tmp_path):
         study = _study(tmp_path / "s")

@@ -84,6 +84,16 @@
     return tag;
   }
 
+  /* A study's system as it is shown: the ID the person gave it in this
+   * browser (preferences.js, by its folder), else its own. */
+  function shownId(study) {
+    try {
+      var kept = JSON.parse(localStorage.getItem("fmx.study:" + study.path) || "null");
+      if (kept && /^[A-Z0-9]{1,4}$/.test(kept.name || "")) return kept.name;
+    } catch (e) { /* not kept */ }
+    return study.system || "";
+  }
+
   function dateSaid(when) {
     var date = new Date(when);
     return isNaN(date.getTime()) ? "" : date.toLocaleDateString(undefined,
@@ -91,7 +101,8 @@
   }
 
   function searchText(study) {
-    return [study.name, study.system, study.kind, study.state, study.forcefield || "",
+    return [study.name, shownId(study), study.system, study.structure || "", study.kind,
+      study.state, study.forcefield || "",
       (study.tags || []).join(" "), study.note || ""].join(" ").toLowerCase();
   }
 
@@ -360,7 +371,7 @@
     item.dataset.state = study.state;
     var frame = make("div", "study-thumb");
     var named = function () {
-      frame.replaceChildren(make("span", "study-thumb-none", study.system || study.name));
+      frame.replaceChildren(make("span", "study-thumb-none", shownId(study) || study.name));
     };
     if (study.series) {
       // Its first measure's series, plotted in the page's colours.
@@ -377,7 +388,7 @@
     head.appendChild(make("span", "study-state", study.state));
     body.appendChild(head);
     body.appendChild(make("div", "study-what",
-      [study.system, study.kind, study.forcefield].filter(Boolean).join(" · ")));
+      [shownId(study), study.kind, study.forcefield].filter(Boolean).join(" · ")));
     var when = dateSaid(study.when);
     if (when) body.appendChild(make("div", "study-when muted", when));
     if ((study.means || []).length) {
@@ -463,7 +474,7 @@
 
   function sortValue(study, key, columns) {
     if (key === "name") return String(study.name || "").toLowerCase();
-    if (key === "system") return String(study.system || "").toLowerCase();
+    if (key === "system") return String(shownId(study) || "").toLowerCase();
     if (key === "state") return STATE_ORDER[String(study.state || "").toLowerCase()];
     if (key === "when" || key === "active") {
       var t = new Date(key === "when" ? study.when : study.last_active || study.when).getTime();
@@ -562,7 +573,9 @@
       state.append(light, document.createTextNode(" " + (study.state || "")));
       var active = make("td", "muted", timeSaid(study.last_active || study.when));
       if (study.last_active) active.title = new Date(study.last_active).toLocaleString();
-      tr.append(pick, name, make("td", "", study.system || ""), state,
+      var system = make("td", "", shownId(study));
+      if (study.structure && study.structure !== system.textContent) system.title = study.structure;
+      tr.append(pick, name, system, state,
                 make("td", "muted", dateSaid(study.when)), active);
       columns.forEach(function (column) {
         var m = meanOf(study, column);
@@ -909,7 +922,7 @@
       list.replaceChildren.apply(list, recent.map(function (study) {
         var here = sameFolder(study.path, open);
         var word = stateWord(study.state);
-        var name = study.system || study.name;
+        var name = shownId(study) || study.name;
         var item = make("button", "sidebar-recent-item");
         item.type = "button";
         item.title = (word ? word + "\n" : "") + study.path;
@@ -1038,6 +1051,13 @@
     var moved = open !== recentFor;
     recentFor = open;
     showRecent(moved || stale, moved);
+  });
+
+  // The open study's ID given or cleared: shown so at once.
+  document.addEventListener("change", function (event) {
+    if (!event.target || event.target.id !== "setting-run-name") return;
+    showRecent(false, true);
+    if (studies.length) draw();
   });
 
   window.FastMDXStudies = { load: load, narrowTo: narrowTo,

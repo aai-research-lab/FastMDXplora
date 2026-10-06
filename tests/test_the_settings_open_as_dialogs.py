@@ -173,10 +173,14 @@ def test_the_study_s_own_words_are_kept_by_its_folder(browser, session):
     before = page.text_content("#topbar-run-title")
     page.click("#study-card")
     page.click('[data-study-field="name"]')
+    # The system's ID, four letters or digits at most.
     page.fill("#study-field-input", "Ubiquitin, wild type")
     page.keyboard.press("Enter")
+    too_long = page.text_content("#study-field-refused")
+    page.fill("#study-field-input", "ubwt")
+    page.keyboard.press("Enter")
     page.wait_for_function("() => document.getElementById('topbar-run-title').textContent"
-                           " === 'Ubiquitin, wild type'")
+                           " === 'UBWT'")
     page.click("#study-card")
     page.click('[data-study-field="ligand"]')
     page.fill("#study-field-input", "two words")
@@ -191,7 +195,7 @@ def test_the_study_s_own_words_are_kept_by_its_folder(browser, session):
                   "{name: 'Not this one'})); }")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => document.getElementById('topbar-run-title').textContent"
-                           " === 'Ubiquitin, wild type'")
+                           " === 'UBWT'")
     ligand = page.evaluate("() => window.FastMDXDashboard.settings().ligand")
     # Use the default: the system's name again, and nothing kept.
     page.click("#study-card")
@@ -203,9 +207,9 @@ def test_the_study_s_own_words_are_kept_by_its_folder(browser, session):
     errors = page.errors
     page.context.close()
     assert errors == []
-    assert before != "Ubiquitin, wild type"
+    assert before != "UBWT" and too_long == "An ID is 1 to 4 letters or digits."
     assert refused == ("A residue name is 1 to 5 letters or digits.", True)
-    assert kept == [[f"fmx.study:{study}", {"name": "Ubiquitin, wild type", "ligand": "BEN"}]]
+    assert kept == [[f"fmx.study:{study}", {"name": "UBWT", "ligand": "BEN"}]]
     assert ligand == "BEN"
     assert json.loads(left) == {"ligand": "BEN"}
 

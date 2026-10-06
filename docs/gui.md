@@ -115,8 +115,10 @@ is the study's folder by name, shortened in the middle to fit; a click
 copies its whole path. Pressed, the card opens **All studies**, **Open
 another folder** (a picker on any folder), and the study's own folder with
 **Open the folder** (where it cannot be opened from here, its path is
-copied), **Rename for display** (the name the GUI shows the study under
-here; its folder and records keep theirs) and **Ligand residue** (the
+copied), **System ID for display** (the one to four letters or digits the
+GUI shows the study under here; its folder and records keep theirs. A
+study is otherwise shown by its system's ID: its PDB ID, or the first four
+letters or digits of its structure file's name, in capitals) and **Ligand residue** (the
 ligand the Viewer centres on and finds the pocket around, for a structure
 with more than one; the analyses are not changed). Both are kept on this
 computer by the study's folder, as Preferences are. The *Running* line appears only when a run is going in a study

@@ -19,6 +19,7 @@ FastMDXplora/
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
+│       ├── system_id.py           # A study's system as four capitals: its PDB ID, or its file's first four
 │       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
 │       ├── again.py               # What can be run again on a study, and the command that does it
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg

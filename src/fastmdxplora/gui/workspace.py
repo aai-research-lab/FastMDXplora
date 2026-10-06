@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora.system_id import system_id
+
 __all__ = ["studies_in", "card_of", "studies_compared", "tags_used", "thumbnail_of",
            "thumbnail_series"]
 
@@ -104,10 +106,14 @@ def card_of(folder: Path | str) -> dict[str, Any]:
                      or _read_yaml(base / "exploration.yml"))
     batch = _read_json(base / "batch_manifest.json")
     manifest = _read_json(base / "manifest.json")
+    named = _system_of(config, batch, manifest)
     card: dict[str, Any] = {
         "path": str(base),
         "name": base.name,
-        "system": _system_of(config, batch, manifest),
+        # The system in four capital characters (fastmdxplora.system_id),
+        # and what named it: a PDB entry, or its structure file's name.
+        "system": system_id(named),
+        "structure": named,
         "kind": _kind_of(config, batch),
         "state": _state_of(base, batch, manifest),
         "when": _when(base, manifest),

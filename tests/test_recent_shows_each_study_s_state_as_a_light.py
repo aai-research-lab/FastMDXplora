@@ -35,7 +35,9 @@ def session(tmp_path_factory):
            failed="simulation.numerics.nan")
     _study(workspace / "stopped", system="2JOF", started="2026-09-03T10:00:00+00:00",
            failed="simulation.run.stopped")
-    _study(workspace / "long", system=LONG, started="2026-09-04T10:00:00+00:00")
+    # A study named by its folder, its system unknown: a system is four
+    # characters, a folder's name can be long.
+    _study(workspace / LONG, system="", started="2026-09-04T10:00:00+00:00")
     ended = _study(workspace / "ended", system="1L2Y", started="2026-09-05T10:00:00+00:00")
     (ended / "simulation").mkdir()
     (ended / "simulation" / "live_status.json").write_text(json.dumps({

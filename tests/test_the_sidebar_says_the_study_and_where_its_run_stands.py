@@ -200,7 +200,7 @@ def test_the_study_card_opens_another_folder_and_its_own_settings(browser, works
         after = page.is_hidden("#study-menu")
     assert facts["errors"] == []
     assert items == ["All studies\u2026", "Open another folder\u2026", "Open the folder",
-                     "Rename for display\u2026", "Ligand residue\u2026"]
+                     "System ID for display\u2026", "Ligand residue\u2026"]
     assert listed == 0 and not path and expanded == "true"
     assert closed and focused == "study-card" and after
 

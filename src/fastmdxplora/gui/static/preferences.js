@@ -231,13 +231,16 @@
   var STUDY_FIELDS = {
     name: {
       field: "setting-run-name",
-      title: "Name for display",
-      label: "Name",
-      placeholder: "the study's system",
-      note: "The name this study is shown under, in this browser. Its folder " +
-            "and records keep their own. Empty, it is shown by its system.",
-      check: function (text) { return text.length <= 80 ? "" : "At most 80 characters."; },
-      tidy: function (text) { return text; }
+      title: "System ID",
+      label: "ID",
+      placeholder: "its PDB ID, or its file's first four",
+      note: "The four letters or digits this study is shown under, in this " +
+            "browser. Its folder and records keep their own. Empty, it is its " +
+            "PDB ID, or the first four letters or digits of its structure file's name.",
+      check: function (text) {
+        return !text || /^[A-Z0-9]{1,4}$/.test(text) ? "" : "An ID is 1 to 4 letters or digits.";
+      },
+      tidy: function (text) { return text.toUpperCase(); }
     },
     ligand: {
       field: "setting-ligand-resname",
@@ -264,6 +267,8 @@
     Object.keys(STUDY_FIELDS).forEach(function (which) {
       var field = el(STUDY_FIELDS[which].field);
       var value = typeof kept[which] === "string" ? kept[which] : "";
+      // A name kept before IDs were four characters is not one.
+      if (value && STUDY_FIELDS[which].check(STUDY_FIELDS[which].tidy(value))) value = "";
       if (field && field.value !== value) { field.value = value; changed = true; }
     });
     if (changed) tellThePage(STUDY_FIELDS.name.field);

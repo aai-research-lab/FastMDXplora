@@ -121,7 +121,8 @@ class TestTheNavigation:
         title = page.locator("#topbar-run-title")
         name, tip = title.text_content(), title.get_attribute("title")
         page.context.close()
-        assert name == "tri-ala"
+        # Its ID, four capitals from its file's name; the file on hover.
+        assert name == "TRIA"
         assert tip == "/data/lab/structures/tri-ala.pdb"
 
 

@@ -870,11 +870,18 @@
   /* A system given as a file is named by the file: the sidebar read
    * "/home/lab/studies/struct..." for a study of tri-ala.pdb. The whole path
    * stays on hover. */
+  /* The system in four capital characters, as fastmdxplora.system_id
+   * names it: a PDB entry as it is, otherwise the first four letters or
+   * digits of its structure file's name. */
   function studyName(system) {
     const text = system == null ? "" : String(system).trim();
-    if (!/[\\/]/.test(text)) return text;
+    if (!text) return "";
+    if (/^[0-9][A-Za-z0-9]{3}$/.test(text)) return text.toUpperCase();
+    if (/^\d+ systems$/.test(text)) return text;
     const file = text.split(/[\\/]/).filter(Boolean).pop() || text;
-    return file.replace(/\.(pdb|cif|mmcif|pdbx|gro|mol2|sdf|xml|prmtop|psf)(\.gz)?$/i, "");
+    const stem = file.replace(/(\.(pdb|ent|cif|mmcif|pdbx|bcif|gro|mol2|sdf|xml|prmtop|parm7|psf|top|xyz))?(\.(gz|bz2|xz|zip))?$/i, "") || file;
+    const letters = stem.replace(/[^A-Za-z0-9]/g, "");
+    return (letters || stem).slice(0, 4).toUpperCase();
   }
 
   function setTextWithTooltip(id, value) {
@@ -2269,5 +2276,6 @@
     listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
     /* A name shortened in its middle to the width given (studies.js). */
     fitInTheMiddle,
+    systemId: studyName,
   };
 }());
