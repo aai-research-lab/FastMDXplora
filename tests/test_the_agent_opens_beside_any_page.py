@@ -133,3 +133,26 @@ def test_in_autonomous_mode_a_suggestion_waits_to_be_read(browser, session) -> N
         m.value = 'assisted'; m.dispatchEvent(new Event('change')); }""")
     tab.context.close()
     assert "1UBQ" in said[0] and said[1] == 0
+
+
+def test_new_study_opens_the_builder_with_the_agent_beside_it(browser, session) -> None:
+    """A study can be described to the Agent or set field by field: New
+    study opens both, the builder keeping the keyboard."""
+    tab = _open(browser, session, "#overview")
+    tab.click('.sidebar-start a[data-view-link="run"]')
+    tab.wait_for_function("() => !document.getElementById('agent-drawer').hidden")
+    opened = _where(tab)
+    focused = tab.evaluate("() => document.activeElement.id")
+    placeholder = tab.get_attribute("#agent-request", "placeholder")
+    tab.click('.sidebar-start a[data-view-link="run"]')
+    tab.wait_for_timeout(100)
+    again = _where(tab)
+    tab.keyboard.press("Control+j")
+    closed = tab.get_attribute("#agent-request", "placeholder")
+    tab.context.close()
+    assert opened["page"] == "run" and opened["beside"] and opened["thread"]
+    assert opened["overlap"] is False and focused != "agent-request"
+    # Pressed again, it stays open, and the page's own prompt is put back
+    # once it closes.
+    assert again["beside"] and placeholder == "Ask about this study, or describe one."
+    assert closed != placeholder

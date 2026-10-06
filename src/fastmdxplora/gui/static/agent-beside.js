@@ -5,7 +5,11 @@
  * button beside Agent in the sidebar, its conversation opens in the side
  * panel's place, the page left as it was. It is the Agent page's own
  * conversation, moved here and back, so a thread begun on the page goes
- * on beside another and the reverse; nothing is drawn twice.
+ * on beside another and the reverse; nothing is shown twice.
+ *
+ * New study in the sidebar opens it too, beside the Config builder: a
+ * study can be described to the Agent or set field by field, and either
+ * fills the other.
  */
 (function () {
   "use strict";
@@ -22,7 +26,9 @@
 
   function isOpen() { return !!drawer && !drawer.hidden; }
 
-  function open() {
+  /* Opened, the Agent's box has the keyboard, unless `quiet`: then it
+   * stays where it was (with New study, on the builder). */
+  function open(quiet) {
     if (!body || !drawer) return;
     if (onTheAgentPage() && window.FastMDXDashboard) {
       // Beside a page, not beside itself: back to the page before it.
@@ -33,9 +39,10 @@
     document.body.classList.add("agent-beside");
     var box = el("agent-request");
     if (box) {
-      placeholder = box.placeholder;
+      if (!drawer.dataset.placeholder) placeholder = box.placeholder;
+      drawer.dataset.placeholder = "1";
       box.placeholder = BESIDE_PROMPT;
-      box.focus();
+      if (quiet !== true) box.focus();
     }
   }
 
@@ -55,6 +62,7 @@
     document.body.classList.remove("agent-beside");
     var box = el("agent-request");
     if (box && placeholder) box.placeholder = placeholder;
+    delete drawer.dataset.placeholder;
     if (hadFocus) {
       var back = el("agent-beside-open");
       if (back && back.offsetParent !== null) back.focus();
@@ -88,6 +96,12 @@
       });
     }
     el("agent-drawer-close").addEventListener("click", close);
+    document.querySelectorAll('.sidebar-start a[data-view-link="run"]').forEach(function (link) {
+      link.addEventListener("click", function () {
+        // After the page has changed to the builder, not before it.
+        setTimeout(function () { if (!isOpen()) open(true); }, 0);
+      });
+    });
     el("agent-drawer-page").addEventListener("click", function () {
       close();
       if (window.FastMDXDashboard) window.FastMDXDashboard.navigate("agent");
