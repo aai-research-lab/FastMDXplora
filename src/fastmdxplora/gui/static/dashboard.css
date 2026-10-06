@@ -5599,3 +5599,34 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .palette-foot { padding: 8px 14px; border-top: 1px solid var(--border-subtle); }
 .palette-foot kbd { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 0 4px;
                     border: 1px solid var(--border-primary); border-radius: 4px; }
+
+/* All studies as a table (studies.js): one row a study, sorted by a
+   column's head, the means in the table's numbers. */
+.studies-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    background: var(--panel-glass);
+}
+.studies-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.studies-table th, .studies-table td {
+    padding: 8px 10px; text-align: left; vertical-align: middle;
+    border-bottom: 1px solid var(--border-subtle); white-space: nowrap;
+}
+.studies-table tbody tr:last-child td { border-bottom: none; }
+.studies-table tbody tr:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.studies-table th { color: var(--text-muted); font-weight: 600; font-size: var(--text-2xs);
+                    text-transform: uppercase; letter-spacing: 0.06em; }
+.studies-sort { border: none; background: none; padding: 0; color: inherit; font: inherit;
+                letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.studies-sort[data-dir="down"]::after { content: " \2193"; }
+.studies-sort[data-dir="up"]::after { content: " \2191"; }
+.studies-name { white-space: normal; min-width: 180px; }
+.studies-name-text { display: block; padding: 0; border: none; background: none; cursor: pointer;
+                     color: var(--text-primary); font: inherit; font-weight: 600; text-align: left; }
+.studies-name-text:hover { color: var(--accent-text, var(--accent-cyan)); text-decoration: underline; }
+.studies-kind { display: block; }
+.studies-state .recent-light { display: inline-block; vertical-align: middle; }
+.studies-mean { text-align: right; }
+.studies-tags .study-tag { margin-right: 4px; }
+.studies-view { flex: none; }

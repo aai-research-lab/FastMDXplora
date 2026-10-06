@@ -394,6 +394,165 @@
     return item;
   }
 
+  /* ---- As a table --------------------------------------------------- */
+  var VIEW_KEPT = "fmx.studiesView";
+  var view = "cards";
+  var sortBy = { key: "when", down: true };
+  var STATE_ORDER = { running: 0, failed: 1, stopped: 2, interrupted: 3, incomplete: 4,
+                      completed: 5, "not started": 6 };
+
+  function keptView() {
+    try { return localStorage.getItem(VIEW_KEPT) === "table" ? "table" : "cards"; }
+    catch (e) { return "cards"; }
+  }
+
+  function showAs(chosenView, remember) {
+    view = chosenView === "table" ? "table" : "cards";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-studies-view]"), function (b) {
+      var on = b.getAttribute("data-studies-view") === view;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    if (remember) {
+      try { localStorage.setItem(VIEW_KEPT, view); } catch (e) { /* not kept */ }
+    }
+    draw();
+  }
+
+  /* The means the table has columns for: the first three named among the
+   * studies shown, in the order the cards give them. */
+  function meanColumns(shown) {
+    var columns = [];
+    shown.forEach(function (study) {
+      (study.means || []).forEach(function (m) {
+        var key = m.analysis + ":" + (m.label || m.analysis);
+        if (columns.length < 3 && !columns.some(function (c) { return c.key === key; })) {
+          columns.push({ key: key, label: m.label || m.analysis, analysis: m.analysis });
+        }
+      });
+    });
+    return columns;
+  }
+
+  function meanOf(study, column) {
+    return (study.means || []).find(function (m) {
+      return m.analysis + ":" + (m.label || m.analysis) === column.key;
+    }) || null;
+  }
+
+  function sortValue(study, key, columns) {
+    if (key === "name") return String(study.name || "").toLowerCase();
+    if (key === "system") return String(study.system || "").toLowerCase();
+    if (key === "state") return STATE_ORDER[String(study.state || "").toLowerCase()];
+    if (key === "when") { var t = new Date(study.when).getTime(); return isNaN(t) ? null : t; }
+    var column = columns.find(function (c) { return c.key === key; });
+    var m = column ? meanOf(study, column) : null;
+    return m && m.mean != null ? m.mean : null;
+  }
+
+  function sorted(shown, columns) {
+    var key = sortBy.key;
+    return shown.slice().sort(function (a, b) {
+      var x = sortValue(a, key, columns), y = sortValue(b, key, columns);
+      // What has no value goes last, either way.
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      var order = x < y ? -1 : x > y ? 1 : 0;
+      return sortBy.down ? -order : order;
+    });
+  }
+
+  function refocus(selector, key, value) {
+    var found = Array.prototype.find.call(document.querySelectorAll(selector), function (node) {
+      return node.dataset[key] === value;
+    });
+    if (found) found.focus();
+  }
+
+  function table(shown) {
+    var host = el("studies-table");
+    var columns = meanColumns(shown);
+    var heads = [["", null], ["Study", "name"], ["System", "system"], ["State", "state"],
+                 ["Started", "when"]].concat(columns.map(function (c) { return [c.label, c.key]; }))
+                 .concat([["Tags", null], ["", null]]);
+    var head = make("thead");
+    var row = make("tr");
+    heads.forEach(function (h) {
+      var th = make("th");
+      th.scope = "col";
+      if (h[1]) {
+        var button = make("button", "studies-sort", h[0]);
+        button.type = "button";
+        button.dataset.key = h[1];
+        var on = sortBy.key === h[1];
+        th.setAttribute("aria-sort", on ? (sortBy.down ? "descending" : "ascending") : "none");
+        if (on) button.dataset.dir = sortBy.down ? "down" : "up";
+        button.addEventListener("click", function () {
+          sortBy = { key: h[1], down: sortBy.key === h[1] ? !sortBy.down : h[1] === "when" };
+          draw();
+          // The table is built again: the keyboard stays where it was.
+          refocus(".studies-sort", "key", h[1]);
+        });
+        th.appendChild(button);
+      } else if (h[0]) {
+        th.textContent = h[0];
+      } else {
+        th.appendChild(make("span", "sr-only", heads.indexOf(h) === 0 ? "Compare" : "Open"));
+      }
+      row.appendChild(th);
+    });
+    head.appendChild(row);
+    var body = make("tbody");
+    sorted(shown, columns).forEach(function (study) {
+      var tr = make("tr", "studies-row");
+      tr.dataset.path = study.path;
+      tr.dataset.state = String(study.state || "").toLowerCase();
+      var pick = make("td");
+      var box = make("input");
+      box.type = "checkbox";
+      box.checked = chosen.indexOf(study.path) >= 0;
+      box.setAttribute("aria-label", "Compare " + study.name);
+      box.dataset.path = study.path;
+      box.addEventListener("change", function () {
+        choose(study.path, box.checked);
+        refocus("#studies-table tbody input[type=checkbox]", "path", study.path);
+      });
+      pick.appendChild(box);
+      var name = make("td", "studies-name");
+      // The name opens the study, as Open does at the row's end.
+      var named = make("button", "studies-name-text", study.name);
+      named.type = "button";
+      named.title = "Open " + study.path;
+      named.addEventListener("click", function () { openStudy(study.path, named); });
+      name.appendChild(named);
+      var kind = [study.kind, study.forcefield].filter(Boolean).join(" · ");
+      if (kind) name.appendChild(make("span", "studies-kind muted small", kind));
+      var state = make("td", "studies-state");
+      var light = make("span", "recent-light");
+      light.dataset.state = String(study.state || "").toLowerCase();
+      light.setAttribute("aria-hidden", "true");
+      state.append(light, document.createTextNode(" " + (study.state || "")));
+      tr.append(pick, name, make("td", "", study.system || ""), state,
+                make("td", "muted", dateSaid(study.when)));
+      columns.forEach(function (column) {
+        var m = meanOf(study, column);
+        tr.appendChild(make("td", "mono studies-mean", m ? meanSaid(m) : ""));
+      });
+      var tags = make("td", "studies-tags");
+      (study.tags || []).forEach(function (t) { tags.appendChild(make("span", "study-tag", t)); });
+      if (study.note) tags.title = study.note;
+      var open = make("td");
+      var button = make("button", "file-action study-open", "Open");
+      button.type = "button";
+      button.addEventListener("click", function () { openStudy(study.path, button); });
+      open.appendChild(button);
+      tr.append(tags, open);
+      body.appendChild(tr);
+    });
+    host.replaceChildren(head, body);
+  }
+
   function draw() {
     var grid = el("studies-grid");
     var empty = el("studies-empty");
@@ -410,7 +569,16 @@
       filter.hidden = !tagged;
       el("studies-tag-filter-said").textContent = tagged ? "Tagged " + tagged : "";
     }
-    grid.replaceChildren.apply(grid, shown.map(card));
+    var wrap = el("studies-table-wrap");
+    var asTable = view === "table" && !!wrap;
+    grid.hidden = asTable;
+    if (wrap) wrap.hidden = !asTable || !shown.length;
+    if (asTable) {
+      grid.replaceChildren();
+      table(shown);
+    } else {
+      grid.replaceChildren.apply(grid, shown.map(card));
+    }
     empty.hidden = shown.length > 0;
     empty.textContent = studies.length
       ? "No study matches that."
@@ -591,6 +759,13 @@
   function attach() {
     if (!el("studies-grid")) return;
     el("studies-search").addEventListener("input", draw);
+    view = keptView();
+    Array.prototype.forEach.call(document.querySelectorAll("[data-studies-view]"), function (b) {
+      var on = b.getAttribute("data-studies-view") === view;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+      b.addEventListener("click", function () { showAs(b.getAttribute("data-studies-view"), true); });
+    });
     el("studies-tag-filter-clear").addEventListener("click", function () { narrowTo(null); });
     el("studies-compare").addEventListener("click", compare);
     el("studies-clear").addEventListener("click", function () {

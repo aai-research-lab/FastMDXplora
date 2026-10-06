@@ -499,6 +499,10 @@
             <div class="page-header-actions">
               <input type="search" class="studies-search" id="studies-search" autocomplete="off"
                      placeholder="Search by name, structure, kind, state, tag or note" aria-label="Search the studies">
+              <div class="seg studies-view" role="group" aria-label="Show the studies as">
+                <button type="button" class="seg-btn active" data-studies-view="cards" aria-pressed="true">Cards</button>
+                <button type="button" class="seg-btn" data-studies-view="table" aria-pressed="false">Table</button>
+              </div>
               <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
               <input type="hidden" id="studies-path">
             </div>
@@ -515,6 +519,11 @@
           </div>
           <div class="card studies-compared" id="studies-compared" hidden></div>
           <div class="studies-grid" id="studies-grid" role="list"></div>
+          <!-- The same studies as rows, sorted by a column's head
+               (studies.js). -->
+          <div class="studies-table-wrap" id="studies-table-wrap" hidden>
+            <table class="studies-table" id="studies-table"></table>
+          </div>
           <p class="muted studies-empty" id="studies-empty" hidden></p>
         </section>
 

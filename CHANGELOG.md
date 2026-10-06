@@ -36,6 +36,14 @@ stops or fails: only a run seen running in the page, never on opening a
 finished study. The browser asks once; refused, the setting is unticked
 and says so.
 
+### All studies as a table
+
+**Added:** **Cards** and **Table** on All studies. The table gives a row a
+study: its name (which opens it), system, state as its light, when it
+began, its first means and its tags, sorted by any column's head (a study
+without the value last either way), narrowed by the search as the cards
+are, and kept as chosen.
+
 ### A study's card is plotted in the page's colours
 
 **Changed:** each card on All studies showed the first figure its study
