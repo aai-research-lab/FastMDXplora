@@ -161,8 +161,21 @@ def test_a_stopped_study_says_where_and_what_would_fix_it(browser, workspace):
     assert facts["errors"] == []
     assert facts["word"] == "Stopped" and "status-dot-waiting" in facts["dot"]
     assert facts["run"] == "stopped" and facts["card"]
-    assert (facts["stage"], facts["count"]) == ("Stopped in NPT", "Stage 4 of 5")
+    assert (facts["stage"], facts["count"]) == ("NPT stopped", "Stage 4 of 5")
     assert facts["fix"] and not facts["pause"]
+
+
+def test_a_failed_study_says_its_stage_first(browser, tmp_path):
+    """"Failed in simulation" read as a sentence begun at its end; the
+    stage comes first, as the phases are said: "Simulation failed"."""
+    _live(_study(tmp_path / "failed", system="1L2Y", started="2026-09-01T10:00:00+00:00"),
+          status="failed", stage="simulation", current_step=40000, total_planned_steps=2000000,
+          platform="CPU", latest_error="NaN in positions")
+    with _sidebar_of(browser, tmp_path / "failed") as (facts, _):
+        pass
+    assert facts["errors"] == []
+    assert facts["run"] == "failed"
+    assert facts["stage"] == "Simulation failed"
 
 
 def test_the_study_card_opens_another_folder_and_its_own_settings(browser, workspace):

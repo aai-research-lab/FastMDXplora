@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A stage that stopped or failed is said first
+
+**Changed:** the sidebar's progress card and the standalone dashboard said
+*Failed in simulation* and *Stopped in NPT*. They now say the stage first,
+as the phases are said: *Simulation failed*, *NPT stopped*.
+
 ### The Overview leads with what the study determined
 
 **Changed:** the Overview opened on a health card that said *Completed*

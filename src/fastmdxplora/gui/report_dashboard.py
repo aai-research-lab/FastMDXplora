@@ -1812,8 +1812,8 @@ def _render_sidebar(
     shown = [step for step in stages if not step.hidden]
     at = next((k for k, step in enumerate(shown) if step.state in {"current", "failed"}), -1)
     stage = shown[at].label if at >= 0 else ""
-    heading = (f"Failed in {stage}" if run == "failed" and stage else
-               f"Stopped in {stage}" if run == "stopped" and stage else stage or "Stopped")
+    heading = (f"{stage} failed" if run == "failed" and stage else
+               f"{stage} stopped" if run == "stopped" and stage else stage or "Stopped")
     count = f"Stage {at + 1} of {len(shown)}" if at >= 0 else ""
     said = {"completed": "Completed", "failed": "Failed", "recorded": "Recorded",
             "not run": "Not run"}.get(state, state[:1].upper() + state[1:])

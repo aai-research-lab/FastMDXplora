@@ -759,8 +759,9 @@
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.
     const stage = stageWord(status.stage) || "Starting";
-    setText("topbar-stage", run === "stopped" ? `Stopped in ${stage}`
-      : run === "failed" ? `Failed in ${stage}`
+    // Said stage first, "Simulation failed", as the phases are said.
+    setText("topbar-stage", run === "stopped" ? `${stage} stopped`
+      : run === "failed" ? `${stage} failed`
       : run === "interrupted" ? (status.last_update_timestamp
         ? `${stage}, last update ${formatWhen(status.last_update_timestamp)}` : stage)
       : stage);
@@ -832,10 +833,11 @@
     const words = {
       setup: "Setup", minimization: "Minimisation", minimisation: "Minimisation",
       nvt: "NVT", npt: "NPT", production: "Production", analysis: "Analysis",
-      report: "Report",
+      report: "Report", simulation: "Simulation",
     };
     const key = normaliseStage(stage);
-    return words[key] || (stage ? String(stage) : "");
+    const said = stage ? String(stage) : "";
+    return words[key] || said.charAt(0).toUpperCase() + said.slice(1);
   }
 
   /* A system given as a file is named by the file: the sidebar read
