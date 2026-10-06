@@ -196,10 +196,14 @@
     // Kept once a person changes one, here or in the Viewer (its pocket
     // cutoff is this one), and only then: until something is chosen, the
     // defaults of the release in use apply.
+    // Kept at once: a page reloaded straight after a change, before a
+    // timer had run, came back without it. Here, on the document, this runs
+    // after the field's own listeners (the Viewer's cutoff is copied into
+    // Preferences' field by the page's), so what they set is taken.
     document.addEventListener("change", function (e) {
       var id = e.target && e.target.id;
       if (ownFields().indexOf(id) >= 0 || id === "pocket-cutoff") {
-        setTimeout(function () { store.write(KEY, taken()); }, 0);
+        store.write(KEY, taken());
       }
     });
 

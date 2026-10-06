@@ -162,7 +162,9 @@
    * pressing it asks once more, saying what is written again, what is
    * kept aside and that nothing is simulated or analysed, and only a
    * second press starts it. */
-  var writing = false;
+  /* When the writing started here began, as the server recorded it; null
+   * while none is waited for. A state sent before it began is not its end. */
+  var writing = null;
   var several = false;
   var WRITE_TITLE = "Write the report again from this study's records, " +
     "simulating and analysing nothing";
@@ -190,7 +192,7 @@
       body: "{}"
     }).then(function (res) { return res.json(); }).then(function (d) {
       if (d && d.ok) {
-        writing = true;
+        writing = (d.state && d.state.started_at) || "";
         say("Writing it again. Its log is in the side panel, and the report is shown here once written.");
       } else {
         say((d && d.error) || "Could not start it.");
@@ -233,11 +235,15 @@
     button.title = running
       ? "A run is going. The report can be written again once it ends."
       : WRITE_TITLE;
-    if (writing && !running) {
-      writing = false;
-      say("Written again.");
-      load();
+    if (writing === null || running || app.started_at !== writing) return;
+    if (app.returncode === null || app.returncode === undefined) return;
+    writing = null;
+    if (app.returncode !== 0 || app.error) {
+      say(app.error || "It stopped before the report was written again; its log is in the side panel.");
+      return;
     }
+    say("Written again.");
+    load();
   }
 
   document.addEventListener("DOMContentLoaded", function () {

@@ -174,3 +174,50 @@ def test_the_report_page_writes_it_again_after_asking(tmp_path) -> None:
     assert "Nothing is simulated or analysed." in said
     assert len(asked) == 1
     assert errors == []
+
+
+def test_only_the_end_of_the_writing_started_here_is_said(tmp_path) -> None:
+    """A state the server sent before the writing began says nothing runs;
+    it was read as the writing having ended, and "Written again." was said
+    with nothing written. A writing that fails is said to have failed."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    root = _study(tmp_path / "study")
+    main(["report", "--output", str(root), "--title", "Before"])
+    (root / RUN_PROCESS_FILE).unlink(missing_ok=True)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
+    said: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            # Started, as far as the page is told; nothing is run.
+            page.route("**/api/report/write", lambda route: route.fulfill(
+                json={"ok": True, "state": {"started_at": began}}))
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            page.wait_for_selector("#report-write:not([hidden])")
+            for end in (0, 1):
+                page.click("#report-write")
+                page.click("#report-write-ask .fix-confirm")
+                page.wait_for_selector("#report-write-ask:has-text('Writing it again.')")
+                for state in ({"started_at": None, "returncode": None},
+                              {"started_at": "2026-10-06T12:00:00+00:00", "returncode": 0},
+                              {"started_at": began, "returncode": None, "process_running": True},
+                              {"started_at": began, "returncode": end,
+                               "error": "The workflow exited with code 1." if end else None}):
+                    page.evaluate("d => window.dispatchEvent(new CustomEvent("
+                                  "'dashboard:app-state', {detail: d}))",
+                                  {"active_run": str(root), "process_running": False, **state})
+                    said.append(page.text_content("#report-write-ask").strip())
+            browser.close()
+    finally:
+        session.server.shutdown()
+    waiting = [text.startswith("Writing it again.") for text in said]
+    assert waiting == [True, True, True, False] * 2
+    assert said[3] == "Written again." and said[7] == "The workflow exited with code 1."

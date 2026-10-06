@@ -160,7 +160,8 @@ def test_the_preferences_are_kept_and_put_back(browser, session):
     assert told["ground"] == "white" and told["showWater"] and told["pocketCutoff"] == 7.5
     # The Viewer's ground button says white as it opens.
     assert after == ["12h", "white", True, "7.5", "true"]
-    assert restored == ["24h", "dark", False, None]
+    # The release's ground is the scheme's own.
+    assert restored == ["24h", "scheme", False, None]
 
 
 def test_the_study_s_own_words_are_kept_by_its_folder(browser, session):

@@ -13,7 +13,9 @@
 
   var offered = null;
   var running = false;
-  var started = false;
+  /* When the run started here began, as the server recorded it; null
+   * while none is waited for. A state sent before it began is not its end. */
+  var started = null;
 
   function el(id) { return document.getElementById(id); }
 
@@ -157,7 +159,7 @@
       body: JSON.stringify({ phases: ["analysis"], analyses: analyses })
     }).then(function (res) { return res.json(); }).then(function (d) {
       if (d && d.ok) {
-        started = true;
+        started = (d.state && d.state.started_at) || "";
         say("Analyzing again. Its log is in the side panel, and the analyses appear " +
             "here as they are written.");
       } else {
@@ -187,10 +189,14 @@
     button.title = running
       ? "A run is going. The study can be analyzed again once it ends."
       : "Analyze this study's frames again, with the analyses you choose, simulating nothing";
-    if (started && !running) {
-      started = false;
-      say("Analyzed again. What it replaced is in " + ((offered && offered.previous) || "previous") + "/.");
+    if (started === null || running || app.started_at !== started) return;
+    if (app.returncode === null || app.returncode === undefined) return;
+    started = null;
+    if (app.returncode !== 0 || app.error) {
+      say(app.error || "It stopped before the analyses were written again; its log is in the side panel.");
+      return;
     }
+    say("Analyzed again. What it replaced is in " + ((offered && offered.previous) || "previous") + "/.");
   }
 
   document.addEventListener("DOMContentLoaded", function () {

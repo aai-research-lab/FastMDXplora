@@ -110,3 +110,88 @@ def test_the_analysis_page_analyses_again_after_asking(tmp_path) -> None:
     assert asked.count("POST") == 1
     assert _made(root) == ["rmsd", "rg"] and _made(root / "previous") == ["rmsd"]
     assert errors == []
+
+
+def test_a_state_sent_before_the_run_began_is_not_its_end(tmp_path) -> None:
+    """The page polls the server's state. One answered before the run began
+    says nothing runs, which was read as the run having ended: the page said
+    "Analyzed again." with nothing analyzed. Only the end of the run started
+    here is said, and a failed end as a failure."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
+    errors: list[str] = []
+
+    def state(**more):
+        return {"active_run": str(root), "process_running": False, **more}
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            # Started, as far as the page is told; nothing is run.
+            page.route("**/api/again", lambda route: route.fulfill(
+                json={"ok": True, "said": "", "state": {"started_at": began}})
+                if route.request.method == "POST" else route.continue_())
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+
+            def sent(detail):
+                page.evaluate("d => window.dispatchEvent(new CustomEvent("
+                              "'dashboard:app-state', {detail: d}))", detail)
+                return page.text_content("#analysis-again-ask .again-said")
+
+            before = sent(state(started_at=None, returncode=None))
+            earlier = sent(state(started_at="2026-10-06T12:00:00+00:00", returncode=0))
+            going = sent(state(started_at=began, returncode=None, process_running=True))
+            ended = sent(state(started_at=began, returncode=0))
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert before.startswith("Analyzing again.") and earlier.startswith("Analyzing again.")
+    assert going.startswith("Analyzing again.")
+    assert ended.startswith("Analyzed again.")
+    assert errors == []
+
+
+def test_a_run_again_that_fails_is_said_to_have_failed(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.route("**/api/again", lambda route: route.fulfill(
+                json={"ok": True, "said": "", "state": {"started_at": began}})
+                if route.request.method == "POST" else route.continue_())
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(root), "process_running": False,
+                                            "started_at": began, "returncode": 1,
+                                            "error": "The workflow exited with code 1."})
+            said = page.text_content("#analysis-again-ask .again-said")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert said == "The workflow exited with code 1."
