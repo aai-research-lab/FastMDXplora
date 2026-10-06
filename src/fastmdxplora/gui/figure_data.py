@@ -13,7 +13,11 @@ colours, with each value, time and frame under the pointer:
   the hierarchy, and the RMSD between frames;
 - a projection (PCA, t-SNE, UMAP) coloured by time, and its free-energy
   landscape;
-- the backbone dihedrals' density over the Ramachandran plane.
+- the backbone dihedrals' density over the Ramachandran plane;
+- how tightly each thermodynamic observable is known, as a bar each;
+- the three principal moments of inertia over time;
+- the residues most often in contact with the ligand, and the interactions
+  that hold it, each with the share of frames it was present in.
 
 Only what the analysis wrote is read, and a figure whose numbers are not
 there keeps its picture. The frame and time of each frame analysed are
@@ -40,6 +44,10 @@ FIGURES = re.compile(
     r"|cluster/(?P<matrix>cluster_rmsd_matrix)"
     r"|dimred/dimred_(?P<dimred>[a-z]+)(?P<landscape>_landscape)?"
     r"|(?P<dihedrals>dihedrals)/dihedrals"
+    r"|(?P<thermodynamics>thermodynamics)/thermodynamics"
+    r"|(?P<inertia>moments_of_inertia)/moments_of_inertia"
+    r"|(?P<contacts>pl_contacts)/pl_contacts"
+    r"|(?P<interactions>pl_interactions)/pl_interactions"
     r")\.png$")
 
 #: More points than a plot on a page can show; longer is thinned evenly.
@@ -81,6 +89,14 @@ def figure_payload(root: str | Path, figure: str) -> dict[str, Any]:
         elif found["dimred"]:
             payload = (_landscape(root, found["dimred"]) if found["landscape"]
                        else _projection(root, found["dimred"]))
+        elif found["thermodynamics"]:
+            payload = _thermodynamics(root)
+        elif found["inertia"]:
+            payload = _moments(root)
+        elif found["contacts"]:
+            payload = _contacts(root)
+        elif found["interactions"]:
+            payload = _interactions(root)
         else:
             payload = _ramachandran(root)
     except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
@@ -510,3 +526,169 @@ def _ramachandran(root: Path) -> dict[str, Any] | None:
         }
     _keep(path, payload)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Bars, one a row: thermodynamics, contacts, interactions
+# ---------------------------------------------------------------------------
+
+#: As many rows as the analyses' own figures give.
+MOST_BARS = 20
+
+#: What each thermodynamic observable is called on the page.
+_OBSERVABLES = {
+    "density": "Density", "potential_energy": "Potential energy",
+    "kinetic_energy": "Kinetic energy", "total_energy": "Total energy",
+    "temperature": "Temperature", "volume": "Box volume",
+}
+
+
+def _findings(root: Path, analysis: str) -> dict[str, Any]:
+    from fastmdxplora.gui.series import _json
+
+    found = _json(root / "analysis" / analysis / "options.json").get("findings")
+    return found if isinstance(found, dict) else {}
+
+
+def _percent(fraction: float) -> str:
+    return f"{fraction * 100:.0f}%" if fraction >= 0.1 else f"{fraction * 100:.1f}%"
+
+
+def _thermodynamics(root: Path) -> dict[str, Any] | None:
+    """Each observable's standard error as a share of its mean, as the
+    analysis plots it: one scale for an energy and a density, so the bars
+    say how tightly each is known rather than how large it is."""
+    path = root / "analysis" / "thermodynamics" / "thermodynamics.dat"
+    if not path.is_file():
+        return None
+    record = _findings(root, "thermodynamics").get("thermodynamics")
+    record = record if isinstance(record, dict) else {}
+    bars = []
+    for row in _table(path):
+        key = str(row.get("observable") or "")
+        mean, error = _number(row.get("mean")), _number(row.get("standard_error"))
+        if not key or mean is None or error is None:
+            continue
+        samples = _number(row.get("effective_samples"))
+        entry = record.get(key) if isinstance(record.get(key), dict) else {}
+        unit = str(entry.get("units") or "")
+        share = error / abs(mean) * 100.0 if mean else 0.0
+        name = _OBSERVABLES.get(key, key.replace("_", " ").capitalize())
+        said = [name, f"{mean:.6g} \u00b1 {error:.2g} {unit}".rstrip(),
+                f"standard error {share:.2g}% of the mean"]
+        if samples is not None:
+            said.append(f"{samples:.0f} independent samples")
+        bars.append({"label": name, "value": share, "said": said})
+    if not bars:
+        return None
+    # What was not measured, and why, under the bars.
+    # A constant volume's density and volume are recorded as the value the
+    # setup fixed, not as a mean.
+    apart = [f"{_OBSERVABLES.get(k, k)}: held constant by the run, not sampled"
+             if "value" in v else f"{_OBSERVABLES.get(k, k)}: not determined"
+             for k, v in record.items()
+             if isinstance(v, dict) and v.get("not_a_measurement")
+             and _OBSERVABLES.get(k, k) not in [b["label"] for b in bars]]
+    return {"kind": "hbars", "title": "Thermodynamic observables",
+            "x_label": "Standard error, per cent of the mean", "x_low": 0.0,
+            "bars": bars, "note": "; ".join(apart)}
+
+
+def _contacts(root: Path) -> dict[str, Any] | None:
+    """The residues most often in contact with the ligand, the most first."""
+    path = root / "analysis" / "pl_contacts" / "pl_contacts_per_residue.csv"
+    if not path.is_file():
+        return None
+    rows = [(str(r.get("residue") or ""), _number(r.get("contact_frequency"))) for r in _table(path)]
+    rows = sorted([(name, f) for name, f in rows if name and f is not None],
+                  key=lambda row: row[1], reverse=True)
+    if not rows:
+        return {"kind": "hbars", "title": "Protein-ligand contact frequency by residue",
+                "x_label": "Contact frequency (fraction of frames)", "x_low": 0.0, "x_high": 1.0,
+                "bars": [], "note": "No protein-ligand contacts detected."}
+    bars = [{"label": name, "value": f, "said": [name, f"in contact in {_percent(f)} of frames"]}
+            for name, f in rows[:MOST_BARS]]
+    note = (f"The {MOST_BARS} most often in contact of {len(rows)} residues."
+            if len(rows) > MOST_BARS else "")
+    return {"kind": "hbars", "title": "Protein-ligand contact frequency by residue",
+            "x_label": "Contact frequency (fraction of frames)", "x_low": 0.0, "x_high": 1.0,
+            "bars": bars, "note": note}
+
+
+def _interactions(root: Path) -> dict[str, Any] | None:
+    """The interactions that hold the ligand, each an atom pair, by the
+    share of frames it was present in, with its error; one seen in fewer
+    than five separate episodes hollow, as the analysis plots it."""
+    path = root / "analysis" / "pl_interactions" / "pl_interactions.dat"
+    if not path.is_file():
+        return None
+    from fastmdxplora.analysis.pl_interactions import _row_label
+
+    class _Row:
+        def __init__(self, row: dict[str, str]) -> None:
+            self.kind = row.get("kind") or ""
+            self.residue = row.get("residue") or ""
+            self.protein_atom_name = row.get("protein_atom_name") or None
+            self.ligand_atom_name = row.get("ligand_atom_name") or None
+
+    rows = [r for r in _table(path) if _number(r.get("occupancy")) is not None]
+    rows.sort(key=lambda r: _number(r.get("occupancy")) or 0.0, reverse=True)
+    bars = []
+    for row in rows[:MOST_BARS]:
+        occupancy = _number(row.get("occupancy")) or 0.0
+        error = _number(row.get("standard_error"))
+        present, total = _number(row.get("frames_present")), _number(row.get("frames_total"))
+        episodes = _number(row.get("episodes"))
+        well = str(row.get("well_sampled") or "").strip().lower() in ("true", "1", "yes")
+        label = _row_label(_Row(row))
+        said = [label, f"present in {_percent(occupancy)} of frames"
+                + (f" ({present:.0f} of {total:.0f})" if present is not None and total else "")]
+        if error is not None:
+            said.append(f"\u00b1 {error:.2f}")
+        if episodes is not None:
+            said.append(f"formed {episodes:.0f} " + ("time" if episodes == 1 else "times"))
+        bars.append({"label": label, "value": occupancy, "error": error, "hollow": not well,
+                     "said": said})
+    thin = sum(1 for b in bars if b["hollow"])
+    notes = []
+    if not bars:
+        notes.append("No interactions found.")
+    if thin:
+        notes.append(f"{thin} hollow: fewer than five separate observations.")
+    if len(rows) > MOST_BARS:
+        notes.append(f"The {MOST_BARS} present most often of {len(rows)}.")
+    return {"kind": "hbars", "title": "Protein-ligand interactions by type",
+            "x_label": "Fraction of frames present", "x_low": 0.0, "x_high": 1.0,
+            "bars": bars, "note": " ".join(notes)}
+
+
+# ---------------------------------------------------------------------------
+# The principal moments of inertia over time
+# ---------------------------------------------------------------------------
+
+def _moments(root: Path) -> dict[str, Any] | None:
+    """I1 <= I2 <= I3 of each frame analysed, in amu nm², over time."""
+    path = root / "analysis" / "moments_of_inertia" / "moments_of_inertia.dat"
+    if not path.is_file():
+        return None
+    rows = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            values = [_number(v) for v in line.split()]
+            if len(values) >= 3:
+                rows.append(values[:3])
+    if not rows:
+        return None
+    keep = _thinned(len(rows), MOST_POINTS)
+    frames, x, x_label = _clock(root, keep)
+    return {
+        "kind": "lines", "title": "Principal moments of inertia",
+        "x": x, "frames": frames, "x_label": x_label,
+        "y_label": "Moment of inertia (amu nm²)", "unit": "amu nm²",
+        "series": [{"label": name, "y": [rows[i][k] for i in keep]}
+                   for k, name in enumerate(("I₁", "I₂", "I₃"))],
+        "thinned": keep[1] - keep[0] if len(keep) > 1 and keep[1] - keep[0] > 1 else None,
+        "linked": _linked(root),
+    }

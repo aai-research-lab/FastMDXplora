@@ -7,7 +7,10 @@
  * plotted as the analysis plotted them: secondary structure, residue
  * against time; each frame's cluster, the clusters' populations, the
  * hierarchy and the RMSD between frames; a projection coloured by time and
- * its free-energy landscape; the backbone dihedrals' density. Pointing at a
+ * its free-energy landscape; the backbone dihedrals' density; how tightly
+ * each thermodynamic observable is known; the principal moments of inertia
+ * over time; the residues in contact with the ligand and the interactions
+ * that hold it. Pointing at a
  * plot gives its value there; a frame of the trajectory opens in the viewer.
  *
  * The figure the analysis wrote stays one click away: it is the one at
@@ -26,7 +29,7 @@
   var VIRIDIS = ["#440154", "#482878", "#3e4989", "#31688e", "#26828e", "#1f9e89",
                  "#35b779", "#6ece58", "#b5de2b", "#fde725"];
   /* The figures this plots, by their path in the study. */
-  var FIGURES = /(?:^|\/)(analysis\/(?:ss\/ss|cluster\/cluster_[a-z]+(?:_counts|_dendrogram|_matrix)?|dimred\/dimred_[a-z]+(?:_landscape)?|dihedrals\/dihedrals)\.png)$/;
+  var FIGURES = /(?:^|\/)(analysis\/(?:ss\/ss|cluster\/cluster_[a-z]+(?:_counts|_dendrogram|_matrix)?|dimred\/dimred_[a-z]+(?:_landscape)?|dihedrals\/dihedrals|thermodynamics\/thermodynamics|moments_of_inertia\/moments_of_inertia|pl_contacts\/pl_contacts|pl_interactions\/pl_interactions)\.png)$/;
 
   function token(name, fallback) {
     var value = "";
@@ -124,7 +127,8 @@
     host.replaceChildren();
     var width = Math.max(280, Math.round(host.clientWidth || 480));
     var bar = !!options.bar;
-    var margin = { top: options.legend ? 30 : 14, right: bar ? 78 : 20, bottom: 40, left: 62 };
+    var margin = { top: options.legend ? 30 : 14, right: bar ? 78 : 20, bottom: 40,
+                   left: options.left || 62 };
     var height = options.square
       ? Math.min(420, Math.max(260, width - margin.left - margin.right + margin.top + margin.bottom))
       : (options.height || 280);
@@ -577,9 +581,125 @@
     });
   }
 
+  /* One bar a row, each named at its left, the largest first: hollow
+   * where the analysis says it rests on too few observations, with its
+   * error where it has one. A note under it says what is left out. */
+  function plotHBars(host, data) {
+    var bars = data.bars || [];
+    if (!bars.length) {
+      host.replaceChildren();
+      host.appendChild(Object.assign(document.createElement("p"), {
+        className: "muted small figure-note", textContent: data.note || "Nothing to plot." }));
+      return;
+    }
+    var width = Math.max(280, Math.round(host.clientWidth || 480));
+    // Room for the names, up to two fifths of the width; longer is cut.
+    var longest = Math.max.apply(null, bars.map(function (b) { return b.label.length; }));
+    var left = Math.min(Math.round(width * 0.4), Math.max(70, longest * 6.2 + 14));
+    var row = 20;
+    var f = frame(host, data, { left: left, height: 14 + 40 + bars.length * row,
+      said: data.title + ": " + bars.map(function (b) { return b.said.slice(0, 2).join(", "); }).join("; ") });
+    var high = data.x_high != null ? data.x_high : Math.max.apply(null, bars.map(function (b) {
+      return b.value + (b.error || 0);
+    })) * 1.1 || 1;
+    var x = { low: data.x_low || 0, high: high, label: data.x_label };
+    var y = { low: 0, high: bars.length, label: "", ticks: false, grid: false };
+    var map = axes(f, x, y);
+    var c = f.c;
+    var fit = Math.floor((left - 12) / 6.2);
+    bars.forEach(function (b, i) {
+      var top = f.plot.top + i * row + 3;
+      var right = map.px(Math.max(x.low, Math.min(x.high, b.value)));
+      var shape = { x: f.plot.left, y: top, width: Math.max(0, right - f.plot.left),
+                    height: row - 6, rx: 2, class: "figure-bar", fill: c.line };
+      if (b.hollow) {
+        shape.fill = "none";
+        shape.stroke = c.line;
+        shape["stroke-width"] = 1.2;
+        shape["stroke-dasharray"] = "3 2";
+      }
+      var bar = el("rect", shape, f.svg);
+      bar.dataset.index = String(i);
+      if (b.error != null && isFinite(b.error) && b.error > 0) {
+        var mid = top + (row - 6) / 2;
+        var lo = map.px(Math.max(x.low, b.value - b.error)), hi = map.px(Math.min(x.high, b.value + b.error));
+        el("path", { d: "M" + lo + " " + mid + "H" + hi + "M" + lo + " " + (mid - 4) + "V" + (mid + 4)
+                     + "M" + hi + " " + (mid - 4) + "V" + (mid + 4),
+                     stroke: c.warm, "stroke-width": 1.2, fill: "none" }, f.svg);
+      }
+      var name = b.label.length > fit ? b.label.slice(0, Math.max(1, fit - 1)) + "\u2026" : b.label;
+      text(f.svg, f.plot.left - 8, top + (row - 6) / 2 + 3.5, name,
+           { fill: c.text, "text-anchor": "end" });
+    });
+    if (data.note) {
+      var note = document.createElement("p");
+      note.className = "muted small figure-note";
+      note.textContent = data.note;
+      host.appendChild(note);
+    }
+    f.svg.addEventListener("mousemove", function (event) {
+      var at = pointer(f, event);
+      var i = Math.floor((at.y - f.plot.top) / row);
+      if (at.x < 0 || at.x > f.plot.right || i < 0 || i >= bars.length) { f.tip.hidden = true; return; }
+      var b = bars[i];
+      showTip(f, Math.min(at.x, f.plot.right - 20), f.plot.top + i * row + 4, b.said, "");
+    });
+    f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
+  }
+
+  /* A few series over the same frames, each in its colour, named above
+   * the plot; under the pointer, each one's value at the frame there. */
+  function plotLines(host, data) {
+    var f = frame(host, data, { height: 280, legend: true, said: data.title + " over "
+      + data.x.length + " frames" });
+    var all = [];
+    data.series.forEach(function (s) { all = all.concat(s.y); });
+    var yr = span(all), pad = (yr[1] - yr[0]) * 0.06;
+    var n = data.x.length;
+    var x = { low: data.x[0], high: n > 1 && data.x[n - 1] > data.x[0] ? data.x[n - 1] : data.x[0] + 1,
+              label: data.x_label };
+    var y = { low: yr[0] - pad, high: yr[1] + pad, label: data.y_label };
+    var map = axes(f, x, y);
+    data.series.forEach(function (s, k) {
+      var d = "";
+      s.y.forEach(function (v, i) {
+        if (v == null || !isFinite(v)) return;
+        d += (d ? "L" : "M") + map.px(data.x[i]).toFixed(1) + " " + map.py(v).toFixed(1);
+      });
+      el("path", { d: d, fill: "none", stroke: category(k), "stroke-width": 1.4,
+                   "stroke-linejoin": "round", class: "figure-line" }, f.svg);
+    });
+    legend(f, data.series.map(function (s, k) { return { label: s.label, colour: category(k) }; }));
+    var guide = el("line", { y1: f.plot.top, y2: f.plot.bottom, stroke: f.c.axis,
+                             "stroke-dasharray": "3 3", visibility: "hidden" }, f.svg);
+    var hint = data.linked ? "Click to open this frame" : "";
+    var unit = data.unit ? " " + data.unit : "";
+    f.svg.addEventListener("mousemove", function (event) {
+      var at = pointer(f, event);
+      if (!inside(f, at)) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
+      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
+      var px = map.px(data.x[i]);
+      guide.setAttribute("x1", px);
+      guide.setAttribute("x2", px);
+      guide.setAttribute("visibility", "visible");
+      showTip(f, px, at.y, [when(data, i)].concat(data.series.map(function (s) {
+        return s.label + " " + format(s.y[i]) + unit;
+      })), hint);
+      f.svg.dataset.at = String(i);
+    });
+    f.svg.addEventListener("mouseleave", function () {
+      f.tip.hidden = true;
+      guide.setAttribute("visibility", "hidden");
+    });
+    f.svg.addEventListener("click", function () {
+      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    });
+  }
+
   var PLOTS = {
     states: plotStates, labels: plotLabels, bars: plotBars, dendrogram: plotDendrogram,
     matrix: plotMatrix, landscape: plotLandscape, density: plotDensity, projection: plotProjection,
+    hbars: plotHBars, lines: plotLines,
   };
 
   function plot(host, data) {

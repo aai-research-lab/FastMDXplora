@@ -5872,3 +5872,7 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
                      color: var(--text-muted); font-size: var(--text-xs); }
 .conv-study-count { font-size: var(--text-2xs); color: var(--text-muted); }
 .agent-conv-study > .agent-conv-row { margin-left: 12px; }
+
+/* Bars a row each are as tall as their rows; their note under them. */
+.figure-chart[data-figure-kind="hbars"] { min-height: 0; }
+.figure-chart .figure-note { margin: 4px 8px 8px; }
