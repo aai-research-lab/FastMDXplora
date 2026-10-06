@@ -146,7 +146,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
-    "/api/analysis-overview", "/api/convergence", "/api/overview",
+    "/api/analysis-overview", "/api/convergence", "/api/overview", "/api/figure-data",
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
@@ -751,6 +751,14 @@ def make_handler(
                 most = max(60, min(most, 5000))
                 self._send_json({"metrics": thinned_metrics(
                     read_metrics(root, limit=None), most)})
+                return
+            if path == "/api/figure-data":
+                # The numbers behind an analysis's other figures, to plot
+                # them in the page's colours (figure_data.py).
+                from fastmdxplora.gui.figure_data import figure_payload
+
+                wanted = (parse_qs(parsed.query).get("figure") or [""])[0]
+                self._send_json(figure_payload(root, wanted))
                 return
             if path == "/api/overview":
                 # What the Overview leads with (overview_view.py).

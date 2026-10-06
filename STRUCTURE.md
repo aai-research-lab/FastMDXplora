@@ -150,6 +150,7 @@ FastMDXplora/
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
+│       │   ├── figure_data.py     # The numbers behind an analysis's other figures, to plot in the page's colours
 │       │   ├── stopping_view.py   # A study run until it is determined, for the Overview
 │       │   ├── fixes_view.py      # What would fix the study on screen
 │       │   ├── figure_provenance.py  # What made each figure, and the command that makes it again
@@ -175,7 +176,7 @@ FastMDXplora/
 │       │   │                      #   JetBrains Mono, SIL OFL 1.1), studies.js,
 │       │   │                      #   preferences.js (the dialogs, preferences kept),
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
-│       │   │                      #   series-chart.js, analysis-page.js, runs-compared.js, stopping.js,
+│       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
 │       │   │                      #   beside any page), tooltips.js (hints in the page's
 │       │   │                      #   own style), charts.js, overview.js (the Overview's

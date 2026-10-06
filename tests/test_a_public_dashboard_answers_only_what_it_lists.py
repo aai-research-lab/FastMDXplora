@@ -260,6 +260,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # What the Overview leads with, read from the same records as
             # the Analysis page and the live record.
             "/api/overview",
+            # The numbers an analysis's other figures were plotted from, to
+            # plot them in the page's colours.
+            "/api/figure-data",
             # A command that measures two atoms over every frame: text built
             # from the study's records and two checked selections; it runs
             # nothing.

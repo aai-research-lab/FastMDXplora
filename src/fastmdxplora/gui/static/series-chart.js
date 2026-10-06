@@ -406,5 +406,10 @@
   /* A new run, or new results, may have new numbers. */
   window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; });
 
-  window.FastMDXSeries = { hydrate: hydrate, ticks: ticks, forget: function () { cache = {}; playback = null; } };
+  window.FastMDXSeries = {
+    hydrate: hydrate, ticks: ticks,
+    forget: function () { cache = {}; playback = null; },
+    /* A frame of the trajectory opened in the viewer (figure-chart.js). */
+    openFrame: function (frame) { open({ linked: true, frames: [frame] }, 0); },
+  };
 }());

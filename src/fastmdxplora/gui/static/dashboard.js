@@ -1191,6 +1191,7 @@
     if (key === state.analysisSectionsKey && host.childElementCount) return;
     state.analysisSectionsKey = key;
     window.FastMDXSeries?.forget();
+    window.FastMDXFigures?.forget();
     const charted = new Set();
     const named = new Set();
 
@@ -1208,7 +1209,11 @@
         // drawn from its numbers, once per analysis.
         const own = /(?:^|\/)analysis\/([a-z][a-z0-9_]*)\/\1\.png$/.exec(
           panel.original_source || panel.source || "");
-        const series = own && !charted.has(own[1]) ? own[1] : "";
+        // A figure that is not a series (secondary structure, clusters,
+        // a projection, the dihedrals) is plotted from its own numbers
+        // where figure-chart.js knows it.
+        const plotted = window.FastMDXFigures?.figureOf(panel.original_source || panel.source || "") || "";
+        const series = own && !plotted && !charted.has(own[1]) ? own[1] : "";
         if (series) charted.add(series);
         // The first card of each analysis answers to its name, so an
         // Agent's answer that cites it can open it here.
@@ -1222,13 +1227,16 @@
         if (series) {
           links.push('<a class="file-action" href="#" data-series-toggle hidden>Show the figure</a>');
         }
+        if (plotted) {
+          links.push('<a class="file-action" href="#" data-figure-toggle hidden>Show the figure</a>');
+        }
         const made = folder ? provenanceChip(folder[1]) : "";
         return `
         <article class="analysis-card" data-state="complete"${analysisName ? ` data-analysis="${escapeAttr(analysisName)}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(panel.title || "")}</div>
           </div>
-          <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
+          <div class="ac-frame"${series ? ` data-series="${escapeAttr(series)}"` : ""}${plotted ? ` data-figure="${escapeAttr(plotted)}"` : ""}><img src="${escapeAttr(figure)}" alt="${escapeAttr(panel.title || "")}" loading="lazy"></div>
           <div class="ac-body">${escapeHTML(panel.summary || "")}</div>
           <div class="ac-footer">${links.join("")}${made}</div>
           ${made ? '<div class="figure-provenance" hidden></div>' : ""}
@@ -1264,6 +1272,7 @@
       </div>`).join("");
 
     window.FastMDXSeries?.hydrate(host);
+    window.FastMDXFigures?.hydrate(host);
     listenForProvenance(host);
     window.FastMDXAnalysisPage?.sectionsRendered(host, sections);
 

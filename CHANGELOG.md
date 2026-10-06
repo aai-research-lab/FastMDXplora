@@ -7,6 +7,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### An analysis's other figures are plotted in the page's colours
+
+**Changed:** on the Analysis page only an analysis's own series was plotted
+from its numbers; every other figure was the picture the analysis wrote,
+white on the dark scheme, with nothing to point at. Secondary structure
+(residue against time, in its three classes), each frame's cluster, the
+clusters' populations, the hierarchy (each merge below the cut in its
+cluster's colour), the RMSD between frames, a projection coloured by time,
+its free-energy landscape and the backbone dihedrals' density are now
+plotted from the numbers each was made from, in the scheme's colours, and
+plotted again when the scheme changes. The value, time and frame are given
+under the pointer, and a frame, or a cluster's medoid, opens in the Viewer.
+The figure the analysis wrote is a click away, and is still the one in the
+report and the one to download.
+
 ### A stage that stopped or failed is said first
 
 **Changed:** the sidebar's progress card and the standalone dashboard said

@@ -4541,6 +4541,18 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     white-space: nowrap;
 }
 .series-tip strong { color: var(--text-primary); font-weight: 600; }
+
+/* An analysis's other figures, plotted from their numbers in the scheme's
+   colours (figure-chart.js). */
+.figure-chart {
+    position: relative;
+    padding: 8px 8px 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    min-height: 260px;
+}
+.figure-svg { display: block; width: 100%; cursor: crosshair; outline: none; }
+.figure-svg text { font-family: var(--font-mono); }
+.figure-raster { image-rendering: pixelated; }
 .series-tip-hint { display: block; color: var(--text-muted); font-size: var(--text-2xs); }
 
 /* The Overview's phase and statistics tables, which had no style of their
