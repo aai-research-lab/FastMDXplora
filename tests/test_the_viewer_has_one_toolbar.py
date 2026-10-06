@@ -171,7 +171,9 @@ def test_a_picture_is_saved_for_a_page_and_the_view_is_put_back(page) -> None:
     after = page.evaluate(f"() => {{ const c = {VIEWER}.engine.plugin.canvas3d.webgl.gl.canvas; "
                           "return [c.width, c.height, c.clientWidth, window.devicePixelRatio]; }")
     assert after == before
-    assert "2,400 pixels" in page.get_attribute('[data-action="screenshot"]', "title")
+    # Its hint, which is off the button while the pointer is on it (tooltips.js).
+    assert "2,400 pixels" in page.evaluate("() => window.FastMDXTooltips.titleOf("
+                                           "document.querySelector('[data-action=\"screenshot\"]'))")
     assert page.errors == []
 
 

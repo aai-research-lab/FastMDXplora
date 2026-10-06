@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Hints are shown in the page's own style
+
+**Changed:** every hint in the GUI was the browser's own box, square and in
+the system's colours whatever the scheme. A hint is now a rounded box in the
+scheme's colours, shown after a moment on the pointer, at once on keyboard
+focus, and moved or put away as its element scrolls, is pressed or Escape
+is pressed. A screen reader is told it as the element's description. The
+standalone dashboard shows its hints the same way.
+
 ### Recent keeps each name's ends and shows each study's state as a light
 
 **Changed:** a long name under Recent was cut at its end, where studies of

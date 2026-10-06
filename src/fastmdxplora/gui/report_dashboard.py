@@ -1386,6 +1386,16 @@ def _product_mark_uri() -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(data).decode("ascii")
 
 
+def _tooltips_script() -> str:
+    """The GUI's tooltips (``static/tooltips.js``), so a hint here is shown
+    as it is there; nothing if the file is missing."""
+    try:
+        found = (Path(__file__).resolve().parent / "static" / "tooltips.js").read_text(encoding="utf-8")
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return ""
+    return f"<script>{found}</script>\n"
+
+
 def _gui_stylesheet() -> str:
     """The GUI's own stylesheet, for inlining after the tokens.
 
@@ -1747,7 +1757,7 @@ def _render_dashboard(
         "<div class=\"main\">\n<main class=\"page-shell\" role=\"main\">\n", pages,
         "\n</main>\n</div>\n</div>\n",
         _render_series_scripts(series or {}),
-        f"<script>{_PAGE_JS}</script>\n</body>\n</html>\n",
+        f"<script>{_PAGE_JS}</script>\n{_tooltips_script()}</body>\n</html>\n",
     ))
 
 

@@ -5334,3 +5334,22 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     .report-document figure, .report-document blockquote { break-inside: avoid; }
     .report-document h1, .report-document h2, .report-document h3 { break-after: avoid; }
 }
+
+/* ===========================================================================
+   Tooltips (tooltips.js): an element's title in a rounded box in the
+   scheme's colours, in place of the browser's own square one.
+   =========================================================================== */
+.fmx-tooltip {
+    position: fixed; left: 0; top: 0; z-index: 10001;
+    max-width: min(320px, calc(100vw - 16px));
+    padding: 6px 10px; border-radius: 8px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-elevated); color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
+    font-family: var(--font-stack); font-size: var(--text-xs); font-weight: 400;
+    line-height: 1.4; letter-spacing: normal; text-transform: none;
+    white-space: pre-line; overflow-wrap: anywhere;
+    pointer-events: none;
+}
+.fmx-tooltip[hidden] { display: none; }
+@media print { .fmx-tooltip { display: none !important; } }

@@ -160,7 +160,9 @@ def test_a_click_keeps_a_column_on_the_viewer(browser, session) -> None:
     spot = tab.locator("#sidebar-expand").bounding_box()
     tab.mouse.move(spot["x"] + 4, spot["y"] + spot["height"] / 2)
     tab.wait_for_timeout(100)
-    title = tab.get_attribute("#sidebar-expand", "title")
+    # Its hint, which is off the element while it is shown (tooltips.js).
+    title = tab.evaluate("() => window.FastMDXTooltips.titleOf("
+                         "document.getElementById('sidebar-expand'))")
     tab.click("#sidebar-expand")
     tab.mouse.move(720, 450)
     tab.wait_for_timeout(400)
