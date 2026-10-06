@@ -1389,10 +1389,13 @@ def test_report_panels_never_break_the_dashboard(tmp_path: Path) -> None:
 
 
 def test_overview_hosts_the_report_panels(tmp_path: Path) -> None:
-    """Overview has containers for the summary cards, phases, and statistics.
+    """Overview has places for what the analyses determined, the run's
+    phases and its facts, filled from the records the report and the
+    Analysis page read (overview.js, /api/overview).
 
-    These mirror what the generated report shows, so the browser is no longer
-    the poorer of the two surfaces.
+    The seven summary cards repeated the health card's numbers, and the
+    phases were a table each marked "Ok"; both are gone, said once in the
+    run's card.
     """
     run = tmp_path / "run"
     run.mkdir()
@@ -1403,28 +1406,21 @@ def test_overview_hosts_the_report_panels(tmp_path: Path) -> None:
         server.shutdown()
         server.server_close()
 
-    for container in (
-        'id="overview-summary-cards"',
-        'id="overview-phase-rows"',
-        'id="overview-stat-rows"',
-    ):
+    for container in ('id="overview-tiles"', 'id="overview-phases"', 'id="overview-run"',
+                      'id="overview-verdict"'):
         assert container in html
-
-    # The means with their standard errors, as the Analysis page gives them,
-    # not a spread over the frames.
-    assert "Mean ± standard error" in html and "Std. dev." not in html
+    for gone in ('id="overview-summary-cards"', 'id="overview-phase-rows"',
+                 'id="overview-stat-rows"', "Std. dev."):
+        assert gone not in html
     assert "What the analyses determined" in html
-    # Renamed when the live panels joined this page: one card is a bar for the
-    # running stage and the other a table of phases, and both were "progress".
-    assert "Phases" in html
+    assert '<script src="/static/overview.js"></script>' in html
 
     import fastmdxplora.gui as gui_pkg
 
     script = (Path(gui_pkg.__file__).with_name("static") / "dashboard.js").read_text(
         encoding="utf-8"
     )
-    assert "function renderReportPanels(" in script
-    assert "renderReportPanels(payload);" in script
+    assert "function renderReportPanels(" not in script
 
 
 def test_results_payload_carries_categorised_sections(tmp_path: Path) -> None:
@@ -1647,11 +1643,13 @@ def test_summary_card_values_truncate_long_paths() -> None:
     assert "text-overflow: ellipsis" in body
     assert "white-space: nowrap" in body
 
-    script = (Path(gui_pkg.__file__).with_name("static") / "dashboard.js").read_text(
+    # The live Overview leads with what was determined now; the cards stay
+    # in the dashboard a study writes beside its report.
+    written = (Path(gui_pkg.__file__).with_name("report_dashboard.py")).read_text(
         encoding="utf-8"
     )
-    assert 'title="${escapeAttr(value)}"' in script
-    assert 'data-kind="${kind}"' in script
+    assert 'title="{escape(value)}"' in written
+    assert 'data-kind="{kind}"' in written
 
 
 class TestTheBrowserCanReachEverySetting:
@@ -3054,10 +3052,13 @@ class TestPanelsForPhasesThatAreNotRunning:
             block = re.search(rf'<div[^>]*id="{element_id}"[^>]*>', page)
             assert block, f"{element_id} is gone; check this test"
             assert 'data-needs-phase="simulation"' in block.group(0)
-        for cls in ("overview-facts card", "overview-stack"):
-            block = re.search(rf'<div class="{cls}"[^>]*>', page)
-            assert block, cls
+        for element_id in ("overview-health-card", "overview-run", "overview-charts"):
+            block = re.search(rf'<(?:div|section)[^>]*id="{element_id}"[^>]*>', page)
+            assert block, element_id
             assert 'data-needs-phase="simulation"' in block.group(0)
+        # What the analyses determined does not need a simulation.
+        results = re.search(r'<section[^>]*id="overview-results"[^>]*>', page)
+        assert results and "data-needs-phase" not in results.group(0)
 
     def test_the_page_hides_them_when_it_knows(self) -> None:
         import pathlib
@@ -4558,19 +4559,25 @@ class TestOnePageForOneRun:
     def test_what_is_happening_comes_before_what_was_recorded(self) -> None:
         """A page opened during a run answered "is it running, and how far"
         below a table of phases that had already finished."""
-        import re
-
         markup = self._markup()
         start = markup.index('<section class="page" data-page="overview"')
         end = markup.index('<section class="page"', start + 10)
-        cards = re.findall(r'card-title">([^<]+)<', markup[start:end])
+        page = markup[start:end]
 
-        # The bar-and-table progress card is gone; the sidebar carries the
-        # running stage. What is happening -- the charts, the structure --
-        # still comes before what was recorded.
-        assert cards.index("Structure") < cards.index("Live charts")
-        assert cards.index("Live charts") < cards.index("Phases")
-        assert cards.index("Live charts") < cards.index("What the analyses determined")
+        # A running study shows its health, the run and its charts first;
+        # what the analyses determined leads once it has ended. Which comes
+        # first is the stylesheet's, by the run's state; in the markup the
+        # run's card holds the molecule and comes before the charts.
+        assert page.index('id="overview-run"') < page.index('id="overview-charts"')
+        assert page.index('id="hero-health"') < page.index('id="overview-run"')
+        import pathlib
+
+        from fastmdxplora.gui import server
+
+        css = (pathlib.Path(server.__file__).parent / "static" / "dashboard.css").read_text(
+            encoding="utf-8")
+        assert '.overview-body[data-lead="health"] > #live-panels' in css
+        assert '.overview-body[data-lead="results"]' in css
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.
@@ -4580,7 +4587,7 @@ class TestOnePageForOneRun:
         # and one table of phases, labelled Phases. The Overview's own
         # "Simulation progress" card repeated the sidebar and is gone.
         assert 'card-title">Simulation progress<' not in markup
-        assert 'card-title">Phases<' in markup
+        assert 'id="overview-phases" aria-label="Phases"' in markup
         assert 'card-title">Exploration progress<' not in markup
         sidebar = markup[markup.index('<aside class="sidebar"'):markup.index("</aside>")]
         assert 'class="sidebar-progress"' in sidebar and 'id="topbar-stage"' in sidebar

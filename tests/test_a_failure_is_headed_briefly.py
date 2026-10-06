@@ -70,4 +70,4 @@ def test_the_overview_heads_it_briefly(tmp_path):
         session.server.shutdown()
     assert MESSAGE in said
     assert sizes[0] > sizes[1]
-    assert worded == ("What the run did, and how it went.", "Charts")
+    assert worded == ("What the run did, and how it went.", "Thermodynamics")

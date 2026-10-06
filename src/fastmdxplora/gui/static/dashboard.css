@@ -5353,3 +5353,140 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 }
 .fmx-tooltip[hidden] { display: none; }
 @media print { .fmx-tooltip { display: none !important; } }
+
+/* ===========================================================================
+   The Overview, results first (overview.js, overview_view.py). A study that
+   ended well opens on what its analyses determined, then the run in one
+   card, then its thermodynamics two a row on the production's clock; a
+   study running, or one that stopped short, keeps its health and charts
+   first. The order is the body's, by where the run stands.
+   =========================================================================== */
+.overview-body { display: flex; flex-direction: column; gap: 16px; }
+.overview-body > #overview-verdict { order: 0; }
+.overview-body > #live-absent { order: 1; }
+.overview-body > #stopping-card { order: 2; }
+.overview-body > #fixes-card { order: 3; }
+.overview-body > #overview-results { order: 4; }
+.overview-body > #live-panels { order: 5; }
+.overview-body > #overview-methods-card { order: 6; }
+.overview-body[data-lead="health"] > #live-panels { order: 4; }
+.overview-body[data-lead="health"] > #overview-results { order: 5; }
+#live-panels > #overview-health-card { order: 0; }
+#live-panels > #overview-run { order: 1; }
+#live-panels > #overview-charts { order: 2; }
+.overview-body[data-lead="health"] #live-panels > #overview-charts { order: 1; }
+.overview-body[data-lead="health"] #live-panels > #overview-run { order: 2; }
+/* A run that ended well says so in its line above; the health card is for
+   one going on, or one that did not end well. */
+.overview-body[data-lead="results"]:is([data-health="ok"], [data-health="completed"]) #overview-health-card { display: none; }
+#overview-health-card { padding: 18px 20px; }
+#overview-health-card .hero-card { padding: 0; border: none; background: transparent; box-shadow: none; }
+
+/* The study in a line: its name large, its word and light, what it ran. */
+.overview-verdict { padding: 2px 2px 0; }
+.overview-verdict[hidden] { display: none; }
+.overview-verdict-name {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 0;
+    font-size: var(--text-2xl); font-weight: 650; letter-spacing: -0.01em; color: var(--text-primary);
+}
+.verdict-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    font-size: var(--text-xs); font-weight: 500; letter-spacing: 0;
+    border: 1px solid var(--border-primary); color: var(--text-secondary);
+}
+.verdict-chip .status-dot { margin: 0; width: 7px; height: 7px; }
+.verdict-chip[data-tone="completed"] { color: var(--status-completed); border-color: color-mix(in srgb, var(--status-completed) 45%, transparent); }
+.verdict-chip[data-tone="live"] { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent); }
+.verdict-chip[data-tone="failed"] { color: var(--status-error); border-color: color-mix(in srgb, var(--status-error) 45%, transparent); }
+.verdict-chip[data-tone="waiting"] { color: var(--status-waiting); border-color: color-mix(in srgb, var(--status-waiting) 45%, transparent); }
+.overview-verdict-facts { margin: 4px 0 0; color: var(--text-muted); font-size: var(--text-sm); }
+
+/* A section's heading with what it says beside it. */
+.overview-sec { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.overview-sec h2 { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--text-primary); }
+.overview-sec-said { font-size: var(--text-xs); color: var(--text-muted); }
+.overview-sec-said a, .overview-all-link { color: var(--accent-text); text-decoration: none; }
+.overview-sec-said a:hover { text-decoration: underline; }
+.overview-results[hidden] { display: none; }
+
+/* What the analyses determined, as tiles: each opens its analysis. */
+/* As many across as hold a mean and its error on one line. */
+.overview-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+.overview-tile {
+    position: relative; display: block; min-width: 0; padding: 12px 14px 10px;
+    border: 1px solid var(--border-primary); border-radius: 12px;
+    background: var(--panel-glass, var(--background-elevated)); color: inherit; text-decoration: none;
+}
+.overview-tile:hover { border-color: color-mix(in srgb, var(--accent-cyan) 45%, var(--border-primary)); }
+.overview-tile:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.tile-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: var(--text-xs); color: var(--text-muted); }
+.tile-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-badge { flex: none; font-size: var(--text-2xs); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-primary); color: var(--text-muted); }
+.tile-badge[data-kind="yes"] { color: var(--status-completed); border-color: color-mix(in srgb, var(--status-completed) 45%, transparent); }
+.tile-badge[data-kind="no"] { color: var(--status-waiting); border-color: color-mix(in srgb, var(--status-waiting) 45%, transparent); }
+.tile-value { margin: 4px 0 2px; font-size: var(--text-lg); letter-spacing: -0.01em; color: var(--text-primary); overflow-wrap: anywhere; }
+.overview-tile[data-determined="false"] .tile-value { color: var(--text-secondary); }
+.tile-note { font-size: var(--text-2xs); color: var(--text-muted); min-height: 1.2em; }
+.tile-plot { margin-top: 6px; height: 42px; }
+.tile-plot svg { display: block; }
+.tile-bars svg { width: 100%; height: 42px; }
+.tile-bar { fill: var(--accent-cyan); opacity: 0.75; }
+.spark-line { fill: none; stroke: var(--accent-cyan); stroke-width: 1.3; }
+.spark-equilibrated { fill: color-mix(in srgb, var(--accent-cyan) 7%, transparent); }
+.spark-from { stroke: var(--text-muted); stroke-width: 0.8; stroke-dasharray: 3 3; }
+.spark-cross { stroke: var(--text-secondary); stroke-width: 0.8; }
+/* Why a mean was not determined, over the tile, on hover or focus. */
+.tile-why {
+    display: none; position: absolute; left: 8px; right: 8px; top: 30px; z-index: 6;
+    padding: 8px 10px; border: 1px solid var(--border-primary); border-radius: 8px;
+    background: var(--background-elevated); color: var(--text-secondary);
+    font-size: var(--text-xs); line-height: 1.45; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.overview-tile:hover .tile-why, .overview-tile:focus-visible .tile-why { display: block; }
+
+/* The run in one card: the molecule beside its phases and facts. */
+.overview-run { padding: 16px 18px; }
+.overview-run-body { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .overview-run-body { grid-template-columns: minmax(0, 1fr); } }
+#live-panels .overview-run .preview-frame { height: 240px; }
+.overview-run-molecule p { margin: 6px 0 0; }
+.overview-phases { list-style: none; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; }
+.overview-phases[hidden] { display: none; }
+.overview-phase { border-top: 3px solid var(--border-primary); padding-top: 6px; font-size: var(--text-xs); color: var(--text-primary); min-width: 0; }
+.overview-phase .phase-name, .overview-phase .phase-time { display: block; }
+.overview-phase .phase-time { color: var(--text-muted); font-size: var(--text-2xs); }
+.overview-phase[data-state="done"] { border-top-color: var(--status-completed); }
+.overview-phase[data-state="failed"] { border-top-color: var(--status-error); }
+.overview-phase[data-state="failed"] .phase-time { color: var(--status-error); }
+.overview-phase[data-state="skipped"] { border-top-style: dashed; }
+/* Its facts as a list, each said once. */
+.overview-strip.overview-run-list {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px;
+    padding-top: 0; border-top: none;
+}
+.overview-run-list > div { display: contents; }
+.overview-run-list > div[hidden] { display: none; }
+.overview-run-list dt { align-self: baseline; }
+.overview-run-list dd { align-self: baseline; white-space: normal; }
+.overview-run-list .strip-note { display: inline; margin: 0 0 0 6px; }
+
+/* The thermodynamics two a row; the speed, which is not one, a slim
+   strip under them. */
+#chart-stack.chart-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { #chart-stack.chart-stack { grid-template-columns: minmax(0, 1fr); } }
+#chart-stack > .chart-row { display: flex; flex-direction: column; height: 210px; }
+#chart-stack > .chart-row-slim { grid-column: 1 / -1; height: 130px; }
+#chart-stack > .chart-row[hidden] { display: none; }
+.chart-note { flex: none; padding: 0 10px 5px; font-size: var(--text-2xs); color: var(--text-muted); min-height: 1.1em; }
+.chart-key { margin-top: 8px; }
+.chart-key[hidden] { display: none; }
+.chart-key-swatch { display: inline-block; width: 18px; height: 9px; margin-right: 6px; vertical-align: middle; border: 1px solid var(--border-primary); background: color-mix(in srgb, var(--text-muted) 12%, transparent); }
+
+/* The methods, folded until opened; Copy in its heading. */
+.overview-methods > summary { list-style: none; cursor: pointer; }
+.overview-methods > summary::-webkit-details-marker { display: none; }
+.overview-methods > summary .card-title::before { content: "\25B8"; display: inline-block; margin-right: 8px; transition: transform .15s; color: var(--text-muted); }
+.overview-methods[open] > summary .card-title::before { transform: rotate(90deg); }
+.overview-methods:not([open]) > summary { margin-bottom: 0; }
+.overview-methods[hidden] { display: none; }
+.overview-methods .methods-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }

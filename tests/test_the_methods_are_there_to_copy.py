@@ -90,7 +90,10 @@ def test_the_overview_shows_them_and_copies_them_plain(tmp_path):
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#overview", wait_until="domcontentloaded")
-            page.wait_for_selector("#overview-methods-card:not([hidden]) strong")
+            # Folded under the rest of the Overview; opened, they are there.
+            page.wait_for_selector("#overview-methods-card:not([hidden]) strong", state="attached")
+            page.click("#overview-methods-card summary .card-title")
+            page.wait_for_selector("#overview-methods-card[open] strong")
             shown = page.text_content("#overview-methods-text")
             requests: list[str] = []
             page.on("request", lambda request: requests.append(request.url))

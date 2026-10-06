@@ -7,6 +7,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Overview leads with what the study determined
+
+**Changed:** the Overview opened on a health card that said *Completed*
+with *Ok* beside it, six charts the width of the page plotted against the
+sample index, seven cards repeating the health card's numbers and a table
+of phases each marked *Ok*; what the analyses determined came last. It now
+opens on the study in a line, its state and what it ran, then each mean the
+analyses recorded as a tile, said as the Analysis page says it, marked
+*Determined* or *Not determined* with the reason on hover, with its series
+beside it and the part the mean is taken over shaded, and RMSF as bars over
+its residues. A tile opens its analysis. Then the run: the molecule, each
+phase with how long it took, and its length, frames, atoms, platform and
+wall time. Then its thermodynamics two a row, timed from the start of
+production with the equilibration shaded before 0, the temperature against
+its target, and each headed by its mean over the production: the
+thermodynamics analysis's own where it recorded one, else taken from the
+live record with the error the analyses would give it, or none where the
+production holds too few independent samples, and none for a density whose
+box volume was held. The axis is fitted to the production, and a value of
+the equilibration beyond it is marked at its edge. One time is pointed at
+on every plot and tile at once. A study still running keeps its health and
+charts first; one that ended well has no health card, and one that did not
+leads with what happened. The methods are folded under the rest. The
+dashboard a study writes beside its report keeps its cards.
+
 ### The live charts show the whole run
 
 **Fixed:** the Overview's charts were given the newest 500 samples of the

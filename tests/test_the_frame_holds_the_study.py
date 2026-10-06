@@ -481,7 +481,7 @@ class TestTheOverviewHoldsWhatTheSidebarCannot(unittest.TestCase):
     def overview(self):
         page = _page()
         start = page.index('<section class="page" data-page="overview" data-status')
-        return page[start:page.index("</section>", start)]
+        return page[start:page.index('<section class="page"', start + 10)]
 
     def test_nothing_repeated_from_the_sidebar(self):
         ov = self.overview()
@@ -542,10 +542,12 @@ class TestThreeThingsSeenInTheBrowser(unittest.TestCase):
 
     def test_the_summary_cards_have_a_grid(self):
         # `metric-grid` was a class with no rule behind it, so the cards
-        # had nothing to sit in and overlapped.
-        page = _page()
-        self.assertIn('class="grid overview-summary metric-cards" id="overview-summary-cards"', page)
-        self.assertNotIn("metric-grid", page)
+        # had nothing to sit in and overlapped. The live Overview has no
+        # cards now; the dashboard a study writes beside its report keeps
+        # them, on the same stylesheet.
+        written = (STATIC.parent / "report_dashboard.py").read_text(encoding="utf-8")
+        self.assertIn('class="grid overview-summary metric-cards" id="overview-summary-cards"', written)
+        self.assertNotIn("metric-grid", _page())
         css = _css()
         # Two across, and the value wraps rather than clips. Four across
         # put each card at a quarter of the page with its text cut off.
@@ -554,15 +556,19 @@ class TestThreeThingsSeenInTheBrowser(unittest.TestCase):
 
     def test_the_overview_is_one_column(self):
         # A structure card beside the charts made a second right-hand panel
-        # inside the centre, next to the real one.
+        # inside the centre, next to the real one. The molecule sits inside
+        # the run's card now, beside what the run did, in one column.
         page = _page()
         start = page.index('<section class="page" data-page="overview" data-status')
-        ov = page[start:page.index("</section>", start)]
-        self.assertIn('class="overview-stack"', ov)
+        ov = page[start:page.index('<section class="page"', start + 10)]
+        self.assertIn('class="overview-body" id="overview-body"', ov)
         self.assertNotIn("overview-grid", ov)
+        run = ov[ov.index('id="overview-run"'):ov.index('id="overview-charts"')]
+        self.assertIn('id="mini-preview-canvas"', run)
         css = _css()
-        self.assertIn(".overview-stack { display: flex; flex-direction: column;", css)
-        self.assertIn("#live-panels .preview-frame { height: 360px; }", css)
+        self.assertIn(".overview-body { display: flex; flex-direction: column;", css)
+        self.assertIn("#live-panels { display: flex; flex-direction: column;", css)
+        self.assertIn("#live-panels .overview-run .preview-frame { height: 240px; }", css)
 
 
 class TestElevenThingsFromUsingIt(unittest.TestCase):

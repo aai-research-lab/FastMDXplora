@@ -278,3 +278,158 @@ class TestTheChartsSeeTheWholeRun:
         assert len(rows) <= 610
         # As many as the person's setting keeps.
         assert rows[0]["stage"] == fewer[0]["stage"] and 100 <= len(fewer) <= 110
+
+
+# --------------------------------------------------------------------------
+# In a browser
+# --------------------------------------------------------------------------
+
+def _browser_study(root: Path, status: str) -> Path:
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    _write_study(root)
+    _manifest(root, {"rmsd": {"status": "ok"}, "rg": {"status": "ok"},
+                     "rmsf": {"status": "ok"}})
+    _analysis(root, "rmsd", 0.30 + 0.002 * _ar1(2000, 0.5, 1))
+    _analysis(root, "rg", 1.60 + 0.01 * _ar1(300, 0.95, 2, transient=3.0))
+    _analysis(root, "rmsf", None, rows="1 0.05\n2 0.07\n3 0.06\n")
+    _metrics(root)
+    _status(root, status=status)
+    _phases(root)
+    return root
+
+
+def _open(root: Path, check):
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#overview", wait_until="domcontentloaded")
+            page.wait_for_selector("#overview-tiles .overview-tile")
+            try:
+                return check(page), errors
+            finally:
+                browser.close()
+    finally:
+        session.server.shutdown()
+
+
+def _tops(page) -> dict:
+    return page.evaluate("""() => Object.fromEntries(
+        ['overview-verdict', 'overview-results', 'overview-health-card', 'overview-run',
+         'overview-charts'].map((id) => {
+            const box = document.getElementById(id).getBoundingClientRect();
+            return [id, box.height ? box.top : null];
+        }))""")
+
+
+def test_an_ended_study_leads_with_what_it_determined(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", "completed")
+
+    def check(page):
+        page.wait_for_function(
+            "() => document.getElementById('overview-body').dataset.run === 'ended'")
+        page.wait_for_selector("#overview-tiles .tile-plot svg path.spark-line")
+        tops = _tops(page)
+        tiles = page.eval_on_selector_all(
+            "#overview-tiles .overview-tile", "(all) => all.map((t) => t.dataset.tileAnalysis)")
+        phases = page.eval_on_selector_all(
+            "#overview-phases .overview-phase", "(all) => all.map((p) => p.textContent)")
+        header = page.text_content('[data-chart-value="temperature"]')
+        page.click('#overview-tiles [data-tile-analysis="rg"]')
+        page.wait_for_function("() => document.documentElement.dataset.page === 'analysis'")
+        return tops, tiles, phases, header
+
+    (tops, tiles, phases, header), errors = _open(root, check)
+    assert not errors, errors
+    assert tops["overview-verdict"] < tops["overview-results"] < tops["overview-run"]
+    assert tops["overview-run"] < tops["overview-charts"]
+    # A study that ended well says so in its line; no health card.
+    assert tops["overview-health-card"] is None
+    assert tiles[:2] == ["rmsd", "rg"] and "rmsf" in tiles
+    assert phases == ["Setup42 s", "Simulation9m 18s", "Analysis1m 30s"]
+    # The production's mean, with its error, rather than its last sample.
+    assert "±" in header
+
+
+def test_a_running_study_keeps_its_health_and_charts_first(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", "running")
+
+    def check(page):
+        page.wait_for_function(
+            "() => document.getElementById('overview-body').dataset.run === 'running'")
+        return _tops(page)
+
+    tops, errors = _open(root, check)
+    assert not errors, errors
+    assert tops["overview-health-card"] < tops["overview-charts"] < tops["overview-run"]
+    assert tops["overview-charts"] < tops["overview-results"]
+
+
+@pytest.mark.parametrize("ended", ["failed", "stopped"])
+def test_a_study_that_stopped_short_leads_with_what_happened(tmp_path, ended) -> None:
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", ended)
+
+    def check(page):
+        page.wait_for_function(
+            "() => document.getElementById('overview-body').dataset.lead === 'health'")
+        return _tops(page)
+
+    tops, errors = _open(root, check)
+    assert not errors, errors
+    assert tops["overview-health-card"] < tops["overview-charts"] < tops["overview-results"]
+
+
+def test_one_time_is_pointed_at_on_every_plot(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", "completed")
+
+    def check(page):
+        page.wait_for_selector("#overview-tiles .tile-plot svg path.spark-line")
+        page.evaluate("""() => {
+            window.__pointed = [];
+            window.addEventListener('fmx:crosshair', (e) => window.__pointed.push(e.detail.t_ns));
+        }""")
+        canvas = page.locator('canvas[data-chart="temperature"]')
+        canvas.scroll_into_view_if_needed()
+        box = canvas.bounding_box()
+        page.mouse.move(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
+        page.wait_for_function("() => window.__pointed.some((t) => t != null)")
+        pointed = page.evaluate("() => window.__pointed.filter((t) => t != null).pop()")
+        crosses = page.eval_on_selector_all(
+            "#overview-tiles .spark-cross", "(all) => all.map((c) => c.style.display)")
+        page.mouse.move(5, 5)
+        page.wait_for_function("() => window.__pointed[window.__pointed.length - 1] == null")
+        return pointed, crosses
+
+    (pointed, crosses), errors = _open(root, check)
+    assert not errors, errors
+    # A time on the production's clock, inside the production.
+    assert 0 < pointed
+    assert "" in crosses
+
+
+def test_the_copy_is_not_in_the_fold_s_summary() -> None:
+    """A button inside a summary is a control inside a control: a screen
+    reader names the two as one, and a press on it opened the fold."""
+    import re
+
+    from fastmdxplora.gui import server
+
+    page = (Path(server.__file__).parent / "templates" / "dashboard.html").read_text(
+        encoding="utf-8")
+    fold = re.search(r'<details class="card overview-methods".*?</details>', page, re.S).group(0)
+    summary = fold[fold.index("<summary"):fold.index("</summary>")]
+    assert "<button" not in summary
+    assert 'id="overview-methods-copy"' in fold

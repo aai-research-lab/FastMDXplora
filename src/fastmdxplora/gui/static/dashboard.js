@@ -705,6 +705,8 @@
       setText("sidebar-run-name", "No active study");
       setText("topbar-run-id", "workspace");
       setText("topbar-run-title", "No active study");
+      const body = byId("overview-body");
+      if (body) { body.dataset.run = ""; body.dataset.health = ""; body.dataset.lead = ""; }
       return;
     }
     let statusName = String(health.state || status.status || "waiting").toLowerCase();
@@ -744,6 +746,16 @@
       : run === "stopped" || run === "interrupted" ? "status-dot-waiting"
       : finished ? "status-dot-completed" : stateDotClass(statusName)}`);
     byId("sidebar-progress")?.setAttribute("data-run", run);
+    // The Overview leads with what it determined once the run has ended
+    // well, and with its health and charts while it runs or once it has
+    // stopped short: what happened first (overview.js, the CSS).
+    const body = byId("overview-body");
+    if (body) {
+      body.dataset.run = run === "running" ? "running" : "ended";
+      body.dataset.health = statusName;
+      body.dataset.lead = run === "running" || run === "failed" || run === "stopped"
+        || run === "interrupted" ? "health" : "results";
+    }
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.
     const stage = stageWord(status.stage) || "Starting";
@@ -863,7 +875,7 @@
     setText("overview-subtitle", writing
       ? "What the run is doing, and whether it is doing it well."
       : "What the run did, and how it went.");
-    setText("overview-charts-title", writing ? "Live charts" : "Charts");
+    setText("overview-charts-title", writing ? "Live charts" : "Thermodynamics");
   }
 
   function renderHealth(health) {
@@ -1141,7 +1153,6 @@
 
     renderTopBar(state.status, state.health);
     renderStageTimeline(state.status);
-    renderReportPanels(payload);
     renderMethods(payload);
     renderAnalysisSections(payload);
     renderAnalysis(payload);
@@ -1407,54 +1418,6 @@
           () => showToast("Copied."), () => showToast("Select the text to copy it."));
       }
     });
-  }
-
-  function renderReportPanels(payload) {
-    // Summary cards, phase progress, and trajectory statistics come from the
-    // same computation the generated report uses, so both surfaces agree.
-    const cards = Array.isArray(payload.summary_cards) ? payload.summary_cards : [];
-    const cardHost = byId("overview-summary-cards");
-    if (cardHost) {
-      cardHost.innerHTML = cards.map((card) => {
-        const value = card.value || "—";
-        // Paths get monospace at a smaller size; everything else stays large.
-        const kind = /[\\/]/.test(value) ? "path" : "text";
-        return `
-        <div class="metric-card">
-          <div class="metric-card-label">${escapeHTML(card.label || "")}</div>
-          <div class="metric-card-value mono" data-kind="${kind}" title="${escapeAttr(value)}">${escapeHTML(value)}</div>
-          <div class="metric-card-unit" title="${escapeAttr(card.detail || "")}">${escapeHTML(card.detail || "")}</div>
-        </div>`;
-      }).join("");
-      cardHost.hidden = cards.length === 0;
-    }
-
-    const phases = Array.isArray(payload.phase_rows) ? payload.phase_rows : [];
-    const phaseHost = byId("overview-phase-rows");
-    const phaseCard = byId("overview-phase-card");
-    if (phaseHost) {
-      phaseHost.innerHTML = phases.map((row) => `
-        <tr>
-          <td>${escapeHTML(row.name || "")}</td>
-          <td><span class="stage-pill">${escapeHTML(row.status || "")}</span></td>
-          <td class="muted">${escapeHTML(row.detail || "")}</td>
-        </tr>`).join("");
-    }
-    if (phaseCard) phaseCard.hidden = phases.length === 0;
-
-    const stats = Array.isArray(payload.metric_rows) ? payload.metric_rows : [];
-    const statHost = byId("overview-stat-rows");
-    const statCard = byId("overview-stats-card");
-    if (statHost) {
-      statHost.innerHTML = stats.map((row) => `
-        <tr>
-          <td>${escapeHTML(row.metric || "")}</td>
-          <td class="mono">${escapeHTML(row.average || "—")}</td>
-          <td class="mono">${escapeHTML(row.samples || "—")}</td>
-          <td class="muted"${row.why ? ` title="${escapeHTML(row.why)}"` : ""}>${escapeHTML(row.status || "")}</td>
-        </tr>`).join("");
-    }
-    if (statCard) statCard.hidden = stats.length === 0;
   }
 
   /* The methods paragraphs, asked for again only when what they are written

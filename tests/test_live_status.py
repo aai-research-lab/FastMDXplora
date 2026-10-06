@@ -417,7 +417,7 @@ class TestTheChartsDrawWhatIsRecorded:
         import re
 
         html = self._text("dashboard.html")
-        rows = re.findall(r'<div class="chart-row">(.*?)<canvas', html, re.S)
+        rows = re.findall(r'<div class="chart-row[^"]*">(.*?)<canvas', html, re.S)
         assert len(rows) == 5, len(rows)
         for row in rows:
             assert "chart-title" in row

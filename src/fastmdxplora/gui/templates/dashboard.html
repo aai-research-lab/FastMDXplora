@@ -679,6 +679,14 @@
             </div>
           </div>
 
+          <div class="overview-body" id="overview-body">
+          <!-- The study, where it stands and what it ran, in a line: the
+               word and the light are the sidebar's (runState). -->
+          <div class="overview-verdict" id="overview-verdict" hidden>
+            <h2 class="overview-verdict-name"><span id="verdict-name"></span><span class="verdict-chip" id="verdict-chip"><span class="status-dot" id="verdict-dot"></span><span id="verdict-word"></span></span></h2>
+            <p class="overview-verdict-facts" id="verdict-facts"></p>
+          </div>
+
           <!-- No run: one sentence and the way to start one. The sidebar
                already says "No active study"; this says what to do. -->
           <div class="card" id="live-absent" hidden>
@@ -721,136 +729,149 @@
             <ul class="fixes-list" id="fixes-list"></ul>
           </div>
 
+          <!-- What the analyses determined, first for a study that has
+               ended: each mean with its error, the independent samples
+               behind it and where its equilibrated part began, Determined
+               or Not determined with the reason on hover, and its series on
+               the production's clock (overview.js, overview_view.py). The
+               numbers are the Analysis page's own. -->
+          <section class="overview-results" id="overview-results" hidden aria-labelledby="overview-results-title">
+            <div class="overview-sec">
+              <h2 id="overview-results-title">What the analyses determined</h2>
+              <span class="overview-sec-said" id="overview-results-said"></span>
+            </div>
+            <div class="overview-tiles" id="overview-tiles"></div>
+          </section>
+
           <div id="live-panels">
-            <!-- What the sidebar is too narrow to say. The stage, step,
-                 progress and ETA are in the sidebar on every page; this row
-                 is the rest, in one line each. -->
-            <div class="overview-facts card" data-needs-phase="simulation">
+            <!-- How the run is going, or how it went where it did not end
+                 well. A run that finished well says so above, once. -->
+            <div class="card overview-health" id="overview-health-card" data-needs-phase="simulation">
               <div class="hero-card" id="hero-health" data-state="normal" data-needs-phase="simulation">
-              <div class="hero-card-top">
-                <div>
-                  <div class="hero-label">Simulation health</div>
-                  <div class="hero-status" id="health-headline">—</div>
+                <div class="hero-card-top">
+                  <div>
+                    <div class="hero-label">Simulation health</div>
+                    <div class="hero-status" id="health-headline">—</div>
+                  </div>
+                  <span class="stage-pill" id="health-pill">normal</span>
                 </div>
-                <span class="stage-pill" id="health-pill">normal</span>
+                <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
+                <ul class="health-list" id="health-list" role="list"></ul>
               </div>
-              <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
-              <ul class="health-list" id="health-list" role="list"></ul>
-            </div>
-              <dl class="overview-strip">
-                <div><dt id="live-simtime-label">Production</dt><dd><span class="mono" id="live-simtime-cell">—</span><span class="strip-note" id="live-simtime-note" hidden></span></dd></div>
-                <div><dt>Frames written</dt><dd class="mono" id="live-frames-cell">—</dd></div>
-                <div><dt>Wall time</dt><dd class="mono" id="live-elapsed-cell">—</dd></div>
-                <div><dt>Checkpoint</dt><dd class="mono" id="live-checkpoint-cell">—</dd></div>
-                <div><dt>Last update</dt><dd class="mono" id="live-lastupdate-cell">—</dd></div>
-              </dl>
-              <!-- Read by dashboard.js; not shown here because the sidebar
-                   shows them. Kept so the writes have somewhere to land. -->
-              <span id="live-stage-cell" hidden></span>
-              <span id="live-step-cell" hidden></span>
-              <span id="live-total-cell" hidden></span>
-              <span id="live-eta-cell" hidden></span>
-              <span id="live-progress-pct" hidden></span>
-              <span id="live-sim-time" hidden></span>
-              <div id="live-progress-fill" hidden></div>
             </div>
 
-            <div class="overview-stack" data-needs-phase="simulation">
-              <div class="card">
-                <div class="card-header">
-                  <h2 class="card-title">Structure</h2>
-                  <a href="#" class="ghost-link" data-view-link="viewer">Open the viewer</a>
+            <!-- The run in one card: the molecule, its phases and how long
+                 each took, and what it ran, each said once. -->
+            <section class="card overview-run" id="overview-run" data-needs-phase="simulation" aria-labelledby="overview-run-title">
+              <div class="overview-sec">
+                <h2 id="overview-run-title">The run</h2>
+                <a href="#" class="ghost-link" data-view-link="viewer">Open the viewer</a>
+              </div>
+              <div class="overview-run-body">
+                <div class="overview-run-molecule">
+                  <div class="preview-frame" id="mini-preview-frame">
+                    <div id="mini-preview-canvas" class="mini-preview-canvas" role="img" aria-label="Molecular preview"></div>
+                    <div class="preview-empty" id="mini-preview-empty">
+                      Waiting for a structure file…
+                    </div>
+                  </div>
+                  <p class="muted small" id="mini-preview-note">The newest frame, as it is written.</p>
                 </div>
-                <div class="preview-frame" id="mini-preview-frame">
-                <div id="mini-preview-canvas" class="mini-preview-canvas" role="img" aria-label="Molecular preview"></div>
-                <div class="preview-empty" id="mini-preview-empty">
-                  Waiting for a structure file…
+                <div class="overview-run-facts">
+                  <ol class="overview-phases" id="overview-phases" aria-label="Phases"></ol>
+                  <dl class="overview-strip overview-run-list">
+                    <div><dt id="live-simtime-label">Production</dt><dd><span class="mono" id="live-simtime-cell">—</span><span class="strip-note" id="live-simtime-note" hidden></span></dd></div>
+                    <div><dt>Frames written</dt><dd class="mono" id="live-frames-cell">—</dd></div>
+                    <div id="overview-atoms-row" hidden><dt>Atoms</dt><dd><span class="mono" id="overview-atoms-cell">—</span><span class="strip-note" id="overview-atoms-note"></span></dd></div>
+                    <div id="overview-platform-row" hidden><dt>Platform</dt><dd class="mono" id="overview-platform-cell">—</dd></div>
+                    <div><dt>Wall time</dt><dd class="mono" id="live-elapsed-cell">—</dd></div>
+                    <div><dt>Checkpoint</dt><dd class="mono" id="live-checkpoint-cell">—</dd></div>
+                    <div><dt>Last update</dt><dd class="mono" id="live-lastupdate-cell">—</dd></div>
+                  </dl>
+                  <!-- Read by dashboard.js; not shown here because the sidebar
+                       shows them. Kept so the writes have somewhere to land. -->
+                  <span id="live-stage-cell" hidden></span>
+                  <span id="live-step-cell" hidden></span>
+                  <span id="live-total-cell" hidden></span>
+                  <span id="live-eta-cell" hidden></span>
+                  <span id="live-progress-pct" hidden></span>
+                  <span id="live-sim-time" hidden></span>
+                  <div id="live-progress-fill" hidden></div>
                 </div>
               </div>
-                <p class="muted small" id="mini-preview-note">The newest frame, as it is written.</p>
-              </div>
+            </section>
 
-<div class="card">
-            <div class="card-header">
-              <h2 id="overview-charts-title" class="card-title">Live charts</h2>
-              <div class="card-header-actions">
-                <select class="metric-select" id="chart-metric-select" aria-label="Chart metric"></select>
-                <button class="ghost-btn" type="button" id="chart-reset">Reset zoom</button>
-              </div>
-            </div>
-            <div class="chart-stack" id="chart-stack">
-              <div class="chart-row">
-                <div class="chart-head">
-                  <div class="chart-title">Potential energy (kJ/mol)</div>
-                  <div class="chart-latest mono" data-chart-value="potential_energy">—</div>
-                </div>
-                <canvas class="chart-canvas" data-chart="potential_energy" data-color="cyan" width="900" height="220"></canvas>
-              </div>
-              <div class="chart-row">
-                <div class="chart-head">
-                  <div class="chart-title">Total energy (kJ/mol)</div>
-                  <div class="chart-latest mono" data-chart-value="total_energy">—</div>
-                </div>
-                <canvas class="chart-canvas" data-chart="total_energy" data-color="green" width="900" height="220"></canvas>
-              </div>
-              <div class="chart-row">
-                <div class="chart-head">
-                  <div class="chart-title">Temperature (K)</div>
-                  <div class="chart-latest mono" data-chart-value="temperature">—</div>
-                </div>
-                <canvas class="chart-canvas" data-chart="temperature" data-color="orange" width="900" height="220"></canvas>
-              </div>
-              <div class="chart-row">
-                <div class="chart-head">
-                  <div class="chart-title">Density (g/mL)</div>
-                  <div class="chart-latest mono" data-chart-value="density">—</div>
-                </div>
-                <canvas class="chart-canvas" data-chart="density" data-color="violet" width="900" height="220"></canvas>
-              </div>
-              <div class="chart-row">
-                <div class="chart-head">
-                  <div class="chart-title">Simulation speed (ns/day, derived)</div>
-                  <div class="chart-latest mono" data-chart-value="speed">—</div>
-                </div>
-                <canvas class="chart-canvas" data-chart="speed" data-color="silver" width="900" height="220"></canvas>
-              </div>
-            </div>
-            <div class="chart-empty muted" id="chart-empty">Live telemetry will appear after the first sample.</div>
-          </div>
-            </div>
-
-            <!-- What was recorded, after what is happening. The summary
-                 cards and the phase table come from the same computation
-                 the report uses, so the two surfaces agree; the cards
-                 carry numbers the sidebar has no room for, and the phase
-                 rows carry a detail per phase -- "7.5 s", "Failed" -- that
-                 the sidebar's markers cannot. Both hide until there is
-                 something to say. -->
-            <div class="grid overview-summary metric-cards" id="overview-summary-cards" hidden></div>
-            <div class="card" id="overview-phase-card" hidden>
-              <div class="card-header"><h2 class="card-title">Phases</h2></div>
-              <table class="phase-table">
-                <thead><tr><th>Phase</th><th>Status</th><th>Detail</th></tr></thead>
-                <tbody id="overview-phase-rows"></tbody>
-              </table>
-            </div>
-            <div class="card" id="overview-stats-card" hidden>
-              <div class="card-header"><h2 class="card-title">What the analyses determined</h2></div>
-              <table class="phase-table">
-                <thead><tr><th>Analysis</th><th>Mean ± standard error</th><th>Independent samples</th><th>Status</th></tr></thead>
-                <tbody id="overview-stat-rows"></tbody>
-              </table>
-            </div>
-            <!-- The methods paragraphs as the report gives them, written from the
-                 records as they stand, with a Copy that leaves the Markdown
-                 behind: a manuscript is not Markdown. -->
-            <div class="card" id="overview-methods-card" hidden>
+            <!-- The thermodynamics two a row on the production's clock,
+                 equilibration shaded before 0, each axis fitted to the
+                 production, one crosshair across every plot on the page
+                 (charts.js), and each mean over the production as the
+                 analyses take theirs. The speed under them. -->
+            <section class="card overview-charts" id="overview-charts" data-needs-phase="simulation" aria-labelledby="overview-charts-title">
               <div class="card-header">
-                <h2 class="card-title">Methods</h2>
-                <button class="btn btn-small" type="button" id="overview-methods-copy">Copy</button>
+                <h2 id="overview-charts-title" class="card-title">Live charts</h2>
+                <div class="card-header-actions">
+                  <select class="metric-select" id="chart-metric-select" aria-label="Chart metric"></select>
+                  <button class="ghost-btn" type="button" id="chart-reset">Reset zoom</button>
+                </div>
               </div>
-              <div class="card-body methods-text" id="overview-methods-text"></div>
+              <div class="chart-stack" id="chart-stack">
+                <div class="chart-row">
+                  <div class="chart-head">
+                    <div class="chart-title">Potential energy (kJ/mol)</div>
+                    <div class="chart-latest mono" data-chart-value="potential_energy">—</div>
+                  </div>
+                  <canvas class="chart-canvas" data-chart="potential_energy" data-color="cyan" width="900" height="220"></canvas>
+                  <div class="chart-note" data-chart-note="potential_energy"></div>
+                </div>
+                <div class="chart-row">
+                  <div class="chart-head">
+                    <div class="chart-title">Total energy (kJ/mol)</div>
+                    <div class="chart-latest mono" data-chart-value="total_energy">—</div>
+                  </div>
+                  <canvas class="chart-canvas" data-chart="total_energy" data-color="green" width="900" height="220"></canvas>
+                  <div class="chart-note" data-chart-note="total_energy"></div>
+                </div>
+                <div class="chart-row">
+                  <div class="chart-head">
+                    <div class="chart-title">Temperature (K)</div>
+                    <div class="chart-latest mono" data-chart-value="temperature">—</div>
+                  </div>
+                  <canvas class="chart-canvas" data-chart="temperature" data-color="orange" width="900" height="220"></canvas>
+                  <div class="chart-note" data-chart-note="temperature"></div>
+                </div>
+                <div class="chart-row">
+                  <div class="chart-head">
+                    <div class="chart-title">Density (g/mL)</div>
+                    <div class="chart-latest mono" data-chart-value="density">—</div>
+                  </div>
+                  <canvas class="chart-canvas" data-chart="density" data-color="violet" width="900" height="220"></canvas>
+                  <div class="chart-note" data-chart-note="density"></div>
+                </div>
+                <div class="chart-row chart-row-slim">
+                  <div class="chart-head">
+                    <div class="chart-title">Simulation speed (ns/day, derived)</div>
+                    <div class="chart-latest mono" data-chart-value="speed">—</div>
+                  </div>
+                  <canvas class="chart-canvas" data-chart="speed" data-color="silver" width="900" height="220"></canvas>
+                </div>
+              </div>
+              <div class="chart-key muted small" id="chart-key" hidden><span class="chart-key-swatch" aria-hidden="true"></span>equilibration, before 0 · each axis fits the production; what lies beyond it is marked at the edge</div>
+              <div class="chart-empty muted" id="chart-empty">Live telemetry will appear after the first sample.</div>
+            </section>
+          </div>
+
+          <!-- The methods paragraphs as the report gives them, written from the
+               records as they stand, with a Copy that leaves the Markdown
+               behind: a manuscript is not Markdown. Folded until opened. -->
+          <details class="card overview-methods" id="overview-methods-card" hidden>
+            <summary class="card-header">
+              <h2 class="card-title">Methods</h2>
+            </summary>
+            <div class="card-body">
+              <div class="methods-actions"><button class="btn btn-small" type="button" id="overview-methods-copy">Copy</button></div>
+              <div class="methods-text" id="overview-methods-text"></div>
             </div>
+          </details>
           </div>
         </section>
 <section class="page" data-page="viewer" hidden>
@@ -1728,6 +1749,7 @@
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>
+  <script src="/static/overview.js"></script>
   <script src="/static/series-chart.js"></script>
   <script src="/static/analysis-page.js"></script>
   <script src="/static/runs-compared.js"></script>
