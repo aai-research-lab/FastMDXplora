@@ -5148,7 +5148,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         overflow-x: hidden;
     }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar :is(.brand-text, .sidebar-collapse,
-        .sidebar-recent, .sidebar-study, .sidebar-progress, .nav-count,
+        .sidebar-study, .sidebar-progress, .nav-count,
         .nav-link > span, .sidebar-account-text, .sidebar-account-gear) {
         display: none;
     }
@@ -5677,4 +5677,27 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
         transform: scale(1.12);
     }
     .sidebar-account:hover .sidebar-account-gear { transform: rotate(45deg); }
+}
+
+/* Folded to its strip, the sidebar keeps Recent as its icon; its studies
+   show beside the strip when it is clicked (studies.js). */
+@media (min-width: 801px) {
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-recent > summary {
+        justify-content: center; gap: 0; margin: 0; padding: 8px 0;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-recent > summary > :not(.recent-icon) {
+        display: none;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-recent:not(.flyout) .sidebar-recent-list {
+        display: none;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-recent.flyout > summary {
+        color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    }
+    .sidebar-recent.flyout .sidebar-recent-list {
+        position: fixed; left: calc(var(--strip-width) + 6px); z-index: 70;
+        width: 240px; max-height: 60vh; overflow-y: auto; padding: 6px;
+        border: 1px solid var(--border-primary); border-radius: 10px;
+        background: var(--background-elevated); box-shadow: 0 12px 32px var(--shadow-color);
+    }
 }

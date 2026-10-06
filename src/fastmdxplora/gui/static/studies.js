@@ -916,12 +916,71 @@
     });
   }
 
+  /* With the sidebar folded to its strip, Recent is its icon there, and
+   * a click shows its studies beside the strip, to open one; a click
+   * elsewhere, Escape, or a study opened puts them away. The fold kept for
+   * the sidebar shown is left as it was. */
+  function folded() {
+    return document.body.classList.contains("sidebar-collapsed")
+      && !document.body.classList.contains("sidebar-peek")
+      && window.matchMedia("(min-width: 801px)").matches;
+  }
+
+  function recentBesideTheStrip() {
+    var fold = el("sidebar-recent");
+    if (!fold) return;
+    var head = fold.querySelector("summary");
+    var list = el("sidebar-recent-list");
+    var wasOpen = fold.open;
+
+    function shut(back) {
+      if (!fold.classList.contains("flyout")) return;
+      fold.classList.remove("flyout");
+      head.setAttribute("aria-expanded", "false");
+      fold.open = wasOpen;
+      if (back) head.focus();
+    }
+
+    head.addEventListener("click", function (event) {
+      if (!folded()) return;
+      event.preventDefault();
+      if (fold.classList.contains("flyout")) { shut(false); return; }
+      wasOpen = fold.open;
+      var at = head.getBoundingClientRect();
+      list.style.top = Math.round(at.top) + "px";
+      fold.classList.add("flyout");
+      fold.open = true;
+      head.setAttribute("aria-expanded", "true");
+      showRecent(false, true);
+      var first = list.querySelector(".sidebar-recent-item");
+      if (first && event.detail === 0) first.focus();
+    });
+    // Its toggle is not the fold kept for the sidebar shown.
+    fold.addEventListener("toggle", function (event) {
+      if (fold.classList.contains("flyout")) event.stopImmediatePropagation();
+    }, true);
+    list.addEventListener("click", function (event) {
+      if (event.target.closest(".sidebar-recent-item")) shut(false);
+    });
+    document.addEventListener("click", function (event) {
+      if (!fold.contains(event.target)) shut(false);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && fold.classList.contains("flyout")) shut(true);
+    });
+    // The sidebar shown again, or folded: the list goes back in place.
+    new MutationObserver(function () { if (!folded()) shut(false); })
+      .observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", attach);
+    document.addEventListener("DOMContentLoaded", recentBesideTheStrip);
     document.addEventListener("DOMContentLoaded", keepRecentFolded);
     document.addEventListener("DOMContentLoaded", fitRecentAsTheSidebarChanges);
   } else {
     attach();
+    recentBesideTheStrip();
     keepRecentFolded();
     fitRecentAsTheSidebarChanges();
   }
