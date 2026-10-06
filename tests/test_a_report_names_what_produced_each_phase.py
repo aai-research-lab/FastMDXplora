@@ -68,7 +68,7 @@ class TestTheMethodsNamesWhatRan:
         text = _methods(root)
         assert ("System setup, simulation and analysis were performed with "
                 "FastMDXplora 2.5.8.") in text
-        assert "**Tools.** FastMDXplora calls OpenMM 8.6.1." in text
+        assert "**Tools.** FastMDXplora uses OpenMM 8.6.1." in text
 
     def test_only_the_phases_that_ran_are_credited(self, tmp_path) -> None:
         """An analysis of an existing trajectory was not set up here."""

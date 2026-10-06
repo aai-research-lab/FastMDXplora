@@ -2846,7 +2846,7 @@ class TestTheReportSaysWhatItMeans:
             tmp_path, setup={"parameters": {}}, sim={"parameters": {}},
             versions={"FastMDXplora": "2.5", "OpenMM": "8.4", "NumPy": "2.1"})
         assert "**Software.** System setup, simulation and analysis were performed with FastMDXplora 2.5." in text
-        assert "**Tools.** FastMDXplora calls NumPy 2.1, OpenMM 8.4." in text
+        assert "**Tools.** FastMDXplora uses NumPy 2.1, OpenMM 8.4." in text
         assert "Analysis and orchestration" not in text
 
     def test_the_tools_list_includes_what_the_arithmetic_stands_on(self):

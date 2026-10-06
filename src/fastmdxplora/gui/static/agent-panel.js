@@ -21,13 +21,13 @@
 
   /* One line per mode, said where the mode is chosen: what stands between
    * it and a bad study. That is the only thing a reader needs at the
-   * moment of choosing. */
+   * moment of choosing. The Agent says it of itself. */
   var MODE_NOTES = {
-    assisted: "Drafted and shown to you. Nothing runs until you say so.",
-    autonomous: "Runs without being shown to you first, so a ceiling is " +
-                "required: it is the only thing left that can stop it.",
-    unvalidated: "Works outside the schema, so nothing checks the method. " +
-                 "Every figure it produces is stamped."
+    assisted: "I show you each one first. Nothing runs until you say so.",
+    autonomous: "I run it without showing it to you first, so a ceiling is " +
+                "required: it is the only thing left that can stop me.",
+    unvalidated: "I work outside the schema, so nothing validates the method. " +
+                 "Every figure I produce is stamped."
   };
 
   /* Where a key comes from, for the provider actually chosen. Said here
@@ -390,7 +390,7 @@
     var note = el("agent-start-note");
     var mode = el("agent-mode");
     if (note && mode) {
-      note.textContent = "It drafts a config and the software checks it. "
+      note.textContent = "I draft a config and the software validates it. "
         + (MODE_NOTES[mode.value] || "");
     }
   }

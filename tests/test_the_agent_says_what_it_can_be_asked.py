@@ -105,7 +105,9 @@ def test_with_a_model_that_line_is_gone(browser, tmp_path, no_model) -> None:
         page.wait_for_function("() => document.getElementById('agent-start-engine').hidden",
                                timeout=10000)
         note = page.locator("#agent-start-note").text_content()
-        assert note.endswith("Nothing runs until you say so.")
+        # The Agent speaks for itself, and the software validates.
+        assert note == ("I draft a config and the software validates it. "
+                        "I show you each one first. Nothing runs until you say so.")
     finally:
         page.close()
         session.server.shutdown()

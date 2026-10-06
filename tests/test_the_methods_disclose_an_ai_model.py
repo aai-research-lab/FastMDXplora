@@ -31,7 +31,7 @@ def test_a_drafted_study_says_so_and_names_its_model():
                            "drafted with an AI model and approved by a person before "
                            "it ran.")
     assert f"The AI model was recorded as {MODEL}." in said
-    assert "Every setting was checked by the software's validator before it ran." in said
+    assert "Every setting was validated by the software before it ran." in said
     assert ("The conversation with the FastMDXplora Agent about this study is kept with it, "
             "in `agent/conversations`.") in said
 
@@ -45,7 +45,7 @@ def test_an_unseen_study_and_a_phase_outside_the_schema_are_said():
     assert ("Its analysis phase was written outside the configuration schema, so the "
             "software's validator did not check it.") in said
     assert "Which AI model was not recorded." in said
-    assert "Every setting outside the analysis phase was checked" in said
+    assert "Every setting outside the analysis phase was validated" in said
 
 
 def test_a_phase_outside_the_schema_alone_is_not_called_an_ai_model_s():

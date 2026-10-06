@@ -800,8 +800,10 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertIn(action, panel)
         self.assertIn('id="agent-load"', panel)
-        # "Draft" is not a word this page uses.
-        self.assertNotIn("draft", panel.lower())
+        # No action is called a draft; the Agent says it drafts a config
+        # (user, 10-06: "I draft a config").
+        self.assertNotRegex(panel, r">\s*Draft")
+        self.assertIn("I draft a config and the software validates it.", panel)
 
     def test_the_actions_are_the_builders_own(self):
         """One derivation, two doors.

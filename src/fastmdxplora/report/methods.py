@@ -699,7 +699,7 @@ def methods_paragraphs(
         if tools:
             named = ", ".join(f"{name} {version}" for name, version in
                               sorted(tools.items(), key=lambda kv: kv[0].lower()))
-            sentence = f"**Tools.** FastMDXplora calls {named}."
+            sentence = f"**Tools.** FastMDXplora uses {named}."
             if not tools_recorded:
                 sentence += (
                     " The run did not record its libraries, so these are the "
@@ -915,12 +915,12 @@ def _model_paragraph(written: dict[str, Any] | None,
     unchecked = sorted(name for name, ok in (written.get("checked") or {}).items()
                        if ok is False)
     if not unchecked:
-        said.append("Every setting was checked by the software's validator before it ran.")
+        said.append("Every setting was validated by the software before it ran.")
     else:
         said.append("Every setting outside the "
                     + _listed(unchecked).replace("`", "")
                     + (" phase" if len(unchecked) == 1 else " phases")
-                    + " was checked by the software's validator before it ran.")
+                    + " was validated by the software before it ran.")
     if conversations:
         said.append("The conversation" + ("s" if conversations > 1 else "")
                     + " with the FastMDXplora Agent about this study "
