@@ -286,7 +286,7 @@
       <!-- The newest studies of the workspace, one click from each; folded
            and kept so (studies.js). -->
       <details class="sidebar-recent" id="sidebar-recent" open>
-        <summary class="nav-heading sidebar-recent-head" title="Recent studies">
+        <summary class="nav-link sidebar-recent-head" title="Recent studies">
           <!--icon:recent:nav-icon recent-icon--><span>Recent</span><!--icon:chevron:recent-chevron-->
         </summary>
         <div class="sidebar-recent-list" id="sidebar-recent-list"></div>
@@ -325,8 +325,8 @@
         <span id="sidebar-status-dot" hidden></span>
         <span id="sidebar-run-name" hidden></span>
         <div class="study-menu" id="study-menu" role="menu" aria-label="Switch study" hidden>
-          <div class="study-menu-label">Recent studies</div>
-          <div class="study-menu-list" id="study-menu-list"><div class="study-menu-empty muted">Looking for studies&hellip;</div></div>
+          <!-- The newest studies are Recent's, above; the menu is for
+               another folder and this study's own settings. -->
           <a href="#studies" class="study-menu-item" role="menuitem" data-menu-page="studies">All studies&hellip;</a>
           <!-- The same folder picker the builder uses, into a hidden input. -->
           <button class="study-menu-item" type="button" role="menuitem" id="load-study" title="Open a study from another folder">Open another folder&hellip;</button>

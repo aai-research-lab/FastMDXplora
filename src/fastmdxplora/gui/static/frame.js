@@ -177,7 +177,7 @@
     var name = which === "sidebar" ? "sidebar" : "panel";
     if (button) button.title = on ? "Keep the " + name + " open" : "Show " + name;
   }
-  function peekWhilePointedAt(which, button, column) {
+  function peekWhilePointedAt(which, button, column, keep) {
     if (!button || !column) return;
     var cls = which === "sidebar" ? "sidebar-collapsed" : "panel-collapsed";
     var enter = function () {
@@ -203,6 +203,14 @@
     column.addEventListener("mouseenter", stay);
     [button, column].forEach(function (node) {
       node.addEventListener("mouseleave", leave);
+    });
+    /* A click on the column shown, anywhere but on something of its own
+     * to use, keeps it, as its button does: the button alone was a small
+     * place to find with the column already open under the pointer. */
+    column.addEventListener("click", function (e) {
+      if (!document.body.classList.contains(which + "-peek") || !keep) return;
+      if (e.target.closest("a, button, input, select, textarea, label, summary, details, [role='button'], [tabindex]")) return;
+      keep();
     });
   }
 
@@ -888,10 +896,11 @@
       panelChosen = true;
       setCollapsed(true);
     });
-    el("side-expand").addEventListener("click", function () {
+    function keepThePanel() {
       panelChosen = true;
       setCollapsed(false);
-    });
+    }
+    el("side-expand").addEventListener("click", keepThePanel);
     if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
       var processRunning = false;
       window.FastMDXDashboard.on("app-state", function (s) {
@@ -907,8 +916,9 @@
     setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1", false);
     el("sidebar-collapse").addEventListener("click", function () { setSidebarCollapsed(true); });
     el("sidebar-expand").addEventListener("click", function () { setSidebarCollapsed(false); });
-    peekWhilePointedAt("sidebar", el("sidebar-expand"), document.querySelector(".sidebar"));
-    peekWhilePointedAt("panel", el("side-expand"), el("side-panel"));
+    peekWhilePointedAt("sidebar", el("sidebar-expand"), document.querySelector(".sidebar"),
+                       function () { setSidebarCollapsed(false); });
+    peekWhilePointedAt("panel", el("side-expand"), el("side-panel"), keepThePanel);
     followThePage();
     new MutationObserver(followThePage).observe(document.documentElement,
       { attributes: true, attributeFilter: ["data-page"] });
@@ -966,9 +976,6 @@
       studyMenu.hidden = !open;
       studyCard.setAttribute("aria-expanded", String(open));
       if (open) {
-        if (window.FastMDXStudies && window.FastMDXStudies.offerRecent) {
-          window.FastMDXStudies.offerRecent();
-        }
         var first = studyMenu.querySelector(".study-menu-item");
         if (first) first.focus();
       }

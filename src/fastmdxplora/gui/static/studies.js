@@ -505,10 +505,7 @@
   }
 
   /* The sidebar's part: how many studies the workspace holds, beside All
-   * studies, and the newest of them in the study card's menu, to switch
-   * to. Asked once, a moment after the page opens, and again when the
-   * All studies page lists the workspace. */
-  var RECENT = 6;
+   * studies, and the newest of them under Recent, to switch to. */
   var workspace = null;
   var asked = null;
 
@@ -538,34 +535,6 @@
 
   function sameFolder(a, b) {
     return String(a || "").replace(/\/+$/, "") === String(b || "").replace(/\/+$/, "");
-  }
-
-  function offerRecent() {
-    var list = el("study-menu-list");
-    if (!list) return;
-    askTheWorkspace().then(function (data) {
-      var open = (el("sidebar-output-folder") || {}).textContent || "";
-      var recent = (data && data.studies || []).filter(function (study) {
-        return !sameFolder(study.path, open.trim());
-      }).slice(0, RECENT);
-      if (!recent.length) {
-        list.replaceChildren(make("div", "study-menu-empty muted",
-          data ? "No other study in this workspace." : "The studies could not be listed."));
-        return;
-      }
-      list.replaceChildren.apply(list, recent.map(function (study) {
-        var item = make("button", "study-menu-item study-menu-study");
-        item.type = "button";
-        item.setAttribute("role", "menuitem");
-        item.title = study.path;
-        item.dataset.path = study.path;
-        item.append(make("span", "study-menu-name", study.name),
-          make("span", "study-menu-state", (study.system ? study.system + " \u00b7 " : "") +
-            (study.state || "")));
-        item.addEventListener("click", function () { openStudy(study.path, item); });
-        return item;
-      }));
-    });
   }
 
   /* The sidebar's Recent: the workspace's newest studies, the open one
@@ -632,6 +601,6 @@
     showRecent(moved || stale);
   });
 
-  window.FastMDXStudies = { load: load, narrowTo: narrowTo, offerRecent: offerRecent,
+  window.FastMDXStudies = { load: load, narrowTo: narrowTo,
                             showRecent: showRecent };
 }());

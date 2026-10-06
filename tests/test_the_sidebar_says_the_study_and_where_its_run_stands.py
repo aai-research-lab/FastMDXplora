@@ -165,15 +165,18 @@ def test_a_stopped_study_says_where_and_what_would_fix_it(browser, workspace):
     assert facts["fix"] and not facts["pause"]
 
 
-def test_the_study_card_opens_the_studies_to_switch_to(browser, workspace):
+def test_the_study_card_opens_another_folder_and_its_own_settings(browser, workspace):
+    """The newest studies are the sidebar's Recent; the card's menu no
+    longer lists them a second time, nor prints the folder's path."""
     with _sidebar_of(browser, workspace / "finished") as (facts, page):
         assert page.get_attribute("#study-card", "aria-expanded") == "false"
         page.click("#study-card")
-        page.wait_for_selector("#study-menu:not([hidden]) .study-menu-study")
-        listed = page.eval_on_selector_all(".study-menu-study .study-menu-name",
-                                           "n => n.map((x) => x.textContent)")
+        page.wait_for_selector("#study-menu:not([hidden])")
+        items = page.eval_on_selector_all("#study-menu .study-menu-item:not([hidden])",
+                                          "n => n.map((x) => x.textContent.trim())")
+        listed = page.locator("#study-menu .study-menu-study").count()
+        path = page.is_visible("#study-menu .study-path")
         expanded = page.get_attribute("#study-card", "aria-expanded")
-        folder = page.text_content("#study-menu .study-path")
         page.keyboard.press("Escape")
         closed = page.is_hidden("#study-menu")
         focused = page.evaluate("() => document.activeElement.id")
@@ -183,9 +186,9 @@ def test_the_study_card_opens_the_studies_to_switch_to(browser, workspace):
         page.wait_for_function("() => document.documentElement.dataset.page === 'studies'")
         after = page.is_hidden("#study-menu")
     assert facts["errors"] == []
-    # The workspace's other studies, newest first, not the one on screen.
-    assert listed == ["running", "stopped"] and expanded == "true"
-    assert folder.endswith("finished")
+    assert items == ["All studies\u2026", "Open another folder\u2026", "Open the folder",
+                     "Rename for display\u2026", "Ligand residue\u2026"]
+    assert listed == 0 and not path and expanded == "true"
     assert closed and focused == "study-card" and after
 
 

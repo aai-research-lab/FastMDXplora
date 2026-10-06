@@ -62,8 +62,9 @@ double-click to reset; the sidebar folds to a strip of its icons under the
 lab's mark, the side panel to a tab at its edge, and the centre stays
 centred at a reading width whatever is folded. Pointing at the strip's
 mark, or the panel's tab, shows the column over the page for as long as
-the pointer stays on it or the column, with a button at the column's edge;
-a click on that keeps the column open. The strip's icons are used as they
+the pointer stays on it or the column, with one button that keeps it; a
+click on that button, or anywhere in the column with nothing of its own
+under the pointer, keeps the column open. The strip's icons are used as they
 are, without opening the sidebar. Opening the Viewer folds both, and
 another page brings them back as they were; a column kept open on the
 Viewer stays open there. Every page's header is one band across the
@@ -111,8 +112,7 @@ folded. The study card says the study's name (its system), large, and one
 line: where it stands (running, completed, stopped, failed), the platform,
 and, when the page has stopped hearing from the server, that too. Under it
 is the study's folder by name, shortened in the middle to fit; a click
-copies its whole path. Pressed, it opens the
-studies to switch to: the newest of the workspace, **All studies**, **Open
+copies its whole path. Pressed, the card opens **All studies**, **Open
 another folder** (a picker on any folder), and the study's own folder with
 **Open the folder** (where it cannot be opened from here, its path is
 copied), **Rename for display** (the name the GUI shows the study under

@@ -87,7 +87,7 @@ class TestTheNavigation:
         was under New study, though it answers about the open study too."""
         page = _open(browser, studies["finished"])
         said = page.evaluate("""() => ({
-            order: [...document.querySelectorAll('.sidebar .nav-link')].map(a => a.dataset.viewLink),
+            order: [...document.querySelectorAll('.sidebar a.nav-link')].map(a => a.dataset.viewLink),
             headings: [...document.querySelectorAll('.sidebar .nav-heading')]
                 .map(h => h.textContent.trim()),
             top: getComputedStyle(document.querySelector('.sidebar-top')).position,
@@ -95,7 +95,7 @@ class TestTheNavigation:
         })""")
         page.context.close()
         assert said == {"order": NEW_NAV + ["studies"] + STUDY_NAV,
-                        "headings": ["Recent", "Active study"],
+                        "headings": ["Active study"],
                         "top": "sticky", "begin": NEW_NAV}
 
     def test_every_entry_is_in_a_short_window(self, browser, studies) -> None:

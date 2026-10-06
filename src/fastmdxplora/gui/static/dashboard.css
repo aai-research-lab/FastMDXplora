@@ -5020,21 +5020,32 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar-start .nav-link { font-weight: 500; color: var(--text-primary); }
 .sidebar-start .nav-link .nav-icon { color: var(--text-secondary); }
 
-.sidebar-recent > summary {
+/* Recent is a row of the sidebar with its own line icon, as New study and
+   the Agent are, and folds the studies under it. */
+.sidebar .sidebar-recent > summary {
     list-style: none; cursor: pointer;
-    display: flex; align-items: center; gap: 6px;
-    margin: 12px 8px 4px; font-weight: 500; letter-spacing: .08em;
+    display: flex; align-items: center; gap: 10px;
+    margin: 6px 0 2px; padding: 6px 8px; border: none; border-radius: 7px;
+    font-size: var(--text-sm); font-weight: 400; letter-spacing: 0; text-transform: none;
+    color: var(--text-secondary);
 }
 .sidebar-recent > summary::-webkit-details-marker { display: none; }
-.sidebar-recent > summary:hover { color: var(--text-secondary); }
-.sidebar-recent > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
-.sidebar-recent .recent-icon { display: none; }
+.sidebar .sidebar-recent > summary:hover {
+    color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+.sidebar-recent > summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.sidebar-recent > summary > span { flex: 1; min-width: 0; }
+.sidebar .sidebar-recent .recent-icon {
+    display: block; width: 16px; height: 16px; flex: none;
+    background: none; opacity: 1; border-radius: 0; color: var(--text-muted);
+}
 .sidebar-recent .recent-chevron {
-    width: 12px; height: 12px; transform: rotate(-90deg);
+    width: 14px; height: 14px; flex: none; color: var(--text-muted);
+    transform: rotate(-90deg);
     transition: transform var(--duration-fast) var(--ease);
 }
 .sidebar-recent[open] .recent-chevron { transform: none; }
-.sidebar-recent-list { display: flex; flex-direction: column; gap: 1px; }
+.sidebar-recent-list { display: flex; flex-direction: column; gap: 1px; padding-left: 26px; }
 .sidebar-recent-item {
     display: flex; align-items: baseline; gap: 8px; width: 100%;
     padding: 5px 8px; border: none; border-radius: 7px; background: transparent;
@@ -5051,6 +5062,14 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .sidebar .sidebar-workspace { padding: 6px 0 0; }
 
 .sidebar-study > .nav-heading { margin: 12px 8px 6px; font-weight: 500; letter-spacing: .08em; }
+/* The active study is a part of the sidebar, not a box in it. */
+.sidebar .sidebar-study-card {
+    padding: 6px 8px; border: none; border-radius: 7px; background: transparent;
+}
+.sidebar .sidebar-study-card:hover, .sidebar .sidebar-study-card[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+.sidebar .study-folder { padding-left: 8px; padding-right: 8px; }
 .sidebar-study-card .study-name {
     margin-top: 0; font-size: var(--text-lg); font-weight: 650; letter-spacing: -0.01em;
 }
@@ -5115,6 +5134,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         color: var(--text-secondary);
     }
     body.sidebar-peek .sidebar .sidebar-top .sidebar-brand { padding-left: calc(var(--strip-width) - 4px); }
+    /* One button while it is shown over the page, the one that keeps it;
+       its own fold button beside it read as a second, the opposite way. */
+    body.sidebar-peek .sidebar .sidebar-collapse { display: none; }
 }
 
 /* On a phone the sidebar is the bar across the top: the name, the study,

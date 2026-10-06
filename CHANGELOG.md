@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The active study is a part of the sidebar, and a column shown over the page has one button
+
+**The active study is no longer a box in the sidebar, and its menu no
+longer lists the newest studies a second time** (Recent, above it, does);
+the menu opens All studies, another folder, and the study's own settings.
+**Recent is a row with its own line icon**, as New study and the Agent
+are. **A folded column shown over the page has one button**, the one that
+keeps it: the sidebar showed its own fold button beside it, pointing the
+other way. **A click anywhere in a column shown over the page keeps it**,
+where nothing of its own is under the pointer, as its button does.
+
 ### An entry typed into the builder is fetched once, and read only whole
 
 **Fixed:** the builder's preview and its estimate ask for a structure

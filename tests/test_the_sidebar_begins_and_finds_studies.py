@@ -143,3 +143,44 @@ def test_the_mark_pointed_at_and_clicked_where_it_is_keeps_the_sidebar(browser, 
     tab.context.close()
     assert under and kept
     assert first == "sidebar-expand"
+
+
+def test_shown_over_the_page_it_has_one_button_and_a_click_keeps_it(browser, session) -> None:
+    """Pointed at, the folded sidebar showed both its keep button and its
+    own fold button, the opposite way; and only the small button kept it.
+    The side panel the same: a click on it, where nothing of its own is,
+    keeps it."""
+    tab = _open(browser, session, "#viewer")
+    tab.wait_for_function("() => document.body.classList.contains('sidebar-collapsed')")
+    tab.mouse.move(720, 450)
+    said = {}
+    for which, button, column in (("sidebar", "#sidebar-expand", ".sidebar"),
+                                  ("panel", "#side-expand", "#side-panel")):
+        box = tab.locator(button).bounding_box()
+        tab.mouse.move(box["x"] + box["width"] / 2 + 1, box["y"] + box["height"] / 2)
+        tab.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        tab.wait_for_function(f"() => document.body.classList.contains('{which}-peek')")
+        if which == "sidebar":
+            said["folds"] = tab.evaluate(
+                "() => getComputedStyle(document.getElementById('sidebar-collapse')).display")
+        # Onto the column, to a place in it with nothing of its own.
+        x, y = tab.evaluate(f"""() => {{
+            const r = document.querySelector('{column}').getBoundingClientRect();
+            const x = r.left + r.width / 2;
+            for (let y = r.bottom - 90; y > r.top + 60; y -= 10) {{
+                const at = document.elementFromPoint(x, y);
+                if (at && !at.closest('a, button, input, select, textarea, label, summary, details, [tabindex]'))
+                    return [x, y];
+            }}
+            return [x, r.top + 60];
+        }}""")
+        tab.mouse.move(x, y)
+        empty = tab.evaluate(f"""() => !document.elementFromPoint({x}, {y})
+            .closest('a, button, input, select, textarea, label, summary, details')""")
+        tab.mouse.click(x, y)
+        tab.mouse.move(720, 450)
+        tab.wait_for_timeout(400)
+        said[which] = [empty, tab.evaluate(
+            f"() => !document.body.classList.contains('{which}' === 'sidebar' ? 'sidebar-collapsed' : 'panel-collapsed')")]
+    tab.context.close()
+    assert said == {"folds": "none", "sidebar": [True, True], "panel": [True, True]}
