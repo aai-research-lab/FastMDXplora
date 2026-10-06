@@ -4945,7 +4945,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-means dt { color: var(--text-muted); }
 .study-means dd { margin: 0; color: var(--text-primary); }
 .study-free-energy { color: var(--text-secondary); }
-.study-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+/* Its buttons together at its foot, not spread across the card. */
+.study-actions { display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin-top: 4px; }
+.study-actions .study-pick { margin-left: 6px; }
 .study-pick { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
 .studies-compare-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
 .studies-compare-bar[hidden], .studies-compared[hidden], .studies-empty[hidden] { display: none; }
@@ -5783,3 +5785,15 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 }
 .menu-item-name { font-weight: 500; }
 .menu-item-kind { font-size: var(--text-2xs); color: var(--text-muted); }
+
+/* All studies as a table: Open and Tag side by side at a row's end, and
+   its tags and note changed under it. */
+.studies-actions { display: flex; gap: 6px; align-items: center; }
+.studies-table .studies-editing td { white-space: normal; background: color-mix(in srgb, var(--text-primary) 3%, transparent); }
+.studies-table td:last-child, .studies-table th:last-child {
+    position: sticky; right: 0; z-index: 1;
+    background: var(--background-elevated);
+    box-shadow: -1px 0 0 var(--border-subtle);
+}
+.studies-table .studies-editing td { position: static; box-shadow: none; }
+.studies-editing .study-tag-editor { max-width: 560px; padding: 6px 2px; }

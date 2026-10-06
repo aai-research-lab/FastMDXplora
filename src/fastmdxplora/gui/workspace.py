@@ -111,6 +111,9 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         "kind": _kind_of(config, batch),
         "state": _state_of(base, batch, manifest),
         "when": _when(base, manifest),
+        # When anything was last done with it: run, analysed, reported,
+        # tagged, viewed or talked about.
+        "last_active": _last_active(base),
         "means": [],
         # A figure it plotted, else a picture of its backbone, else none.
         "thumbnail": _picture_of(base),
@@ -389,6 +392,37 @@ def _when(base: Path, manifest: Any) -> str:
     except OSError:
         return ""
     return datetime.fromtimestamp(stamp, timezone.utc).isoformat(timespec="seconds")
+
+
+#: The records a study's activity changes: its run, its analyses and report,
+#: and what the person keeps with it (tags, views, selections). The Agent's
+#: conversations are looked at as a folder, each file in it.
+_ACTIVE_RECORDS = (
+    "manifest.json", "batch_manifest.json", "simulation/live_status.json",
+    "analysis/analysis_manifest.json", "report/report.md", "study_tags.json",
+    "viewer_views.json", "viewer_selections.json",
+)
+_CONVERSATIONS = Path("agent") / "conversations"
+
+
+def _last_active(base: Path) -> str:
+    """When the study was last active, by its newest record, or ''."""
+    newest = 0.0
+    for name in _ACTIVE_RECORDS:
+        try:
+            newest = max(newest, (base / name).stat().st_mtime)
+        except OSError:
+            continue
+    try:
+        with os.scandir(base / _CONVERSATIONS) as kept:
+            for entry in kept:
+                if entry.is_file():
+                    newest = max(newest, entry.stat().st_mtime)
+    except OSError:
+        pass
+    if not newest:
+        return ""
+    return datetime.fromtimestamp(newest, timezone.utc).isoformat(timespec="seconds")
 
 
 def _lifted(config: Any) -> Any:

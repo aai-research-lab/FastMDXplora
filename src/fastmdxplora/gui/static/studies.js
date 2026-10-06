@@ -57,6 +57,33 @@
     return withError(record.mean, record.error, record.unit);
   }
 
+  /* A time within the day said as how long ago; earlier, its date. */
+  function timeSaid(when) {
+    var date = new Date(when);
+    if (isNaN(date.getTime())) return "";
+    var minutes = Math.round((Date.now() - date.getTime()) / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return minutes + " min ago";
+    if (minutes < 24 * 60) return Math.round(minutes / 60) + " h ago";
+    return dateSaid(when);
+  }
+
+  /* Tags and a note of the person's own, changed on the card or under
+   * the table's row. */
+  function tagButton(study) {
+    var tag = make("button", "file-action study-tag-edit",
+      (study.tags || []).length || study.note ? "Tags" : "Tag");
+    tag.type = "button";
+    tag.title = "Tags and a note of your own, kept in the study's folder";
+    tag.addEventListener("click", function () {
+      editing = study.path;
+      draw();
+      var input = document.querySelector(".study-tag-editor .study-tag-input");
+      if (input) input.focus();
+    });
+    return tag;
+  }
+
   function dateSaid(when) {
     var date = new Date(when);
     return isNaN(date.getTime()) ? "" : date.toLocaleDateString(undefined,
@@ -382,17 +409,7 @@
     box.checked = chosen.indexOf(study.path) >= 0;
     box.addEventListener("change", function () { choose(study.path, box.checked); });
     pick.append(box, document.createTextNode(" Compare"));
-    var tag = make("button", "file-action study-tag-edit",
-      (study.tags || []).length || study.note ? "Tags" : "Tag");
-    tag.type = "button";
-    tag.title = "Tags and a note of your own, kept in the study's folder";
-    tag.addEventListener("click", function () {
-      editing = study.path;
-      draw();
-      var input = document.querySelector(".study-tag-editor .study-tag-input");
-      if (input) input.focus();
-    });
-    actions.append(open, tag, pick);
+    actions.append(open, tagButton(study), pick);
     body.appendChild(actions);
     item.appendChild(body);
     return item;
@@ -448,7 +465,10 @@
     if (key === "name") return String(study.name || "").toLowerCase();
     if (key === "system") return String(study.system || "").toLowerCase();
     if (key === "state") return STATE_ORDER[String(study.state || "").toLowerCase()];
-    if (key === "when") { var t = new Date(study.when).getTime(); return isNaN(t) ? null : t; }
+    if (key === "when" || key === "active") {
+      var t = new Date(key === "when" ? study.when : study.last_active || study.when).getTime();
+      return isNaN(t) ? null : t;
+    }
     var column = columns.find(function (c) { return c.key === key; });
     var m = column ? meanOf(study, column) : null;
     return m && m.mean != null ? m.mean : null;
@@ -478,7 +498,8 @@
     var host = el("studies-table");
     var columns = meanColumns(shown);
     var heads = [["", null], ["Study", "name"], ["System", "system"], ["State", "state"],
-                 ["Started", "when"]].concat(columns.map(function (c) { return [c.label, c.key]; }))
+                 ["Started", "when"], ["Last activity", "active"]]
+                 .concat(columns.map(function (c) { return [c.label, c.key]; }))
                  .concat([["Tags", null], ["", null]]);
     var head = make("thead");
     var row = make("tr");
@@ -493,7 +514,9 @@
         th.setAttribute("aria-sort", on ? (sortBy.down ? "descending" : "ascending") : "none");
         if (on) button.dataset.dir = sortBy.down ? "down" : "up";
         button.addEventListener("click", function () {
-          sortBy = { key: h[1], down: sortBy.key === h[1] ? !sortBy.down : h[1] === "when" };
+          // A date is sorted newest first to begin with.
+          var dated = h[1] === "when" || h[1] === "active";
+          sortBy = { key: h[1], down: sortBy.key === h[1] ? !sortBy.down : dated };
           draw();
           // The table is built again: the keyboard stays where it was.
           refocus(".studies-sort", "key", h[1]);
@@ -537,8 +560,10 @@
       light.dataset.state = String(study.state || "").toLowerCase();
       light.setAttribute("aria-hidden", "true");
       state.append(light, document.createTextNode(" " + (study.state || "")));
+      var active = make("td", "muted", timeSaid(study.last_active || study.when));
+      if (study.last_active) active.title = new Date(study.last_active).toLocaleString();
       tr.append(pick, name, make("td", "", study.system || ""), state,
-                make("td", "muted", dateSaid(study.when)));
+                make("td", "muted", dateSaid(study.when)), active);
       columns.forEach(function (column) {
         var m = meanOf(study, column);
         tr.appendChild(make("td", "mono studies-mean", m ? meanSaid(m) : ""));
@@ -547,12 +572,23 @@
       (study.tags || []).forEach(function (t) { tags.appendChild(make("span", "study-tag", t)); });
       if (study.note) tags.title = study.note;
       var open = make("td");
+      var acts = make("div", "studies-actions");
       var button = make("button", "file-action study-open", "Open");
       button.type = "button";
       button.addEventListener("click", function () { openStudy(study.path, button); });
-      open.appendChild(button);
+      acts.append(button, tagButton(study));
+      open.appendChild(acts);
       tr.append(tags, open);
       body.appendChild(tr);
+      // Its tags and note changed under its row, as on its card.
+      if (editing === study.path) {
+        var under = make("tr", "studies-editing");
+        var cell = make("td");
+        cell.colSpan = heads.length;
+        cell.appendChild(tagEditor(study));
+        under.appendChild(cell);
+        body.appendChild(under);
+      }
     });
     host.replaceChildren(head, body);
   }
