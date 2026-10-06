@@ -78,8 +78,12 @@ button {
 
 .muted { color: var(--text-muted); }
 .small { font-size: var(--text-xs); }
+/* Placed at its column's top-left corner: left where the text would have
+   been, a legend at the foot of the Viewer's settings column lay 200 px
+   below the window, and the column scrolled on to it, onto nothing. */
 .sr-only {
     position: absolute;
+    top: 0; left: 0;
     width: 1px; height: 1px;
     padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0,0,0,0);
@@ -5138,6 +5142,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
        its own fold button beside it read as a second, the opposite way. */
     body.sidebar-peek .sidebar .sidebar-collapse { display: none; }
 }
+
+/* The Viewer is fitted to the window (molecule-viewer.js fitTheLayout,
+   20 px short of its foot): the page's own foot of 64 px under it made the
+   column scroll onto the bare ground. */
+html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 0; }
 
 /* On a desk the window is the shell, each column scrolling by itself: a
    piece of the page placed outside its column (a screen-reader legend at

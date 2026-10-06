@@ -252,3 +252,19 @@ def test_the_sequence_folds_with_the_sections_own_marker(browser, session) -> No
     }""")
     tab.context.close()
     assert found[0] == found[1] == ["list-item", "inside", found[1][2]]
+
+
+@pytest.mark.parametrize("width,height,stored", [
+    (1440, 900, {}), (1280, 720, {}), (1512, 982, {"viewerPlaybackOpen": "1"})])
+def test_the_viewer_s_column_does_not_scroll_onto_the_ground(browser, session, width, height,
+                                                             stored) -> None:
+    """The Viewer is fitted to the window, yet its column scrolled on by
+    about 200 pixels onto nothing but the ground: the page's own foot of 64
+    pixels under the fitted molecule, and a screen-reader legend at the foot
+    of the settings, placed below the window."""
+    tab = _open(browser, session, page="viewer", width=width, height=height, stored=stored)
+    _settled(tab)
+    over = tab.evaluate("""() => { const m = document.querySelector('.main');
+        return [m.scrollHeight - m.clientHeight, document.scrollingElement.scrollHeight - innerHeight]; }""")
+    tab.context.close()
+    assert over[0] <= 0 and over[1] <= 0, over

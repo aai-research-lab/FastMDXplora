@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Viewer's column no longer scrolls onto the ground
+
+**Fixed:** with the sidebar folded and the side panel closed, the Viewer's
+column scrolled about 200 pixels past the fitted molecule onto nothing but
+the ground: the page's own foot of 64 pixels sat under a layout already
+fitted to the window, and a screen-reader legend at the foot of the
+settings column was placed below the window. The Viewer has no foot, and
+text kept for screen readers sits at its column's top corner.
+
 ### The window no longer scrolls past its columns
 
 **Fixed:** on the Viewer the whole window scrolled on past the page by
