@@ -27,6 +27,15 @@ under Recent, an analysis of the study open, a tool of the Viewer, a
 scheme, Preferences, Cite or the Viewer's keys by the words typed, chosen
 with the arrows and Enter.
 
+### A run's progress in the tab's title, and a notice when it ends
+
+**Added:** while a run goes on, the tab's title begins with how far it is
+("42% · 1L2Y"), so a run is followed from another tab. **Notify when a run
+ends** in Preferences shows the browser's notice as the run completes,
+stops or fails: only a run seen running in the page, never on opening a
+finished study. The browser asks once; refused, the setting is unticked
+and says so.
+
 ### A study's card is plotted in the page's colours
 
 **Changed:** each card on All studies showed the first figure its study

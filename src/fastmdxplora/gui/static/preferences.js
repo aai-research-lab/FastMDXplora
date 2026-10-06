@@ -150,7 +150,8 @@
     keepCamera: ["setting-preserve-camera", "checked", true],
     pocketCutoff: ["setting-pocket-cutoff", "value", "5"],
     timeFormat: ["setting-time-format", "value", "24h"],
-    chartHistory: ["setting-chart-history", "value", "600"]
+    chartHistory: ["setting-chart-history", "value", "600"],
+    notify: ["setting-notify", "checked", false]
   };
 
   function put(values) {

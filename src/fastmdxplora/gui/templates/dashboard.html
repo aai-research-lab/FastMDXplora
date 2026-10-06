@@ -198,7 +198,16 @@
             </label>
           </div>
         </div>
-
+        <div class="pref-group">
+          <div class="pref-group-title">While a study runs</div>
+          <div class="pref-rows">
+            <label class="pref-row"><span>Notify when a run ends<small>A notice from the browser, as it
+              completes, stops or fails; how far it is shows in the tab's title either way</small></span>
+              <input type="checkbox" id="setting-notify">
+            </label>
+            <p class="muted small" id="setting-notify-note" role="status" hidden></p>
+          </div>
+        </div>
       </div>
       <div class="agent-dialog-foot">
         <button type="button" class="ghost-btn" id="prefs-restore">Restore defaults</button>
@@ -1811,6 +1820,7 @@
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/viewer-rail.js"></script>
   <script src="/static/palette.js"></script>
+  <script src="/static/run-notice.js"></script>
   <script src="/static/viewer-sequence.js"></script>
   <script src="/static/viewer-selections.js"></script>
   <script src="/static/frame-series.js"></script>
