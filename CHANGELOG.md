@@ -20,6 +20,13 @@ black on the Light scheme too: it is on the scheme's ground now, white on
 Light, unless a ground is chosen (Preferences, **As the scheme** by
 default, or the ground button).
 
+### Go to anything by typing it
+
+**Added:** ⌘K (Ctrl+K off a Mac) opens a field that finds a page, a study
+under Recent, an analysis of the study open, a tool of the Viewer, a
+scheme, Preferences, Cite or the Viewer's keys by the words typed, chosen
+with the arrows and Enter.
+
 ### A study's card is plotted in the page's colours
 
 **Changed:** each card on All studies showed the first figure its study

@@ -101,6 +101,16 @@
       </div>
     </div>
   </div>
+  <!-- Everything to go to or do, found by typing (palette.js, Cmd+K). -->
+  <div id="palette" class="agent-dialog palette" hidden>
+    <div class="agent-dialog-panel palette-panel" role="dialog" aria-modal="true" aria-label="Go to anything">
+      <input id="palette-input" class="palette-input" type="text" autocomplete="off" spellcheck="false"
+             role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list"
+             placeholder="Go to a page, a study, an analysis, a tool...">
+      <ul id="palette-list" class="palette-list" role="listbox" aria-label="Found"></ul>
+      <div class="palette-foot muted small"><kbd>&uarr;</kbd><kbd>&darr;</kbd> choose · <kbd>Enter</kbd> go · <kbd>Esc</kbd> close</div>
+    </div>
+  </div>
   <!-- The Viewer's keys, opened by ? on the Viewer or its Keys button. -->
   <div id="viewer-help" class="agent-dialog" hidden>
     <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
@@ -123,6 +133,7 @@
           <div><dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>The tool above or below on the rail</dd></div>
           <div><dt><kbd>Esc</kbd></dt><dd>Clear a measurement; close this list</dd></div>
           <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
+          <div><dt><kbd>&#8984;</kbd> <kbd>K</kbd></dt><dd>Go to anything, on any page (<kbd>Ctrl</kbd> <kbd>K</kbd> off a Mac)</dd></div>
         </dl>
         <p class="builder-card-note">On the molecule: drag to turn, scroll to zoom, right-drag to move,
           click an atom to select it.</p>
@@ -1799,6 +1810,7 @@
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/viewer-rail.js"></script>
+  <script src="/static/palette.js"></script>
   <script src="/static/viewer-sequence.js"></script>
   <script src="/static/viewer-selections.js"></script>
   <script src="/static/frame-series.js"></script>
