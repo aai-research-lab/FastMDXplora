@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A shared study made a draft on Zenodo
+
+**Added:** `--share-to zenodo` (or `zenodo-sandbox`) with `--share` makes a
+draft on Zenodo from the token in `ZENODO_TOKEN`: the study packed first,
+the draft's DOI reserved and written into the archive as its own, the
+archive uploaded and the description filled in from the records. It never
+publishes. The study keeps the record in `shared_to.json`: shared again
+before publishing, the same draft is made again; after, a new version.
+
 ### A study shared as one file
 
 **Added:** `fastmdx report --output STUDY --share FILE` packs a finished

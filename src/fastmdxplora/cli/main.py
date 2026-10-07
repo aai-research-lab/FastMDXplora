@@ -2021,6 +2021,10 @@ def _share_args(parser: argparse.ArgumentParser) -> None:
     share.add_argument("--share-author", action="append", default=[], metavar="NAME",
                        help="With --share: an author, given once for each; NAME;ORCID "
                             "adds an ORCID. Default: the report's --author.")
+    share.add_argument("--share-to", default=None, choices=("zenodo", "zenodo-sandbox"),
+                       help="With --share: also make a draft of it on Zenodo (or Zenodo's "
+                            "sandbox), with the token in ZENODO_TOKEN (ZENODO_SANDBOX_TOKEN); "
+                            "you read the draft and publish it.")
 
 
 def _cmd_share(args: argparse.Namespace) -> int:
@@ -2051,10 +2055,26 @@ def _cmd_share(args: argparse.Namespace) -> int:
         print("fastmdx report: --share needs an author: --share-author NAME, given once "
               "for each.", file=sys.stderr)
         return 2
+    licence = args.share_license or DEFAULT_LICENSE
+
+    def pack(identifier: str = "") -> dict:
+        return share_study(args.output_dir, args.share, everything=args.share_all,
+                           license_id=licence, authors=authors, identifier=identifier,
+                           said=print)
+
     try:
-        share_study(args.output_dir, args.share, everything=args.share_all,
-                    license_id=args.share_license or DEFAULT_LICENSE, authors=authors,
-                    said=print)
+        if args.share_to:
+            from fastmdxplora.sharing.pack import finished_manifest
+            from fastmdxplora.sharing.zenodo import draft
+
+            study = Path(args.output_dir).expanduser()
+            # Refused before a draft is made for a study that cannot be shared.
+            manifest = finished_manifest(study)
+            draft(study, Path(args.share).expanduser(), site=args.share_to, pack=pack,
+                  authors=authors, license_id=licence,
+                  system=str(manifest.get("system") or ""), said=print)
+        else:
+            pack()
     except CodedError as exc:
         print(f"fastmdx report: {exc}", file=sys.stderr)
         return 2

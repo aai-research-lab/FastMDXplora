@@ -365,6 +365,7 @@ Full documentation: [Sharing a study](sharing.md).
 
 ```bash
 fastmdx report --output runs/study --share study.zip --share-author "A. Researcher"
+fastmdx report --output runs/study --share study.zip --share-author "A. Researcher;0000-0002-1825-0097" --share-to zenodo
 ```
 
 | Flag | Default | What it does |
@@ -373,6 +374,7 @@ fastmdx report --output runs/study --share study.zip --share-author "A. Research
 | `--share-all` | off | Every file of the study, not only what its pages read |
 | `--share-license ID` | `CC-BY-4.0` | The licence, as an SPDX identifier |
 | `--share-author NAME` | the report's `--author` | An author, given once for each; `"NAME;ORCID"` adds an ORCID iD |
+| `--share-to SITE` | none | Also make a draft on `zenodo` or `zenodo-sandbox`, with the token in `ZENODO_TOKEN` or `ZENODO_SANDBOX_TOKEN`; you publish it |
 
 ---
 

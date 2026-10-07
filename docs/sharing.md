@@ -2,13 +2,16 @@
 
 A finished study can be handed to someone else as one file, and opened by their
 FastMDXplora as the study it was: the same pages, the same frames, the same
-numbers, with every file checked against what was packed.
+numbers, with every file checked against what was packed. Put on Zenodo, it
+has a DOI, and a DOI is all anyone needs to open it.
 
 ```bash
 fastmdx report --output runs/3ptb --share 3ptb.zip --share-author "Adekunle Aina"
+fastmdx report --output runs/3ptb --share 3ptb.zip --share-author "Adekunle Aina" --share-to zenodo
 ```
 
-It packs the study as its pages show it.
+The first packs the study as its pages show it. The second also makes a
+draft of it on Zenodo, for you to read and publish.
 
 The file is a zip in a published format, [RO-Crate](https://www.researchobject.org/ro-crate/)
 1.2: the study's files as they are laid out in its folder, and one more,
@@ -35,6 +38,7 @@ after `fastmdx resume` where it stopped.
 | `--share-all` | Packs every file of the study, not only what its pages read (below). |
 | `--share-license ID` | The licence the archive is shared under, as an SPDX identifier; `CC-BY-4.0` unless given. |
 | `--share-author NAME` | An author of the archive, given once for each; `"NAME;ORCID"` adds an ORCID iD (`"Adekunle Aina;0000-0002-8215-7452"`). The report's `--author` unless given; one is needed. |
+| `--share-to zenodo` | Also makes a draft of the archive on Zenodo (below); `zenodo-sandbox` on Zenodo's sandbox, for trying it out. |
 
 The same study packed twice with the same flags on the same day gives the same
 bytes: the files in name order, each with the time of the study's last phase.
@@ -94,6 +98,46 @@ home folder or the computer's name is still found is not written
 (`environment.share.unscrubbed`, naming the file). Binary files (the
 trajectory, figures, NumPy arrays) are packed as they are; none of their
 formats records a path.
+
+---
+
+## Putting it on Zenodo
+
+`--share-to zenodo` makes a **draft** on Zenodo, never a publication.
+FastMDXplora:
+
+1. makes a draft deposition and asks Zenodo to reserve its DOI;
+2. writes that DOI into the archive's packing list as the archive's own
+   `identifier`, so the archive names itself;
+3. uploads the archive;
+4. fills in the draft's description from the study's records: its title, the
+   authors given, a summary from the report, the licence, keywords (the
+   system, "molecular dynamics"), the software that made it
+   (`isCompiledBy` FastMDXplora's repository) and the structure it started
+   from (`isDerivedFrom` the PDB entry's DOI, where it is one);
+5. prints the draft's address.
+
+You open the address, read the draft, change what you want, and press
+**Publish**. Until then nothing is public, and the draft can be deleted (a
+share after that makes a new one).
+
+The study is packed before Zenodo is asked anything, so a study that cannot
+be shared leaves no draft behind, and the draft is recorded in the study as
+soon as it exists, so a share that fails part way is finished by the next
+one rather than leaving a second draft.
+
+It needs a Zenodo token in `ZENODO_TOKEN` (`ZENODO_SANDBOX_TOKEN` for
+`--share-to zenodo-sandbox`) with the **deposit:write** scope, made under
+Applications in your Zenodo account's settings. FastMDXplora never
+publishes. The token is read from the environment for the one command and
+written nowhere.
+
+The study keeps the record it was shared as in `shared_to.json`. Shared
+again before you publish, the same draft is made again with the new
+archive. Shared again after (analysed again, say), it is a draft of a new
+version of the same record, which Zenodo makes only for a token that also
+has the **deposit:actions** scope; the record's concept DOI always leads to
+its latest version.
 
 ---
 
@@ -231,3 +275,4 @@ The packing list of the demo study, cut to one file of each kind:
 | `environment.share.unscrubbed` | A packed text file still holds the study's folder, the home folder or the computer's name. |
 | `environment.share.not_a_study` | No packing list, not RO-Crate 1.2, not this profile, or a profile version this release does not know. |
 | `environment.share.unsafe` | A member outside the folder, a link or a device, or more unpacked than the limit. |
+| `environment.service.unreachable` | Zenodo could not be reached, refused the token, or did not answer as it documents. |

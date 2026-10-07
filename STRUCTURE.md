@@ -42,7 +42,8 @@ FastMDXplora/
 │       ├── sharing/               # A study shared as one file, and opened from it (docs/sharing.md)
 │       │   ├── __init__.py        # The profile, its version and the placeholders a packed record says
 │       │   ├── crate.py           # The packing list: RO-Crate 1.2 with the study profile, and its check
-│       │   └── pack.py            # `fastmdx report --share`: the files chosen, paths replaced, the zip
+│       │   ├── pack.py            # `fastmdx report --share`: the files chosen, paths replaced, the zip
+│       │   └── zenodo.py          # `--share-to zenodo`: a draft with its DOI reserved; a record read back
 │       ├── mcp/
 │       │   ├── protocol.py        # The Model Context Protocol over stdio, both eras
 │       │   ├── app.py             # What `fastmdx mcp` offers an AI app
