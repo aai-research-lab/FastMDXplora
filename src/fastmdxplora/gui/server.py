@@ -850,10 +850,12 @@ def make_handler(
                                     else lambda path: hosting.inside(str(path)) is not None)))
                 return
             if path == "/api/artifacts" or path == "/api/files":
-                self._send_json({"artifacts": _artifact_records(root)})
+                self._send_json({"artifacts": self._where_each_is(root, _artifact_records(root))})
                 return
             if path == "/api/results" or path == "/api/analyses":
-                self._send_json(_results_payload(root))
+                payload = _results_payload(root)
+                self._where_each_is(root, payload.get("artifacts") or [])
+                self._send_json(payload)
                 return
             if path == "/api/series":
                 from fastmdxplora.gui.series import series_over_time, series_payload
@@ -1907,6 +1909,20 @@ def make_handler(
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _where_each_is(self, root: Path,
+                           records: list[dict[str, str]]) -> list[dict[str, str]]:
+            """Each file's full path on this computer, which Copy path
+            copies. It copied the path inside the study (`simulation/
+            production.dcd`), of no use in a terminal or a script opened
+            elsewhere. Only where the GUI is on the person's own computer:
+            beyond loopback and hosted, a path on the server is not theirs
+            to know, and the path inside the study is what is said."""
+            if not allow_control or hosting is not None:
+                return records
+            for record in records:
+                record["absolute_path"] = str(root / record["path"])
+            return records
 
         def _send_artifact(
             self,
