@@ -299,3 +299,78 @@ def test_a_run_that_ended_before_it_was_seen_running_is_summarised(tmp_path, mon
     assert line.startswith("Ran version 1") and stop == 0
     assert button == ["Run again", False]
     assert errors == []
+
+
+def test_a_late_summary_of_one_run_does_not_end_the_next(tmp_path, monkeypatch):
+    """Found by the third and fourth reviews (10-07): with run A's summary
+    still being read, version 2 was run; A's answer then said B's line had
+    run, took its Stop and freed its button while B ran. And by the fifth
+    and sixth (10-07): A's own line then kept "Running" and a Stop that
+    would have stopped B."""
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", tempfile.mkdtemp())
+    session = start_dashboard_session(output=str(tmp_path / "workspace" / "here"),
+                                      host="127.0.0.1", port=0)
+
+    def config(ns):
+        return {"ok": True, "cycles": 1, "yaml": "systems:\n- system: 1UAO\n",
+                "config": {"systems": [{"system": "1UAO"}], "simulation": {"duration_ns": ns}},
+                "plan": [], "attempts": []}
+
+    replies, outputs, held = [config(2), config(4)], ["/A", "/B"], []
+
+    def summary(route):
+        if json.loads(route.request.post_data)["study"] == "/A":
+            held.append(route)  # a slow read of A's records
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps({"ok": True, "ended": False}))
+
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session.url)
+            page.route("**/api/agent/propose*", lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
+            page.route("**/api/agent/run", lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps({"ok": True, "output": outputs.pop(0)})))
+            page.route("**/api/agent/run-summary", summary)
+            page.wait_for_selector("#agent-request", state="visible")
+            page.fill("#agent-request", "chignolin")
+            page.keyboard.press("Enter")
+            page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+            page.wait_for_selector("#agent-thread .agent-running")
+            page.evaluate("() => document.getElementById('refresh-now').click()")
+            for _ in range(100):
+                if held:
+                    break
+                page.wait_for_timeout(100)
+            page.fill("#agent-request", "make it 4 ns")
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "() => document.querySelectorAll('#agent-thread .agent-study').length >= 2")
+            page.click("#agent-thread .agent-study:not([hidden]) [data-role=run] >> nth=-1")
+            page.wait_for_function(
+                "() => document.querySelectorAll('#agent-thread .agent-running').length >= 2")
+            held[0].fulfill(status=200, content_type="application/json", body=json.dumps(
+                {"ok": True, "ended": True, "status": "completed",
+                 "head": "The run ended: completed", "found": "x"}))
+            page.wait_for_timeout(800)
+            line = page.locator("#agent-thread .agent-running-said").last.text_content()
+            first = page.locator("#agent-thread .agent-running-said").first.text_content()
+            stop = page.locator("#agent-thread .agent-running").last.locator(
+                ".agent-running-stop").count()
+            stops = page.locator("#agent-thread .agent-running-stop").count()
+            button = page.eval_on_selector_all(
+                "#agent-thread [data-role=run]", "bs => [bs.at(-1).textContent, "
+                "bs.at(-1).disabled]")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert line.startswith("Running version 2") and stop == 1
+    assert first.startswith("Ran version 1") and stops == 1
+    assert button == ["Running", True]
+    assert errors == []

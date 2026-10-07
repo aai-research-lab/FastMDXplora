@@ -1343,10 +1343,22 @@
   /* Whether a study is running here, by the server's word (`app-state`). */
   var runGoing = false;
 
+  /* The newest run of a version, from the transcript. */
+  function latestRunOf(number) {
+    for (var i = transcript.length - 1; i >= 0; i--) {
+      var e = transcript[i];
+      if (e.kind === "action" && e.action === "run" && e.version === number) return e;
+    }
+    return null;
+  }
+
   /* A run ended: its version can be run again, and its line no longer
-   * offers Stop. */
-  function runEnded() {
+   * offers Stop. With `only` (a run's transcript entry), that run's line
+   * alone, and its version's button unless the version was run again
+   * since (fifth and sixth reviews, 10-07). */
+  function runEnded(only) {
     versions.forEach(function (v) {
+      if (only && (v.number !== only.version || latestRunOf(v.number) !== only)) return;
       var button = v.r.part("run");
       if (button && button.textContent === "Running") {
         button.textContent = "Run again";
@@ -1355,6 +1367,7 @@
     });
     Array.prototype.forEach.call(document.querySelectorAll("#agent-thread .agent-running"),
       function (line) {
+        if (only && line.getAttribute("data-started") !== String(only.started || "")) return;
         var stop = line.querySelector(".agent-running-stop");
         if (stop) stop.remove();
         var light = line.querySelector(".recent-light");
@@ -1433,6 +1446,8 @@
   function runLine(box, number, started, live) {
     var line = document.createElement("div");
     line.className = "agent-running";
+    /* Whose line it is: a run's summary ends its own line alone. */
+    line.setAttribute("data-started", String(started || ""));
     /* The study's own light, as Recent shows it. */
     var light = document.createElement("span");
     light.className = "recent-light";
@@ -1675,10 +1690,12 @@
         return;
       }
       if (!s || !s.ended) return;
-      /* The server's word for that folder: the run has ended. A run that
-       * ended before a poll saw it going stayed "Running", with Stop, and
-       * the next run was refused (second review, 10-07). */
-      if (!runGoing) runEnded();
+      /* The server's word for that folder: this run has ended, whatever
+       * else runs. A run that ended before a poll saw it going stayed
+       * "Running", with Stop, and the next run was refused (second
+       * review, 10-07); its own line alone, as a later run may be going
+       * (third to sixth reviews, 10-07). */
+      runEnded(run);
       if (runAwaitingSummary() !== run) return;
       var r = reply();
       whoIs(r, STOPPED_AS.test(s.status || "") ? "stopped" : "done");
