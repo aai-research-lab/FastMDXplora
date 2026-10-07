@@ -2106,7 +2106,8 @@ class TestSixMoreFromUsingIt(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('note(box, "Thinking\\u2026");', script)
+        # What it is doing, a step at a time (10-07), not "Thinking...".
+        self.assertIn("function stepsIn(box)", script)
         self.assertNotIn('"Writing\\u2026"', script)
 
     def test_the_placeholder_is_as_general_as_the_agent(self):

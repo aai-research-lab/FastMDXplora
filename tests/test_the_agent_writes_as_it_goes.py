@@ -153,9 +153,11 @@ class TestThePanelSendsItOn:
         answer = propose_endpoint({"request": "How many residues in 1UBQ?"}, None,
                                   emit=events.append)
         kinds = [e["type"] for e in events]
-        assert kinds == ["begin", "text", "text", "look", "begin", "text", "text"]
-        assert events[3]["look"]["tool"] == "inspect_structure"
-        assert "".join(e["text"] for e in events[5:]) == "SAY: It has 76 residues."
+        # Each look said as it begins (10-07), then as taken.
+        assert kinds == ["begin", "text", "text", "looking", "look", "begin", "text", "text"]
+        assert events[3]["label"] == "Inspecting 1UBQ"
+        assert events[4]["look"]["tool"] == "inspect_structure"
+        assert "".join(e["text"] for e in events[6:]) == "SAY: It has 76 residues."
         assert answer["answer"] == "It has 76 residues."
 
     def test_a_completion_that_cannot_stream_is_sent_whole(self, monkeypatch):

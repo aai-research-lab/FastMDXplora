@@ -3435,7 +3435,31 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
     font-size: var(--text-md); line-height: 1.5; color: var(--text-primary);
     white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.agent-msg-agent { align-self: stretch; display: flex; flex-direction: column; gap: 10px; }
+.agent-msg-agent { align-self: stretch; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 0 12px; }
+.agent-msg-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* The Agent's icon beside each reply, coloured by what it is doing. */
+.agent-who {
+    width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center;
+    border: 1px solid var(--border-subtle); background: var(--background-elevated); color: var(--text-muted);
+}
+.agent-who-icon { width: 16px; height: 16px; }
+.agent-msg-agent[data-state="working"] .agent-who {
+    color: var(--status-live); border-color: var(--status-live); animation: agent-working 1.2s ease-in-out infinite;
+}
+.agent-msg-agent[data-state="waiting"] .agent-who { color: var(--status-waiting); border-color: var(--status-waiting); }
+.agent-msg-agent[data-state="stopped"] .agent-who { color: var(--status-error); border-color: var(--status-error); }
+@keyframes agent-working { 50% { opacity: .4; } }
+/* What the Agent is doing while it does it, a line a step. */
+.agent-steps { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-xs); color: var(--text-muted); padding-top: 4px; }
+.agent-step::before { content: "\2713"; color: var(--status-completed); margin-right: 7px; }
+.agent-step.is-now { color: var(--text-secondary); }
+.agent-step.is-now::before { content: "\2026"; color: var(--status-live); }
+/* A refusal by the software, in view: what it said, and that it was written again. */
+.agent-refused { border-left: 3px solid var(--status-waiting); padding: 6px 10px; font-size: var(--text-sm);
+    color: var(--text-secondary); background: var(--background-elevated); border-radius: 0 8px 8px 0; }
+.agent-refused b { color: var(--status-waiting); font-weight: 600; }
+.agent-look-found { color: var(--text-secondary); margin-top: 2px; }
+.agent-look details > summary { cursor: pointer; color: var(--text-muted); margin-top: 4px; }
 .agent-msg-agent .agent-attempts { margin: 0; }
 .agent-msg-agent .agent-result { margin: 0; }
 .agent-msg-agent .agent-actions { margin: 0; }

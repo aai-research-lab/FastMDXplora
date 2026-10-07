@@ -38,8 +38,8 @@ from typing import Any, Callable
 
 from fastmdxplora.refusals import CodedError
 
-__all__ = ["AgentTool", "ENTRY_POINT_GROUP", "Look", "ToolRefused", "Toolbox",
-           "current_view_tool", "plugged_in", "use_in", "MOST_LOOKS"]
+__all__ = ["AgentTool", "ENTRY_POINT_GROUP", "LOOK_WORDS", "Look", "ToolRefused", "Toolbox",
+           "current_view_tool", "look_said", "plugged_in", "use_in", "MOST_LOOKS"]
 
 logger = logging.getLogger("fastmdx.agent.tools")
 
@@ -93,7 +93,51 @@ class Look:
 
     def as_record(self) -> dict[str, Any]:
         return {"tool": self.tool, "asked": _brief(self.asked), "said": self.said,
-                "ok": self.ok}
+                "ok": self.ok, "label": look_said(self.tool, self.asked),
+                "found": self.found()}
+
+    def found(self) -> str:
+        """What the look found, in one line: the first of what the software
+        said, or why it was refused."""
+        first = next((line.strip() for line in self.said.splitlines() if line.strip()), "")
+        first = first if len(first) <= 160 else first[:157].rstrip() + "..."
+        return first if self.ok else f"Refused: {first}"
+
+
+#: What each look is called where it is shown (the Agent page, `fastmdx
+#: agent`), done and while it is being done, and the argument it names.
+#: The page showed the tool's own name for any look not listed here
+#: (`find_structure`, `list_studies`, ...), which reads as code.
+LOOK_WORDS: dict[str, tuple[str, str, str]] = {
+    "find_structure": ("Looked up {} in the PDB", "Looking up {} in the PDB", "query"),
+    "inspect_structure": ("Inspected {}", "Inspecting {}", "system"),
+    "preview_setup": ("Previewed what setup builds", "Previewing what setup builds", ""),
+    "check_config": ("Checked the config", "Checking the config", ""),
+    "check_selection": ("Checked a selection", "Checking a selection", ""),
+    "read_study": ("Read a study's record", "Reading a study's record", ""),
+    "list_studies": ("Listed the studies here", "Listing the studies here", ""),
+    "compare_studies": ("Compared two studies", "Comparing two studies", ""),
+    "methods_of_study": ("Read a study's methods", "Reading a study's methods", ""),
+    "current_view": ("Checked what the page shows", "Checking what the page shows", ""),
+}
+
+
+def look_said(tool: str, asked: dict[str, Any] | None, *, doing: bool = False) -> str:
+    """A look as the person reads it: "Looked up "trp-cage" in the PDB",
+    "Inspecting 1L2Y"; a tool from outside by its name."""
+    words = LOOK_WORDS.get(tool)
+    if words is None:
+        return f"{'Using' if doing else 'Used'} {tool}"
+    done, going, named = words
+    text = going if doing else done
+    if "{}" not in text:
+        return text
+    value = " ".join(str((asked or {}).get(named) or "").split())
+    if tool == "inspect_structure":
+        value = Path(value).name if value else "the structure"
+    else:
+        value = f"\u201c{value[:60]}\u201d" if value else "a name"
+    return text.format(value)
 
 
 @dataclass(frozen=True)

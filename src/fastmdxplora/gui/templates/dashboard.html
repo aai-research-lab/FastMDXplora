@@ -1816,7 +1816,11 @@
                ids here are the template's; each clone addresses its own
                copy by data-role. -->
           <template id="agent-reply-template">
-            <div class="agent-msg agent-msg-agent">
+            <div class="agent-msg agent-msg-agent" data-state="working">
+              <!-- The Agent's icon, coloured by what it is doing: working,
+                   waiting for you, done, could not finish. -->
+              <span class="agent-who" data-role="who" title="Working"><!--icon:agent:agent-who-icon--></span>
+              <div class="agent-msg-body" data-role="body">
               <div class="agent-attempts" data-role="attempts" id="agent-attempts"></div>
               <dl class="agent-plan" data-role="plan" id="agent-plan" hidden></dl>
               <pre class="agent-result" data-role="result" id="agent-result" hidden></pre>
@@ -1839,6 +1843,7 @@
                 <p class="builder-card-note">
                   <a href="#run" data-role="load" id="agent-load">Open in the builder</a> to change it first.
                 </p>
+              </div>
               </div>
             </div>
           </template>

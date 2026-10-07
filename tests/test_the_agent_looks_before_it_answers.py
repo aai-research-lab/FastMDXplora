@@ -278,7 +278,7 @@ def test_the_thread_shows_it_and_keeps_it(structure, tmp_path, monkeypatch) -> N
             browser.close()
     finally:
         session.server.shutdown()
-    assert head == "Checked with the software: inspected the structure"
+    assert head == f"Inspected {structure.name}"
     assert "NE2 is 2.4 Å from ZN A:401" in said
     assert errors == []
     kept = list((study / "agent" / "conversations").glob("*.json"))

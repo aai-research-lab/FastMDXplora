@@ -246,26 +246,44 @@
   }
 
   /* What the Agent looked at with the software's own tools before it
-   * answered: each look, what it asked and what the software said, folded
-   * under one line so the answer stays first. The words are the software's,
-   * put in as text: a tool's answer quotes a structure file's names. */
+   * answered, folded under one line so the answer stays first: each look
+   * in words (`agent/tools.py` LOOK_WORDS, sent as `label`), what it found
+   * in a line, and what the software said in full under that. The words
+   * are the software's, put in as text: a tool's answer quotes a structure
+   * file's names. A conversation kept before the labels were sent is said
+   * from this list; a tool not in it by its name. */
   var LOOKED = {
+    find_structure: "Looked up a name in the PDB",
     inspect_structure: "Inspected the structure",
     preview_setup: "Previewed what setup builds",
     check_config: "Checked the config",
     check_selection: "Checked a selection",
-    read_study: "Read another study's record",
-    current_view: "Checked the current view"
+    read_study: "Read a study's record",
+    list_studies: "Listed the studies here",
+    compare_studies: "Compared two studies",
+    methods_of_study: "Read a study's methods",
+    current_view: "Checked what the page shows"
   };
+
+  function lookLabel(l) {
+    return l.label || LOOKED[l.tool] || ("Used " + l.tool);
+  }
+
+  /* "Looked up "trp-cage" in the PDB, checked the config": the first as
+   * it is, the rest after a comma with a small first letter. */
+  function lookedSaid(looks) {
+    return looks.map(function (l, i) {
+      var said = lookLabel(l) + (l.ok ? "" : " (refused)");
+      return i ? said.charAt(0).toLowerCase() + said.slice(1) : said;
+    }).join(", ");
+  }
 
   function looked(box, looks) {
     if (!looks || !looks.length) return null;
     var fold = document.createElement("details");
     fold.className = "agent-looks";
     var head = document.createElement("summary");
-    head.textContent = "Checked with the software: " + looks.map(function (l) {
-      return (LOOKED[l.tool] || l.tool).toLowerCase() + (l.ok ? "" : " (refused)");
-    }).join("; ");
+    head.textContent = lookedSaid(looks);
     fold.appendChild(head);
     looks.forEach(function (l) {
       var item = document.createElement("div");
@@ -273,19 +291,76 @@
       item.setAttribute("data-tool", l.tool || "");
       var name = document.createElement("div");
       name.className = "agent-look-name";
-      var asked = l.asked && typeof l.asked === "object"
-        ? Object.keys(l.asked).map(function (k) { return k + ": " + l.asked[k]; }).join(", ")
-        : "";
-      name.textContent = (LOOKED[l.tool] || l.tool) + (asked ? " (" + asked + ")" : "");
+      name.textContent = lookLabel(l);
       item.appendChild(name);
+      if (l.found) {
+        var found = document.createElement("div");
+        found.className = "agent-look-found";
+        found.textContent = l.found;
+        item.appendChild(found);
+      }
+      var whole = document.createElement("details");
+      var named = document.createElement("summary");
+      named.textContent = "What the software said";
+      whole.appendChild(named);
       var said = document.createElement("pre");
       said.className = "agent-look-said";
       said.textContent = l.said || "";
-      item.appendChild(said);
+      whole.appendChild(said);
+      item.appendChild(whole);
       fold.appendChild(item);
     });
     box.appendChild(fold);
     return fold;
+  }
+
+  /* The software's refusals of what the Agent wrote, in view, as one line
+   * each; a reply the loop could not read as a config at all
+   * (`config.file.unparseable`) is a format repair and stays out of sight.
+   * Under an accepted config, that it was written again. */
+  var FORMAT_REPAIR = "config.file.unparseable";
+  /* A conversation kept before the code was kept with each refusal names
+   * its format repairs only by their words (agent/propose.py,
+   * agent/conversation.py). */
+  var FORMAT_REPAIRS_SAID = [
+    "The reply was not a YAML mapping.", "The config was not a mapping.",
+    "The question was empty.", "Two actions in one reply.", "A scene without an answer.",
+    "The reply was empty.", "No reply was made.",
+    "The looks for this reply are used up; answer from what the software said."
+  ];
+
+  function isFormatRepair(refusal) {
+    return refusal.code ? refusal.code === FORMAT_REPAIR
+      : FORMAT_REPAIRS_SAID.indexOf(String(refusal.message || "")) >= 0;
+  }
+
+  function refusals(box, attempts, accepted) {
+    var shown = 0;
+    (attempts || []).forEach(function (a) {
+      var refusal = a && a.refusal;
+      if (!refusal || isFormatRepair(refusal)) return;
+      var line = document.createElement("div");
+      line.className = "agent-refused";
+      var lead = document.createElement("b");
+      lead.textContent = "The software refused it: ";
+      line.appendChild(lead);
+      line.appendChild(document.createTextNode(String(refusal.message || "")
+        + (accepted ? " I wrote it again." : "")));
+      box.appendChild(line);
+      shown += 1;
+    });
+    return shown;
+  }
+
+  /* What the Agent is doing, said by its icon beside the reply. */
+  var STATES = { working: "Working", waiting: "Waiting for you", done: "Done",
+                 stopped: "Could not finish" };
+
+  function whoIs(r, state) {
+    if (!r || !r.node) return;
+    r.node.setAttribute("data-state", state);
+    var who = r.part("who");
+    if (who) who.title = STATES[state] || "";
   }
 
   /* What the Agent read for this reply, kept beside the conversation
@@ -777,7 +852,7 @@
     });
     el("agent-thread").appendChild(node);
     var part = function (role) { return node.querySelector('[data-role="' + role + '"]'); };
-    tools(node, [
+    tools(part("body") || node, [
       { label: "Copy", title: "Copy this reply",
         run: function () {
           var result = part("result");
@@ -847,6 +922,7 @@
     autosize(area);
     var r = reply();
     var box = r.part("attempts");
+    if (stopPending || runPending || fixPending) whoIs(r, "done");
     if (stopPending) {
       confirmStop(typed, box);
       scrollToEnd();
@@ -862,7 +938,6 @@
       scrollToEnd();
       return;
     }
-    note(box, "Thinking\u2026");
     scrollToEnd();
 
     var asked = fromStarter && fromStarter.prompt === typed ? fromStarter.key : null;
@@ -878,10 +953,8 @@
         ? window.FastMDXMoleculeViewer.currentViewHints() : null
     }, box).then(function (data) {
       box.innerHTML = "";
-      (data.attempts || []).forEach(function (attempt) {
-        if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
-      });
       looked(box, data.looks);
+      refusals(box, data.attempts, !!data.ok);
       sent(box, data.context_receipt);
       var receipt = data.context_receipt && data.context_receipt.kept
         ? data.context_receipt : null;
@@ -894,6 +967,7 @@
          * asked about first. The server says which from what they typed;
          * without its word, ask. */
         var confirmRunFirst = data.action === "run" && data.confirm !== false;
+        whoIs(r, confirmRunFirst || data.action === "stop" || data.fix ? "waiting" : "done");
         if (data.action === "run the fix" || data.action === "rerun windows" ||
             data.action === "analyze again" || data.action === "write the report again") {
           /* Asked, not done, and not kept as waiting: a reloaded thread
@@ -922,6 +996,7 @@
       }
       if (data.answer) {
         /* A question, answered. No config, no actions. */
+        whoIs(r, "done");
         var p = document.createElement("div");
         p.className = "agent-answer";
         p.innerHTML = prose(data.answer);
@@ -939,6 +1014,7 @@
         return;
       }
       if (data.question) {
+        whoIs(r, "waiting");
         note(box, data.question);
         history.push({ role: "agent", text: data.question });
         transcript.push({ role: "agent", kind: "question", text: data.question,
@@ -950,6 +1026,7 @@
         return;
       }
       if (!data.ok) {
+        whoIs(r, "stopped");
         note(box, IN_THE_GUI[data.code] || data.error);
         transcript.push({ role: "agent", kind: "error", text: IN_THE_GUI[data.code] || data.error });
         persist();
@@ -957,9 +1034,9 @@
         scrollToEnd();
         return;
       }
-      note(box, data.cycles === 1
-        ? "Accepted first time."
-        : "Accepted after " + data.cycles + " attempts.", true);
+      /* No "Accepted first time": that the software checked it is said by
+       * the card's "passes the checks", and a refusal on the way above. */
+      whoIs(r, "done");
       saidBeside(box, data.note);
       history.push({ role: "agent", text: (data.note ? data.note + "\n\n" : "")
                      + "Wrote a config:\n" + data.yaml });
@@ -968,13 +1045,15 @@
                         note: data.note || null,
                         plan: data.plan || [], looks: data.looks || [], receipt: receipt,
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
-                          return a.refusal ? { refusal: { message: a.refusal.message } } : {};
+                          return a.refusal ? { refusal: { message: a.refusal.message,
+                                                          code: a.refusal.code || null } } : {};
                         }) });
       persist();
       wireActions(r, data, box);
       scrollToEnd();
     }).catch(function (error) {
       box.innerHTML = "";
+      whoIs(r, "stopped");
       if (error && error.name === "AbortError") {
         /* Stopped by the person: what it had written is not kept, and the
          * next message goes on from their last. */
@@ -1016,22 +1095,57 @@
     button.textContent = on ? "\u25a0" : "\u2191";
   }
 
-  /* What the AI model is writing, as a person reads it: a look is said as
+  /* What the Agent is writing, as a person reads it: a look is said as
    * one, the reply's own marker is left off. */
   function writtenSoFar(raw) {
-    if (/^\s*USE:/.test(raw)) return "Looking with the software\u2026";
+    if (/^\s*USE:/.test(raw)) return "";
     // A scene proposed on the last line is shown as its card once written.
     return raw.replace(/^\s*(SAY|ASK):\s*/, "").replace(/\n\s*SHOW:[^\n]*$/i, "");
   }
 
+  /* What the Agent is doing while it does it, a line a step: each look as
+   * it begins ("Looking up "trp-cage" in the PDB...") and, once taken, as
+   * done; writing the config. Under them, its words as it writes them. */
+  function stepsIn(box) {
+    box.innerHTML = "";
+    var steps = document.createElement("div");
+    steps.className = "agent-steps";
+    steps.setAttribute("role", "status");
+    var shown = document.createElement("div");
+    shown.className = "agent-writing";
+    box.appendChild(steps);
+    box.appendChild(shown);
+    function finished() {
+      var now = steps.querySelector(".agent-step.is-now");
+      if (now) now.classList.remove("is-now");
+      return now;
+    }
+    return {
+      writing: shown,
+      begin: function (label) {
+        finished();
+        var line = document.createElement("div");
+        line.className = "agent-step is-now";
+        line.textContent = label;
+        steps.appendChild(line);
+      },
+      done: function (label) {
+        var now = finished();
+        if (now && label) now.textContent = label;
+      },
+      finished: finished
+    };
+  }
+
   function propose(body, box) {
+    var steps = stepsIn(box);
     if (!window.ReadableStream || !window.AbortController || !window.TextDecoder) {
       writingState(true);
       return post("/api/agent/propose", body).finally(function () { writingState(false); });
     }
     writing = new AbortController();
     writingState(true);
-    var shown = null;
+    var shown = steps.writing;
     var raw = "";
     var answer = null;
     function handle(line) {
@@ -1040,22 +1154,19 @@
       try { event = JSON.parse(line); } catch (e) { return; }
       if (event.type === "begin") {
         raw = "";
-        if (!shown) {
-          box.innerHTML = "";
-          shown = document.createElement("div");
-          shown.className = "agent-writing";
-          box.appendChild(shown);
-        }
         shown.textContent = "";
-      } else if (event.type === "text" && shown) {
+      } else if (event.type === "text") {
         raw += event.text || "";
         shown.textContent = writtenSoFar(raw);
         scrollToEnd();
+      } else if (event.type === "looking") {
+        steps.begin(String(event.label || "Looking") + "\u2026");
+        scrollToEnd();
       } else if (event.type === "look" && event.look) {
-        var said = document.createElement("div");
-        said.className = "agent-writing-look";
-        said.textContent = "Looked: " + (LOOKED[event.look.tool] || event.look.tool);
-        box.insertBefore(said, shown);
+        steps.done(lookLabel(event.look) + (event.look.ok ? "" : " (refused)"));
+      } else if (event.type === "step") {
+        steps.begin(String(event.label || "") + "\u2026");
+        scrollToEnd();
       } else if (event.type === "done") {
         answer = event.answer;
       }
@@ -1541,14 +1652,11 @@
         }
         var r = reply();
         var box = r.part("attempts");
+        whoIs(r, e.kind === "error" ? "stopped" : "done");
         looked(box, e.looks);
         sent(box, e.receipt);
         if (e.kind === "config") {
-          (e.attempts || []).forEach(function (a) {
-            if (a.refusal) note(box, "Refused: " + a.refusal.message);
-          });
-          note(box, e.cycles === 1 ? "Accepted first time."
-               : "Accepted after " + (e.cycles || "several") + " attempts.", true);
+          refusals(box, e.attempts, true);
           saidBeside(box, e.note);
           history.push({ role: "agent", text: (e.note ? e.note + "\n\n" : "")
                          + "Wrote a config:\n" + e.yaml });
@@ -1564,6 +1672,8 @@
           sceneCard(box, e.scene, e);
           history.push({ role: "agent", text: e.text });
         } else if (e.kind === "question") {
+          // Waiting for you only while it is the last thing said.
+          if (e === entries[entries.length - 1]) whoIs(r, "waiting");
           note(box, e.text);
           history.push({ role: "agent", text: e.text });
           // A stop confirmation that was the last thing said is still

@@ -947,7 +947,7 @@ def test_the_page_is_told_a_config_is_being_written():
     complete.turn = turn
     _written_as_it_goes(complete, events.append).turn("s", [], [])
     assert events == [{"type": "begin"}, {"type": "text", "text": "I will write it."},
-                      {"type": "text", "text": "Writing the config…"}]
+                      {"type": "step", "label": "Writing the config"}]
 
 
 def test_the_command_line_says_an_answer_and_what_it_cost(monkeypatch, capsys, tmp_path):

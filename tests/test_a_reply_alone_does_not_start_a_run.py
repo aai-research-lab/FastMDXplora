@@ -110,11 +110,13 @@ class TestInTheBrowser:
 
     def _say(self, ui, text: str) -> None:
         page = ui.page
-        count = page.eval_on_selector_all(".agent-attempt, .agent-answer", "n => n.length")
+        # "Accepted first time" is not said (10-07): a config is a reply done.
+        shown = ".agent-attempt, .agent-answer, .agent-msg-agent[data-state=done]"
+        count = page.eval_on_selector_all(shown, "n => n.length")
         page.fill("#agent-request", text)
         page.click("#agent-propose")
         page.wait_for_function(
-            f"document.querySelectorAll('.agent-attempt, .agent-answer').length > {count}",
+            f"document.querySelectorAll('{shown}').length > {count}",
             timeout=20000)
         page.wait_for_timeout(300)
 

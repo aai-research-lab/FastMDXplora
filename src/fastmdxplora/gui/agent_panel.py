@@ -284,8 +284,10 @@ def _written_as_it_goes(complete: Any, emit: Any) -> Any:
             emit({"type": "begin"})
 
             def calling(name: str) -> None:
+                # A config comes as a call's arguments, not as text the page
+                # could show line by line: said as a step while it is written.
                 if name == "propose_config":
-                    emit({"type": "text", "text": "Writing the config\u2026"})
+                    emit({"type": "step", "label": "Writing the config"})
 
             return turn(system, messages, tools,
                         on_text=lambda piece: emit({"type": "text", "text": piece}),
@@ -317,10 +319,15 @@ def _active_view_error(view_hints: Any, runtime: Any, path_for: Any) -> str | No
 
 
 def _say_each_look(tools: Any, emit: Any) -> None:
-    """Each look sent on as it is taken, as it will be shown under the reply."""
+    """Each look said as it begins ("Looking up "trp-cage" in the PDB"), so
+    the page shows what the Agent is doing, and sent on when it is taken, as
+    it will be shown under the reply."""
+    from fastmdxplora.agent.tools import look_said
+
     used = tools.use
 
     def use(name: str, asked: dict[str, Any]) -> Any:
+        emit({"type": "looking", "label": look_said(name, asked, doing=True)})
         look = used(name, asked)
         emit({"type": "look", "look": look.as_record()})
         return look

@@ -3186,10 +3186,11 @@ def _run_agent(args: Any) -> int:
         print(refusal_of(exc).message)
         return 1
 
-    # What it looked at with the software's own tools, first line of each.
+    # What it looked at with the software's own tools, in the page's words,
+    # and what each found.
     for look in proposal.looks:
-        first = (look.said.splitlines() or [""])[0]
-        print(f"  looked: {look.tool}{'' if look.ok else ' (refused)'}: {first}")
+        record = look.as_record()
+        print(f"  {record['label']}: {record['found']}")
 
     # The corrections, shown rather than hidden. They are the only visible
     # sign that anything checked the config, and the count is worth seeing.
