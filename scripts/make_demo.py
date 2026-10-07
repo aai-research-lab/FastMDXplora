@@ -35,14 +35,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "src" / "fastmdxplora" / "demo" / "3ptb"
 MOST_FRAMES = 100
-#: Files a run needs and the GUI does not show, left out whatever their size.
-LEFT_OUT = {"system.xml", "state.xml", "solvated.pdb", "integrator.xml"}
+#: Files a run needs and the GUI does not show, left out whatever their size;
+#: and the report's downloads, which the Report page offers only where they
+#: exist (the 3PTB study's bundle was 40 MB, its PDF and slides 5 MB each).
+LEFT_OUT = {"system.xml", "state.xml", "solvated.pdb", "integrator.xml",
+            "project_bundle.zip", "report.pdf", "slides.pptx", "analysis_summary.svg"}
 LEFT_OUT_SUFFIXES = {".chk", ".nc", ".xtc"}
 #: Kept whatever their size: the frames the Viewer plays, the structure they
-#: are played on, and the system as simulated, which the Viewer renders
-#: first and reads the ligand from (`prepared.pdb` is the protein alone).
+#: are played on, the system as simulated, which the Viewer renders first
+#: and reads the ligand from (`prepared.pdb` is the protein alone), the
+#: live record the Overview plots the thermodynamics from, and the summary
+#: figure the report shows.
 KEPT = {"simulation/production.dcd", "simulation/trajectory_topology.pdb",
-        "setup/topology.pdb"}
+        "setup/topology.pdb", "simulation/live_metrics.csv",
+        "report/analysis_summary.png"}
 #: What a reader of the demo reads: left out for its size, the demo would be
 #: missing a figure or a page, so packaging stops and names it.
 SHOWN = ("analysis/", "report/")
@@ -68,7 +74,7 @@ def finished(study: Path) -> list[str]:
     for phase in PHASES:
         if done.get(phase) not in {"ok", "completed", "complete"}:
             wrong.append(f"the {phase} phase is {done.get(phase) or 'not recorded'}")
-    for needed in sorted(KEPT - {"setup/topology.pdb"}):
+    for needed in ("simulation/production.dcd", "simulation/trajectory_topology.pdb"):
         if not (study / needed).is_file():
             wrong.append(f"no {needed}")
     return wrong
@@ -101,7 +107,8 @@ def package(study: Path, out: Path, most_bytes: int) -> dict:
         else:
             left.append((relative, size))
     missing = [name for name, size in left
-               if name.startswith(SHOWN) and size > most_bytes]
+               if name.startswith(SHOWN) and size > most_bytes
+               and Path(name).name not in LEFT_OUT]
     if missing:
         shutil.rmtree(out)
         raise SystemExit("These are shown by the GUI and are over the size given; raise "

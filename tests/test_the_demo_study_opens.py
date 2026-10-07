@@ -83,6 +83,26 @@ def test_a_figure_too_large_stops_it_rather_than_leaving_it_out(tmp_path) -> Non
     assert not (tmp_path / "out").exists()
 
 
+def test_the_report_s_downloads_are_left_out_and_what_it_shows_kept(tmp_path) -> None:
+    """The 3PTB study's report wrote a 40 MB bundle, a 5 MB PDF and 5 MB of
+    slides, each over the limit under `report/`, so packaging stopped; the
+    Report page offers a download only where it exists. The summary figure
+    the report shows and the live record the Overview plots are kept
+    whatever their size."""
+    study = _finished(tmp_path / "made")
+    (study / "report").mkdir()
+    for name in ("project_bundle.zip", "report.pdf", "slides.pptx", "analysis_summary.svg",
+                 "analysis_summary.png"):
+        (study / "report" / name).write_bytes(b"x" * 3000)
+    (study / "simulation" / "live_metrics.csv").write_bytes(b"x" * 3000)
+    out = tmp_path / "out"
+    done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(study),
+                           "--out", str(out), "--most-kb", "1"], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert sorted(p.name for p in (out / "report").iterdir()) == ["analysis_summary.png"]
+    assert (out / "simulation" / "live_metrics.csv").is_file()
+
+
 def test_an_unfinished_study_is_refused(tmp_path) -> None:
     study = _write_study(tmp_path / "unfinished")
     done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(study),
