@@ -404,8 +404,7 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
                 "setup pipeline with the following parameters:"
             )
         lines.append("")
-        for k, v in setup_params.items():
-            lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")
+        lines.extend(_settings_listed(setup_params, project_root))
     else:
         lines.append("")
         if phase_context.setup_present:
@@ -436,8 +435,8 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
                 f"before, to {extended[0]:.3g} ns of production in all; each "
                 "piece's own record is in its `segment-NNN/simulation` folder.")
         lines.append("")
-        for k, v in _resolve_derived(dict(sim_params), record=sim).items():
-            lines.append(f"- **{_md_text(k)}**: `{_code_text(v)}`")
+        lines.extend(_settings_listed(_resolve_derived(dict(sim_params), record=sim),
+                                      project_root))
     else:
         lines.append("")
         if phase_context.simulation_present:
@@ -454,6 +453,52 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
             lines.append("Simulation was not run in this workflow.")
 
     return "\n".join(lines)
+
+
+def _settings_listed(params: dict[str, Any], project_root: Path) -> list[str]:
+    """A phase's settings, one line each, as the person set them.
+
+    The record also keeps what the phase worked out for itself under names
+    beginning with an underscore (the repair's arguments, the file the
+    retained ions went to), and listing them printed the folder the study
+    ran in, the person's home folder among it, into every report and every
+    copy of it shared. They are left out; the seed a phase drew is said on
+    its setting, since it is what repeats the run. A file inside the study
+    is named from the study's folder.
+    """
+    drawn = params.get("_random_seed")
+    lines = []
+    for key, value in params.items():
+        if str(key).startswith("_"):
+            continue
+        said = _code_text(_from_the_study(value, project_root))
+        if key == "random_seed" and value is None and drawn is not None:
+            lines.append(f"- **{_md_text(key)}**: `{_code_text(drawn)}` (drawn, as none "
+                         "was given)")
+            continue
+        lines.append(f"- **{_md_text(key)}**: `{said}`")
+    return lines
+
+
+def _from_the_study(value: Any, project_root: Path) -> Any:
+    """``value`` with each path inside the study named from its folder."""
+    roots = {str(project_root)}
+    try:
+        roots.add(str(project_root.resolve()))
+    except OSError:
+        pass
+    if isinstance(value, str):
+        for root in sorted(roots, key=len, reverse=True):
+            if value == root:
+                return "."
+            if value.startswith(root.rstrip("/") + "/"):
+                return value[len(root.rstrip("/")) + 1:]
+        return value
+    if isinstance(value, (list, tuple)):
+        return type(value)(_from_the_study(item, project_root) for item in value)
+    if isinstance(value, dict):
+        return {k: _from_the_study(v, project_root) for k, v in value.items()}
+    return value
 
 
 def _decisions_said(project_root: Path) -> list[str]:

@@ -7,6 +7,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A report lists the settings given, not where the study ran
+
+**Fixed:** a report's methods listed what setup worked out for itself
+(`_retained_pdb`, `_repaired` and the rest), each an absolute path, so every
+report and every copy shared printed the folder the study ran in, the home
+folder among it. They are left out; the seed setup drew is said on
+`random_seed` ("drawn, as none was given"), and a file inside the study is
+named from its folder (`setup/ligands/BEN.sdf`). A report written before
+keeps its text until it is written again (`fastmdx report --rerun`).
+
 ### The Report page links only what the study holds
 
 **Fixed:** a study shared without its standalone page (the demo leaves it
