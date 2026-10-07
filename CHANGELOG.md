@@ -169,6 +169,27 @@ refused and said), shown under the list when the view is chosen and on
 hover over its name, and listed to an AI app by `views_of_study`. From the
 research bookmarks of Prince Otegbulu (#51) and Derrick Kwan (#52).
 
+### What the AI model was sent, and what the page shows it
+
+**Under each reply of the Agent, what the AI model was sent.** Each time the
+AI model was asked for a reply, what it was given is kept beside the
+conversation: replying by tool calls, the system prompt (once), the tools
+declared and the messages it had not been given before, a look's result
+among them; in text, each prompt (`agent/receipt.py`, each text bounded,
+`agent/conversations/receipts/<sha256>.json`, the newest 100, the system
+prompt kept once by its SHA-256). The reply names it by its digest, and the
+fold **What the AI model was sent** reads it when opened, checked against
+that digest (`GET /api/agent/receipt`, private as the conversations are).
+**The Agent knows what the page shows**: the study, the frame, the
+representation, colouring and superposition, and the residues chosen
+(`currentViewHints`), given to its `current_view` tool as where to look,
+never as what is so; the tool reads the facts from the study's records, and
+reads the page's own view, never one the AI model writes. A message about a
+study that is no longer the one open, or a reply that comes back after
+another study was opened, is refused (`agent.view.changed`), and what was
+sent is kept with the study it was about. From the context-aware Agent of
+Prince Otegbulu (#51) and Derrick Kwan (#52).
+
 ### The demo study is fetched the first time it is opened
 
 **Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the

@@ -642,6 +642,14 @@ def make_handler(
 
                 self._send_json(read_conversation(app_runtime))
                 return
+            if path == "/api/agent/receipt":
+                # What the AI model was sent for one reply, kept beside the
+                # conversation; private as the conversations are.
+                from fastmdxplora.gui.agent_panel import receipt_endpoint
+
+                self._send_json(receipt_endpoint(
+                    app_runtime, (parse_qs(parsed.query).get("sha256") or [""])[0]))
+                return
             if path == "/api/file-text":
                 # A run's own text file, for the Files tab's preview.
                 # Confined to the run root, over the same list of types

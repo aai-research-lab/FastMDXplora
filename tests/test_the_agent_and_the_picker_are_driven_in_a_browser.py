@@ -74,6 +74,11 @@ def test_a_question_typed_and_sent_is_answered_from_the_study(study, monkeypatch
             page.wait_for_selector("#agent-thread .agent-answer")
             said = page.text_content("#agent-thread .agent-answer")
             cite = page.text_content('#agent-thread .agent-cite[data-analysis="rmsd"]')
+            # What the AI model was sent, read when the fold is opened.
+            sent_head = page.text_content("#agent-thread .agent-sent > summary")
+            page.click("#agent-thread .agent-sent > summary")
+            page.wait_for_selector("#agent-thread .agent-sent pre")
+            sent = page.locator("#agent-thread .agent-sent pre").last.text_content()
             browser.close()
     finally:
         session.server.shutdown()
@@ -90,6 +95,60 @@ def test_a_question_typed_and_sent_is_answered_from_the_study(study, monkeypatch
     assert kept
     entries = json.loads(kept[0].read_text(encoding="utf-8"))["entries"]
     assert entries[-1]["kind"] == "answer" and entries[-1]["cites"][0]["analysis"] == "rmsd"
+    # The prompt as it went, kept with the conversation and named in it.
+    assert sent_head == "What the AI model was sent (asked 1 time)"
+    assert sent == prompts[-1]
+    assert entries[-1]["receipt"]["asked"] == 1 and entries[-1]["receipt"]["kept"] is True
+
+
+def test_a_reply_by_tool_calls_shows_what_each_turn_was_sent(study, monkeypatch) -> None:
+    """The system prompt once, the tools declared, each turn's new
+    messages: the AI model's call and what the software gave back."""
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", tempfile.mkdtemp())
+    import fastmdxplora.agent as agent_mod
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.agent.turns import ToolCall, Turn, Usage
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    replies = [Turn("", (ToolCall("call_1", "current_view", {}),), Usage(calls=1)),
+               Turn("The study holds an RMSD of 0.112 nm.", (), Usage(calls=1))]
+    systems: list[str] = []
+
+    def complete(prompt: str) -> str:
+        raise AssertionError("asked in text")
+
+    def turn(system, messages, tools, **_streamed):
+        systems.append(system)
+        return replies.pop(0)
+
+    complete.turn = turn
+    monkeypatch.setattr(agent_mod, "completion_for", lambda *a, **k: complete)
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser, page = _browser(pw)
+            page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            page.fill("#agent-request", "What does this study hold?")
+            page.keyboard.press("Enter")
+            page.wait_for_selector("#agent-thread .agent-answer")
+            head = page.text_content("#agent-thread .agent-sent > summary")
+            page.click("#agent-thread .agent-sent > summary")
+            page.wait_for_selector("#agent-thread .agent-sent-digest")
+            body = page.text_content("#agent-thread .agent-sent > div")
+            page.locator("#agent-thread .agent-sent details > summary").first.click()
+            system = page.locator("#agent-thread .agent-sent details pre").first.text_content()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert head == "What the AI model was sent (asked 2 times)"
+    assert system == systems[0] == systems[1]
+    assert body.count("System prompt (the same each time)") == 1
+    assert "Tools declared: " in body and "current_view" in body
+    assert "The person" in body and "What does this study hold?" in body
+    assert "The AI model called current_view" in body
+    assert "What current_view gave back" in body and "read_study" in body
+    assert page.errors == []
 
 
 def test_the_picker_walks_the_folders_and_fills_its_field(study) -> None:

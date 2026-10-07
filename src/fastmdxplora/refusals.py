@@ -359,6 +359,10 @@ CODES: tuple[Code, ...] = (
          "A tool the Agent asked for declined what it was asked: a file it does "
          "not read, a place outside the workspace, or arguments it cannot use.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
+    Code("agent.view.changed",
+         "The page asked the Agent about a study that is no longer the one open: "
+         "another was opened, or it was reloaded.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("mcp.tool.refused",
          "A tool an AI app called declined what it was asked: a path outside "
          "the workspace, a config that is not a file, a study already running, or "

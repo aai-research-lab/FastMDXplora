@@ -16,6 +16,9 @@ the page runs.
 
 from __future__ import annotations
 
+import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +147,15 @@ def propose_endpoint(payload: dict[str, Any],
 
     mode = str(payload.get("agent") or "assisted")
     phases = payload.get("phases") or ["setup", "simulation"]
+    # What the page shows (`molecule-viewer.js` `currentViewHints`): where
+    # to look, never what is so; the `current_view` tool looks it up.
+    view_hints = payload.get("current_view")
+    scope_error = _active_view_error(view_hints, runtime, path_for)
+    if scope_error is not None:
+        return {"ok": False, "error": scope_error, "code": "agent.view.changed"}
+    # Where this reply's receipt is kept, taken as it is asked: a study
+    # opened while the AI model answers is not where its prompts belong.
+    receipts = _receipts_of(runtime)
     try:
         complete = completion_for(where="page")
     except StudyError as exc:
@@ -175,7 +187,7 @@ def propose_endpoint(payload: dict[str, Any],
          "truncated": bool(a.get("truncated"))}
         for a in (payload.get("attachments") or []) if isinstance(a, dict) and a.get("text")
     ][:6]
-    from fastmdxplora.agent.tools import Toolbox
+    from fastmdxplora.agent.tools import Toolbox, current_view_tool
 
     # Your defaults, from where this GUI puts new studies: the Agent is told
     # them and an accepted config has them filled in, as the run will.
@@ -185,8 +197,15 @@ def propose_endpoint(payload: dict[str, Any],
         return {"ok": False, "error": str(exc), "code": exc.code}
     from fastmdxplora.workspace_studies import folder_of_studies
 
-    tools = Toolbox(path_for=path_for,
-                    workspace=folder_of_studies(getattr(runtime, "exploration_root", None)))
+    tools = Toolbox(
+        path_for=path_for,
+        workspace=folder_of_studies(getattr(runtime, "exploration_root", None)),
+        extra=(current_view_tool(
+            view_hints,
+            active_root=getattr(runtime, "active_root", None),
+            path_for=path_for,
+        ),),
+    )
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)
@@ -201,8 +220,21 @@ def propose_endpoint(payload: dict[str, Any],
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
                 "looks": [look.as_record() for look in tools.looks]}
+    # What the AI model was sent is kept beside the conversation whatever
+    # came of it; the reply names it by its digest, and the page reads it
+    # from `/api/agent/receipt` when the person opens it.
+    receipt = _kept_receipt(receipts, proposal.receipt.as_record(),
+                            looks=len(proposal.looks))
+    scope_error = _active_view_error(view_hints, runtime, path_for)
+    if scope_error is not None:
+        # The study changed while the AI model answered: its reply is about
+        # a study no longer open, so it is not offered.
+        return {"ok": False, "error": scope_error, "code": "agent.view.changed",
+                "looks": [look.as_record() for look in proposal.looks],
+                "context_receipt": receipt}
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
+    answer["context_receipt"] = receipt
     return answer
 
 
@@ -261,6 +293,27 @@ def _written_as_it_goes(complete: Any, emit: Any) -> Any:
         written.turn = turned  # type: ignore[attr-defined]
         written.turned_away = getattr(complete, "turned_away", None)  # type: ignore[attr-defined]
     return written
+
+
+def _active_view_error(view_hints: Any, runtime: Any, path_for: Any) -> str | None:
+    """Reject a stale or changed study before an Agent call begins."""
+    if not isinstance(view_hints, dict) or not view_hints.get("study"):
+        return None
+    if getattr(runtime, "data_stale", False):
+        return "Reload the current study before asking the Agent about its view."
+    active = getattr(runtime, "active_root", None)
+    try:
+        named = (path_for(view_hints["study"]) if path_for is not None
+                 else view_hints["study"])
+        matches = (
+            active is not None and named is not None
+            and Path(named).expanduser().resolve() == Path(active).expanduser().resolve()
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        matches = False
+    if not matches:
+        return "The current view changed. Select it again before asking the Agent."
+    return None
 
 
 def _say_each_look(tools: Any, emit: Any) -> None:
@@ -936,6 +989,7 @@ CONVERSATIONS_SUBDIR = Path("agent") / "conversations"
 WORKSPACE_CONVERSATIONS_DIR = ".fastmdxplora_agent_conversations"
 CONVERSATION_FILE = ".fastmdxplora_agent_conversation.json"  # pre-0047 single file
 CONVERSATION_KEEP = 400
+CONTEXT_RECEIPTS_DIR = Path("receipts")
 
 
 def _is_study(path: Any) -> bool:
@@ -1049,6 +1103,128 @@ def _current_in(store: Path) -> str | None:
     except OSError:
         return None
     return cid if (store / f"{cid}.json").is_file() else None
+
+
+#: Receipts kept beside a study's conversations, the newest; each is what
+#: the AI model was sent for one reply (bounded in `agent/receipt.py`).
+MOST_RECEIPTS = 100
+#: Where a receipt's system prompts are kept, once each by their SHA-256:
+#: the same 46,000 characters for every reply, which would otherwise be
+#: most of every receipt.
+RECEIPT_SYSTEMS_DIR = "systems"
+#: System prompts kept before those no receipt names are looked for: one a
+#: release, so the receipts are read again only now and then.
+MOST_UNNAMED_SYSTEMS = 5
+
+
+def _digest_of(value: Any) -> str | None:
+    digest = str(value or "")
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        return None
+    return digest
+
+
+def _receipts_of(runtime: Any) -> Path | None:
+    """The folder of receipts beside the conversations shown; none where the
+    runtime names neither a workspace nor a study, rather than the folder
+    the process happens to be in."""
+    if runtime is None:
+        return None
+    workspace, study = _scope(runtime)
+    if study is None and getattr(runtime, "exploration_root", None) is None:
+        return None
+    return _store_for(workspace, study) / CONTEXT_RECEIPTS_DIR
+
+
+def _written(target: Path, text: str) -> None:
+    """Written whole, as bytes: the text read back is the text kept, line
+    endings included, so its digest holds."""
+    temporary = target.with_name(f".{target.name}.{threading.get_ident()}.tmp")
+    temporary.write_bytes(text.encode("utf-8", "surrogatepass"))
+    temporary.replace(target)
+
+
+def _kept_receipt(store: Path | None, record: dict[str, Any], *,
+                  looks: int = 0) -> dict[str, Any]:
+    """Keep a reply's receipt in `store`, beside the conversation it
+    belongs to, the newest `MOST_RECEIPTS`, and say it in brief: its
+    digest, how many times the AI model was asked and how many looks it
+    took, whether any text was cut. Saved or not, the brief is the same;
+    `kept` says which. Its system prompts are kept once each, by digest."""
+    import hashlib
+
+    brief = {"sha256": record.get("sha256"), "asked": len(record.get("sent") or ()),
+             "looks": int(looks), "truncated": bool(record.get("truncated")),
+             "kept": False}
+    digest = _digest_of(record.get("sha256"))
+    if store is None or digest is None:
+        return brief
+    systems = store / RECEIPT_SYSTEMS_DIR
+    try:
+        systems.mkdir(parents=True, exist_ok=True)
+        named = []
+        for text in record.get("systems") or ():
+            sha = hashlib.sha256(str(text).encode("utf-8", "surrogatepass")).hexdigest()
+            if not (systems / f"{sha}.txt").is_file():
+                _written(systems / f"{sha}.txt", str(text))
+            named.append({"sha256": sha})
+        _written(store / f"{digest}.json",
+                 json.dumps({**record, "systems": named}, indent=1, ensure_ascii=True))
+        kept = sorted(store.glob("*.json"), key=lambda path: path.stat().st_mtime_ns)
+        if len(kept) > MOST_RECEIPTS:
+            for old in kept[:-MOST_RECEIPTS]:
+                old.unlink(missing_ok=True)
+            if len(list(systems.glob("*.txt"))) > MOST_UNNAMED_SYSTEMS:
+                _forget_unnamed_systems(store, kept[-MOST_RECEIPTS:])
+    except OSError:
+        return brief
+    return {**brief, "kept": True}
+
+
+def _forget_unnamed_systems(store: Path, kept: list[Path]) -> None:
+    """The system prompts no kept receipt names any more."""
+    named: set[str] = set()
+    for path in kept:
+        try:
+            for entry in json.loads(path.read_text(encoding="utf-8")).get("systems") or ():
+                named.add(str(entry.get("sha256")))
+        except (OSError, ValueError, AttributeError):
+            return  # unread, so none is known to be unnamed
+    now = time.time()
+    for text in (store / RECEIPT_SYSTEMS_DIR).glob("*.txt"):
+        # One written in the last minute may be about to be named by a reply
+        # being kept beside this one.
+        try:
+            if text.stem not in named and now - text.stat().st_mtime > 60:
+                text.unlink(missing_ok=True)
+        except OSError:
+            continue  # gone already, by a reply kept beside this one
+
+
+def receipt_endpoint(runtime: Any, digest: Any) -> dict[str, Any]:
+    """One kept receipt of the conversations shown, by its digest, its
+    system prompts read back in, and checked against that digest."""
+    named = _digest_of(digest)
+    if runtime is None or named is None:
+        return {"ok": False, "error": "No such record of what the AI model was sent."}
+    store = _receipts_of(runtime)
+    if store is None:
+        return {"ok": False, "error": "No such record of what the AI model was sent."}
+    try:
+        record = json.loads((store / f"{named}.json").read_text(encoding="utf-8"))
+        record["systems"] = [
+            (store / RECEIPT_SYSTEMS_DIR / f"{_digest_of(entry.get('sha256'))}.txt")
+            .read_bytes().decode("utf-8", "surrogatepass")
+            for entry in record.get("systems") or ()]
+    except (OSError, ValueError, AttributeError, UnicodeDecodeError):
+        return {"ok": False, "error": "This record of what the AI model was sent is no "
+                                      f"longer kept (the newest {MOST_RECEIPTS} are)."}
+    from fastmdxplora.agent.receipt import digest_of
+
+    if digest_of(record) != named:
+        return {"ok": False, "error": "This record of what the AI model was sent has "
+                                      "changed since it was kept."}
+    return {"ok": True, "receipt": record}
 
 
 def _valid_id(cid: Any) -> bool:

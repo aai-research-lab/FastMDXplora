@@ -225,7 +225,8 @@ class TestConversationsAreNotReadBeyondLoopback:
         return words
 
     @pytest.mark.parametrize("path", ["/api/agent/conversation",
-                                      "/api/agent/conversations"])
+                                      "/api/agent/conversations",
+                                      "/api/agent/receipt?sha256=" + "0" * 64])
     def test_off_loopback_they_are_refused(self, runtime, said, path) -> None:
         with _serving(runtime, allow_control=False) as url:
             status, body = _ask(url + path)

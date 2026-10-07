@@ -44,6 +44,7 @@ from fastmdxplora.agent.evaluate import REQUESTS, Report, measure
 from fastmdxplora.agent.propose import (
     Attempt,
     Completion,
+    ContextReceipt,
     Proposal,
     propose_config,
     prompt_for,
@@ -74,6 +75,7 @@ __all__ = [
     "submit_study",
     "work",
     "Completion",
+    "ContextReceipt",
     "Proposal",
     "propose_config",
     "prompt_for",

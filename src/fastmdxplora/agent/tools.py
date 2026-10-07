@@ -39,7 +39,7 @@ from typing import Any, Callable
 from fastmdxplora.refusals import CodedError
 
 __all__ = ["AgentTool", "ENTRY_POINT_GROUP", "Look", "ToolRefused", "Toolbox",
-           "plugged_in", "use_in", "MOST_LOOKS"]
+           "current_view_tool", "plugged_in", "use_in", "MOST_LOOKS"]
 
 logger = logging.getLogger("fastmdx.agent.tools")
 
@@ -66,6 +66,15 @@ MOST_LOOKS = 4
 
 #: The most of a tool's answer given to the AI model and shown to the person.
 MOST_SAID = 4000
+
+# Hints describe what the browser is showing. They are deliberately smaller
+# than evidence, and the current-view tool sends facts to the existing tools.
+MOST_VIEW_HINTS = 12
+MOST_VIEW_HINT_TEXT = 512
+_VIEW_HINT_KEYS = frozenset({
+    "analysis", "colour", "expression", "field", "frame", "page", "representation",
+    "selection", "study", "superposed", "system",
+})
 
 #: A structure a tool may read: a PDB identifier or a structure file. Only
 #: these, so a tool asked for a path reads coordinates and nothing else.
@@ -309,6 +318,125 @@ def use_in(raw: str) -> tuple[str, dict[str, Any]] | None:
             asked = {"value": asked}
         return name.strip().strip("`").lower(), asked
     return None
+
+
+def _residue_hint(row: Any) -> dict[str, Any]:
+    """A residue the page has selected: its chain, number, insertion code
+    and name, each bounded."""
+    if not isinstance(row, dict):
+        raise _Refused("A selected residue must be a mapping.")
+    kept: dict[str, Any] = {}
+    for key, most in (("chain", 32), ("icode", 1), ("resn", 8)):
+        if isinstance(row.get(key), str) and len(row[key]) <= most:
+            kept[key] = row[key]
+    resi = row.get("resi")
+    if isinstance(resi, int) and not isinstance(resi, bool) and -100_000 < resi < 10_000_000:
+        kept["resi"] = resi
+    return kept
+
+
+def _bounded_view_hints(value: Any) -> dict[str, Any]:
+    """Keep browser-supplied current-view hints small and non-factual."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _Refused("Current-view hints must be a mapping.")
+    if len(value) > MOST_VIEW_HINTS:
+        raise _Refused(f"Current-view hints are bounded to {MOST_VIEW_HINTS} fields.")
+    kept: dict[str, Any] = {}
+    for key, item in value.items():
+        if key not in _VIEW_HINT_KEYS:
+            continue
+        if isinstance(item, bool):
+            kept[key] = item
+        elif isinstance(item, int) and not isinstance(item, bool):
+            if not 0 <= item < 10_000_000:
+                raise _Refused("Current-view frame hints must be a bounded frame number.")
+            kept[key] = item
+        elif isinstance(item, str) and len(item) <= MOST_VIEW_HINT_TEXT:
+            kept[key] = item
+        elif isinstance(item, list) and key == "selection" and len(item) <= 20:
+            kept[key] = [_residue_hint(row) for row in item]
+        else:
+            raise _Refused("Current-view hints must contain bounded text or numbers.")
+    return kept
+
+
+def _same_path(left: Any, right: Any) -> bool:
+    try:
+        return Path(str(left)).expanduser().resolve() == Path(str(right)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _read_with(box: Toolbox, name: str, asked: dict[str, Any]) -> str:
+    """What one of the tools here says, read as part of another look: one
+    look in all, as the AI model asked for one."""
+    try:
+        return str(box._table()[name][2](box, asked))
+    except _Refused as exc:
+        return str(exc)
+    except Exception as exc:  # noqa: BLE001 - a tool's failure is what it says
+        from fastmdxplora.refusals import refusal_of
+
+        return f"{name} could not answer: {refusal_of(exc).message}"
+
+
+def _current_view_look(box: Toolbox, asked: dict[str, Any], request_hints: Any,
+                       active_root: Any, path_for: Any) -> str:
+    # The page's own hints, never ones the AI model writes: it asks what the
+    # page shows, and cannot point the tool at another study by asking.
+    hints = _bounded_view_hints(request_hints)
+    if not hints:
+        return ("The current view supplied no bounded hints. Hints are navigation only; "
+                "ask an existing evidence tool for facts.")
+
+    study = hints.get("study")
+    named_study = study
+    if study and path_for is not None:
+        named_study = path_for(study)
+    if study and named_study is None:
+        raise _Refused("The current-view study is outside the workspace.")
+    if study and active_root is not None and not _same_path(named_study, active_root):
+        raise _Refused("The current view no longer names the active study.")
+
+    parts = ["Current-view hints are navigation only: " +
+             json.dumps(hints, sort_keys=True, default=str)]
+    expression = hints.get("expression")
+    selection = hints.get("selection")
+    if isinstance(selection, str) and not expression:
+        expression = selection
+    system = hints.get("system")
+    if expression and system:
+        parts.append("Factual evidence from check_selection:\n" + _read_with(
+            box, "check_selection", {"system": system, "expression": expression}))
+    elif system:
+        parts.append("Factual evidence from inspect_structure:\n" + _read_with(
+            box, "inspect_structure", {"system": system}))
+    elif named_study:
+        parts.append("Factual evidence from read_study:\n" + _read_with(
+            box, "read_study", {"study": named_study}))
+    else:
+        parts.append("No study or structure hint was supplied for an existing evidence tool.")
+    return "\n".join(parts)
+
+
+def current_view_tool(hints: Any = None, *, active_root: Any = None,
+                      path_for: Any = None) -> AgentTool:
+    """Make a read-only current-view tool for one Agent request.
+
+    The browser hints can identify a page, frame, selection, study or
+    structure. They are not evidence. Factual work is delegated to the
+    existing tools, with the same workspace boundary as the request.
+    """
+    return AgentTool(
+        "current_view",
+        "none: what the page shows is given to the tool by the page.",
+        "what the page shows (the study, frame, view and residues chosen), as "
+        "where to look and not as what is so, then the facts from the study's "
+        "records or the structure, read by the tools that read them.",
+        lambda box, asked: _current_view_look(box, asked, hints, active_root, path_for),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +871,7 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "tag": {"type": "string", "description": "Only the studies tagged so."}}},
     "compare_studies": {"type": "object", "properties": {
         "first": _A_FOLDER, "second": _A_FOLDER}, "required": ["first", "second"]},
+    "current_view": {"type": "object", "properties": {}, "additionalProperties": False},
     "check_selection": {"type": "object", "properties": {
         "system": _A_STRUCTURE,
         "expression": {"type": "string", "description": "An MDTraj selection."}},

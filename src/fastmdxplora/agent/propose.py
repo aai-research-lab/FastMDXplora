@@ -43,15 +43,17 @@ none of this package's business.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from fastmdxplora.agent.receipt import ContextReceipt, ReceiptBuilder
 from fastmdxplora.config.describe import describe_schema
 from fastmdxplora.config.loader import ConfigError, validate_config
 from fastmdxplora.refusals import Kind, Refusal, refusal_of
 
 __all__ = [
     "Attempt",
+    "ContextReceipt",
     "Proposal",
     "Completion",
     "propose_config",
@@ -152,6 +154,9 @@ class Proposal:
     #: How the AI model replied: ``"tools"`` (calls delivered as data) or
     #: ``"text"`` (a reply read by a pattern).
     protocol: str = "text"
+    #: What the AI model was sent to reach this, kept bounded
+    #: (:mod:`fastmdxplora.agent.receipt`).
+    receipt: ContextReceipt = ContextReceipt()
 
     @property
     def accepted(self) -> bool:
@@ -1017,12 +1022,15 @@ def propose_config(
     a question the software declined to guess at, which is the behaviour
     this design exists to prevent.
     """
-    proposal = _asked(request, complete, phases=phases, max_cycles=max_cycles,
-                      verbose_schema=verbose_schema, history=history,
-                      current_config=current_config, run_status=run_status,
-                      attachments=attachments, tools=tools, as_registered=as_registered,
-                      defaults=defaults)
-    return _with_your_defaults(proposal, defaults)
+    receipt = ReceiptBuilder()
+    proposal = _asked(request, receipt.recording(complete), phases=phases,
+                      max_cycles=max_cycles, verbose_schema=verbose_schema,
+                      history=history, current_config=current_config,
+                      run_status=run_status, attachments=attachments, tools=tools,
+                      as_registered=as_registered, defaults=defaults)
+    # What the AI model was sent, whatever came of it: each prompt, or
+    # each turn's system prompt, tools and new messages (`agent/receipt.py`).
+    return replace(_with_your_defaults(proposal, defaults), receipt=receipt.freeze())
 
 
 def _with_your_defaults(proposal: Proposal, defaults: Any) -> Proposal:

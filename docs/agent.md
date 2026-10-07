@@ -630,6 +630,7 @@ four times per reply:
 | `methods_of_study` | A study's methods paragraphs as its report gives them, written from what it recorded, to quote when asked how it was set up, simulated or analysed, or for a methods section |
 | `list_studies` | The studies in the workspace, newest first, each with its system, state, length, force field, tags, your note and the means it recorded; optionally only those with a tag |
 | `compare_studies` | How two studies differ: each setting one asks for and the other does not, and their means side by side, a difference called resolved only where it is more than the stated multiple of its combined standard error |
+| `current_view` | In the GUI, what the page shows (the study, the frame, the view and the residues chosen) as where to look, then the facts from that study's record or structure, read by `read_study`, `inspect_structure` or `check_selection`. It reads the page's own view, never one the AI model writes |
 
 It is told to look rather than guess: to find a structure named in words
 before writing its PDB identifier, to preview before stating a size or a
@@ -664,6 +665,18 @@ and an answer is kept for a week, so a conversation does not ask twice.
 What it looked at is folded under its reply, **Checked with the software**,
 each tool with what was asked and what the software said, and kept with the
 thread. From the command line, `fastmdx agent` prints a line for each.
+
+Under it, **What the AI model was sent**: each time the AI model was asked
+for this reply, what it was given, as it went. Replying by tool calls, the
+system prompt (the same each time, shown once), the tools declared and the
+messages it had not been given before, a look's result among them; in text,
+each prompt. It is kept beside the conversation, as
+`agent/conversations/receipts/<sha256>.json` (the newest 100, the system
+prompt once in `receipts/systems/`), each text bounded to 64,000 characters
+with the cut marked, read only when the fold is opened and checked against
+its SHA-256 then. A message about a study that is no longer the one open, or
+a reply that comes back after another study was opened, is refused
+(`agent.view.changed`); what was sent is kept with the study it was about.
 
 #### Tools from outside
 

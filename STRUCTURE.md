@@ -57,6 +57,7 @@ FastMDXplora/
 │       │   ├── propose.py         # Propose a study, have it refused, repair it, try again
 │       │   ├── conversation.py    # The same loop when the AI model replies by tool calls
 │       │   ├── turns.py           # One turn with tools, in each provider's shape
+│       │   ├── receipt.py         # What the AI model was sent for one reply, kept bounded
 │       │   ├── tools.py           # What the Agent looks at with the software's own tools
 │       │   ├── models.py          # A stored provider choice, as the function the Agent calls
 │       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks

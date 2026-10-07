@@ -254,7 +254,8 @@
     preview_setup: "Previewed what setup builds",
     check_config: "Checked the config",
     check_selection: "Checked a selection",
-    read_study: "Read another study's record"
+    read_study: "Read another study's record",
+    current_view: "Checked the current view"
   };
 
   function looked(box, looks) {
@@ -282,6 +283,113 @@
       said.textContent = l.said || "";
       item.appendChild(said);
       fold.appendChild(item);
+    });
+    box.appendChild(fold);
+    return fold;
+  }
+
+  /* What the AI model was sent for this reply, kept beside the
+   * conversation (`/api/agent/receipt`), read only when opened: each time
+   * it was asked, the prompt in full, or the system prompt, the tools
+   * declared and the messages it had not been given before (a look's
+   * result among them). */
+  function receiptPart(body, label, text) {
+    var name = document.createElement("div");
+    name.className = "agent-look-name";
+    name.textContent = label;
+    var said = document.createElement("pre");
+    said.className = "agent-look-said";
+    said.textContent = text;
+    body.appendChild(name);
+    body.appendChild(said);
+  }
+
+  function receiptMessage(body, message) {
+    var who = { user: "The person", assistant: "The AI model", results: "The software" };
+    var label = who[message.role] || message.role;
+    if (message.text) receiptPart(body, label, message.text);
+    (message.calls || []).forEach(function (call) {
+      receiptPart(body, label + " called " + call.name, JSON.stringify(call.arguments, null, 1));
+    });
+    (message.results || []).forEach(function (result) {
+      receiptPart(body, "What " + (result.name || "the call") + " gave back"
+                  + (result.is_error ? " (not taken)" : ""), String(result.content || ""));
+    });
+  }
+
+  function sent(box, brief) {
+    if (!brief || !brief.sha256 || !brief.asked) return null;
+    var fold = document.createElement("details");
+    fold.className = "agent-looks agent-sent";
+    var head = document.createElement("summary");
+    head.textContent = "What the AI model was sent (asked " + brief.asked
+      + (brief.asked === 1 ? " time" : " times") + ")"
+      + (brief.truncated ? ", long parts shortened" : "");
+    fold.appendChild(head);
+    var body = document.createElement("div");
+    fold.appendChild(body);
+    fold.addEventListener("toggle", function () {
+      if (!fold.open || fold.dataset.read) return;
+      fold.dataset.read = "1";
+      body.textContent = "Reading\u2026";
+      fetch("/api/agent/receipt?sha256=" + encodeURIComponent(brief.sha256),
+            { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { ok: false, error: "The server did not answer." }; })
+        .then(function (said) {
+          body.textContent = "";
+          if (!said || !said.ok) {
+            body.textContent = (said && said.error) || "Not kept.";
+            delete fold.dataset.read;
+            return;
+          }
+          var shownSystem = null;
+          var shownTools = null;
+          (said.receipt.sent || []).forEach(function (entry, i) {
+            var asked = document.createElement("div");
+            asked.className = "agent-look-name";
+            asked.textContent = "Asked, time " + (i + 1);
+            body.appendChild(asked);
+            if (entry.prompt != null) {
+              receiptPart(body, "Prompt", entry.prompt);
+              return;
+            }
+            if (entry.system !== shownSystem) {
+              shownSystem = entry.system;
+              var system = document.createElement("details");
+              var summary = document.createElement("summary");
+              summary.textContent = "System prompt (the same each time)";
+              system.appendChild(summary);
+              var text = document.createElement("pre");
+              text.className = "agent-look-said";
+              text.textContent = (said.receipt.systems || [])[entry.system] || "";
+              system.appendChild(text);
+              body.appendChild(system);
+            }
+            if (entry.tools !== shownTools) {
+              shownTools = entry.tools;
+              var declared = (said.receipt.toolsets || [])[entry.tools] || [];
+              var tools = document.createElement("details");
+              var named = document.createElement("summary");
+              named.textContent = "Tools declared: " + declared.map(function (tool) {
+                return tool.name;
+              }).join(", ");
+              tools.appendChild(named);
+              var specs = document.createElement("pre");
+              specs.className = "agent-look-said";
+              specs.textContent = JSON.stringify(declared, null, 1);
+              tools.appendChild(specs);
+              body.appendChild(tools);
+            }
+            (entry.messages || []).forEach(function (message) {
+              receiptMessage(body, message);
+            });
+          });
+          var digest = document.createElement("div");
+          digest.className = "muted small agent-sent-digest";
+          digest.textContent = "SHA-256 " + said.receipt.sha256;
+          body.appendChild(digest);
+        });
     });
     box.appendChild(fold);
     return fold;
@@ -764,13 +872,18 @@
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
       current_config: currentConfig,
-      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; })
+      attachments: files.map(function (f) { return { name: f.name, text: f.text, truncated: !!f.truncated }; }),
+      current_view: window.FastMDXMoleculeViewer?.currentViewHints
+        ? window.FastMDXMoleculeViewer.currentViewHints() : null
     }, box).then(function (data) {
       box.innerHTML = "";
       (data.attempts || []).forEach(function (attempt) {
         if (attempt.refusal) note(box, "Refused: " + attempt.refusal.message);
       });
       looked(box, data.looks);
+      sent(box, data.context_receipt);
+      var receipt = data.context_receipt && data.context_receipt.kept
+        ? data.context_receipt : null;
       if (data.action) {
         /* An instruction, carried out through the same door the button
          * uses. The thread says what was done, so nothing happens
@@ -797,7 +910,8 @@
           transcript.push({ role: "agent", kind: "question",
                             text: "Stop the run" + (data.where ? " at " + data.where : "") + "? Say yes." });
         } else {
-          transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "" });
+          transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "",
+                            receipt: receipt });
         }
         persist();
         act(data.action, data.where || "", box, r, confirmRunFirst, data.fix || null,
@@ -814,7 +928,7 @@
         cite(box, data.cites);
         history.push({ role: "agent", text: data.answer });
         var answered = { role: "agent", kind: "answer", text: data.answer,
-                         cites: data.cites || [], looks: data.looks || [] };
+                         cites: data.cites || [], looks: data.looks || [], receipt: receipt };
         if (data.scene) answered.scene = data.scene;
         transcript.push(answered);
         sceneCard(box, data.scene, answered);
@@ -827,7 +941,7 @@
         note(box, data.question);
         history.push({ role: "agent", text: data.question });
         transcript.push({ role: "agent", kind: "question", text: data.question,
-                          looks: data.looks || [] });
+                          looks: data.looks || [], receipt: receipt });
         persist();
         pending = request;
         area.focus();
@@ -851,7 +965,7 @@
       currentConfig = data.yaml;
       transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
                         note: data.note || null,
-                        plan: data.plan || [], looks: data.looks || [],
+                        plan: data.plan || [], looks: data.looks || [], receipt: receipt,
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message } } : {};
                         }) });
@@ -1427,6 +1541,7 @@
         var r = reply();
         var box = r.part("attempts");
         looked(box, e.looks);
+        sent(box, e.receipt);
         if (e.kind === "config") {
           (e.attempts || []).forEach(function (a) {
             if (a.refusal) note(box, "Refused: " + a.refusal.message);

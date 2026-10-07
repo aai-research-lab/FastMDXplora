@@ -1242,6 +1242,33 @@
     return view;
   }
 
+  /* What is on screen, for the Agent: where to look, never what is so. The
+   * server's `current_view` tool reads the facts from the study's records
+   * (`agent/tools.py`). */
+  function currentViewHints() {
+    const view = viewNow() || {};
+    const dashboard = window.FastMDXDashboard?.state || {};
+    const appState = dashboard.appState || {};
+    const hints = {
+      page: dashboard.activePage || null,
+      study: appState.active_run || null,
+      frame: Number.isInteger(view.frame) ? view.frame : null,
+      representation: view.representation || null,
+      colour: view.colour || null,
+      superposed: view.superposed || null,
+    };
+    if (STATE.selection?.expression) hints.expression = STATE.selection.expression;
+    else if (Array.isArray(STATE.selection?.residues) && STATE.selection.residues.length) {
+      hints.selection = STATE.selection.residues.slice(0, 20).map((residue) => ({
+        chain: String(residue.chain || "").slice(0, 32),
+        resi: Number.isInteger(residue.resi) ? residue.resi : null,
+        icode: String(residue.icode || "").slice(0, 1),
+        resn: String(residue.resn || "").slice(0, 8),
+      }));
+    }
+    return Object.fromEntries(Object.entries(hints).filter(([, value]) => value != null));
+  }
+
   async function showView(view) {
     if (!view || !view.camera) return false;
     const generation = STATE.viewerGeneration;
@@ -3100,6 +3127,7 @@
       return restyleViewers();
     },
     viewNow,
+    currentViewHints,
     showView,
     setPublication,
     resize: resizeViewers,
