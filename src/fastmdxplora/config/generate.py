@@ -363,7 +363,8 @@ def write_resolved_config(
             # study read back as the text '0.5'.
             value = merged[key]
             numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
-            doc[key] = value if numeric else str(value)
+            # And a mapping a mapping: the decisions behind the settings.
+            doc[key] = value if numeric or isinstance(value, (dict, list)) else str(value)
 
     options = merged.get("options") or {}
     if full:

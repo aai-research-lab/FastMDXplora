@@ -316,8 +316,10 @@ def python_script(config: dict[str, Any]) -> str:
     # config it is. `config_data=` is the API's own form for that.
     shaped = [key for key in ("sweep", "execution") if config.get(key)]
     # And the study-level settings the keyword form has no place for: how
-    # the study was written, its budget, and the two presentation settings.
-    shaped += [key for key in ("agent", "agent_model", "budget_hours", "verbose", "explain")
+    # the study was written, its budget, why its settings have their values,
+    # and the two presentation settings.
+    shaped += [key for key in ("agent", "agent_model", "budget_hours", "decisions",
+                               "verbose", "explain")
                if config.get(key) is not None
                and config.get(key) != _top_level_default(key)]
     several = len(config.get("systems") or []) > 1
@@ -333,7 +335,8 @@ def python_script(config: dict[str, Any]) -> str:
         elif system is not None:
             study["systems"] = [{"system": system}]
         for key in ("output", "include_phase", "exclude_phase",
-                    "verbose", "explain", "agent", "agent_model", "budget_hours"):
+                    "verbose", "explain", "agent", "agent_model", "budget_hours",
+                    "decisions"):
             if config.get(key) is not None:
                 study[key] = config[key]
         study.update(blocks)

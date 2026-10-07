@@ -220,6 +220,20 @@ TOP_LEVEL = PhaseSchema(
               "not only what it contained.",
               choices=("assisted", "autonomous", "unvalidated"),
               example="assisted"),
+        Field("decisions", dict, None,
+              "Why a setting has the value it has, keyed by the setting's "
+              "dotted name (`setup.ph`, `simulation.duration_ns`, "
+              "`budget_hours`): `why`, the reason in a sentence; `source`, "
+              "who or what decided it (`person`, `agent`, or a reference such "
+              "as a DOI); and `alternatives`, the values considered and set "
+              "aside. A record, not a setting: no run reads it, every file "
+              "the study writes carries it, and the report gives it beside "
+              "the methods, so a reader learns what was chosen and why "
+              "rather than only what was used. A name that is not a setting "
+              "is refused, as a misspelled setting is.",
+              example={"setup.ph": {"why": "the assay buffer is pH 7.0",
+                                    "source": "person",
+                                    "alternatives": ["7.4"]}}),
         Field("explain", bool, True,
               "Say why each step happens as it happens, with a reference "
               "where there is one worth reading. On, because a pipeline that "
@@ -1089,8 +1103,9 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("output",)),
         ("How it was written",
          "Whether an AI model was involved and which one, so the record "
-         "identifies the software rather than the category.",
-         ("agent", "agent_model")),
+         "identifies the software rather than the category, and why each "
+         "setting chosen has its value.",
+         ("agent", "agent_model", "decisions")),
         ("What it may spend",
          "A ceiling for a study nobody is watching, checked after setup "
          "when the particle count -- and so the cost -- is first known.",

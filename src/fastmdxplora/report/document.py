@@ -370,6 +370,12 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
     if prose:
         lines.append(prose)
         lines.append("")
+        decided = _decisions_said(project_root)
+        if decided:
+            lines.append("### Why these settings")
+            lines.append("")
+            lines.extend(decided)
+            lines.append("")
         lines.append("### Every setting used")
         lines.append("")
         lines.append(
@@ -448,6 +454,44 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
             lines.append("Simulation was not run in this workflow.")
 
     return "\n".join(lines)
+
+
+def _decisions_said(project_root: Path) -> list[str]:
+    """The study's recorded decisions (the `decisions` block), one line
+    each: the setting, the value it took, why, who or what decided it, and
+    what was set aside. Read from the config the study ran, so a reason is
+    given beside the value it explains."""
+    import yaml
+
+    resolved = project_root / "resolved_config.yml"
+    try:
+        data = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return []
+    decisions = data.get("decisions") if isinstance(data, dict) else None
+    if not isinstance(decisions, dict) or not decisions:
+        return []
+    lines = []
+    for name, said in decisions.items():
+        if not isinstance(said, dict) or not said.get("why"):
+            continue
+        block, _, key = str(name).partition(".")
+        value = ((data.get(block) or {}).get(key) if key and isinstance(data.get(block), dict)
+                 else data.get(str(name)))
+        line = f"- `{_code_text(name)}`"
+        if value is not None:
+            line += f" = `{_code_text(value)}`"
+        line += f": {_md_text(str(said['why']).strip())}"
+        extra = []
+        if said.get("source"):
+            extra.append(f"decided by {_md_text(said['source'])}")
+        if said.get("alternatives"):
+            extra.append("set aside: " + ", ".join(
+                f"`{_code_text(v)}`" for v in said["alternatives"]))
+        if extra:
+            line += " (" + "; ".join(extra) + ")"
+        lines.append(line)
+    return lines
 
 
 def _results_section(project_root: Path, report_dir: Path | None = None) -> str:

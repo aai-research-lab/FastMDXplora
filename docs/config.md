@@ -54,7 +54,7 @@ output: runs/ubiquitin
 
 ---
 
-## The fifteen top-level keys
+## The sixteen top-level keys
 
 Nothing else is accepted at the top level; an unknown key is refused with the
 nearest match.
@@ -95,9 +95,30 @@ Every setting in each is in the [Config reference](config_reference.md).
 | `agent` | str | — | Records that the [Agent](agent.md) wrote this study: `assisted`, `autonomous` or `unvalidated` |
 | `agent_model` | str | — | Which AI model wrote it, as `provider/model` |
 | `budget_hours` | float | — | A ceiling on GPU hours for the whole study, every run of it. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
+| `decisions` | mapping | none | Why a setting has its value, keyed by the setting's dotted name: `why`, and optionally `source` and `alternatives` |
 
 `agent` and `agent_model` are provenance, not behaviour. They are described in
 [The FastMDXplora Agent](agent.md).
+
+`decisions` is a record too: no run reads it. Each entry says why one setting
+has the value it has, who or what decided it, and what was set aside:
+
+```yaml
+setup:
+  ph: 7.0
+decisions:
+  setup.ph:
+    why: the assay buffer is pH 7.0
+    source: person        # or agent, or a reference such as a DOI
+    alternatives: [7.4]
+```
+
+A name that is not a setting is refused, as a misspelled setting is, and so
+is an entry without a `why`. The resolved config every run writes carries the
+block, and the report gives each reason beside its value, under **Why these
+settings** in the methods. The Config Builder writes it from **Why this
+value?** under a changed setting; on the command line it is `--decisions`
+with the same mapping as YAML or JSON.
 
 ---
 

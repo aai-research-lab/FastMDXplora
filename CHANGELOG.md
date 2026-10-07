@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Why a setting has its value: `decisions`
+
+**Added:** a top-level `decisions` block: for a setting by its dotted name
+(`setup.ph`, `budget_hours`, `execution.mode`), `why`, and optionally
+`source` (`person`, `agent`, or a reference) and `alternatives`. A name that
+is not a setting, or an entry without a `why`, is refused with the nearest
+spelling. The resolved config and the Python script carry it, the report
+gives each reason beside its value under **Why these settings**, the command
+line takes `--decisions`, and the Config Builder writes it from **Why this
+value?** (a reason rewritten there is the person's; one for a setting taken
+back, or of a phase not run, is left out).
+
 ### The Viewer's tools on a rail, its keys on ?, its ground the scheme's
 
 **Changed:** the settings beside the molecule were sixteen sections one

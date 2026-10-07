@@ -604,6 +604,9 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     }
     _validate_block(top_scalars, TOP_LEVEL, context="top-level")
 
+    if data.get("decisions") is not None:
+        _check_decisions(data["decisions"])
+
     # include / exclude mutual exclusion
     if data.get("include_phase") and data.get("exclude_phase"):
         raise ConfigError(
@@ -715,6 +718,86 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
             raise ConfigError(str(exc), **_rewrapped(exc)) from exc
 
 
+#: What a decision may say about the setting it is recorded for.
+DECISION_KEYS = ("why", "source", "alternatives")
+
+
+def settings_named() -> set[str]:
+    """Every setting a decision may be about, by its dotted name: each
+    phase's as `phase.name`, the scheduling block's as `execution.name`,
+    and the top level's by its own name."""
+    from fastmdxplora.config.schema import EXECUTION
+
+    names = {f"{phase}.{field.name}" for phase, schema in PHASE_SCHEMAS.items()
+             for field in schema.fields}
+    names |= {f"execution.{field.name}" for field in EXECUTION.fields}
+    names |= {field.name for field in TOP_LEVEL.fields if field.name != "decisions"}
+    return names
+
+
+def _check_decisions(decisions: Any) -> None:
+    """Refuse a decision about a setting that does not exist, or one that
+    does not say why: the record is read in place of the reasoning, so a
+    misspelled name would attach a reason to nothing."""
+    if not isinstance(decisions, dict):
+        raise ConfigError(
+            "`decisions` is a mapping from a setting's dotted name to why it "
+            "has its value, for example `decisions: {setup.ph: {why: ...}}`.",
+            code="config.option.wrong_type", option="decisions",
+            context="top-level", expected_type="mapping",
+            found_type=type(decisions).__name__)
+    known = settings_named()
+    for name, said in decisions.items():
+        if str(name) not in known:
+            raise ConfigError(
+                f"`decisions` names '{name}', which is not a setting"
+                f"{_suggest(str(name), known)}. A decision is recorded for a "
+                "setting by its dotted name, such as `setup.ph`.",
+                code="config.option.unknown", option=str(name),
+                context="decisions", permitted=sorted(known),
+                suggestion=_suggestion_only(str(name), known))
+        if not isinstance(said, dict):
+            raise ConfigError(
+                f"The decision for `{name}` is a mapping with `why`, and "
+                "optionally `source` and `alternatives`.",
+                code="config.option.wrong_type", option=str(name),
+                context="decisions", expected_type="mapping",
+                found_type=type(said).__name__)
+        for key in said:
+            if key not in DECISION_KEYS:
+                raise ConfigError(
+                    f"The decision for `{name}` has '{key}'"
+                    f"{_suggest(str(key), set(DECISION_KEYS))}. A decision says "
+                    "`why`, and optionally `source` and `alternatives`.",
+                    code="config.option.unknown", option=str(key),
+                    context=f"decisions.{name}", permitted=list(DECISION_KEYS),
+                    suggestion=_suggestion_only(str(key), set(DECISION_KEYS)))
+        why = said.get("why")
+        if not isinstance(why, str) or not why.strip():
+            raise ConfigError(
+                f"The decision for `{name}` says no `why`: a decision is its "
+                "reason, in a sentence.",
+                code="config.option.missing_companion", option=str(name),
+                context="decisions", requires=["why"])
+        if said.get("source") is not None and not isinstance(said["source"], str):
+            raise ConfigError(
+                f"The decision for `{name}` gives its `source` as "
+                f"{type(said['source']).__name__}; it is text: `person`, "
+                "`agent`, or a reference.",
+                code="config.option.wrong_type", option="source",
+                context=f"decisions.{name}", expected_type="str",
+                found_type=type(said["source"]).__name__)
+        alternatives = said.get("alternatives")
+        if alternatives is not None and not isinstance(alternatives, list):
+            raise ConfigError(
+                f"The decision for `{name}` gives its `alternatives` as "
+                f"{type(alternatives).__name__}; it is a list of the values "
+                "set aside.",
+                code="config.option.wrong_type", option="alternatives",
+                context=f"decisions.{name}", expected_type="list",
+                found_type=type(alternatives).__name__)
+
+
 def _check_analysis_names(analysis: dict[str, Any]) -> None:
     """Refuse a name no analysis has.
 
@@ -781,7 +864,7 @@ def phase_options(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 #: folded into the phase blocks: `resolve_agent_modes` compares the two to
 #: find the departures, and a phase that agreed with a study value it could
 #: not see was reported as departing from it.
-STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours")
+STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours", "decisions")
 
 
 def study_options(data: dict[str, Any]) -> dict[str, Any]:
