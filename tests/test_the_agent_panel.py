@@ -840,9 +840,10 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
 
     def test_opening_the_builder_is_a_link_not_the_way_out(self):
         panel = self.panel()
-        load = panel[panel.index('id="agent-load"') - 40:panel.index('id="agent-load"') + 80]
+        load = panel[panel.index('id="agent-load"') - 60:panel.index('id="agent-load"') + 80]
         self.assertIn("<a href=", load)
-        self.assertIn("to change it first", panel)
+        # Beside Run, not the primary button (10-07).
+        self.assertIn('class="ctl-btn" data-role="load"', load)
 
     def test_the_dialog_is_not_a_file_picker(self):
         # It borrows the shape and not the class: there is exactly one file
@@ -1496,7 +1497,7 @@ class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
 
     def test_the_two_actions_carry_the_builders_descriptions(self):
         page = self.page()
-        agent = page[page.index('id="agent-copy-command"'):page.index('id="agent-run"')]
+        agent = page[page.index('id="agent-copy-command"'):page.index('id="agent-full-config"')]
         self.assertIn("The fastmdx invocation that runs this study", agent)
         self.assertIn("The same study as a Python script", agent)
 
@@ -1795,7 +1796,10 @@ class TestAMessageCanBeCopiedEditedAndRetried(unittest.TestCase):
         self.assertIn("function cutFrom(msg)", script)
         cut = script[script.index("function cutFrom(msg)"):script.index("function say(text, attached)")]
         self.assertIn("history.length = i;", cut)
-        self.assertIn("currentConfig = null;", cut)
+        # What the next message changes is the newest version left, none
+        # if every config went with the cut.
+        self.assertIn("currentConfig = versions.length ? "
+                      "versions[versions.length - 1].data.yaml : null;", cut)
 
 
 class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):

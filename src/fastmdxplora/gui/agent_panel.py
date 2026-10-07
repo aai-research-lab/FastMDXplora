@@ -445,18 +445,27 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
     chosen = load_choice()
     if chosen is not None:
         config["agent_model"] = f"{chosen.provider}/{chosen.model}"
-    from fastmdxplora.gui.plan import plan_of
+    from fastmdxplora.gui.plan import changes_between, plan_of, sourced
 
     try:
-        plan = plan_of(config)
+        # Each line with where its value came from (`decisions`).
+        plan = sourced(plan_of(config), config)
     except Exception:  # noqa: BLE001 - the config stands without its summary
         plan = []
+    # What changed from the version before, the config the page sent as the
+    # current one: an edit is shown as its change.
+    try:
+        before = yaml.safe_load(str(payload.get("current_config") or "")) or None
+        changes = changes_between(before, config) if isinstance(before, dict) else None
+    except Exception:  # noqa: BLE001 - a version stands without its change
+        changes = None
     return {
         "ok": True,
         "cycles": proposal.cycles,
         "attempts": attempts,
         "config": config,
         "plan": plan,
+        "changes": changes,
         "note": getattr(proposal, "note", None),
         "yaml": yaml.safe_dump(config, sort_keys=False),
     }

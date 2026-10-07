@@ -166,4 +166,5 @@ def test_the_plan_says_it():
     lines = {line["label"]: line for line in plan_of(
         {"systems": [{"system": "3PTB"}], "setup": {"residue_states": {"A:57": "HIP"}}})}
     assert lines["Residue states"] == {"label": "Residue states", "value": "A:57 HIP",
-                                       "default": False}
+                                       "default": False,
+                                       "settings": ["setup.residue_states"]}

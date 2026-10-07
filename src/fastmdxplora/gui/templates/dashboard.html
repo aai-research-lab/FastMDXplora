@@ -1822,27 +1822,49 @@
               <span class="agent-who" data-role="who" title="Working"><!--icon:agent:agent-who-icon--></span>
               <div class="agent-msg-body" data-role="body">
               <div class="agent-attempts" data-role="attempts" id="agent-attempts"></div>
-              <dl class="agent-plan" data-role="plan" id="agent-plan" hidden></dl>
-              <pre class="agent-result" data-role="result" id="agent-result" hidden></pre>
-              <div class="agent-actions" data-role="actions" id="agent-actions" hidden>
-                <label class="checkbox-row agent-full">
-                  <input type="checkbox" data-role="full" id="agent-full-config">
-                  <span>Write every setting, not only the ones the Agent set</span>
-                </label>
-                <div class="control-row">
-                  <button class="ctl-btn" type="button" data-role="show" id="agent-show">Show the config</button>
-                  <button class="ctl-btn" type="button" data-role="download" id="agent-download">Download config</button>
-                  <button class="ctl-btn" type="button" data-role="copy" id="agent-copy-command"
-                          title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
-                  <button class="ctl-btn" type="button" data-role="script" id="agent-download-script"
-                          title="The same study as a Python script, using the documented API.">Download a script</button>
-                  <button class="primary-btn" type="button" data-role="run" id="agent-run">Run on this machine</button>
-                  <span class="builder-card-note agent-action-note" data-role="note" id="agent-action-note" role="status"></span>
+              <!-- A config the Agent wrote, as a version of the study: what
+                   changed from the version before, each value with where it
+                   came from, and Run on the newest only. An older version
+                   folds to its head, with Show and Use this version. -->
+              <div class="agent-study" data-role="study" hidden>
+                <div class="agent-study-head">
+                  <b class="agent-study-version" data-role="version">Study</b>
+                  <span class="agent-badge is-ok" data-role="checks">passes the checks</span>
+                  <span class="agent-badge" data-role="replaced" hidden></span>
+                  <span class="agent-spacer"></span>
+                  <span class="agent-badge" data-role="count" hidden></span>
+                  <button type="button" class="ghost-btn" data-role="unfold" hidden>Show</button>
+                  <button type="button" class="ghost-btn" data-role="use" hidden
+                          title="Make this version the newest again, to run or change">Use this version</button>
                 </div>
-                <div class="agent-run-fix" data-role="fix" id="agent-run-fix" hidden></div>
-                <p class="builder-card-note">
-                  <a href="#run" data-role="load" id="agent-load">Open in the builder</a> to change it first.
-                </p>
+                <div class="agent-study-change" data-role="change" hidden></div>
+                <div class="agent-study-whole" data-role="whole">
+                <dl class="agent-plan" data-role="plan" id="agent-plan" hidden></dl>
+                <pre class="agent-result" data-role="result" id="agent-result" hidden></pre>
+                <div class="agent-actions" data-role="actions" id="agent-actions" hidden>
+                  <div class="control-row">
+                    <button class="primary-btn" type="button" data-role="run" id="agent-run">Run on this machine</button>
+                    <a href="#run" class="ctl-btn" data-role="load" id="agent-load">Open in the builder</a>
+                    <details class="agent-more" data-role="more">
+                      <summary class="ctl-btn">More</summary>
+                      <div class="agent-more-menu" role="group" aria-label="More for this study">
+                        <button class="ctl-btn" type="button" data-role="show" id="agent-show">Show the config</button>
+                        <button class="ctl-btn" type="button" data-role="download" id="agent-download">Download config</button>
+                        <button class="ctl-btn" type="button" data-role="copy" id="agent-copy-command"
+                                title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
+                        <button class="ctl-btn" type="button" data-role="script" id="agent-download-script"
+                                title="The same study as a Python script, using the documented API.">Download a script</button>
+                        <label class="checkbox-row agent-full">
+                          <input type="checkbox" data-role="full" id="agent-full-config">
+                          <span>Write every setting, not only the ones the Agent set</span>
+                        </label>
+                      </div>
+                    </details>
+                    <span class="builder-card-note agent-action-note" data-role="note" id="agent-action-note" role="status"></span>
+                  </div>
+                  <div class="agent-run-fix" data-role="fix" id="agent-run-fix" hidden></div>
+                </div>
+                </div>
               </div>
               </div>
             </div>

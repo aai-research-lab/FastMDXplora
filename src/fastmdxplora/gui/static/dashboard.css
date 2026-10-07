@@ -4533,6 +4533,56 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     font-size: var(--text-sm);
 }
 .agent-plan[hidden] { display: none; }
+/* A config the Agent wrote, as one version of the study (agent-panel.js). */
+.agent-study {
+    max-width: 780px; border: 1px solid var(--border-primary); border-radius: 12px;
+    background: var(--panel-glass); overflow: visible;
+}
+.agent-study[hidden] { display: none; }
+.agent-study .agent-plan { margin: 0; border: 0; border-radius: 0; background: none; }
+.agent-study-head {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm);
+}
+.agent-study.is-replaced { background: var(--background-soft); }
+.agent-study.is-replaced:not(.is-unfolded) .agent-study-head { border-bottom: 0; }
+.agent-study.is-replaced .agent-study-version { color: var(--text-secondary); }
+.agent-spacer { flex: 1; }
+.agent-badge { font-size: var(--text-2xs); padding: 2px 8px; border-radius: 999px;
+    background: var(--background-elevated); color: var(--text-muted); }
+.agent-badge.is-ok { color: var(--status-completed); }
+.agent-study-change { padding: 10px 14px 0; font-size: var(--text-md); }
+.agent-study-change[hidden] { display: none; }
+.agent-change-row .was { color: var(--text-muted); text-decoration: line-through; }
+.agent-change-row .arrow { color: var(--text-muted); margin: 0 6px; }
+.agent-change-row .now { font-weight: 600; }
+.agent-change-rest { color: var(--text-muted); font-size: var(--text-sm); margin-top: 4px; }
+/* Where each value came from, at the end of its line, and the Agent's
+   reason under it. */
+.agent-study .agent-plan dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.agent-plan-value { flex: 1 1 auto; min-width: 0; }
+.agent-source { font-size: var(--text-2xs); border-radius: 999px; margin-left: auto;
+    padding: 1px 8px; white-space: nowrap; border: 1px solid var(--border-primary); color: var(--text-muted); }
+.agent-source.is-asked { color: var(--accent-text); border-color: var(--accent-cyan); }
+.agent-source.is-yours { color: var(--status-completed); border-color: var(--status-completed); }
+.agent-source.is-agent { color: var(--status-waiting); border-color: var(--status-waiting); }
+.agent-plan-why { flex: 1 0 100%; color: var(--text-muted); font-size: var(--text-xs); }
+.agent-study .agent-actions { padding: 10px 14px; border-top: 1px solid var(--border-subtle); }
+.agent-study .agent-actions .control-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* More: the file actions and every setting, as a menu under its button. */
+.agent-more { position: relative; }
+.agent-more > summary { list-style: none; cursor: pointer; }
+.agent-more > summary::-webkit-details-marker { display: none; }
+.agent-more > summary::after { content: " \25BE"; }
+.agent-more-menu {
+    /* Upward: the newest version sits just above the message box. */
+    position: absolute; z-index: 20; bottom: calc(100% + 6px); left: 0; min-width: 260px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px;
+    border: 1px solid var(--border-primary); border-radius: 10px; background: var(--background-elevated);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.agent-more-menu .ctl-btn { text-align: left; }
+.agent-more-menu .agent-full { padding: 4px 2px 0; }
 
 /* A scene an answer proposes (agent-panel.js), written with a button. */
 .agent-scene {

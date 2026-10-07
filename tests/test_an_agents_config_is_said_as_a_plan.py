@@ -20,7 +20,16 @@ from fastmdxplora.gui.plan import plan_of
 
 
 def _lines(config: dict) -> dict:
-    return {line["label"]: line for line in plan_of(config)}
+    """Each line, without the settings it says (tested on their own below)."""
+    return {line["label"]: {k: v for k, v in line.items() if k != "settings"}
+            for line in plan_of(config)}
+
+
+def test_each_line_names_the_settings_it_says() -> None:
+    plan = plan_of({"systems": [{"system": "1UBQ"}]})
+    said = {line["label"]: line.get("settings") for line in plan}
+    assert "simulation.duration_ns" in said["Production"]
+    assert "setup.forcefield" in said["Force field"]
 
 
 class TestThePlan:
@@ -263,7 +272,7 @@ def test_the_plan_ends_with_what_it_would_build_and_take(tmp_path) -> None:
             browser.close()
     finally:
         session.server.shutdown()
-    assert terms == ["Production", "System", "Time here"]
+    assert terms == ["Production", "Size", "Time here"]
     assert shown
     assert values[1].startswith("about ") and "dodecahedron" in values[1]
     assert "padding grown to" in values[1]
@@ -325,7 +334,7 @@ def test_a_reply_that_arrives_before_the_builder_is_ready_still_gets_it(tmp_path
             browser.close()
     finally:
         session.server.shutdown()
-    assert terms == ["Production", "System", "Time here"]
+    assert terms == ["Production", "Size", "Time here"]
     assert shown
     assert values[1].startswith("about ") and "dodecahedron" in values[1]
     assert "padding grown to" in values[1]

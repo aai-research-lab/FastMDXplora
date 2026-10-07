@@ -767,15 +767,11 @@
     stopPending = null;
     runPending = null;
     fixPending = null;
-    lastReply = null;
-    currentConfig = null;
-    for (var j = history.length - 1; j >= 0; j--) {
-      var text = history[j].text || "";
-      if (history[j].role === "agent" && text.indexOf("Wrote a config:\n") === 0) {
-        currentConfig = text.slice("Wrote a config:\n".length);
-        break;
-      }
-    }
+    keptVersions();
+    /* What the next message changes is the newest version left. Read from
+     * the history it missed a config written with a note beside it, and the
+     * Agent then edited an older version (review, 10-07). */
+    currentConfig = versions.length ? versions[versions.length - 1].data.yaml : null;
   }
 
   function say(text, attached) {
@@ -1041,15 +1037,16 @@
       history.push({ role: "agent", text: (data.note ? data.note + "\n\n" : "")
                      + "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
+      var made = wireActions(r, data, box);
       transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
-                        note: data.note || null,
+                        note: data.note || null, version: made.number,
+                        changes: data.changes || null,
                         plan: data.plan || [], looks: data.looks || [], receipt: receipt,
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message,
                                                           code: a.refusal.code || null } } : {};
                         }) });
       persist();
-      wireActions(r, data, box);
       scrollToEnd();
     }).catch(function (error) {
       box.innerHTML = "";
@@ -1412,6 +1409,18 @@
     host.hidden = false;
   }
 
+  /* Where a value came from (`gui/plan.py` `sourced`, from the config's
+   * `decisions`): the person's request, their fastmdx-defaults.yml, the
+   * Agent's choice with its reason, or FastMDXplora's default. A value set
+   * with no decision recorded says nothing rather than a guess. */
+  var SOURCES = {
+    asked: ["you asked", "is-asked", "Your message said it."],
+    yours: ["your default", "is-yours", "From fastmdx-defaults.yml, your defaults."],
+    agent: ["Agent\u2019s choice", "is-agent", "I chose it; why is under it."],
+    "default": ["default", "is-default",
+                "Not set in the config: the value the run takes when nothing is said."]
+  };
+
   function showPlan(host, plan) {
     if (!host) return;
     host.innerHTML = "";
@@ -1420,14 +1429,24 @@
       var term = document.createElement("dt");
       term.textContent = line.label;
       var value = document.createElement("dd");
-      value.textContent = line.value;
-      if (line["default"]) {
+      var said = document.createElement("span");
+      said.className = "agent-plan-value";
+      said.textContent = line.value;
+      value.appendChild(said);
+      var source = SOURCES[line.source || (line["default"] ? "default" : "")];
+      if (source) {
         var tag = document.createElement("span");
-        tag.className = "agent-plan-default";
-        tag.textContent = "default";
-        tag.title = "Not set in the config: the value the run takes when nothing is said.";
+        tag.className = "agent-source " + source[1];
+        tag.textContent = source[0];
+        tag.title = source[2];
         value.appendChild(document.createTextNode(" "));
         value.appendChild(tag);
+      }
+      if (line.why) {
+        var why = document.createElement("div");
+        why.className = "agent-plan-why";
+        why.textContent = line.why;
+        value.appendChild(why);
       }
       host.appendChild(term);
       host.appendChild(value);
@@ -1435,8 +1454,139 @@
     host.hidden = !lines.length;
   }
 
-  function wireActions(r, data, box) {
+  /* What changed from the version before (`gui/plan.py`
+   * `changes_between`): "Temperature 310 K -> 330 K", and that the rest
+   * is as it was. */
+  function showChanges(r, changes, before) {
+    var host = r.part("change");
+    var count = r.part("count");
+    if (!host || !Array.isArray(changes) || !before) return;
+    host.innerHTML = "";
+    changes.forEach(function (c) {
+      var row = document.createElement("div");
+      row.className = "agent-change-row";
+      row.appendChild(document.createTextNode(c.label + " "));
+      var was = document.createElement("span");
+      was.className = "was";
+      was.textContent = c.before;
+      var arrow = document.createElement("span");
+      arrow.className = "arrow";
+      arrow.textContent = "\u2192";
+      var now = document.createElement("span");
+      now.className = "now";
+      now.textContent = c.after;
+      row.append(was, arrow, now);
+      host.appendChild(row);
+    });
+    var rest = document.createElement("div");
+    rest.className = "agent-change-rest";
+    rest.textContent = changes.length ? "Everything else as version " + before + "."
+      : "The same study as version " + before + ".";
+    host.appendChild(rest);
+    host.hidden = false;
+    count.textContent = changes.length === 1 ? "1 change" : changes.length + " changes";
+    count.hidden = !changes.length;
+  }
+
+  /* The versions of the study written in this conversation, oldest first;
+   * the newest is the one Run, "run it" and the next edit act on. */
+  var versions = [];
+
+  /* An older version folded to its head: no Run, Show to read it, and Use
+   * this version to make it the newest again. */
+  function fold(v, by) {
+    var r = v.r;
+    var study = r.part("study");
+    study.classList.add("is-replaced");
+    study.classList.remove("is-unfolded");
+    r.part("checks").hidden = true;
+    var replaced = r.part("replaced");
+    replaced.textContent = "replaced by version " + by;
+    replaced.hidden = false;
+    r.part("count").hidden = true;
+    r.part("change").hidden = true;
+    r.part("whole").hidden = true;
+    r.part("actions").hidden = true;
+    var unfold = r.part("unfold");
+    unfold.hidden = false;
+    unfold.textContent = "Show";
+    r.part("use").hidden = false;
+  }
+
+  /* The newest version as it was written: whole, with its actions. */
+  function unfolded(v) {
+    var r = v.r;
+    var study = r.part("study");
+    study.classList.remove("is-replaced", "is-unfolded");
+    r.part("checks").hidden = false;
+    r.part("replaced").hidden = true;
+    r.part("unfold").hidden = true;
+    r.part("use").hidden = true;
+    r.part("whole").hidden = false;
+    r.part("actions").hidden = false;
+    if (v.changes) showChanges(r, v.changes, v.number - 1);
+  }
+
+  function newVersion(r, data, number) {
+    var v = { r: r, data: data, number: number || versions.length + 1,
+              changes: data.changes || null };
+    var previous = versions[versions.length - 1];
+    if (previous) fold(previous, v.number);
+    versions.push(v);
+    r.part("version").textContent = "Study, version " + v.number;
+    r.part("study").hidden = false;
+    if (v.changes && previous) showChanges(r, v.changes, previous.number);
+    r.part("unfold").onclick = function () {
+      var study = r.part("study");
+      var opening = !study.classList.contains("is-unfolded");
+      study.classList.toggle("is-unfolded", opening);
+      r.part("whole").hidden = !opening;
+      r.part("unfold").textContent = opening ? "Hide" : "Show";
+    };
+    r.part("use").onclick = function () { useVersion(v); };
+    return v;
+  }
+
+  /* An older version made the newest again: written into the conversation
+   * as the person's choice and as a new version of the same config, so the
+   * next "make it 5 ns" changes it, and Run runs it. Nothing is asked of
+   * the Agent's AI model. */
+  function useVersion(v) {
+    if (writing) return;
+    /* A new choice, so nothing still waiting for a yes takes it. */
+    stopPending = null; runPending = null; fixPending = null;
+    var asked = "Use version " + v.number;
+    say(asked, []);
+    history.push({ role: "user", text: asked });
+    transcript.push({ role: "user", text: asked });
+    var r = reply();
+    whoIs(r, "done");
+    var again = { yaml: v.data.yaml, config: v.data.config, plan: v.data.plan,
+                  note: "Version " + v.number + ", again.", changes: null };
+    saidBeside(r.part("attempts"), again.note);
+    history.push({ role: "agent", text: again.note + "\n\nWrote a config:\n" + again.yaml });
+    currentConfig = again.yaml;
+    var made = wireActions(r, again, r.part("attempts"));
+    transcript.push({ role: "agent", kind: "config", yaml: again.yaml, config: again.config,
+                      note: again.note, plan: again.plan || [], cycles: 1, attempts: [],
+                      version: made.number, again: v.number });
+    persist();
+    scrollToEnd();
+  }
+
+  /* After an edit or a retry cut the thread, the newest version left is the
+   * one to run: unfolded, with its actions. */
+  function keptVersions() {
+    var thread = el("agent-thread");
+    versions = versions.filter(function (v) { return thread.contains(v.r.node); });
+    var newest = versions[versions.length - 1];
+    if (newest) unfolded(newest);
+    lastReply = newest ? newest.r : null;
+  }
+
+  function wireActions(r, data, box, number) {
     lastReply = r;
+    var made = newVersion(r, data, number);
     var result = r.part("result");
     var actions = r.part("actions");
     var showBtn = r.part("show");
@@ -1486,7 +1636,7 @@
       onItsConfig().previewCost().then(function (cost) {
         if (!cost) return;
         addPlanLines(r.part("plan"), [
-          { label: "System", value: cost.size },
+          { label: "Size", value: cost.size },
           { label: "Time here", value: cost.time },
         ]);
       });
@@ -1582,6 +1732,20 @@
         }
       });
     };
+    /* More: a menu, put away by a choice in it, a click elsewhere or Escape. */
+    var more = r.part("more");
+    if (more) {
+      more.addEventListener("click", function (e) {
+        if (e.target.closest(".agent-more-menu button")) more.open = false;
+      });
+      more.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && more.open) {
+          more.open = false;
+          more.querySelector("summary").focus();
+        }
+      });
+    }
+    return made;
   }
 
   /* A refused run with what would fix it (remedies.py): the fix, and the
@@ -1662,7 +1826,7 @@
                          + "Wrote a config:\n" + e.yaml });
           currentConfig = e.yaml;
           wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles,
-                           plan: e.plan || [] }, box);
+                           plan: e.plan || [], changes: e.changes || null }, box, e.version);
         } else if (e.kind === "answer") {
           var p = document.createElement("div");
           p.className = "agent-answer";
@@ -1702,12 +1866,19 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     restore();
+    /* A study's More menu is put away by a click anywhere else. */
+    document.addEventListener("click", function (e) {
+      Array.prototype.forEach.call(document.querySelectorAll(".agent-more[open]"), function (m) {
+        if (!m.contains(e.target)) m.open = false;
+      });
+    });
     /* Start fresh: the thread on screen is already saved and stays in
      * the list. Nothing is lost, so nothing is confirmed. */
     function resetThread() {
       el("agent-thread").innerHTML = "";
       history = []; transcript = []; currentConfig = null; pending = null;
       stopPending = null; runPending = null; fixPending = null; lastReply = null;
+      versions = [];
     }
     /* A fresh thread: where the GUI is, or, given `study` (null for a
      * chat of no study), there. */
