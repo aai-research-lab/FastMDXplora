@@ -19,6 +19,7 @@ FastMDXplora/
 │       ├── explain.py             # The prose the CLI prints beside each step
 │       ├── scenes.py              # A view of a study as a MolViewSpec scene (.mvsx)
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
+│       ├── structure_search.py    # A structure found by its name: the PDB's entries by protein, AlphaFold DB's models
 │       ├── system_id.py           # A study's system as four capitals: its PDB ID, or its file's first four
 │       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
 │       ├── study_files.py         # What each file of a study is: its phase, run, kind and name

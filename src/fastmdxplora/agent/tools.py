@@ -212,7 +212,8 @@ class Toolbox:
 
 
 _LOOK_RATHER_THAN_GUESS = (
-    "Look rather than guess. Preview before you state a system's size or "
+    "Look rather than guess. Find a structure named in words before you write "
+    "its PDB identifier; preview before you state a system's size or "
     "a study's time; check a config you are unsure of before you hand it "
     "over; inspect a structure before you choose its chains, its ligand "
     "or a residue's state; check a selection before you write one into a "
@@ -569,6 +570,28 @@ def _methods_of_study(box: Toolbox, asked: dict[str, Any]) -> str:
             f"(a gap they name was not recorded):\n\n{prose}")
 
 
+def _find_structure(box: Toolbox, asked: dict[str, Any]) -> str:
+    """The PDB entries a name answers to, by protein, and AlphaFold DB's
+    models where the PDB holds none or where asked."""
+    from fastmdxplora.structure_search import SearchUnreachable, find_structures, said
+
+    query = " ".join(str(asked.get("query") or "").split())
+    if not query:
+        raise _Refused("Name the structure as `query`: a molecule's name, such as "
+                       "lysozyme, or a PDB identifier.")
+    try:
+        most = int(asked.get("most") or 5)
+    except (TypeError, ValueError):
+        raise _Refused("`most` is a whole number of entries, 1 to 10.") from None
+    try:
+        found = find_structures(query, organism=str(asked.get("organism") or ""),
+                                most=most, predicted=asked.get("predicted") is True)
+    except SearchUnreachable as exc:
+        raise _Refused(f"{exc} Nothing is guessed in its place: ask the person for the "
+                       "PDB identifier or a structure file.") from None
+    return said(found)
+
+
 def _config_asked(asked: dict[str, Any]) -> dict[str, Any]:
     config = asked.get("config", asked)
     if isinstance(config, str):
@@ -586,6 +609,15 @@ def _config_asked(asked: dict[str, Any]) -> dict[str, Any]:
 
 #: name -> (its arguments, what it tells, the function)
 _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
+    "find_structure": (
+        "`query` (a molecule's name or a PDB identifier), and optionally `organism` "
+        "(a species as the PDB names it, such as Homo sapiens), `most` (entries, 1 to "
+        "10) and `predicted` (true for AlphaFold DB's models as well).",
+        "the PDB entries a name answers to, grouped by protein, the most studied "
+        "first, each with its method, resolution, chains and ligands; and AlphaFold "
+        "DB's predicted models where the PDB holds no structure or where asked. "
+        "Look here before you write a PDB identifier for a system named in words.",
+        _find_structure),
     "inspect_structure": (
         "`system` (a PDB identifier or a structure file's path).",
         "the chains, protein residues, ligands, ions and water a structure holds, "
@@ -632,6 +664,17 @@ _A_FOLDER = {"type": "string", "description": "A study's folder, as given to --o
 
 #: Each tool's arguments as the AI model is told them, by name.
 _SCHEMAS: dict[str, dict[str, Any]] = {
+    "find_structure": {"type": "object", "properties": {
+        "query": {"type": "string",
+                  "description": "A molecule's name, such as lysozyme or trp-cage, or a "
+                                 "PDB identifier."},
+        "organism": {"type": "string",
+                     "description": "A species as the PDB names it, such as Homo sapiens."},
+        "most": {"type": "integer", "minimum": 1, "maximum": 10,
+                 "description": "How many entries to offer; 5 if not given."},
+        "predicted": {"type": "boolean",
+                      "description": "AlphaFold DB's models as well as the PDB's entries."}},
+        "required": ["query"]},
     "inspect_structure": {"type": "object", "properties": {"system": _A_STRUCTURE},
                           "required": ["system"]},
     "preview_setup": {"type": "object", "properties": {"config": _A_STUDY},

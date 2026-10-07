@@ -1,0 +1,2863 @@
+[
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "terminal",
+    "service": "text",
+    "parameters": {
+     "attribute": "rcsb_polymer_entity.pdbx_description",
+     "operator": "contains_phrase",
+     "value": "lysozyme"
+    }
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "d2f75bcd-0423-44a3-a091-45449c73d643",
+   "result_type": "polymer_entity",
+   "total_count": 2468,
+   "result_set": [
+    {
+     "identifier": "180L_1",
+     "score": 1.0
+    }
+   ],
+   "facets": [
+    {
+     "name": "by_protein",
+     "buckets": [
+      {
+       "label": "P00698",
+       "population": 1398
+      },
+      {
+       "label": "P00720",
+       "population": 617
+      },
+      {
+       "label": "P61626",
+       "population": 215
+      },
+      {
+       "label": "D9IEF7",
+       "population": 32
+      },
+      {
+       "label": "P07550",
+       "population": 20
+      },
+      {
+       "label": "P00703",
+       "population": 13
+      },
+      {
+       "label": "P01823",
+       "population": 12
+      },
+      {
+       "label": "P16009",
+       "population": 12
+      },
+      {
+       "label": "Q96GG9",
+       "population": 11
+      },
+      {
+       "label": "P01642",
+       "population": 7
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P00698"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "cdd1bc95-02f5-4304-89ec-0d6b25d519b9",
+   "result_type": "polymer_entity",
+   "total_count": 1252,
+   "result_set": [
+    {
+     "identifier": "2VB1_1",
+     "score": 0.6530581125796205
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P00698"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_accession_info.initial_release_date",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "d58b5b68-15ef-491f-9809-68e869602794",
+   "result_type": "polymer_entity",
+   "total_count": 1252,
+   "result_set": [
+    {
+     "identifier": "1LYZ_1",
+     "score": 0.8146672211437799
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P00720"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "5b226aed-52f7-4f68-bb7c-61c2a50b00e7",
+   "result_type": "polymer_entity",
+   "total_count": 162,
+   "result_set": [
+    {
+     "identifier": "3FA0_1",
+     "score": 0.8482993855615991
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P00720"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "lysozyme"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_accession_info.initial_release_date",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "96808f68-5d78-48ed-b43f-7974cbfc2fb3",
+   "result_type": "polymer_entity",
+   "total_count": 162,
+   "result_set": [
+    {
+     "identifier": "2LZM_1",
+     "score": 0.8689286380129527
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "data.rcsb.org",
+  "path": "/graphql",
+  "query": "",
+  "body": {
+   "query": "\nquery($ids: [String!]!) { entries(entry_ids: $ids) {\n  rcsb_id struct { title } exptl { method }\n  rcsb_entry_info { resolution_combined }\n  rcsb_accession_info { initial_release_date }\n  polymer_entities {\n    rcsb_polymer_entity { pdbx_description }\n    entity_poly { rcsb_sample_sequence_length pdbx_strand_id }\n    rcsb_entity_source_organism { scientific_name }\n    rcsb_polymer_entity_container_identifiers {\n      reference_sequence_identifiers { database_accession database_name } } }\n  nonpolymer_entities { nonpolymer_comp { chem_comp { id name } } }\n} }",
+   "variables": {
+    "ids": [
+     "2VB1",
+     "3FA0",
+     "1LYZ",
+     "2LZM"
+    ]
+   }
+  },
+  "answer": {
+   "data": {
+    "entries": [
+     {
+      "rcsb_id": "2VB1",
+      "struct": {
+       "title": "HEWL at 0.65 angstrom resolution"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        0.65
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2007-09-18T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "LYSOZYME C"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 129,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "GALLUS GALLUS"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P00698",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "ACT",
+          "name": "ACETATE ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "EDO",
+          "name": "1,2-ETHANEDIOL"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "NO3",
+          "name": "NITRATE ION"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "rcsb_id": "3FA0",
+      "struct": {
+       "title": "Evaulaution at Atomic Resolution of the Role of Strain in Destabilizing the Temperature Sensitive T4 Lysozyme Mutant Arg96-->His"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        1.09
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2009-02-17T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "Lysozyme"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 162,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Enterobacteria phage T4"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P00720",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "K",
+          "name": "POTASSIUM ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "CL",
+          "name": "CHLORIDE ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "PO4",
+          "name": "PHOSPHATE ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "BME",
+          "name": "BETA-MERCAPTOETHANOL"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "HED",
+          "name": "2-HYDROXYETHYL DISULFIDE"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "rcsb_id": "1LYZ",
+      "struct": {
+       "title": "Real-space refinement of the structure of hen egg-white lysozyme"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        2.0
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "1977-04-12T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "HEN EGG WHITE LYSOZYME"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 129,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Gallus gallus"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P00698",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "2LZM",
+      "struct": {
+       "title": "STRUCTURE OF BACTERIOPHAGE T4 LYSOZYME REFINED AT 1.7 ANGSTROMS RESOLUTION"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        1.7
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "1986-10-24T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "T4 LYSOZYME"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 164,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Enterobacteria phage T4"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P00720",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "terminal",
+    "service": "text",
+    "parameters": {
+     "attribute": "rcsb_polymer_entity.pdbx_description",
+     "operator": "contains_phrase",
+     "value": "trp-cage"
+    }
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "5ebdbfc9-c982-4e53-a3c2-edbbba6c7561",
+   "result_type": "polymer_entity",
+   "total_count": 13,
+   "result_set": [
+    {
+     "identifier": "2JOF_1",
+     "score": 1.0
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "or",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.pdbx_description",
+       "operator": "contains_phrase",
+       "value": "trp-cage"
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "struct.title",
+       "operator": "contains_phrase",
+       "value": "trp-cage"
+      }
+     }
+    ]
+   },
+   "return_type": "entry",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 6
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_accession_info.initial_release_date",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "1e3ecc26-4d0b-4eda-a546-44f22f376256",
+   "result_type": "entry",
+   "total_count": 29,
+   "result_set": [
+    {
+     "identifier": "1L2Y",
+     "score": 0.4174598203080922
+    },
+    {
+     "identifier": "1RIJ",
+     "score": 0.48823578440821574
+    },
+    {
+     "identifier": "2JOF",
+     "score": 0.9618769251069278
+    },
+    {
+     "identifier": "2LDJ",
+     "score": 0.7944652244012285
+    },
+    {
+     "identifier": "2LL5",
+     "score": 0.5174802467799545
+    },
+    {
+     "identifier": "3UC7",
+     "score": 0.4386560414577551
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "data.rcsb.org",
+  "path": "/graphql",
+  "query": "",
+  "body": {
+   "query": "\nquery($ids: [String!]!) { entries(entry_ids: $ids) {\n  rcsb_id struct { title } exptl { method }\n  rcsb_entry_info { resolution_combined }\n  rcsb_accession_info { initial_release_date }\n  polymer_entities {\n    rcsb_polymer_entity { pdbx_description }\n    entity_poly { rcsb_sample_sequence_length pdbx_strand_id }\n    rcsb_entity_source_organism { scientific_name }\n    rcsb_polymer_entity_container_identifiers {\n      reference_sequence_identifiers { database_accession database_name } } }\n  nonpolymer_entities { nonpolymer_comp { chem_comp { id name } } }\n} }",
+   "variables": {
+    "ids": [
+     "1L2Y",
+     "1RIJ",
+     "2JOF",
+     "2LDJ",
+     "2LL5",
+     "3UC7"
+    ]
+   }
+  },
+  "answer": {
+   "data": {
+    "entries": [
+     {
+      "rcsb_id": "1L2Y",
+      "struct": {
+       "title": "NMR Structure of Trp-Cage Miniprotein Construct TC5b"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2002-05-29T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "TC5b"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 20,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": null
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "1RIJ",
+      "struct": {
+       "title": "E6-bind Trp-cage (E6apn1)"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2004-08-03T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "E6apn1 peptide"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 23,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": null
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "2LDJ",
+      "struct": {
+       "title": "1H Chemical Shift Assignments and structure of Trp-Cage mini-protein with D-amino acid"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2011-11-23T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "Trp-Cage mini-protein"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 20,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": null,
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "3UC7",
+      "struct": {
+       "title": "Trp-cage cyclo-TC1 - monoclinic crystal form"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        1.1
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2012-07-18T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "Cyclo-TC1"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 22,
+         "pdbx_strand_id": "A,B,C,D,E,F"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": null
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "CL",
+          "name": "CHLORIDE ION"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "rcsb_id": "2LL5",
+      "struct": {
+       "title": "Cyclo-TC1 Trp-cage"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2012-07-18T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "Cyclo-TC1"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 22,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": null,
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "2JOF",
+      "struct": {
+       "title": "The Trp-cage: Optimizing the Stability of a Globular Miniprotein"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2008-03-04T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "TRP-CAGE"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 20,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "synthetic construct"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "terminal",
+    "service": "text",
+    "parameters": {
+     "attribute": "rcsb_polymer_entity.pdbx_description",
+     "operator": "contains_phrase",
+     "value": "villin headpiece"
+    }
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "da10b3d6-49f4-427e-9e04-25e50507b426",
+   "result_type": "polymer_entity",
+   "total_count": 6,
+   "result_set": [
+    {
+     "identifier": "1QQV_1",
+     "score": 1.0
+    }
+   ],
+   "facets": [
+    {
+     "name": "by_protein",
+     "buckets": [
+      {
+       "label": "P02640",
+       "population": 1
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P02640"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "villin headpiece"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "villin headpiece"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "54afb1e5-21f5-4056-95c5-529204273e1e",
+   "result_type": "polymer_entity",
+   "total_count": 3,
+   "result_set": [
+    {
+     "identifier": "2RJY_1",
+     "score": 0.8308959200552858
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P02640"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "or",
+      "nodes": [
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_polymer_entity.pdbx_description",
+         "operator": "contains_phrase",
+         "value": "villin headpiece"
+        }
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "struct.title",
+         "operator": "contains_phrase",
+         "value": "villin headpiece"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_accession_info.initial_release_date",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "227e9b6e-3cd4-4edb-9ddb-b4982063fd23",
+   "result_type": "polymer_entity",
+   "total_count": 3,
+   "result_set": [
+    {
+     "identifier": "1VII_1",
+     "score": 0.8308959200552858
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "data.rcsb.org",
+  "path": "/graphql",
+  "query": "",
+  "body": {
+   "query": "\nquery($ids: [String!]!) { entries(entry_ids: $ids) {\n  rcsb_id struct { title } exptl { method }\n  rcsb_entry_info { resolution_combined }\n  rcsb_accession_info { initial_release_date }\n  polymer_entities {\n    rcsb_polymer_entity { pdbx_description }\n    entity_poly { rcsb_sample_sequence_length pdbx_strand_id }\n    rcsb_entity_source_organism { scientific_name }\n    rcsb_polymer_entity_container_identifiers {\n      reference_sequence_identifiers { database_accession database_name } } }\n  nonpolymer_entities { nonpolymer_comp { chem_comp { id name } } }\n} }",
+   "variables": {
+    "ids": [
+     "2RJY",
+     "1VII"
+    ]
+   }
+  },
+  "answer": {
+   "data": {
+    "entries": [
+     {
+      "rcsb_id": "2RJY",
+      "struct": {
+       "title": "Crystal structure of villin headpiece, P21 21 21 space group"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        1.4
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2008-09-23T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "Villin-1"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 67,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Gallus gallus"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P02640",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     },
+     {
+      "rcsb_id": "1VII",
+      "struct": {
+       "title": "THERMOSTABLE SUBDOMAIN FROM CHICKEN VILLIN HEADPIECE, NMR, MINIMIZED AVERAGE STRUCTURE"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "1997-08-12T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "VILLIN"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 36,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Gallus gallus"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P02640",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "host": "data.rcsb.org",
+  "path": "/graphql",
+  "query": "",
+  "body": {
+   "query": "\nquery($ids: [String!]!) { entries(entry_ids: $ids) {\n  rcsb_id struct { title } exptl { method }\n  rcsb_entry_info { resolution_combined }\n  rcsb_accession_info { initial_release_date }\n  polymer_entities {\n    rcsb_polymer_entity { pdbx_description }\n    entity_poly { rcsb_sample_sequence_length pdbx_strand_id }\n    rcsb_entity_source_organism { scientific_name }\n    rcsb_polymer_entity_container_identifiers {\n      reference_sequence_identifiers { database_accession database_name } } }\n  nonpolymer_entities { nonpolymer_comp { chem_comp { id name } } }\n} }",
+   "variables": {
+    "ids": [
+     "1L2Y"
+    ]
+   }
+  },
+  "answer": {
+   "data": {
+    "entries": [
+     {
+      "rcsb_id": "1L2Y",
+      "struct": {
+       "title": "NMR Structure of Trp-Cage Miniprotein Construct TC5b"
+      },
+      "exptl": [
+       {
+        "method": "SOLUTION NMR"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": null
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2002-05-29T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "TC5b"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 20,
+         "pdbx_strand_id": "A"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": null
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       }
+      ],
+      "nonpolymer_entities": null
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.pdbx_description",
+       "operator": "contains_phrase",
+       "value": "GTPase KRas"
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entity_source_organism.scientific_name",
+       "operator": "exact_match",
+       "value": "Homo sapiens"
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "0a7a4a76-781d-4ec2-bbe5-382057969c68",
+   "result_type": "polymer_entity",
+   "total_count": 534,
+   "result_set": [
+    {
+     "identifier": "10NU_1",
+     "score": 1.0
+    }
+   ],
+   "facets": [
+    {
+     "name": "by_protein",
+     "buckets": [
+      {
+       "label": "P01116",
+       "population": 531
+      },
+      {
+       "label": "A0A7K5XXT4",
+       "population": 1
+      },
+      {
+       "label": "H2Q5M0",
+       "population": 1
+      },
+      {
+       "label": "P79800",
+       "population": 1
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P01116"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "and",
+      "nodes": [
+       {
+        "type": "group",
+        "logical_operator": "or",
+        "nodes": [
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "rcsb_polymer_entity.pdbx_description",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         },
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "struct.title",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         }
+        ]
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_entity_source_organism.scientific_name",
+         "operator": "exact_match",
+         "value": "Homo sapiens"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "289ff21b-1659-4bf7-877b-45e43b609c73",
+   "result_type": "polymer_entity",
+   "total_count": 27,
+   "result_set": [
+    {
+     "identifier": "6P0Z_1",
+     "score": 1.0
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "P01116"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "and",
+      "nodes": [
+       {
+        "type": "group",
+        "logical_operator": "or",
+        "nodes": [
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "rcsb_polymer_entity.pdbx_description",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         },
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "struct.title",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         }
+        ]
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_entity_source_organism.scientific_name",
+         "operator": "exact_match",
+         "value": "Homo sapiens"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_accession_info.initial_release_date",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "252b9970-0cde-44f3-b4fa-625efb1d68d5",
+   "result_type": "polymer_entity",
+   "total_count": 27,
+   "result_set": [
+    {
+     "identifier": "3GFT_1",
+     "score": 1.0
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "A0A7K5XXT4"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "and",
+      "nodes": [
+       {
+        "type": "group",
+        "logical_operator": "or",
+        "nodes": [
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "rcsb_polymer_entity.pdbx_description",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         },
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "struct.title",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         }
+        ]
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_entity_source_organism.scientific_name",
+         "operator": "exact_match",
+         "value": "Homo sapiens"
+        }
+       }
+      ]
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "entity_poly.rcsb_mutation_count",
+       "operator": "equals",
+       "value": 0
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_entry_info.polymer_entity_count_protein",
+       "operator": "equals",
+       "value": 1
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.rcsb_source_part_count",
+       "operator": "equals",
+       "value": 1
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": null
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "and",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+       "operator": "exact_match",
+       "value": "A0A7K5XXT4"
+      }
+     },
+     {
+      "type": "group",
+      "logical_operator": "and",
+      "nodes": [
+       {
+        "type": "group",
+        "logical_operator": "or",
+        "nodes": [
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "rcsb_polymer_entity.pdbx_description",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         },
+         {
+          "type": "terminal",
+          "service": "text",
+          "parameters": {
+           "attribute": "struct.title",
+           "operator": "contains_phrase",
+           "value": "GTPase KRas"
+          }
+         }
+        ]
+       },
+       {
+        "type": "terminal",
+        "service": "text",
+        "parameters": {
+         "attribute": "rcsb_entity_source_organism.scientific_name",
+         "operator": "exact_match",
+         "value": "Homo sapiens"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "rcsb_entry_info.resolution_combined",
+      "direction": "asc"
+     }
+    ]
+   }
+  },
+  "answer": {
+   "query_id": "3b8624ac-d41f-4560-9002-d768129708b3",
+   "result_type": "polymer_entity",
+   "total_count": 1,
+   "result_set": [
+    {
+     "identifier": "9GLZ_1",
+     "score": 1.0
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "host": "data.rcsb.org",
+  "path": "/graphql",
+  "query": "",
+  "body": {
+   "query": "\nquery($ids: [String!]!) { entries(entry_ids: $ids) {\n  rcsb_id struct { title } exptl { method }\n  rcsb_entry_info { resolution_combined }\n  rcsb_accession_info { initial_release_date }\n  polymer_entities {\n    rcsb_polymer_entity { pdbx_description }\n    entity_poly { rcsb_sample_sequence_length pdbx_strand_id }\n    rcsb_entity_source_organism { scientific_name }\n    rcsb_polymer_entity_container_identifiers {\n      reference_sequence_identifiers { database_accession database_name } } }\n  nonpolymer_entities { nonpolymer_comp { chem_comp { id name } } }\n} }",
+   "variables": {
+    "ids": [
+     "6P0Z",
+     "9GLZ",
+     "3GFT"
+    ]
+   }
+  },
+  "answer": {
+   "data": {
+    "entries": [
+     {
+      "rcsb_id": "6P0Z",
+      "struct": {
+       "title": "Crystal structure of N-acetylated KRAS (2-169) bound to GDP and Mg"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        1.011
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2019-07-31T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "GTPase KRas"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 168,
+         "pdbx_strand_id": "A,B"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Homo sapiens"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P01116",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "PEG",
+          "name": "DI(HYDROXYETHYL)ETHER"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "ACE",
+          "name": "ACETYL GROUP"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "GDP",
+          "name": "GUANOSINE-5'-DIPHOSPHATE"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "MG",
+          "name": "MAGNESIUM ION"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "rcsb_id": "9GLZ",
+      "struct": {
+       "title": "KRas-G12D-GMPPnP in complex with the nanobody KM12-AM"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        2.1
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2025-12-10T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "nanobody KM12-AM"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 135,
+         "pdbx_strand_id": "C,D"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Homo sapiens"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": null
+        }
+       },
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "GTPase KRas"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 170,
+         "pdbx_strand_id": "A,B"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Homo sapiens"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "A0A7K5XXT4",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "MG",
+          "name": "MAGNESIUM ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "GNP",
+          "name": "PHOSPHOAMINOPHOSPHONIC ACID-GUANYLATE ESTER"
+         }
+        }
+       }
+      ]
+     },
+     {
+      "rcsb_id": "3GFT",
+      "struct": {
+       "title": "Human K-Ras (Q61H) in complex with a GTP analogue"
+      },
+      "exptl": [
+       {
+        "method": "X-RAY DIFFRACTION"
+       }
+      ],
+      "rcsb_entry_info": {
+       "resolution_combined": [
+        2.27
+       ]
+      },
+      "rcsb_accession_info": {
+       "initial_release_date": "2009-03-10T00:00:00Z"
+      },
+      "polymer_entities": [
+       {
+        "rcsb_polymer_entity": {
+         "pdbx_description": "GTPase KRas"
+        },
+        "entity_poly": {
+         "rcsb_sample_sequence_length": 187,
+         "pdbx_strand_id": "A,B,C,D,E,F"
+        },
+        "rcsb_entity_source_organism": [
+         {
+          "scientific_name": "Homo sapiens"
+         }
+        ],
+        "rcsb_polymer_entity_container_identifiers": {
+         "reference_sequence_identifiers": [
+          {
+           "database_accession": "P01116",
+           "database_name": "UniProt"
+          }
+         ]
+        }
+       }
+      ],
+      "nonpolymer_entities": [
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "CIT",
+          "name": "CITRIC ACID"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "UNX",
+          "name": "UNKNOWN ATOM OR ION"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "GNP",
+          "name": "PHOSPHOAMINOPHOSPHONIC ACID-GUANYLATE ESTER"
+         }
+        }
+       },
+       {
+        "nonpolymer_comp": {
+         "chem_comp": {
+          "id": "MG",
+          "name": "MAGNESIUM ION"
+         }
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "host": "rest.uniprot.org",
+  "path": "/uniprotkb/search",
+  "query": "query=%22GTPase+KRas%22+AND+organism_name%3A%22Homo+sapiens%22+AND+reviewed%3Atrue&fields=accession%2Cprotein_name%2Corganism_name&format=json&size=2",
+  "body": null,
+  "answer": {
+   "results": [
+    {
+     "entryType": "UniProtKB reviewed (Swiss-Prot)",
+     "primaryAccession": "P01116",
+     "organism": {
+      "scientificName": "Homo sapiens",
+      "commonName": "Human",
+      "taxonId": 9606,
+      "lineage": [
+       "Eukaryota",
+       "Metazoa",
+       "Chordata",
+       "Craniata",
+       "Vertebrata",
+       "Euteleostomi",
+       "Mammalia",
+       "Eutheria",
+       "Euarchontoglires",
+       "Primates",
+       "Haplorrhini",
+       "Catarrhini",
+       "Hominidae",
+       "Homo"
+      ]
+     },
+     "proteinDescription": {
+      "recommendedName": {
+       "fullName": {
+        "value": "GTPase KRas"
+       },
+       "ecNumbers": [
+        {
+         "evidences": [
+          {
+           "evidenceCode": "ECO:0000269",
+           "source": "PubMed",
+           "id": "20949621"
+          },
+          {
+           "evidenceCode": "ECO:0000269",
+           "source": "PubMed",
+           "id": "39809765"
+          }
+         ],
+         "value": "3.6.5.2"
+        }
+       ]
+      },
+      "alternativeNames": [
+       {
+        "fullName": {
+         "value": "K-Ras 2"
+        }
+       },
+       {
+        "fullName": {
+         "value": "Ki-Ras"
+        }
+       },
+       {
+        "fullName": {
+         "value": "c-K-ras"
+        }
+       },
+       {
+        "fullName": {
+         "value": "c-Ki-ras"
+        }
+       }
+      ],
+      "contains": [
+       {
+        "recommendedName": {
+         "fullName": {
+          "value": "GTPase KRas, N-terminally processed"
+         }
+        }
+       }
+      ],
+      "flag": "Precursor"
+     },
+     "extraAttributes": {
+      "uniParcId": "UPI0000133132"
+     }
+    },
+    {
+     "entryType": "UniProtKB reviewed (Swiss-Prot)",
+     "primaryAccession": "Q07889",
+     "organism": {
+      "scientificName": "Homo sapiens",
+      "commonName": "Human",
+      "taxonId": 9606,
+      "lineage": [
+       "Eukaryota",
+       "Metazoa",
+       "Chordata",
+       "Craniata",
+       "Vertebrata",
+       "Euteleostomi",
+       "Mammalia",
+       "Eutheria",
+       "Euarchontoglires",
+       "Primates",
+       "Haplorrhini",
+       "Catarrhini",
+       "Hominidae",
+       "Homo"
+      ]
+     },
+     "proteinDescription": {
+      "recommendedName": {
+       "fullName": {
+        "value": "Son of sevenless homolog 1"
+       },
+       "shortNames": [
+        {
+         "value": "SOS-1"
+        }
+       ]
+      }
+     },
+     "extraAttributes": {
+      "uniParcId": "UPI0000135CF0"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "host": "alphafold.ebi.ac.uk",
+  "path": "/api/prediction/P01116",
+  "query": "",
+  "body": null,
+  "answer": [
+   {
+    "toolUsed": "AlphaFold Monomer v2.0 pipeline",
+    "providerId": "GDM",
+    "entityType": "protein",
+    "isUniProt": true,
+    "modelEntityId": "AF-P01116-F1",
+    "modelCreatedDate": "2025-08-01T00:00:00Z",
+    "sequenceVersionDate": "1986-07-21T00:00:00Z",
+    "globalMetricValue": 91.5,
+    "fractionPlddtVeryLow": 0.021,
+    "fractionPlddtLow": 0.053,
+    "fractionPlddtConfident": 0.148,
+    "fractionPlddtVeryHigh": 0.778,
+    "latestVersion": 6,
+    "allVersions": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "sequence": "MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHHYREQIKRVKDSEDVPMVLVGNKCDLPSRTVDTKQAQDLARSYGIPFIETSAKTRQRVEDAFYTLVREIRQYRLKKISKEEKTPGCVKIKKCIIM",
+    "sequenceStart": 1,
+    "sequenceEnd": 189,
+    "sequenceChecksum": "4a8c310887927cecc35b9de4b784596e",
+    "isUniProtReviewed": true,
+    "gene": "KRAS",
+    "uniprotAccession": "P01116",
+    "uniprotId": "RASK_HUMAN",
+    "uniprotDescription": "GTPase KRas",
+    "taxId": 9606,
+    "organismScientificName": "Homo sapiens",
+    "isUniProtReferenceProteome": true,
+    "chainId": "A",
+    "bcifUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-model_v6.bcif",
+    "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-model_v6.cif",
+    "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-model_v6.pdb",
+    "paeImageUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-predicted_aligned_error_v6.png",
+    "msaUrl": "https://alphafold.ebi.ac.uk/files/msa/AF-P01116-F1-msa_v6.a3m",
+    "plddtDocUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-confidence_v6.json",
+    "paeDocUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-predicted_aligned_error_v6.json",
+    "amAnnotationsUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-aa-substitutions.csv",
+    "amAnnotationsHg19Url": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-hg19.csv",
+    "amAnnotationsHg38Url": "https://alphafold.ebi.ac.uk/files/AF-P01116-F1-hg38.csv",
+    "isComplex": false,
+    "entryId": "AF-P01116-F1",
+    "uniprotSequence": "MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHHYREQIKRVKDSEDVPMVLVGNKCDLPSRTVDTKQAQDLARSYGIPFIETSAKTRQRVEDAFYTLVREIRQYRLKKISKEEKTPGCVKIKKCIIM",
+    "uniprotStart": 1,
+    "uniprotEnd": 189,
+    "isReferenceProteome": true,
+    "isReviewed": true
+   },
+   {
+    "toolUsed": "AlphaFold Monomer v2.0 pipeline",
+    "providerId": "GDM",
+    "entityType": "protein",
+    "isUniProt": true,
+    "modelEntityId": "AF-P01116-2-F1",
+    "modelCreatedDate": "2025-08-01T00:00:00Z",
+    "sequenceVersionDate": "1986-07-21T00:00:00Z",
+    "globalMetricValue": 92.56,
+    "fractionPlddtVeryLow": 0.011,
+    "fractionPlddtLow": 0.059,
+    "fractionPlddtConfident": 0.138,
+    "fractionPlddtVeryHigh": 0.793,
+    "latestVersion": 6,
+    "allVersions": [
+     5,
+     6
+    ],
+    "sequence": "MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHHYREQIKRVKDSEDVPMVLVGNKCDLPSRTVDTKQAQDLARSYGIPFIETSAKTRQGVDDAFYTLVREIRKHKEKMSKDGKKKKKKSKTKCVIM",
+    "sequenceStart": 1,
+    "sequenceEnd": 188,
+    "sequenceChecksum": "514dd44e461b847a53cc4e078c2583ff",
+    "isUniProtReviewed": true,
+    "gene": "KRAS",
+    "uniprotAccession": "P01116-2",
+    "uniprotId": "RASK_HUMAN",
+    "uniprotDescription": "GTPase KRas",
+    "taxId": 9606,
+    "organismScientificName": "Homo sapiens",
+    "isUniProtReferenceProteome": true,
+    "chainId": "A",
+    "bcifUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-model_v6.bcif",
+    "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-model_v6.cif",
+    "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-model_v6.pdb",
+    "paeImageUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-predicted_aligned_error_v6.png",
+    "msaUrl": "https://alphafold.ebi.ac.uk/files/msa/AF-P01116-2-F1-msa_v6.a3m",
+    "plddtDocUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-confidence_v6.json",
+    "paeDocUrl": "https://alphafold.ebi.ac.uk/files/AF-P01116-2-F1-predicted_aligned_error_v6.json",
+    "isComplex": false,
+    "entryId": "AF-P01116-2-F1",
+    "uniprotSequence": "MTEYKLVVVGAGGVGKSALTIQLIQNHFVDEYDPTIEDSYRKQVVIDGETCLLDILDTAGQEEYSAMRDQYMRTGEGFLCVFAINNTKSFEDIHHYREQIKRVKDSEDVPMVLVGNKCDLPSRTVDTKQAQDLARSYGIPFIETSAKTRQGVDDAFYTLVREIRKHKEKMSKDGKKKKKKSKTKCVIM",
+    "uniprotStart": 1,
+    "uniprotEnd": 188,
+    "isReferenceProteome": true,
+    "isReviewed": true
+   }
+  ]
+ },
+ {
+  "method": "GET",
+  "host": "alphafold.ebi.ac.uk",
+  "path": "/api/prediction/Q07889",
+  "query": "",
+  "body": null,
+  "answer": [
+   {
+    "toolUsed": "AlphaFold Monomer v2.0 pipeline",
+    "providerId": "GDM",
+    "entityType": "protein",
+    "isUniProt": true,
+    "modelEntityId": "AF-Q07889-F1",
+    "modelCreatedDate": "2025-08-01T00:00:00Z",
+    "sequenceVersionDate": "1996-11-01T00:00:00Z",
+    "globalMetricValue": 76.38,
+    "fractionPlddtVeryLow": 0.239,
+    "fractionPlddtLow": 0.037,
+    "fractionPlddtConfident": 0.254,
+    "fractionPlddtVeryHigh": 0.47,
+    "latestVersion": 6,
+    "allVersions": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "sequence": "MQAQQLPYEFFSEENAPKWRGLLVPALKKVQGQVHPTLESNDDALQYVEELILQLLNMLCQAQPRSASDVEERVQKSFPHPIDKWAIADAQSAIEKRKRRNPLSLPVEKIHPLLKEVLGYKIDHQVSVYIVAVLEYISADILKLVGNYVRNIRHYEITKQDIKVAMCADKVLMDMFHQDVEDINILSLTDEEPSTSGEQTYYDLVKAFMAEIRQYIRELNLIIKVFREPFVSNSKLFSANDVENIFSRIVDIHELSVKLLGHIEDTVEMTDEGSPHPLVGSCFEDLAEELAFDPYESYARDILRPGFHDRFLSQLSKPGAALYLQSIGEGFKEAVQYVLPRLLLAPVYHCLHYFELLKQLEEKSEDQEDKECLKQAITALLNVQSGMEKICSKSLAKRRLSESACRFYSQQMKGKQLAIKKMNEIQKNIDGWEGKDIGQCCNEFIMEGTLTRVGAKHERHIFLFDGLMICCKSNHGQPRLPGASNAEYRLKEKFFMRKVQINDKDDTNEYKHAFEIILKDENSVIFSAKSAEEKNNWMAALISLQYRSTLERMLDVTMLQEEKEEQMRLPSADVYRFAEPDSEENIIFEENMQPKAGIPIIKAGTVIKLIERLTYHMYADPNFVRTFLTTYRSFCKPQELLSLIIERFEIPEPEPTEADRIAIENGDQPLSAELKRFRKEYIQPVQLRVLNVCRHWVEHHFYDFERDAYLLQRMEEFIGTVRGKAMKKWVESITKIIQRKKIARDNGPGHNITFQSSPPTVEWHISRPGHIETFDLLTLHPIEIARQLTLLESDLYRAVQPSELVGSVWTKEDKEINSPNLLKMIRHTTNLTLWFEKCIVETENLEERVAVVSRIIEILQVFQELNNFNGVLEVVSAMNSSPVYRLDHTFEQIPSRQKKILEEAHELSEDHYKKYLAKLRSINPPCVPFFGIYLTNILKTEEGNPEVLKRHGKELINFSKRRKVAEITGEIQQYQNQPYCLRVESDIKRFFENLNPMGNSMEKEFTDYLFNKSLEIEPRNPKPLPRFPKKYSYPLKSPGVRPSNPRPGTMRHPTPLQQEPRKISYSRIPESETESTASAPNSPRTPLTPPPASGASSTTDVCSVFDSDHSSPFHSSNDTVFIQVTLPHGPRSASVSSISLTKGTDEVPVPPPVPPRRRPESAPAESSPSKIMSKHLDSPPAIPPRQPTSKAYSPRYSISDRTSISDPPESPPLLPPREPVRTPDVFSSSPLHLQPPPLGKKSDHGNAFFPNSPSPFTPPPPQTPSPHGTRRHLPSPPLTQEVDLHSIAGPPVPPRQSTSQHIPKLPPKTYKREHTHPSMHRDGPPLLENAHSS",
+    "sequenceStart": 1,
+    "sequenceEnd": 1333,
+    "sequenceChecksum": "2b6c54798a6b178e5b71e59a8ac995cd",
+    "isUniProtReviewed": true,
+    "gene": "SOS1",
+    "uniprotAccession": "Q07889",
+    "uniprotId": "SOS1_HUMAN",
+    "uniprotDescription": "Son of sevenless homolog 1",
+    "taxId": 9606,
+    "organismScientificName": "Homo sapiens",
+    "isUniProtReferenceProteome": true,
+    "chainId": "A",
+    "bcifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-model_v6.bcif",
+    "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-model_v6.cif",
+    "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-model_v6.pdb",
+    "paeImageUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-predicted_aligned_error_v6.png",
+    "msaUrl": "https://alphafold.ebi.ac.uk/files/msa/AF-Q07889-F1-msa_v6.a3m",
+    "plddtDocUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-confidence_v6.json",
+    "paeDocUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-predicted_aligned_error_v6.json",
+    "amAnnotationsUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-aa-substitutions.csv",
+    "amAnnotationsHg19Url": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-hg19.csv",
+    "amAnnotationsHg38Url": "https://alphafold.ebi.ac.uk/files/AF-Q07889-F1-hg38.csv",
+    "isComplex": false,
+    "entryId": "AF-Q07889-F1",
+    "uniprotSequence": "MQAQQLPYEFFSEENAPKWRGLLVPALKKVQGQVHPTLESNDDALQYVEELILQLLNMLCQAQPRSASDVEERVQKSFPHPIDKWAIADAQSAIEKRKRRNPLSLPVEKIHPLLKEVLGYKIDHQVSVYIVAVLEYISADILKLVGNYVRNIRHYEITKQDIKVAMCADKVLMDMFHQDVEDINILSLTDEEPSTSGEQTYYDLVKAFMAEIRQYIRELNLIIKVFREPFVSNSKLFSANDVENIFSRIVDIHELSVKLLGHIEDTVEMTDEGSPHPLVGSCFEDLAEELAFDPYESYARDILRPGFHDRFLSQLSKPGAALYLQSIGEGFKEAVQYVLPRLLLAPVYHCLHYFELLKQLEEKSEDQEDKECLKQAITALLNVQSGMEKICSKSLAKRRLSESACRFYSQQMKGKQLAIKKMNEIQKNIDGWEGKDIGQCCNEFIMEGTLTRVGAKHERHIFLFDGLMICCKSNHGQPRLPGASNAEYRLKEKFFMRKVQINDKDDTNEYKHAFEIILKDENSVIFSAKSAEEKNNWMAALISLQYRSTLERMLDVTMLQEEKEEQMRLPSADVYRFAEPDSEENIIFEENMQPKAGIPIIKAGTVIKLIERLTYHMYADPNFVRTFLTTYRSFCKPQELLSLIIERFEIPEPEPTEADRIAIENGDQPLSAELKRFRKEYIQPVQLRVLNVCRHWVEHHFYDFERDAYLLQRMEEFIGTVRGKAMKKWVESITKIIQRKKIARDNGPGHNITFQSSPPTVEWHISRPGHIETFDLLTLHPIEIARQLTLLESDLYRAVQPSELVGSVWTKEDKEINSPNLLKMIRHTTNLTLWFEKCIVETENLEERVAVVSRIIEILQVFQELNNFNGVLEVVSAMNSSPVYRLDHTFEQIPSRQKKILEEAHELSEDHYKKYLAKLRSINPPCVPFFGIYLTNILKTEEGNPEVLKRHGKELINFSKRRKVAEITGEIQQYQNQPYCLRVESDIKRFFENLNPMGNSMEKEFTDYLFNKSLEIEPRNPKPLPRFPKKYSYPLKSPGVRPSNPRPGTMRHPTPLQQEPRKISYSRIPESETESTASAPNSPRTPLTPPPASGASSTTDVCSVFDSDHSSPFHSSNDTVFIQVTLPHGPRSASVSSISLTKGTDEVPVPPPVPPRRRPESAPAESSPSKIMSKHLDSPPAIPPRQPTSKAYSPRYSISDRTSISDPPESPPLLPPREPVRTPDVFSSSPLHLQPPPLGKKSDHGNAFFPNSPSPFTPPPPQTPSPHGTRRHLPSPPLTQEVDLHSIAGPPVPPRQSTSQHIPKLPPKTYKREHTHPSMHRDGPPLLENAHSS",
+    "uniprotStart": 1,
+    "uniprotEnd": 1333,
+    "isReferenceProteome": true,
+    "isReviewed": true
+   },
+   {
+    "toolUsed": "AlphaFold Monomer v2.0 pipeline",
+    "providerId": "GDM",
+    "entityType": "protein",
+    "isUniProt": true,
+    "modelEntityId": "AF-Q07889-2-F1",
+    "modelCreatedDate": "2025-08-01T00:00:00Z",
+    "sequenceVersionDate": "1996-11-01T00:00:00Z",
+    "globalMetricValue": 86.94,
+    "fractionPlddtVeryLow": 0.086,
+    "fractionPlddtLow": 0.045,
+    "fractionPlddtConfident": 0.185,
+    "fractionPlddtVeryHigh": 0.685,
+    "latestVersion": 6,
+    "allVersions": [
+     3,
+     4,
+     5,
+     6
+    ],
+    "sequence": "MLCQAQPRSASDVEERVQKSFPHPIDKWAIADAQSAIEKRKRRNPLSLPVEKIHPLLKEVLGYKIDHQVSVYIVAVLEYISADILKLVGNYVRNIRHYEITKQDIKVAMCADKVLMDMFHQDVEDINILSLTDEEPSTSGEQTYYDLVKAFMAEIRQYIRELNLIIKVFREPFVSNSKLFSANDVENIFSRIVDIHELSVKLLGHIEDTVEMTDEGSPHPLVGSCFEDLAEELAFDPYESYARDILRPGFHDRFLSQLSKPGAALYLQSIGEGFKEAVQYVLPRLLLAPVYHCLHYFELLKFPFGDLSRLRDSV",
+    "sequenceStart": 1,
+    "sequenceEnd": 314,
+    "sequenceChecksum": "bcf1de34a07895acd9a5c6bf5ab76879",
+    "isUniProtReviewed": true,
+    "gene": "SOS1",
+    "uniprotAccession": "Q07889-2",
+    "uniprotId": "SOS1_HUMAN",
+    "uniprotDescription": "Son of sevenless homolog 1",
+    "taxId": 9606,
+    "organismScientificName": "Homo sapiens",
+    "isUniProtReferenceProteome": true,
+    "chainId": "A",
+    "bcifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-model_v6.bcif",
+    "cifUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-model_v6.cif",
+    "pdbUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-model_v6.pdb",
+    "paeImageUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-predicted_aligned_error_v6.png",
+    "msaUrl": "https://alphafold.ebi.ac.uk/files/msa/AF-Q07889-2-F1-msa_v6.a3m",
+    "plddtDocUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-confidence_v6.json",
+    "paeDocUrl": "https://alphafold.ebi.ac.uk/files/AF-Q07889-2-F1-predicted_aligned_error_v6.json",
+    "isComplex": false,
+    "entryId": "AF-Q07889-2-F1",
+    "uniprotSequence": "MLCQAQPRSASDVEERVQKSFPHPIDKWAIADAQSAIEKRKRRNPLSLPVEKIHPLLKEVLGYKIDHQVSVYIVAVLEYISADILKLVGNYVRNIRHYEITKQDIKVAMCADKVLMDMFHQDVEDINILSLTDEEPSTSGEQTYYDLVKAFMAEIRQYIRELNLIIKVFREPFVSNSKLFSANDVENIFSRIVDIHELSVKLLGHIEDTVEMTDEGSPHPLVGSCFEDLAEELAFDPYESYARDILRPGFHDRFLSQLSKPGAALYLQSIGEGFKEAVQYVLPRLLLAPVYHCLHYFELLKFPFGDLSRLRDSV",
+    "uniprotStart": 1,
+    "uniprotEnd": 314,
+    "isReferenceProteome": true,
+    "isReviewed": true
+   }
+  ]
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "terminal",
+    "service": "text",
+    "parameters": {
+     "attribute": "rcsb_polymer_entity.pdbx_description",
+     "operator": "contains_phrase",
+     "value": "zzqx not a molecule"
+    }
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": null
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "group",
+    "logical_operator": "or",
+    "nodes": [
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "rcsb_polymer_entity.pdbx_description",
+       "operator": "contains_phrase",
+       "value": "zzqx not a molecule"
+      }
+     },
+     {
+      "type": "terminal",
+      "service": "text",
+      "parameters": {
+       "attribute": "struct.title",
+       "operator": "contains_phrase",
+       "value": "zzqx not a molecule"
+      }
+     }
+    ]
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": null
+ },
+ {
+  "method": "POST",
+  "host": "search.rcsb.org",
+  "path": "/rcsbsearch/v2/query",
+  "query": "",
+  "body": {
+   "query": {
+    "type": "terminal",
+    "service": "full_text",
+    "parameters": {
+     "value": "zzqx not a molecule"
+    }
+   },
+   "return_type": "polymer_entity",
+   "request_options": {
+    "paginate": {
+     "start": 0,
+     "rows": 1
+    },
+    "results_content_type": [
+     "experimental"
+    ],
+    "sort": [
+     {
+      "sort_by": "score",
+      "direction": "desc"
+     }
+    ],
+    "facets": [
+     {
+      "name": "by_protein",
+      "aggregation_type": "terms",
+      "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
+      "max_num_intervals": 10
+     }
+    ]
+   }
+  },
+  "answer": null
+ },
+ {
+  "method": "GET",
+  "host": "rest.uniprot.org",
+  "path": "/uniprotkb/search",
+  "query": "query=%22zzqx+not+a+molecule%22+AND+reviewed%3Atrue&fields=accession%2Cprotein_name%2Corganism_name&format=json&size=5",
+  "body": null,
+  "answer": {
+   "results": []
+  }
+ },
+ {
+  "method": "GET",
+  "host": "rest.uniprot.org",
+  "path": "/uniprotkb/search",
+  "query": "query=%22zzqx+not+a+molecule%22&fields=accession%2Cprotein_name%2Corganism_name&format=json&size=5",
+  "body": null,
+  "answer": {
+   "results": []
+  }
+ }
+]

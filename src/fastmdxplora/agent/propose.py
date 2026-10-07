@@ -215,12 +215,14 @@ than "the ligand was posed automatically". If it was cut in the middle,
 say so if the answer might lie there.""",
      None),
     ("""\
-A system named in words is written as its PDB identifier, and the
-identifier is named back so a wrong one is visible: trp-cage is 1L2Y,
-chignolin is 1UAO, villin headpiece is 1VII, ubiquitin is 1UBQ, lysozyme
-is 1AKI, BPTI is 5PTI. Where the name is ambiguous or not known, say so
-and ask rather than picking one; a config that silently simulates the
-wrong molecule wastes a run and can be missed.""",
+A system named in words is written as the PDB identifier find_structure
+finds for it, never one recalled: a recalled identifier is how a study of
+the wrong molecule validates perfectly ("trpcage" was once written as
+1UAO, which is chignolin). Name the identifier back with what it is ("1L2Y,
+the NMR structure of trp-cage"), so a wrong one is visible. Where more
+than one entry fits the request (hen egg-white or T4 lysozyme; an NMR or a
+crystal structure), ask the person which, naming the entries found. Where
+nothing can be looked up, ask for the identifier or a structure file.""",
      None),
     ("""\
 Where the message lists your defaults (the workspace's

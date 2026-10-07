@@ -581,6 +581,11 @@ def _new_file(folder: Path, stem: str) -> Path:
 # ---------------------------------------------------------------------------
 # Looking
 # ---------------------------------------------------------------------------
+def _find_structure(ctx: Context, args: dict[str, Any]) -> str:
+    return _looked(ctx, "find_structure", {
+        key: args[key] for key in ("query", "organism", "most", "predicted") if key in args})
+
+
 def _inspect_structure(ctx: Context, args: dict[str, Any]) -> str:
     return _looked(ctx, "inspect_structure", {"system": args["system"]})
 
@@ -1373,6 +1378,23 @@ _READS = {"readOnlyHint": True, "openWorldHint": False}
 #: In the order they are listed, which is the order to reach for them; the
 #: Agent last, as it is optional and calls an AI model of the person's own.
 TOOLS: tuple[Tool, ...] = (
+    Tool("find_structure", "Find a structure by its name",
+         "The PDB entries a molecule's name answers to, grouped by protein, the most "
+         "studied first, each by its best-resolved entry with its method, resolution, "
+         "chains and ligands; and AlphaFold DB's predicted models where the PDB holds no "
+         "structure or where asked. Look here before writing a PDB identifier for a "
+         "system named in words, and where more than one could be meant, ask the person "
+         "which. Offline, it says it cannot reach the PDB and offers nothing.",
+         {"query": {"type": "string",
+                    "description": "A molecule's name, such as lysozyme or trp-cage, or "
+                                   "a PDB identifier."},
+          "organism": {"type": "string",
+                       "description": "A species as the PDB names it, such as Homo sapiens."},
+          "most": {"type": "integer", "minimum": 1, "maximum": 10,
+                   "description": "How many entries to offer; 5 if not given."},
+          "predicted": {"type": "boolean",
+                        "description": "AlphaFold DB's models as well as the PDB's entries."}},
+         ("query",), _LOOKS, _find_structure),
     Tool("inspect_structure", "Inspect a structure",
          "What a structure holds: its chains, protein residues, ligands, ions and "
          "water, the residues whose protonation state a study may set, any side chain "

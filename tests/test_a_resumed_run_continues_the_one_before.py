@@ -784,13 +784,14 @@ class TestTheAgentIsToldWhatTheBlockAnswers(unittest.TestCase):
 
     def test_a_system_named_in_words_is_written_as_its_identifier(self):
         # "trpcage" became 1UAO, which is chignolin. The identifier is
-        # named back so a wrong one is visible.
+        # looked up, never recalled, and named back so a wrong one is
+        # visible.
         from fastmdxplora.agent.propose import prompt_for
 
         prompt = prompt_for("simulate trpcage")
-        self.assertIn("trp-cage is 1L2Y", prompt)
-        self.assertIn("chignolin is 1UAO", prompt)
-        self.assertIn("say so\nand ask rather than picking one", prompt)
+        self.assertIn("the PDB identifier find_structure\nfinds for it, never one "
+                      "recalled", prompt)
+        self.assertIn("ask the person which, naming the entries found", prompt)
 
 
 class TestAContinuationAnalysesWhatItWrote(unittest.TestCase):
