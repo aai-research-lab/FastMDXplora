@@ -453,6 +453,13 @@ began, its first means and its tags, sorted by any column's head (a study
 without the value last either way), narrowed by the search as the cards
 are, and kept as chosen.
 
+### The search on All studies beside its buttons
+
+**Fixed:** the search field on All studies ran over the **Cards** and
+**Table** buttons beside it, so a click on either reached the field (its
+magnifier's wrapper gave way below the field's own least width). The
+wrapper now keeps that width and the field fills it.
+
 ### The demo study opens before any study is run
 
 **Added:** `fastmdx gui --demo [DIR]` copies the demo study, trypsin with

@@ -4843,6 +4843,11 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     font-size: var(--text-xs); outline: none;
 }
 .studies-search:focus { border-color: color-mix(in srgb, var(--accent-cyan) 62%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-cyan) 8%, transparent); }
+/* In the header the magnifier's wrapper gives way, never below the field's
+   own least width, and the field fills it: shrunk on its own, the wrapper
+   left the field running over the Cards and Table buttons. */
+.page-header-actions > .search-field { flex: 0 1 300px; min-width: 160px; }
+.page-header-actions > .search-field > .studies-search { width: 100%; min-width: 0; }
 /* Two studies a row, so each card's figure is wide enough to read; one
    on a narrow window. */
 .studies-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
