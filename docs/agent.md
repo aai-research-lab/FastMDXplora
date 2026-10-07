@@ -375,8 +375,15 @@ recorded, and `fastmdx agent` says it:
 ```
 
 The first message of a conversation writes the instructions to the cache
-(at a little more than the usual price); a message after it within a few
-minutes reads them from there (at about a tenth). `fastmdx agent` says the
+(at a little more than the usual price); a message after it reads them from
+there (at about a tenth), for as long as the cache is kept. With Anthropic
+that is a setting, **Keep the instructions cached** in the Agent's settings
+(or asked by `fastmdx agent model`): `auto`, the default, keeps them for an
+hour on the Agent page, where a plan is read before it is answered, and for
+five minutes from the command line and `ask_agent`, where a request is
+usually asked once; `1h` and `5m` keep them so everywhere. An hour costs
+twice the input price to write instead of 1.25 times, once, and each read
+renews it. Other providers keep their caches as they decide. `fastmdx agent` says the
 reply as a terminal shows it: "Asking the AI model...", the answer without
 its Markdown emphasis, a link as its words and its address, and "Accepted
 first time." or "Accepted after 2 attempts." for a Config.

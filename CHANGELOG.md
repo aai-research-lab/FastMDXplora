@@ -222,6 +222,16 @@ loaded its config into the builder to price itself, over whatever was being
 written there; it now reads its own. **Run here** is **Run on this
 machine**.
 
+### The Agent's instructions cached for an hour on its page
+
+**Added:** how long Anthropic keeps the Agent's instructions in its cache,
+**Keep the instructions cached** in the Agent's settings and in `fastmdx
+agent model`: `auto` (an hour on the Agent page, five minutes from the
+command line), `1h` or `5m`. On the page a reply after a pause of more than
+five minutes wrote the 17,900 tokens of instructions again at 1.25 times
+the input price; kept for an hour they are written once at twice it and
+read at a tenth.
+
 ### Your defaults, and the Agent finds a structure by its name
 
 **Added:** `fastmdx-defaults.yml`, your lab's usual values (310 K, a pH,

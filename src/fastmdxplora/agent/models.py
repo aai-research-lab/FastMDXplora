@@ -49,6 +49,9 @@ from fastmdxplora.user_dir import user_config_dir
 __all__ = [
     "list_models",
     "default_model",
+    "cache_for",
+    "save_cache_for",
+    "CACHE_FOR",
     "ModelChoice",
     "PROVIDERS",
     "model_path",
@@ -180,6 +183,50 @@ def default_model(provider: str, offered: Any = ()) -> str:
         if best is None or ranked > best:
             best = ranked
     return best[2] if best is not None else written
+
+
+#: How long the Agent's instructions are kept in the provider's cache
+#: (Anthropic): "auto" is an hour on the GUI's Agent page, where a person
+#: reads a plan before answering, and five minutes from the command line,
+#: where a request is usually asked once.
+CACHE_FOR = ("auto", "1h", "5m")
+
+
+def cache_for(where: str = "command line", path: Path | None = None) -> str:
+    """``"1h"`` or ``"5m"``: the setting stored with the choice, or for
+    ``"auto"`` (and where none is stored), an hour on the page and five
+    minutes anywhere else."""
+    try:
+        record = json.loads((path or model_path()).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    chosen = str(record.get("cache_for") or "auto") if isinstance(record, dict) else "auto"
+    if chosen in ("1h", "5m"):
+        return chosen
+    return "1h" if where == "page" else "5m"
+
+
+def save_cache_for(value: str, path: Path | None = None) -> None:
+    """Store how long the instructions are kept, beside the choice and
+    keeping everything else in the file, the key included, owner-only."""
+    if value not in CACHE_FOR:
+        raise StudyError(f"The cache is kept for {', '.join(CACHE_FOR)}; not {value!r}.",
+                         code="config.option.not_permitted", option="cache_for",
+                         permitted=list(CACHE_FOR))
+    target = path or model_path()
+    try:
+        record = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    if not isinstance(record, dict):
+        record = {}
+    record["cache_for"] = value
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    try:
+        target.chmod(0o600)
+    except OSError:  # pragma: no cover - some filesystems refuse
+        pass
 
 
 def model_path() -> Path:
@@ -318,8 +365,11 @@ def list_models(choice: ModelChoice | None = None, *,
 
 
 def completion_for(choice: ModelChoice | None = None, *,
-                   path: Path | None = None, timeout: float = 120.0):
-    """Build the prompt-in, text-out function the agent takes.
+                   path: Path | None = None, timeout: float = 120.0,
+                   where: str = "command line"):
+    """Build the prompt-in, text-out function the agent takes. ``where`` it
+    is asked from (``"page"`` for the GUI's Agent page) decides how long
+    the instructions are cached where the setting is ``auto``.
 
     One HTTPS request per call, through the standard library. No client
     library, because a package that should not gain a dependency should
@@ -431,7 +481,8 @@ def completion_for(choice: ModelChoice | None = None, *,
                          model=settled.model, system=system, messages=messages,
                          tools=tools, label=str(PROVIDERS[settled.provider]["label"]),
                          timeout=timeout, on_text=on_text, on_call=on_call,
-                         usage_in_stream=settled.provider == "openai")
+                         usage_in_stream=settled.provider == "openai",
+                         cache_for=cache_for(where, path))
 
     def turned_away() -> None:
         """The server turned tools away on a conversation's first turn:

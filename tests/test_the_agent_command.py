@@ -291,7 +291,7 @@ class TestChoosingTheModel(unittest.TestCase):
 
     def test_model_chooses_and_saves(self):
         code, out = self.choose(["agent", "model"],
-                                ["1", "claude-sonnet-4-6", "sk-x"])
+                                ["1", "claude-sonnet-4-6", "sk-x", ""])
         self.assertEqual(code, 0)
         self.assertIn("No AI model chosen yet.", out)
         chosen = load_choice()

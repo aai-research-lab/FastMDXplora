@@ -3325,7 +3325,7 @@ def _choose_model() -> int:
     from fastmdxplora.agent import (
         PROVIDERS, ModelChoice, describe_choice, load_choice, save_choice,
     )
-    from fastmdxplora.agent.models import default_model, list_models
+    from fastmdxplora.agent.models import default_model, list_models, save_cache_for
 
     # What is in use first, so a look at the choice is not a change to it:
     # nothing is saved unless an AI model is picked below.
@@ -3371,7 +3371,19 @@ def _choose_model() -> int:
           "instead):")
     key = input("> ").strip()
 
+    cache = "auto"
+    if picked == "anthropic":
+        print("Keep the instructions in Anthropic's cache for [auto]: auto (an hour on "
+              "the Agent page, five minutes here), 1h or 5m. An hour costs twice the "
+              "input price to write instead of 1.25 times, and a reply after a pause "
+              "still reads them at a tenth.")
+        cache = input("> ").strip().lower() or "auto"
+        if cache not in ("auto", "1h", "5m"):
+            print(f"{cache!r} is not auto, 1h or 5m.")
+            return 1
+
     where = save_choice(ModelChoice(picked, model, base_url), key=key)
+    save_cache_for(cache)
     print(f"\n  ✓ Saved to {where}")
     if key:
         print("  ✓ Key stored there, readable only by you. It is never "

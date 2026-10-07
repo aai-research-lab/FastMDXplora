@@ -352,6 +352,8 @@
     var spec = providers.filter(function (p) { return p.id === id; })[0];
     if (!spec) return;
     el("agent-url-field").hidden = !spec.needs_url;
+    /* Only Anthropic is told how long to keep its cache. */
+    el("agent-cache-field").hidden = id !== "anthropic";
     /* The AI model follows the provider. It used to be filled only when the
      * field was empty, so switching provider left the previous one's AI model
      * in place -- OpenAI selected and claude-sonnet-4-6 still showing. */
@@ -422,6 +424,7 @@
         select.value = data.current.provider;
         el("agent-base-url").value = data.current.base_url || "";
       }
+      el("agent-cache").value = data.cache_for || "auto";
       showProvider(select.value, data.current && data.current.model);
       engineIsSet(data.current);
     });
@@ -434,7 +437,8 @@
       provider: el("agent-provider").value,
       model: chosenModel(),
       base_url: el("agent-base-url").value,
-      api_key: el("agent-key").value
+      api_key: el("agent-key").value,
+      cache_for: el("agent-cache").value
     }).then(function (data) {
       button.disabled = false;
       if (!data.ok) {

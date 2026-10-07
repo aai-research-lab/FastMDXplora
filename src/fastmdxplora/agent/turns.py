@@ -146,9 +146,16 @@ class NoToolCalling(CodedError, Exception):
 #   {"role": "results", "results": [{"id", "name", "content", "is_error"}]}
 # ---------------------------------------------------------------------------
 def _blocks_body(model: str, system: str, messages: list[dict[str, Any]],
-                 tools: list[ToolSpec], max_tokens: int) -> dict[str, Any]:
+                 tools: list[ToolSpec], max_tokens: int,
+                 cache_for: str = "5m") -> dict[str, Any]:
     """The content-block shape: system and tools cached, the conversation
-    as blocks, each tool's result answering its call by id."""
+    as blocks, each tool's result answering its call by id. ``cache_for``
+    is how long the provider keeps them: ``"5m"`` (its default, written at
+    1.25 times the input price) or ``"1h"`` (written at twice it), each
+    renewed whenever it is read."""
+    kept: dict[str, str] = {"type": "ephemeral"}
+    if cache_for == "1h":
+        kept["ttl"] = "1h"
     out: list[dict[str, Any]] = []
     for message in _alternating(messages):
         if message["role"] == "user":
@@ -177,10 +184,10 @@ def _blocks_body(model: str, system: str, messages: list[dict[str, Any]],
         # The conversation so far cached too, so a second look in one reply
         # reads what the first sent from the cache.
         last = out[-1]["content"][-1]
-        last["cache_control"] = {"type": "ephemeral"}
+        last["cache_control"] = dict(kept)
     body: dict[str, Any] = {
         "model": model, "max_tokens": max_tokens,
-        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        "system": [{"type": "text", "text": system, "cache_control": dict(kept)}],
         "messages": out,
     }
     if tools:
@@ -459,14 +466,14 @@ def take_turn(*, url: str, headers: dict[str, str], shape: str, model: str,
               label: str, timeout: float = 120.0, max_tokens: int = 8192,
               on_text: Callable[[str], None] | None = None,
               on_call: Callable[[str], None] | None = None,
-              usage_in_stream: bool = False) -> Turn:
+              usage_in_stream: bool = False, cache_for: str = "5m") -> Turn:
     """Ask once, in ``shape`` (``"blocks"`` or ``"chat"``), retrying what the
     provider says to retry. The key is in ``headers`` and never in what is
     raised: an error message is the easiest place for a secret to escape
     into a log."""
     streamed = on_text is not None or on_call is not None
     if shape == "blocks":
-        body = _blocks_body(model, system, messages, tools, max_tokens)
+        body = _blocks_body(model, system, messages, tools, max_tokens, cache_for)
     else:
         body = _chat_body(model, system, messages, tools,
                           usage_in_stream=streamed and usage_in_stream)

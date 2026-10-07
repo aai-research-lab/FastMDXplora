@@ -132,7 +132,7 @@ def test_the_command_suggests_the_newest(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr(models, "list_models",
                         lambda choice, **kw: ("claude-sonnet-5-5", "claude-sonnet-4-6"))
-    answers = iter(["1", "", ""])
+    answers = iter(["1", "", "", ""])
     prompts = []
 
     def answer(prompt=""):

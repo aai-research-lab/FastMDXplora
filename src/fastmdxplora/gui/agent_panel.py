@@ -29,8 +29,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     and, if a key came with it, the key.
     """
     from fastmdxplora.agent.models import (
-        PROVIDERS, ModelChoice, _takes_tools, default_model, load_choice, model_path,
-        save_choice,
+        CACHE_FOR, PROVIDERS, ModelChoice, _takes_tools, default_model, load_choice,
+        model_path, save_cache_for, save_choice,
     )
 
     if not payload.get("provider"):
@@ -68,6 +68,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
             # Whether the server takes tool calls; once it has turned them
             # away, the Agent writes to it in plain text.
             "tool_use": _takes_tools() if current else None,
+            # How long the instructions are kept in the provider's cache.
+            "cache_for": _stored_cache_for(),
             "stored_at": str(model_path()),
         }
 
@@ -88,9 +90,14 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     if not model:
         return {"ok": False, "error": "An AI model name is needed.",
                 "code": "config.option.missing_companion"}
+    cache = str(payload.get("cache_for") or "auto")
+    if cache not in CACHE_FOR:
+        return {"ok": False, "error": f"Keep the cache for {', '.join(CACHE_FOR)}.",
+                "code": "config.option.not_permitted"}
 
     save_choice(ModelChoice(provider, model, base_url),
                 key=str(payload.get("api_key") or ""))
+    save_cache_for(cache)
     # Ask the provider what it actually has, now that there is a key to ask
     # with. The written list is what to show before this can be answered.
     from fastmdxplora.agent.models import list_models
@@ -138,7 +145,7 @@ def propose_endpoint(payload: dict[str, Any],
     mode = str(payload.get("agent") or "assisted")
     phases = payload.get("phases") or ["setup", "simulation"]
     try:
-        complete = completion_for()
+        complete = completion_for(where="page")
     except StudyError as exc:
         # The start page's questions about the study open are answered from
         # its records where no AI model can be asked.
@@ -197,6 +204,20 @@ def propose_endpoint(payload: dict[str, Any],
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
     return answer
+
+
+def _stored_cache_for() -> str:
+    """The cache setting as stored: auto, 1h or 5m."""
+    import json
+
+    from fastmdxplora.agent.models import CACHE_FOR, model_path
+
+    try:
+        record = json.loads(model_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "auto"
+    chosen = record.get("cache_for") if isinstance(record, dict) else None
+    return chosen if chosen in CACHE_FOR else "auto"
 
 
 def your_defaults(runtime: Any) -> Any:
