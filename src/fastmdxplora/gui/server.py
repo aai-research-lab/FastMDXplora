@@ -854,6 +854,19 @@ def make_handler(
                 view = (parse_qs(parsed.query).get("view") or ["phases"])[0]
                 self._send_files_page(root, "folders" if view == "folders" else "phases")
                 return
+            if path == "/api/files/sha256":
+                # A file's SHA-256, for a record or a deposit: read once a
+                # version of the file. Loopback, like every route not
+                # listed: reading a 10 GB trajectory through is work.
+                target = self._a_file_of_the_study(
+                    root, (parse_qs(parsed.query).get("path") or [""])[0])
+                if target is None:
+                    return
+                from fastmdxplora.deposit import sha256_of
+
+                self._send_json({"ok": True, "path": target.relative_to(root.resolve()).as_posix(),
+                                 "sha256": sha256_of(target)})
+                return
             if path == "/api/files/zip":
                 # Files of the study in one zip: a trajectory and its
                 # topology, an analysis's folder. Loopback, like every route
@@ -1238,6 +1251,20 @@ def make_handler(
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
             payload = self._read_json_body()
+            if path == "/api/files/reveal":
+                # A file of the study shown in the file manager, selected:
+                # on the person's own computer only, where a window opening
+                # is in front of them.
+                if hosting is not None:
+                    self._send_json({"ok": False, "error": "Not available in a hosted GUI."})
+                    return
+                target = self._a_file_of_the_study(app_runtime.data_root(),
+                                                   str((payload or {}).get("path") or ""))
+                if target is None:
+                    return
+                shown, detail = _reveal_local_path(target)
+                self._send_json({"ok": shown, "error": "" if shown else detail})
+                return
             if path == "/api/study-tags":
                 # A study's tags and note, as the person set them on its card,
                 # kept in its folder beside its records (study_tags.py).
@@ -1927,7 +1954,9 @@ def make_handler(
         def _files_links(self) -> Any:
             from fastmdxplora.gui.files_page import Links, reveal_word
 
-            return Links(can={"zip": allow_control}, reveal_word=reveal_word())
+            own = allow_control and hosting is None
+            return Links(can={"zip": allow_control, "reveal": own, "sha": allow_control},
+                         reveal_word=reveal_word())
 
         def _send_files_page(self, root: Path, view: str) -> None:
             from fastmdxplora.gui.files_page import files_model, render
@@ -1956,6 +1985,24 @@ def make_handler(
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _a_file_of_the_study(self, root: Path, rel: str) -> Path | None:
+            """A file of the study a request names by its path in it, or
+            None with the refusal sent: never one outside it, a hidden one
+            or the Agent's conversations. The path as the request gave it,
+            decoded once."""
+            try:
+                target = (root / rel).resolve()
+                inside = target.relative_to(root.resolve())
+            except (OSError, ValueError):
+                self._send_json({"ok": False, "error": "That file is outside this study."},
+                                status=403)
+                return None
+            if not rel or not target.is_file() or _private(inside.parts):
+                self._send_json({"ok": False, "error": "That is not a file of this study."},
+                                status=404)
+                return None
+            return target
 
         def _send_zip(self, root: Path, paths: list[str], name: str) -> None:
             """Several of the study's files in one zip, written as it is sent:
@@ -3716,6 +3763,37 @@ def _open_local_path(path: Path) -> tuple[bool, str]:
     except Exception as exc:  # noqa: BLE001 - dashboard helper only
         return False, str(exc)
     return True, "opened"
+
+
+def _reveal_local_path(path: Path) -> tuple[bool, str]:
+    """Show a file in the host's file manager, selected where the file
+    manager can be asked to: Finder, Explorer, or one that answers the
+    freedesktop call; else its folder opened."""
+    path = Path(path)
+    if not path.exists():
+        return False, f"{path} does not exist."
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(path)])
+        elif os.name == "nt":
+            subprocess.Popen(["explorer", f"/select,{path}"])
+        else:
+            import shutil
+
+            sender = shutil.which("dbus-send")
+            if sender:
+                asked = subprocess.run(
+                    [sender, "--session", "--print-reply", "--dest=org.freedesktop.FileManager1",
+                     "--type=method_call", "/org/freedesktop/FileManager1",
+                     "org.freedesktop.FileManager1.ShowItems",
+                     f"array:string:{path.as_uri()}", "string:"],
+                    capture_output=True, timeout=5, check=False)
+                if asked.returncode == 0:
+                    return True, "shown"
+            return _open_local_path(path.parent)
+    except Exception as exc:  # noqa: BLE001 - dashboard helper only
+        return False, str(exc)
+    return True, "shown"
 
 
 def _is_loopback_host(host: str) -> bool:

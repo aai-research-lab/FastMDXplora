@@ -18,7 +18,9 @@ report, the bundle, the system as simulated, the final state and the
 configuration. Then the space each phase takes, and the phases in the
 order the study ran them, a row a file: what it is in words, where it is,
 its size and when it was written, with a preview in the side panel, a
-download, and a menu to open it in a tab or copy its path. Each analysis
+download, and a menu to open it in a tab, copy its full path, show it
+in Finder (Explorer, or its folder; on the person's own computer) or
+copy its SHA-256. Each analysis
 is a row under what it studies, with its figure, the mean it recorded
 where its error was determined, its files and **Open in Analysis**. The
 run record, what `--rerun` set aside and the scratch the Viewer and the

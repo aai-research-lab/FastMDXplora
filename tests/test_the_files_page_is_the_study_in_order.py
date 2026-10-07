@@ -223,7 +223,7 @@ def test_the_page_is_served_rendered_and_compressed(study):
         status, headers, body = _get(url + "/api/files-page", {"Accept-Encoding": "gzip"})
         assert status == 200 and headers.get("Content-Encoding") == "gzip"
         said = json.loads(gzip.decompress(body))
-        assert said["ok"] and said["view"] == "phases" and said["can"] == {"zip": True}
+        assert said["ok"] and said["view"] == "phases" and said["can"]["zip"] is True
         assert "What you came for" in said["html"]
         assert f'data-where="{study.resolve() / "setup" / "input.pdb"}"' in said["html"]
         folders = json.loads(_get(url + "/api/files-page?view=folders")[2])
@@ -275,7 +275,7 @@ def test_a_zip_that_fails_partway_is_not_a_finished_download(study, monkeypatch)
 def test_beyond_loopback_the_page_offers_no_zip_and_the_zip_is_refused(study):
     with _serving(study.resolve(), allow_control=False) as url:
         said = json.loads(_get(url + "/api/files-page")[2])
-        assert said["can"] == {"zip": False}
+        assert not any(said["can"].values())
         assert "/api/files/zip" not in said["html"] and "data-where" not in said["html"]
         assert _get(url + "/api/files/zip?path=setup/input.pdb")[0] == 403
 
