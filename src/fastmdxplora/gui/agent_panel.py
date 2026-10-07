@@ -659,26 +659,62 @@ def _config_the_run_used(root: Any) -> str:
     The Agent lost the previous study's config the moment it wrote a new
     one, and said "I have no chignolin study in this conversation" while
     the chignolin run was the active study with its resolved config on
-    disk. It reads that file now. The short form, not the full dump:
-    the full one is a hundred lines of defaults, and what a person means
-    by "the same settings" is what was decided.
+    disk. It reads the study's config now, as it was written
+    (`exploration.yml`, which a study started from the GUI or an AI app
+    keeps), or else the resolved one with what nobody decided left out:
+    every setting at its default, and every one left unset. The resolved
+    file alone is a hundred lines of defaults and nulls (3,152 characters
+    for a 40 ps study, 41 of its lines `null`), cut at 4,000 characters, so a
+    study's analysis and report blocks could be lost behind them; what a
+    person means by "the same settings" is what was decided.
     """
     if not root:
         return ""
-    path = Path(root) / "resolved_config.yml"
-    if not path.is_file():
-        return ""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    # Drop the header comments and cap the length; a config that runs to
-    # pages is not something to paste into every prompt.
-    body = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
-    body = body.strip()
-    if len(body) > 4000:
-        body = body[:4000] + "\n# … (truncated)"
-    return body
+    import yaml
+
+    base = Path(root)
+    for name, decided in (("exploration.yml", False), ("resolved_config.yml", True)):
+        path = base / name
+        if not path.is_file():
+            continue
+        try:
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(config, dict):
+            continue
+        if decided:
+            config = _what_was_decided(config)
+        body = yaml.safe_dump(config, sort_keys=False, default_flow_style=False).strip()
+        # A config that runs to pages is not something to paste into every
+        # prompt.
+        if len(body) > 4000:
+            body = body[:4000] + "\n# \u2026 (truncated)"
+        return body
+    return ""
+
+
+def _what_was_decided(config: dict[str, Any]) -> dict[str, Any]:
+    """A resolved config without its unset settings and those at their
+    defaults: what was decided, as near as the record can tell. A value
+    somebody set to the default itself cannot be told from the default."""
+    from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+    kept: dict[str, Any] = {}
+    for key, value in config.items():
+        if value is None or value == [] or value == {}:
+            continue
+        schema = PHASE_SCHEMAS.get(key)
+        if schema is not None and isinstance(value, dict):
+            defaults = {field.name: field.default for field in schema.fields}
+            block = {name: setting for name, setting in value.items()
+                     if setting is not None and not (name in defaults
+                                                     and setting == defaults[name])}
+            if block:
+                kept[key] = block
+            continue
+        kept[key] = value
+    return kept
 
 
 
