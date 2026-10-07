@@ -42,6 +42,11 @@ the bar carries FastMDXplora's mark and the conversations behind one icon
 (the sidebar's lists of them had filled it), and the Agent's settings say
 nothing with an em dash and style the key field.
 
+**Fixed:** a study of several runs records its process at its top, as one
+run does, so a GUI opened on it while it runs finds it running and can stop
+it, `stop_study` from an AI app reaches it, and it is one study going, not
+one for each run inside it.
+
 ### A shared study opened from its DOI
 
 **Added:** `fastmdx gui --open SOURCE` (`--open-into DIR`,

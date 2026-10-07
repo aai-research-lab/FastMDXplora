@@ -1383,6 +1383,20 @@ class BatchExplorer:
         if stopping is not None:
             self._write_planned_stopping(stopping)
 
+        if not self.is_single:
+            # The study's process, at its top: each run records its own (a
+            # worker's, in parallel), which says nothing between two runs,
+            # while the comparison is written, or while an umbrella study
+            # prepares once for every window (seventh and eighth reviews,
+            # 10-08). A GUI opened on the study finds it running, and can
+            # stop it. After the refusals above, so a second `explore`
+            # refused for a study whose runs have begun does not write over
+            # its record (one by hand during the shared preparation still
+            # can; the GUI and an AI app refuse it by `runs_here`).
+            from fastmdxplora.orchestrator import _record_run_process
+
+            _record_run_process(self.output_dir)
+
         shared = self._maybe_prepare_once(include, exclude)
         if shared is not None:
             # The windows read the system that was just prepared, so none of

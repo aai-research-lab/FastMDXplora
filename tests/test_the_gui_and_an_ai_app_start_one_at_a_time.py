@@ -313,3 +313,21 @@ def test_a_list_that_cannot_be_written_leaves_nothing_half_written(workspace, sl
         record_start(workspace, workspace / "new", run.pid, _command(workspace / "new"),
                      by="from the GUI")
     assert sorted(p.name for p in workspace.iterdir() if p.name.startswith(RUNS_FILE)) == []
+
+
+def test_a_study_of_several_runs_is_one_run_going(workspace, sleepers):
+    """A study of several runs records its process at its top (third
+    review, 10-07), and each run inside it its own: one study going, not
+    one for each."""
+    import json
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    sweep = workspace / "sweep"
+    command = _command(sweep)
+    for here in (sweep, sweep / "runs" / "r1"):
+        here.mkdir(parents=True, exist_ok=True)
+        process = _sleeping_as(command, sleepers)
+        (here / RUN_PROCESS_FILE).write_text(json.dumps(
+            {"pid": process.pid, "argv": command[1:]}), encoding="utf-8")
+    assert running_in(workspace) == [(sweep, "")]

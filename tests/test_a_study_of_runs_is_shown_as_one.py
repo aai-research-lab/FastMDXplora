@@ -332,3 +332,42 @@ class TestTheSidebarShowsSevenThenThreeMoreAtATime(unittest.TestCase):
                 browser.close()
         finally:
             session.server.shutdown()
+
+
+def test_a_study_of_several_runs_records_its_process_at_its_top(tmp_path, monkeypatch):
+    """Found by the third review (10-07): only each run inside it recorded
+    a process (a worker, in parallel), so a GUI opened on the study after a
+    restart could not tell it was still going between two runs, or while
+    its comparison was written."""
+    import os
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    root = tmp_path / "sweep"
+    study = BatchExplorer(config_data={"systems": [{"system": "1UBQ"}],
+                                       "simulation": {"duration_ns": 1.0},
+                                       "sweep": {"simulation.temperature_K": [300, 310]}},
+                          output_dir=str(root))
+    seen = {}
+
+    def runs(self, include, exclude):
+        record = root / RUN_PROCESS_FILE
+        seen["pid"] = json.loads(record.read_text(encoding="utf-8")).get("pid")
+        return []
+
+    def prepare(self, include, exclude):
+        # An umbrella study prepares once, for hours, before any run.
+        record = root / RUN_PROCESS_FILE
+        seen["preparing"] = json.loads(record.read_text(encoding="utf-8")).get("pid")
+        return None
+
+    monkeypatch.setattr(BatchExplorer, "_maybe_prepare_once", prepare)
+    monkeypatch.setattr(BatchExplorer, "_run_sequential", runs)
+    monkeypatch.setattr(BatchExplorer, "_run_parallel", runs)
+    monkeypatch.setattr(BatchExplorer, "_write_comparison", lambda self: None, raising=False)
+    try:
+        study.run()
+    except Exception:  # noqa: BLE001 - what follows the runs is not this test's
+        pass
+    assert seen.get("pid") == seen.get("preparing") == os.getpid()

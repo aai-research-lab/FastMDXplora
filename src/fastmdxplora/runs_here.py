@@ -178,6 +178,10 @@ def running_in(workspace: Path, *, walk: bool = True) -> list[tuple[Path, str]]:
                                                        if not f.startswith(".")]
             if RUN_PROCESS_FILE not in files or Path(here) in going:
                 continue
+            if any(Path(here).is_relative_to(folder) for folder in going):
+                # A run inside a study already going (a study of several
+                # runs records its process at its top too): the same study.
+                continue
             try:
                 record = json.loads((Path(here) / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
             except (OSError, ValueError):
