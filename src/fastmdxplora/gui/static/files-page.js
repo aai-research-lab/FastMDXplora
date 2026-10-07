@@ -129,7 +129,7 @@
         group.hidden = !show;
         var files = group.querySelector(".files-arow-files");
         var button = group.querySelector(".files-expand");
-        var open = filtering ? inside > 0 && !titled : Boolean(kept.expanded[group.getAttribute("data-key")]);
+        var open = filtering ? inside > 0 : Boolean(kept.expanded[group.getAttribute("data-key")]);
         if (files) files.hidden = !open;
         if (button) button.setAttribute("aria-expanded", String(open));
         if (show) seen += 1;

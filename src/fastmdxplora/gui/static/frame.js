@@ -817,13 +817,23 @@
       box.appendChild(empty);
       return;
     }
-    // Group by top-level directory, in the order a study runs.
-    var order = ["", "setup", "simulation", "analysis", "report"];
+    // Group by top-level directory, in the order a study runs, with what
+    // is kept aside last. The live view's snapshots, two hundred of them,
+    // are one line: the Files page lists them, folded.
+    var order = ["", "setup", "simulation", "analysis", "report", "scenes", "movies", "deposit",
+                 "previous", "superseded", "viewer_runs", "viewer_beside"];
     var groups = {};
+    var snapshots = 0;
     items.forEach(function (it) {
+      if (it.path.indexOf("/live_frames/") !== -1) { snapshots += 1; return; }
       var top = it.path.indexOf("/") === -1 ? "" : it.path.split("/")[0];
       (groups[top] = groups[top] || []).push(it);
     });
+    if (snapshots) {
+      groups.simulation = groups.simulation || [];
+      groups.simulation.push({ path: "simulation/live_frames/", name: "live_frames/",
+                               snapshots: snapshots });
+    }
     Object.keys(groups).sort(function (a, b) {
       var ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.localeCompare(b);
@@ -837,6 +847,16 @@
         box.appendChild(dir);
       }
       groups[top].forEach(function (it) {
+        if (it.snapshots) {
+          var line = document.createElement("div");
+          line.className = "side-file side-file-dir";
+          line.style.paddingLeft = "24px";
+          line.innerHTML = '<span class="side-file-name"></span><span class="side-file-meta"></span>';
+          line.querySelector(".side-file-name").textContent = it.name;
+          line.querySelector(".side-file-meta").textContent = it.snapshots + " live view snapshots";
+          box.appendChild(line);
+          return;
+        }
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "side-file";

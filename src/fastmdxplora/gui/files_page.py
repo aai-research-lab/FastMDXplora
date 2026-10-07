@@ -71,7 +71,12 @@ def _when(mtime: object) -> tuple[str, str]:
     """When a file was written, as the page shows it before its script
     says it in the reader's own time, and as an ISO time."""
     try:
-        moment = datetime.fromtimestamp(float(mtime), tz=timezone.utc)  # type: ignore[arg-type]
+        seconds = float(mtime)  # type: ignore[arg-type]
+        # Written after the listing was read (the standalone page, the
+        # bundle): no time to say.
+        if seconds <= 0:
+            return "", ""
+        moment = datetime.fromtimestamp(seconds, tz=timezone.utc)
     except (TypeError, ValueError, OverflowError, OSError):
         return "", ""
     return moment.strftime("%d %b %Y %H:%M UTC"), moment.isoformat(timespec="seconds")
@@ -160,7 +165,8 @@ def _manifest_figure(said: object, prefix: str, have: set[str]) -> str | None:
 
 
 def files_model(root: Path, records: list[dict[str, Any]], *,
-                values: dict[str, str] | None = None) -> dict[str, Any]:
+                values: dict[str, str] | None = None,
+                not_produced: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the page shows, from the file listing (`server._artifact_records`)
     and the study's own records: every file placed, the analyses gathered,
     the key files found, the runs of a study of several."""
@@ -270,24 +276,27 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
     for entry in files:
         counts[entry["filter"]] = counts.get(entry["filter"], 0) + 1
     return {"files": files, "analyses": ordered, "runs": runs,
-            "keys": _key_files(root, files, runs), "counts": counts,
+            "keys": _key_files(root, files, runs, not_produced), "counts": counts,
             "total": sum(entry["size"] for entry in files)}
 
 
-def _key_files(root: Path, files: list[dict[str, Any]],
-               runs: list[dict[str, str]]) -> list[dict[str, Any]]:
-    """The files most come for, for the study's own folder and each run."""
+def _key_files(root: Path, files: list[dict[str, Any]], runs: list[dict[str, str]],
+               not_produced: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """The files most come for, for the study's own folder and each run.
+    ``not_produced`` is what the report could not write, where the caller
+    knows it better than the record on the disk (the report phase, which
+    writes that record after this page)."""
     by_path = {entry["path"]: entry for entry in files}
     scopes = [""] + [run["id"] for run in runs]
     tiles: list[dict[str, Any]] = []
     for run in scopes:
         prefix = f"runs/{run}/" if run else ""
-        tiles.extend(_tiles_of(root, prefix, run, by_path))
+        tiles.extend(_tiles_of(root, prefix, run, by_path, None if run else not_produced))
     return tiles
 
 
-def _tiles_of(root: Path, prefix: str, run: str,
-              by_path: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, Any]],
+              not_produced: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     tiles: list[dict[str, Any]] = []
 
     def there(rel: str) -> dict[str, Any] | None:
@@ -330,7 +339,9 @@ def _tiles_of(root: Path, prefix: str, run: str,
     if report is not None:
         what = "Written"
         if report["path"].endswith(".md") and there("report/report.pdf") is None:
-            for item in (_load_json_list(root / prefix / "report" / "not_produced.json")):
+            said = (not_produced if not_produced is not None
+                    else _load_json_list(root / prefix / "report" / "not_produced.json"))
+            for item in said:
                 if str(item.get("artifact")) == "report.pdf":
                     what += " · no PDF: " + str(item.get("reason") or "").split(". ")[0].rstrip(".")
                     break
@@ -509,9 +520,9 @@ def _row(entry: dict[str, Any], links: Links) -> str:
         f'<div class="files-what"><div class="files-name">{escape(entry["label"])}{note}</div>'
         f'<div class="files-path">{escape(entry["path"])}</div></div>'
         f'<span class="files-size">{escape(human_size(entry["size"]))}</span>'
-        f'<time class="files-when" datetime="{_attr(iso)}" data-when="{entry["mtime"]:.0f}">'
-        f'{escape(when)}</time>'
-        f'<div class="files-acts">{"".join(acts)}</div></div>')
+        + (f'<time class="files-when" datetime="{_attr(iso)}" data-when="{entry["mtime"]:.0f}">'
+           f'{escape(when)}</time>' if iso else '<span class="files-when"></span>')
+        + f'<div class="files-acts">{"".join(acts)}</div></div>')
 
 
 def _chip_order(path: str) -> tuple[int, str]:

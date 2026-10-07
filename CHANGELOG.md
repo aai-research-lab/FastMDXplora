@@ -41,7 +41,11 @@ checkpoint and a joined study's segments only when ticked; a figure
 without a twin of the kind chosen, and the report's pictures, kept; not
 while the study runs (`deposit.py`). Rendered by the server
 (`gui/files_page.py`, `GET /api/files-page`), compressed for a remote
-browser, and rendered again only when the study's files change.
+browser, and rendered again only when the study's files change. The
+report's standalone dashboard carries the same page, rendered by the same
+code and worked by the same script, its links to the files beside it
+and without what the bundle it travels in leaves out;
+the side panel's Files tab lists the live view's snapshots as one line.
 
 **Fixed:** `production.dcd` holds the atoms the run saved, without the
 water by default, and only `trajectory_topology.pdb` describes them; the

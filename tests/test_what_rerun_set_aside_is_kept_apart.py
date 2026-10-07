@@ -8,8 +8,6 @@ apart.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastmdxplora.gui.server import ARTIFACT_GROUPS, _artifact_label
 
 
@@ -32,12 +30,8 @@ def test_a_window_run_again_is_set_aside_too():
 
 def test_the_group_is_listed_last_and_folded():
     assert ARTIFACT_GROUPS[-1] == ("previous", "Set aside by --rerun")
-    import fastmdxplora.gui as gui
-
     from fastmdxplora.gui.files_page import FOLDED
     from fastmdxplora.study_files import place
 
     # The Files page puts them in a section of their own, folded.
     assert place("previous/analysis/rmsd/rmsd.png")[0] == "previous" and "previous" in FOLDED
-    standalone = (Path(gui.__file__).parent / "report_dashboard.py").read_text(encoding="utf-8")
-    assert 'if key in ("record", "previous") else grid)' in standalone

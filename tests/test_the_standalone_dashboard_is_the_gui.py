@@ -146,12 +146,25 @@ def test_what_was_not_produced_is_said_and_an_old_record_is_not(tmp_path: Path) 
 def test_the_files_are_the_gui_s_files(tmp_path: Path) -> None:
     html = _write(_study(tmp_path, manifest=FINISHED), include_bundle_link=True)
 
-    # Named by the GUI's own labels, this page and the bundle included
-    # though written after the list is read.
-    assert '<div class="file-title" title="report/dashboard.html">Standalone dashboard</div>' in html
-    assert '<div class="file-title" title="report/project_bundle.zip">Everything, zipped</div>' in html
-    assert '<details class="file-fold" data-fold="record">' in html
-    assert '<a class="file-action" href="../analysis/rmsd/rmsd.png" target="_blank"' in html
+    # The GUI's page, rendered by the GUI's renderer, named by its labels,
+    # this page and the bundle included though written after the list is
+    # read; both views, since there is no server to ask for the other.
+    from fastmdxplora.gui.files_page import FOLDED
+
+    assert 'data-path="report/dashboard.html"' in html
+    assert "Standalone dashboard: this page as one file" in html
+    assert 'data-path="report/project_bundle.zip"' in html
+    assert 'data-body="phases"' in html and 'data-body="folders" hidden' in html
+    for phase in FOLDED & {"record"}:
+        section = html[html.index(f'data-phase="{phase}"'):]
+        assert 'aria-expanded="false"' in section[:section.index("</button>")]
+    # Opened in place, beside the page, and its menu; nothing needing the server.
+    assert '<a class="files-act" href="../analysis/rmsd/rmsd.png" target="_blank"' in html
+    assert "/api/files/zip" not in html and "data-deposit" not in html
+    assert 'class="files-act" data-preview' not in html
+    assert "window.FastMDXFiles" in html
+    # What the bundle leaves out is not listed: this page travels in it.
+    assert 'data-phase="scratch"' not in html and 'data-phase="previous"' not in html
 
 
 def test_the_pages_open_from_the_sidebar_and_the_series_is_plotted(tmp_path: Path) -> None:
@@ -191,8 +204,8 @@ def test_the_pages_open_from_the_sidebar_and_the_series_is_plotted(tmp_path: Pat
 
 
 def test_the_sidebar_says_states_as_the_gui_says_them() -> None:
+    from fastmdxplora.gui.files_page import human_size
     from fastmdxplora.gui.report_dashboard import (
-        _human_size,
         _normalise_stage,
         _phase_state,
         _stage_steps,
@@ -211,8 +224,8 @@ def test_the_sidebar_says_states_as_the_gui_says_them() -> None:
     assert _study_state({}, {"status": "completed"}) == ("completed", "completed")
     assert _study_state({}, {"status": "running"}) == ("running", "waiting")
     assert _study_state({}, None) == ("not run", "stale")
-    assert [_human_size(v) for v in (512, 2048, 3 * 1024 ** 2, 5 * 1024 ** 3, None)] \
-        == ["512 B", "2.0 KB", "3.00 MB", "5.00 GB", "\u2014"]
+    assert [human_size(v) for v in (512, 2048, 3 * 1024 ** 2, 5 * 1024 ** 3, None)] \
+        == ["512 B", "2.0 KB", "3.0 MB", "5.00 GB", ""]
     # A stage the live record says is running is current, whatever else.
     steps = {s.stage: s.state for s in _stage_steps(
         {}, {"stage": "npt", "stage_states": {"npt": "running", "nvt": "failed"}}, None)}

@@ -598,7 +598,8 @@ class TestDashboard:
         assert text.count('<article class="analysis-card"') == len(artifact_names)
         assert "dashboard view" not in text
         # Every file on the Files page, the run record folded, as in the GUI.
-        assert '<details class="file-fold" data-fold="record">' in text
+        record = text[text.index('data-phase="record"'):]
+        assert 'aria-expanded="false"' in record[:record.index("</button>")]
         for rel in artifact_names:
             assert f"../{rel}" in text
         for label in (

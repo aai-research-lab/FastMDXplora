@@ -1196,64 +1196,6 @@ button {
 /* ============================================================ */
 /* Files & reports                           */
 /* ============================================================ */
-.files-list {
-    display: grid;
-    /* Two across, always. auto-fill packed three on a wide screen at
-       266px each, where a name and four buttons cannot both fit, and
-       one on a narrow one. Two is the width a row needs. */
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-.file-row {
-    /* Title, then the path, then the size and date, then the buttons on a
-       line of their own. As a grid of "1fr auto" the meta and buttons sat
-       in the auto column beside the title, and a long title starved them
-       so the left card wrapped its buttons where the right one did not. */
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--text-primary) 2%, transparent);
-    color: var(--text-secondary);
-    text-decoration: none;
-    transition: border-color var(--duration-fast) var(--ease),
-                background var(--duration-fast) var(--ease);
-    min-width: 0;
-}
-.file-row:hover {
-    border-color: color-mix(in srgb, var(--accent-cyan) 40%, transparent);
-    background: color-mix(in srgb, var(--accent-cyan) 4%, transparent);
-    color: var(--accent-white);
-}
-.file-row .file-title {
-    font-size: var(--text-sm);
-    color: inherit;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.file-row .file-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 10px;
-    font-size: var(--text-2xs);
-    color: var(--text-muted);
-    margin-top: 4px;
-}
-.file-row .file-meta .file-actions { flex-basis: 100%; margin-top: 4px; }
-/* The buttons stay whole -- "Copy path" is never "Copy" over "path" --
-   but the row of them may wrap to a second line in a narrow cell, rather
-   than run out of it. */
-.file-row .file-actions { display: flex; gap: 4px; flex-wrap: wrap; }
-.file-row { min-width: 0; }
-.file-row .file-title { overflow-wrap: anywhere; }
-.file-row .file-subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The run record's rows, once unfolded, sit in the same two-across grid. */
-.file-fold > .files-list { margin-top: 10px; }
-.card > .file-fold { display: block; }
 /* The Files page (gui/files_page.py, files-page.js): a toolbar, the space
    each phase takes, the files most come for, then one dense row a file
    under the phase that wrote it. */
@@ -2685,30 +2627,6 @@ body.state-ready .loading-screen {
     flex: 1 1 auto;
     min-height: 0;
     height: auto;
-}
-
-/* The rolling viewer history, folded. Sixty-four near-identical PDBs listed
-   flat buried the trajectory, the checkpoint and the final state among them;
-   they are still reachable, just not first. */
-.file-fold {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    margin-top: 8px;
-}
-.file-fold > summary {
-    padding: 10px 12px;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-    letter-spacing: 0.04em;
-}
-.file-fold > summary:hover { color: var(--accent-white); }
-.file-fold[open] > summary { border-bottom: 1px solid var(--border-subtle); }
-.file-subtitle {
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    margin-top: 2px;
-    word-break: break-all;
 }
 
 /* A list of choices, all visible, none needing a modifier key to pick. */

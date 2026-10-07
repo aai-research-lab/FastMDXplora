@@ -306,8 +306,9 @@ def build_dashboard(
                                 not_produced=not_produced),
         methods=_methods_for_page(project_root),
         series=_series_for_page(project_root, sections),
-        file_groups=_file_groups(project_root, output_dir,
-                                 include_bundle_link=include_bundle_link),
+        files_html=_files_page(project_root, output_dir,
+                               include_bundle_link=include_bundle_link,
+                               not_produced=not_produced),
     )
 
     dashboard_path = output_dir / "dashboard.html"
@@ -1386,6 +1387,16 @@ def _product_mark_uri() -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(data).decode("ascii")
 
 
+def _files_script() -> str:
+    """The GUI's Files page script (``static/files-page.js``): finding,
+    filtering, sorting, folding and a file's menu, as there."""
+    try:
+        found = (Path(__file__).resolve().parent / "static" / "files-page.js").read_text(encoding="utf-8")
+    except OSError:  # pragma: no cover - only if the installed package is incomplete
+        return ""
+    return f"<script>{found}</script>\n"
+
+
 def _tooltips_script() -> str:
     """The GUI's tooltips (``static/tooltips.js``), so a hint here is shown
     as it is there; nothing if the file is missing."""
@@ -1531,49 +1542,33 @@ def _study_state(manifest: dict[str, Any], live_status: dict[str, Any] | None) -
     return "not run", "stale"
 
 
-def _human_size(size: object) -> str:
-    """A size as the GUI's Files page says it (``humanSize``)."""
-    try:
-        value = int(size)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return DASH
-    if value < 1024:
-        return f"{value} B"
-    if value < 1024 ** 2:
-        return f"{value / 1024:.1f} KB"
-    if value < 1024 ** 3:
-        return f"{value / 1024 ** 2:.2f} MB"
-    return f"{value / 1024 ** 3:.2f} GB"
-
-
-def _when(epoch: object) -> tuple[str, str]:
-    """A time as written, in UTC, and as seconds for the page to put in the
-    reader's own time zone, as the GUI's pages do."""
-    try:
-        seconds = float(epoch)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        # Written after the list was read (this page, the bundle): no time.
-        return "", ""
-    moment = datetime.fromtimestamp(seconds, tz=timezone.utc)
-    return moment.strftime("%Y-%m-%d %H:%M UTC"), f"{seconds:.0f}"
-
-
-def _file_groups(
+def _files_page(
     project_root: Path,
     output_dir: Path,
     *,
     include_bundle_link: bool,
-) -> list[tuple[str, str, list[dict[str, Any]]]]:
-    """Every file the study has written, grouped as the GUI's Files page
-    groups them, read by the GUI's own listing (``server._artifact_records``)
-    so the two pages offer the same files under the same names.
+    not_produced: list[tuple[str, str]] | None = None,
+) -> str:
+    """The GUI's Files page, rendered as the GUI renders it
+    (``files_page.render``) from the GUI's own listing
+    (``server._artifact_records``), so the two pages offer the same files
+    under the same names, laid out the same way; its links are made
+    relative to this page, and what needs the server (a zip, a deposit,
+    the side panel) is left out.
 
     This page and the bundle are written after the listing is read, so they
-    are added by name.
+    are added by name. The scratch, what was set aside and deposits are not
+    listed: this page travels in the bundle, which leaves them out.
     """
     from fastmdxplora.gui import server
+    from fastmdxplora.gui.files_page import Links, files_model, render
 
-    records = [dict(record) for record in server._artifact_records(project_root)]
+    from fastmdxplora.study_files import place
+
+    # Not what the bundle and a deposit leave out: in either, this page
+    # goes with them, and their rows would be links to nothing.
+    records = [dict(record) for record in server._artifact_records(project_root)
+               if place(record["path"])[0] not in ("scratch", "previous", "deposit")]
     have = {record["path"] for record in records}
     later = [output_dir / "dashboard.html"]
     if include_bundle_link:
@@ -1585,18 +1580,19 @@ def _file_groups(
             continue
         if rel in have:
             continue
-        label, group = server._artifact_label(rel)
-        records.append({"path": rel, "name": path.name, "size": None, "mtime": None,
-                        "label": label, "group": group})
+        records.append({"path": rel, "size": None, "mtime": None})
     records.sort(key=lambda record: record["path"])
     for record in records:
-        record["href_here"] = _href(project_root / record["path"], output_dir)
-    groups: list[tuple[str, str, list[dict[str, Any]]]] = []
-    for key, title in server.ARTIFACT_GROUPS:
-        files = [record for record in records if (record.get("group") or "record") == key]
-        if files:
-            groups.append((key, title, files))
-    return groups
+        record["absolute_path"] = (project_root / record["path"]).as_posix()
+    # What the report could not produce is said by the report phase as it
+    # writes, not read from a record an earlier run may have left.
+    model = files_model(project_root, records,
+                        values=server._determined_values(project_root, records),
+                        not_produced=[{"artifact": artifact, "reason": reason}
+                                      for artifact, reason in not_produced or []])
+    links = Links(standalone=True,
+                  here=lambda rel: _href(project_root / rel, output_dir))
+    return render(model, links, view="both")
 
 
 def _report_for_page(
@@ -1698,7 +1694,7 @@ def _render_dashboard(
     platform: str = "",
     report: dict[str, Any] | None = None,
     methods: tuple[str, str] = ("", ""),
-    file_groups: list[tuple[str, str, list[dict[str, Any]]]] | None = None,
+    files_html: str = "",
     series: dict[str, Any] | None = None,
 ) -> str:
     """The page, laid out as the GUI is: its sidebar, and its Overview,
@@ -1726,7 +1722,7 @@ def _render_dashboard(
             has_report=bool(report and report.get("ok"))),
         _render_analysis_page(sections, series or {}),
         _render_report_page(report or {"ok": False}),
-        _render_files_page(file_groups or [], output_folder),
+        _render_files_page(files_html),
     ))
     mark = _product_mark_uri()
     icon = f'<link rel="icon" type="image/svg+xml" href="{mark}">\n' if mark else ""
@@ -1757,7 +1753,7 @@ def _render_dashboard(
         "<div class=\"main\">\n<main class=\"page-shell\" role=\"main\">\n", pages,
         "\n</main>\n</div>\n</div>\n",
         _render_series_scripts(series or {}),
-        f"<script>{_PAGE_JS}</script>\n{_tooltips_script()}</body>\n</html>\n",
+        f"<script>{_PAGE_JS}</script>\n{_files_script()}{_tooltips_script()}</body>\n</html>\n",
     ))
 
 
@@ -2019,56 +2015,11 @@ def _render_report_page(report: dict[str, Any]) -> str:
             "</article></section>")
 
 
-def _render_files_page(
-    groups: list[tuple[str, str, list[dict[str, Any]]]], output_folder: str
-) -> str:
-    cards = []
-    for key, title, files in groups:
-        sizes = [int(f["size"]) for f in files if str(f.get("size") or "").isdigit()]
-        rows = "".join(_render_file_row(record, output_folder) for record in files)
-        grid = f'<div class="files-list">{rows}</div>'
-        total = _human_size(sum(sizes))
-        # The run record is mostly manifests and scratch: kept, folded.
-        body = (f'<details class="file-fold" data-fold="{escape(key)}"><summary>'
-                f"{len(files)} files, {escape(total)}</summary>{grid}</details>"
-                if key in ("record", "previous") else grid)
-        cards.append(
-            '<div class="card"><div class="card-header">'
-            f'<h2 class="card-title">{escape(title)}</h2>'
-            f'<span class="muted small mono">{len(files)} · {escape(total)}</span>'
-            f"</div>{body}</div>")
-    body = "".join(cards) or (
-        '<div class="card"><div class="muted small">This run has not written any files yet.</div></div>')
+def _render_files_page(files_html: str) -> str:
+    body = files_html or '<div class="files-empty">This study has not written any files yet.</div>'
     return ('<section class="page" data-page="files" hidden>'
-            + _page_header("Files", "Everything the run wrote, grouped by phase")
-            + f'<div id="file-groups">{body}</div></section>')
-
-
-def _render_file_row(record: dict[str, Any], output_folder: str) -> str:
-    rel = str(record.get("path") or "")
-    within = "/".join(rel.split("/")[1:])
-    label = str(record.get("label") or within or record.get("name") or "Artifact")
-    subtitle = within if within and within != label else ""
-    when, epoch = _when(record.get("mtime"))
-    when_attr = f' data-when="{epoch}"' if epoch else ""
-    link = record.get("href_here") or ""
-    suffix = rel.rsplit(".", 1)[-1].lower() if "." in rel else ""
-    opens = suffix in {"png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"}
-    absolute = (Path(output_folder) / rel).as_posix()
-    return (
-        f'<div class="file-row" data-path="{escape(absolute)}">'
-        f'<div class="file-title" title="{escape(rel)}">{escape(label)}</div>'
-        + (f'<div class="file-subtitle mono">{escape(subtitle)}</div>' if subtitle else "")
-        + '<div class="file-meta">'
-        f"<span>{escape(_human_size(record.get('size')))}</span>"
-        f'<span class="muted"{when_attr}>{escape(when)}</span>'
-        '<div class="file-actions">'
-        + (f'<a class="file-action" href="{escape(link)}" target="_blank" rel="noopener">Open</a>'
-           if opens and link else "")
-        + (f'<a class="file-action" href="{escape(link)}" download>Download</a>' if link else "")
-        + '<button class="file-action" type="button" data-copy-path>Copy path</button>'
-        "</div></div></div>"
-    )
+            + _page_header("Files", "Everything the study wrote, in the order it ran")
+            + f'<div id="files-page" class="files-page">{body}</div></section>')
 
 
 def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
@@ -2478,12 +2429,9 @@ _PAGE_JS = """
     if (ok) done(); else failed();
   }
   document.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-copy-path], [data-copy-text], [data-copy-from]");
+    var button = event.target.closest("[data-copy-text], [data-copy-from]");
     if (!button) return;
-    if (button.hasAttribute("data-copy-path")) {
-      var row = button.closest(".file-row");
-      copy(row ? row.getAttribute("data-path") || "" : "", "File path copied.");
-    } else if (button.hasAttribute("data-copy-text")) {
+    if (button.hasAttribute("data-copy-text")) {
       copy(button.getAttribute("data-copy-text") || "", "Output folder path copied.");
     } else {
       var source = document.getElementById(button.getAttribute("data-copy-from"));
