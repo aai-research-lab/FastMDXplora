@@ -308,11 +308,16 @@ determine its own protonation is not, and an AI model that retries it is guessin
 at the question the software declined to guess at. The loop stops and returns
 the refusal.
 
-**The repair prompt withholds.** It names the offending setting and, where the
-refusal registry permits, the legal set. It volunteers nothing further. A
-validator that hands over the fix turns every rejection into a well-specified
-task — and the rule the whole design turns on is that *the validator may say
-what the schema permits, and may never say what the chemistry requires*.
+**A repair says what would fix it, and no more than the registry allows.**
+It names the offending setting, the legal set where the refusal registry
+permits it, and the remedy within the same rule: the setting's name, an
+install command, and nothing where the answer is a scientific judgement. The
+rule the whole design turns on is that *the validator may say what the
+schema permits, and may never say what the chemistry requires*. The builder,
+the Agent's `check_config` and an AI app's `check_study` give the same
+words. A repair also carries everything the first request did (the
+request, the config language, the conversation, the run), so the AI model
+reads again what was asked rather than patching only what it was shown.
 
 **Cycles are counted and capped.** Three attempts in all, the first included,
 from the command line (`--attempts`), the browser and Python alike. Cheap
@@ -322,6 +327,59 @@ fall-through to whatever last nearly worked.
 
 `--phases` chooses which parts of the Config it writes; the default is
 `setup,simulation`.
+
+### Replies by tool calls
+
+Where the AI model takes tool calls, which the providers named above and
+most compatible servers do, the Agent declares its tools to the provider and
+a reply comes as data rather than as text read by a pattern:
+
+| Tool | What it carries |
+|---|---|
+| `propose_config` | The Config, a reason for each setting set (`why`, the `alternatives` set aside, and whether the request stated it), and a sentence beside it |
+| `ask_person` | A question, and the candidates where there are some |
+| `act` | One action, and what it takes (the windows and their values, the analyses) |
+| `show_scene` | A scene beside an answer |
+
+A plain answer is the reply's own text, and the looks (below) are tools of
+the same kind. Each reason is written into the study's
+[`decisions`](config.md), so the report's **Why these settings** says why
+each setting was chosen; a decision may be about `systems` and `sweep` too.
+A reason is the person's only where the request itself states the value
+(310 in "at 310 K"); the AI model saying it was asked is not enough, and
+"body temperature" makes 310 K the Agent's reading. A decision the Config
+already holds as the person's is kept as it is, and a reason about
+anything but a setting's dotted name is set aside and said, never a cause
+to refuse a Config. A refusal comes back as `propose_config`'s result, in
+the same conversation, and every call is answered in the turn after it.
+Text written beside a look is what the AI model is about to do, not its
+reply. The sentence beside a Config is shown under it on the page, and a
+question's candidates are said with the question.
+
+The instructions, the tools and the config language are the same for every
+message, and they are sent first, as a system prompt the provider keeps in
+its cache; what changes (the run, the current Config, the files attached,
+the request) comes after them. After the first message of a conversation
+most of what is sent is read from the cache. What each reply cost is
+recorded, and `fastmdx agent` says it:
+
+```
+  AI model: 2 calls, 31,204 tokens in (28,770 cached), 412 out
+```
+
+A server that does not take tool calls (some local ones) says so on the
+first message of a conversation, and is asked in the text protocol from
+then on, which is the same loop with the reply read from its first line:
+`SAY:` an answer, `ASK:` a question, `DO:` an action, `USE:` a look,
+`SHOW:` a scene, and otherwise the YAML of a Config, which is found among
+any prose around it. Only the words such servers use are read that way: a
+refusal that merely mentions tools is a fault and is said as one, and a
+server that took tools and refuses them later in the same reply has failed.
+What is noted is noted for that provider, AI model and address, and
+`fastmdx agent model` says which a server takes. A rate limit or an
+overloaded service is asked again after the wait the provider gives. A
+provider's error that quotes the key back has it replaced before it is
+said.
 
 ```bash
 fastmdx agent "..." --phases setup,simulation,analysis --attempts 5
@@ -454,10 +512,13 @@ proposal.accepted   # True
 proposal.cycles     # 2 — it took one repair
 proposal.config     # the validated study, as a dict
 proposal.refusal    # None here; the reason it stopped, otherwise
+proposal.usage      # what the calls cost, where the completion reports it
 ```
 
 `complete` is the entire AI model interface: a callable taking a prompt string and
-returning text.
+returning text. A completion that also has a `turn` (as `completion_for`'s
+does) is asked by tool calls: `turn(system, messages, tools)` returns a
+`fastmdxplora.agent.turns.Turn` (its text, its calls and their cost).
 
 ```python
 def my_model(prompt: str) -> str:
@@ -490,8 +551,9 @@ Each request goes to the AI model with three things beside the schema:
   edit, not a new study.
 - **What the run is doing**: status, stage, the step and the fraction
   complete, elapsed and remaining time, the last error, the health verdict;
-  the config the run used, in its short form, so "the same settings as that
-  one" has something to copy from; once analyses have run, what they found,
+  the config the run used, as it was written (or, for a study run from a
+  config file, the resolved one without what nobody decided), so "the same
+  settings as that one" has something to copy from; once analyses have run, what they found,
   per analysis: the mean, its standard error and unit, the effective sample
   count, and how many frames were discarded as unequilibrated; how much longer
   the study must run for the means it withheld, and what that takes here; and

@@ -327,6 +327,16 @@ ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse   # no help text
   refusals seen: config.option.unknown x2
 ```
 
+The harness asks in the text protocol (a completion taking a prompt and
+returning text), so it evaluates the instructions and the config language
+the same way for every AI model, whether or not it takes tool calls. It
+asks as these counts were first made (`as_registered`): each repair says
+what was refused and not what would fix it, so cycles read as how well an
+AI model reads the config language rather than how well it follows a fix.
+`measure(complete, as_registered=False)` evaluates the Agent as it now
+asks, the remedy given and the request kept. The looks harnesses below ask
+the same registered way, since their registrations fix the prompt.
+
 Fourteen requests across three tiers, reported apart — one number over three
 difficulties hides where an AI model stops rather than whether it succeeds.
 **Easy** states the value outright. **Medium** makes the AI model supply what the

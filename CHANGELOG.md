@@ -154,6 +154,56 @@ loaded its config into the builder to price itself, over whatever was being
 written there; it now reads its own. **Run here** is **Run on this
 machine**.
 
+### The Agent replies by tool calls
+
+**Changed:** where the AI model takes tool calls, the Agent declares its
+tools to the provider and the reply comes as data: `propose_config` with
+the config, a reason for each setting it set and a sentence beside it;
+`ask_person` with a question and its candidates; `act` with an action and
+what it takes; `show_scene` beside an answer; and the six looks, typed. A
+plain answer is the reply's text. The rules are the same: the validator is
+the only judge, a look is not an attempt, a structural refusal is answered
+and a semantic one ends the loop, and the software confirms a run the
+person's own words did not plainly ask for and every stop. Each reason is
+written into the study's `decisions`, so the report's **Why these
+settings** says why each was chosen: as the person's only where the
+request itself states the value, a decision already the person's kept as
+it is, and a reason about anything but a setting set aside and said. A
+decision may now be about `systems` and `sweep`. The page shows the
+sentence beside a config under it, and a question's candidates with it;
+an AI app's `ask_agent` is given both, and a proposed scene. The instructions, the tools and the config language are sent
+as a system prompt the provider caches, before what changes from one
+message to the next; with content blocks each conversation so far is cached
+too. What each reply cost is recorded (calls, tokens in, cached and out),
+said by `fastmdx agent` and given to the page. A rate limit or an
+overloaded service (429, 502, 503, 504, 529) is asked again after the wait
+the provider gives, else 1, 2 and 4 seconds. A server that says on a
+conversation's first message that it takes no tools is asked in the text
+protocol from then on, noted for that provider, AI model and address, and
+Settings says so; a refusal that only mentions tools is said as the fault
+it is. A provider's error that quotes the key back has it replaced. A
+model an AI app lends to `ask_agent` is asked in text, and the evaluation
+harnesses ask as their counts were registered (`as_registered`).
+
+**Changed:** a refusal is answered with what would fix it, within what the
+refusal registry lets be said (the permitted values, the setting's name, an
+install command; nothing where the answer is a scientific judgement), as
+the builder, the Agent's `check_config` and an AI app's `check_study`
+already said it.
+
+**Fixed:** in the text protocol, a repair was sent alone: the refusal and
+the reply, without the request, the config language, the conversation or
+the run (200 to 700 characters), so the AI model could patch what it was
+shown and not read again what was asked; it now carries them. A sentence
+before the YAML was read as a key and refused, and a fence or the YAML with
+a sentence after it was refused as unreadable; each cost an attempt, and
+the config is now taken from among the prose, a misspelled key kept to be
+refused by name. The Agent was given the config a run used as its resolved
+file, a hundred lines of defaults and nulls cut at 4,000 characters (3,152
+for a 40 ps study, 41 of its lines `null`); it is given the config as
+written, or the resolved one without what nobody decided. `fastmdx agent`
+said it gave up when the reply was an answer; it says the answer.
+
 ### Why a setting has its value: `decisions`
 
 **Added:** a top-level `decisions` block: for a setting by its dotted name
