@@ -1,7 +1,8 @@
 """Project bundle: zip the entire study into a shareable archive.
 
 Produces a single ``project_bundle.zip`` containing every artifact written
-during the run: setup, simulation, analysis and report. The bundle is
+during the run: setup, simulation, analysis and report, without the
+Viewer's and the live view's scratch (`fastmdxplora.study_files`). The bundle is
 suitable for attaching to a publication's supplementary materials or sharing
 with a collaborator.
 
@@ -15,6 +16,7 @@ otherwise.
 from __future__ import annotations
 
 from fastmdxplora.replaced import PREVIOUS
+from fastmdxplora.study_files import is_scratch
 from fastmdxplora.utils.logging import get_logger
 import zipfile
 from pathlib import Path
@@ -56,9 +58,17 @@ def _iter_project_files(root: Path, bundle_path: Path) -> list[Path]:
             continue
         if any(part in EXCLUDE_DIR_NAMES for part in p.relative_to(root).parts[:-1]):
             continue
+        rel = p.relative_to(root)
         # What a phase run again replaced (`fastmdxplora.replaced`): kept in
         # the study's folder, not in the archive of what the report describes.
-        if p.relative_to(root).parts[0] == PREVIOUS:
+        # Nor the windows a study of windows ran again, nor a data deposit,
+        # itself an archive of the study.
+        if rel.parts[0] in (PREVIOUS, "superseded", "deposit"):
+            continue
+        # The Viewer's and the live view's scratch, written again when
+        # needed: trypsin's bundle carried the 200 snapshots the live view
+        # keeps, 52 MB of PDB beside a 7.8 MB trajectory.
+        if is_scratch(rel.as_posix()):
             continue
         if p.name.endswith(EXCLUDE_SUFFIXES):
             continue

@@ -21,6 +21,7 @@ FastMDXplora/
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
 │       ├── system_id.py           # A study's system as four capitals: its PDB ID, or its file's first four
 │       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
+│       ├── study_files.py         # What each file of a study is: its phase, run, kind and name
 │       ├── again.py               # What can be run again on a study, and the command that does it
 │       ├── movies.py              # Movies of a study's frames, encoded by this computer's ffmpeg
 │       ├── movie_maker.py         # `fastmdx movie`: a movie made by the Viewer in a browser with no window
