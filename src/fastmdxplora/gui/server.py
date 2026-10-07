@@ -1368,6 +1368,16 @@ def make_handler(
                     payload or {},
                     path_for=hosting.inside if hosting is not None else None))
                 return
+            if path == "/api/structure-facts":
+                # What a structure in the form's list of systems holds, for
+                # its row: read, never prepared. The same path rule as the
+                # preview, so a hosted form reads only its workspace.
+                from fastmdxplora.gui.preview import structure_facts
+
+                self._send_json(structure_facts(
+                    (payload or {}).get("system"),
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/save-config":
                 # Hosted, for the service's page that runs a study on its
                 # own compute (--runs-url): the builder's config saved in

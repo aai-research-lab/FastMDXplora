@@ -77,9 +77,10 @@ def preview_of_config(config: dict[str, Any], *,
 
     settings = dict(setup)
     settings.update(config.get("simulation") or {})
+    counted = count_structure(structure)
     advisories = [
         {"setting": a.setting, "summary": a.summary, "detail": a.detail, "remedy": a.remedy}
-        for a in advise(_as_given(count_structure(structure), given), settings)
+        for a in advise(_as_given(counted, given), settings)
         # The box is said by the estimate, from the solute's bounding sphere
         # as OpenMM sizes it; the advisory's reckoning from the longest
         # extent could say otherwise beside it.
@@ -96,7 +97,71 @@ def preview_of_config(config: dict[str, Any], *,
         "titratable": titratable_residues(estimate.atoms),
         "time": _time(config, estimate.particles),
         "advisories": advisories,
+        # What the file holds before anything is chosen or discarded: the
+        # chains to choose among, its models, its heterogens.
+        "structure": facts_of(counted),
+        "forcefield": _forcefield_said(setup),
+        # Which analyses the study leaves nothing for, with what the
+        # structure holds: its models, and the ligands setup simulates.
+        "not_applicable": _not_applicable(config, counted, estimate),
     }
+
+
+def _not_applicable(config: dict[str, Any], counted: dict[str, Any], estimate: Any) -> dict[str, str]:
+    from fastmdxplora.gui.applicable import not_applicable
+
+    return not_applicable(config, {"models": counted.get("models") or 1,
+                                   "ligands": list(getattr(estimate, "ligands", []) or [])})
+
+
+def facts_of(counted: dict[str, Any]) -> dict[str, Any]:
+    """What a structure file holds, as the builder says it beside the
+    system: its models, every chain, its residues and its heterogens."""
+    if not counted.get("valid"):
+        return {"ok": False, "reason": "The structure could not be read."}
+    return {
+        "ok": True,
+        "models": int(counted.get("models") or 1),
+        "chains": list(counted.get("all_chains") or counted.get("chains") or []),
+        "residues": int(counted.get("protein_residues") or 0),
+        "ligands": sorted(set(counted.get("ligand_resnames") or [])),
+        "ions": int(counted.get("ions") or 0),
+        "waters": int(counted.get("water_residues") or 0),
+    }
+
+
+def structure_facts(given: Any, *,
+                    path_for: Callable[[Any], str | None] | None = None) -> dict[str, Any]:
+    """The same for one structure named in the form's list of systems,
+    without estimating its box: read, not prepared."""
+    from fastmdxplora.structure_info import count_structure
+
+    named = str(given or "").strip()
+    if not named:
+        return {"ok": False, "reason": "No structure named."}
+    try:
+        structure = structure_file(named, path_for)
+    except StudyError as exc:
+        if exc.code == "environment.service.unreachable":
+            return {"ok": False, "reason": f"{named.upper()} could not be fetched from the PDB from here."}
+        return {"ok": False, "reason": str(exc)}
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "reason": str(exc)}
+    return {**facts_of(count_structure(structure)), "system": named}
+
+
+def _forcefield_said(setup: dict[str, Any]) -> dict[str, Any]:
+    """The force field a study will use, as `auto` resolves it here."""
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    if setup.get("force_field"):
+        return {"name": "files", "description": "The OpenMM force-field files the study names."}
+    try:
+        choice = resolve_forcefield(setup.get("forcefield"))
+    except Exception:  # noqa: BLE001 - a name the validator refuses says itself
+        return {"name": str(setup.get("forcefield")), "description": ""}
+    return {"name": choice.name, "description": choice.description,
+            "water_model": choice.water_model}
 
 
 #: How close a metal must be to a side chain's nitrogen or oxygen to be said

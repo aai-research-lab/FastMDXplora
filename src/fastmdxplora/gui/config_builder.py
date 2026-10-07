@@ -375,7 +375,14 @@ def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
         short = build_config(state, full=False) if full else None
     except SweepError as exc:
         return {"ok": False, "error": str(exc), "yaml": "", **refused(exc)}
-    return render_config(config, full=full, short=short)
+    answer = render_config(config, full=full, short=short)
+    if answer.get("ok"):
+        from fastmdxplora.gui.applicable import not_applicable
+
+        # Which analyses this study leaves nothing for, and why, from its
+        # config alone; the preview adds what the structure holds.
+        answer["not_applicable"] = not_applicable(config)
+    return answer
 
 
 def refused(exc: BaseException) -> dict[str, Any]:
@@ -479,9 +486,18 @@ def render_config(config: dict[str, Any], *, full: bool = False,
         header += f"# ({why})\n#\n"
 
     body = yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
+    from fastmdxplora.gui.plan import plan_of
+
+    try:
+        plan = plan_of(decided)
+    except Exception:  # noqa: BLE001 - the plan is said beside the file, never instead of it
+        plan = []
     return {
         "ok": True,
         "error": None,
+        # The study said in lines, as the Agent's plan says it, defaults
+        # marked: what the form's review shows.
+        "plan": plan,
         "command": command,
         "script": python_script(decided),
         "yaml": header + body,

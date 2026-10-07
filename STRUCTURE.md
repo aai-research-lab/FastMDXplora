@@ -138,6 +138,7 @@ FastMDXplora/
 │       │   ├── chain_contacts.py  # What holds the chains together, frame by frame
 │       │   ├── runs_compared.py   # The runs of a study side by side, resolved differences marked
 │       │   ├── analysis_overview.py  # What every analysis determined, read together, and how each series converged
+│       │   ├── applicable.py      # Which analyses a study's config and structure leave nothing for, and why
 │       │   ├── runs_together.py   # The runs of a study played together in one Viewer
 │       │   ├── occupancy.py       # Where the ligand and water went over the frames; water sites placed
 │       │   ├── motion.py          # A study's main motions, swung and shown as lines on the first frame
