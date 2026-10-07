@@ -339,11 +339,17 @@ def changes_between(before: Any, after: dict[str, Any]) -> list[dict[str, str]]:
             label, unit = _LABELLED[key], ""
         elif key.startswith("sweep."):
             label = f"Varied {label.lower()}"
+        if _unset(was) and _unset(now):
+            # Unset either way (missing, None, an empty block): not a change.
+            continue
         before, after = _said(was, unit), _said(now, unit)
         if before == after:
-            # Unset either way (missing, None, an empty block), or said the
-            # same: not a change a person can see.
-            continue
+            # Said the same in brief, yet not the same: a system's own
+            # settings, or its file in another folder. Said in full, so the
+            # change is seen (second review, 10-07).
+            before, after = _said(was, unit, whole=True), _said(now, unit, whole=True)
+            if before == after:
+                continue
         changes.append({"setting": key, "label": label, "before": before, "after": after})
     return changes
 
@@ -359,27 +365,41 @@ def _flat(config: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return flat
 
 
-def _said(value: Any, unit: str) -> str:
-    if value is _MISSING or value is None or value == {}:
+def _unset(value: Any) -> bool:
+    return value is _MISSING or value is None or value == {}
+
+
+def _said(value: Any, unit: str, *, whole: bool = False) -> str:
+    if _unset(value):
         return "not set"
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, (int, float)):
         return f"{_number(value)} {unit}".strip()
     if isinstance(value, list):
-        return ", ".join(_system_said(v) if isinstance(v, dict) else str(v)
+        return ", ".join(_system_said(v, whole=whole) if isinstance(v, dict) else str(v)
                          for v in value) or "none"
     if isinstance(value, dict):
         import json
 
-        return json.dumps(value, separators=(", ", ": "), default=str)
+        return json.dumps(value, separators=(", ", ": "), default=str, sort_keys=whole)
     return f"{value} {unit}".strip() if unit else str(value)
 
 
-def _system_said(system: dict[str, Any]) -> str:
+def _system_said(system: dict[str, Any], *, whole: bool = False) -> str:
     """A system by its name and what it is: "protein (1UAO)", so a structure
-    changed under the same name is seen."""
+    changed under the same name is seen. In ``whole``, the file's full path
+    and the system's own settings too."""
     named, what = system.get("id"), system.get("system")
     if named and what and str(named) != str(what):
-        return f"{named} ({Path(str(what)).name})"
-    return str(named or what or system)
+        said = f"{named} ({what if whole else Path(str(what)).name})"
+    else:
+        said = str(named or what or system)
+    if whole:
+        import json
+
+        own = {k: v for k, v in system.items() if k not in ("id", "system")}
+        if own:
+            said += " " + json.dumps(own, separators=(", ", ": "), default=str,
+                                     sort_keys=True)
+    return said

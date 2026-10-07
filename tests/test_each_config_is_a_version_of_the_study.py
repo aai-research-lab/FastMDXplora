@@ -91,6 +91,26 @@ def test_a_change_is_one_a_person_can_see() -> None:
     assert changes_between({"simulation": {"umbrella": None}}, {"simulation": {}}) == []
 
 
+def test_a_change_inside_a_system_is_said() -> None:
+    """Found by the second review (10-07): a system's own override changed,
+    or its file moved to another folder under the same name, read the same
+    as before and was left out, so the new version said no change."""
+    held = {"id": "p", "system": "1L2Y", "setup": {"residue_states": {"A:57": "HIP"}}}
+    other = dict(held, setup={"residue_states": {"A:57": "HID"}})
+    said = changes_between({"systems": [held]}, {"systems": [other]})
+    assert [c["label"] for c in said] == ["System"]
+    assert "HIP" in said[0]["before"] and "HID" in said[0]["after"]
+    moved = changes_between({"systems": [{"id": "p", "system": "/data/v1/protein.pdb"}]},
+                            {"systems": [{"id": "p", "system": "/data/v2/protein.pdb"}]})
+    assert [(c["before"], c["after"]) for c in moved] == [
+        ("p (/data/v1/protein.pdb)", "p (/data/v2/protein.pdb)")]
+    # Still nothing where nothing a person would see changed.
+    assert changes_between({"systems": [held]}, {"systems": [dict(held)]}) == []
+    reordered = {"setup": {"residue_states": {"A:57": "HIP"}}, "system": "1L2Y", "id": "p"}
+    assert changes_between({"systems": [held]}, {"systems": [reordered]}) == []
+    assert changes_between({"setup": {"ph": None}}, {"setup": {}}) == []
+
+
 def test_a_switch_a_list_a_sweep_and_a_block_are_said_plainly() -> None:
     said = changes_between(
         {"setup": {"use_switching_function": True},
