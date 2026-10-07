@@ -218,6 +218,7 @@ for remedy in remedies_of("runs/umbrella"):
 | What stopped it | The fix | The price |
 |---|---|---|
 | A run stopped by a signal, or runs never started | `fastmdx resume STUDY`, one command for the whole study | What remains of each run's production; a run that never reached production is counted from the top |
+| A run that ended without recording its end (its machine restarted, or a scheduler ended it) | `fastmdx resume STUDY`, which the GUI runs only where the run's process was seen to be gone; after a day of silence with no process here to ask, look where it runs first | What remains of its production |
 | Umbrella windows that recorded too few values | Those windows again, longer, with `--rerun-window` and the length that gives the thinnest the values it needs | That production for each window named |
 | Windows that ran with settings the config no longer gives | Those windows again with `--rerun-window`, or the settings restored | The windows named, or nothing |
 | Gaps between windows | A new study with the windows these windows' sampling implies, as a config | Every window of it |
@@ -324,5 +325,6 @@ A few you are likely to meet, and what each means.
 | `simulation.resume.segment_named_twice` | Two segment folders of one study read as the same number (`segment-1` and `segment-001`). Both are named |
 | `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |
 | `analysis.sampling.*` | The run is sound and too short. `sampling_shortfall` says by how much |
-| `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C): in production it ended on a frame, with a checkpoint there; in a parallel study's other phases, where it was. Retryable: `fastmdx resume` carries it on |
+| `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C): in production it ended on a frame, with a checkpoint there; in a parallel study's other phases, where it was; a second Ctrl-C, or one outside production, where it was. Retryable: `fastmdx resume` carries it on |
+| `simulation.run.interrupted` | The run ended without recording its end: its process is gone (the machine restarted, or a scheduler or a person ended it), or nothing has been written for a day with no process here to ask. Retryable: `fastmdx resume` carries it on from its last checkpoint, offered to run from the GUI only where its process was seen to be gone |
 | `simulation.resume.bias_not_carried` | A metadynamics or steered run cannot be split into segments |

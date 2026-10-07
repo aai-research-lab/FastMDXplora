@@ -619,6 +619,11 @@ CODES: tuple[Code, ...] = (
          "carried on.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
          detail_keys=("signal", "step", "checkpoint_on_frame")),
+    Code("simulation.run.interrupted",
+         "A run that ended without recording its end: its process is gone, "
+         "or nothing has been written for a day.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
+         detail_keys=("ended_by",)),
     Code("simulation.resume.checkpoint_truncated",
          "A checkpoint that is not the whole file that was written.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,

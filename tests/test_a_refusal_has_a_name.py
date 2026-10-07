@@ -76,13 +76,14 @@ class TestTheRegistryIsWellFormed(unittest.TestCase):
         # missing package does not qualify: something has to be installed,
         # which is a change to the machine. A run stopped by a signal
         # qualifies: nothing about it was wrong, and it is carried on as it
-        # stands.
+        # stands; so does one whose machine restarted under it.
         for code in CODES:
             if code.retryable:
                 with self.subTest(code=code.id):
                     self.assertEqual(code.kind, Kind.ENVIRONMENTAL)
                     self.assertTrue(code.id.startswith("environment.service.")
-                                    or code.id == "simulation.run.stopped")
+                                    or code.id in ("simulation.run.stopped",
+                                                   "simulation.run.interrupted"))
 
     def test_superseded_identifiers_resolve_to_live_ones(self):
         for old, new in SUPERSEDED.items():

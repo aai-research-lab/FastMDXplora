@@ -906,8 +906,8 @@
 
   function showRecent(fresh, evenUnderThePointer) {
     var list = el("sidebar-recent-list");
-    if (!list) return;
-    askTheWorkspace(fresh).then(function (data) {
+    if (!list) return Promise.resolve();
+    return askTheWorkspace(fresh).then(function (data) {
       // Not built again under somebody's keyboard, nor, unless another
       // study was opened, under their pointer.
       if (list.contains(document.activeElement)) return;
@@ -972,9 +972,9 @@
     });
   }
 
-  /* With the sidebar folded to its strip, Recent is its icon there, and
-   * a click shows its studies beside the strip, to open one; a click
-   * elsewhere, Escape, or a study opened puts them away. The fold kept for
+  /* With the sidebar folded to its strip, Recent and Chats are their icons
+   * there, and a click shows the list beside the strip, to open one; a
+   * click elsewhere, Escape, or one opened puts it away. The fold kept for
    * the sidebar shown is left as it was. */
   function folded() {
     return document.body.classList.contains("sidebar-collapsed")
@@ -982,11 +982,9 @@
       && window.matchMedia("(min-width: 801px)").matches;
   }
 
-  function recentBesideTheStrip() {
-    var fold = el("sidebar-recent");
-    if (!fold) return;
+  function besideTheStrip(fold, list, item, onShow) {
+    if (!fold || !list) return;
     var head = fold.querySelector("summary");
-    var list = el("sidebar-recent-list");
     var wasOpen = fold.open;
 
     function shut(back) {
@@ -994,29 +992,42 @@
       fold.classList.remove("flyout");
       head.setAttribute("aria-expanded", "false");
       fold.open = wasOpen;
+      list.style.top = "";
       if (back) head.focus();
+    }
+
+    /* Beside its icon, and kept inside the window: Chats sits low in the
+     * strip, and its list would run off the foot. */
+    function place() {
+      var at = head.getBoundingClientRect();
+      var room = window.innerHeight - list.offsetHeight - 8;
+      list.style.top = Math.round(Math.max(8, Math.min(at.top, room))) + "px";
     }
 
     head.addEventListener("click", function (event) {
       if (!folded()) return;
+      // The head's own buttons (a new chat) are not the fold.
+      if (event.target.closest("button")) return;
       event.preventDefault();
       if (fold.classList.contains("flyout")) { shut(false); return; }
       wasOpen = fold.open;
-      var at = head.getBoundingClientRect();
-      list.style.top = Math.round(at.top) + "px";
       fold.classList.add("flyout");
       fold.open = true;
       head.setAttribute("aria-expanded", "true");
-      showRecent(false, true);
-      var first = list.querySelector(".sidebar-recent-item");
-      if (first && event.detail === 0) first.focus();
+      place();
+      Promise.resolve(onShow()).then(function () {
+        if (!fold.classList.contains("flyout")) return;
+        place();
+        var first = list.querySelector(item);
+        if (first && event.detail === 0) first.focus();
+      });
     });
     // Its toggle is not the fold kept for the sidebar shown.
     fold.addEventListener("toggle", function (event) {
       if (fold.classList.contains("flyout")) event.stopImmediatePropagation();
     }, true);
     list.addEventListener("click", function (event) {
-      if (event.target.closest(".sidebar-recent-item")) shut(false);
+      if (event.target.closest(item)) shut(false);
     });
     document.addEventListener("click", function (event) {
       if (!fold.contains(event.target)) shut(false);
@@ -1027,6 +1038,13 @@
     // The sidebar shown again, or folded: the list goes back in place.
     new MutationObserver(function () { if (!folded()) shut(false); })
       .observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  function recentBesideTheStrip() {
+    besideTheStrip(el("sidebar-recent"), el("sidebar-recent-list"), ".sidebar-recent-item",
+      function () { return showRecent(false, true); });
+    besideTheStrip(el("sidebar-chats"), el("sidebar-chats-list"), ".sidebar-conv, .sidebar-conv-new",
+      function () { return window.FastMDXChats ? window.FastMDXChats.show() : null; });
   }
 
   if (document.readyState === "loading") {

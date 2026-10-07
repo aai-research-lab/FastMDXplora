@@ -54,6 +54,14 @@
     var now = panel() ? panel().current : {};
     var all = group ? group.conversations : [];
     host.replaceChildren();
+    if (group && group.chats) {
+      // Beside the folded strip the head's + is not shown: the list
+      // begins with it (hidden in the sidebar shown, by the CSS).
+      var fresh = make("button", "sidebar-conv-new", "New chat");
+      fresh.type = "button";
+      fresh.addEventListener("click", function () { begin(null); });
+      host.appendChild(fresh);
+    }
     // None yet: the head and its + say enough, and the sidebar keeps its
     // height for the pages.
     if (!all.length) return;

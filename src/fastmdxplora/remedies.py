@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +82,8 @@ SETTINGS: dict[str, tuple[str, ...]] = {
 _RETRY_AFTER = {
     "simulation.run.stopped": ("Carry it on from where it stopped.",
                                "Carry them on from where they stopped."),
+    "simulation.run.interrupted": ("Carry it on from its last checkpoint.",
+                                   "Carry them on from their last checkpoints."),
     "environment.service": ("Once the service answers again, carry it on.",
                             "Once the service answers again, carry them on."),
 }
@@ -332,6 +334,11 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     batch = _read(root / "batch_manifest.json")
     if isinstance(batch, dict):
         return _of_a_batch(root, batch)
+    interrupted = _interrupted(root)
+    if interrupted is not None:
+        # Its record still says it is going: any Manifest is an earlier
+        # run's, and says nothing of this one.
+        return [interrupted]
     manifest = _read(root / "manifest.json")
     if not isinstance(manifest, dict):
         return []
@@ -340,6 +347,35 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         return []
     name, refusal = failed
     return [remedy_for(refusal, study=root, where=f"the study's {name}")]
+
+
+#: The refusal said of a run that ended without recording its end.
+INTERRUPTED_CODE = "simulation.run.interrupted"
+
+
+def _interrupted(root: Path) -> Remedy | None:
+    """`fastmdx resume` for a run that ended without saying so
+    (`telemetry.how_the_run_ended`), or None. Where its process was seen to
+    be gone, the GUI may run it; where only a day of silence says so, the
+    run may be on another machine, and carrying it on is the person's to
+    decide once they have looked there."""
+    from fastmdxplora.gui.telemetry import how_the_run_ended
+
+    try:
+        ended = how_the_run_ended(root)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        ended = None
+    if ended is None:
+        return None
+    if ended == "process":
+        why = ("The run ended without recording its end: its process is gone "
+               "(the machine restarted, or it was ended by a scheduler or by hand).")
+    else:
+        why = ("Nothing has been written for a day, and no process on this machine "
+               "runs it. If it runs on another machine or under a scheduler, look "
+               "there first: two runs must not write to one study.")
+    remedy = _resume(INTERRUPTED_CODE, why, "the study", [root], root)
+    return remedy if ended == "process" else replace(remedy, decision=True)
 
 
 def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:

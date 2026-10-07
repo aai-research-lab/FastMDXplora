@@ -66,6 +66,12 @@ INTERRUPTED_EXPLANATION = (
     "says whether it can be carried on from its last checkpoint."
 )
 
+STOPPED_EXPLANATION = (
+    "It was asked to stop (Ctrl+C, or Stop) and ended where it can be "
+    "carried on. What it wrote up to then is kept, and fastmdx resume "
+    "carries it on from there."
+)
+
 SILENT_EXPLANATION = (
     "Its last update said it was still going, and no process on this machine "
     "runs it. If it runs on another machine or under a scheduler, look there "
@@ -673,6 +679,14 @@ def analyze_health(
     runs one level down, nothing at all, or a run that recorded none.
     """
     latest_error = status.get("latest_error")
+    if str(status.get("status", "")).lower() == "stopped":
+        # Asked to stop, not failed: its message says where it stopped.
+        return {
+            "state": "stopped",
+            "headline": "Stopped",
+            "message": str(latest_error or "The run was stopped."),
+            "explanation": STOPPED_EXPLANATION,
+        }
     if latest_error or str(status.get("status", "")).lower() == "failed":
         # The explanation used to be NUMERIC_EXPLANATION for every failure,
         # so "setup outputs are missing" arrived with a paragraph about

@@ -1960,6 +1960,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
     # Single run -> flat layout; point at the project manifest.
     rc = 0 if all(r.status == "ok" for r in results) else 1
+    if rc and _stopped_by_ctrl_c(results):
+        # Stopped at the terminal: the study wrote where it stopped and
+        # what carries it on, and the shell is told it was interrupted.
+        rc = 130
     if len(results) == 1:
         if rc and not results[0].phases and results[0].message:
             # Stopped before any phase ran, which no phase has said.
@@ -1979,6 +1983,21 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         print(f"Manifest:       {fmdx.output_dir / 'manifest.json'}")
     _finish_dashboard_for_command(session, args)
     return rc
+
+
+def _stopped_by_ctrl_c(results: list[Any]) -> bool:
+    """Whether a study ended because Ctrl+C asked it to stop."""
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    for run in results:
+        for phase in getattr(run, "phases", None) or []:
+            refusal = getattr(phase, "refusal", None) or {}
+            details = refusal.get("details") or {}
+            # Raised with `details=` the particulars sit one level down.
+            details = details.get("details", details)
+            if refusal.get("code") == STOPPED_CODE and details.get("signal") == "SIGINT":
+                return True
+    return False
 
 
 def _cmd_phase(phase: str, args: argparse.Namespace) -> int:

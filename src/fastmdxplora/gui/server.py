@@ -3150,7 +3150,12 @@ def _summary_records(
     if phase_statuses and all(value in {"ok", "completed", "skipped"} for value in phase_statuses):
         status = "completed"
     elif any(value in {"error", "failed"} for value in phase_statuses):
-        status = "failed"
+        # A phase asked to stop is said as stopped, as the study's card says.
+        from fastmdxplora.simulation.runner import STOPPED_CODE
+
+        stopped = any((item.get("refusal") or {}).get("code") == STOPPED_CODE
+                      for item in manifest.get("phases", []) if isinstance(item, dict))
+        status = "stopped" if stopped else "failed"
     elif phase_statuses:
         status = "in progress"
     elif read_status(root):

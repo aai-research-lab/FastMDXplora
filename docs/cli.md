@@ -687,7 +687,7 @@ not `fastmdx setup --config study.yml`.
 | **0** | Success. Also `--version`, `--cite`, `info`, a written template, a matched selection, a completed dry run |
 | **1** | The work ran and failed: a phase errored, a selection matched nothing, the Agent gave up or exceeded its budget |
 | **2** | A usage or Config error: an unknown setting, a bad value, `--include` with `--exclude`, no system given, a refusal to overwrite |
-| **130** | Interrupted with Ctrl-C |
+| **130** | Interrupted with Ctrl-C; the study records where it stopped, and `fastmdx resume` carries it on |
 
 Failures print `fastmdx: <message>` on stderr **without a traceback** — the
 traceback is kept at debug level. What you see is the refusal, not the stack

@@ -593,7 +593,10 @@ interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
 platform that allows more or less. A second signal is obeyed at once. A
 second SIGTERM within two seconds of the first is the same request arriving
 twice, as it does when sent to a whole process group, and counts once; a
-second Ctrl-C, however quick, means now.
+second Ctrl-C, however quick, means now. Either way the study records where
+it stopped (the retryable `simulation.run.stopped`), the GUI says Stopped
+with what would fix it, `fastmdx resume` carries it on, and the command
+exits 130.
 
 **A study of several runs stops as one.** Running its runs in parallel, the
 study passes SIGTERM on to each of them (Ctrl-C reaches them from the terminal

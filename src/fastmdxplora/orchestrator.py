@@ -694,13 +694,18 @@ class FastMDXplora:
 
         if dashboard_writer is not None:
             failed = next((item for item in self.results if item.status == "error"), None)
+            # A stop is not a failure: the page says where it stopped and
+            # offers to carry it on, as the study's records do.
+            ended = ("stopped" if _was_a_stop(failed) else "failed") if failed else "completed"
             dashboard_writer.write_status(
-                status="failed" if failed else "completed",
+                status=ended,
                 latest_error=failed.message if failed else None,
             )
             dashboard_writer.event(
-                "FastMDXplora exploration failed" if failed else "FastMDXplora exploration completed",
-                level="error" if failed else "info",
+                {"stopped": "FastMDXplora exploration stopped",
+                 "failed": "FastMDXplora exploration failed"}.get(
+                    ended, "FastMDXplora exploration completed"),
+                level="error" if ended == "failed" else "info",
             )
 
         self._write_manifest()
@@ -1054,6 +1059,13 @@ class FastMDXplora:
         else:
             state = "failed"
 
+        if _was_a_stop(result):
+            # Where it stopped stays the stage it was in, so the page shows
+            # how far it got; nothing after it failed.
+            writer.write_status(status="stopped", latest_error=result.message)
+            writer.event(f"{phase.title()} phase stopped", level="warning")
+            return
+
         if phase == "simulation":
             from fastmdxplora.gui.telemetry import read_status
 
@@ -1333,9 +1345,15 @@ class FastMDXplora:
                 artifacts=list(artifacts or []),
                 produced_by=self._phase_provenance(),
             )
-        except RunStopped as stopped:
-            # Past every handler that would have made it something else.
-            error = stopped.as_error()
+        except (RunStopped, KeyboardInterrupt) as stopped:
+            # Past every handler that would have made it something else. A
+            # second Ctrl+C (or one outside production) arrives as a
+            # KeyboardInterrupt and went past this too: the study wrote no
+            # end, its record of its process was taken away as it exited,
+            # and it read Running until a day of silence. It is the same
+            # stop, recorded as one, so `fastmdx resume` carries it on.
+            error = (stopped.as_error() if isinstance(stopped, RunStopped)
+                     else _stopped_by_ctrl_c(phase))
             return PhaseResult(
                 name=phase,
                 status="error",
@@ -1720,6 +1738,25 @@ def record_is_from_elsewhere(record: dict) -> bool:
         if isinstance(there, str) and there and here.get(key) and there != here[key]:
             return True
     return False
+
+
+def _stopped_by_ctrl_c(phase: str) -> StudyError:
+    """A phase ended by Ctrl+C, as the retryable stop it is."""
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    return StudyError(
+        f"The run was stopped by Ctrl+C in its {phase} phase, before it "
+        "finished; `fastmdx resume` carries it on.",
+        code=STOPPED_CODE, signal="SIGINT", checkpoint_on_frame=False)
+
+
+def _was_a_stop(result: Any) -> bool:
+    """Whether a phase ended because it was asked to stop."""
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    refusal = getattr(result, "refusal", None)
+    return (getattr(result, "status", None) == "error" and isinstance(refusal, dict)
+            and refusal.get("code") == STOPPED_CODE)
 
 
 def _record_run_process(output_dir: Path) -> None:

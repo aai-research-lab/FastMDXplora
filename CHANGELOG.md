@@ -89,6 +89,28 @@ played while a run is going) is sent it made whole and centred on the
 protein, as the trajectory is. A snapshot written before is imaged in the
 box of the trajectory's last frame.
 
+### A run stopped by Ctrl+C says so; an interrupted one is offered its fix
+
+**Fixed:** a second Ctrl+C, or one outside production, ended a study with
+no end written: the KeyboardInterrupt passed every handler, the record of
+the run's process was removed as it exited, and the study read Running
+until a day of silence. The phase it was in now records the stop as the
+retryable `simulation.run.stopped`, the Manifest and resolved config are
+written, `fastmdx resume` carries it on, and the command exits 130. A
+stopped run's live record says `stopped` rather than `failed`, keeping the
+stage it was in, and the page says Stopped with what would fix it.
+
+**Added:** `simulation.run.interrupted`, for a run that ended without
+recording its end. **What would fix it** offers `fastmdx resume` for it,
+priced at what remains; the GUI runs it only where the run's process was
+seen to be gone, and after a day of silence says to look where it runs
+first. The sidebar's progress card links to it.
+
+### Chats on the folded sidebar
+
+**Added:** folded to its strip, the sidebar keeps Chats as an icon; a click
+shows the chats beside the strip, **New chat** first, as Recent does.
+
 ### The Config Builder in five steps, beside the study
 
 **Changed:** the Config Builder (subtitle "Configure a new MD simulation and

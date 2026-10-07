@@ -229,5 +229,6 @@ def test_the_page_says_it(tmp_path):
         session.server.shutdown()
     assert said["stage"].startswith("Production, last update ")
     assert said["dot"] == "status-dot status-dot-waiting"
+    # What would fix it is offered: `fastmdx resume` carries it on.
     assert (said["card"], said["eta"], said["pause"], said["fix"]) == \
-        ("interrupted", "—", True, "none")
+        ("interrupted", "—", True, "block")

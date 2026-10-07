@@ -3906,6 +3906,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     color: var(--accent-text); text-decoration: none;
 }
 .sidebar-progress[data-run="stopped"] .sidebar-fix,
+.sidebar-progress[data-run="interrupted"] .sidebar-fix,
 .sidebar-progress[data-run="failed"] .sidebar-fix { display: block; }
 .sidebar-fix:hover { text-decoration: underline; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }
@@ -5073,7 +5074,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
         overflow-x: hidden;
     }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar :is(.brand-text, .sidebar-collapse,
-        .sidebar-study, .sidebar-progress, .nav-count, .sidebar-convs, .sidebar-chats,
+        .sidebar-study, .sidebar-progress, .nav-count, .sidebar-convs,
         .nav-link > span, .sidebar-account-text, .sidebar-account-gear) {
         display: none;
     }
@@ -5617,13 +5618,29 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-recent.flyout > summary {
         color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent);
     }
-    .sidebar-recent.flyout .sidebar-recent-list {
+    .sidebar-recent.flyout .sidebar-recent-list,
+    .sidebar-chats.flyout .sidebar-convs-list {
         position: fixed; left: calc(var(--strip-width) + 6px); z-index: 70;
         width: 240px; max-height: 60vh; overflow-y: auto; padding: 6px;
         border: 1px solid var(--border-primary); border-radius: 10px;
         background: var(--background-elevated); box-shadow: 0 12px 32px var(--shadow-color);
     }
+    /* Chats the same way, its + the list's first row there. */
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-chats > summary {
+        justify-content: center; gap: 0; margin: 0; padding: 8px 0;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-chats > summary > :not(.chats-icon) {
+        display: none;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-chats:not(.flyout) .sidebar-convs-list {
+        display: none;
+    }
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-chats.flyout > summary {
+        color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    }
 }
+.sidebar-chats:not(.flyout) .sidebar-conv-new { display: none; }
+.sidebar-conv-new { color: var(--accent-text); }
 
 /* A button that is its line icon alone, named on hover: Close in a
    dialog's top right corner, Clear selection beside the sequence's words,
@@ -5734,15 +5751,16 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .sidebar-convs-head .line-icon, .sidebar-chats-head .line-btn .line-icon { width: 14px; height: 14px; }
 .sidebar-convs-list { display: flex; flex-direction: column; gap: 1px; }
 .sidebar-chats .sidebar-convs-list { padding-left: 26px; }
-.sidebar-conv {
+.sidebar-conv, .sidebar-conv-new {
     display: flex; align-items: baseline; gap: 8px; width: 100%;
     padding: 5px 8px; border: none; border-radius: 7px; background: transparent;
     font: inherit; font-size: var(--text-sm); color: var(--text-secondary); text-align: left; cursor: pointer;
 }
-.sidebar-conv:hover, .sidebar-conv:focus-visible {
+.sidebar-conv:hover, .sidebar-conv:focus-visible,
+.sidebar-conv-new:hover, .sidebar-conv-new:focus-visible {
     background: color-mix(in srgb, var(--text-primary) 7%, transparent); color: var(--text-primary);
 }
-.sidebar-conv:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.sidebar-conv:focus-visible, .sidebar-conv-new:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .sidebar-conv[aria-current="true"] { color: var(--text-primary); font-weight: 600; }
 .sidebar-conv-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-conv-when { flex: none; font-size: var(--text-2xs); color: var(--text-muted); font-weight: 400; }

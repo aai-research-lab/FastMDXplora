@@ -3130,7 +3130,12 @@ def run_simulation(
             )
 
     except Exception as exc:
-        if telemetry is not None:
+        if telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
+            # Asked to stop, and stopped where it can be carried on: the
+            # stage it was in stays the one it was in, not a failed one.
+            telemetry.event(str(exc), level="warning")
+            telemetry.write_status(status="stopped", latest_error=str(exc))
+        elif telemetry is not None:
             telemetry.event(f"error: {type(exc).__name__}: {exc}", level="error")
             try:
                 from fastmdxplora.gui.telemetry import read_status

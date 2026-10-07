@@ -118,8 +118,8 @@ def test_folded_it_is_a_strip_of_icons_that_still_take_you_there(browser, sessio
     peeked = tab.evaluate("() => document.body.classList.contains('sidebar-peek')")
     tab.click("#sidebar-expand")
     tab.context.close()
-    # Recent among them, as an icon.
-    assert said == {"width": 56, "icons": 9, "words": 0, "card": False, "mark": True}
+    # Recent and Chats among them, as icons.
+    assert said == {"width": 56, "icons": 10, "words": 0, "card": False, "mark": True}
     assert page == "analysis" and not peeked
 
 
@@ -155,6 +155,37 @@ def test_folded_recent_shows_its_studies_beside_the_strip(browser, session) -> N
     assert gone
     # The fold kept for the sidebar shown is as it was left.
     assert kept == [False, "0"]
+
+
+def test_folded_chats_show_beside_the_strip_with_a_new_one(browser, session) -> None:
+    """The strip had no Chats: folded, a chat was out of reach but through
+    the Agent's own list. It is an icon there, as Recent is, its list beside
+    the strip and kept inside the window, a new chat its first row."""
+    tab = _open(browser, session)
+    tab.click("#sidebar-collapse")
+    tab.mouse.move(720, 450)
+    tab.click("#sidebar-chats > summary")
+    tab.wait_for_selector("#sidebar-chats.flyout .sidebar-conv-new")
+    said = tab.evaluate("""() => {
+        const list = document.getElementById('sidebar-chats-list').getBoundingClientRect();
+        return {beside: list.left >= 56, inside: list.bottom <= window.innerHeight,
+                first: document.querySelector('#sidebar-chats-list > *').textContent,
+                peeked: document.body.classList.contains('sidebar-peek'),
+                expanded: document.querySelector('#sidebar-chats > summary')
+                    .getAttribute('aria-expanded')};
+    }""")
+    tab.click("#sidebar-chats-list .sidebar-conv-new")
+    tab.wait_for_function("() => !document.getElementById('agent-drawer').hidden")
+    gone = tab.evaluate("() => !document.getElementById('sidebar-chats').classList.contains('flyout')")
+    tab.click("#sidebar-expand")
+    hidden = tab.evaluate("""() => getComputedStyle(
+        document.querySelector('#sidebar-chats-list .sidebar-conv-new')).display""")
+    tab.context.close()
+    assert said == {"beside": True, "inside": True, "first": "New chat", "peeked": False,
+                    "expanded": "true"}
+    assert gone
+    # With the sidebar shown, its head's + is the way; the row is not shown.
+    assert hidden == "none"
 
 
 def test_the_mark_pointed_at_and_clicked_where_it_is_keeps_the_sidebar(browser, session) -> None:

@@ -208,6 +208,10 @@ class TestARealRunStoppedMidProduction(unittest.TestCase):
         self.assertEqual(simulation["refusal"]["code"], STOPPED_CODE)
         self.assertTrue(simulation["refusal"]["retryable"])
         self.assertIn("frame 3", simulation["message"])
+        # Its live record says it stopped, not that it failed.
+        from fastmdxplora.gui.telemetry import read_status
+
+        self.assertEqual(read_status(self.stopped)["status"], "stopped")
 
     def test_it_is_carried_on_from_that_frame(self):
         import mdtraj

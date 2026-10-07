@@ -65,7 +65,8 @@ mark, or the panel's tab, shows the column over the page for as long as
 the pointer stays on it or the column, with one button that keeps it; a
 click on that button, or anywhere in the column with nothing of its own
 under the pointer, keeps the column open. The strip's icons are used as they
-are, without opening the sidebar. Opening the Viewer folds both, and
+are, without opening the sidebar; Recent's and Chats' show their lists
+beside the strip, Chats' with **New chat** first. Opening the Viewer folds both, and
 another page brings them back as they were; a column kept open on the
 Viewer stays open there. Every page's header is one band across the
 centre column, and stays put while the page scrolls. The three columns'
@@ -131,8 +132,10 @@ The progress card is there while a run goes on:
 its stage and how far it is, a bar of the stages it can reach (each named
 when pointed at), which of them it is in, the time left at its speed so
 far, its step, and buttons to pause the page's updates (the run goes on)
-and to refresh now. A run that stopped or failed keeps the card, saying
-where, with **What would fix it**, which opens the Overview at that card.
+and to refresh now. A run that stopped, failed or was interrupted keeps
+the card, saying where, with **What would fix it**, which opens the
+Overview at that card (for an interrupted run, `fastmdx resume`, run from
+there only where its process was seen to be gone).
 A finished study has no card: its own card says it completed. A finished
 study can be opened and read while another runs; Stop still stops the
 running one from any page.
