@@ -133,7 +133,9 @@ class TestTheLoopStops(unittest.TestCase):
 
 
 class TestTheRepairPromptWithholds(unittest.TestCase):
-    """It says what the schema permits. It never says what chemistry needs."""
+    """It says what the refusal registry lets be said: the permitted set,
+    the setting's name, the remedy within the same rule (decided
+    2026-10-07). It never says what chemistry needs."""
 
     def test_a_structural_refusal_offers_the_permitted_set(self):
         refusal = Refusal(
@@ -163,9 +165,8 @@ class TestTheRepairPromptWithholds(unittest.TestCase):
         self.assertIn("protonation depends on pH", prompt)
 
     def test_no_remedy_is_volunteered_beyond_the_schema(self):
-        # A validator that hands over the fix turns every rejection into a
-        # well-specified task, which flatters the measurement and moves the
-        # domain reasoning out of the part being measured.
+        # Where the software does not know the answer, the remedy says so
+        # and offers nothing: no value, no direction to try.
         refusal = Refusal(
             code="setup.structure.undetermined",
             message="This structure does not determine what should be simulated.",

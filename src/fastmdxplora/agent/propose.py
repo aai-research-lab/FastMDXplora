@@ -141,6 +141,17 @@ class Proposal:
     #: `SHOW:` line by a strict pattern, and written only when the person
     #: presses its button. The Agent's tools only look; this only offers.
     scene: dict[str, Any] | None = None
+    #: The candidates a question names, where it names any (a structure's
+    #: deposited entries, most often), for the person to choose from.
+    choices: tuple[str, ...] = ()
+    #: What the Agent says beside a config, in a sentence or two.
+    note: str | None = None
+    #: What the AI model's calls cost, in the provider's counts, where the
+    #: completion reports them (:class:`~fastmdxplora.agent.turns.Usage`).
+    usage: dict[str, int] | None = None
+    #: How the AI model replied: ``"tools"`` (calls delivered as data) or
+    #: ``"text"`` (a reply read by a pattern).
+    protocol: str = "text"
 
     @property
     def accepted(self) -> bool:
@@ -158,38 +169,60 @@ class Proposal:
             "refusal": self.refusal.as_dict() if self.refusal else None,
             "codes": [a.refusal.code for a in self.attempts if a.refusal],
             "looks": [look.tool for look in self.looks],
+            "protocol": self.protocol,
+            "usage": self.usage,
         }
 
 
-_INSTRUCTIONS = """\
+#: What the Agent is told, paragraph by paragraph: each as the text protocol
+#: says it, then, where replying by tool calls says it otherwise, that way.
+#: Written once each, so the two ways of replying cannot drift apart on what
+#: the Agent is for; they differ only in how a reply is made.
+_PARAGRAPHS: tuple[tuple[str, str | None], ...] = (
+    ("""\
 Write a FastMDXplora study config as YAML. Reply with the YAML only: no
-prose, no explanation, no code fences.
-
+prose, no explanation, no code fences.""",
+     """\
+Write a FastMDXplora study config by calling `propose_config` with the
+config, as a mapping in the shape the file holds it, and `reasons`: for
+each setting you set, its dotted name (`setup.ph`,
+`simulation.duration_ns`), why it has that value in a sentence, the values
+you set aside where there were some, and `asked: true` where the request
+stated the value. The software validates the config. A refusal comes back
+as the tool's result, with what would fix it where the software can say;
+call `propose_config` again with the config corrected. Anything to say
+beside the config goes in `note`, in a sentence or two."""),
+    ("""\
 Include only settings the request calls for. Every setting has a default
 that is there for a reason, and a config that sets everything is harder
-to read and no more correct.
-
-An unknown key is refused rather than ignored, so do not invent settings.
-
+to read and no more correct.""",
+     None),
+    ("""\
+An unknown key is refused rather than ignored, so do not invent settings.""",
+     None),
+    ("""\
 This is a conversation, not a form. When there is a conversation so far,
 read it: the request may refer to it ("the same but at 320 K", "run
 it", "why did that fail?"). When there is a current config, a request
 is a change to it unless it plainly describes a different study: return
 the whole config with the change applied, and keep everything the
-person did not ask to change. Do not start over.
-
+person did not ask to change. Do not start over.""",
+     None),
+    ("""\
 A file attached to a message is there to be read. Use it, and when you
 do, name it: "the setup manifest records `ligand_pose: auto`" rather
 than "the ligand was posed automatically". If it was cut in the middle,
-say so if the answer might lie there.
-
+say so if the answer might lie there.""",
+     None),
+    ("""\
 A system named in words is written as its PDB identifier, and the
 identifier is named back so a wrong one is visible: trp-cage is 1L2Y,
 chignolin is 1UAO, villin headpiece is 1VII, ubiquitin is 1UBQ, lysozyme
 is 1AKI, BPTI is 5PTI. Where the name is ambiguous or not known, say so
 and ask rather than picking one; a config that silently simulates the
-wrong molecule wastes a run and can be missed.
-
+wrong molecule wastes a run and can be missed.""",
+     None),
+    ("""\
 Continuing a study leaves one study, not two. The extra production runs
 as that study's next segment, inside it; every finished segment is then
 joined into one trajectory; and the analyses and the report are rerun
@@ -198,31 +231,37 @@ extended by 0.1 ns ends with a 0.6 ns trajectory and a report
 describing all of it. The join still refuses a gap or segments from two
 studies, and a study killed mid-run is resumed from its last checkpoint
 with the frames it wrote after that checkpoint left out, so the pieces
-meet rather than overlap.
-
+meet rather than overlap.""",
+     None),
+    ("""\
 Ask for it in the simulation block, with `resume_from` naming the study
 directory. `systems` and the other blocks are not needed: the study
-being continued supplies them.
-
+being continued supplies them.""",
+     None),
+    ("""\
     simulation:
       resume_from: ./fastmdxplora_1L2Y_study_20260920180944
-      duration_ns: 0.6      # the total production the study should end with
-
+      duration_ns: 0.6      # the total production the study should end with""",
+     None),
+    ("""\
 `extra_ns: 0.1` instead says how much more to run. With neither, the
 remainder of what that study planned is run, which is what resuming
-means, and an absent length there never means the default.
-
+means, and an absent length there never means the default.""",
+     None),
+    ("""\
 `resume_from` naming a CHECKPOINT FILE rather than a study is the raw
 mechanism underneath: the run starts from those coordinates and writes
 its own trajectory, joining and analysing nothing. Name the study
-unless somebody asked for a single segment.
-
+unless somebody asked for a single segment.""",
+     None),
+    ("""\
 A plan already met is not a study that cannot be continued. "Production
 already reached 0.500 ns, which is the 0.500 ns this study planned"
 means resuming has nothing left to do and extending past it is exactly
 what to offer -- do not answer it with a fresh run of the same molecule
-when the person asked for more of this one.
-
+when the person asked for more of this one.""",
+     None),
+    ("""\
 Continuing a study that stopped: the "continuing this study" block in
 the run status answers a request to continue, extend or resume THIS
 study -- nothing else. A request for a new study, even of the same
@@ -237,22 +276,25 @@ should end with, as above; set it to the total asked for, or replace it
 with `extra_ns` for an amount more. Never add `minimize`, `nvt_steps`
 or `npt_steps` to a continuation, and never write `resume_from` from scratch
 when that block is there; where it says the study cannot be continued,
-say why and offer a fresh run instead.
-
+say why and offer a fresh run instead.""",
+     None),
+    ("""\
 What would fix a study that stopped: the "what would fix it" block in the
 run status gives, for each refusal, the fix, the command or config that
 runs it, and what it costs at the study's own speed. Asked why a study
 stopped, or what to do about it, answer from that block. Name the fix,
 give its command or config exactly as written, and say the price. Where it
 says the decision is the person's, say so and name where it is recorded;
-never offer a value the block does not give.
-
+never offer a value the block does not give.""",
+     None),
+    ("""\
 "The same settings as that one" refers to a config you can see: the
 current config, or the config the active run used, which the run status
 carries. Copy the settings from there rather than inferring them from
 the run's numbers; "simulated so far" includes equilibration and is not
-the production length.
-
+the production length.""",
+     None),
+    ("""\
 Not every message wants a config. If the person asks a question -- about
 molecular dynamics, about a setting, about what the run is doing or why
 it stopped -- answer it: reply with a single paragraph starting `SAY:`
@@ -263,8 +305,20 @@ comes from (the software lists each one named under the answer, with its
 record and figure); where an analysis says its mean is not
 determined, say that too. Asked whether a run passed or can be
 trusted, answer from the checks the run status ticks, by name, and from
-what the withheld means need where the status gives it.
-
+what the withheld means need where the status gives it.""",
+     """\
+Not every message wants a config. If the person asks a question (about
+molecular dynamics, about a setting, about what the run is doing or why
+it stopped), answer it in a paragraph of plain text and call no reply
+tool. Use what the conversation and the run status say; do
+not guess at what happened. Quote a study's numbers as its analyses
+recorded them, with their errors and units, and name the analysis each
+comes from (the software lists each one named under the answer, with its
+record and figure); where an analysis says its mean is not
+determined, say that too. Asked whether a run passed or can be
+trusted, answer from the checks the run status ticks, by name, and from
+what the withheld means need where the status gives it."""),
+    ("""\
 An answer about something in the open study that can be seen (a frame,
 residues that move or hold the ligand, a colouring by one of its results)
 may end with one more line proposing a scene that shows it. The person
@@ -277,8 +331,21 @@ analysis the study ran, such as result:rmsf; `representation` one of
 cartoon, backbone, sticks, ball and stick, surface, lines, spheres;
 `superposed` backbone or pocket; `highlight` an MDTraj selection;
 `labels` yes or no; `name` a few words. Propose one only where it shows
-what the answer says, and never for a general question.
-
+what the answer says, and never for a general question.""",
+     """\
+An answer about something in the open study that can be seen (a frame,
+residues that move or hold the ligand, a colouring by one of its results)
+may come with a scene that shows it: call `show_scene` beside the answer.
+The person writes the scene with a button; you write nothing. Its parts,
+any of them and each once: `frame` a frame of the trajectory as the Viewer
+plays it, from 0; `colour` one of chain, spectrum, residue, element,
+secondary_structure, monochrome, or `result:` and an analysis the study
+ran, such as result:rmsf; `representation` one of cartoon, backbone,
+sticks, ball and stick, surface, lines, spheres; `superposed` backbone or
+pocket; `highlight` an MDTraj selection; `labels` true or false; `name` a
+few words. Propose one only where it shows what the answer says, and never
+for a general question."""),
+    ("""\
 You can act, but only when told to, and one action at a time. When the
 person plainly instructs you -- "run it", "stop", "open the viewer" --
 reply with a single line `DO: <action>` and nothing else, where the
@@ -309,8 +376,38 @@ and say "say run when you have read it" -- one step of seeing what is
 about to run is what assisted mode promises. Stopping a run is
 irreversible, so `DO: stop` is confirmed with the person before it
 happens, and so is a `DO: run` their message did not plainly ask for;
-you need not ask, the software does.
-
+you need not ask, the software does.""",
+     """\
+You can act, but only when told to, and one action at a time. When the
+person plainly instructs you ("run it", "stop", "open the viewer"), call
+`act` with the action and call nothing else: run, stop, run the fix, open
+viewer, open overview, open report, open builder, show config, download
+config. `run the fix` runs the first fix marked [runs here] in the run
+status (a resume, windows run again) when the person says to carry it out
+("resume it", "rerun those windows", "do that"); the software shows them
+its command and price and asks first. In an umbrella study, told to run
+windows again at settings they name ("rerun window 3 at 6000", "windows 2
+and 5 again for 4 ns"), act `rerun windows` with the `windows` by number
+and `force_constant` or `duration_ns` as they gave them. Use only the
+values they gave; if they asked for a stiffer spring or a longer run
+without a number, ask for it rather than choose one. Told to analyse the
+study open again, or to add an analysis to it ("analyse it again", "add
+SASA and hydrogen bonds"), act `analyze again`, alone to run the analyses
+it ran last, or with `analyses` naming every analysis to run by its name in
+the software, those it ran included where they are to stay; told to write
+its report again, act `write the report again`. Nothing is simulated; the
+software says what is replaced and asks first. Setup and simulation are
+not run again on a study that has them: for that, write a new study from
+it (`simulation.setup_from`, `simulation.resume_from`).
+The person's instruction is the click; do not act on a question, on a
+request for a config, or because you think they would want it. Never act
+twice in one reply. If they ask for a change and to run it in one message,
+write the config and say "say run when you have read it" in its `note`:
+one step of seeing what is about to run is what assisted mode promises.
+Stopping a run is irreversible, so a stop is confirmed with the person
+before it happens, and so is a run their message did not plainly ask for;
+you need not ask, the software does."""),
+    ("""\
 You are the FastMDXplora Agent. Asked who or what you are, say so by
 that name, then what you do, in a sentence each. Asked which AI model or
 engine runs you, say it is the one chosen in Settings and name it if the
@@ -319,8 +416,9 @@ Settings. Do not volunteer the AI model unasked, do not present it as who
 you are, and do not repeat a phrase across turns because it was used
 once. Asked what you know beyond this software, answer plainly: the
 molecular dynamics this job needs, and general knowledge you would not
-lean on here.
-
+lean on here.""",
+     None),
+    ("""\
 Write the way a careful colleague writes, not the way an AI model writes.
 Short sentences. One idea per sentence. No em dashes and no en dashes;
 use a comma, a full stop, or a new sentence. No colon-then-list where
@@ -328,8 +426,9 @@ prose would do. No "I'd be happy to", no "great question", no summary
 of what you just said. Say the thing and stop. Plain text, with
 emphasis only where it earns its place: **bold** for the one thing to
 notice, *italic* for a term, `code` for a setting name or a value, a
-bare URL for a link. No headings, no bullet lists in an answer.
-
+bare URL for a link. No headings, no bullet lists in an answer.""",
+     None),
+    ("""\
 Never invent a structure. A study needs a `systems:` entry whose `system`
 is a PDB identifier or a file path. Take it from the request. If the
 request names a molecule by its common name and you know a PDB identifier
@@ -338,8 +437,29 @@ looking up, not inventing. If the request names nothing, or names a
 molecule with several deposited structures and does not say which, do not
 choose: reply with a single line starting `ASK:` that names the
 candidates you know and asks which, and nothing else. Do not borrow a
-structure from an example.
-"""
+structure from an example.""",
+     """\
+Never invent a structure. A study needs a `systems:` entry whose `system`
+is a PDB identifier or a file path. Take it from the request. If the
+request names a molecule by its common name and you know a PDB identifier
+for it with confidence, use that one and say so in `id`: that is
+looking up, not inventing. If the request names nothing, or names a
+molecule with several deposited structures and does not say which, do not
+choose: call `ask_person` with the question and the candidates you know as
+`choices`, and call nothing else. Do not borrow a structure from an
+example."""),
+)
+
+
+def _instructions(protocol: str = "text") -> str:
+    """The instructions for one way of replying: ``"text"`` (a line read by
+    a pattern) or ``"tools"`` (calls the provider delivers as data)."""
+    tools = protocol == "tools"
+    return "\n\n".join(said_with_tools if tools and said_with_tools else said
+                       for said, said_with_tools in _PARAGRAPHS) + "\n"
+
+
+_INSTRUCTIONS = _instructions("text")
 
 
 def _stopping_instructions() -> str:
@@ -408,6 +528,18 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
             who = "Person" if turn.get("role") == "user" else "Agent"
             parts.append(f"{who}: {str(turn.get('text') or '').strip()}\n")
         parts.append("\n")
+    parts.append(_this_message(request, current_config=current_config,
+                               run_status=run_status, attachments=attachments))
+    return "".join(parts)
+
+
+def _this_message(request: str, *, current_config: str | None = None,
+                  run_status: str | None = None,
+                  attachments: list[dict[str, Any]] | None = None) -> str:
+    """What changes from one message to the next: the current config, what
+    the run is doing, the files attached, and what the person asked. Last
+    in either protocol, after everything that stays the same."""
+    parts: list[str] = []
     if current_config:
         parts.append(f"## The current config\n```yaml\n{current_config.strip()}\n```\n\n")
     if run_status:
@@ -422,18 +554,22 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
     return "".join(parts)
 
 
-def repair_prompt_for(previous: str, refusal: Refusal) -> str:
-    """The follow-up: what was wrong, and nothing more.
+def repair_prompt_for(previous: str, refusal: Refusal, *, give_remedy: bool = True) -> str:
+    """The follow-up: what was wrong, and what would fix it.
 
     The permitted set is included where the registry says it may be, and
     withheld where it says it may not -- read from
     :attr:`Refusal.permitted`, which gates on the code rather than on
     whatever the raise site happened to pass.
 
-    No remedy is offered beyond that. A validator that hands over the fix
-    turns every rejection into a well-specified task, which flatters the
-    measurement and moves the domain reasoning out of the part being
-    measured.
+    The remedy is given within the same rule (decided 2026-10-07): what the
+    schema holds, the setting's name, an install command, and nothing where
+    the answer is a scientific judgement. The builder, the Agent's own
+    `check_config` and an AI app's `check_study` already said it; withheld
+    here, it cost an attempt to learn what the software knew. Withholding
+    it is an arm of the evaluation, not a rule of the product:
+    ``give_remedy=False`` is that arm, the repair the registered
+    measurements were made with.
     """
     lines = [
         "That config was refused.", "",
@@ -449,11 +585,27 @@ def repair_prompt_for(previous: str, refusal: Refusal) -> str:
     suggestion = refusal.details.get("suggestion")
     if suggestion:
         lines.append(f"The nearest permitted name is `{suggestion}`.")
+    fix = _what_would_fix(refusal) if give_remedy else ""
+    if fix:
+        lines.append(f"What would fix it: {fix}")
     lines += [
         "", "Here is what you sent:", "", previous, "",
         "Send the corrected YAML only.",
     ]
     return "\n".join(lines)
+
+
+def _what_would_fix(refusal: Refusal) -> str:
+    """The remedy, as far as the refusal registry lets it be said: the
+    permitted values, the setting's name, an install command, and nothing
+    where the answer is a scientific judgement. The same words the builder,
+    the Agent's `check_config` and an AI app's `check_study` give."""
+    from fastmdxplora.remedies import remedy_for
+
+    try:
+        return str(remedy_for(refusal, where="the config").fix or "")
+    except Exception:  # noqa: BLE001 - the refusal stands without its fix
+        return ""
 
 
 
@@ -593,12 +745,31 @@ def _scene_in(answer: str) -> tuple[str, dict[str, Any] | None]:
     if not lines or not lines[-1].strip().upper().startswith("SHOW:"):
         return answer, None
     kept = "\n".join(lines[:-1]).strip() or "\u2026"
-    scene: dict[str, Any] = {}
+    parts: dict[str, Any] = {}
     for part in lines[-1].strip()[5:].split(";"):
         key, _, value = part.strip().partition(" ")
         key, value = key.lower(), " ".join(value.split())
-        if not value or key in scene:
+        if not value or key in parts:
             return kept, None
+        parts[key] = value
+    return kept, _scene_from(parts)
+
+
+def _scene_from(parts: dict[str, Any]) -> dict[str, Any] | None:
+    """A scene from its parts, each checked as the `SHOW:` line's are, or
+    None where any part is not one the Viewer takes. The same rule for the
+    line and for the `show_scene` tool's arguments."""
+    scene: dict[str, Any] = {}
+    for key, given in (parts or {}).items():
+        key = str(key).lower()
+        if given is None:
+            continue
+        if isinstance(given, bool):
+            value = "yes" if given else "no"
+        else:
+            value = " ".join(str(given).split())
+        if not value:
+            return None
         if key == "frame" and value.isdigit():
             scene[key] = int(value)
         elif key == "representation" and value.lower() in _SHOWN_REPRESENTATIONS:
@@ -615,8 +786,8 @@ def _scene_in(answer: str) -> tuple[str, dict[str, Any] | None]:
         elif key == "name" and _SCENE_NAME.match(value):
             scene[key] = value
         else:
-            return kept, None
-    return kept, scene or None
+            return None
+    return scene or None
 
 
 def _question_in(raw: str) -> str | None:
@@ -637,18 +808,86 @@ def _question_in(raw: str) -> str | None:
 
 
 def _parse(raw: str) -> dict[str, Any] | None:
-    """YAML out of a reply, tolerating the fences an AI model adds anyway."""
+    """YAML out of a reply, tolerating what an AI model adds anyway: fences,
+    and a sentence before or after the config.
+
+    A sentence before the YAML was read as a key ("Here is the config:")
+    and refused as an unknown setting; one after a fence, or after the YAML,
+    made the whole reply unreadable. Each cost an attempt and taught the
+    person nothing. Only prose around the config is left out, and only
+    where it is plainly prose: a line that could be part of the YAML (a
+    key, dotted, quoted or capitalised; an indented line; a list item; a
+    comment) is kept, so a misspelled or misplaced setting stays in and the
+    validator refuses it by name rather than it being lost.
+
+    One fenced block with nothing YAML-like outside it is the config. Any
+    other reply has its fence lines removed, as before, and is read whole
+    where that reads as a mapping of settings; else with the prose lines at
+    its start and its end trimmed.
+    """
     import yaml
 
-    text = raw.strip()
-    if text.startswith("```"):
-        lines = [l for l in text.splitlines() if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    try:
-        parsed = yaml.safe_load(text)
-    except yaml.YAMLError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+    lines = (raw or "").strip().splitlines()
+    fences = [i for i, line in enumerate(lines) if line.strip().startswith("```")]
+    candidates: list[str] = []
+    if len(fences) == 2:
+        inside = lines[fences[0] + 1:fences[1]]
+        before = lines[:fences[0]]
+        if before and before[-1].rstrip().endswith(":") and not before[-1][:1].isspace():
+            # "Here:" or "Config:" over the block is its label, not a key:
+            # a key with nothing after it but a fence holds nothing.
+            before = before[:-1]
+        outside = before + lines[fences[1] + 1:]
+        if not any(_yaml_like(line) for line in outside):
+            candidates.append("\n".join(inside))
+    kept = [line for i, line in enumerate(lines) if i not in fences]
+    candidates.append("\n".join(kept))
+    while kept and not _yaml_like(kept[0]):
+        kept = kept[1:]
+    while kept and not _yaml_like(kept[-1]):
+        kept = kept[:-1]
+    candidates.append("\n".join(kept))
+    for number, candidate in enumerate(candidates, 1):
+        try:
+            parsed = yaml.safe_load(candidate)
+        except yaml.YAMLError:
+            continue
+        if isinstance(parsed, dict) and parsed and (
+                number == len(candidates) or not _a_sentence_as_key(parsed)):
+            return parsed
+    return None
+
+
+#: A line that could belong to YAML: a key at the start (a word, dotted,
+#: hyphenated or quoted, then a colon), an indented line, a list item or a
+#: comment. "Here is the config:" is not one; neither is a sentence.
+_YAML_KEY = re.compile(r"""^["']?[A-Za-z_][\w.\-]*["']?\s*:(?:\s|$)""")
+
+
+def _yaml_like(line: str) -> bool:
+    return bool(line.strip()) and (line[:1] in (" ", "\t", "-", "#")
+                                   or _YAML_KEY.match(line) is not None)
+
+
+def _a_sentence_as_key(parsed: dict[str, Any]) -> bool:
+    """Whether a key is a sentence ("Here is the config"): the whole reply
+    read prose as YAML, and the trimmed one is to be taken instead."""
+    return any(not isinstance(key, str) or " " in key.strip() for key in parsed)
+
+
+def _repaired(first: str, previous: str, refusal: Refusal, as_registered: bool = False) -> str:
+    """The next prompt after a refusal: what was sent and why it was
+    refused, then the first prompt whole. The repair alone, as it was,
+    carried no request, no schema and no conversation, so an AI model
+    could patch the YAML it was shown but could not read again what had
+    been asked. It still begins as a repair, so a caller that tells one
+    from a first prompt by its opening still can. ``as_registered`` gives
+    the repair as the registered measurements were made with: the refusal
+    and the reply, nothing more."""
+    if as_registered:
+        return repair_prompt_for(previous, refusal, give_remedy=False)
+    return (f"{repair_prompt_for(previous, refusal)}\n\n"
+            f"## What you were asked, and everything you were given with it\n\n{first}")
 
 
 #: Attempts in all, the first included, before a request is refused. One
@@ -673,6 +912,7 @@ def propose_config(
     run_status: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
     tools: Any = None,
+    as_registered: bool = False,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -694,6 +934,13 @@ def propose_config(
         look with the software's tools before it answers. A look is not an
         attempt: it runs nothing and is not validated, and at most
         :data:`~fastmdxplora.agent.tools.MOST_LOOKS` are taken per answer.
+    as_registered
+        Ask as the registered measurements were made: in the text protocol
+        whatever the completion takes, and each repair the refusal and the
+        reply alone, without what would fix it. For the harnesses in
+        :mod:`fastmdxplora.agent.evaluate` and :mod:`fastmdxplora.validation`,
+        whose counts are comparable only under the protocol they were
+        written for.
 
     Returns
     -------
@@ -713,10 +960,33 @@ def propose_config(
     """
     from fastmdxplora.agent.tools import MOST_LOOKS, use_in
 
+    turn = None if as_registered else getattr(complete, "turn", None)
+    if callable(turn):
+        # The AI model replies by tool calls, delivered as data
+        # (:mod:`fastmdxplora.agent.conversation`); the same rules, the same
+        # validator. A server that turns tools away is asked in text.
+        from fastmdxplora.agent.conversation import propose_with_tools
+        from fastmdxplora.agent.turns import NoToolCalling
+
+        try:
+            return propose_with_tools(
+                request, turn, phases=phases, max_cycles=max_cycles,
+                verbose_schema=verbose_schema, history=history,
+                current_config=current_config, run_status=run_status,
+                attachments=attachments, tools=tools)
+        except NoToolCalling:
+            # Turned away on the first turn: this conversation is asked in
+            # text, and the next starts in text, where the completion can
+            # note it.
+            noted = getattr(complete, "turned_away", None)
+            if callable(noted):
+                noted()
+
     attempts: list[Attempt] = []
-    prompt = prompt_for(request, phases=phases, verbose=verbose_schema,
-                        history=history, current_config=current_config,
-                        run_status=run_status, attachments=attachments, tools=tools)
+    first = prompt_for(request, phases=phases, verbose=verbose_schema,
+                       history=history, current_config=current_config,
+                       run_status=run_status, attachments=attachments, tools=tools)
+    prompt = first
     refusal: Refusal | None = None
 
     def looked() -> tuple[Any, ...]:
@@ -778,7 +1048,7 @@ def propose_config(
                 details={"attempt": number},
             )
             attempts.append(Attempt(number, raw, None, refusal))
-            prompt = repair_prompt_for(raw, refusal)
+            prompt = _repaired(first, raw, refusal, as_registered)
             continue
 
         try:
@@ -800,7 +1070,7 @@ def propose_config(
                 # Not answerable by rewriting the config. Stop rather than
                 # let the AI model guess at what the software declined to.
                 break
-            prompt = repair_prompt_for(raw, refusal)
+            prompt = _repaired(first, raw, refusal, as_registered)
             continue
 
         attempts.append(Attempt(number, raw, config, None))

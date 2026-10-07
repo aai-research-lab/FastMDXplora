@@ -199,7 +199,10 @@ def ask(question: Question, truth: Any, complete: Callable[[str], str], *,
     tools = (toolbox or Toolbox)() if with_tools else None
     arm = "tools" if with_tools else "no tools"
     try:
-        proposal = propose_config(question.request, complete, tools=tools)
+        # As registered: in the text protocol, whatever the AI model takes,
+        # since the registrations fix the prompt the replies were judged on.
+        proposal = propose_config(question.request, complete, tools=tools,
+                                  as_registered=True)
     except Exception as exc:  # noqa: BLE001 - a failure is a result here
         return Trial(question.name, arm, "", "failed", why=str(exc))
     if proposal.answer:

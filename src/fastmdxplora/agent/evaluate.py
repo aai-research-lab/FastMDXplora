@@ -296,18 +296,25 @@ def measure(
     requests: "tuple[Request, ...] | None" = None,
     max_cycles: int = DEFAULT_ATTEMPTS,
     verbose_schema: bool = True,
+    as_registered: bool = True,
 ) -> Report:
     """Run every request and report what happened.
 
     ``verbose_schema`` is worth varying. The help text is most of the
     prompt, and whether it earns those tokens is exactly the sort of thing
     this exists to settle rather than assume.
+
+    ``as_registered`` keeps the protocol the counts in ``developers.md``
+    were made with: the text protocol, and a repair that says what was
+    refused without what would fix it, so cycles read as competence.
+    ``False`` measures the Agent as it now asks.
     """
     outcomes: list[Outcome] = []
     for request in (requests or REQUESTS):
         proposal = propose_config(
             request.text, complete, phases=list(request.phases),
-            max_cycles=max_cycles, verbose_schema=verbose_schema)
+            max_cycles=max_cycles, verbose_schema=verbose_schema,
+            as_registered=as_registered)
         codes = tuple(a.refusal.code for a in proposal.attempts if a.refusal)
         wrong = tuple(request.failures(proposal.config)
                       if proposal.config else ())

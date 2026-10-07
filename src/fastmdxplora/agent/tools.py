@@ -134,7 +134,7 @@ class Toolbox:
         return tuple(self._table())
 
     def describe(self) -> str:
-        """The tools as the prompt states them."""
+        """The tools as the text protocol's prompt states them."""
         lines = [
             "## Looking before you answer",
             "You can look with the software's own tools before you reply. Reply "
@@ -144,18 +144,36 @@ class Toolbox:
             f"software said\". At most {MOST_LOOKS} looks before each reply. "
             "The tools only look: nothing is run, written or started by one.",
             "",
-            "Look rather than guess. Preview before you state a system's size or "
-            "a study's time; check a config you are unsure of before you hand it "
-            "over; inspect a structure before you choose its chains, its ligand "
-            "or a residue's state; check a selection before you write one into a "
-            "config. What a tool says is the software's own finding: quote it as "
-            "it is, and never contradict it with a number of your own. A tool that "
-            "refused says why; do not look again with the same arguments.",
+            _LOOK_RATHER_THAN_GUESS,
             "",
         ]
         for name, (arguments, what, _) in self._table().items():
             lines.append(f"- `{name}`: {what} Arguments: {arguments}")
         return "\n".join(lines) + "\n"
+
+    def guidance(self) -> str:
+        """How to look, for an AI model the tools are declared to: the same
+        rule as :meth:`describe` gives, without the text protocol's format."""
+        return ("## Looking before you answer\n"
+                "You can look with the software's own tools before you reply; the "
+                "software runs each and gives you what it said. At most "
+                f"{MOST_LOOKS} looks before each reply. The tools only look: "
+                "nothing is run, written or started by one.\n\n"
+                + _LOOK_RATHER_THAN_GUESS + "\n")
+
+    def specs(self) -> list[Any]:
+        """Each tool as it is declared to the AI model, its arguments as a
+        JSON schema: the ones here by their own schema, one from outside
+        by the arguments it describes in words."""
+        from fastmdxplora.agent.turns import ToolSpec
+
+        found = []
+        for name, (arguments, what, _) in self._table().items():
+            schema = _SCHEMAS.get(name) or {
+                "type": "object", "additionalProperties": True,
+                "description": f"Arguments: {arguments}"}
+            found.append(ToolSpec(name, f"The software tells you {what}", schema))
+        return found
 
     def use(self, name: str, asked: dict[str, Any]) -> Look:
         """Run one tool and keep what it said. Never raises: a tool that
@@ -191,6 +209,16 @@ class Toolbox:
             parts.append("That is all the looking there is for this reply. Answer now, "
                          "from what the software said.")
         return "\n\n".join(parts) + "\n\n"
+
+
+_LOOK_RATHER_THAN_GUESS = (
+    "Look rather than guess. Preview before you state a system's size or "
+    "a study's time; check a config you are unsure of before you hand it "
+    "over; inspect a structure before you choose its chains, its ligand "
+    "or a residue's state; check a selection before you write one into a "
+    "config. What a tool says is the software's own finding: quote it as "
+    "it is, and never contradict it with a number of your own. A tool that "
+    "refused says why; do not look again with the same arguments.")
 
 
 class _Refused(CodedError, Exception):
@@ -593,6 +621,31 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "how many atoms and which residues the selection matches in that "
         "structure.",
         _check_selection),
+}
+
+
+_A_STUDY = {"type": "object", "description": "A study config, as the file holds it."}
+_A_STRUCTURE = {"type": "string",
+                "description": "A PDB identifier such as 1UBQ, or the path to a PDB or "
+                               "mmCIF file."}
+_A_FOLDER = {"type": "string", "description": "A study's folder, as given to --output."}
+
+#: Each tool's arguments as the AI model is told them, by name.
+_SCHEMAS: dict[str, dict[str, Any]] = {
+    "inspect_structure": {"type": "object", "properties": {"system": _A_STRUCTURE},
+                          "required": ["system"]},
+    "preview_setup": {"type": "object", "properties": {"config": _A_STUDY},
+                      "required": ["config"]},
+    "check_config": {"type": "object", "properties": {"config": _A_STUDY},
+                     "required": ["config"]},
+    "read_study": {"type": "object", "properties": {"study": _A_FOLDER},
+                   "required": ["study"]},
+    "methods_of_study": {"type": "object", "properties": {"study": _A_FOLDER},
+                         "required": ["study"]},
+    "check_selection": {"type": "object", "properties": {
+        "system": _A_STRUCTURE,
+        "expression": {"type": "string", "description": "An MDTraj selection."}},
+        "required": ["system", "expression"]},
 }
 
 

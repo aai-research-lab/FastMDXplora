@@ -725,13 +725,16 @@ DECISION_KEYS = ("why", "source", "alternatives")
 def settings_named() -> set[str]:
     """Every setting a decision may be about, by its dotted name: each
     phase's as `phase.name`, the scheduling block's as `execution.name`,
-    and the top level's by its own name."""
+    and the top level's by its own name, `systems` and `sweep` among them:
+    which structure a study simulates, and how many replicas, are the
+    choices a reader most wants the reason for."""
     from fastmdxplora.config.schema import EXECUTION
 
     names = {f"{phase}.{field.name}" for phase, schema in PHASE_SCHEMAS.items()
              for field in schema.fields}
     names |= {f"execution.{field.name}" for field in EXECUTION.fields}
     names |= {field.name for field in TOP_LEVEL.fields if field.name != "decisions"}
+    names |= {"systems", "sweep"}
     return names
 
 
