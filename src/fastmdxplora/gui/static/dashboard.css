@@ -1428,6 +1428,9 @@ button {
 .files-menu [role="menuitem"]:hover, .files-menu [role="menuitem"]:focus-visible { background: var(--panel-hover); outline: none; }
 .files-menu-path { display: block; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
 
+.files-dialog-said { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
+.files-dialog-kept { margin: 10px 0 0; padding-left: 18px; font-size: var(--text-xs); color: var(--text-muted); }
+
 @media (max-width: 760px) {
     .files-tiles { grid-template-columns: 1fr; }
     .files-search { max-width: none; flex-basis: 100%; }

@@ -90,11 +90,10 @@ def test_beyond_loopback_neither_is_offered_nor_answered(study):
     with _serving(study, allow_control=False) as url:
         assert _ask(url + "/api/files/sha256?path=simulation/production.dcd")[0] == 403
         assert _ask(url + "/api/files/reveal", {"path": "simulation/production.dcd"})[0] == 403
-        assert _ask(url + "/api/files-page")[1]["can"] == {"zip": False, "reveal": False,
-                                                          "sha": False}
+        assert not any(_ask(url + "/api/files-page")[1]["can"].values())
     with _serving(study) as url:
-        assert _ask(url + "/api/files-page")[1]["can"] == {"zip": True, "reveal": True,
-                                                          "sha": True}
+        can = _ask(url + "/api/files-page")[1]["can"]
+        assert can["zip"] and can["reveal"] and can["sha"]
 
 
 def test_each_system_s_file_manager_is_asked_its_own_way(tmp_path, monkeypatch):

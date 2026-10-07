@@ -23,8 +23,13 @@ in Finder (Explorer, or its folder; on the person's own computer) or
 copy its SHA-256. Each analysis
 is a row under what it studies, with its figure, the mean it recorded
 where its error was determined, its files and **Open in Analysis**. The
-run record, what `--rerun` set aside and the scratch the Viewer and the
-live view write again are folded, the live view's snapshots one row.
+run record, what `--rerun` set aside and the scratch (the Viewer's,
+written again from the trajectory when needed, and the live view's
+snapshots) are folded, the snapshots one row; **Clear scratch…** removes
+it on the person's own computer after saying how much would go and that
+the snapshots go for good, judging each run by its own record: never
+what a run still going needs, nor the snapshots of a run with no
+trajectory or one that failed or ended without saying so.
 **Find a file**, a filter by kind, a sort, **Folder view**, and a run
 picker for a study of several runs. Rendered by the server
 (`gui/files_page.py`, `GET /api/files-page`), compressed for a remote

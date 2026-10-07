@@ -1265,6 +1265,24 @@ def make_handler(
                 shown, detail = _reveal_local_path(target)
                 self._send_json({"ok": shown, "error": "" if shown else detail})
                 return
+            if path == "/api/files/clear-scratch":
+                # The Viewer's and the live view's scratch removed, after the
+                # page has asked (`dry` says what would go). On the person's
+                # own computer only: it deletes files.
+                if hosting is not None:
+                    self._send_json({"ok": False, "error": "Not available in a hosted GUI."})
+                    return
+                from fastmdxplora.gui.files_page import clear_scratch
+
+                root = app_runtime.data_root()
+                if _no_study(root):
+                    self._send_json({"ok": False, "error": "No study is open."})
+                    return
+                self._send_json(clear_scratch(
+                    root, _artifact_records(root),
+                    running=bool(app_runtime.snapshot().get("process_running")),
+                    dry=bool((payload or {}).get("dry"))))
+                return
             if path == "/api/study-tags":
                 # A study's tags and note, as the person set them on its card,
                 # kept in its folder beside its records (study_tags.py).
@@ -1955,7 +1973,8 @@ def make_handler(
             from fastmdxplora.gui.files_page import Links, reveal_word
 
             own = allow_control and hosting is None
-            return Links(can={"zip": allow_control, "reveal": own, "sha": allow_control},
+            return Links(can={"zip": allow_control, "reveal": own, "sha": allow_control,
+                              "clear": own},
                          reveal_word=reveal_word())
 
         def _send_files_page(self, root: Path, view: str) -> None:

@@ -13,8 +13,9 @@ folded record. It is now:
   analyses are a row each, under what they study, with the figure, the
   value the analysis determined, and a link to it on the Analysis page.
 - **What is kept beside them**, folded: the run's records, what `--rerun`
-  set aside, and the scratch the Viewer and the live view write again when
-  needed, which on this computer can be cleared.
+  set aside, and the scratch: the Viewer's, written again from the
+  trajectory when needed, and the live view's snapshots of the run as it
+  went; on this computer it can be cleared.
 
 It is rendered here, for the GUI (`GET /api/files-page`) and for the
 standalone dashboard the report writes alike, so the two cannot drift;
@@ -43,7 +44,8 @@ __all__ = ["FOLDED", "Links", "files_model", "human_size", "render", "render_fol
 FOLDED = frozenset({"record", "previous", "scratch"})
 
 #: What a folded section's heading says of it besides its size.
-_PHASE_NOTE = {"previous": "one copy of each phase kept", "scratch": "written again when needed"}
+_PHASE_NOTE = {"previous": "one copy of each phase kept",
+               "scratch": "the Viewer's, written again when needed, and the live view's snapshots"}
 
 #: Analyses the study writes outside `analysis/`, by their folder.
 _OUTSIDE_ANALYSIS = {"comparison": "The runs compared", "free_energy": "Free energy",
@@ -884,3 +886,121 @@ def zip_entries(out: Any, entries: list[tuple[Path, str]], *,
                 shutil.copyfileobj(handle, sink, 1 << 20)
         for name, data in extra or []:
             archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+
+
+# ---------------------------------------------------------------------------
+# Clearing the scratch
+# ---------------------------------------------------------------------------
+
+#: What a run's record says while it goes on, and once it has finished.
+_GOING = frozenset({"running", "starting", "paused"})
+_DONE = frozenset({"completed", "complete", "ok", "success", "succeeded"})
+
+
+def _snapshot(inner: str) -> bool:
+    """Whether a scratch file is one of the live view's snapshots, written
+    by the run as it went and by nothing after: the rest of the scratch is
+    the Viewer's, written again from the trajectory when next needed."""
+    parts = PurePosixPath(inner).parts
+    return "live_frames" in parts[:-1] or parts[-1] == "live_frame_history.json"
+
+
+def _run_folder(inner: str) -> str:
+    """The folder of the run a scratch file is of: the one holding the
+    `simulation/` it is in (the study's, a run's, a segment's), or "" for
+    the Viewer's fits at the study's root."""
+    parts = PurePosixPath(inner).parts
+    if "simulation" not in parts[:-1]:
+        return ""
+    return "/".join(parts[:parts.index("simulation")])
+
+
+def _why_kept(folder: Path) -> str:
+    """Why a run's snapshots are kept, or "" where they can go: a run still
+    going writes and reads them; a run with no trajectory has only them to
+    play; and a run that failed or ended without saying so may have a
+    trajectory cut short, which the Viewer plays the snapshots instead of."""
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+
+    status = status_as_it_stands(folder)
+    said = str(status.get("status") or "").lower()
+    if said in _GOING:
+        return "it is still running"
+    has_trajectory = False
+    for trajectory in (folder / "joined" / "production.dcd", folder / "simulation" / "production.dcd"):
+        try:
+            if trajectory.stat().st_size > 0:
+                has_trajectory = True
+                break
+        except OSError:
+            continue
+    if not has_trajectory:
+        return "it has no trajectory, and the snapshots are all the Viewer has to play"
+    if status and said not in _DONE:
+        return (f"the run {'was ' + said if said else 'did not say it finished'}, and its "
+                "trajectory may be cut short: the snapshots may be all the Viewer can play")
+    return ""
+
+
+def clear_scratch(root: Path, records: list[dict[str, Any]], *, running: bool,
+                  dry: bool = False) -> dict[str, Any]:
+    """Remove the scratch (`study_files.is_scratch`), or with ``dry`` say
+    what would go: the Viewer's, which it writes again from the trajectory
+    when next needed, and the live view's snapshots of a run that finished
+    with its trajectory, which nothing writes again. Never while the study
+    runs, and each run's snapshots judged by that run's own record (a
+    study's, a run's of several, a segment's). A link is removed as a link:
+    resolved, the file it pointed to went, a trajectory among them."""
+    if running:
+        return {"ok": False, "error": "The study is running; its scratch is in use.",
+                "files": 0, "bytes": 0, "snapshots": 0, "kept": []}
+    root = Path(root).resolve()
+    going: list[Path] = []
+    kept: dict[str, str] = {}
+    judged: dict[str, str] = {}
+    size = snapshots = 0
+    for record in records:
+        rel = str(record["path"])
+        phase, _, _ = place(rel)
+        if phase != "scratch":
+            continue
+        if _snapshot(rel):
+            folder = _run_folder(rel)
+            if folder not in judged:
+                judged[folder] = _why_kept(root / folder if folder else root)
+            if judged[folder]:
+                kept[folder] = judged[folder]
+                continue
+        target = root / rel
+        try:
+            # Its folder in the study, not where a link leads.
+            target.parent.resolve().relative_to(root)
+            info = target.lstat()
+        except (OSError, ValueError):
+            continue
+        going.append(target)
+        size += info.st_size
+        snapshots += _snapshot(rel)
+    said = {"ok": True, "files": len(going), "bytes": size, "snapshots": snapshots,
+            "kept": [{"run": folder, "why": why} for folder, why in kept.items()]}
+    if dry:
+        return said
+    removed = freed = 0
+    for target in going:
+        try:
+            freed += target.lstat().st_size
+            target.unlink()
+            removed += 1
+        except OSError:
+            continue
+    # The folders scratch alone filled, now empty.
+    for folder in sorted({t.parent for t in going}, key=lambda p: len(p.parts), reverse=True):
+        while folder != root and folder.name in ("live_frames", "frames_pieces", "viewer_runs",
+                                                 "viewer_beside"):
+            try:
+                folder.rmdir()
+            except OSError:
+                break
+            folder = folder.parent
+    said.update(files=removed, bytes=freed)
+    return said

@@ -46,10 +46,11 @@ _PHASE_OF_FOLDER = {
 #: Kept with the study by the Viewer, at its root: what a person made.
 _SAVED_NAMES = frozenset({"viewer_views.json", "viewer_selections.json", "study_tags.json"})
 
-#: What the Viewer and the live view write, and write again when asked:
-#: the frames sent to the browser, the snapshots of a run as it goes, and
-#: what the Viewer computed from the frames. Each is rebuilt from the
-#: trajectory when it is next needed, and none is a result.
+#: What the Viewer and the live view write: the frames sent to the browser
+#: and what the Viewer computed from them, each written again from the
+#: trajectory when next needed; and the snapshots of a run as it goes,
+#: which nothing writes again, and which the Viewer plays only while the
+#: run goes on or where its trajectory cannot be read. None is a result.
 _SCRATCH_FOLDERS = frozenset({"live_frames", "frames_pieces"})
 _SCRATCH_TOP = frozenset({"viewer_runs", "viewer_beside"})
 _SCRATCH_IN_SIMULATION = frozenset({
