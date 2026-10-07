@@ -122,20 +122,37 @@ def _links_from_the_report(text: str, report_dir: Path, base: Path) -> str:
     load. A link that names nothing from report/ but names a file from the
     study's root is read as the second, and the report's file is left as it
     was written.
+
+    A link to a file the study does not hold is shown as its words alone:
+    a study shared without its standalone page (the demo is one) linked
+    `dashboard.html` from its first lines, and the link went nowhere. The
+    report's line naming that page goes with it.
     """
     import re
     from urllib.parse import unquote
 
+    def held(path: str) -> bool:
+        return (report_dir / path).exists() or (base / path).exists()
+
     def resolved(found: "re.Match[str]") -> str:
-        target, rest = found.group(1), found.group(2) or ""
+        image, words, target = found.group(1), found.group(2), found.group(3)
+        rest = found.group(4) or ""
         if re.match(r"^([a-z][a-z0-9+.-]*:|/|#|\.\./)", target, re.IGNORECASE):
             return found.group(0)
         path = unquote(target.split("#")[0].split("?")[0])
-        if not path or (report_dir / path).exists() or not (base / path).is_file():
+        if not path or (report_dir / path).exists():
             return found.group(0)
-        return f"]({'../' + target}{rest})"
+        if (base / path).is_file():
+            return f"{image}[{words}]({'../' + target}{rest})"
+        return found.group(0) if image or (base / path).exists() else words
 
-    return re.sub(r'\]\(([^)\s]+)(\s+"[^"]*")?\)', resolved, text)
+    lines = []
+    for line in text.splitlines(keepends=True):
+        named = re.fullmatch(r"\s*_Dashboard: \[[^\]]*\]\(([^)\s]+)\)_\s*", line)
+        if named and not held(unquote(named.group(1))):
+            continue
+        lines.append(line)
+    return re.sub(r'(!?)\[([^\]]*)\]\(([^)\s]+)(\s+"[^"]*")?\)', resolved, "".join(lines))
 
 
 def _generated_line(text: str) -> str:

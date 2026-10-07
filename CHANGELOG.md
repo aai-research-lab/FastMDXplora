@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Report page links only what the study holds
+
+**Fixed:** a study shared without its standalone page (the demo leaves it
+out) showed `Dashboard: dashboard.html` as the first link on the Report
+page, and it went nowhere. A link to a file the study does not hold is shown
+as its words, and the report's line naming the standalone page is left out
+while the page is not there. The report on disk is unchanged.
+
 ### The Files page, in the order the study ran
 
 **Changed:** the Files page was every file in cards of two across, grouped

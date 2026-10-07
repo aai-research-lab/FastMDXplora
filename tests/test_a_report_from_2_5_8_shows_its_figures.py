@@ -52,11 +52,12 @@ def test_each_link_is_read_as_it_resolves(tmp_path):
     said = _links_from_the_report(REPORT, root / "report", root)
     assert "](../analysis/rmsd/rmsd.png)" in said
     assert "](../analysis/rmsd/rmsd.dat)" in said
-    # Already right, beside the report, missing everywhere, or not a file.
+    # Already right, beside the report, or not a file.
     for kept in ("](analysis_summary.png)", "](../analysis/rg/rg.png)",
-                 "](analysis/missing.png)", "](https://example.org/analysis/rmsd/rmsd.png)",
-                 "](#summary)"):
+                 "](https://example.org/analysis/rmsd/rmsd.png)", "](#summary)"):
         assert kept in said
+    # Missing everywhere: its words, not a link that goes nowhere.
+    assert "](analysis/missing.png)" not in said and " nothing," in said
     # The report on disk is as it was written.
     assert (root / "report" / "report.md").read_text(encoding="utf-8") == REPORT
 
