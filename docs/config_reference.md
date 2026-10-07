@@ -62,6 +62,7 @@ What is kept, what is repaired, and how it is protonated.
 | `chains` | list | the declared assembly | Chains to simulate, by deposited ID, as `[A, B]`. Unset, the biological assembly the file declares, or every chain where it declares none |
 | `build_missing_termini` | bool | `false` | Build unresolved residues past the ends of a chain, not only the gaps between resolved ones |
 | `fixed_pdb` | str | — | An already-fixed PDB to use directly, skipping PDBFixer |
+| `preparation_audit` | bool | `false` | Keep a record of each step of the preparation in `setup/preparation_audit.json`: the structure's SHA-256 and counts after each, and a copy within 16 MB a file and 64 MB in all. It only observes: the system prepared is the same with it and without it |
 | `mutations` | list | — | Point substitutions, as `L99A` or `LEU-99-ALA` |
 | `mutation_chain` | str | first chain | Which chain the mutations apply to |
 

@@ -190,6 +190,22 @@ another study was opened, is refused (`agent.view.changed`), and what was
 sent is kept with the study it was about. From the context-aware Agent of
 Prince Otegbulu (#51) and Derrick Kwan (#52).
 
+### What preparation did to the structure, step by step
+
+**`setup.preparation_audit: true` keeps a record of each step of the
+preparation.** The structure as supplied, as resolved, after each model,
+chain and heterogen choice, after each PDBFixer step (mutations, heterogens
+removed, missing residues and atoms added, residues replaced, hydrogens
+added at the pH) and as the system saved, each with its SHA-256, its counts
+of atoms, residues, bonds and hydrogens, and a copy of the file (at most 16
+MB each, 64 MB in all), in `setup/preparation_audit.json` and
+`setup/audit/`; a preparation that stops says so. It observes and never
+chooses: the system and state prepared are the same byte for byte with it
+and without it, a capture that fails is said as a warning and setup goes
+on, and the record says that hydrogens added do not by themselves establish
+a protonation state. Off by default. From the preparation audit of Prince
+Otegbulu (#51) and Derrick Kwan (#52).
+
 ### The demo study is fetched the first time it is opened
 
 **Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the

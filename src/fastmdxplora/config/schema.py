@@ -379,6 +379,12 @@ SETUP = PhaseSchema(
               "Path to an already-fixed PDB to use directly, skipping "
               "PDBFixer. Default: run PDBFixer on the input.",
               example="prepared.pdb"),
+        Field("preparation_audit", bool, False,
+              "Keep a record of each step of the preparation in "
+              "setup/preparation_audit.json: the structure's SHA-256 and "
+              "counts after each, and a copy within 16 MB a file and 64 MB "
+              "in all. It only observes: the system prepared is the same "
+              "with it and without it."),
         Field("forcefield", str, "auto",
               "Named force field. "
               "Resolves to the right XML files and water model. For an "
@@ -1139,6 +1145,9 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "How much water, of what kind, at what salt concentration.",
          ("water_model", "solvent_padding_nm", "box_shape", "neutralize",
           "ion_positive", "ion_negative", "ion_concentration_M", "random_seed")),
+        ("How preparation is observed",
+         "Whether setup saves bounded observational evidence for this run.",
+         ("preparation_audit",)),
         ("The force field",
          "What the atoms are, and which motions are held rigid.",
          ("forcefield", "force_field", "constraints", "rigid_water",

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +43,11 @@ if TYPE_CHECKING:
     from fastmdxplora.orchestrator import FastMDXplora
 
 logger = get_logger("setup")
+
+#: The recorder of this preparation, where `setup.preparation_audit` asks for
+#: one (`setup/audit.py`); read by the repair however deep it is called, so
+#: it never rides in the parameters the manifest records.
+_RECORDER: ContextVar[Any] = ContextVar("preparation_recorder", default=None)
 
 
 # Default parameters. The CHARMM36 + CHARMM36 water choice matches
@@ -644,6 +650,7 @@ def _repaired_complex(params: dict, input_pdb, setup_dir):
         settings = dict(arguments)
         set_by_hand = fix_pdb_with_pdbfixer(
             settings.pop("input_pdb"), str(prepared), complex_pdb=str(repaired),
+            audit=_RECORDER.get(),
             **settings)
     except StudyError:
         raise
@@ -1064,11 +1071,23 @@ def run(
     kept = random.getstate()
     random.seed(seed)
     threads = _one_cpu_thread()
+    audit = None
+    if params.get("preparation_audit"):
+        from fastmdxplora.setup.audit import PreparationRecorder
+
+        audit = PreparationRecorder(Path(output_dir))
+    # This preparation's recorder, or none, and never another's afterwards.
+    recording = _RECORDER.set(audit)
     try:
         return _run(orchestrator=orchestrator, output_dir=output_dir,
                     **{**options, "_random_seed": seed,
                        "_random_seed_drawn": given is None})
+    except BaseException as exc:
+        if audit is not None:
+            audit.stopped(exc)
+        raise
     finally:
+        _RECORDER.reset(recording)
         random.setstate(kept)
         threads()
 
@@ -1132,6 +1151,7 @@ def _run(
     setup_dir = output_dir
 
     params: dict[str, Any] = {**DEFAULTS, **options}
+    audit = _RECORDER.get()
 
     # One ligand, either spelling. The collective-variable blocks call this
     # `ligand_resname` and setup has always called it `ligand_name`, and a
@@ -1191,6 +1211,13 @@ def _run(
 
     # ---- Stage 1: resolve input ----------------------------------------
     try:
+        if audit and input_form == "pdb_file":
+            audit.capture_file(
+                orchestrator.system,
+                "original_supplied_source",
+                details={"input_form": input_form},
+                reason="Supplied structure before existing conversion or selection operations.",
+            )
         input_pdb = _resolve_input(orchestrator.system, input_form, setup_dir)
 
         # Recorded here rather than at the manifest, because this is the last
@@ -1199,6 +1226,13 @@ def _run(
         # from, not what this run then did to it.
         orchestrator._structure_provenance = structure_provenance(
             orchestrator.system, input_form, input_pdb)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "resolved_input",
+                details={"provenance": orchestrator._structure_provenance},
+                reason="Input delivered by the existing resolver.",
+            )
 
         # An OPM file marks its membrane with pseudo-atoms, which are not a
         # molecule: read as one they were a component to parameterise. Taken
@@ -1206,6 +1240,13 @@ def _run(
         # a bilayer.
         opm = _take_out_opm_markers(input_pdb)
         if opm is not None:
+            if audit:
+                audit.capture_file(
+                    input_pdb,
+                    "remove_opm_markers",
+                    details=opm,
+                    reason="Existing OPM marker removal and membrane frame retention.",
+                )
             params["_membrane_frame"] = "opm"
             logger.info(
                 "OPM file: %d membrane marker pseudo-atoms taken out; its frame "
@@ -1217,9 +1258,23 @@ def _run(
         # One model of an ensemble, where the study names one; where it does
         # not and the file holds several, which one is prepared is said.
         _the_model(input_pdb, params, notes)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "model_selection",
+                details={"requested_model": params.get("model"), "notes": list(notes)},
+                reason="Existing model selection result.",
+            )
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)
+        if audit:
+            audit.capture_file(
+                input_pdb,
+                "assembly_chain_selection",
+                details={"assembly": orchestrator._assembly},
+                reason="Existing assembly and chain selection result.",
+            )
 
         artifacts.append("input.pdb")
         if presenter:
@@ -1303,6 +1358,17 @@ def _run(
         _refuse_without_a_charge_provider(params)
 
     # ---- Stage 2: PDBFixer (or skip via fixed_pdb) ---------------------
+    if audit:
+        audit.decision(
+            "heterogen_policy",
+            {
+                "requested": params.get("heterogens"),
+                "decisions": params.get("_heterogen_decisions"),
+                "reinstated": params.get("_reinstated_heterogens"),
+                "explained": params.get("_explained_heterogens"),
+            },
+            reason="Existing heterogen classifier outputs. No unavailable reason is inferred.",
+        )
     prepared_pdb = setup_dir / "prepared.pdb"
     fixed_pdb = params.get("fixed_pdb")
     if fixed_pdb:
@@ -1347,7 +1413,7 @@ def _run(
             else:
                 settings = dict(arguments)
                 set_by_hand = fix_pdb_with_pdbfixer(
-                    settings.pop("input_pdb"), str(prepared_pdb), **settings)
+                    settings.pop("input_pdb"), str(prepared_pdb), audit=audit, **settings)
             artifacts.append("prepared.pdb")
             if set_by_hand:
                 # In the record's notes and on screen: a state chosen by hand
@@ -1377,6 +1443,13 @@ def _run(
             return artifacts
 
     # ---- Stage 3: Solvate, ionize, parameterize, serialize -------------
+    if audit:
+        audit.capture_file(
+            prepared_pdb,
+            "prepared_solute",
+            details={"provided_fixed_pdb": bool(params.get("fixed_pdb"))},
+            reason="Prepared solute passed to the existing system builder.",
+        )
     try:
         from fastmdxplora.setup.prepare import prepare_system
 
@@ -1434,6 +1507,18 @@ def _run(
         for _key, path in produced.items():
             if isinstance(path, (str, Path)):
                 artifacts.append(Path(path).relative_to(setup_dir).as_posix())
+        if audit and produced.get("topology_pdb"):
+            audit.capture_file(
+                produced["topology_pdb"],
+                "prepared_system",
+                details={
+                    "n_atoms_solvated": produced.get("n_atoms_solvated"),
+                    "resolved_forcefield": produced.get("resolved_forcefield"),
+                    "box": produced.get("box"),
+                    "membrane": produced.get("membrane"),
+                },
+                reason="System saved by the existing preparation path.",
+            )
         if presenter:
             # What it resolved to, not what was asked for: "auto" tells a
             # reader nothing, and the run recorded the answer.
@@ -1681,3 +1766,6 @@ def _write_manifest(
     }
     with (setup_dir / "setup_parameters.json").open("w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, default=str)
+    audit = _RECORDER.get()
+    if audit is not None:
+        audit.manifest(manifest)

@@ -49,6 +49,10 @@ NOT_REFUSALS = frozenset({
     # it got wrong, a question put to the person mid-call, a call the
     # client cancelled.
     "ProtocolError", "InputRequired", "Cancelled",
+    # A preparation audit's capture given up, said as a warning in its
+    # record by the recorder that raised it and never raised past it
+    # (`setup/audit.py`): the preparation goes on as it would without it.
+    "CaptureStopped",
 })
 
 #: Helpers that carry an inner refusal's code out to an outer raise. A site
