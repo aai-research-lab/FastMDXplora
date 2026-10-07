@@ -201,8 +201,14 @@ def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
     played = joined if (root / "joined" / "joined.json").is_file() and joined.is_file() \
         else root / "simulation" / "production.dcd"
     try:
-        return Path(analysed).resolve() == played.resolve()
-    except OSError:
+        if Path(analysed).resolve() == played.resolve():
+            return True
+        # A study moved or shared names the trajectory where it was read:
+        # the same place in the study, the folder before it gone.
+        named = Path(analysed)
+        return (not named.exists() and played.is_file()
+                and named.parts[-2:] == played.relative_to(root).parts[-2:])
+    except (OSError, ValueError):
         return False
 
 

@@ -7,6 +7,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A frame is shown at the time it was written
+
+**Fixed:** the Viewer spread a trajectory's frames evenly from 0 to the
+run's length: 100 frames of 10 ns read 0, 0.101, ... 10 ns where OpenMM
+wrote them at 0.1, 0.2, ... 10, so a frame was a frame's spacing from the
+same frame on the Analysis page. Frame k is now shown at k + 1 saving
+intervals, the clock the analyses plot, the interval read from what the
+analyses read the trajectory at, else from the run's saving interval and
+timestep (as Derrick Kwan's `fix/viewer-recorded-frame-times` reads it).
+Frames written before are given their times when next read. A study moved
+or shared, whose records name the trajectory where it was read, has its
+analyses' series linked to the frames again.
+
 ### A report lists the settings given, not where the study ran
 
 **Fixed:** a report's methods listed what setup worked out for itself

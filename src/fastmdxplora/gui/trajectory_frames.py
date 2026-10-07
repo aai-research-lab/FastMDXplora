@@ -131,6 +131,15 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
         if (cached.get("available") and cached.get("signature") == signature
                 and (simulation / FRAMES_FILE).is_file()
                 and (simulation / FRAMES_TOPOLOGY).is_file()):
+            interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
+                        and cached.get("source_kind") == "production-dcd" else None)
+            if interval:
+                # Read again where a record says it: frames written before
+                # the times were read from the records carry the old ones,
+                # and an analysis run since can say the interval.
+                cached["frame_times_ns"] = _times(
+                    list(cached.get("frame_indices") or []),
+                    int(cached.get("n_frames_total") or 0), None, interval)
             return cached
     try:
         if source["kind"] == "trajectory":
@@ -215,7 +224,9 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
               for length, angle in zip(lengths, angles)] if boxed else None)
     return {"available": True, "reason": None, "n_atoms": int(len(shown)),
             "n_frames_total": int(total), "n_frames_browser": len(indices),
-            "frame_indices": indices, "frame_times_ns": _times(indices, total, total_ns),
+            "frame_indices": indices,
+            "frame_times_ns": _times(indices, total, total_ns,
+                                     _interval_ns(simulation.parent, source)),
             "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept,
             "cells": cells}
 
@@ -683,10 +694,56 @@ def _write_dcd(frames: Any, target: Path) -> None:
     temporary.replace(target)
 
 
-def _times(indices: list[int], total: int, total_ns: float | None) -> list[float | None]:
+def _times(indices: list[int], total: int, total_ns: float | None,
+           interval_ns: float | None = None) -> list[float | None]:
+    """Each frame's time in the production, in ns.
+
+    OpenMM's reporter writes frame k at (k + 1) saving intervals, which is
+    the clock the analyses plot (`gui/series.analysed_axis`). The frames
+    were spread evenly from 0 to the run's length, 0, 0.101, ... 10 ns for
+    100 frames of 10 ns where they were 0.1, 0.2, ... 10, and a frame shown
+    in the Viewer was a frame's spacing from the same frame on the Analysis
+    page. A DCD written through MDTraj records no clock of its own, so the
+    interval comes from the records (:func:`_interval_ns`); where none says
+    it, the old spread stands.
+    """
+    if interval_ns:
+        return [round((index + 1) * interval_ns, 12) for index in indices]
     if total_ns is None or total < 2:
         return [None] * len(indices)
     return [float(total_ns) * index / (total - 1) for index in indices]
+
+
+def _interval_ns(out: Path, source: dict[str, Any]) -> float | None:
+    """The time between the trajectory's frames, from the records: the
+    interval the analyses read the played trajectory at, else, for a run's
+    own production, its saving interval and timestep (the reading Derrick
+    Kwan's branch, `fix/viewer-recorded-frame-times`, gives). ``None``
+    where neither says it."""
+    from fastmdxplora.gui.series import of_the_played_trajectory
+
+    manifest = _load_json(out / "analysis" / "analysis_manifest.json")
+    loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}
+    interval_ps = loaded.get("saving_interval_ps")
+    if (type(interval_ps) in (int, float) and np.isfinite(interval_ps) and interval_ps > 0
+            and of_the_played_trajectory(out)):
+        return float(interval_ps) / 1000.0
+    trajectory = source.get("trajectory")
+    if not isinstance(trajectory, Path) or trajectory != out / "simulation" / "production.dcd":
+        return None
+    record = _load_json(trajectory.parent / "simulation_parameters.json")
+    resolved, parameters = record.get("resolved"), record.get("parameters")
+    if record.get("continues") or not isinstance(resolved, dict) \
+            or not isinstance(parameters, dict):
+        return None
+    steps = resolved.get("trajectory_interval_steps")
+    timestep = parameters.get("timestep_fs")
+    if (type(steps) is int and steps > 0 and type(timestep) in (int, float)
+            and np.isfinite(timestep) and timestep > 0
+            and parameters.get("integrator") in {"langevin", "langevin_middle", "verlet",
+                                                 "brownian"}):
+        return steps * float(timestep) / 1_000_000.0
+    return None
 
 
 def _even(count: int, cap: int) -> list[int]:
