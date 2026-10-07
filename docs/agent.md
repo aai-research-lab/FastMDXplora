@@ -384,7 +384,8 @@ five minutes from the command line and `ask_agent`, where a request is
 usually asked once; `1h` and `5m` keep them so everywhere. An hour costs
 twice the input price to write instead of 1.25 times, once, and each read
 renews it. Other providers keep their caches as they decide. `fastmdx agent` says the
-reply as a terminal shows it: "Thinking...", the answer without
+reply as a terminal shows it: "Thinking...", each look in the page's words,
+the answer without
 its Markdown emphasis, a link as its words and its address, and "Accepted
 first time." or "Accepted after 2 attempts." for a Config.
 
@@ -461,12 +462,53 @@ model. With one set, the three go to it, and it reads the same records with
 its tools.
 
 The page is a conversation. What you said sits on the right; what came back
-sits under it: the refusals as the Agent corrected itself, then the Config
-with its actions, or an answer, or a question. Newest at the bottom, where the
-composer is. Enter sends; Shift+Enter breaks a line. Every message can be
-copied, edited or retried, and an edit or a retry cuts the thread from that
-message on, so the conversation continues from there rather than with a fork
-in it.
+sits under the Agent's icon, at the left: the refusals as the Agent corrected
+itself, then the Config as a version of the study, or an answer, or a
+question. Newest at the bottom, where the message box is. Enter sends;
+Shift+Enter breaks a line. Every message can be copied, edited or retried,
+and an edit or a retry cuts the thread from that message on, so the
+conversation continues from there rather than with a fork in it.
+
+**The page speaks as the Agent.** The AI model it thinks with is its own and
+is named only in its settings (and by `fastmdx agent model`): the page and
+`fastmdx agent` say "Thinking...", "What I read for this reply", "From this
+study's records", never which AI model or provider. Its replies are set in
+Inter, as the rest of the page.
+
+**Its icon says what it is doing**, coloured: working (pulsing), waiting for
+you (a question or a confirmation), done, or could not finish. While it
+works, each step is a line as it happens: "Looking up "trp-cage" in the
+PDB...", then "Looked up "trp-cage" in the PDB", "Writing the config...".
+
+**Each Config is a version of the study.** "Study, version 2" says what
+changed from the version before ("Temperature 310 K -> 330 K") with the whole
+study under it, each value with where it came from: *you asked* (your
+message said it), *your default* (your `fastmdx-defaults.yml`), *Agent's
+choice* with the Agent's reason under it, or *default* (FastMDXplora's own);
+a value set with no decision recorded says nothing rather than a guess. The
+version it replaced folds to one line with **Show** and **Use this version**,
+which makes it the newest again without asking the AI model. Only the newest
+version has **Run on this machine**, so an older one cannot be run by a
+press meant for another; "run it" runs the newest.
+
+**A question comes with its candidates as buttons**, each entry's identifier
+first and what it is under it ("2LZM, T4 phage, X-ray 1.7 Å, 1987"); a press
+answers with the identifier, and typing still answers. A message that is not
+an answer is sent as it is: the conversation carries the question.
+
+**The message box's words follow the situation**: "Describe a study, or ask
+about one in this folder" with nothing open, "Change something, or say run
+it" after a Config, "Pick one above, or type your answer" after candidates,
+"Answer above, or type yes or no" while a confirmation waits, "Ask how it is
+going, or tell me to stop it" while a study runs, "Ask why it stopped, or what
+would fix it" for one that stopped.
+
+**Useful or Wrong** under each reply marks it, kept with the conversation for
+the Agent's evaluation (a second press takes it back), beside what the reply
+took in tokens ("17,899 tokens in (17,806 from the cache) · 498 out").
+
+**On a phone** the bar across the top carries FastMDXplora's mark, the study
+and the pages; the conversations are behind its chat icon.
 
 **The attempts are shown rather than summarised.** They are the only visible
 sign that anything checked the Config, and watching an AI model correct itself
@@ -485,13 +527,13 @@ particles in what box, and how long the study would take on this machine
 where the machine has been timed, worked out as the builder works them out,
 so the cost is read before the run rather than learned from setup's log.
 
-Under a Config are the builder's own actions: *Show the config*, *Download
-config*, *Copy the command*, *Download a script*, *Run on this machine*, and a
-checkbox to write every setting rather than only the ones the Agent set. They
-are the builder's functions, on this Config, so the file, the command and the
-script are exactly what the builder would produce; a form in the builder is
-left as it was. *Open in the builder* puts the Config there to change, and is
-not the way out.
+Under a Config are *Run on this machine*, *Open in the builder* and *More*:
+*Show the config*, *Download config*, *Copy the command*, *Download a
+script*, and a checkbox to write every setting rather than only the ones the
+Agent set. They are the builder's own functions, on this Config, so the file,
+the command and the script are exactly what the builder would produce; a form
+in the builder is left as it was. *Open in the builder* puts the Config there
+to change, and is not the way out.
 
 A refused *Run on this machine* says what would fix it under the button, as the
 builder's refusals do: the setting to change, or the install command where a
@@ -662,9 +704,10 @@ answers with an error, nothing is guessed in its place: the Agent asks for
 the identifier or a structure file. A search takes at most a minute in all,
 and an answer is kept for a week, so a conversation does not ask twice.
 
-What it looked at is folded under its reply, **Checked with the software**,
-each tool with what was asked and what the software said, and kept with the
-thread. From the command line, `fastmdx agent` prints a line for each.
+What it looked at is folded under its reply, each look in words ("Looked up
+"trp-cage" in the PDB, checked the config"), with what it found in a line and
+what the software said in full under that, and kept with the thread. From the
+command line, `fastmdx agent` prints a line for each, in the same words.
 
 Under it, **What I read for this reply**: each step the Agent took for
 this reply (each time its AI model was asked), what it was given, as it
@@ -741,7 +784,16 @@ does not allow drops the proposal and keeps the answer.
 **Your instruction is the click.** "Run it" typed into the thread does what
 pressing *Run on this machine* does, through the same door, so the mode's
 gates apply to a word as they do to a press: an `autonomous` run still needs
-its budget. The thread says what was done. Nothing happens silently.
+its budget. The run is said under the message that started it, "Running
+version 2, started 13:41", with **Watch on the Overview** and **Stop** (which
+asks first); read again later, "Started version 2 at 13:41". Nothing happens
+silently.
+
+**When it ends, what it found**, under the conversation, once: how it ended
+and how long it took, what it found with each error, whether it ran long
+enough, and what would strengthen it, written from the study's records
+(`POST /api/agent/run-summary`), so it costs no tokens. A run that ended while
+the page was closed is said when the conversation is next opened.
 
 **It never acts unasked.** Not on a question, not on a request for a Config,
 not because it thinks you would want it, and never twice in one reply. A
@@ -752,20 +804,24 @@ carried out.
 attach, and a file can tell it what to say, so the prompt is not what decides.
 The software reads your own message: *run it*, *start the study*, *go ahead*
 and the like run at once; after anything else a `run` asks first, and only
-*yes* or *run it* starts it:
+*yes* or *run it* starts it. The question names the version and what it is,
+with **Run it** and **Not now**:
 
 ```
-Run the study above? Say yes.
+Run version 2 on this machine?
+1L2Y trp-cage · 330 K, 1 bar · 10 ns, 2 fs steps · about 3,305 particles
 ```
 
 **Stopping is confirmed.** A run stopped is hours gone, so `stop` asks first,
 naming where the run is:
 
 ```
-Stop the run at production step 16,000? Say yes.
+Stop the run at production step 16,000?
+What it has written so far is kept.
 ```
 
-Anything that is not *yes* is *Not stopped*.
+with **Stop it** and **Keep running**. Anything that is not *yes* is *Not
+stopped*.
 
 **A change and a run in one message** writes the Config and says *say run
 when you have read it*. One step of seeing what is about to run is what

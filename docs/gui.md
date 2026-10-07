@@ -653,6 +653,7 @@ a movie's frames at 64 MB.
 | `POST /api/again` | Run the study open's analysis or report again (`phases`, `analyses`), by the phase command with `--rerun`; loopback only |
 | `POST /api/agent/model` | Read or set the [Agent](agent.md)'s AI model choice. Never returns the key |
 | `POST /api/agent/propose` | A sentence to a validated Config |
+| `POST /api/agent/run-summary` | What a run the Agent started found once it has ended (`{"study"}`), from the study's records; `ended` false while it runs; loopback only |
 | `POST /api/movies`, `/api/movies/<id>/frame`, `/api/movies/<id>/finish`, `/api/movies/<id>/cancel` | A movie: started with `{"name", "fps", "width", "height", "about"}`, given its frames as PNGs of its size, one a request, and finished into `movies/` or cancelled with nothing left; one not given a frame for five minutes is given up |
 
 `GET /api/schema` is the one worth knowing about: it is the same declaration

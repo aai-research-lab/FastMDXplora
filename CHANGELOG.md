@@ -7,6 +7,41 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent page, as the Agent
+
+**Changed:** the Agent page and `fastmdx agent` speak as the Agent: its AI
+model is named only in its settings ("Thinking...", "What I read for this
+reply", "From this study's records"), and its replies are set in Inter. Its
+icon beside each reply says what it is doing (working, waiting for you,
+done, could not finish), and each look is said as it happens and named
+after it with what it found ("Looked up "trp-cage" in the PDB"), where four
+of the Agent's tools were shown by their code names. A refusal by the
+software is one line in view; a format repair and "Accepted first time"
+are not shown.
+
+**Changed:** each Config the Agent writes is a version of the study: what
+changed from the version before, each value with where it came from (you
+asked, your default, the Agent's choice with its reason, or the default),
+and **Run on this machine** on the newest only, with **Open in the builder**
+and **More** for the file actions. An older version folds to one line with
+**Show** and **Use this version**. Before, every version kept its own Run
+button, so a study replaced by an edit could still be run.
+
+**Changed:** a question's candidates are buttons, and the next message is
+sent as it is (it was joined to the question whatever it said); a run or a
+stop not plainly asked for is confirmed with **Run it** / **Not now** or
+**Stop it** / **Keep running** (typing yes still works); a run is said under
+the message that started it, with **Watch on the Overview** and **Stop**
+(its "Started" was said in the Config's card two messages up).
+
+**Added:** when a run the Agent started ends, what it found, from the
+study's records (`POST /api/agent/run-summary`), so it costs no tokens; the
+message box's words follow the situation; **Useful** or **Wrong** on each
+reply, kept with the conversation, beside the tokens it took. On a phone,
+the bar carries FastMDXplora's mark and the conversations behind one icon
+(the sidebar's lists of them had filled it), and the Agent's settings say
+nothing with an em dash and style the key field.
+
 ### A shared study opened from its DOI
 
 **Added:** `fastmdx gui --open SOURCE` (`--open-into DIR`,
