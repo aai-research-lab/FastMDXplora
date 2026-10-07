@@ -255,31 +255,33 @@ class TestTheGuiCanTurnItOff:
         config = build_config({"system": "1UBQ", "__run__": {"explain": True}})
         assert "explain" not in config
 
-    def test_the_form_draws_them_under_their_own_heading(self) -> None:
+    def test_the_form_shows_them_where_the_study_is_reviewed(self) -> None:
+        """The run options are the study's, not a phase's: shown in the
+        Review step, under the key the server reads."""
         from pathlib import Path
 
         script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
                   / "gui" / "static" / "run-builder.js").read_text(encoding="utf-8")
-        assert "runOptionsSection" in script
-        assert "RUN_OPTIONS_KEY" in script
+        review = script[script.index("function renderReviewStep"):]
+        review = review[:review.index("function groupHead")]
+        assert "state.schema.run_options" in review
+        assert "control(RUN_OPTIONS_KEY, field)" in review
 
 
 def test_the_run_options_section_uses_the_layout_the_stylesheet_has() -> None:
     """A bare heading with controls appended ran every label into its help
-    text, because the stylesheet lays out a head and a body grid and nothing
-    else."""
+    text: the Review's group is built as every group is, a head and a grid
+    the stylesheet lays out."""
     from pathlib import Path
 
-    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora"
-              / "gui" / "static" / "run-builder.js").read_text(encoding="utf-8")
-    section = script[script.index("function runOptionsSection"):]
-    section = section[:section.index("function settingsSection")]
-
-    assert "run-section-head" in section
-    assert "run-section-body" in section
-    assert "run-section-title" not in section, (
-        "that class is not in the stylesheet"
-    )
+    root = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+    script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
+    sheet = (root / "static" / "dashboard.css").read_text(encoding="utf-8")
+    review = script[script.index("function renderReviewStep"):]
+    review = review[:review.index("function groupHead")]
+    assert '"builder-grid"' in review
+    assert "groupHead(" in review
+    assert ".builder-grid {" in sheet and ".builder-group-head" in sheet
 
 
 def test_an_analysis_needing_water_does_not_run_without_it() -> None:

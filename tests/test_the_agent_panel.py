@@ -795,7 +795,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         self.assertIn('id="agent-propose"', panel)
         self.assertIn('title="Send (Enter). Shift+Enter for a new line."', panel)
         for action in ("Show the config", "Download config",
-                       "Copy the command", "Download a script", "Run here",
+                       "Copy the command", "Download a script", "Run on this machine",
                        "Write every setting"):
             with self.subTest(action=action):
                 self.assertIn(action, panel)
@@ -809,19 +809,19 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         """One derivation, two doors.
 
         The file, the command and the script come from the builder's
-        exported actions, reading the builder's state -- which the panel
-        loads silently from the config it just wrote. So what the Agent
-        hands over is exactly what the builder would, rather than a
-        second rendering that could drift. The first version wrote the
-        YAML from the browser without a round trip; that matched the
-        screen but not the builder.
+        exported actions, on the config the panel just wrote, mapped to the
+        builder's state by the server. So what the Agent hands over is
+        exactly what the builder would, rather than a second rendering that
+        could drift. They no longer load that config into the builder to do
+        it: a reply overwrote somebody's draft there to price itself.
         """
         script = self.script()
         self.assertIn('post("/api/load-config", { config: data.config })', script)
         for action in ("download", "copyCommand", "downloadScript"):
             with self.subTest(action=action):
                 self.assertIn(f'viaBuilder("{action}")', script)
-        self.assertIn("window.FastMDXRun.fetchConfig()", script)
+        self.assertIn("window.FastMDXRun.forLoaded(loadedState", script)
+        self.assertIn("onItsConfig().fetchConfig()", script)
         import pathlib
 
         import fastmdxplora.gui as gui
@@ -1468,7 +1468,7 @@ class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
         self.assertIn("function defaultOutput()", script)
         # The browser does not name the folder; the server does, by one rule.
         self.assertNotIn('"fastmdxplora_output_"', script)
-        self.assertIn('output: el("run-output").value.trim(),', script)
+        self.assertIn('output: (el("run-output") && el("run-output").value.trim()) || "",', script)
 
 
 class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
@@ -1506,7 +1506,7 @@ class TestTheAgentsButtonsBehaveLikeTheBuilders(unittest.TestCase):
         page = self.page()
         self.assertIn('id="agent-action-note"', page)
         script = self.script()
-        self.assertIn('noteEl.textContent = said ? said.textContent : "";', script)
+        self.assertIn('say: function (words) { noteEl.textContent = words || ""; }', script)
         self.assertNotIn("note(box, said.textContent", script)
 
     def test_downloads_ask_where(self):
@@ -2835,11 +2835,11 @@ class TestTheHeadersStayPut(unittest.TestCase):
 
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn("Select what you have, what should happen to it, and anything you want to change.", page)
+        self.assertIn('<div class="page-subtitle">Configure a new MD simulation and analysis</div>', page)
         self.assertNotIn("Nothing chosen yet", page)
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "run-builder.js").read_text(encoding="utf-8")
         # The reason is still said at the Run button; not in the header.
-        self.assertIn('return "Choose what this run starts from.";', script)
+        self.assertIn('return "Choose what this study starts from.";', script)
         summary = script[script.index('text(el("run-summary")'):script.index(";", script.index('text(el("run-summary")'))]
         self.assertNotIn("whyNotReady", summary)

@@ -407,13 +407,14 @@ where the machine has been timed, worked out as the builder works them out,
 so the cost is read before the run rather than learned from setup's log.
 
 Under a Config are the builder's own actions: *Show the config*, *Download
-config*, *Copy the command*, *Download a script*, *Run here*, and a checkbox
-to write every setting rather than only the ones the Agent set. They are the
-builder's functions, reading the same Config, so the file, the command and the
-script are exactly what the builder would produce. *Open in the builder* is a
-link for changing the Config, not the way out.
+config*, *Copy the command*, *Download a script*, *Run on this machine*, and a
+checkbox to write every setting rather than only the ones the Agent set. They
+are the builder's functions, on this Config, so the file, the command and the
+script are exactly what the builder would produce; a form in the builder is
+left as it was. *Open in the builder* puts the Config there to change, and is
+not the way out.
 
-A refused *Run here* says what would fix it under the button, as the
+A refused *Run on this machine* says what would fix it under the button, as the
 builder's refusals do: the setting to change, or the install command where a
 package is missing. Where the fix is a setting of the study, **Ask the Agent
 to fix it** sends the refusal into the thread as your next message and the
@@ -605,9 +606,9 @@ does not allow drops the proposal and keeps the answer.
 ### Acting
 
 **Your instruction is the click.** "Run it" typed into the thread does what
-pressing *Run here* does, through the same door, so the mode's gates apply to
-a word as they do to a press: an `autonomous` run still needs its budget. The
-thread says what was done. Nothing happens silently.
+pressing *Run on this machine* does, through the same door, so the mode's
+gates apply to a word as they do to a press: an `autonomous` run still needs
+its budget. The thread says what was done. Nothing happens silently.
 
 **It never acts unasked.** Not on a question, not on a request for a Config,
 not because it thinks you would want it, and never twice in one reply. A

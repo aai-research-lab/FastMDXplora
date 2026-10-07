@@ -244,8 +244,8 @@ class TestInTheBrowser:
             page = browser.new_page(viewport={"width": 1440, "height": 900})
             page.set_default_timeout(60000)
             page.goto(session.url.rstrip("/") + "/#run", wait_until="domcontentloaded")
-            page.wait_for_selector("#run-start option[value='structure']", state="attached")
-            page.select_option("#run-start", "structure")
+            page.wait_for_selector("#run-start [data-start='structure']", state="attached")
+            page.evaluate("() => window.FastMDXRun.setStart('structure')")
             page.fill("#run-system", str(root / "zinc.pdb"))
             page.wait_for_function(
                 "() => /particles/.test(document.getElementById('run-system-preview-body')"
@@ -267,7 +267,7 @@ class TestInTheBrowser:
         assert "Time here" in rows
 
     def test_an_advisory_opens_its_setting(self, page) -> None:
-        page.click("text=Show forcefield")
+        page.click("#run-worth-knowing .system-preview-go:has-text(\"Show Force field\")")
         page.wait_for_selector('#run-settings [data-setting="forcefield"].is-pointed')
         focused = page.evaluate(
             "() => document.activeElement.closest('[data-setting]')?.dataset.setting")

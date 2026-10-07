@@ -140,10 +140,15 @@
   var panelClosed = false;
   var onTheViewer = false;
   var keptOnTheViewer = { sidebar: false, panel: false };
+  /* The Config Builder has the study's summary where the side panel is,
+   * so the panel is closed there, and opened there only with its button. */
+  var onTheBuilder = false;
+  var keptOnTheBuilder = false;
 
   function showTheColumns() {
     var sidebar = onTheViewer ? !keptOnTheViewer.sidebar : sidebarClosed;
-    var panel = onTheViewer ? !keptOnTheViewer.panel : panelClosed;
+    var panel = onTheViewer ? !keptOnTheViewer.panel
+      : onTheBuilder ? !keptOnTheBuilder : panelClosed;
     document.body.classList.toggle("sidebar-collapsed", sidebar);
     document.body.classList.toggle("panel-collapsed", panel);
     var expand = el("sidebar-expand");
@@ -155,7 +160,10 @@
   }
 
   function setCollapsed(yes, chosen) {
-    if (onTheViewer && chosen !== false) {
+    if (onTheBuilder && !onTheViewer && chosen !== false) {
+      keptOnTheBuilder = !yes;
+      store.set("builderPanelOpen", yes ? "0" : "1");
+    } else if (onTheViewer && chosen !== false) {
       keptOnTheViewer.panel = !yes;
       store.set("viewerPanelOpen", yes ? "0" : "1");
     } else {
@@ -215,9 +223,12 @@
   }
 
   function followThePage() {
-    var viewer = document.documentElement.getAttribute("data-page") === "viewer";
-    if (viewer === onTheViewer) return;
+    var page = document.documentElement.getAttribute("data-page");
+    var viewer = page === "viewer";
+    var builder = page === "run";
+    if (viewer === onTheViewer && builder === onTheBuilder) return;
     onTheViewer = viewer;
+    onTheBuilder = builder;
     showTheColumns();
   }
 
@@ -889,6 +900,7 @@
 
     keptOnTheViewer.sidebar = store.get("viewerSidebarOpen", "0") === "1";
     keptOnTheViewer.panel = store.get("viewerPanelOpen", "0") === "1";
+    keptOnTheBuilder = store.get("builderPanelOpen", "0") === "1";
     var remembered = store.get("panelCollapsed", null);
     panelChosen = remembered !== null;
     setCollapsed(remembered === "1", false);

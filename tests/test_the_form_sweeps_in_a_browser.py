@@ -65,7 +65,7 @@ class TestTheFormSweeps(unittest.TestCase):
                                    r.querySelector('.run-sweep-values').value]);
                     const built = await run.fetchConfig();
                     return {rows, summary: document.getElementById('run-summary').textContent,
-                            head: document.querySelector('#run-sweep .run-section-count').textContent,
+                            head: document.querySelector('#run-sweep .run-section-head').textContent,
                             yaml: built.yaml || built.error};
                 }""", str(study))
                 page.context.browser.close()

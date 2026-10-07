@@ -7,6 +7,49 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Config Builder in five steps, beside the study
+
+**Changed:** the Config Builder (subtitle "Configure a new MD simulation and
+analysis") asks in five steps, in the order a study is decided: **Start**,
+**System**, **Protocol**, **Analysis and report** and **Review**, with a bar
+of the steps that follows the page. Beside them, the study as it stands:
+whether its checks pass (the server's validator, a moment after each
+change), what setup will build, what was changed with a revert for each, the
+Config, the command and the Python script, and **Run on this machine** with
+the other actions always in view (where the page is narrow, as with the
+Agent open beside it, a bar at its foot). Each group shows its essential
+settings (`ESSENTIAL` in the schema) and **Show more** the rest; a setting
+changed is shown whatever its tier. Each has a label and a unit from its
+name, its default, what it does when left unset (`UNSET_MEANS`), its help's
+first sentence with **More**, and a dot and a revert once changed. **Find a
+setting** shows only the settings named. The starting point is three cards;
+a study of several systems is a table of systems, each with what its file
+holds; how long it runs is a fixed length or until it is determined;
+replicas are a choice of 1, 3, 5, other seeds or the NMR models; enhanced
+sampling is a row of cards, each block a field per setting with **Edit as
+YAML**. The analyses are under the Analysis page's themes, and one this
+study leaves nothing for says why (`gui/applicable.py`: no ligand, no
+membrane, no water in the frames, an NMR entry's B-factors, a bias not run);
+a distance between two groups the study names runs where it is chosen. **Or
+describe the study to the Agent** opens the Agent beside the form. The form
+is saved in the browser for each person, so a reload loses nothing; Reset
+puts every setting back.
+
+**Fixed:** a list of choices with no default showed its first choice: a
+protein in water read as embedded in POPC, and choosing it back wrote
+`membrane: POPC`; each now starts at "Not set" with what that means. Tab
+out of a changed setting landed on the page, because every change built the
+form again; a change now builds its field and the summary only. A study of
+several systems opened in the form came back as its first, its names and
+its systems' own settings dropped; the Python script dropped a system's
+name and the command ran it as `s1` (it now says it cannot carry one). A
+temperature, a production length and a timestep were text boxes, and a
+limit the schema declares (pH 0 to 14) was said only by the server; an
+example in an empty box read as a value and is now "e.g.". An Agent's reply
+loaded its config into the builder to price itself, over whatever was being
+written there; it now reads its own. **Run here** is **Run on this
+machine**.
+
 ### Why a setting has its value: `decisions`
 
 **Added:** a top-level `decisions` block: for a setting by its dotted name

@@ -111,8 +111,8 @@ def page(tmp_path_factory):
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url.rstrip("/") + "/#run", wait_until="domcontentloaded")
-            page.wait_for_selector("#run-start option[value='structure']", state="attached")
-            page.select_option("#run-start", "structure")
+            page.wait_for_selector("#run-start [data-start='structure']", state="attached")
+            page.evaluate("() => window.FastMDXRun.setStart('structure')")
             page.fill("#run-system", str(root / "site.pdb"))
             page.wait_for_function(
                 "() => /particles/.test(document.getElementById("

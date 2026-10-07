@@ -25,7 +25,6 @@ except ImportError:
 #: setting -> why it does not survive the page. Closing one means taking it
 #: off here; a setting newly lost fails.
 KNOWN_GAPS: dict[str, str] = {
-    "(study).systems": "the form takes one system",
     "analysis.topology": "only meaningful for a study that starts from a trajectory; "
                          "dropped beside a structure, which is right",
 }

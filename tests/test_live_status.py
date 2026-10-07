@@ -1533,7 +1533,7 @@ class TestOneControlPerSetting:
 
     def test_the_panel_still_writes_the_key(self) -> None:
         js = self._builder()
-        assert "analysis.include = Array.from(state.analyses)" in js
+        assert "analysis.include = Array.from(chosen)" in js
 
     def test_the_panel_says_what_it_writes(self) -> None:
         """The mapping from a picker to a config key should not be implicit."""

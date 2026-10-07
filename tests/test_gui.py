@@ -2540,9 +2540,9 @@ class TestBothKindsOfConfigFile:
         from fastmdxplora.gui import server
 
         root = pathlib.Path(server.__file__).parent
-        page = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
         script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
-        assert 'id="run-full-config"' in page
+        # Built in the Review step, read when the config is asked for.
+        assert 'box.id = "run-full-config"' in script
         assert 'el("run-full-config")' in script
 
 
@@ -3219,14 +3219,16 @@ class TestTheStartingPointIsOneChoice:
         )
 
     def test_it_is_a_single_control(self) -> None:
-        page, _ = self._files()
-        assert '<select id="run-start">' in page
+        """One group of choices, one of which is chosen: cards that are
+        radio buttons, so the keyboard and a reader take them as one."""
+        page, script = self._files()
+        assert '<div class="builder-start" id="run-start" role="radiogroup"' in page
+        assert 'radio.name = "run-start"' in script
 
     def test_the_description_belongs_to_the_option(self) -> None:
-        """It is what the option means, so it changes as the option does."""
-        page, script = self._files()
-        assert 'id="run-start-detail"' in page
-        assert "STARTING_POINTS[state.start].detail" in script
+        """It is what the option means, so it is on the option."""
+        _, script = self._files()
+        assert 'node("span", "builder-start-what", point.detail)' in script
 
     def test_a_config_already_written_is_one_of_them(self) -> None:
         _, script = self._files()
@@ -3325,9 +3327,9 @@ class TestNothingPromisesASequence:
 
         from fastmdxplora.gui import server
 
-        page = (pathlib.Path(server.__file__).parent / "templates"
-                / "dashboard.html").read_text(encoding="utf-8")
-        marker = page[page.index('id="run-system"'):][:220]
+        script = (pathlib.Path(server.__file__).parent / "static"
+                  / "run-builder.js").read_text(encoding="utf-8")
+        marker = script[script.index("structure.placeholder"):][:120]
         assert "sequence" not in marker.lower()
 
     def test_nor_does_the_config_template(self) -> None:
@@ -3697,8 +3699,8 @@ class TestTheWordsOnTheRunPage:
 
     def test_the_structure_field_asks_for_what_it_accepts(self) -> None:
         """Not for one particular protein."""
-        page, _ = self._files()
-        field = page[page.index('id="run-system"'):][:220]
+        _, script = self._files()
+        field = script[script.index("structure.placeholder"):][:120]
         assert "PDB ID" in field
         assert "1L2Y" not in field
 
@@ -4190,7 +4192,11 @@ class TestASettingsBlockCanBeWrittenInTheBrowser:
 
         script = (pathlib.Path(server.__file__).parent / "static"
                   / "run-builder.js").read_text(encoding="utf-8")
-        block = script[script.index('field.control === "mapping"'):][:700]
+        block = script[script.index("function mappingControl"):]
+        block = block[:block.index("function yamlScalar")]
+        # A field for each setting the example names, and the block as
+        # YAML for anything the fields do not hold.
+        assert "Object.keys(field.example)" in block
         assert 'createElement("textarea")' in block
 
     def test_each_block_shows_what_one_looks_like(self) -> None:
@@ -4821,8 +4827,8 @@ class TestTheSectionsThatAreNotPhasesReachTheConfig:
         assert "RUN_OPTIONS_KEY" in source
         # Emitted, not merely drawn: the sentinel has to appear where the
         # payload is assembled, not only where the controls are.
-        _, _, after = source.partition("function currentState()")
-        emitted, _, _ = after.partition("function ready()")
+        _, _, after = source.partition("function bodyOf(snap)")
+        emitted, _, _ = after.partition("function currentState()")
         assert "RUN_OPTIONS_KEY" in emitted
         assert "EXECUTION_KEY" in emitted
 

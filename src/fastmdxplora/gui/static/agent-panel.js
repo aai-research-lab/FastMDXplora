@@ -1021,7 +1021,7 @@
       if (runBtn.disabled) {
         /* Already pressed, by hand or by a word. Clicking a disabled
          * button does nothing, and "Starting the run" over nothing was
-         * a lie -- reported after Run here had been pressed first. */
+         * a lie -- reported after Run on this machine had been pressed first. */
         note(box, "It is already running.");
         return;
       }
@@ -1210,29 +1210,37 @@
      * builder's actions read that state, so the file, the command and
      * the script are exactly what the builder would produce. One
      * derivation, two doors. */
+    /* The reply's config as the builder reads it, without putting it in
+     * the builder: the file, the command, the script and the cost come
+     * from the builder's own derivation on this config, and somebody's
+     * draft in the builder is left as it is until they open this one. */
+    var loadedState = null;
     var loaded = post("/api/load-config", { config: data.config }).then(function (m) {
       if (!m || !m.ok) {
         noteEl.textContent = (m && m.error) || "Could not prepare the config for the builder.";
         return false;
       }
       var run = window.FastMDXRun;
-      if (!run || !run.applyLoadedState) return false;
-      // Waits for the builder's schema where the reply arrived first.
-      return Promise.resolve(run.applyLoadedState(m.state, {})).then(function () {
-        return true;
-      });
+      if (!run || !run.forLoaded) return false;
+      loadedState = m.state;
+      return true;
     });
+    function onItsConfig() {
+      return window.FastMDXRun.forLoaded(loadedState, {
+        full: function () { return fullBox.checked; },
+        say: function (words) { noteEl.textContent = words || ""; }
+      });
+    }
 
     /* What the proposal would build and how long it would take here, added
-     * to its plan once the builder holds it: the cost read before the run,
-     * not learned from setup's log. A moment after the reply, because a
-     * structure named by its identifier is fetched to be inspected. */
+     * to its plan: the cost read before the run, not learned from setup's
+     * log. A moment after the reply, because a structure named by its
+     * identifier is fetched to be inspected. */
     loaded.then(function (ok) {
-      var run = window.FastMDXRun;
-      if (!ok || !run || !run.previewCost) return;
+      if (!ok) return;
       var wants = (data.config && data.config.include_phase) || null;
       if (wants && wants.indexOf("setup") < 0) return;
-      run.previewCost().then(function (cost) {
+      onItsConfig().previewCost().then(function (cost) {
         if (!cost) return;
         addPlanLines(r.part("plan"), [
           { label: "System", value: cost.size },
@@ -1245,12 +1253,7 @@
       return function () {
         loaded.then(function (ok) {
           if (!ok) return;
-          var full = el("run-full-config");
-          if (full) full.checked = fullBox.checked;
-          Promise.resolve(window.FastMDXRun[action]()).then(function () {
-            var said = document.getElementById("run-note");
-            noteEl.textContent = said ? said.textContent : "";
-          });
+          onItsConfig()[action]();
         });
       };
     }
@@ -1270,9 +1273,7 @@
       }
       loaded.then(function (ok) {
         if (!ok) return;
-        var full = el("run-full-config");
-        if (full) full.checked = true;
-        window.FastMDXRun.fetchConfig().then(function (built) {
+        onItsConfig().fetchConfig().then(function (built) {
           if (built && built.ok && built.yaml) {
             result.textContent = built.yaml;
             result.hidden = false;
@@ -1292,7 +1293,12 @@
     r.part("script").onclick = viaBuilder("downloadScript");
     r.part("load").onclick = function (e) {
       e.preventDefault();
-      loaded.then(function (ok) { if (ok) window.location.hash = "#run"; });
+      loaded.then(function (ok) {
+        if (!ok) return;
+        Promise.resolve(window.FastMDXRun.applyLoadedState(loadedState, {
+          note: "Opened the Agent's study here. Changes are saved as a new config."
+        })).then(function () { window.location.hash = "#run"; });
+      });
     };
     runBtn.onclick = function () {
       runBtn.disabled = true;
@@ -1382,7 +1388,7 @@
 
   /* Draw a saved thread again. Each entry renders the way it rendered
    * the first time; a config gets its actions back, wired to the stored
-   * config, so Run here on a restored thread runs what was written. */
+   * config, so Run on this machine on a restored thread runs what was written. */
   function restore() {
     fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
       if (d && d.ok) { convId = d.id || null; convStudy = d.study || null; }

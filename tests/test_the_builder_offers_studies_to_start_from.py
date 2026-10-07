@@ -88,14 +88,9 @@ def test_a_starter_chosen_is_the_study_the_builder_writes(tmp_path) -> None:
             chosen = page.locator("#run-starters .starter.is-chosen").get_attribute("data-starter")
             note = page.text_content("#run-starters-note")
             system = page.input_value("#run-system")
-            # Folded, it stays folded.
-            page.click("#run-starters-card > summary")
-            # The fold is kept when the card's toggle event fires, a task
-            # after the click: reload once it has been kept, not before.
-            page.wait_for_function("() => window.localStorage.getItem('fastmdx-starters-folded') === '1'")
-            page.reload(wait_until="domcontentloaded")
-            page.wait_for_selector("#run-starters .starter", state="attached")
-            folded = page.evaluate("() => !document.getElementById('run-starters-card').open")
+            # What each one is and runs is said on the chip, for a pointer
+            # or a reader.
+            said = page.get_attribute('#run-starters .starter[data-starter="membrane"]', "title")
             browser.close()
     finally:
         session.server.shutdown()
@@ -114,5 +109,5 @@ def test_a_starter_chosen_is_the_study_the_builder_writes(tmp_path) -> None:
     assert written["determined"]["simulation"]["stop_when"]["max_duration_ns"] == 50
     assert written["determined"]["sweep"] == {"simulation.random_seed": [1, 2, 3]}
     assert len(written["umbrella"]["systems"]) == 13
-    assert folded
+    assert facts in said
     assert errors == []

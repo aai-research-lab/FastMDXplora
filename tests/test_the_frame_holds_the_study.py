@@ -320,8 +320,9 @@ class TestTheStudyIsInTheSidebar(unittest.TestCase):
 
 
 class TestTheBuilderAsksFourQuestions(unittest.TestCase):
-    """Four numbered cards, the phases as tiles, and the second question
-    continued inside the first rather than opened as a card of its own."""
+    """Five numbered steps in the order a study is decided, the phases as
+    chips, and where the study's input is continued inside the first step
+    rather than opened as a step of its own."""
 
     def builder(self):
         page = _page()
@@ -334,12 +335,15 @@ class TestTheBuilderAsksFourQuestions(unittest.TestCase):
         self.assertGreater(end, start)
         return page[start:end]
 
-    def test_four_cards_numbered_in_order(self):
+    def test_five_steps_numbered_in_order(self):
         import re
 
-        steps = re.findall(r'builder-step">(\d\d)<', self.builder())
-        self.assertEqual(steps, ["01", "02", "03", "04"])
-        self.assertEqual(self.builder().count('class="card builder-card"'), 4)
+        builder = self.builder()
+        bar = re.findall(r'data-step="(\w+)"><b>(\d)</b>', builder)
+        self.assertEqual(bar, [("start", "1"), ("system", "2"), ("protocol", "3"),
+                               ("analysis", "4"), ("review", "5")])
+        sections = re.findall(r'<section class="builder-step" id="run-step-(\w+)"', builder)
+        self.assertEqual(sections, ["start", "system", "protocol", "analysis", "review"])
 
     def test_where_it_is_continues_the_first_card(self):
         builder = self.builder()
@@ -351,20 +355,20 @@ class TestTheBuilderAsksFourQuestions(unittest.TestCase):
 
     def test_every_field_the_js_drives_is_still_there_once(self):
         builder = self.builder()
-        for field in ("run-start", "run-system", "run-trajectory",
+        # `run-system` is the first row of the systems, built by the script.
+        for field in ("run-start", "run-systems", "run-trajectory",
                       "run-topology", "run-config-path", "run-output",
                       "run-phases", "run-start-button", "run-download"):
             with self.subTest(field=field):
                 self.assertEqual(builder.count(f'id="{field}"'), 1)
 
-    def test_the_phases_are_tiles(self):
+    def test_the_phases_are_chips(self):
         css = _css()
-        rule = css[css.index(".run-phases {"):]
-        rule = rule[:rule.index("}")]
-        self.assertIn("grid-template-columns: 1fr 1fr", rule)
-        # A chosen tile is bordered in the accent, not striped down one
-        # edge, so the set that will run reads at a glance.
-        self.assertIn('.run-phase[data-chosen="true"] { border-color: var(--accent-cyan)', css)
+        self.assertIn('.page[data-page="run"] .run-phases { display: flex;', css)
+        # A chosen chip is bordered in the accent, so the set that will run
+        # reads at a glance.
+        rule = css[css.index('.run-phase.builder-chip-check:has(input:checked) {'):]
+        self.assertIn("border-color: var(--accent-cyan)", rule[:rule.index("}")])
 
     def test_the_page_is_not_duplicated(self):
         # The regression the slicing bug produced: the run section's cards

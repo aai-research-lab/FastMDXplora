@@ -550,196 +550,188 @@
           <p class="muted studies-empty" id="studies-empty" hidden></p>
         </section>
 
+        <!-- The Config Builder (run-builder.js): five steps in the order a
+             study is decided, built from the schema, and beside them the
+             study as it stands, what it will build, what changed, the
+             config in each language and the way to run it. -->
         <section class="page" data-page="run">
           <div class="page-header">
             <div>
               <h1 class="page-title">Config Builder</h1>
-              <div class="page-subtitle">Select what you have, what should happen to it, and anything you want to change.</div>
+              <div class="page-subtitle">Configure a new MD simulation and analysis</div>
             </div>
             <div class="page-header-actions">
-              <div class="muted small" id="run-summary"></div>
-              <button type="button" class="ghost-btn" id="run-reset">Reset to defaults</button>
+              <span class="builder-draft muted small" id="run-draft" hidden>Draft saved in this browser</span>
+              <input type="search" class="builder-find" id="run-find" autocomplete="off"
+                     placeholder="Find a setting" aria-label="Find a setting">
+              <button type="button" class="ghost-btn" id="run-reset" title="Every setting back to its default, and the draft discarded">Reset</button>
             </div>
           </div>
 
-          <!-- Complete studies to start from (starters.py), drawn by
-               run-builder.js from the schema payload. -->
-          <details class="card builder-card starters-card" id="run-starters-card" open hidden>
-            <summary class="card-header">
-              <div>
-                <h2 class="card-title">Start from an example</h2>
-                <p class="builder-card-note">
-                  A complete study to change, rather than an empty form. Each runs as it
-                  stands, on the structure it names.
-                </p>
-              </div>
-            </summary>
-            <div class="starters" id="run-starters" role="list"></div>
-            <p class="builder-card-note starters-note" id="run-starters-note" role="status"></p>
-          </details>
+          <div class="builder-layout">
+            <div class="builder-main">
+              <nav class="builder-steps" id="run-steps" aria-label="Steps">
+                <button type="button" class="builder-step-link is-current" data-step="start"><b>1</b><span>Start</span></button>
+                <button type="button" class="builder-step-link" data-step="system"><b>2</b><span>System</span></button>
+                <button type="button" class="builder-step-link" data-step="protocol"><b>3</b><span>Protocol</span></button>
+                <button type="button" class="builder-step-link" data-step="analysis"><b>4</b><span>Analysis and report</span></button>
+                <button type="button" class="builder-step-link" data-step="review"><b>5</b><span>Review</span></button>
+              </nav>
+              <p class="builder-find-said muted small" id="run-find-said" hidden></p>
 
-          <div class="card builder-card">
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">What have you got?</h2>
-                <p class="builder-card-note">
-                  This sets what happens next. You can change it afterwards.
-                </p>
-              </div>
-              <span class="builder-step">01</span>
-            </div>
-            <div class="builder-grid builder-grid-2">
-              <label class="builder-field">
-                <span class="builder-label">Starting from</span>
-                <select id="run-start"></select>
-                <span class="builder-card-note" id="run-start-detail"></span>
-              </label>
-            </div>
-            <!-- Where it is, revealed once the starting point says what "it"
-                 is. The same id the JS toggles; only the card boundary went.
-                 A second card appearing under the first read as a step
-                 completed rather than a question continued. -->
-            <div class="builder-grid builder-grid-2 builder-continued" id="run-input-card" hidden>
-              <label class="builder-field builder-field-wide" id="run-structure-field" hidden>
-                <span class="builder-label">Structure</span>
-                <input type="text" id="run-system" autocomplete="off" data-picks="structure"
-                       placeholder="PDB ID, or a path to a structure file">
-                <span class="builder-card-note">
-                  A four-character identifier is fetched from the PDB.
-                </span>
-              </label>
-              <div class="builder-field builder-field-wide" id="run-trajectory-field" hidden>
-                <span class="builder-label">Trajectory</span>
-                <div class="analyse-path-row">
-                  <input type="text" id="run-trajectory" autocomplete="off" data-picks="trajectory"
-                         placeholder="/path/to/production.dcd">
+              <section class="builder-step" id="run-step-start" data-step="start" aria-labelledby="run-step-start-title">
+                <div class="builder-step-head"><span class="builder-step-n">1</span><h2 id="run-step-start-title">Start</h2></div>
+                <div class="builder-start" id="run-start" role="radiogroup" aria-label="Starting from"></div>
+                <div class="builder-start-alt">
+                  <a href="#agent" class="builder-agent-link">Or describe the study to the Agent</a>
+                  <span class="builder-start-alt-said" id="run-starters-card" hidden>
+                    <span class="muted">Start from an example</span>
+                    <span class="starters" id="run-starters" role="list"></span>
+                  </span>
                 </div>
-                <span class="builder-label" style="margin-top:10px">Structure</span>
-                <input type="text" id="run-topology" autocomplete="off" data-picks="structure"
-                       placeholder="/path/to/topology.pdb">
-                <span class="builder-card-note">
-                  The structure describing the atoms the trajectory moves.
-                </span>
-              </div>
-              <div class="builder-field builder-field-wide" id="run-config-field" hidden>
-                <span class="builder-label">Config file</span>
-                <div class="analyse-path-row">
-                  <input type="text" id="run-config-path" autocomplete="off" data-picks="config"
-                         placeholder="/path/to/fastmdxplora.yml">
-                  <button type="button" class="ghost-btn" id="run-check-config">Check it</button>
+                <p class="builder-card-note starters-note" id="run-starters-note" role="status"></p>
+
+                <div class="builder-group" id="run-input-card" hidden>
+                  <!-- A structure: the systems the study runs, each with its
+                       name and any settings for it alone. -->
+                  <div id="run-structure-field" hidden>
+                    <div class="builder-group-head"><h3>Systems</h3>
+                      <p>Every system runs with the settings below. Settings for one system only are listed on its row.</p></div>
+                    <div class="builder-systems" id="run-systems" role="table" aria-label="Systems"></div>
+                    <button type="button" class="builder-add" id="run-add-system">+ Add a system</button>
+                  </div>
+                  <div class="builder-field builder-field-wide" id="run-trajectory-field" hidden>
+                    <div class="builder-grid">
+                      <div class="builder-field builder-field-wide">
+                        <div class="builder-head"><span class="builder-label">Trajectory</span></div>
+                        <div class="analyse-path-row">
+                          <input type="text" id="run-trajectory" autocomplete="off" data-picks="trajectory"
+                                 placeholder="e.g. /path/to/production.dcd">
+                        </div>
+                      </div>
+                      <div class="builder-field builder-field-wide">
+                        <div class="builder-head"><span class="builder-label">Structure</span></div>
+                        <input type="text" id="run-topology" autocomplete="off" data-picks="structure"
+                               placeholder="e.g. /path/to/topology.pdb">
+                        <span class="builder-help">The structure describing the atoms the trajectory moves; found beside it where it can be.</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="builder-field builder-field-wide" id="run-config-field" hidden>
+                    <div class="builder-head"><span class="builder-label">Config file</span></div>
+                    <div class="analyse-path-row">
+                      <input type="text" id="run-config-path" autocomplete="off" data-picks="config"
+                             placeholder="e.g. /path/to/fastmdxplora.yml">
+                      <button type="button" class="ghost-btn" id="run-check-config">Check it</button>
+                    </div>
+                    <span class="builder-help" id="run-config-verdict"></span>
+                    <div class="builder-actions-row">
+                      <button type="button" class="ghost-btn" id="run-open-config" disabled>Open and change it</button>
+                      <button type="button" class="primary-btn" id="run-as-is" disabled>Run on this machine as it is</button>
+                      <!--__FASTMDX_RUN_AS_IS_ELSEWHERE__-->
+                    </div>
+                    <span class="builder-help">Opening it never writes to it. Anything changed is saved as a new file, so a config saved beside a paper stays as it was.</span>
+                  </div>
                 </div>
-                <span class="builder-card-note" id="run-config-verdict"></span>
-                <div class="page-header-actions" style="margin-top:10px">
-                  <button type="button" class="ghost-btn" id="run-open-config" disabled>
-                    Open and change it
-                  </button>
-                  <button type="button" class="primary-btn" id="run-as-is" disabled>
-                    Run it as it is
-                  </button>
-                  <!--__FASTMDX_RUN_AS_IS_ELSEWHERE__-->
-                </div>
-                <span class="builder-card-note">
-                  Opening it never writes to it. Anything you change is saved as
-                  a new file, so a config kept beside a paper stays as it was.
-                </span>
-              </div>
-              <div class="builder-field" id="run-output-field">
-                <span class="builder-label">Results folder</span>
-                <input type="text" id="run-output" autocomplete="off" data-picks="folder"
-                       placeholder="fastmdxplora_<system>_study_<timestamp>">
-                <span class="builder-card-note" id="run-output-note"></span>
-              </div>
-              <section class="builder-field builder-field-wide system-preview" id="run-system-preview"
-                       hidden aria-live="polite" aria-labelledby="run-system-preview-title">
-                <div class="system-preview-head">
-                  <span class="builder-label" id="run-system-preview-title">What setup will build</span>
-                  <span class="system-preview-state" id="run-system-preview-state"></span>
-                </div>
-                <div class="system-preview-layout">
-                  <div class="system-preview-body" id="run-system-preview-body"></div>
-                  <div class="system-preview-view" id="run-system-preview-view" hidden
-                       role="img" aria-label="The structure setup keeps, in the periodic box it builds"></div>
+
+                <div class="builder-grid builder-start-more" id="run-start-more" hidden>
+                  <div class="builder-field builder-field-wide" id="run-output-field">
+                    <div class="builder-head"><span class="builder-label">Results folder</span></div>
+                    <input type="text" id="run-output" autocomplete="off" data-picks="folder" class="mono"
+                           placeholder="fastmdxplora_<system>_study_<timestamp>">
+                    <span class="builder-help" id="run-output-note"></span>
+                  </div>
+                  <div class="builder-field builder-field-wide" id="run-phases-card">
+                    <div class="builder-head"><span class="builder-label">What runs</span></div>
+                    <div class="run-phases" id="run-phases"></div>
+                    <span class="builder-help" id="run-phases-said"></span>
+                  </div>
                 </div>
               </section>
-            </div>
-          </div>
 
-          <div class="card builder-card" id="run-phases-card" hidden>
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">What should happen?</h2>
-                <p class="builder-card-note">
-                  Each of these can be left out. A run that only analyses is a
-                  run with one of them ticked.
-                </p>
-              </div>
-              <span class="builder-step">02</span>
-            </div>
-            <div class="run-phases" id="run-phases"></div>
-          </div>
+              <!-- Every setting the form offers, built by run-builder.js into
+                   the steps below from the schema. -->
+              <div id="run-settings">
+              <section class="builder-step" id="run-step-system" data-step="system" aria-labelledby="run-step-system-title" hidden>
+                <div class="builder-step-head"><span class="builder-step-n">2</span><h2 id="run-step-system-title">System</h2>
+                  <span class="builder-step-said" id="run-step-system-said">How the structure becomes the system that is simulated</span></div>
+                <div class="builder-step-body" id="run-system-body"></div>
+              </section>
 
-          <div class="card builder-card" id="run-settings-card" hidden>
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">Anything to change?</h2>
-                <p class="builder-card-note">
-                  Every setting has a default that works. These are here for
-                  when it does not.
-                </p>
-              </div>
-              <span class="builder-step">03</span>
-            </div>
-            <div class="run-settings" id="run-settings"></div>
-          </div>
+              <section class="builder-step" id="run-step-protocol" data-step="protocol" aria-labelledby="run-step-protocol-title" hidden>
+                <div class="builder-step-head"><span class="builder-step-n">3</span><h2 id="run-step-protocol-title">Protocol</h2>
+                  <span class="builder-step-said">How long, under what conditions, and how many runs</span></div>
+                <div class="builder-step-body" id="run-protocol-body"></div>
+              </section>
 
-          <div class="card builder-card" id="run-actions-card" hidden>
-            <div class="card-header">
-              <div>
-                <h2 class="card-title">Run it here, or take it with you</h2>
-                <p class="builder-card-note">
-                  The same file either way. A laptop is a poor place to run a
-                  long simulation; a cluster is a poor place to decide what to
-                  run.
-                </p>
+              <section class="builder-step" id="run-step-analysis" data-step="analysis" aria-labelledby="run-step-analysis-title" hidden>
+                <div class="builder-step-head"><span class="builder-step-n">4</span><h2 id="run-step-analysis-title">Analysis and report</h2>
+                  <span class="builder-step-said">The same themes as the Analysis page</span></div>
+                <div class="builder-step-body" id="run-analysis-body"></div>
+              </section>
+
+              <section class="builder-step" id="run-step-review" data-step="review" aria-labelledby="run-step-review-title" hidden>
+                <div class="builder-step-head"><span class="builder-step-n">5</span><h2 id="run-step-review-title">Review</h2></div>
+                <div class="builder-step-body" id="run-review-body"></div>
+              </section>
+
               </div>
-              <span class="builder-step">04</span>
             </div>
-            <label class="analyse-full-toggle">
-              <input type="checkbox" id="run-full-config">
-              <span>
-                Write every setting, not only the ones I changed
-                <span class="builder-card-note">
-                  A full config records what the run used, so a default that
-                  moves in a later version cannot change what the file meant.
-                </span>
-              </span>
-            </label>
-            <div class="page-header-actions">
-              <button type="button" class="ghost-btn" id="run-preview"
-                      aria-expanded="false" aria-controls="run-config-preview">
-                Show the config
-              </button>
-              <button type="button" class="ghost-btn" id="run-download" disabled>
-                Download config
-              </button>
-              <button type="button" class="ghost-btn" id="run-copy-command" disabled
-                      title="The fastmdx invocation that runs this study, for a terminal or a batch script.">
-                Copy the command
-              </button>
-              <button type="button" class="ghost-btn" id="run-download-script" disabled
-                      title="The same study as a Python script, using the documented API.">
-                Download a script
-              </button>
-              <!--__FASTMDX_RUN_ELSEWHERE__-->
-              <button type="button" class="primary-btn" id="run-start-button" disabled>
-                Run here
-              </button>
-              <button type="button" class="danger-btn" id="run-stop" hidden>
-                Stop the run
-              </button>
-            </div>
-            <div class="builder-card-note" id="run-note"></div>
-            <pre class="mono small" id="run-config-preview" hidden></pre>
+
+            <aside class="builder-summary" id="run-summary-panel" aria-label="This study">
+              <div class="builder-summary-head">
+                <h2>This study</h2>
+                <span class="builder-status" id="run-status" data-state="none" role="status"></span>
+              </div>
+              <div class="builder-plan-chain" id="run-summary"></div>
+
+              <section class="builder-summary-card system-preview" id="run-system-preview"
+                       hidden aria-live="polite" aria-labelledby="run-system-preview-title">
+                <div class="system-preview-head">
+                  <span class="builder-summary-k" id="run-system-preview-title">What setup will build</span>
+                  <span class="system-preview-state" id="run-system-preview-state"></span>
+                </div>
+                <div class="system-preview-view" id="run-system-preview-view" hidden
+                     role="img" aria-label="The structure setup prepares, in the periodic box it builds"></div>
+                <div class="system-preview-body" id="run-system-preview-body"></div>
+              </section>
+
+              <section class="builder-summary-card" id="run-changed-card" aria-labelledby="run-changed-title">
+                <div class="builder-summary-k"><span id="run-changed-title">Changed</span>
+                  <span class="mono" id="run-changed-n">0</span>
+                  <button type="button" class="builder-linkish" id="run-only-changed" aria-pressed="false">Show only these</button></div>
+                <ul class="builder-changed" id="run-changed"></ul>
+              </section>
+
+              <section class="builder-summary-card builder-code" aria-label="The study in each language">
+                <div class="builder-tabs" role="tablist">
+                  <button type="button" role="tab" aria-selected="true" data-code="yaml">Config</button>
+                  <button type="button" role="tab" aria-selected="false" data-code="command">Command</button>
+                  <button type="button" role="tab" aria-selected="false" data-code="script">Python</button>
+                </div>
+                <pre class="mono small builder-code-pane" id="run-config-preview" data-code-pane="yaml"></pre>
+                <pre class="mono small builder-code-pane" id="run-command-preview" data-code-pane="command" hidden></pre>
+                <pre class="mono small builder-code-pane" id="run-script-preview" data-code-pane="script" hidden></pre>
+              </section>
+
+              <div class="builder-actions" id="run-actions-card">
+                <button type="button" class="primary-btn builder-run" id="run-start-button" disabled>Run on this machine</button>
+                <button type="button" class="danger-btn builder-run" id="run-stop" hidden>Stop the run</button>
+                <div class="builder-actions-row">
+                  <button type="button" class="ghost-btn" id="run-download" disabled>Download config</button>
+                  <button type="button" class="ghost-btn" id="run-copy-command" disabled
+                          title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy command</button>
+                  <button type="button" class="ghost-btn" id="run-download-script" disabled
+                          title="The same study as a Python script, using the documented API.">Python script</button>
+                  <!--__FASTMDX_RUN_ELSEWHERE__-->
+                </div>
+                <div class="builder-card-note" id="run-note" role="status"></div>
+              </div>
+            </aside>
+          </div>
+          <div class="builder-phone-bar" id="run-phone-bar">
+            <span class="builder-status" id="run-phone-status" data-state="none"></span>
+            <button type="button" class="primary-btn" id="run-phone-start" disabled>Run on this machine</button>
           </div>
         </section>
 
@@ -1760,7 +1752,7 @@
                           title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy the command</button>
                   <button class="ctl-btn" type="button" data-role="script" id="agent-download-script"
                           title="The same study as a Python script, using the documented API.">Download a script</button>
-                  <button class="primary-btn" type="button" data-role="run" id="agent-run">Run here</button>
+                  <button class="primary-btn" type="button" data-role="run" id="agent-run">Run on this machine</button>
                   <span class="builder-card-note agent-action-note" data-role="note" id="agent-action-note" role="status"></span>
                 </div>
                 <div class="agent-run-fix" data-role="fix" id="agent-run-fix" hidden></div>

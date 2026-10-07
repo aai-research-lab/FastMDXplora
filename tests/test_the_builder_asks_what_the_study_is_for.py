@@ -75,10 +75,10 @@ def test_the_page_writes_the_rule(tmp_path) -> None:
                           " system: '1UAO', start: 'structure',"
                           " include_phase: ['setup', 'simulation', 'analysis'], phases: {}})")
             page.evaluate("() => window.FastMDXDashboard.navigate('run')")
-            heads = page.locator("#run-settings .run-section-head")
-            heads.filter(has_text="Simulate").first.click()
+            # How long it runs: until it is determined, which opens on a row
+            # to write.
+            page.click('#run-length-mode [data-value="until"]')
             field = page.locator('[data-setting="stop_when"]')
-            field.locator(".builder-stopping-add").click()
             row = field.locator(".builder-stopping-row").first
             row.locator(".builder-stopping-analysis").select_option("rmsd")
             kind_label = row.locator(".builder-stopping-kind option").first.text_content()
