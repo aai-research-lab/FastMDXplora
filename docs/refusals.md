@@ -304,6 +304,8 @@ A few you are likely to meet, and what each means.
 | `setup.structure.undetermined` | The structure does not determine what to simulate. Usually a ligand whose chemistry could not be looked up — supply an SDF |
 | `setup.chemistry.protonation_undetermined` | A ligand's pKa sits inside the pH margin. A decision about the science |
 | `environment.path.exists` | The output directory already holds results. `--force-overwrite` if you mean to |
+| `environment.demo.absent` | The demo study has not been published for this release, or the folder named holds none |
+| `environment.demo.unverified` | What was fetched as the demo study does not hash to the SHA-256 this release records, or is not a demo study; nothing is kept |
 | `setup.membrane.no_belt` | A bilayer was asked for and the structure does not look like a membrane protein: no slab buries enough apolar surface. Check `chains`, or give an OPM file |
 | `setup.membrane.orientation_unchecked` | A bilayer was asked for and the structure lies at an angle to z. The tilt is stated; `membrane_orient: true` rotates it |
 | `setup.membrane.packing_failed` | OpenMM's packing of the bilayer ran away to a NaN in each of three packings, each from its own seed. The seeds are stated; another `setup.random_seed` packs from other random numbers, and a structure not oriented across the slab fails every time |

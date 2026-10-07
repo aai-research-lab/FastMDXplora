@@ -446,6 +446,7 @@ than one release are said to be. See
 | `--host` | What to bind to | `127.0.0.1` |
 | `--port` | Which port. If it is busy, the next free one is used and reported | `8765` |
 | `--no-browser` | Print the URL instead of opening a tab | opens a tab |
+| `--demo [DIR]` | Copy the demo study (trypsin with benzamidine, 3PTB, finished) into DIR and open it. It is not in the package: it is fetched the first time (about 11 MB), checked against the SHA-256 this release records, and kept in `~/.cache/fastmdxplora/demo` (or under `FASTMDXPLORA_CACHE_DIR`). **Open the demo study** on an empty Overview does the same | off |
 | `--ligand-resname NAME` | Which residue the viewer treats as the ligand | auto-detected |
 | `--binding-pocket-cutoff-A X` | How near counts as the pocket | `5.0` |
 | `--hosted` | Serve it to someone else, through a proxy that signs them in; see [Serving the GUI to other people](hosting.md) | off |

@@ -84,6 +84,7 @@
     if (demoButton) {
       demoButton.addEventListener("click", async () => {
         demoButton.disabled = true;
+        if (Number(state.appState?.demo_to_fetch || 0)) demoButton.textContent = "Fetching the demo study\u2026";
         try {
           const response = await fetch("/api/demo", {
             method: "POST", headers: {"content-type": "application/json"}, body: "{}",
@@ -487,7 +488,16 @@
     state.appState = payload || {};
     // The demo study, offered where this installation carries it.
     const demo = byId("open-demo");
-    if (demo) demo.hidden = !state.appState.demo_available;
+    if (demo) {
+      demo.hidden = !state.appState.demo_available;
+      // Fetched the first time it is opened: said, with its weight.
+      const weight = Number(state.appState.demo_to_fetch || 0);
+      if (!demo.disabled) {
+        demo.textContent = weight
+          ? `Open the demo study (fetches ${Math.round(weight / 1e6)} MB once)`
+          : "Open the demo study";
+      }
+    }
     if (runChanged) {
       resetRunDependentState();
       emit("run-changed", {previousRun, activeRun, first: firstAppState});

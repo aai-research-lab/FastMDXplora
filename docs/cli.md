@@ -403,6 +403,7 @@ fastmdx gui --output runs/study    # open a run, live or finished
 | `--host` | `127.0.0.1` | What to bind to |
 | `--port` | `8765` | Which port. If busy, the next free one is used and reported |
 | `--no-browser` | opens a tab | Print the URL instead |
+| `--demo [DIR]` | off | Copy the demo study (3PTB, finished) into DIR and open it; fetched the first time (about 11 MB) and kept in the cache |
 | `--ligand-resname NAME` | auto-detected | Which residue the viewer treats as the ligand |
 | `--binding-pocket-cutoff-A X` | `5.0` | How near counts as the pocket |
 

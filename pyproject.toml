@@ -240,9 +240,10 @@ fastmdxplora = [
     "gui/static/**/*",
     "gui/templates/*.html",
     "gui/templates/**/*",
-    # The demo study and the config it is made from.
+    # The config the demo study is made from, and where the study is fetched
+    # from (it is not in the package: fastmdxplora/demo).
     "demo/*.yml",
-    "demo/3ptb/**/*",
+    "demo/*.json",
 ]
 
 [tool.setuptools_scm]

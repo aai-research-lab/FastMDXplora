@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The demo study is fetched the first time it is opened
+
+**Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the
+package: packaged, it is about 16 MB (11 MB compressed) for a study most
+people open once. `fastmdx gui --demo` and **Open the demo study** fetch it
+the first time from where `demo/3ptb.source.json` says, check it against
+the SHA-256 recorded there (`environment.demo.unverified` where it does not
+match; nothing is kept), and keep it in `~/.cache/fastmdxplora/demo`.
+`scripts/make_demo.py --zip FILE` writes the archive, the same bytes for the
+same folder, and says its SHA-256 and size; it leaves out the report's
+downloads and what a finished study is not shown from (the run's live
+snapshots, the SVG beside each figure, the clusters' medoid structures, the
+standalone page), and keeps what the pages read.
+
 ### The Config Builder in five steps, beside the study
 
 **Changed:** the Config Builder (subtitle "Configure a new MD simulation and

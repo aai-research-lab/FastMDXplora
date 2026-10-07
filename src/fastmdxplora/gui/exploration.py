@@ -849,6 +849,7 @@ class DashboardRuntime:
                 "can_launch": not running,
                 # Whether this installation carries the demo study to open.
                 "demo_available": _demo_available() and self.hosting is None,
+                "demo_to_fetch": _demo_to_fetch() if self.hosting is None else 0,
             }
 
     def _spawn(
@@ -1574,6 +1575,13 @@ class DashboardRuntime:
 
 
 def _demo_available() -> bool:
-    from fastmdxplora.demo import packaged
+    from fastmdxplora.demo import offered
 
-    return packaged() is not None
+    return offered()
+
+
+def _demo_to_fetch() -> int:
+    """What the demo study weighs where it has still to be fetched, or 0."""
+    from fastmdxplora.demo import cached, packaged, source
+
+    return 0 if packaged() or cached() else source()["bytes"]

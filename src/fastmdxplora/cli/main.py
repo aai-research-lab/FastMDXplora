@@ -1161,7 +1161,8 @@ def _build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--demo", nargs="?", const=".", default=None, metavar="DIR",
                      help="Copy the demo study, trypsin with benzamidine (3PTB), "
                           "finished, into DIR (default: the current folder) and "
-                          "open it.")
+                          "open it. Fetched the first time (about 11 MB) and kept "
+                          "in the cache.")
     gui.add_argument("--host", default="127.0.0.1",
                      help="Bind address (default: 127.0.0.1).")
     gui.add_argument("--port", type=int, default=8765,
@@ -2705,6 +2706,10 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
         from fastmdxplora.demo import DemoMissing, copy_demo
 
         try:
+            from fastmdxplora.demo import fetch_demo, packaged
+
+            if packaged() is None:
+                fetch_demo(said=print)
             copied = copy_demo(args.demo)
         except DemoMissing as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)

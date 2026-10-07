@@ -14,6 +14,10 @@ pip-wheel-metadata/
 
 # Versioning artifact from setuptools-scm
 src/fastmdxplora/_version.py
+
+# The demo study as scripts/make_demo.py packages it: published as a
+# download, never committed (fastmdxplora/demo)
+src/fastmdxplora/demo/3ptb/
 shim-package/src/fastmdx/_version.py
 
 # Test / coverage artifacts

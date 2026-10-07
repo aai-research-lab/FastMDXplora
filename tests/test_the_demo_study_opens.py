@@ -159,12 +159,14 @@ def test_copied_with_its_paths_made_the_copy_s(tmp_path) -> None:
     assert _of_the_played_trajectory(first, _json(first / "analysis" / "analysis_manifest.json"))
 
 
-def test_without_a_demo_installed_it_says_so(tmp_path, monkeypatch) -> None:
+def test_without_a_demo_published_it_says_so(tmp_path, monkeypatch) -> None:
     import fastmdxplora.demo as demo
 
     monkeypatch.setattr(demo, "_PACKAGED", tmp_path / "none")
-    assert demo.packaged() is None
-    with pytest.raises(demo.DemoMissing, match="carries no demo study") as said:
+    monkeypatch.setattr(demo, "_SOURCE", tmp_path / "no-source.json")
+    monkeypatch.setenv("FASTMDXPLORA_CACHE_DIR", str(tmp_path / "cache"))
+    assert demo.packaged() is None and not demo.offered()
+    with pytest.raises(demo.DemoMissing, match="not been published") as said:
         demo.copy_demo(tmp_path / "mine")
     assert said.value.refusal.code == "environment.demo.absent"
     from fastmdxplora.cli.main import main
@@ -205,3 +207,121 @@ def test_a_service_s_gui_does_not_copy_it() -> None:
 
     said = DashboardRuntime.open_the_demo(SimpleNamespace(hosting=object(), snapshot=dict))
     assert said["ok"] is False and "your own computer" in said["error"]
+
+
+# ---------------------------------------------------------------------------
+# Fetched the first time it is opened
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def published(tmp_path, monkeypatch):
+    """The demo packaged as `make_demo.py --zip` writes it, served over HTTP
+    as a release would serve it, and recorded where the package reads it."""
+    import functools
+    import http.server
+    import threading
+
+    import fastmdxplora.demo as demo
+
+    made = _finished(tmp_path / "made")
+    served = tmp_path / "served"
+    done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(made),
+                           "--out", str(tmp_path / "packaged"),
+                           "--zip", str(served / "demo.zip")],
+                          capture_output=True, text=True, check=True)
+    said = json.loads(done.stdout[done.stdout.index("{"):])
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(served))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/demo.zip"
+    record = tmp_path / "3ptb.source.json"
+    record.write_text(json.dumps({**said, "url": url}))
+    monkeypatch.setattr(demo, "_PACKAGED", tmp_path / "none")
+    monkeypatch.setattr(demo, "_SOURCE", record)
+    monkeypatch.setenv("FASTMDXPLORA_CACHE_DIR", str(tmp_path / "cache"))
+    yield {"server": server, "said": said, "record": record, "served": served, "made": made}
+    server.shutdown()
+
+
+def test_it_is_fetched_once_and_then_opened_from_the_cache(published, tmp_path) -> None:
+    import fastmdxplora.demo as demo
+
+    assert demo.offered() and demo.cached() is None
+    told: list[str] = []
+    first = demo.copy_demo(tmp_path / "mine")
+    assert (first / "simulation" / "production.dcd").is_file()
+    kept = demo.cached()
+    assert kept is not None and kept.parent == tmp_path / "cache" / "demo"
+    # The second needs no server.
+    published["server"].shutdown()
+    second = demo.copy_demo(tmp_path / "mine")
+    assert second.name.endswith("-2") and (second / "demo.json").is_file()
+    assert demo.fetch_demo(said=told.append) == kept and told == []
+
+
+def test_the_same_folder_is_the_same_archive(published, tmp_path) -> None:
+    """Written again from the same packaged folder, the archive is the same
+    bytes: members in name order with one fixed time."""
+    import hashlib
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("make_demo", ROOT / "scripts" / "make_demo.py")
+    make_demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(make_demo)
+    again = make_demo.archive(tmp_path / "packaged", tmp_path / "again.zip")
+    assert again == (published["said"]["sha256"], published["said"]["bytes"])
+    assert hashlib.sha256((tmp_path / "again.zip").read_bytes()).hexdigest() == again[0]
+
+
+def test_what_does_not_hash_as_recorded_is_not_kept(published, tmp_path) -> None:
+    import fastmdxplora.demo as demo
+
+    (published["served"] / "demo.zip").write_bytes(b"not the demo")
+    with pytest.raises(demo.DemoMissing) as refused:
+        demo.copy_demo(tmp_path / "mine")
+    assert refused.value.refusal.code == "environment.demo.unverified"
+    assert demo.cached() is None and not (tmp_path / "mine").exists()
+    assert list((tmp_path / "cache" / "demo").iterdir()) == []
+
+
+def test_an_archive_naming_a_path_outside_itself_is_refused(published, tmp_path) -> None:
+    import hashlib
+    import zipfile
+
+    import fastmdxplora.demo as demo
+
+    archive = published["served"] / "demo.zip"
+    with zipfile.ZipFile(archive, "w") as out:
+        out.writestr("3ptb/demo.json", "{}")
+        out.writestr("../escaped.txt", "x")
+    record = json.loads(published["record"].read_text())
+    record["sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+    published["record"].write_text(json.dumps(record))
+    with pytest.raises(demo.DemoMissing, match="outside itself"):
+        demo.fetch_demo()
+    assert not (tmp_path / "cache" / "escaped.txt").exists()
+
+
+def test_with_no_way_to_fetch_it_says_so(published, tmp_path) -> None:
+    import fastmdxplora.demo as demo
+
+    published["server"].shutdown()
+    published["server"].server_close()
+    with pytest.raises(demo.DemoMissing, match="needs the internet") as refused:
+        demo.copy_demo(tmp_path / "mine")
+    assert refused.value.refusal.code == "environment.service.unreachable"
+
+
+def test_the_page_says_it_is_fetched_and_its_weight(published, tmp_path) -> None:
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    session = start_dashboard_session(output=str(workspace), host="127.0.0.1", port=0)
+    try:
+        state = json.loads(urllib.request.urlopen(session.url + "/api/app-state", timeout=30).read())
+    finally:
+        session.server.shutdown()
+    assert state["demo_available"] is True
+    assert state["demo_to_fetch"] == published["said"]["bytes"]
+    script = (ROOT / "src" / "fastmdxplora" / "gui" / "static" / "dashboard.js").read_text()
+    assert "fetches ${Math.round(weight / 1e6)} MB once" in script

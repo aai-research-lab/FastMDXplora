@@ -19,6 +19,7 @@ Usage
 -----
     python scripts/make_demo.py <the finished study>
     python scripts/make_demo.py <the finished study> --out <folder> --most-kb 1024
+    python scripts/make_demo.py <the finished study> --out <folder> --zip <file>
 
 It refuses a study that has not finished each phase, or one whose
 production holds more than 100 frames (the analyses number their frames as
@@ -168,12 +169,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=OUT, help=f"Where to write it (default {OUT}).")
     parser.add_argument("--most-kb", type=int, default=1024,
                         help="Leave out any other file larger than this (default 1024 KB).")
+    parser.add_argument("--zip", type=Path, default=None, metavar="FILE",
+                        help="Also write it as the archive the demo is fetched as, and say "
+                             "its SHA-256 and size for demo/3ptb.source.json.")
     args = parser.parse_args(argv)
     record = package(args.study, args.out, args.most_kb * 1024)
     print(f"Wrote {args.out}: {record['frames']} frames, {record['bytes'] / 1e6:.1f} MB.")
     if record["left_out"]:
         print("Left out: " + said_briefly(record["left_out"]))
+    if args.zip is not None:
+        digest, size = archive(args.out, args.zip)
+        print(f"Wrote {args.zip}: {size / 1e6:.1f} MB, SHA-256 {digest}.")
+        print("For demo/3ptb.source.json, once it is published:")
+        print(json.dumps({"url": "<where it is published>", "sha256": digest, "bytes": size},
+                         indent=2))
     return 0
+
+
+def archive(folder: Path, to: Path) -> tuple[str, int]:
+    """The packaged demo as one archive, its members under ``3ptb/`` in
+    name order with one fixed time, so the same folder is the same bytes and
+    the same SHA-256 however often it is written."""
+    import hashlib
+    import zipfile
+
+    to.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(to, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as out:
+        for path in sorted(p for p in folder.rglob("*") if p.is_file()):
+            member = zipfile.ZipInfo("3ptb/" + path.relative_to(folder).as_posix(),
+                                     date_time=(2026, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.external_attr = 0o644 << 16
+            out.writestr(member, path.read_bytes())
+    data = to.read_bytes()
+    return hashlib.sha256(data).hexdigest(), len(data)
 
 
 if __name__ == "__main__":
