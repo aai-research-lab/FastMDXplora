@@ -3473,6 +3473,17 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-confirm-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .agent-confirm-btn:disabled { opacity: .55; cursor: default; }
 .agent-confirm-btn.is-chosen { opacity: 1; }
+/* What a run found once it ended, from its records. */
+.agent-summary { max-width: 780px; border: 1px solid var(--border-primary); border-radius: 12px;
+    background: var(--panel-glass); }
+.agent-summary-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); font-size: var(--text-sm); }
+.agent-summary-rows { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px;
+    margin: 0; padding: 12px 14px; font-size: var(--text-sm); }
+.agent-summary-rows dt { color: var(--text-muted); }
+.agent-summary-rows dd { margin: 0; font-size: var(--text-sm); line-height: 1.5; max-width: none; }
+.agent-summary-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px;
+    border-top: 1px solid var(--border-subtle); }
 /* A study running, under the message that started it. */
 .agent-running { max-width: 780px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
     border: 1px solid var(--border-primary); border-radius: 12px; background: var(--panel-glass);

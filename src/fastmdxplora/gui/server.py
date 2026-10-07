@@ -1463,6 +1463,14 @@ def make_handler(
                     payload or {}, app_runtime,
                     dashboard_url=self.headers.get("Origin")))
                 return
+            if path == "/api/agent/run-summary":
+                # What a run the Agent started found, from its records.
+                from fastmdxplora.gui.agent_panel import run_summary_endpoint
+
+                self._send_json(run_summary_endpoint(
+                    payload or {}, app_runtime,
+                    path_for=hosting.inside if hosting is not None else None))
+                return
             if path == "/api/agent/propose":
                 # A sentence in, a config out -- through the same
                 # `propose_config` the CLI uses and the same validator a

@@ -913,6 +913,7 @@
   }
 
   function scrollToEnd() {
+    placeholder();
     /* The last message into view, whichever ancestor scrolls. Setting
      * scrollTop on the thread assumed the thread was the scroll
      * container, and when it was not, nothing moved. After a frame, so
@@ -1148,6 +1149,7 @@
   var writing = null;
 
   function writingState(on) {
+    setTimeout(placeholder, 0);
     var button = el("agent-propose");
     button.classList.toggle("is-writing", on);
     button.setAttribute("aria-label", on ? "Stop" : "Send");
@@ -1531,6 +1533,134 @@
       return;
     }
     note(box, "I do not know how to " + action + ".");
+  }
+
+  /* When a run started here ends, what it found, from the study's records
+   * (`/api/agent/run-summary`), so it costs no tokens: said once, under the
+   * conversation, and kept with it. */
+  var SUMMARY_ROWS = [["found", "What it found"], ["long_enough", "Long enough?"],
+                      ["strengthen", "To strengthen it"]];
+
+  function summaryCard(box, s) {
+    var card = document.createElement("div");
+    card.className = "agent-summary";
+    var head = document.createElement("div");
+    head.className = "agent-summary-head";
+    var said = document.createElement("b");
+    said.textContent = s.head || "The run ended";
+    var from = document.createElement("span");
+    from.className = "agent-badge";
+    from.textContent = "from the study\u2019s records";
+    var spacer = document.createElement("span");
+    spacer.className = "agent-spacer";
+    head.append(said, spacer, from);
+    card.appendChild(head);
+    var rows = document.createElement("dl");
+    rows.className = "agent-summary-rows";
+    SUMMARY_ROWS.forEach(function (row) {
+      if (!s[row[0]]) return;
+      var term = document.createElement("dt");
+      term.textContent = row[1];
+      var value = document.createElement("dd");
+      value.className = "agent-answer";
+      value.innerHTML = prose(s[row[0]]);
+      rows.append(term, value);
+    });
+    card.appendChild(rows);
+    var foot = document.createElement("div");
+    foot.className = "agent-summary-foot";
+    [["Open the Overview", "overview"], ["Open the report", "report"]].forEach(function (b) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "ctl-btn";
+      button.textContent = b[0];
+      button.addEventListener("click", function () {
+        if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+          window.FastMDXDashboard.navigate(b[1]);
+        } else {
+          window.location.hash = "#" + b[1];
+        }
+      });
+      foot.appendChild(button);
+    });
+    card.appendChild(foot);
+    box.appendChild(card);
+    return card;
+  }
+
+  /* A run this conversation started whose summary is not said yet. */
+  function runAwaitingSummary() {
+    for (var i = transcript.length - 1; i >= 0; i--) {
+      var e = transcript[i];
+      if (e.kind === "summary") return null;
+      if (e.kind === "action" && e.action === "run" && e.output) {
+        return e.no_summary ? null : e;
+      }
+    }
+    return null;
+  }
+
+  var summaryAsked = false;
+  /* A run that did not finish; one whose record says nothing is not that. */
+  var STOPPED_AS = /^(failed|stopped|interrupted)$/;
+  function sayHowTheRunEnded() {
+    var run = runAwaitingSummary();
+    if (!run || summaryAsked) return;
+    summaryAsked = true;
+    post("/api/agent/run-summary", { study: run.output }).then(function (s) {
+      summaryAsked = false;
+      if (s && !s.ok) {
+        // No study there any more: not asked again.
+        run.no_summary = true;
+        persist();
+        return;
+      }
+      if (!s || !s.ended || runAwaitingSummary() !== run) return;
+      var r = reply();
+      whoIs(r, STOPPED_AS.test(s.status || "") ? "stopped" : "done");
+      summaryCard(r.part("attempts"), s);
+      var entry = { role: "agent", kind: "summary", study: run.output, head: s.head,
+                    status: s.status, found: s.found, long_enough: s.long_enough,
+                    strengthen: s.strengthen };
+      transcript.push(entry);
+      history.push({ role: "agent", text: s.head + ".\n" + [s.found, s.long_enough,
+                     s.strengthen].filter(Boolean).join("\n") });
+      persist();
+      placeholder();
+      scrollToEnd();
+    }).catch(function () { summaryAsked = false; });
+  }
+
+  /* The message box's words follow the situation (user, 10-07: "This
+   * default should be adaptive"). */
+  var studyState = "none";
+  function placeholder() {
+    var area = el("agent-request");
+    if (!area) return;
+    var thread = el("agent-thread");
+    var nodes = thread ? thread.querySelectorAll(".agent-msg") : [];
+    var last = nodes.length ? nodes[nodes.length - 1] : null;
+    var words;
+    if (writing) {
+      words = "I am working on it; you can write your next message";
+    } else if (stopPending || runPending || fixPending) {
+      words = "Answer above, or type yes or no";
+    } else if (last && last.querySelector(".agent-choice:not(:disabled)")) {
+      words = "Pick one above, or type your answer";
+    } else if (last && last.querySelector(".agent-question")) {
+      words = "Type your answer";
+    } else if (last && last.querySelector(".agent-study:not([hidden]):not(.is-replaced)")) {
+      words = "Change something, or say run it";
+    } else if (studyState === "running") {
+      words = "Ask how it is going, or tell me to stop it";
+    } else if (studyState === "stopped") {
+      words = "Ask why it stopped, or what would fix it";
+    } else if (studyState === "finished") {
+      words = "Ask about this study, or describe the next one";
+    } else {
+      words = "Describe a study, or ask about one in this folder";
+    }
+    area.placeholder = words;
   }
 
   /* A fix asked about with its price, as the two buttons. */
@@ -2104,6 +2234,11 @@
           stopPending = e.confirm === "stop" || /^Stop the run.*\? Say yes\.$/.test(e.text || "")
             ? true : null;
           runPending = e.confirm === "run" || e.text === RUN_QUESTION ? true : null;
+        } else if (e.kind === "summary") {
+          whoIs(r, STOPPED_AS.test(e.status || "") ? "stopped" : "done");
+          summaryCard(box, e);
+          history.push({ role: "agent", text: (e.head || "") + ".\n" + [e.found, e.long_enough,
+                         e.strengthen].filter(Boolean).join("\n") });
         } else if (e.kind === "action") {
           if (e.action === "run" && e.started) runLine(box, e.version, e.started, false);
           else note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
@@ -2124,6 +2259,8 @@
             last.text === RUN_QUESTION))) {
         runPending = null;
       }
+      // A run started here that ended while the page was closed.
+      sayHowTheRunEnded();
       scrollToEnd();
   }
 
@@ -2149,6 +2286,7 @@
       history = []; transcript = []; currentConfig = null;
       stopPending = null; runPending = null; fixPending = null; lastReply = null;
       versions = [];
+      placeholder();
     }
     /* A fresh thread: where the GUI is, or, given `study` (null for a
      * chat of no study), there. */
@@ -2494,18 +2632,37 @@
         studyOpen = served && (ran.status || ran.results);
         syncStart();
       };
+      var ended = "";
+      var processState = "idle";
+      var said = function () {
+        studyState = processState === "running" ? "running"
+          : /^(failed|stopped|interrupted)$/.test(ended) ? "stopped"
+          : studyOpen ? "finished" : "none";
+        placeholder();
+      };
       window.FastMDXDashboard.on("app-state", function (s) {
         served = !!(s && s.active_run);
+        processState = (s && s.status) || "idle";
         decide();
+        said();
+        /* The run the Agent started has ended: what it found. Asked on any
+         * state not running while one waits for it, not only on a change
+         * seen from running: a run that ended between two of the page's
+         * polls was missed (review, 10-07). The server says not yet while
+         * it goes on. */
+        if (processState !== "running") sayHowTheRunEnded();
       });
       window.FastMDXDashboard.on("status-updated", function (u) {
         var status = (u && u.status) || {};
         ran.status = !!(status.stage || status.current_step != null);
+        ended = String(status.status || "").toLowerCase();
         decide();
+        said();
       });
       window.FastMDXDashboard.on("results-updated", function (r) {
         ran.results = !!(r && (r.has_analysis || r.has_report));
         decide();
+        said();
       });
     }
     syncStart();

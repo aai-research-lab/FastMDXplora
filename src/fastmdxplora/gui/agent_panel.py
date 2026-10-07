@@ -546,6 +546,59 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
                 "code": said["refusal"]["code"], **said}
 
 
+#: How a run that has ended is said at the head of its summary.
+_ENDED_AS = {"completed": "The run ended: completed", "failed": "The run failed",
+             "stopped": "The run was stopped", "interrupted": "The run was interrupted"}
+
+
+def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
+                         path_for: Any = None) -> dict[str, Any]:
+    """What a run the Agent started found, once it has ended, written from
+    the study's records (`records_answer`), so it costs no tokens: how it
+    ended and how long it took, what it found with each error, whether it
+    ran long enough, and what would strengthen it. ``ended`` false while
+    the run is still going."""
+    from fastmdxplora.gui.records_answer import MARK, answer_from_the_records
+    from fastmdxplora.gui.simulated_time import phases_wall_seconds
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+
+    given = str((payload or {}).get("study") or "").strip()
+    try:
+        named = path_for(given) if path_for is not None else (Path(given) if given else None)
+    except Exception:  # noqa: BLE001 - outside the workspace, said as no study
+        named = None
+    root = Path(named).expanduser() if named else None
+    if root is None or not _is_study(root):
+        return {"ok": False, "error": "No study there."}
+    running = getattr(runtime, "running_root", None)
+    process = getattr(runtime, "process", None)
+    if running is not None and process is not None and process.poll() is None \
+            and Path(running).resolve() == root.resolve():
+        return {"ok": True, "ended": False}
+    status = str((status_as_it_stands(root) or {}).get("status") or "").lower()
+    if status in ("running", "starting", "paused"):
+        # Going, by its own record, though not this server's process: after
+        # the GUI restarted, or a run on another machine (review, 10-07).
+        return {"ok": True, "ended": False}
+    seconds = phases_wall_seconds(root)
+
+    def said(question: str) -> str:
+        text = answer_from_the_records(root, question) or ""
+        return text[len(MARK):].strip() if text.startswith(MARK) else text.strip()
+
+    head = _ENDED_AS.get(status, "The run ended")
+    if seconds:
+        head += (" in " if status == "completed" else " after ") + _hms(seconds)
+    if (root / "batch_manifest.json").is_file():
+        # A study of several runs is answered in one paragraph, the same for
+        # every question: said once.
+        return {"ok": True, "ended": True, "status": status or "ended", "head": head,
+                "found": said("found"), "long_enough": "", "strengthen": ""}
+    return {"ok": True, "ended": True, "status": status or "ended", "head": head,
+            "found": said("found"), "long_enough": said("long_enough"),
+            "strengthen": said("strengthen")}
+
+
 def _with_its_fix(answer: dict[str, Any]) -> dict[str, Any]:
     """A refused run with what would fix it, as the builder's refusals come.
 

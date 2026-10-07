@@ -2121,7 +2121,8 @@ class TestSixMoreFromUsingIt(unittest.TestCase):
 
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('placeholder="Describe a study, ask a question, or tell me what to do."', page)
+        # The words then follow the situation (agent-panel.js `placeholder`).
+        self.assertIn('placeholder="Describe a study, or ask about one in this folder"', page)
 
     def test_a_page_opens_at_its_top(self):
         import pathlib
