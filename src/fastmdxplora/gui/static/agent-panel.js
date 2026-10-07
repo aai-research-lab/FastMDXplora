@@ -326,12 +326,16 @@
     "The reply was not a YAML mapping.", "The config was not a mapping.",
     "The question was empty.", "Two actions in one reply.", "A scene without an answer.",
     "The reply was empty.", "No reply was made.",
-    "The looks for this reply are used up; answer from what the software said."
+    "The looks for this reply are used up; answer from what the software said.",
+    "Name the windows to run again, by number, as `windows`."
   ];
+  /* Said with the name the reply used, so matched by how they begin. */
+  var FORMAT_REPAIRS_BEGIN = /^There is no (tool called|action) /;
 
   function isFormatRepair(refusal) {
+    var said = String(refusal.message || "");
     return refusal.code ? refusal.code === FORMAT_REPAIR
-      : FORMAT_REPAIRS_SAID.indexOf(String(refusal.message || "")) >= 0;
+      : FORMAT_REPAIRS_SAID.indexOf(said) >= 0 || FORMAT_REPAIRS_BEGIN.test(said);
   }
 
   function refusals(box, attempts, accepted) {

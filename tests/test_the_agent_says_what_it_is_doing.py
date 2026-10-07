@@ -241,7 +241,9 @@ def test_a_question_waits_and_an_error_stops(study, monkeypatch) -> None:
 
 def test_a_kept_format_repair_stays_out_of_sight(study, monkeypatch) -> None:
     """Found by the review (10-07): attempts kept before their code was kept
-    showed "The reply was not a YAML mapping." again when read back."""
+    showed "The reply was not a YAML mapping." again when read back. And by
+    the second review (10-07): a call to no such tool or action, and windows
+    not named, were missing from the words matched."""
     import json
     import urllib.request
 
@@ -251,8 +253,13 @@ def test_a_kept_format_repair_stays_out_of_sight(study, monkeypatch) -> None:
     config = {"systems": [{"system": "1UBQ"}]}
     entries = [{"role": "user", "text": "ubiquitin"},
                {"role": "agent", "kind": "config", "yaml": "x: 1\n", "config": config,
-                "cycles": 3, "plan": [], "attempts": [
+                "cycles": 6, "plan": [], "attempts": [
                     {"refusal": {"message": "The reply was not a YAML mapping."}},
+                    {"refusal": {"message": "There is no tool called 'read_files'."}},
+                    {"refusal": {"message": "There is no action 'launch'. The actions are: "
+                                            "run, stop."}},
+                    {"refusal": {"message": "Name the windows to run again, by number, "
+                                            "as `windows`."}},
                     {"refusal": {"message": "simulation option 'duration_ns' is -5."}}, {}]}]
     request = urllib.request.Request(
         session.url + "/api/agent/conversation", data=json.dumps({"entries": entries}).encode(),
