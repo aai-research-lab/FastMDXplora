@@ -20,6 +20,7 @@ import threading
 import time
 import zipfile
 from dataclasses import dataclass
+from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from collections.abc import Callable
@@ -219,6 +220,56 @@ def _served_beyond_loopback(root: Path, target: Path) -> bool:
     except (OSError, ValueError):
         return False
     return not _private(parts)
+
+
+
+#: How much of a file is read and sent at a time.
+SENT_AT_A_TIME = 1 << 20
+
+
+def byte_range(asked: str, size: int) -> tuple[int, int] | tuple[()] | None:
+    """The bytes a `Range` header asks for, first and last inclusive; ``()``
+    where it asks for none this server answers in part (several ranges, or
+    words it does not read), so the whole file is sent; None where it asks
+    only for bytes the file does not have (416), as RFC 9110 reads it."""
+    unit, _, spans = asked.partition("=")
+    if unit.strip().lower() != "bytes" or "," in spans:
+        return ()
+    first_said, dash, last_said = spans.strip().partition("-")
+    # Digits only: int() also reads "+5" and "1_0", which no range is.
+    if not dash or not (first_said or last_said) \
+            or not all(part.isdigit() and part.isascii() for part in (first_said, last_said) if part):
+        return ()
+    if not first_said:
+        # The last n bytes; the last none is no bytes at all.
+        count = int(last_said)
+        if count == 0 or size == 0:
+            return None
+        return max(0, size - count), size - 1
+    first = int(first_said)
+    last = int(last_said) if last_said else size - 1
+    if first >= size:
+        return None
+    if last < first:
+        return ()
+    return first, min(last, size - 1)
+
+
+def _names_the_tag(header: str | None, tag: str) -> bool:
+    """Whether `If-None-Match` names this version of the file."""
+    if not header:
+        return False
+    said = [part.strip() for part in header.split(",")]
+    return "*" in said or tag in said or f"W/{tag}" in said
+
+
+def attachment_named(name: str) -> str:
+    """`Content-Disposition` for a download of a file called ``name``, the
+    name kept as it is (RFC 6266) where it is not plain ASCII."""
+    plain = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in name)
+    if plain == name:
+        return f'attachment; filename="{plain}"'
+    return f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 PLOT_TITLE_ALIASES = {
@@ -522,6 +573,16 @@ def make_handler(
                 logger.warning("dashboard route %s failed: %s", self.path, exc)
                 logger.debug("dashboard route %s failed", self.path, exc_info=True)
                 self.send_error(500, "Dashboard internal error")
+
+        def do_HEAD(self) -> None:  # noqa: N802 - stdlib API
+            """A study's file's size and type without the file, which a
+            download manager asks before it fetches in pieces. Only
+            `/artifacts/`: every other route's answer is made as it is
+            asked for, and making it to send none of it is waste."""
+            if not urlparse(self.path).path.startswith("/artifacts/"):
+                self.send_error(405, "Only a study's files answer HEAD")
+                return
+            self.do_GET()
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib API
             try:
@@ -1854,6 +1915,14 @@ def make_handler(
             *,
             download: bool = False,
         ) -> None:
+            """A study's file, sent from the disk in pieces.
+
+            It was read whole into memory and sent with `no-store`: a 10 GB
+            trajectory took 10 GB of the server's memory, a download cut
+            short started again from nothing, and a figure seen twice was
+            sent twice. Now it is sent a megabyte at a time, a range of it
+            on request (`Range`, so a download resumes), and a copy the
+            browser holds is checked rather than sent again (`ETag`)."""
             try:
                 target = (root / unquote(raw_rel)).resolve()
                 target.relative_to(root)
@@ -1865,25 +1934,67 @@ def make_handler(
                 self.send_error(404, "Artifact not found")
                 return
             content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-            data = target.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            if _can_run_script(content_type):
-                # A study's own page, or one somebody put in it, runs as a
-                # page from nowhere: its scripts work, and it can neither
-                # read this server's answers nor act as the GUI does.
-                self.send_header("Content-Security-Policy", ARTIFACT_SANDBOX)
-            if download:
-                safe_name = target.name.replace('"', "")
-                self.send_header(
-                    "Content-Disposition",
-                    f'attachment; filename="{safe_name}"',
-                )
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                handle = target.open("rb")
+            except OSError:
+                self.send_error(404, "Artifact not found")
+                return
+            with handle:
+                info = os.fstat(handle.fileno())
+                size = info.st_size
+                tag = f'"{info.st_mtime_ns:x}-{size:x}"'
+                modified = formatdate(info.st_mtime, usegmt=True)
+                if _names_the_tag(self.headers.get("If-None-Match"), tag):
+                    self.send_response(304)
+                    self.send_header("ETag", tag)
+                    self.send_header("Cache-Control", "private, no-cache")
+                    self.end_headers()
+                    return
+                first, last, status = 0, size - 1, 200
+                asked = self.headers.get("Range")
+                kept = self.headers.get("If-Range")
+                if asked and (kept is None or kept.strip() in (tag, modified)):
+                    span = byte_range(asked, size)
+                    if span is None:
+                        self.send_response(416)
+                        self.send_header("Content-Range", f"bytes */{size}")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    if span:
+                        first, last = span
+                        status = 206
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "private, no-cache")
+                self.send_header("ETag", tag)
+                self.send_header("Last-Modified", modified)
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                if _can_run_script(content_type):
+                    # A study's own page, or one somebody put in it, runs as a
+                    # page from nowhere: its scripts work, and it can neither
+                    # read this server's answers nor act as the GUI does.
+                    self.send_header("Content-Security-Policy", ARTIFACT_SANDBOX)
+                if download:
+                    self.send_header("Content-Disposition", attachment_named(target.name))
+                if status == 206:
+                    self.send_header("Content-Range", f"bytes {first}-{last}/{size}")
+                self.send_header("Content-Length", str(max(0, last - first + 1)))
+                self.end_headers()
+                if self.command == "HEAD":
+                    return
+                handle.seek(first)
+                left = last - first + 1
+                while left > 0:
+                    piece = handle.read(min(SENT_AT_A_TIME, left))
+                    if not piece:
+                        # Shorter now than when it was looked at: what was
+                        # promised cannot be sent, so the connection ends.
+                        self.close_connection = True
+                        break
+                    self.wfile.write(piece)
+                    left -= len(piece)
 
         def _send_svg_bundle(self, root: Path) -> None:
             """Download every generated SVG analysis/report figure as one ZIP."""
