@@ -1674,7 +1674,12 @@
         persist();
         return;
       }
-      if (!s || !s.ended || runAwaitingSummary() !== run) return;
+      if (!s || !s.ended) return;
+      /* The server's word for that folder: the run has ended. A run that
+       * ended before a poll saw it going stayed "Running", with Stop, and
+       * the next run was refused (second review, 10-07). */
+      if (!runGoing) runEnded();
+      if (runAwaitingSummary() !== run) return;
       var r = reply();
       whoIs(r, STOPPED_AS.test(s.status || "") ? "stopped" : "done");
       summaryCard(r.part("attempts"), s);

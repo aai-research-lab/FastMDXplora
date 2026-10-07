@@ -191,7 +191,9 @@ def test_a_run_that_ended_before_it_was_seen_running_is_summarised(tmp_path, mon
     """Found by the review (10-07): the summary was asked only on a change
     seen from running, so a run that ended between two polls had none. And
     a study whose record says nothing of how it ended is not said as one
-    that could not finish."""
+    that could not finish. And by the second review (10-07): such a run
+    stayed "Running" with Stop, and the next "run it" was told a study was
+    running."""
     from playwright.sync_api import sync_playwright
 
     from fastmdxplora.gui.server import start_dashboard_session
@@ -225,9 +227,16 @@ def test_a_run_that_ended_before_it_was_seen_running_is_summarised(tmp_path, mon
             page.wait_for_selector("#agent-thread .agent-summary")
             state = page.get_attribute("#agent-thread .agent-msg-agent >> nth=-1", "data-state")
             head = page.text_content("#agent-thread .agent-summary-head")
+            line = page.text_content("#agent-thread .agent-running-said")
+            stop = page.locator("#agent-thread .agent-running-stop").count()
+            button = page.eval_on_selector(
+                "#agent-thread .agent-study:not([hidden]) [data-role=run]",
+                "b => [b.textContent, b.disabled]")
             browser.close()
     finally:
         session.server.shutdown()
     assert head.startswith("The run ended after 2h 7m")
     assert state == "done"
+    assert line.startswith("Ran version 1") and stop == 0
+    assert button == ["Run again", False]
     assert errors == []
