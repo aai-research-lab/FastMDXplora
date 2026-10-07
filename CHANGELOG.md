@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A shared study opened from its DOI
+
+**Added:** `fastmdx gui --open SOURCE` (`--open-into DIR`,
+`--open-most-gb GB`) and **Open a shared study** on All studies take a
+shared study's DOI, its Zenodo address or its zip, and open nothing until
+every file is the one the packing list names: downloaded up to a limit and
+checked against Zenodo's MD5, unpacked only inside a folder of its own,
+nothing unlisted and nothing packing never writes
+(`environment.share.unsafe`, `unverified`, `too_large`). The study's
+folder is then put back in its records, and where it came from kept in
+`shared_from.json`. Nothing in an archive is run.
+
 ### A shared study made a draft on Zenodo
 
 **Added:** `--share-to zenodo` (or `zenodo-sandbox`) with `--share` makes a

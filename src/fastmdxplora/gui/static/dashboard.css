@@ -6258,3 +6258,10 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .page[data-page="run"] .builder-analyses .analyse-why + .analyse-toggle { margin-left: 8px; }
 .page[data-page="run"] .builder-sweep.run-section { margin-top: 14px; padding: 0; border: 0; background: none; border-radius: 0; }
 .page[data-page="run"] .builder-sweep .run-section-head { color: var(--accent-text); font-size: var(--text-sm); }
+
+/* Open a shared study: one line for its DOI, address or zip, under the
+   studies' header (studies.js). */
+.studies-open-form { display: grid; gap: 8px; margin: 0 0 16px; }
+.studies-open-row { display: flex; gap: 8px; align-items: center; }
+.studies-open-row .studies-open-path { flex: 1; min-width: 0; }
+.studies-open-row input { flex: 1; min-width: 0; font-family: var(--font-mono); }

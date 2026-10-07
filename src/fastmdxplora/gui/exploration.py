@@ -1358,6 +1358,27 @@ class DashboardRuntime:
         answer["folder"] = str(copied)
         return answer
 
+    def open_shared_study(self, source: str) -> dict[str, Any]:
+        """A shared study, from its DOI, its Zenodo address or a zip on this
+        computer, checked file by file and opened in a folder of its own in
+        the workspace (fastmdxplora.sharing.opening)."""
+        from fastmdxplora.refusals import CodedError
+        from fastmdxplora.sharing.opening import open_shared
+
+        if self.hosting is not None:
+            return {"ok": False, "error": "A shared study opens only in a GUI on your own "
+                    "computer: fastmdx gui --open.", "state": self.snapshot()}
+        try:
+            opened = open_shared(source, workspace=self.exploration_root)
+        except CodedError as exc:
+            return {"ok": False, "error": str(exc), "state": self.snapshot()}
+        except OSError as exc:
+            return {"ok": False, "error": f"The shared study could not be opened: {exc}",
+                    "state": self.snapshot()}
+        answer = self.switch_to(opened)
+        answer["folder"] = str(opened)
+        return answer
+
     def switch_to(self, folder: str | Path) -> dict[str, Any]:
         """Watch a different output folder without relaunching.
 

@@ -1165,6 +1165,16 @@ def _build_parser() -> argparse.ArgumentParser:
                           "finished, into DIR (default: the current folder) and "
                           "open it. Fetched the first time (about 11 MB) and kept "
                           "in the cache.")
+    gui.add_argument("--open", default=None, metavar="SOURCE",
+                     help="Open a shared study: its DOI (10.5281/zenodo.N), its Zenodo "
+                          "address, or the archive's file. Every file is checked against "
+                          "its SHA-256 before it opens. See docs/sharing.md.")
+    gui.add_argument("--open-into", default=None, metavar="DIR",
+                     help="With --open: the folder the study is unpacked into (default: "
+                          "the current folder).")
+    gui.add_argument("--open-most-gb", type=float, default=None, metavar="GB",
+                     help="With --open: the largest archive downloaded and opened "
+                          "(default: 2).")
     gui.add_argument("--host", default="127.0.0.1",
                      help="Bind address (default: 127.0.0.1).")
     gui.add_argument("--port", type=int, default=8765,
@@ -2800,6 +2810,23 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     """
     from fastmdxplora.gui.server import DashboardConfig, serve_dashboard
 
+    if getattr(args, "open", None):
+        if getattr(args, "hosted", False) or getattr(args, "output", None) \
+                or getattr(args, "demo", None) is not None:
+            print("fastmdx gui: --open opens a shared study; it does not go with "
+                  "--output, --demo or --hosted.", file=sys.stderr)
+            return 2
+        from fastmdxplora.refusals import CodedError
+        from fastmdxplora.sharing.opening import MOST_BYTES, open_shared
+
+        most = (int(args.open_most_gb * 1024 ** 3) if args.open_most_gb else MOST_BYTES)
+        try:
+            opened = open_shared(args.open, into=args.open_into, workspace=Path.cwd(),
+                                 most_bytes=most, said=print)
+        except CodedError as exc:
+            print(f"fastmdx gui: {exc}", file=sys.stderr)
+            return 2
+        args.output = str(opened)
     if getattr(args, "demo", None) is not None:
         if getattr(args, "hosted", False) or getattr(args, "output", None):
             print("fastmdx gui: --demo opens the demo study; it does not go with "

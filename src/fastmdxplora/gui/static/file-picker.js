@@ -195,8 +195,9 @@
     state.kind = options.kind || null;
     state.mode = options.mode || (options.kind ? "file" : "folder");
 
+    const said = {shared: "shared study's zip"}[options.kind] || options.kind || "file";
     text(el("fastmdx-picker-what"),
-         state.mode === "file" ? `Choose a ${options.kind || "file"}` : "Choose a folder");
+         state.mode === "file" ? `Choose a ${said}` : "Choose a folder");
     // Choosing the folder you are in only makes sense when a folder is what
     // was asked for; picking a file is done by clicking it.
     el("fastmdx-picker-choose").hidden = state.mode !== "folder";

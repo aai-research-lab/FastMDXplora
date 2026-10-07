@@ -580,9 +580,27 @@
                 <button type="button" class="seg-btn seg-icon" data-studies-view="table" aria-pressed="false" aria-label="Table" title="As a table"><!--icon:table:line-icon--></button>
               </div>
               <button type="button" class="ghost-btn" id="studies-look-in">Look in another folder</button>
+              <button type="button" class="ghost-btn" id="studies-open-shared" aria-expanded="false"
+                      aria-controls="studies-open-form">Open a shared study</button>
               <input type="hidden" id="studies-path">
             </div>
           </div>
+          <!-- A shared study, from its DOI, its Zenodo address or its zip,
+               checked file by file before it opens (studies.js,
+               fastmdxplora/sharing/opening.py). -->
+          <form class="card studies-open-form" id="studies-open-form" hidden>
+            <label class="small" for="studies-open-source">A shared study's DOI, its Zenodo
+              address, or the path of its zip on this computer</label>
+            <div class="studies-open-row">
+              <div class="analyse-path-row studies-open-path">
+                <input type="text" id="studies-open-source" autocomplete="off" spellcheck="false"
+                       data-picks="shared" placeholder="10.5281/zenodo.1234567">
+              </div>
+              <button type="submit" class="primary-btn" id="studies-open-go">Open</button>
+            </div>
+            <div class="muted small" id="studies-open-said" role="status" aria-live="polite">Every
+              file is checked against its SHA-256 before it opens.</div>
+          </form>
           <div class="studies-tag-filter" id="studies-tag-filter" hidden>
             <span class="study-tag is-filter" id="studies-tag-filter-said"></span>
             <button type="button" class="ghost-btn" id="studies-tag-filter-clear">Every study</button>

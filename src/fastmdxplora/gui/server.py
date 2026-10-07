@@ -1681,6 +1681,17 @@ def make_handler(
                 # (fastmdxplora.demo); loopback only, as switching is.
                 self._send_json(app_runtime.open_the_demo())
                 return
+            if path == "/api/open-shared":
+                # A shared study, from its DOI, its Zenodo address or a zip
+                # on this computer, checked and opened (fastmdxplora.sharing);
+                # loopback only, as switching is.
+                source = str((payload or {}).get("source") or "").strip()
+                if not source:
+                    self._send_json({"ok": False, "error": "Give a DOI, a Zenodo address "
+                                     "or the path of a zip."}, status=400)
+                    return
+                self._send_json(app_runtime.open_shared_study(source))
+                return
             if path == "/api/explore/switch":
                 folder = str((payload or {}).get("folder") or "").strip()
                 if not folder:

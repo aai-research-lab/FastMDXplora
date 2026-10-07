@@ -360,7 +360,7 @@ fastmdx report --output runs/study --rerun --no-slides --no-bundle
 ```
 
 **Sharing it.** `--share FILE` packs the finished study as one zip another
-FastMDXplora opens; the report is not written again.
+FastMDXplora opens (`fastmdx gui --open`); the report is not written again.
 Full documentation: [Sharing a study](sharing.md).
 
 ```bash
@@ -421,6 +421,9 @@ fastmdx gui --output runs/study    # open a run, live or finished
 | `--port` | `8765` | Which port. If busy, the next free one is used and reported |
 | `--no-browser` | opens a tab | Print the URL instead |
 | `--demo [DIR]` | off | Copy the demo study (3PTB, finished) into DIR and open it; fetched the first time (about 11 MB) and kept in the cache |
+| `--open SOURCE` | off | Open a shared study from its DOI, its Zenodo address or its zip, every file checked against its SHA-256 first ([Sharing a study](sharing.md)) |
+| `--open-into DIR` | current directory | Where `--open` unpacks it |
+| `--open-most-gb GB` | `2` | The largest archive `--open` downloads and opens |
 | `--ligand-resname NAME` | auto-detected | Which residue the viewer treats as the ligand |
 | `--binding-pocket-cutoff-A X` | `5.0` | How near counts as the pocket |
 

@@ -325,6 +325,13 @@ CODES: tuple[Code, ...] = (
          "A shared study's archive names a path outside itself, a link or a device, "
          "or unpacks to more than the limit.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("environment.share.too_large",
+         "A shared study's archive is over the download limit.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.share.unverified",
+         "A file of a shared study is missing, unlisted, or not the size or SHA-256 "
+         "its packing list gives.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("environment.path.exists",
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,

@@ -836,6 +836,7 @@
     path.addEventListener("change", function () {
       if (path.value.trim()) load(path.value.trim());
     });
+    wireOpenShared();
     var opened = function (detail) {
       var page = detail && detail.page ? detail.page : detail;
       if (page === "studies") load(lookedIn);
@@ -844,6 +845,49 @@
       window.FastMDXDashboard.on("navigate", opened);
     }
     if (location.hash === "#studies") load();
+  }
+
+  /* A shared study, from its DOI, its Zenodo address or a zip on this
+   * computer: downloaded, checked file by file and opened in a folder of
+   * its own in the workspace (POST /api/open-shared). */
+  function wireOpenShared() {
+    var toggle = el("studies-open-shared");
+    var form = el("studies-open-form");
+    if (!toggle || !form) return;
+    var input = el("studies-open-source");
+    var go = el("studies-open-go");
+    var said = el("studies-open-said");
+    toggle.addEventListener("click", function () {
+      form.hidden = !form.hidden;
+      toggle.setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) input.focus();
+    });
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var source = input.value.trim();
+      if (!source) { input.focus(); return; }
+      go.disabled = true;
+      input.disabled = true;
+      said.textContent = "Fetching it and checking every file\u2026";
+      try {
+        var response = await fetch("/api/open-shared", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source: source }),
+        });
+        var answer = await response.json();
+        if (answer && answer.ok) {
+          said.textContent = "Opened. Every file matched its SHA-256.";
+          location.hash = "#overview";
+          location.reload();
+          return;
+        }
+        said.textContent = (answer && answer.error) || "It could not be opened.";
+      } catch (error) {
+        said.textContent = "The server did not answer.";
+      }
+      go.disabled = false;
+      input.disabled = false;
+    });
   }
 
   /* The sidebar's part: how many studies the workspace holds, beside All

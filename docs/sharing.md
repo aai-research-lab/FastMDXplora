@@ -8,10 +8,12 @@ has a DOI, and a DOI is all anyone needs to open it.
 ```bash
 fastmdx report --output runs/3ptb --share 3ptb.zip --share-author "Adekunle Aina"
 fastmdx report --output runs/3ptb --share 3ptb.zip --share-author "Adekunle Aina" --share-to zenodo
+fastmdx gui --open 10.5281/zenodo.1234567
 ```
 
 The first packs the study as its pages show it. The second also makes a
-draft of it on Zenodo, for you to read and publish.
+draft of it on Zenodo, for you to read and publish. The third opens a shared
+study from its DOI; a Zenodo address or the archive's file does as well.
 
 The file is a zip in a published format, [RO-Crate](https://www.researchobject.org/ro-crate/)
 1.2: the study's files as they are laid out in its folder, and one more,
@@ -138,6 +140,59 @@ archive. Shared again after (analysed again, say), it is a draft of a new
 version of the same record, which Zenodo makes only for a token that also
 has the **deposit:actions** scope; the record's concept DOI always leads to
 its latest version.
+
+---
+
+## Opening one
+
+```bash
+fastmdx gui --open 10.5281/zenodo.1234567
+fastmdx gui --open https://zenodo.org/records/1234567
+fastmdx gui --open ~/Downloads/3ptb.zip --open-into ~/studies
+```
+
+In the GUI, **Open a shared study** on All studies takes the same: a DOI, a
+Zenodo address, or the path of a zip on this computer.
+
+FastMDXplora:
+
+1. **Finds the archive.** For a DOI (`10.5281/zenodo.N`, with or without
+   `https://doi.org/`) or a published record's address
+   (`https://zenodo.org/records/N`) it asks Zenodo for the record (a DOI
+   names one version, and that version is opened), and takes the record's
+   one zip. A record with none, or several, is refused
+   (`environment.share.not_a_study`); download the study's and open the file.
+2. **Downloads it**, up to a limit (2 GB unless `--open-most-gb` says
+   otherwise; `environment.share.too_large`), and checks it against the MD5
+   Zenodo recorded for it.
+3. **Unpacks it into a folder of its own**, named from its title, in
+   `--open-into` (else the current folder; in the GUI, where new studies
+   go), and only into it: a member with an absolute path, a `..`, a link, a
+   device or an encryption is refused, as is what packing never writes (the
+   Agent's conversations, a process's record, a file whose name begins with
+   a dot, scratch, what was set aside) and an archive that unpacks to more
+   than four times the limit (`environment.share.unsafe`). A
+   `ro-crate-preview.html` is never unpacked.
+4. **Reads the packing list** and checks it keeps RO-Crate 1.2 and the rules
+   of this profile (below) in a version it knows
+   (`environment.share.not_a_study`).
+5. **Checks every file**: each one listed is there, of the size listed, with
+   the SHA-256 listed, and nothing is there that is not listed
+   (`environment.share.unverified`, naming the file). Nothing is opened
+   before every file has passed.
+6. **Puts the study's own folder back**: `__FASTMDX_STUDY__` becomes the
+   folder it was opened into, in the files the packing list names as holding
+   it, each in its own syntax (escaped in JSON; in YAML as a value, whatever
+   the folder's name holds), line endings kept. `__FASTMDX_HOME__` and
+   `__FASTMDX_HOST__` are left as they are.
+7. **Writes `shared_from.json`**: where it came from (the DOI, the record and
+   its version, or the file), the archive's SHA-256, when it was opened and
+   checked, and which files step 6 rewrote.
+8. **Opens it** in the GUI.
+
+Nothing in an archive is run. Its Config is a file like any other, run again
+only by someone who chooses to. The report is rendered as every report is,
+with raw HTML shown as text and links only within the study or to the web.
 
 ---
 
@@ -275,4 +330,6 @@ The packing list of the demo study, cut to one file of each kind:
 | `environment.share.unscrubbed` | A packed text file still holds the study's folder, the home folder or the computer's name. |
 | `environment.share.not_a_study` | No packing list, not RO-Crate 1.2, not this profile, or a profile version this release does not know. |
 | `environment.share.unsafe` | A member outside the folder, a link or a device, or more unpacked than the limit. |
+| `environment.share.too_large` | The archive is over the download limit. |
+| `environment.share.unverified` | A file missing, of another size or SHA-256, or not listed; or the archive not the one Zenodo recorded. |
 | `environment.service.unreachable` | Zenodo could not be reached, refused the token, or did not answer as it documents. |

@@ -39,6 +39,8 @@ KINDS: dict[str, tuple[str, ...]] = {
     # a script produced by one study can be picked up by the next. A file
     # named anything else can still be typed into the box.
     "plumed": (".dat", ".plumed"),
+    # A shared study's archive (fastmdxplora.sharing).
+    "shared": (".zip",),
 }
 
 #: Enough to scan by eye. A folder with more subdirectories than this is
