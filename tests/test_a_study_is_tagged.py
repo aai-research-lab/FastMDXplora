@@ -184,9 +184,11 @@ def test_the_page_tags_a_card_and_filters_by_a_tag(workspace):
             offered = page.eval_on_selector_all("#studies-tags-used option",
                                                 "o => o.map((x) => x.value)")
             card = '.study-card[data-path$="wild_type"]'
-            # "Tag" on a card without any, "Tags" on one that has some.
-            buttons = (page.text_content(f"{card} .study-tag-edit"),
-                       page.text_content('.study-card[data-path$="mutant"] .study-tag-edit'))
+            # "Tag" on a card without any, "Tags" on one that has some (an
+            # icon, named so and marked).
+            buttons = (page.get_attribute(f"{card} .study-tag-edit", "aria-label"),
+                       page.get_attribute('.study-card[data-path$="mutant"] .study-tag-edit', "aria-label"),
+                       page.get_attribute('.study-card[data-path$="mutant"] .study-tag-edit', "class"))
             page.click(f"{card} .study-tag-edit")
             page.fill(f"{card} .study-tag-input", "ubiquitin")
             page.press(f"{card} .study-tag-input", "Enter")
@@ -213,7 +215,7 @@ def test_the_page_tags_a_card_and_filters_by_a_tag(workspace):
     finally:
         session.server.shutdown()
     assert errors == []
-    assert buttons == ("Tag", "Tags")
+    assert buttons[:2] == ("Tag", "Tags (2)") and "has-tags" in buttons[2]
     assert offered == ["L67S", "ubiquitin"] or offered == ["ubiquitin", "L67S"]
     assert shown == ["ubiquitin"] and note == "the wild type, 300 K"
     assert tags_of(workspace / "wild_type") == {"tags": ["ubiquitin"],

@@ -70,10 +70,12 @@
   /* Tags and a note of the person's own, changed on the card or under
    * the table's row. */
   function tagButton(study) {
-    var tag = make("button", "file-action study-tag-edit",
-      (study.tags || []).length || study.note ? "Tags" : "Tag");
-    tag.type = "button";
-    tag.title = "Tags and a note of your own, kept in the study's folder";
+    var count = (study.tags || []).length;
+    var some = count || study.note;
+    // Tags once it has some, marked so on the icon; the count to a reader.
+    var tag = ICONS.button("tag", some ? "Tags" + (count ? " (" + count + ")" : "") : "Tag",
+                           "study-tag-edit" + (some ? " has-tags" : ""));
+    tag.title = (some ? "Tags" : "Tag") + ": words and a note of your own, kept in the study's folder";
     tag.addEventListener("click", function () {
       editing = study.path;
       draw();
@@ -410,8 +412,7 @@
       if (study.note) body.appendChild(make("div", "study-note", study.note));
     }
     var actions = make("div", "study-actions");
-    var open = make("button", "file-action study-open", "Open");
-    open.type = "button";
+    var open = ICONS.button("open", "Open", "study-open");
     open.addEventListener("click", function () { openStudy(study.path, open); });
     var pick = make("label", "study-pick");
     var box = make("input");
@@ -585,8 +586,7 @@
       if (study.note) tags.title = study.note;
       var open = make("td");
       var acts = make("div", "studies-actions");
-      var button = make("button", "file-action study-open", "Open");
-      button.type = "button";
+      var button = ICONS.button("open", "Open", "study-open");
       button.addEventListener("click", function () { openStudy(study.path, button); });
       acts.append(button, tagButton(study));
       open.appendChild(acts);
@@ -766,12 +766,25 @@
         location.hash = "#overview";
         location.reload();
       } else {
-        button.textContent = (d && d.error) || "Could not open it.";
+        notOpened(button, (d && d.error) || "Could not open it.");
       }
     }).catch(function () {
       button.disabled = false;
-      button.textContent = "The server did not answer.";
+      notOpened(button, "The server did not answer.");
     });
+  }
+
+  /* Why a study did not open, said beside its button, which is an icon (the
+   * page's notice reads it out, so this is not a second one). */
+  function notOpened(button, why) {
+    ICONS.flash(button, false, why);
+    var host = button.parentNode;
+    var said = host.querySelector(".study-open-said");
+    if (!said) {
+      said = make("span", "study-open-said muted small");
+      host.appendChild(said);
+    }
+    said.textContent = why;
   }
 
   function load(where) {

@@ -625,13 +625,16 @@
           </form>
           <div class="studies-tag-filter" id="studies-tag-filter" hidden>
             <span class="study-tag is-filter" id="studies-tag-filter-said"></span>
-            <button type="button" class="ghost-btn" id="studies-tag-filter-clear">Every study</button>
+            <button type="button" class="line-btn" id="studies-tag-filter-clear" aria-label="Every study"
+                    title="Every study"><!--icon:close:line-icon--></button>
           </div>
           <datalist id="studies-tags-used"></datalist>
           <div class="studies-compare-bar" id="studies-compare-bar" hidden>
             <span class="muted small" id="studies-chosen-said"></span>
-            <button type="button" class="primary-btn" id="studies-compare" disabled>Compare</button>
-            <button type="button" class="ghost-btn" id="studies-clear">Clear</button>
+            <button type="button" class="line-btn" id="studies-compare" disabled aria-label="Compare"
+                    title="Compare"><!--icon:compare:line-icon--></button>
+            <button type="button" class="line-btn" id="studies-clear" aria-label="Clear"
+                    title="Clear"><!--icon:erase:line-icon--></button>
           </div>
           <div class="card studies-compared" id="studies-compared" hidden></div>
           <div class="studies-grid" id="studies-grid" role="list"></div>

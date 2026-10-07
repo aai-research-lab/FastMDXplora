@@ -5807,6 +5807,15 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .line-btn:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .line-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .line-btn[hidden] { display: none; }
+/* A study with tags: its Tag icon marked with a dot. */
+.line-btn.has-tags { position: relative; color: var(--accent-text, var(--text-primary)); }
+.line-btn.has-tags::after {
+    content: ""; position: absolute; top: 5px; right: 5px; width: 5px; height: 5px;
+    border-radius: 50%; background: currentColor;
+}
+.line-btn[disabled] { opacity: 0.42; cursor: not-allowed; }
+.line-btn[disabled]:hover { background: transparent; color: var(--text-muted); }
+.study-open-said { align-self: center; }
 .line-btn[aria-expanded="true"] { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .line-icon { width: 16px; height: 16px; display: block; }
 .agent-dialog-head .dialog-x { margin: -4px -6px 0 0; }

@@ -321,7 +321,12 @@ def test_the_page(workspace) -> None:
             rmsd = page.text_content('.studies-means tr[data-analysis="rmsd"]')
             resolved = page.get_attribute('.studies-means tr[data-analysis="rmsd"]', "class")
             page.click('.study-card[data-path$="stopped"] .study-open')
-            page.wait_for_selector('.study-card[data-path$="stopped"] .study-open:has-text("Not in this test.")')
+            # Said beside its button, which is an icon (and named so for a moment).
+            page.wait_for_selector('.study-card[data-path$="stopped"] .study-open-said:has-text("Not in this test.")')
+            # Read out once, by the page's notice, not by the words beside it too.
+            heard = page.evaluate("""() => [document.getElementById('dashboard-toast').textContent,
+                document.querySelector('.study-card[data-path$="stopped"] .study-open-said')
+                    .closest('[role="status"], [aria-live]') === null]""")
             # The page opened from the nav loads the default folder itself.
             page.goto(session.url + "#overview", wait_until="domcontentloaded")
             page.wait_for_selector("body.state-ready")
@@ -338,4 +343,5 @@ def test_the_page(workspace) -> None:
     assert "simulation.duration_ns" in setting and "10" in setting and "20" in setting
     assert "0.0266 ± 0.0069 nm, resolved" in rmsd and "is-resolved" in (resolved or "")
     assert switched == [{"folder": str(workspace / "stopped")}]
+    assert heard == ["Not in this test.", True]
     assert errors == []
