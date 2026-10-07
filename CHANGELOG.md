@@ -57,6 +57,21 @@ Frames written before are given their times when next read. A study moved
 or shared, whose records name the trajectory where it was read, has its
 analyses' series linked to the frames again.
 
+### No time is given to frames a run's integrator spaced itself
+
+**Fixed:** a run with `variable_langevin` or `variable_verlet` writes a
+frame every so many steps, and its steps are not of one length, so the
+steps between frames times the timestep is no clock. The analyses plotted
+such a run against that product, a joined run recorded it, the Viewer
+spread its frames from 0 to the run's length and timed its live snapshots
+by it. Now none of them gives a time (`simulation.runner.chose_its_own_step`,
+from the run's record, or its study's config while it runs): the analyses
+plot against the frame, the Viewer shows the frame's number, and the
+Analysis page plots by frame a study analysed before; that study's own
+figures and data keep the old axis until it is analysed again
+(`fastmdx analyze --rerun`). From Prince Otegbulu (#51) and Derrick Kwan
+(#52).
+
 ### A report lists the settings given, not where the study ran
 
 **Fixed:** a report's methods listed what setup worked out for itself

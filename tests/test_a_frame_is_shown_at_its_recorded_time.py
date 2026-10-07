@@ -71,13 +71,77 @@ def test_the_run_s_record_gives_each_frame_its_time(tmp_path):
     assert said["frame_times_ns"] == pytest.approx([0.001 * (k + 1) for k in range(FRAMES)])
 
 
-@pytest.mark.parametrize("record", [{"integrator": "variable_langevin"}, {"timestep_fs": 0},
-                                    {"interval_steps": 0}, {"continues": True}])
+@pytest.mark.parametrize("record", [{"timestep_fs": 0}, {"interval_steps": 0},
+                                    {"continues": True}])
 def test_a_record_that_cannot_say_it_is_not_used(tmp_path, record):
     root = _study(tmp_path / "s")
     _run_record(root, **record)
     said = frames_info(root, simulation_time_ns_total=0.009)
     assert said["frame_times_ns"][0] == 0
+
+
+@pytest.mark.parametrize("integrator", ["variable_langevin", "variable_verlet"])
+def test_a_run_that_chose_its_own_step_is_given_no_time(tmp_path, integrator):
+    """Its frames are a fixed number of steps apart, not a fixed time: no
+    time is spread over them, nor taken from an analysis that gave one."""
+    root = _study(tmp_path / "s")
+    _run_record(root, integrator=integrator)
+    _analysed(root, interval_ps=5.0, read_at=str(root / "simulation" / "production.dcd"))
+    assert frames_info(root, simulation_time_ns_total=0.009)["frame_times_ns"] == [None] * FRAMES
+    # Read again from what was written: still none.
+    assert frames_info(root, simulation_time_ns_total=0.009)["frame_times_ns"] == [None] * FRAMES
+
+    from fastmdxplora.analysis.analyze import _saving_interval_ps
+
+    assert _saving_interval_ps(root) is None
+
+
+def test_a_run_still_going_is_known_by_its_config(tmp_path):
+    """Before the run writes its record, the study's resolved config says
+    which integrator it has: a run going, or killed before its record."""
+    root = _study(tmp_path / "s")
+    (root / "resolved_config.yml").write_text(
+        "simulation:\n  integrator: variable_langevin\n", encoding="utf-8")
+    assert frames_info(root, simulation_time_ns_total=0.009)["frame_times_ns"] == [None] * FRAMES
+
+
+@pytest.mark.parametrize("integrator, said", [
+    ("variable_langevin", [None, None, None]), ("langevin_middle", [0.0, 0.1, 0.2])])
+def test_a_run_s_snapshots_are_timed_only_where_its_step_is_fixed(tmp_path, integrator, said):
+    """While it runs the Viewer plays its snapshots, each timed at its step
+    times the timestep: no time where the integrator chose its steps."""
+    root = _study(tmp_path / "s")
+    simulation = root / "simulation"
+    pdb = (simulation / "trajectory_topology.pdb").read_text()
+    (simulation / "live_frames").mkdir()
+    for k in range(3):
+        (simulation / "live_frames" / f"frame_{k}.pdb").write_text(pdb)
+    (simulation / "live_frame_history.json").write_text(json.dumps({"frames": [
+        {"path": f"live_frames/frame_{k}.pdb", "sequence": k, "frame_index": k,
+         "mtime_ns": k, "simulation_time_ns": 0.1 * k} for k in range(3)]}))
+    (simulation / "production.dcd").unlink()
+    (root / "resolved_config.yml").write_text(
+        f"simulation:\n  integrator: {integrator}\n", encoding="utf-8")
+    shown = frames_info(root)
+    assert shown["source_kind"] == "live-history"
+    if said[0] is None:
+        assert shown["frame_times_ns"] == said
+    else:
+        assert shown["frame_times_ns"] == pytest.approx(said)
+
+
+def test_an_analysis_made_before_is_plotted_by_frame(tmp_path):
+    """An analysis made before a variable step was known to give no clock
+    recorded one; the pages plot its series by frame."""
+    root = _study(tmp_path / "s")
+    _run_record(root, integrator="variable_verlet")
+    _analysed(root, interval_ps=5.0, read_at=str(root / "simulation" / "production.dcd"))
+    from fastmdxplora.gui.figure_data import _clock
+    from fastmdxplora.gui.series import analysed_axis
+
+    frames, axis, name = analysed_axis(root, 3)
+    assert name == "Frame" and axis == [0.0, 1.0, 2.0]
+    assert _clock(root, [0, 1, 2])[2] == "Frame"
 
 
 def test_the_analyses_clock_is_the_one_shown(tmp_path):

@@ -126,6 +126,11 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
         return _unavailable("There is no trajectory, and fewer than two frames written.")
     signature = f"{source['signature']}:most={int(most_frames)}"
     index = simulation / FRAMES_INDEX
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    if chose_its_own_step(simulation):
+        # Its frames are steps apart, not a time: no time is spread over them.
+        simulation_time_ns_total = None
     if not force:
         cached = _load_json(index)
         if (cached.get("available") and cached.get("signature") == signature
@@ -133,7 +138,9 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
                 and (simulation / FRAMES_TOPOLOGY).is_file()):
             interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
                         and cached.get("source_kind") == "production-dcd" else None)
-            if interval:
+            if chose_its_own_step(simulation):
+                cached["frame_times_ns"] = [None] * len(cached.get("frame_indices") or [])
+            elif interval:
                 # Read again where a record says it: frames written before
                 # the times were read from the records carry the old ones,
                 # and an analysis run since can say the interval.
@@ -235,6 +242,7 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
     import mdtraj as md
 
     from fastmdxplora.gui.live_frames import cell_of, made_whole_frames
+    from fastmdxplora.simulation.runner import chose_its_own_step
 
     records = source["records"]
     first = _atom_lines(_read(simulation / str(records[-1].get("path") or "")))
@@ -276,7 +284,10 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
     return {"available": True, "reason": None, "n_atoms": len(lines),
             "n_frames_total": len(records), "n_frames_browser": len(used),
             "frame_indices": [record.get("frame_index") for record in used],
-            "frame_times_ns": [record.get("simulation_time_ns") for record in used],
+            # A snapshot's time is its step times the timestep, which is no
+            # time where the integrator chose its own step.
+            "frame_times_ns": ([None] * len(used) if chose_its_own_step(simulation)
+                               else [record.get("simulation_time_ns") for record in used]),
             "made_whole": whole is not None}
 
 
@@ -719,8 +730,12 @@ def _interval_ns(out: Path, source: dict[str, Any]) -> float | None:
     interval the analyses read the played trajectory at, else, for a run's
     own production, its saving interval and timestep (the reading Derrick
     Kwan's branch, `fix/viewer-recorded-frame-times`, gives). ``None``
-    where neither says it."""
+    where neither says it, or the integrator chose its own step."""
     from fastmdxplora.gui.series import of_the_played_trajectory
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    if chose_its_own_step(out / "simulation"):
+        return None
 
     manifest = _load_json(out / "analysis" / "analysis_manifest.json")
     loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}

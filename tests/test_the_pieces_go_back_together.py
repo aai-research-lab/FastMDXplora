@@ -130,6 +130,19 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         self.assertEqual(record["trajectory_interval_steps"], 500)
         self.assertEqual(record["saving_interval_ps"], 1.0)
 
+    def test_a_run_that_chose_its_own_step_records_no_time(self):
+        # A variable-step integrator's frames are a fixed number of steps
+        # apart, not a fixed time; its sidecar's timestep is where it began.
+        for index in range(2):
+            self.segment(index)
+            folder = self.root / f"segment-{index:03d}" / "simulation"
+            _checkpoint(folder, finished=True, interval=500)
+            config = folder / "resolved_config.yml"
+            config.write_text(config.read_text() + "  integrator: variable_langevin\n")
+        record = join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(record["trajectory_interval_steps"], 500)
+        self.assertIsNone(record["saving_interval_ps"])
+
     def test_segments_from_two_studies_refuse(self):
         # Two runs of the same length under different settings leave
         # directories that look alike and concatenate without complaint.

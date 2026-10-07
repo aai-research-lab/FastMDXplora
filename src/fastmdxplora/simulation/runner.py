@@ -63,14 +63,48 @@ ATM_TO_BAR = 1.01325
 
 # Integrators this can construct. langevin_middle is the modern default
 # (better configurational sampling than the legacy LangevinIntegrator).
+#: The integrators that choose their own step: a step count is no time,
+#: so a frame's time cannot be taken from the steps between frames.
+VARIABLE_STEP_INTEGRATORS = ("variable_langevin", "variable_verlet")
+
 SUPPORTED_INTEGRATORS = (
     "langevin",
     "langevin_middle",
     "brownian",
     "verlet",
-    "variable_langevin",
-    "variable_verlet",
+    *VARIABLE_STEP_INTEGRATORS,
 )
+
+
+def chose_its_own_step(simulation_dir: str | Path) -> bool:
+    """Whether the run in ``simulation_dir`` had an integrator that chose its
+    own step: its frames are a fixed number of steps apart, not a fixed
+    time, and the time each was saved at is not recorded.
+
+    Read from the run's record (`simulation_parameters.json`, written when
+    it ends), else from the study's resolved config, which is there while
+    it runs and for a run killed before its record."""
+    folder = Path(simulation_dir)
+    try:
+        record = json.loads((folder / "simulation_parameters.json").read_text(encoding="utf-8"))
+        parameters = record.get("parameters") if isinstance(record, dict) else None
+        if isinstance(parameters, dict) and parameters.get("integrator"):
+            return parameters["integrator"] in VARIABLE_STEP_INTEGRATORS
+    except (OSError, ValueError):
+        pass
+    for config in (folder.parent / "resolved_config.yml", folder / "resolved_config.yml"):
+        if config.is_file():
+            try:
+                import yaml
+
+                data = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+                simulation = data.get("simulation") if isinstance(data, dict) else None
+                return isinstance(simulation, dict) and \
+                    simulation.get("integrator") in VARIABLE_STEP_INTEGRATORS
+            except Exception:  # noqa: BLE001 - an unreadable config says nothing
+                return False
+    return False
+
 
 # The default stage lengths are times (simulation/lengths.py), and a run
 # takes its steps from them at its own timestep (plan_stages).

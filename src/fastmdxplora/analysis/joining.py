@@ -341,6 +341,12 @@ def join_segments(
     interval = next(iter(known.values()), None) if len(known) == len(pieces) else None
     timestep_fs = (read_checkpoint_sidecar(
         pieces[0].directory / "simulation" / "checkpoint.chk") or {}).get("timestep_fs")
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    if chose_its_own_step(pieces[0].directory / "simulation"):
+        # Its timestep is where the integrator started, not the step it
+        # took: frames a fixed number of steps apart are no fixed time.
+        timestep_fs = None
 
     import mdtraj
 

@@ -119,7 +119,12 @@ def _clock(root: Path, indices: list[int]) -> tuple[list[int], list[float], str]
     loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}
     stride = _positive_int(loaded.get("stride")) or 1
     first = _non_negative_int(loaded.get("first")) or 0
-    interval = loaded.get("saving_interval_ps")
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    # A run whose integrator chose its own step has no clock, whatever an
+    # analysis made before that was known recorded.
+    interval = (None if chose_its_own_step(Path(root) / "simulation")
+                else loaded.get("saving_interval_ps"))
     timed = isinstance(interval, (int, float)) and not isinstance(interval, bool) and interval > 0
     recorded = manifest.get("frame_times_ps")
     if timed and isinstance(recorded, list) and recorded and all(

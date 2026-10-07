@@ -259,9 +259,16 @@ def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = N
 
     ``None`` where neither is recorded -- a foreign trajectory, or a run from
     before this was written -- which the loader turns into a frame axis
-    rather than an invented one.
+    rather than an invented one. ``None`` too for a run whose integrator
+    chose its own step (`variable_langevin`, `variable_verlet`): its frames
+    are a fixed number of steps apart, not a fixed time.
     """
     import json
+
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    if chose_its_own_step(project_root / "simulation"):
+        return None
 
     # A joined trajectory says its own spacing, which is the one to use: its
     # first segment may have been killed and never written the run's record.

@@ -143,7 +143,12 @@ def analysed_axis(root: Path, n: int) -> tuple[list[int], list[float], str]:
     loaded = manifest.get("load_kwargs") if isinstance(manifest.get("load_kwargs"), dict) else {}
     stride = _positive_int(loaded.get("stride")) or 1
     first = _non_negative_int(loaded.get("first")) or 0
-    interval = loaded.get("saving_interval_ps")
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    # A run whose integrator chose its own step has no clock, whatever an
+    # analysis made before that was known recorded.
+    interval = (None if chose_its_own_step(Path(root) / "simulation")
+                else loaded.get("saving_interval_ps"))
     recorded = manifest.get("frame_times_ps")
     if (isinstance(recorded, list) and len(recorded) == n and isinstance(interval, (int, float))
             and interval > 0 and all(isinstance(t, (int, float)) for t in recorded)):
