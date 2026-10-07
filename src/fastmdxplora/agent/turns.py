@@ -325,7 +325,7 @@ def _events(response: Any):
 
 def _stream_error(event: dict[str, Any]) -> str:
     error = event.get("error") if isinstance(event.get("error"), dict) else {}
-    return redacted("The AI model stopped with an error: "
+    return redacted("I could not finish: the provider said: "
                     f"{str(error.get('message') or error)[:400]}")
 
 

@@ -968,7 +968,7 @@ def test_the_command_line_says_an_answer_and_what_it_cost(monkeypatch, capsys, t
                               attempts=None, agent_output=None, budget_hours=None)
     assert _run_agent(args) == 0
     out = capsys.readouterr().out
-    assert "AI model: 1 call, 900 tokens in, 10 out" in out
+    assert "Used: 1 call, 900 tokens in, 10 out" in out
     assert "A 2 fs step is the usual one" in out
 
 

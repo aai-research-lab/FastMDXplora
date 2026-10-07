@@ -408,7 +408,7 @@ def propose_with_tools(request: str, turn: Any, *, phases: list[str] | None,
             if not turns_taken:
                 raise
             raise StudyError(
-                "The AI model took tool calls and then refused them in the same reply: "
+                "I could not finish: my reply took tool calls and then refused them: "
                 f"{exc}", code="environment.service.unusable_response") from None
         turns_taken += 1
         usage.add(reply.usage)

@@ -38,7 +38,7 @@ def test_an_answer_is_not_announced_as_a_config(monkeypatch, tmp_path, capsys):
                                      Usage(1, 10, 0, 0, 5)))
     out = capsys.readouterr().out
     assert "Writing a config" not in out
-    assert "Asking the AI model..." in out
+    assert "Thinking..." in out and "AI model" not in out
     assert "The usual one is 2 fs, see the docs (https://example.org/x)." in out
     assert "**" not in out
 

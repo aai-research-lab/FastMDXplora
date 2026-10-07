@@ -370,8 +370,8 @@ most of what is sent is read from the cache. What each reply cost is
 recorded, and `fastmdx agent` says it:
 
 ```
-  AI model: 1 call, 17,899 tokens in (17,806 written to the cache), 498 out
-  AI model: 2 calls, 29,170 tokens in (28,770 cached, 300 written to the cache), 412 out
+  Used: 1 call, 17,899 tokens in (17,806 written to the cache), 498 out
+  Used: 2 calls, 29,170 tokens in (28,770 cached, 300 written to the cache), 412 out
 ```
 
 The first message of a conversation writes the instructions to the cache
@@ -384,7 +384,7 @@ five minutes from the command line and `ask_agent`, where a request is
 usually asked once; `1h` and `5m` keep them so everywhere. An hour costs
 twice the input price to write instead of 1.25 times, once, and each read
 renews it. Other providers keep their caches as they decide. `fastmdx agent` says the
-reply as a terminal shows it: "Asking the AI model...", the answer without
+reply as a terminal shows it: "Thinking...", the answer without
 its Markdown emphasis, a link as its words and its address, and "Accepted
 first time." or "Accepted after 2 attempts." for a Config.
 
@@ -666,11 +666,12 @@ What it looked at is folded under its reply, **Checked with the software**,
 each tool with what was asked and what the software said, and kept with the
 thread. From the command line, `fastmdx agent` prints a line for each.
 
-Under it, **What the AI model was sent**: each time the AI model was asked
-for this reply, what it was given, as it went. Replying by tool calls, the
-system prompt (the same each time, shown once), the tools declared and the
-messages it had not been given before, a look's result among them; in text,
-each prompt. It is kept beside the conversation, as
+Under it, **What I read for this reply**: each step the Agent took for
+this reply (each time its AI model was asked), what it was given, as it
+went. Replying by tool calls, its instructions (the same each step, shown
+once), the tools it could use and the messages it had not been given
+before, a look's result among them; in text, each prompt. The page and the
+terminal speak as the Agent: its AI model is named only in its settings. It is kept beside the conversation, as
 `agent/conversations/receipts/<sha256>.json` (the newest 100, the system
 prompt once in `receipts/systems/`), each text bounded to 64,000 characters
 with the cut marked, read only when the fold is opened and checked against

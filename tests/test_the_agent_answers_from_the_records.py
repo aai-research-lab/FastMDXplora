@@ -162,7 +162,7 @@ def test_the_start_page_question_is_answered_in_the_page(tmp_path, monkeypatch):
         session.server.shutdown()
     assert errors == []
     assert note
-    assert answer.startswith("From this study's records: no AI model was asked.")
+    assert answer.startswith("From this study's records.")
     assert "RMSD: 0.1123 ± 0.0021 nm" in answer
 
 

@@ -46,7 +46,7 @@
    * `fastmdx agent model`; there is a Settings button here instead. */
   var IN_THE_GUI = {
     "environment.model.unset":
-      "No AI model set yet. Open Settings and choose one.",
+      "I am not set up yet. Open Settings to set me up.",
     "environment.credentials.absent":
       "API key required. Open Settings and paste one."
   };
@@ -288,11 +288,12 @@
     return fold;
   }
 
-  /* What the AI model was sent for this reply, kept beside the
-   * conversation (`/api/agent/receipt`), read only when opened: each time
-   * it was asked, the prompt in full, or the system prompt, the tools
-   * declared and the messages it had not been given before (a look's
-   * result among them). */
+  /* What the Agent read for this reply, kept beside the conversation
+   * (`/api/agent/receipt`), read only when opened: each step, the prompt in
+   * full, or its instructions, the tools it could use and the messages it
+   * had not been given before (a look's result among them). Said as the
+   * Agent says it: the AI model is its own, named only in Settings (user,
+   * 10-07: "no talk about the AI model as a separate entity"). */
   function receiptPart(body, label, text) {
     var name = document.createElement("div");
     name.className = "agent-look-name";
@@ -305,7 +306,7 @@
   }
 
   function receiptMessage(body, message) {
-    var who = { user: "The person", assistant: "The AI model", results: "The software" };
+    var who = { user: "You", assistant: "I", results: "The software" };
     var label = who[message.role] || message.role;
     if (message.text) receiptPart(body, label, message.text);
     (message.calls || []).forEach(function (call) {
@@ -322,8 +323,8 @@
     var fold = document.createElement("details");
     fold.className = "agent-looks agent-sent";
     var head = document.createElement("summary");
-    head.textContent = "What the AI model was sent (asked " + brief.asked
-      + (brief.asked === 1 ? " time" : " times") + ")"
+    head.textContent = "What I read for this reply (" + brief.asked
+      + (brief.asked === 1 ? " step" : " steps") + ")"
       + (brief.truncated ? ", long parts shortened" : "");
     fold.appendChild(head);
     var body = document.createElement("div");
@@ -348,17 +349,17 @@
           (said.receipt.sent || []).forEach(function (entry, i) {
             var asked = document.createElement("div");
             asked.className = "agent-look-name";
-            asked.textContent = "Asked, time " + (i + 1);
+            asked.textContent = "Step " + (i + 1);
             body.appendChild(asked);
             if (entry.prompt != null) {
-              receiptPart(body, "Prompt", entry.prompt);
+              receiptPart(body, "What I was given", entry.prompt);
               return;
             }
             if (entry.system !== shownSystem) {
               shownSystem = entry.system;
               var system = document.createElement("details");
               var summary = document.createElement("summary");
-              summary.textContent = "System prompt (the same each time)";
+              summary.textContent = "My instructions (the same each step)";
               system.appendChild(summary);
               var text = document.createElement("pre");
               text.className = "agent-look-said";
@@ -371,7 +372,7 @@
               var declared = (said.receipt.toolsets || [])[entry.tools] || [];
               var tools = document.createElement("details");
               var named = document.createElement("summary");
-              named.textContent = "Tools declared: " + declared.map(function (tool) {
+              named.textContent = "Tools I could use: " + declared.map(function (tool) {
                 return tool.name;
               }).join(", ");
               tools.appendChild(named);

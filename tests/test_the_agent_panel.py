@@ -1953,9 +1953,11 @@ class TestTheLayoutAndTheVoice(unittest.TestCase):
         self.assertIn('store.get("panelWidth", String(PANEL_WIDTH))', frame)
         self.assertIn("panel: [280, 640]", frame)
 
-    def test_the_agents_prose_is_a_serif_and_the_persons_is_not(self):
+    def test_the_agents_prose_is_in_the_font_shipped(self):
         css = self.css()
-        self.assertIn(".agent-answer, .agent-msg-agent .agent-attempt {\n    font-family: Georgia", css)
+        # Inter, as the rest of the page (user, 10-07); it was Georgia.
+        self.assertIn(".agent-answer, .agent-msg-agent .agent-attempt {\n"
+                      "    font-family: var(--font-stack);", css)
         # No hosted font: this GUI runs without a route to the internet.
         self.assertNotIn("googleapis", css)
 

@@ -96,7 +96,7 @@ def test_a_question_typed_and_sent_is_answered_from_the_study(study, monkeypatch
     entries = json.loads(kept[0].read_text(encoding="utf-8"))["entries"]
     assert entries[-1]["kind"] == "answer" and entries[-1]["cites"][0]["analysis"] == "rmsd"
     # The prompt as it went, kept with the conversation and named in it.
-    assert sent_head == "What the AI model was sent (asked 1 time)"
+    assert sent_head == "What I read for this reply (1 step)"
     assert sent == prompts[-1]
     assert entries[-1]["receipt"]["asked"] == 1 and entries[-1]["receipt"]["kept"] is True
 
@@ -141,12 +141,12 @@ def test_a_reply_by_tool_calls_shows_what_each_turn_was_sent(study, monkeypatch)
             browser.close()
     finally:
         session.server.shutdown()
-    assert head == "What the AI model was sent (asked 2 times)"
+    assert head == "What I read for this reply (2 steps)"
     assert system == systems[0] == systems[1]
-    assert body.count("System prompt (the same each time)") == 1
-    assert "Tools declared: " in body and "current_view" in body
-    assert "The person" in body and "What does this study hold?" in body
-    assert "The AI model called current_view" in body
+    assert body.count("My instructions (the same each step)") == 1
+    assert "Tools I could use: " in body and "current_view" in body
+    assert "You" in body and "What does this study hold?" in body
+    assert "I called current_view" in body
     assert "What current_view gave back" in body and "read_study" in body
     assert page.errors == []
 

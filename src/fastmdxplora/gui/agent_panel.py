@@ -1206,10 +1206,10 @@ def receipt_endpoint(runtime: Any, digest: Any) -> dict[str, Any]:
     system prompts read back in, and checked against that digest."""
     named = _digest_of(digest)
     if runtime is None or named is None:
-        return {"ok": False, "error": "No such record of what the AI model was sent."}
+        return {"ok": False, "error": "No such record of what I read."}
     store = _receipts_of(runtime)
     if store is None:
-        return {"ok": False, "error": "No such record of what the AI model was sent."}
+        return {"ok": False, "error": "No such record of what I read."}
     try:
         record = json.loads((store / f"{named}.json").read_text(encoding="utf-8"))
         record["systems"] = [
@@ -1217,12 +1217,12 @@ def receipt_endpoint(runtime: Any, digest: Any) -> dict[str, Any]:
             .read_bytes().decode("utf-8", "surrogatepass")
             for entry in record.get("systems") or ()]
     except (OSError, ValueError, AttributeError, UnicodeDecodeError):
-        return {"ok": False, "error": "This record of what the AI model was sent is no "
+        return {"ok": False, "error": "This record of what I read is no "
                                       f"longer kept (the newest {MOST_RECEIPTS} are)."}
     from fastmdxplora.agent.receipt import digest_of
 
     if digest_of(record) != named:
-        return {"ok": False, "error": "This record of what the AI model was sent has "
+        return {"ok": False, "error": "This record of what I read has "
                                       "changed since it was kept."}
     return {"ok": True, "receipt": record}
 

@@ -3477,17 +3477,16 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
     font-size: var(--text-xl); line-height: 1; cursor: pointer;
 }
 .agent-send:disabled { opacity: .45; cursor: default; }
-/* The Agent's prose in a serif; the person's message in the UI sans.
-   That is the pairing every assistant a person has read uses, and it
-   makes the two voices in the thread tell apart at a glance. A system
-   serif, because this GUI runs without a route to the internet. */
-/* Body prose in the secondary text colour at normal weight. In the
-   primary colour -- bright white -- a serif at this size read as bold
-   across the whole reply, which left nowhere for emphasis to go.
-   Emphasis is the model's to place: bold, italic, code and links come
-   through from the reply's own markdown, nothing else does. */
+/* The Agent's prose in Inter, the font FastMDXplora ships, as the rest of
+   the page (user, 10-07: "Reply font: Inter"). It was in Georgia, a
+   system serif shipped by nobody here. The two voices are told apart by
+   the layout: the person's in a bubble at the right, the Agent's under
+   its icon at the left. */
+/* Body prose in the secondary text colour at normal weight, so emphasis
+   has somewhere to go: bold, italic, code and links come through from the
+   reply's own markdown, nothing else does. */
 .agent-answer, .agent-msg-agent .agent-attempt {
-    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Times New Roman", serif;
+    font-family: var(--font-stack);
     font-size: var(--text-md); line-height: 1.65; font-weight: 400; color: var(--text-secondary);
     white-space: pre-wrap; max-width: 720px;
 }

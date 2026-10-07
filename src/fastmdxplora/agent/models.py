@@ -559,7 +559,7 @@ def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
         if event.get("type") == "error":
             error = event.get("error") if isinstance(event.get("error"), dict) else {}
             raise StudyError(
-                f"The AI model stopped with an error: {str(error.get('message') or error)[:400]}",
+                f"I could not finish: the provider said: {str(error.get('message') or error)[:400]}",
                 code="environment.service.unusable_response", url=url)
         piece = ""
         delta = event.get("delta")

@@ -3173,7 +3173,8 @@ def _run_agent(args: Any) -> int:
         return 1
     # Not "Writing a config": the reply may be an answer, a question or an
     # action, and which is known only once it comes.
-    print("Asking the AI model...")
+    # Said as the Agent: its AI model is named only by `fastmdx agent model`.
+    print("Thinking...")
     try:
         proposal = propose_config(
             request, complete,
@@ -3199,7 +3200,7 @@ def _run_agent(args: Any) -> int:
     if proposal.usage:
         from fastmdxplora.agent.turns import Usage
 
-        print(f"  AI model: {Usage(**proposal.usage).said()}")
+        print(f"  Used: {Usage(**proposal.usage).said()}")
 
     if proposal.answer:
         # A question was asked rather than a study: the answer is the reply.

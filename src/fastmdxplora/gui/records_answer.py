@@ -27,7 +27,7 @@ __all__ = ["QUESTIONS", "answer_from_the_records", "answered_from_the_records"]
 #: buttons carry.
 QUESTIONS = ("found", "long_enough", "strengthen")
 
-MARK = "*From this study's records: no AI model was asked.*"
+MARK = "*From this study's records.*"
 
 #: Said by every answer about whether to trust a single run's means.
 TRAPPED = ("A single run's error is estimated from the run itself, so it cannot show "
