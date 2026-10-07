@@ -551,13 +551,70 @@ _ENDED_AS = {"completed": "The run ended: completed", "failed": "The run failed"
              "stopped": "The run was stopped", "interrupted": "The run was interrupted"}
 
 
+#: A run's own record saying it is going.
+_GOING = ("running", "starting", "paused")
+#: How long whether a folder is run is kept before it is asked again: the
+#: page asks at each of its polls while a run awaits its summary, and the
+#: answer reads a process's command line (PowerShell on Windows, `ps` on
+#: macOS).
+GOING_ASKED_FOR_S = 10.0
+_GOING_ASKED: dict[Path, tuple[float, bool]] = {}
+
+
+def _going_here(root: Path, runtime: Any) -> bool:
+    """Whether a live process is known to run the folder, though not as
+    this server's own: one in the workspace's list of runs started there
+    (`runs_here`, written by every Run of the GUI and an AI app), or the
+    run's own record at its top (a study of several runs keeps one there
+    too). A run started on another machine is not. Kept for
+    `GOING_ASKED_FOR_S`."""
+    target = root.resolve()
+    now = time.monotonic()
+    kept = _GOING_ASKED.get(target)
+    if kept is not None and now - kept[0] < GOING_ASKED_FOR_S:
+        return kept[1]
+    going = _asked_going(target, runtime)
+    _GOING_ASKED[target] = (now, going)
+    return going
+
+
+def _asked_going(target: Path, runtime: Any) -> bool:
+    from fastmdxplora import runs_here
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    try:
+        folders = list(runtime._rule_folders()) if hasattr(runtime, "_rule_folders") else []
+    except Exception:  # noqa: BLE001 - no list to read
+        folders = []
+    for folder in folders:
+        for run in runs_here._started_here(Path(folder).resolve()):
+            here = Path(str(run.get("folder") or ""))
+            if (here.is_absolute() and here.resolve() == target
+                    and runs_here._going(run.get("pid"), here, run.get("argv"), run)):
+                return True
+    try:
+        record = json.loads((target / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(record, dict) and runs_here._going(
+        record.get("pid"), target, record.get("argv"), record)
+
+
 def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
                          path_for: Any = None) -> dict[str, Any]:
     """What a run the Agent started found, once it has ended, written from
     the study's records (`records_answer`), so it costs no tokens: how it
     ended and how long it took, what it found with each error, whether it
     ran long enough, and what would strengthen it. ``ended`` false while
-    the run is still going."""
+    the run is still going.
+
+    In order: a folder not there is no study (the page asks no more); this
+    server's process for it, alive, or another known to run it
+    (`_going_here`), is a run going; then no process runs it, and what its
+    records say is how it ended. A record still saying it is going is
+    believed only of a run not this server's (on another machine): this
+    server's own has exited (third to sixth reviews, 10-07)."""
+    from fastmdxplora.gui.exploration import runs_of_a_study
     from fastmdxplora.gui.records_answer import MARK, answer_from_the_records
     from fastmdxplora.gui.simulated_time import phases_wall_seconds
     from fastmdxplora.gui.telemetry import status_as_it_stands
@@ -569,7 +626,6 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
         named = None
     root = Path(named).expanduser() if named else None
     if root is None or not root.is_dir():
-        # Gone, or never there: the page does not ask again.
         return {"ok": False, "error": "No study there."}
     running = getattr(runtime, "running_root", None)
     process = getattr(runtime, "process", None)
@@ -577,42 +633,84 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             and Path(running).resolve() == root.resolve())
     if ours and process.poll() is None:
         return {"ok": True, "ended": False}
+    if _going_here(root, runtime):
+        # Another process runs it: not this server's, or after this
+        # server's ended (`fastmdx resume` carrying it on, eighth review,
+        # 10-08).
+        return {"ok": True, "ended": False}
+    # No process runs it from here on.
+    stopped = root.resolve() in (getattr(runtime, "stopped_roots", None) or ())
+    code = process.poll() if ours else None
+
+    def recorded(folder: Path) -> str:
+        return str((status_as_it_stands(folder) or {}).get("status") or "").lower()
 
     def said(question: str) -> str:
         text = answer_from_the_records(root, question) or ""
         return text[len(MARK):].strip() if text.startswith(MARK) else text.strip()
 
-    from fastmdxplora.gui.exploration import runs_of_a_study
+    def ended_as(status: str) -> str:
+        """Stopped here, or ended with nothing to say how: said so."""
+        if stopped and status in ("", "interrupted", "failed", *_GOING):
+            return "stopped"
+        if status in _GOING or not status:
+            # Nothing recorded of how it ended: this server's process says,
+            # where it was this server's; otherwise it is not known.
+            if code is None:
+                return ""
+            return "interrupted" if code < 0 else "failed" if code else ""
+        return status
 
     runs = runs_of_a_study(root)
     if runs:
-        # A study of several runs ends when each of its runs has; its one
-        # paragraph is said once (second review, 10-07: such a folder, with
-        # no record of one study at its top, was "No study there.").
-        states = [r.get("state") for r in runs]
-        if any(state not in ("completed", "failed") for state in states):
+        if not ours and any(recorded(Path(r["path"])) in _GOING
+                            for r in runs if Path(r["path"]).is_dir()):
+            # A run inside it says it is going: on another machine.
             return {"ok": True, "ended": False}
-        done, failed = states.count("completed"), states.count("failed")
-        status = "completed" if not failed else "failed" if not done else "ended"
+        results = _results_of(root)
+        done = failed = prepared = 0
+        for r in runs:
+            result = results.get(str(r.get("run_id"))) or {}
+            if (result.get("status") == "skipped"
+                    and str(result.get("message") or "").startswith(_prepared_once())):
+                prepared += 1
+                done += 1
+            elif r.get("state") == "completed":
+                done += 1
+            elif r.get("state") == "failed" and recorded(Path(r["path"])) != "stopped":
+                failed += 1
+        unfinished = len(runs) - done - failed
+        # How it ended follows its runs: Stop pressed once every run had
+        # finished changes nothing, and a study halted by a failure failed
+        # (seventh review, 10-08).
+        if not unfinished:
+            status = "completed" if not failed else "failed" if not done else "ended"
+        else:
+            status = "stopped" if stopped else "failed" if failed else "interrupted"
         head = "The runs ended: " + ", ".join(
-            f"{n} {word}" for n, word in ((done, "completed"), (failed, "failed")) if n)
+            f"{n} {word}" for n, word in ((done, "completed"), (failed, "failed"),
+                                          (unfinished, "did not finish")) if n)
+        if prepared == len(runs):
+            # Asked only to prepare: not "completed" above its records'
+            # word that no run was run (tenth review, 10-08).
+            head = f"The study was prepared once, for its {prepared} windows"
         return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
     if not _is_study(root):
-        if ours:
-            # Its process ended before it wrote a record.
-            failed = bool(process.poll())
-            return {"ok": True, "ended": True, "status": "failed" if failed else "ended",
-                    "head": "The run failed" if failed else "The run ended",
-                    "found": "It wrote no records to read.", "long_enough": "",
-                    "strengthen": ""}
-        # Begun, with nothing written yet beside its config.
+        # It ended before it wrote a record of the study. One forgotten by
+        # this server (another folder opened, or a restart) that wrote
+        # nothing cannot have finished.
+        status = ended_as("") or ("ended" if ours else "interrupted")
+        return {"ok": True, "ended": True, "status": status,
+                "head": _ENDED_AS.get(status, "The run ended"),
+                "found": "It wrote no records to read.", "long_enough": "",
+                "strengthen": ""}
+    status = recorded(root)
+    if status in _GOING and not ours:
+        # Going, by its own record, though no process here runs it: a run
+        # on another machine (review, 10-07).
         return {"ok": True, "ended": False}
-    status = str((status_as_it_stands(root) or {}).get("status") or "").lower()
-    if status in ("running", "starting", "paused"):
-        # Going, by its own record, though not this server's process: after
-        # the GUI restarted, or a run on another machine (review, 10-07).
-        return {"ok": True, "ended": False}
+    status = ended_as(status) or "ended"
     seconds = phases_wall_seconds(root)
     head = _ENDED_AS.get(status, "The run ended")
     if seconds:
@@ -620,11 +718,27 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
     if (root / "batch_manifest.json").is_file():
         # A study of several runs is answered in one paragraph, the same for
         # every question: said once.
-        return {"ok": True, "ended": True, "status": status or "ended", "head": head,
+        return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
-    return {"ok": True, "ended": True, "status": status or "ended", "head": head,
+    return {"ok": True, "ended": True, "status": status, "head": head,
             "found": said("found"), "long_enough": said("long_enough"),
             "strengthen": said("strengthen")}
+
+
+def _prepared_once() -> str:
+    from fastmdxplora.batch.explorer import PREPARED_ONCE
+
+    return PREPARED_ONCE
+
+
+def _results_of(root: Path) -> dict[str, dict[str, Any]]:
+    """Each run's result as a study of several runs' manifest records it."""
+    try:
+        manifest = json.loads((root / "batch_manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    runs = manifest.get("runs") if isinstance(manifest, dict) else None
+    return {str(r.get("run_id")): r for r in runs or () if isinstance(r, dict)}
 
 
 def _with_its_fix(answer: dict[str, Any]) -> dict[str, Any]:

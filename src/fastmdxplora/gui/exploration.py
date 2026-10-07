@@ -517,6 +517,10 @@ class DashboardRuntime:
     data_stale: bool = False
     log_path: Path | None = None
     command: list[str] = field(default_factory=list)
+    #: The folders whose run was ended by Stop here, so how it ended is
+    #: said as stopped, not guessed from its return code (a kill by the
+    #: system reads the same; on Windows a stop exits with 1).
+    stopped_roots: set[Path] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -945,6 +949,7 @@ class DashboardRuntime:
         log_handle.close()
         self.active_root = output_dir
         self.running_root = output_dir
+        self.stopped_roots.discard(Path(output_dir).resolve())
         self.process = process
         self.process_started_at = _utc_now()
         self.process_finished_at = None
@@ -1565,6 +1570,9 @@ class DashboardRuntime:
             self._refresh_process()
             if self.process is None or self.process.poll() is not None:
                 return {"stopped": False, "detail": "No workflow is currently running.", "state": self.snapshot()}
+            where = self.running_root or self.active_root
+            if where is not None:
+                self.stopped_roots.add(Path(where).resolve())
             self.process.terminate()
             if hasattr(self.process, "wait"):
                 # Long enough for a run in production to step on to its next

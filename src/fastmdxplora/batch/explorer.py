@@ -601,6 +601,11 @@ def _why_it_failed(result: Any) -> str:
     return message
 
 
+#: How a window of a study only prepared is said: skipped, its preparing
+#: done once for every window. Read by the Agent's summary as completed.
+PREPARED_ONCE = "Prepared once"
+
+
 def _skipped_run_result(spec: RunSpec, run_out: Path, message: str) -> "RunResult":
     from fastmdxplora.orchestrator import RunResult
 
@@ -1420,7 +1425,7 @@ class BatchExplorer:
                 (self.output_dir / "runs").mkdir(exist_ok=True)
                 self.results = [_skipped_run_result(
                     spec, self._run_output_dir(spec),
-                    f"Prepared once, in {shared}, for every window; the "
+                    f"{PREPARED_ONCE}, in {shared}, for every window; the "
                     "windows simulate from it.") for spec in self.run_specs]
                 self._write_study_config()
                 self._write_batch_manifest()
