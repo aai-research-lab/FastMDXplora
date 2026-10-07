@@ -568,12 +568,45 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
     except Exception:  # noqa: BLE001 - outside the workspace, said as no study
         named = None
     root = Path(named).expanduser() if named else None
-    if root is None or not _is_study(root):
+    if root is None or not root.is_dir():
+        # Gone, or never there: the page does not ask again.
         return {"ok": False, "error": "No study there."}
     running = getattr(runtime, "running_root", None)
     process = getattr(runtime, "process", None)
-    if running is not None and process is not None and process.poll() is None \
-            and Path(running).resolve() == root.resolve():
+    ours = (running is not None and process is not None
+            and Path(running).resolve() == root.resolve())
+    if ours and process.poll() is None:
+        return {"ok": True, "ended": False}
+
+    def said(question: str) -> str:
+        text = answer_from_the_records(root, question) or ""
+        return text[len(MARK):].strip() if text.startswith(MARK) else text.strip()
+
+    from fastmdxplora.gui.exploration import runs_of_a_study
+
+    runs = runs_of_a_study(root)
+    if runs:
+        # A study of several runs ends when each of its runs has; its one
+        # paragraph is said once (second review, 10-07: such a folder, with
+        # no record of one study at its top, was "No study there.").
+        states = [r.get("state") for r in runs]
+        if any(state not in ("completed", "failed") for state in states):
+            return {"ok": True, "ended": False}
+        done, failed = states.count("completed"), states.count("failed")
+        status = "completed" if not failed else "failed" if not done else "ended"
+        head = "The runs ended: " + ", ".join(
+            f"{n} {word}" for n, word in ((done, "completed"), (failed, "failed")) if n)
+        return {"ok": True, "ended": True, "status": status, "head": head,
+                "found": said("found"), "long_enough": "", "strengthen": ""}
+    if not _is_study(root):
+        if ours:
+            # Its process ended before it wrote a record.
+            failed = bool(process.poll())
+            return {"ok": True, "ended": True, "status": "failed" if failed else "ended",
+                    "head": "The run failed" if failed else "The run ended",
+                    "found": "It wrote no records to read.", "long_enough": "",
+                    "strengthen": ""}
+        # Begun, with nothing written yet beside its config.
         return {"ok": True, "ended": False}
     status = str((status_as_it_stands(root) or {}).get("status") or "").lower()
     if status in ("running", "starting", "paused"):
@@ -581,11 +614,6 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
         # the GUI restarted, or a run on another machine (review, 10-07).
         return {"ok": True, "ended": False}
     seconds = phases_wall_seconds(root)
-
-    def said(question: str) -> str:
-        text = answer_from_the_records(root, question) or ""
-        return text[len(MARK):].strip() if text.startswith(MARK) else text.strip()
-
     head = _ENDED_AS.get(status, "The run ended")
     if seconds:
         head += (" in " if status == "completed" else " after ") + _hms(seconds)

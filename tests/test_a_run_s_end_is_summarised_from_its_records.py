@@ -79,6 +79,65 @@ def test_a_study_of_several_runs_is_said_once(tmp_path, monkeypatch) -> None:
     assert said["found"] == "Three runs." and said["long_enough"] == said["strengthen"] == ""
 
 
+def _sweep(root: Path, results: dict, live: dict | None = None) -> Path:
+    """A study of several runs as `explore` lays it out: its batch manifest
+    and its runs, nothing of one study at its top."""
+    (root / "runs").mkdir(parents=True)
+    planned = [{"run_id": r} for r in ("r1", "r2")]
+    (root / "batch_manifest.json").write_text(json.dumps({
+        "planned": planned,
+        "runs": [{"run_id": r, "status": s} for r, s in results.items()]}), encoding="utf-8")
+    for run, status in (live or {}).items():
+        (root / "runs" / run / "simulation").mkdir(parents=True)
+        (root / "runs" / run / "simulation" / "live_status.json").write_text(
+            json.dumps(status), encoding="utf-8")
+    return root
+
+
+def test_a_study_of_several_runs_is_said_when_every_run_has_ended(tmp_path, monkeypatch):
+    """Found by the second review (10-07): a study of several runs, as
+    `explore` writes it, was answered "No study there." and never
+    summarised; its end is that of its runs."""
+    monkeypatch.setattr(records_answer, "_several_runs", lambda base: "Two runs.")
+    root = _sweep(tmp_path / "sweep", {"r1": "ok", "r2": "failed"})
+    said = run_summary_endpoint({"study": str(root)}, SimpleNamespace())
+    assert said["ok"] and said["ended"]
+    assert said["head"] == "The runs ended: 1 completed, 1 failed"
+    assert said["found"] == "Two runs." and said["long_enough"] == said["strengthen"] == ""
+    both = _sweep(tmp_path / "both", {"r1": "ok", "r2": "ok"})
+    assert run_summary_endpoint({"study": str(both)}, SimpleNamespace())["status"] == "completed"
+
+
+def test_a_study_of_several_runs_with_one_going_is_not_summarised(tmp_path) -> None:
+    root = _sweep(tmp_path / "sweep", {"r1": "ok"},
+                  {"r2": {"stage": "Production", "current_step": 10, "total_planned_steps": 50}})
+    assert run_summary_endpoint({"study": str(root)}, SimpleNamespace()) == {
+        "ok": True, "ended": False}
+
+
+def test_a_study_just_begun_is_not_said_gone(tmp_path) -> None:
+    """Found by the second review (10-07): a folder holding only its
+    config, in the first seconds of its run, was "No study there.", and
+    the page then never asked again."""
+    root = tmp_path / "begun"
+    root.mkdir()
+    (root / "exploration.yml").write_text("systems: []\n", encoding="utf-8")
+    going = SimpleNamespace(running_root=root, process=SimpleNamespace(poll=lambda: None))
+    assert run_summary_endpoint({"study": str(root)}, going) == {"ok": True, "ended": False}
+    assert run_summary_endpoint({"study": str(root)}, SimpleNamespace()) == {
+        "ok": True, "ended": False}
+
+
+def test_a_run_that_wrote_nothing_before_it_ended_is_said(tmp_path) -> None:
+    root = tmp_path / "begun"
+    root.mkdir()
+    (root / "exploration.yml").write_text("systems: []\n", encoding="utf-8")
+    ended = SimpleNamespace(running_root=root, process=SimpleNamespace(poll=lambda: 1))
+    said = run_summary_endpoint({"study": str(root)}, ended)
+    assert said["ended"] and said["status"] == "failed"
+    assert said["head"] == "The run failed" and said["found"]
+
+
 def test_no_study_no_summary(tmp_path) -> None:
     assert not run_summary_endpoint({"study": str(tmp_path / "nothing")}, None)["ok"]
     assert not run_summary_endpoint({}, None)["ok"]

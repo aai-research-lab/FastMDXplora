@@ -793,7 +793,9 @@ silently.
 and how long it took, what it found with each error, whether it ran long
 enough, and what would strengthen it, written from the study's records
 (`POST /api/agent/run-summary`), so it costs no tokens. A run that ended while
-the page was closed is said when the conversation is next opened.
+the page was closed is said when the conversation is next opened. A study of
+several runs is said when every run has ended ("The runs ended: 2 completed,
+1 failed"), with what they found together.
 
 **It never acts unasked.** Not on a question, not on a request for a Config,
 not because it thinks you would want it, and never twice in one reply. A
