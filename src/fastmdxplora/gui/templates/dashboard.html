@@ -298,14 +298,16 @@
         <p class="cite-name"><strong>FastMDXplora</strong>: __FASTMDX_EXPANSION__</p>
         <div class="cite-block">
           <p id="cite-reference">__FASTMDX_CITATION__</p>
-          <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+          <button type="button" class="line-btn" data-copy-from="cite-reference" aria-label="Copy the reference"
+                  title="Copy the reference"><!--icon:copy:line-icon--></button>
         </div>
         <p class="subtle">DOI: <a href="https://doi.org/__FASTMDX_DOI__"
            target="_blank" rel="noopener">__FASTMDX_DOI__</a>
            &nbsp;&middot;&nbsp; version <span id="cite-version">__FASTMDX_VERSION__</span></p>
         <div class="cite-bibtex-head">
           <span class="builder-label">BibTeX</span>
-          <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+          <button type="button" class="line-btn" data-copy-from="cite-bibtex" aria-label="Copy the BibTeX"
+                  title="Copy the BibTeX"><!--icon:copy:line-icon--></button>
         </div>
         <pre class="mono" id="cite-bibtex">__FASTMDX_BIBTEX__</pre>
         <p class="subtle">&copy; Copyright __FASTMDX_COPYRIGHT__.</p>
@@ -473,7 +475,8 @@
             <span class="status-dot status-dot-live" aria-hidden="true"></span>
             <span class="study-running-name mono" id="study-elsewhere-name"></span>
             <span class="study-running-pct mono" id="study-elsewhere-pct"></span>
-            <button class="ghost-btn" type="button" id="study-elsewhere-view" title="View the running study">View</button>
+            <button class="line-btn" type="button" id="study-elsewhere-view" aria-label="View the running study"
+                    title="View the running study"><!--icon:eye:line-icon--></button>
           </div>
         </div>
         <div class="study-running" id="study-runs" hidden>
@@ -485,7 +488,8 @@
           <div class="study-running-row">
             <span class="study-running-name mono" id="study-run-of-name"></span>
             <span class="study-running-pct mono" id="study-run-of-values"></span>
-            <button class="ghost-btn" type="button" id="study-run-of-back" title="Back to the study">Back</button>
+            <button class="line-btn" type="button" id="study-run-of-back" aria-label="Back to the study"
+                    title="Back to the study"><!--icon:back:line-icon--></button>
           </div>
         </div>
       </div>
@@ -986,7 +990,8 @@
                 <h2 id="overview-charts-title" class="card-title">Live charts</h2>
                 <div class="card-header-actions">
                   <select class="metric-select" id="chart-metric-select" aria-label="Chart metric"></select>
-                  <button class="ghost-btn" type="button" id="chart-reset">Reset zoom</button>
+                  <button class="line-btn" type="button" id="chart-reset" aria-label="Reset zoom"
+                          title="Reset zoom"><!--icon:fit:line-icon--></button>
                 </div>
               </div>
               <div class="chart-stack" id="chart-stack">
@@ -1043,7 +1048,7 @@
               <h2 class="card-title">Methods</h2>
             </summary>
             <div class="card-body">
-              <div class="methods-actions"><button class="btn btn-small" type="button" id="overview-methods-copy">Copy</button></div>
+              <div class="methods-actions"><button class="line-btn" type="button" id="overview-methods-copy" aria-label="Copy the methods" title="Copy the methods, as plain text"><!--icon:copy:line-icon--></button></div>
               <div class="methods-text" id="overview-methods-text"></div>
             </div>
           </details>
@@ -1817,10 +1822,10 @@
                  one. Where every AI app a person has used keeps them. -->
             <div class="agent-footer">
               <button id="agent-settings-open" class="agent-footer-link" type="button" title="Agent settings"><span id="agent-footer-mode">Assisted</span> mode</button>
-              <span class="agent-footer-dot" aria-hidden="true">&middot;</span>
-              <button id="agent-conversations" class="agent-footer-link" type="button" title="Open an earlier conversation">Conversations</button>
-              <span class="agent-footer-dot" aria-hidden="true">&middot;</span>
-              <button id="agent-new" class="agent-footer-link" type="button" title="Start a fresh thread; this one is kept">New</button>
+              <button id="agent-conversations" class="line-btn" type="button" aria-label="Conversations"
+                      title="Conversations: open an earlier one"><!--icon:chat:line-icon--></button>
+              <button id="agent-new" class="line-btn" type="button" aria-label="New conversation"
+                      title="New conversation: this one is kept"><!--icon:new:line-icon--></button>
             </div>
           </div>
 
@@ -1858,7 +1863,8 @@
                 <div class="agent-actions" data-role="actions" id="agent-actions" hidden>
                   <div class="control-row">
                     <button class="primary-btn" type="button" data-role="run" id="agent-run">Run on this machine</button>
-                    <a href="#run" class="ctl-btn" data-role="load" id="agent-load">Open in the builder</a>
+                    <a href="#run" class="line-btn" data-role="load" id="agent-load" aria-label="Open in the builder"
+                       title="Open in the builder"><!--icon:config:line-icon--></a>
                     <details class="agent-more" data-role="more">
                       <summary class="ctl-btn">More</summary>
                       <div class="agent-more-menu" role="group" aria-label="More for this study">
@@ -1943,7 +1949,8 @@
         <span class="agent-drawer-title">Agent</span>
         <kbd class="agent-drawer-keys" id="agent-drawer-keys">Ctrl J</kbd>
         <span class="agent-drawer-spacer"></span>
-        <button type="button" class="ghost-btn" id="agent-drawer-page" title="Open the Agent as a page">Open as a page</button>
+        <button type="button" class="line-btn" id="agent-drawer-page" aria-label="Open as a page"
+                title="Open the Agent as a page"><!--icon:expand:line-icon--></button>
         <button type="button" class="line-btn agent-drawer-close" id="agent-drawer-close" aria-label="Close the Agent" title="Close"><!--icon:close:line-icon--></button>
       </div>
       <div class="agent-drawer-body" id="agent-drawer-body"></div>

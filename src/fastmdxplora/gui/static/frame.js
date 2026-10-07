@@ -1176,11 +1176,7 @@
             pct.className = "study-running-pct mono";
             pct.textContent = r.state === "running" && typeof r.fraction === "number"
               ? (100 * r.fraction).toFixed(0) + "%" : r.state;
-            var view = document.createElement("button");
-            view.className = "ghost-btn";
-            view.type = "button";
-            view.textContent = "View";
-            view.title = "View this run";
+            var view = window.FastMDXIcons.button("eye", "View this run");
             view.addEventListener("click", function () { switchTo(r.path); });
             row.appendChild(dot); row.appendChild(name); row.appendChild(pct); row.appendChild(view);
             list.appendChild(row);

@@ -145,7 +145,12 @@ class TestTheDashboardShowsTheRuns(unittest.TestCase):
                                         ["temperature_K = 300", "completed", "completed"]])
                 self.assertIn("1 of 2 completed", page.text_content("#study-runs-label"))
                 self.assertTrue(page.eval_on_selector("#study-run-of", "e => e.hidden"))
-                # Into the running run, and back.
+                # Into the running run, by its icon, and back.
+                view = page.eval_on_selector(
+                    "#study-runs .study-run-row:nth-child(1) button",
+                    "b => [b.getAttribute('aria-label'), b.title, !!b.querySelector('svg.line-icon'),"
+                    " b.textContent.trim()]")
+                self.assertEqual(view, ["View this run", "View this run", True, ""])
                 page.click("#study-runs .study-run-row:nth-child(1) button")
                 page.wait_for_selector("#study-run-of:not([hidden])", timeout=20000)
                 self.assertEqual(page.text_content("#study-run-of-name"), "sweep")

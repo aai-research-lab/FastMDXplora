@@ -133,8 +133,7 @@
     var source = el(button.getAttribute("data-copy-from"));
     if (!source) return;
     copyText(source.textContent.trim()).then(function (done) {
-      button.textContent = done ? "Copied" : "Select and copy";
-      setTimeout(function () { button.textContent = "Copy"; }, 2000);
+      window.FastMDXIcons.flash(button, done, done ? "Copied" : "Select the text to copy it.");
     });
   });
 

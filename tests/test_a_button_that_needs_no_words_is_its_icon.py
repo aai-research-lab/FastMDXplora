@@ -196,10 +196,33 @@ def test_the_scripts_draw_from_the_page_s_own_icons(tmp_path) -> None:
                 const b = document.getElementById('probe-copy');
                 return [b.getAttribute('aria-label'), b.title, 'label' in b.dataset];
             }""")
+            # A button the template drew gets its own drawing back, and the
+            # copy is said in the page's notice; and the Agent card's way to
+            # the builder is its icon, drawn from the same set.
+            drawn_back = page.evaluate("""async () => {
+                const b = document.querySelector('[data-copy-from="cite-bibtex"]');
+                const before = b.innerHTML;
+                window.FastMDXIcons.flash(b, false, 'Select the text to copy it.');
+                const said = document.getElementById('dashboard-toast').textContent;
+                const during = b.innerHTML === before;
+                await new Promise((done) => setTimeout(done, 2000));
+                return {said, during, after: b.innerHTML === before,
+                        name: b.getAttribute('aria-label')};
+            }""")
+            builder = page.evaluate("""() => {
+                // In the reply's template, each reply's card copied from it.
+                const a = document.getElementById('agent-reply-template').content
+                    .querySelector('[data-role="load"]');
+                return [a.getAttribute('aria-label'), a.title, !!a.querySelector('svg.line-icon path'),
+                        a.textContent.trim()];
+            }""")
             browser.close()
     finally:
         session.server.shutdown()
     assert copied == []
+    assert builder == ["Open in the builder", "Open in the builder", True, ""]
+    assert drawn_back == {"said": "Select the text to copy it.", "during": False,
+                          "after": True, "name": "Copy the BibTeX"}
     assert drawn == sorted(ICONS)
     assert made == ["Copy the command", "Copy the command", "", True]
     assert said == "Copied"

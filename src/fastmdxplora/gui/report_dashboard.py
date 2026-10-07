@@ -1902,6 +1902,8 @@ def _render_overview(
     methods: tuple[str, str],
     has_report: bool,
 ) -> str:
+    from fastmdxplora.gui.sidebar_icons import icon
+
     actions = ('<a href="#analysis" class="ghost-btn" data-view-link="analysis">Analysis</a>'
                + ('<a href="#report" class="ghost-btn" data-view-link="report">Report</a>'
                   if has_report else ""))
@@ -1944,8 +1946,9 @@ def _render_overview(
         parts.append(
             '<div class="card" id="overview-methods-card"><div class="card-header">'
             '<h2 class="card-title">Methods</h2>'
-            '<button class="btn btn-small" type="button" data-copy-from="overview-methods-plain">'
-            "Copy</button></div>"
+            '<button class="line-btn" type="button" data-copy-from="overview-methods-plain" '
+            f'aria-label="Copy the methods" title="Copy the methods, as plain text">{icon("copy", "line-icon")}'
+            "</button></div>"
             f'<div class="card-body methods-text" id="overview-methods-text">{methods_html}</div>'
             f'<pre id="overview-methods-plain" hidden>{escape(methods_plain)}</pre></div>')
     parts.append("</div></section>")
@@ -2042,12 +2045,12 @@ def _render_cite_dialog(citation: str, doi: str, version: str, bibtex: str,
       <p class="cite-name"><strong>FastMDXplora</strong>: {escape(expansion)}</p>
       <div class="cite-block">
         <p id="cite-reference">{escape(citation)}</p>
-        <button type="button" class="ghost-btn" data-copy-from="cite-reference">Copy</button>
+        <button type="button" class="line-btn" data-copy-from="cite-reference" aria-label="Copy the reference" title="Copy the reference">{icon("copy", "line-icon")}</button>
       </div>
       <p class="subtle">DOI: <a href="https://doi.org/{escape(doi)}" target="_blank" rel="noopener">{escape(doi)}</a> &nbsp;&middot;&nbsp; version <span id="cite-version">{escape(version)}</span></p>
       <div class="cite-bibtex-head">
         <span class="builder-label">BibTeX</span>
-        <button type="button" class="ghost-btn" data-copy-from="cite-bibtex">Copy</button>
+        <button type="button" class="line-btn" data-copy-from="cite-bibtex" aria-label="Copy the BibTeX" title="Copy the BibTeX">{icon("copy", "line-icon")}</button>
       </div>
       <pre class="mono" id="cite-bibtex">{escape(bibtex)}</pre>
       <p class="subtle">&copy; Copyright {escape(copyright_)}.</p>

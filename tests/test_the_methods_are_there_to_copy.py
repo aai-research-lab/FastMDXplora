@@ -98,8 +98,9 @@ def test_the_overview_shows_them_and_copies_them_plain(tmp_path):
             requests: list[str] = []
             page.on("request", lambda request: requests.append(request.url))
             page.click("#overview-methods-copy")
+            # An icon: named so for a moment.
             page.wait_for_function(
-                "document.getElementById('overview-methods-copy').textContent === 'Copied'")
+                "document.getElementById('overview-methods-copy').getAttribute('aria-label') === 'Copied'")
             copied = page.evaluate("navigator.clipboard.readText()")
             # Results arriving again with nothing the methods rest on changed
             # do not ask for them again.

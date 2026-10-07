@@ -107,8 +107,7 @@
     if (methodsCopy) {
       methodsCopy.addEventListener("click", async () => {
         const copied = await copyText(methodsPlain);
-        methodsCopy.textContent = copied ? "Copied" : "Select and copy";
-        setTimeout(() => { methodsCopy.textContent = "Copy"; }, 2000);
+        window.FastMDXIcons.flash(methodsCopy, copied, copied ? "Copied" : "Select the text to copy it.");
       });
     }
     $$('[data-view-link]').forEach((element) => {

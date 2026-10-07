@@ -178,10 +178,7 @@
     write.className = "chip-btn";
     write.textContent = "Write this scene";
     write.title = "Write it with the study as a scene file (scenes/, MolViewSpec) and show it in the Viewer";
-    var show = document.createElement("button");
-    show.type = "button";
-    show.className = "chip-btn";
-    show.textContent = "Show it in the Viewer";
+    var show = window.FastMDXIcons.button("viewer", "Show it in the Viewer");
     show.hidden = !entry.scene_written;
     var said = document.createElement("span");
     said.className = "agent-scene-status muted small";
@@ -791,8 +788,7 @@
       name.className = "name"; name.textContent = f.name; name.title = f.path;
       var size = document.createElement("span");
       size.className = "size"; size.textContent = fmtSize(f.size) + (f.truncated ? " \u00b7 cut" : "");
-      var rm = document.createElement("button");
-      rm.className = "rm"; rm.type = "button"; rm.textContent = "\u2715"; rm.title = "Remove";
+      var rm = window.FastMDXIcons.button("close", "Remove " + f.name, "rm");
       rm.addEventListener("click", function () { pendingFiles.splice(i, 1); renderChips(); });
       chip.appendChild(name); chip.appendChild(size); chip.appendChild(rm);
       host.appendChild(chip);
@@ -830,9 +826,7 @@
     var bar = document.createElement("div");
     bar.className = "agent-msg-tools";
     items.forEach(function (it) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.textContent = it.label;
+      var b = window.FastMDXIcons.button(it.icon, it.label);
       b.title = it.title || it.label;
       b.addEventListener("click", it.run);
       bar.appendChild(b);
@@ -892,8 +886,8 @@
     }
     msg.appendChild(body);
     tools(msg, [
-      { label: "Copy", run: function () { copyText(text); } },
-      { label: "Edit", title: "Edit this message in place and send it again",
+      { label: "Copy", icon: "copy", run: function () { copyText(text); } },
+      { label: "Edit", icon: "edit", title: "Edit this message in place and send it again",
         run: function () {
           /* In place, as every AI app a person has used does it: the
            * bubble becomes editable, Enter sends, Escape puts it back.
@@ -931,7 +925,7 @@
           body.addEventListener("keydown", onKey);
           body.addEventListener("blur", onBlur);
         } },
-      { label: "Retry", title: "Send this again from here",
+      { label: "Retry", icon: "refresh", title: "Send this again from here",
         run: function () {
           cutFrom(msg);
           el("agent-request").value = text;
@@ -953,7 +947,7 @@
     el("agent-thread").appendChild(node);
     var part = function (role) { return node.querySelector('[data-role="' + role + '"]'); };
     tools(part("body") || node, [
-      { label: "Copy", title: "Copy this reply",
+      { label: "Copy", icon: "copy", title: "Copy this reply",
         run: function () {
           var result = part("result");
           var answer = node.querySelector(".agent-answer");

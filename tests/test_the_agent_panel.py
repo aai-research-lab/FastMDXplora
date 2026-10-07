@@ -842,8 +842,9 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         panel = self.panel()
         load = panel[panel.index('id="agent-load"') - 60:panel.index('id="agent-load"') + 80]
         self.assertIn("<a href=", load)
-        # Beside Run, not the primary button (10-07).
-        self.assertIn('class="ctl-btn" data-role="load"', load)
+        # Beside Run, not the primary button (10-07): its icon, named.
+        self.assertIn('class="line-btn" data-role="load"', load)
+        self.assertIn('aria-label="Open in the builder"', load)
 
     def test_the_dialog_is_not_a_file_picker(self):
         # It borrows the shape and not the class: there is exactly one file
@@ -1914,7 +1915,7 @@ class TestTheMessageToolsAndTheScrollbar(unittest.TestCase):
         rule = rule[:rule.index("}")]
         self.assertNotIn("position: absolute", rule)
         self.assertIn("margin-top: 4px", rule)
-        self.assertIn(".agent-msg-tools button { width: 40px;", css)
+        self.assertIn(".agent-msg-tools button { width: 24px; height: 24px; }", css)
 
     def test_the_scrollbar_has_its_own_gutter(self):
         # It was painting over the messages.

@@ -382,7 +382,7 @@ def test_a_cut_thread_changes_its_newest_version_left(session) -> None:
             };
             const third = document.querySelectorAll('#agent-thread .agent-msg-user')[2];
             [...third.querySelectorAll('.agent-msg-tools button')]
-                .find(b => b.textContent === 'Retry').click(); }""")
+                .find(b => b.getAttribute('aria-label') === 'Retry').click(); }""")
         page.wait_for_function("() => window.sentBodies.length === 1")
         sent = page.evaluate("() => window.sentBodies[0].current_config")
         browser.close()
@@ -426,7 +426,7 @@ def test_a_cut_thread_runs_its_newest_version_left(session) -> None:
         page.evaluate("""() => {
             const second = document.querySelectorAll('#agent-thread .agent-msg-user')[1];
             const retry = [...second.querySelectorAll('.agent-msg-tools button')]
-                .find(b => b.textContent === 'Retry');
+                .find(b => b.getAttribute('aria-label') === 'Retry');
             window.fetch = () => new Promise(() => {});
             retry.click(); }""")
         page.wait_for_function("() => document.querySelectorAll('#agent-thread .agent-study:not([hidden])').length === 1")

@@ -2819,8 +2819,6 @@ body.state-ready .loading-screen {
     border-radius: 10px;
     font-size: var(--text-xs);
 }
-.cite-block > .ghost-btn,
-.cite-bibtex-head > .ghost-btn { flex: none; padding: 2px 10px; min-height: 26px; font-size: var(--text-xs); }
 .study-field-refused { color: var(--accent-red); }
 /* The menu's items that open a dialog are buttons, read as its links are. */
 button.settings-item {
@@ -3590,19 +3588,14 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
    the thread does not jump when it appears. */
 .agent-msg { position: relative; }
 .agent-msg-tools {
-    display: flex; gap: 3px; margin-top: 4px; height: 16px;
+    display: flex; gap: 2px; margin-top: 4px; height: 24px;
     visibility: hidden;
 }
 .agent-msg-user .agent-msg-tools { justify-content: flex-end; }
 .agent-msg:hover .agent-msg-tools, .agent-msg:focus-within .agent-msg-tools { visibility: visible; }
-.agent-msg-tools button { width: 40px; text-align: center; }
-.agent-msg-tools button {
-    padding: 1px 0; border: 1px solid var(--border-subtle); border-radius: 3px;
-    background: var(--background-elevated);
-    color: var(--text-muted); font-weight: 500; font-size: var(--text-2xs); font-family: inherit; cursor: pointer;
-    letter-spacing: .02em;
-}
-.agent-msg-tools button:hover { color: var(--text-primary); background: var(--background-secondary); }
+/* Copy, Edit and Retry as their line icons, each the same width. */
+.agent-msg-tools button { width: 24px; height: 24px; }
+.agent-msg-tools .line-icon { width: 14px; height: 14px; }
 .report-document .report-plain { white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.6; margin: 0; }
 
 
@@ -3664,7 +3657,6 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .study-running-row .status-dot { width: 6px; height: 6px; margin: 0; }
 .study-running-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .study-running-pct { color: var(--text-muted); font-size: var(--text-2xs); }
-.study-running-row .ghost-btn { padding: 2px 7px; font-size: var(--text-2xs); }
 
 .agent-conv-list {
     margin: 0 0 12px; padding: 6px; border-radius: 10px;
@@ -3706,6 +3698,8 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 .agent-chip .size { color: var(--text-muted); font-size: var(--text-2xs); }
 .agent-chip .rm { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); padding: 0 2px; }
 .agent-chip .rm:hover { color: var(--text-primary); }
+.agent-chip .rm.line-btn { width: 20px; height: 20px; padding: 0; }
+.agent-chip .rm .line-icon { width: 12px; height: 12px; }
 /* In a sent message, what was attached. */
 .agent-msg-user .attached { margin-top: 6px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); }
 
@@ -3727,7 +3721,6 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     color: var(--text-muted); font: inherit; font-size: var(--text-xs); cursor: pointer;
 }
 .agent-footer-link:hover { color: var(--text-primary); text-decoration: underline; }
-.agent-footer-dot { opacity: .6; }
 
 /* The preview's header stays put, so a collapsed list still says what is
    being read; and the facts beside the name make it a record. */
@@ -5329,7 +5322,6 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
     padding: 1px 5px; border: 1px solid var(--border-subtle); border-radius: 4px;
 }
 .agent-drawer-spacer { flex: 1; }
-.agent-drawer-head .ghost-btn { padding: 4px 9px; font-size: var(--text-xs); }
 .agent-drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 0 0 16px; }
 .agent-drawer .agent-thread { padding-right: 12px; }
 .agent-drawer .agent-start { margin: 16px 0 8px; padding-right: 12px; }

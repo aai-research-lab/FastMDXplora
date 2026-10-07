@@ -443,9 +443,10 @@ data. A conversation about no study lives at the workspace level. Under the
 composer, at the right: the mode, which
 opens the Agent's settings; *Conversations*, a list grouped by study with
 the loaded one first, where opening a conversation from another study loads
-that study; and *New*, which starts a fresh thread and keeps the last. Every
-exchange is saved as it happens; a reload shows the thread as it was. A
-conversation that launches a run moves into the study it created.
+that study; and *New conversation*, which starts a fresh thread and keeps
+the last. Every exchange is saved as it happens; a reload shows the thread
+as it was. A conversation that launches a run moves into the study it
+created.
 
 **Its questions about a study are answered from the study's records when no
 AI model is set.** The start page offers three about the study open: what it

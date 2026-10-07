@@ -493,6 +493,29 @@ began, its first means and its tags, sorted by any column's head (a study
 without the value last either way), narrowed by the search as the cards
 are, and kept as chosen.
 
+### Everyday buttons as line icons
+
+**Changed:** the everyday buttons are line icons, each named on hover and
+to a screen reader. On All studies: Open, Tag (marked with a dot once a
+study has tags), Compare, Clear and Every study. In the Config Builder:
+Reset, Download config, Copy the command, Download a script, Open and
+change it, Browse, a reason's Edit and Remove, and each Remove and back to
+the default. On Files: Open in Analysis, and the preview's Download and
+Open in a new tab. On Analysis: Download CSV. In the Viewer: Copy, Center,
+Show, Save the view, Compare, Stop comparing, Clear the pair, Clear the
+atoms picked and Remove the study beside. In the Agent: Conversations, New
+conversation, Open as a page, a message's Copy, Edit and Retry, an
+attachment's Remove, Show it in the Viewer and Open in the builder. On the
+Overview: Reset zoom on the live charts and Copy; Cite's Copy; and the
+study bar's View and Back to the study. A copy in the Viewer, of the
+Overview's methods or in Cite shows a tick for a moment, and the page's
+notice says it was copied (or, where it could not be, to select the text).
+Buttons that run or write something, a dialog's answers, tabs, menus (the
+Agent's More among them), the Viewer's show and hide switches and the
+Agent's starting questions keep their words. The page's scripts draw their
+icons from the GUI's one set (`static/icons.js`), where four had copies of
+their own.
+
 ### A page's actions below its name where they do not fit beside it
 
 **Fixed:** in a narrow centre column (both side columns open, under about
