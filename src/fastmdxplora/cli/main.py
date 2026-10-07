@@ -3004,12 +3004,29 @@ def _run_agent(args: Any) -> int:
     for attempt in proposal.attempts:
         if attempt.refusal is not None:
             print(f"  ✗ {attempt.refusal.message}")
+    # What the AI model's calls cost, where the provider said.
+    if proposal.usage:
+        from fastmdxplora.agent.turns import Usage
 
+        print(f"  AI model: {Usage(**proposal.usage).said()}")
+
+    if proposal.answer:
+        # A question was asked rather than a study: the answer is the reply.
+        print(f"\n{proposal.answer}")
+        return 0
+    if proposal.action:
+        # The command line writes studies; it carries out nothing it is told.
+        print(f"\n  The Agent read this as an instruction ({proposal.action}). The "
+              "command line writes a config; run, stop and the rest are done in "
+              "`fastmdx gui` or with their own commands.")
+        return 2
     if proposal.question:
         # Not a failure. The request is short of something only the person
         # can supply -- a structure, most often -- and guessing one would
         # produce a study of the wrong molecule that validates perfectly.
         print(f"\n  ? {proposal.question}")
+        for choice in proposal.choices:
+            print(f"      - {choice}")
         print("\nAdd that to the request and try again.")
         return 2
     if not proposal.accepted:
@@ -3031,6 +3048,8 @@ def _run_agent(args: Any) -> int:
         config["agent_model"] = f"{chosen.provider}/{chosen.model}"
     text = yaml.safe_dump(config, sort_keys=False)
     print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
+    if proposal.note:
+        print(f"  {proposal.note}\n")
     print(text)
     if args.agent_mode == "autonomous":
         if args.budget_hours is None:

@@ -841,9 +841,12 @@
       note(box, data.cycles === 1
         ? "Accepted first time."
         : "Accepted after " + data.cycles + " attempts.", true);
-      history.push({ role: "agent", text: "Wrote a config:\n" + data.yaml });
+      saidBeside(box, data.note);
+      history.push({ role: "agent", text: (data.note ? data.note + "\n\n" : "")
+                     + "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
       transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+                        note: data.note || null,
                         plan: data.plan || [], looks: data.looks || [],
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message } } : {};
@@ -864,6 +867,16 @@
       }
       note(box, "The Agent did not answer. Check Settings, then try again.");
     });
+  }
+
+  /* What the Agent said beside a config it wrote (why it chose as it did),
+   * shown as an answer is. */
+  function saidBeside(box, text) {
+    if (!text) return;
+    var p = document.createElement("div");
+    p.className = "agent-answer";
+    p.innerHTML = prose(text);
+    box.appendChild(p);
   }
 
   /* ---- The reply as it is written ------------------------------------ */
@@ -1416,7 +1429,9 @@
           });
           note(box, e.cycles === 1 ? "Accepted first time."
                : "Accepted after " + (e.cycles || "several") + " attempts.", true);
-          history.push({ role: "agent", text: "Wrote a config:\n" + e.yaml });
+          saidBeside(box, e.note);
+          history.push({ role: "agent", text: (e.note ? e.note + "\n\n" : "")
+                         + "Wrote a config:\n" + e.yaml });
           currentConfig = e.yaml;
           wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles,
                            plan: e.plan || [] }, box);

@@ -437,6 +437,17 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
         told("The Agent is writing")
         return complete(prompt)
 
+    # The person's own AI model replies by tool calls where it takes them.
+    # A model the AI app lends is asked in text: sampling is a prompt and a
+    # reply, and its rounds keep what each read.
+    turn = None if lent else getattr(complete, "turn", None)
+    if callable(turn):
+        def turned(system: str, messages: list[Any], tools: list[Any]) -> Any:
+            told("The Agent is writing")
+            return turn(system, messages, tools)
+        written.turn = turned  # type: ignore[attr-defined]
+        written.turned_away = getattr(complete, "turned_away", None)  # type: ignore[attr-defined]
+
     try:
         proposal = propose_config(args["request"], written,
                                   phases=args.get("phases") or list(_AGENT_PHASES),
@@ -453,10 +464,16 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
     after = (["", said_whose]
              + (["", "What the Agent checked with the software:", *checked] if checked else []))
     if proposal.question:
+        choices = list(getattr(proposal, "choices", ()) or ())
         return "\n".join([f"The Agent asks: {proposal.question}",
+                          *([f"Candidates: {'; '.join(choices)}."] if choices else []),
                           "Answer it in a new request, with what it asks for.", *after])
     if proposal.answer:
-        return "\n".join([f"The Agent says: {proposal.answer}", *after])
+        scene = getattr(proposal, "scene", None)
+        # The same parts write_scene takes; nothing is written until asked.
+        shown = ([f"It proposes a scene: {json.dumps(scene, sort_keys=True)}. write_scene "
+                  "writes it, once the person agrees."] if scene else [])
+        return "\n".join([f"The Agent says: {proposal.answer}", *shown, *after])
     if proposal.action:
         if proposal.action in _IN_THE_WINDOW:
             next_step = ("That is done in FastMDXplora's own window, which `fastmdx gui` "
@@ -534,6 +551,8 @@ def _proposed(ctx: Context, args: dict[str, Any], proposal: Any, corrected: list
              f"{'first time' if tries == 1 else f'after {tries} attempts'}."]
     if corrected:
         lines += ["Refused on the way, and corrected:", *corrected]
+    if getattr(proposal, "note", None):
+        lines.append(f"The Agent says: {proposal.note}")
     if args.get("save", True):
         asked = " ".join(str(args["request"]).split())[:400]
         target = _new_file(ctx.workspace.root, name)

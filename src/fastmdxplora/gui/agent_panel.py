@@ -29,7 +29,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     and, if a key came with it, the key.
     """
     from fastmdxplora.agent.models import (
-        PROVIDERS, ModelChoice, load_choice, model_path, save_choice,
+        PROVIDERS, ModelChoice, _takes_tools, load_choice, model_path, save_choice,
     )
 
     if not payload.get("provider"):
@@ -64,6 +64,9 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
             ],
             # What is set, never the key.
             "current": current.as_record() if current else None,
+            # Whether the server takes tool calls; once it has turned them
+            # away, the Agent writes to it in plain text.
+            "tool_use": _takes_tools() if current else None,
             "stored_at": str(model_path()),
         }
 
@@ -185,7 +188,12 @@ def propose_endpoint(payload: dict[str, Any],
 
 def _written_as_it_goes(complete: Any, emit: Any) -> Any:
     """The completion, each reply sent on as the AI model writes it. One that
-    cannot stream (a test's, another's) is sent on whole when it answers."""
+    cannot stream (a test's, another's) is sent on whole when it answers.
+
+    A completion that replies by tool calls (``turn``) is wrapped the same
+    way: its text sent on as it is written, and a config being written said
+    as it begins, since a config comes as a call's arguments and not as
+    text the page could show line by line."""
     def written(prompt: str) -> str:
         emit({"type": "begin"})
         if getattr(complete, "streams", False):
@@ -193,6 +201,21 @@ def _written_as_it_goes(complete: Any, emit: Any) -> Any:
         text = complete(prompt)
         emit({"type": "text", "text": text})
         return text
+
+    turn = getattr(complete, "turn", None)
+    if callable(turn):
+        def turned(system: str, messages: list[Any], tools: list[Any]) -> Any:
+            emit({"type": "begin"})
+
+            def calling(name: str) -> None:
+                if name == "propose_config":
+                    emit({"type": "text", "text": "Writing the config\u2026"})
+
+            return turn(system, messages, tools,
+                        on_text=lambda piece: emit({"type": "text", "text": piece}),
+                        on_call=calling)
+        written.turn = turned  # type: ignore[attr-defined]
+        written.turned_away = getattr(complete, "turned_away", None)  # type: ignore[attr-defined]
     return written
 
 
@@ -210,13 +233,24 @@ def _say_each_look(tools: Any, emit: Any) -> None:
 def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
                      request: str, mode: str) -> dict[str, Any]:
     """What the browser is sent for a proposal, by what kind it is."""
-    import yaml
-
     attempts = [
         {"number": attempt.number,
          "refusal": (attempt.refusal.as_dict() if attempt.refusal else None)}
         for attempt in proposal.attempts
     ]
+    answer = _proposal_kind(proposal, payload, runtime, request, mode, attempts)
+    # What the AI model's calls cost, where the completion reports it, and
+    # how it replied: on every kind of answer, for the page and the record.
+    answer["usage"] = getattr(proposal, "usage", None)
+    answer["protocol"] = getattr(proposal, "protocol", "text")
+    return answer
+
+
+def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
+                   request: str, mode: str, attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    """The answer for what the proposal is: an action, an answer, a
+    question, a refusal or a config."""
+    import yaml
     if proposal.action:
         # An instruction. The browser carries it out through the same
         # door the button uses; the server only names it. For "stop" it
@@ -280,10 +314,15 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
         return answer
     if proposal.question:
         # Not a failure. The request is short of something only the person
-        # can supply, and the honest answer is to say what.
-        return {"ok": False, "question": proposal.question,
+        # can supply, and the honest answer is to say what. The candidates
+        # the AI model named are said with it, so a page that shows only
+        # the question still shows them, and the conversation keeps them.
+        choices = list(getattr(proposal, "choices", ()) or ())
+        question = proposal.question + (
+            "\n\nCandidates: " + "; ".join(choices) + "." if choices else "")
+        return {"ok": False, "question": question, "choices": choices,
                 "code": "config.option.missing_companion",
-                "error": proposal.question, "attempts": attempts}
+                "error": question, "attempts": attempts}
     if not proposal.accepted:
         last = proposal.refusal
         return {"ok": False, "attempts": attempts, "cycles": proposal.cycles,
@@ -314,6 +353,7 @@ def _proposal_answer(proposal: Any, payload: dict[str, Any], runtime: Any,
         "attempts": attempts,
         "config": config,
         "plan": plan,
+        "note": getattr(proposal, "note", None),
         "yaml": yaml.safe_dump(config, sort_keys=False),
     }
 

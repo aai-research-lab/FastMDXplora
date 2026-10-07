@@ -585,7 +585,9 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         self.assertIn("history: history.slice(0, -1),", script)
         self.assertIn("current_config: currentConfig", script)
         self.assertIn("if (data.answer) {", script)
-        self.assertIn('history.push({ role: "agent", text: "Wrote a config:\\n" + data.yaml });', script)
+        # What the Agent said beside the config is kept in the thread with it.
+        self.assertIn('+ "Wrote a config:\\n" + data.yaml });', script)
+        self.assertIn("saidBeside(box, data.note);", script)
 
 
 class TestTheAgentReadsTheResults(unittest.TestCase):
