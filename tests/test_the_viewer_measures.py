@@ -151,6 +151,16 @@ def test_the_viewer_measures(study) -> None:
             page.wait_for_function("() => /Dihedral/.test(document.querySelector("
                                    "'#measure-said .measure-values')?.textContent || '')")
             four = page.text_content("#measure-said .measure-values")
+            # Clear is an icon beside the panel's name, named for what it clears.
+            clear = page.evaluate("""() => {
+                const b = document.querySelector('#measure-said .measure-head .measure-clear');
+                return [b.getAttribute('aria-label'), b.title, !!b.querySelector('svg.line-icon'),
+                        b.textContent.trim(), b.disabled];
+            }""")
+            page.click("#measure-said .measure-clear")
+            picked = page.evaluate(f"() => {viewer}.STATE.picks.length")
+            emptied = page.get_attribute("#measure-said .measure-clear", "disabled")
+            click(page, 3)
             page.keyboard.press("Escape")
             cleared = page.evaluate(f"() => {viewer}.STATE.picks.length")
             page.keyboard.press("m")
@@ -166,5 +176,7 @@ def test_the_viewer_measures(study) -> None:
     assert shown == 1
     assert "--analyze-analyses pair_distance" in command
     assert "Angle at 2" in four and "Angle at 3" in four and "Dihedral, 1-2-3-4" in four
+    assert clear == ["Clear the atoms picked", "Clear the atoms picked", True, "", False]
+    assert picked == 0 and emptied == ""
     assert cleared == 0 and off == "false"
     assert errors == []

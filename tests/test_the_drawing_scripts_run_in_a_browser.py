@@ -180,12 +180,32 @@ def test_every_style_and_ligand_control_runs(page) -> None:
     for listed in ("#viewer-rep", "#viewer-color"):
         for value in page.eval_on_selector_all(f"{listed} option", "os => os.map(o => o.value)"):
             page.select_option(listed, value)
+    # Each ligand button is wired whatever it looks like: Center, a chip
+    # until it was a line icon, lost its click while the wiring looked for
+    # chips.
+    page.evaluate(f"""() => {{
+        const engine = {ENGINE};
+        const own = engine.focusPart;
+        window.__focused = [];
+        engine.focusPart = (...asked) => {{ window.__focused.push(asked[0]); return own.apply(engine, asked); }};
+    }}""")
     for selector, tool in ((".chip-btn[data-cam]", "side-view"),
-                           (".chip-btn[data-ligand]", "side-ligand")):
+                           ("[data-ligand]", "side-ligand")):
         hooks.tool(page, tool)
         for button in page.query_selector_all(selector):
             if button.is_visible():
                 button.click()
+    hooks.tool(page, "side-ligand")
+    page.evaluate("() => { window.__focused = []; }")
+    page.click('[data-ligand="center"]')
+    assert page.evaluate("() => window.__focused") == ["ligand"]
+    # One icon saves a view or a scene file, named for the one being named.
+    hooks.tool(page, "side-saved")
+    page.click("#viewer-scene-save")
+    for_a_scene = page.get_attribute("#viewer-view-keep", "aria-label")
+    page.click("#viewer-view-save")
+    for_a_view = page.get_attribute("#viewer-view-keep", "aria-label")
+    assert (for_a_scene, for_a_view) == ("Save the scene", "Save the view")
     # Spin is one button: pressed once above, so spinning; pressed again, not.
     hooks.tool(page, "side-view")
     spin = page.locator('[data-cam="spin"]')

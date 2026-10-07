@@ -1092,7 +1092,7 @@
     document.querySelectorAll(".chip-btn[data-cam]").forEach((button) => {
       button.addEventListener("click", () => handleCameraAction(button.getAttribute("data-cam")));
     });
-    document.querySelectorAll(".chip-btn[data-ligand]").forEach((button) => {
+    document.querySelectorAll("[data-ligand]").forEach((button) => {
       button.addEventListener("click", () => handleLigandAction(button.getAttribute("data-ligand")));
     });
     document.querySelectorAll(".ctl-btn[data-action]").forEach((button) => {
@@ -2597,7 +2597,14 @@
       host.appendChild(node);
       return node;
     };
-    add("div", "measure-title", "Measuring");
+    // Its name, and beside it the icon that clears the atoms picked.
+    const head = add("div", "measure-head");
+    head.appendChild(Object.assign(document.createElement("div"),
+      {className: "measure-title", textContent: "Measuring"}));
+    const clear = window.FastMDXIcons.button("erase", "Clear the atoms picked", "measure-clear");
+    clear.disabled = !STATE.picks.length;
+    clear.addEventListener("click", clearPicks);
+    head.appendChild(clear);
     if (!STATE.picks.length) {
       add("p", "muted small", "Click an atom in the structure. Two give a distance, three an "
         + "angle, four a dihedral; a fifth starts again.");
@@ -2644,9 +2651,6 @@
       button.addEventListener("click", () => overEveryFrame(over));
       over.appendChild(button);
     }
-    const clear = add("button", "file-action measure-clear", "Clear");
-    clear.type = "button";
-    clear.addEventListener("click", clearPicks);
   }
 
   /* An atom of the frames played is an atom of the topology they were
@@ -2692,18 +2696,14 @@
     const said = document.createElement("pre");
     said.className = "measure-command";
     said.textContent = answer.command || answer.config || "";
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "file-action measure-copy";
-    copy.textContent = "Copy";
+    const copy = window.FastMDXIcons.button("copy", "Copy the command", "measure-copy");
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(said.textContent);
-        copy.textContent = "Copied";
+        window.FastMDXIcons.flash(copy, true, "Copied");
       } catch (error) {
-        copy.textContent = "Select and copy";
+        window.FastMDXIcons.flash(copy, false, "Select the text to copy it.");
       }
-      setTimeout(() => { copy.textContent = "Copy"; }, 1800);
     });
     host.append(said, copy);
   }
@@ -2747,19 +2747,15 @@
       name.textContent = label;
       const code = document.createElement("code");
       code.textContent = found.selection;
-      const copy = document.createElement("button");
-      copy.type = "button";
-      copy.className = "file-action";
-      copy.textContent = "Copy";
+      const copy = window.FastMDXIcons.button("copy", `Copy the ${label.toLowerCase()} selection`);
       copy.title = `Copy the selection: ${found.atoms} atom${found.atoms === 1 ? "" : "s"} in ${answer.against}`;
       copy.addEventListener("click", async () => {
         try {
           await navigator.clipboard.writeText(found.selection);
-          copy.textContent = "Copied";
+          window.FastMDXIcons.flash(copy, true, "Copied");
         } catch (error) {
-          copy.textContent = "Select and copy";
+          window.FastMDXIcons.flash(copy, false, "Select the text to copy it.");
         }
-        setTimeout(() => { copy.textContent = "Copy"; }, 1800);
       });
       row.append(name, code, copy);
       host.appendChild(row);

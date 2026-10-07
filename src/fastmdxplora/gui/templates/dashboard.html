@@ -1306,7 +1306,7 @@
                     <div class="control-group" role="group" aria-label="Ligand tools">
                       <span class="control-label">Ligand tools</span>
                       <span class="ligand-meta mono" id="ligand-meta">&mdash;</span>
-                      <button class="chip-btn" type="button" data-ligand="center">Center</button>
+                      <button class="line-btn" type="button" data-ligand="center" aria-label="Center" title="Center on the ligand"><!--icon:crosshair:line-icon--></button>
                       <button class="chip-btn" type="button" data-ligand="isolate">Isolate</button>
                       <label class="chip-toggle micro" title="The viewer works in angstroms; the analyses report nanometres">Cutoff <input type="number" min="3" max="15" step="0.5" id="pocket-cutoff" value="5"> Å <span class="muted" id="pocket-cutoff-nm">(0.50 nm)</span></label>
                       <button class="chip-btn" type="button" data-ligand="show-pocket">Show pocket residues</button>
@@ -1374,8 +1374,8 @@
                   <label class="select-field">with
                     <select id="states-second" aria-label="Second state"></select>
                   </label>
-                  <button type="button" class="chip-btn" id="states-compare" title="Show the second state's representative in grey beside the first's, fitted on the alpha carbons, and colour the protein by how far each residue moved">Compare</button>
-                  <button type="button" class="chip-btn" id="states-stop" hidden>Stop comparing</button>
+                  <button type="button" class="line-btn" id="states-compare" aria-label="Compare" title="Compare: show the second state's representative in grey beside the first's, fitted on the alpha carbons, and colour the protein by how far each residue moved"><!--icon:compare:line-icon--></button>
+                  <button type="button" class="line-btn" id="states-stop" hidden aria-label="Stop comparing" title="Stop comparing"><!--icon:close:line-icon--></button>
                 </div>
                 <p class="muted small" id="states-note" role="status"></p>
               </details>
@@ -1413,7 +1413,7 @@
                   <label class="select-field">vs
                     <select id="cmap-first" aria-label="State it is compared with"></select>
                   </label>
-                  <button type="button" class="chip-btn" id="cmap-compare" title="Colour each pair by how much more often it was in contact in one state than in the other">Compare</button>
+                  <button type="button" class="line-btn" id="cmap-compare" aria-label="Compare" title="Compare: colour each pair by how much more often it was in contact in one state than in the other"><!--icon:compare:line-icon--></button>
                   <button type="button" class="chip-btn" id="cmap-all" hidden>Every frame</button>
                 </div>
                 <canvas class="cmap-canvas" id="cmap-canvas" width="300" height="300" role="img" aria-label="Contact map of the protein's residues over the frames played"></canvas>
@@ -1425,7 +1425,7 @@
                 </div>
                 <p class="muted small" id="cmap-hover" aria-live="off"></p>
                 <div class="occ-row" id="cmap-pair-row" hidden>
-                  <button type="button" class="chip-btn" id="cmap-clear">Clear the pair</button>
+                  <button type="button" class="line-btn" id="cmap-clear" aria-label="Clear the pair" title="Clear the pair"><!--icon:erase:line-icon--></button>
                 </div>
                 <p class="muted small" id="cmap-note" role="status"></p>
               </details>
@@ -1449,7 +1449,7 @@
                     <select id="beside-study" aria-label="The study to show beside this one"></select>
                   </label>
                   <button type="button" class="chip-btn" id="beside-show" title="Play the other study's frames beside these, its residues paired by sequence and fitted on their alpha carbons to this study's first frame">Show beside</button>
-                  <button type="button" class="chip-btn" id="beside-remove" hidden>Remove</button>
+                  <button type="button" class="line-btn" id="beside-remove" hidden aria-label="Remove the study beside" title="Remove the study beside"><!--icon:close:line-icon--></button>
                 </div>
                 <div class="occ-row" id="beside-colour-row" hidden>
                   <label class="chip-toggle" title="This study's protein coloured by the other's RMSF less its own over the paired residues: red where the other moves more, blue where less"><input type="checkbox" id="beside-colour">Coloured by the difference in RMSF</label>
@@ -1483,7 +1483,7 @@
                       <span class="viewer-view-naming" id="viewer-view-naming" hidden>
                         <input id="viewer-view-name" maxlength="60" aria-label="Name of the view" placeholder="Name">
                         <input id="viewer-view-note" maxlength="500" aria-label="Note on the view, optional" placeholder="What it shows (optional)">
-                        <button class="chip-btn" type="button" id="viewer-view-keep">Save</button>
+                        <button class="line-btn" type="button" id="viewer-view-keep" aria-label="Save the view" title="Save the view"><!--icon:bookmark:line-icon--></button>
                       </span>
                     </div>
                     <p class="muted small viewer-view-said" id="viewer-view-said" hidden></p>

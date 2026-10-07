@@ -65,10 +65,7 @@
         : ", frame " + found.representative);
       item.append(bar, said);
       if (found.representative != null) {
-        var button = document.createElement("button");
-        button.type = "button";
-        button.className = "chip-btn";
-        button.textContent = "Show";
+        var button = window.FastMDXIcons.button("eye", "Show " + nameOf(found));
         button.title = "Show the state's representative frame";
         button.addEventListener("click", function () { showFrame(found.representative); });
         item.append(button);

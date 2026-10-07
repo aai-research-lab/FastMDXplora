@@ -150,6 +150,10 @@
     if (open) {
       namingFor = what || "view";
       input.setAttribute("aria-label", namingFor === "scene" ? "Name of the scene" : "Name of the view");
+      // One button saves either: named for the one being named.
+      var keep = byId("viewer-view-keep");
+      var keeps = namingFor === "scene" ? "Save the scene" : "Save the view";
+      if (keep) { keep.setAttribute("aria-label", keeps); keep.title = keeps; }
       input.value = namingFor === "scene" ? "Scene " + (scenes + 1) : "View " + (views.length + 1);
       input.focus();
       input.select();

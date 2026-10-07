@@ -4938,7 +4938,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* What the viewer's measuring tool measured, in the Selection tab. */
 .measure-said { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-subtle); font-size: var(--text-xs); display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .measure-said[hidden] { display: none; }
+.measure-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
 .measure-title { font-weight: 600; color: var(--text-primary); }
+.measure-head .measure-clear { width: 24px; height: 24px; margin: -4px -4px -4px 0; }
 .measure-atoms { margin: 0; padding-left: 18px; color: var(--text-secondary); }
 .measure-values { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0; }
 .measure-values dt { color: var(--text-muted); }
