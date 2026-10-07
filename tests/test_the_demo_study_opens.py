@@ -72,6 +72,21 @@ def test_packaged_with_what_the_gui_shows(tmp_path) -> None:
     assert (out / "setup" / "topology.pdb").is_file()
 
 
+def test_what_it_prints_is_its_own_and_ends_with_the_record(tmp_path) -> None:
+    """MDTraj's DCD plugin writes from C to the process's stdout, flushed
+    when the C runtime flushes: on CI its two lines came after the record,
+    and the record could not be read from the output."""
+    made = _finished(tmp_path / "made")
+    done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(made),
+                           "--out", str(tmp_path / "packaged"),
+                           "--zip", str(tmp_path / "served" / "demo.zip")],
+                          capture_output=True, text=True, check=True)
+    assert "dcdplugin" not in done.stdout + done.stderr
+    assert done.stdout.startswith("Wrote ")
+    record = json.loads(done.stdout[done.stdout.index("{"):])
+    assert set(record) == {"url", "sha256", "bytes"}
+
+
 def test_a_figure_too_large_stops_it_rather_than_leaving_it_out(tmp_path) -> None:
     study = _finished(tmp_path / "made")
     (study / "report").mkdir()

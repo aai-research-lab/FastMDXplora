@@ -69,10 +69,16 @@ PHASES = ("setup", "simulation", "analysis", "report")
 
 
 def frames_in(dcd: Path) -> int:
+    """The frames in a DCD, read without MDTraj's plugin writing to stdout:
+    its C lines ("dcdplugin) detected ...") are flushed when the C runtime
+    flushes, so they can land after the JSON this script prints last."""
     from mdtraj.formats import DCDTrajectoryFile
 
-    with DCDTrajectoryFile(str(dcd)) as found:
-        return len(found)
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    with suppress_native_output():
+        with DCDTrajectoryFile(str(dcd)) as found:
+            return len(found)
 
 
 def finished(study: Path) -> list[str]:
