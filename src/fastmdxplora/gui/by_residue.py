@@ -495,11 +495,10 @@ def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
         except OSError:
             return path, None
     if of == "live":
-        path = simulation / "live_frame.pdb"
-        try:
-            return path, path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return path, None
+        from fastmdxplora.gui.live_frames import live_frame_text
+
+        # As the Viewer is sent it, so the fingerprint is the one it holds.
+        return simulation / "live_frame.pdb", live_frame_text(simulation)
     from fastmdxplora.gui.protein_preview import find_structure, find_system
     from fastmdxplora.gui.server import _display_structure_bytes
 

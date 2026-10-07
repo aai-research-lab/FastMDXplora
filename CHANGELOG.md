@@ -77,6 +77,18 @@ downloads and what a finished study is not shown from (the run's live
 snapshots, the SVG beside each figure, the clusters' medoid structures, the
 standalone page), and keeps what the pages read.
 
+### A live frame shows a bound ligand in its pocket
+
+**Fixed:** the Viewer's live and last frame, and the Overview's picture of
+the run, showed a ligand that never left its pocket a box length away from
+the protein. A snapshot wraps each molecule into the box on its own, and
+its CRYST1 was the box the run started with, not the one a barostat had
+made since. Each snapshot now records the box of its moment, and every
+reader of it (the structure, its coordinates, its DSSP, and the frames
+played while a run is going) is sent it made whole and centred on the
+protein, as the trajectory is. A snapshot written before is imaged in the
+box of the trajectory's last frame.
+
 ### The Config Builder in five steps, beside the study
 
 **Changed:** the Config Builder (subtitle "Configure a new MD simulation and

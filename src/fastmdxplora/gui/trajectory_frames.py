@@ -223,34 +223,50 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
 def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) -> dict[str, Any]:
     import mdtraj as md
 
+    from fastmdxplora.gui.live_frames import cell_of, made_whole_frames
+
     records = source["records"]
     first = _atom_lines(_read(simulation / str(records[-1].get("path") or "")))
     chosen = [records[i] for i in _even(len(records), frames_for_binary(len(first), most_frames))]
     lines: list[str] | None = None
-    xyz, used = [], []
+    opened = ""
+    xyz, used, cells = [], [], []
     for record in chosen:
-        atoms = _atom_lines(_read(simulation / str(record.get("path") or "")))
+        text = _read(simulation / str(record.get("path") or ""))
+        atoms = _atom_lines(text)
         if not atoms or (lines is not None and len(atoms) != len(lines)):
             continue
         if lines is None:
-            lines = atoms
+            lines, opened = atoms, text
         xyz.append([(float(a[30:38]), float(a[38:46]), float(a[46:54])) for a in atoms])
+        cells.append(cell_of(text))
         used.append(record)
     if lines is None or len(used) < 2:
         return _unavailable("Fewer than two of the frames written could be read.")
+    # Each snapshot wraps every molecule into the box on its own, so a bound
+    # ligand was played a box length from its pocket; the frames are made
+    # whole about the protein as a trajectory's are.
+    coordinates = np.asarray(xyz, dtype=np.float32)
+    try:
+        whole = made_whole_frames(opened, coordinates, cells)
+    except Exception:  # noqa: BLE001 - played as written rather than not at all
+        whole = None
+    if whole is not None:
+        coordinates = whole
+        lines = [f"{line.ljust(54)[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line.ljust(54)[54:]}".rstrip()
+                 for line, (x, y, z) in zip(lines, whole[0])]
     _write_text(simulation / FRAMES_TOPOLOGY, "\n".join(lines) + "\nEND\n")
     topology = md.Topology()
     chain = topology.add_chain()
     residue = topology.add_residue("UNK", chain)
     for _ in lines:
         topology.add_atom("X", md.element.carbon, residue)
-    _write_dcd(md.Trajectory(np.asarray(xyz, dtype=np.float32) / 10.0, topology),
-               simulation / FRAMES_FILE)
+    _write_dcd(md.Trajectory(coordinates / 10.0, topology), simulation / FRAMES_FILE)
     return {"available": True, "reason": None, "n_atoms": len(lines),
             "n_frames_total": len(records), "n_frames_browser": len(used),
             "frame_indices": [record.get("frame_index") for record in used],
             "frame_times_ns": [record.get("simulation_time_ns") for record in used],
-            "made_whole": False}
+            "made_whole": whole is not None}
 
 
 #: What the frames can be superposed on, and how a pocket is chosen.

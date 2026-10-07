@@ -354,6 +354,14 @@ Live frames are a read-only side channel: they never feed values back into
 OpenMM, and failures there are swallowed, so visualisation cannot stop or
 change a scientific simulation.
 
+Each live frame is written with its CRYST1 the box of that moment (recorded
+too in `live_frame_index.json` as `cell`), and is sent to the Viewer made
+whole and centred on the protein, as the frames played are: a snapshot
+wraps each molecule into the box on its own, so a bound ligand could
+otherwise be shown a box length from its pocket. A snapshot written before
+its box was recorded names the box the run started with, so it is imaged
+in the box of the trajectory's last frame.
+
 One run at a time. Starting a second returns *"A FastMDXplora workflow is
 already running."* The rule holds beyond this window too: a study started in
 the same workspace by another window or by an AI app

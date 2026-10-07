@@ -2280,16 +2280,15 @@ def make_handler(
             self.wfile.write(data)
 
         def _send_live_frame(self, root: Path) -> None:
-            sim_dir = root / "simulation"
-            live_path = sim_dir / "live_frame.pdb"
-            if not live_path.is_file():
+            from fastmdxplora.gui.live_frames import live_frame_text
+
+            # Made whole, so a bound ligand is shown in its pocket rather
+            # than in the copy of the box the snapshot wrapped it into.
+            text = live_frame_text(root / "simulation")
+            if text is None:
                 self.send_error(404, "Live frame not available")
                 return
-            try:
-                data = live_path.read_bytes()
-            except OSError:
-                self.send_error(404, "Live frame not available")
-                return
+            data = text.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
             self.send_header("Cache-Control", "no-store")

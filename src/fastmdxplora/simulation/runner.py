@@ -3435,11 +3435,20 @@ def _maybe_write_live_frame(
         positions_state = simulation.context.getState(
             getPositions=True, enforcePeriodicBox=True
         )
+        # The box the positions were wrapped in: PDBFile writes the
+        # topology's, the box the run started with, which a barostat has
+        # since changed.
+        try:
+            box_vectors = positions_state.getPeriodicBoxVectors(asNumpy=True).value_in_unit(
+                omm["unit"].nanometer)
+        except Exception:  # noqa: BLE001 - a run with no box
+            box_vectors = None
         write_openmm_live_frame(
             telemetry.root,
             pdbfile_writer=omm["PDBFile"].writeFile,
             topology=simulation.topology,
             positions=positions_state.getPositions(),
+            box_vectors=box_vectors,
             frame_index=step,
             stage=stage,
             simulation_time_ns=simulation_time_ns,

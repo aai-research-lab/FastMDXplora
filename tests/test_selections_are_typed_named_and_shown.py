@@ -102,8 +102,12 @@ def test_each_structure_the_viewer_renders_is_read_as_sent(study, tmp_path):
     assert frames is None and key == ("", 0, 0)
     (study / "simulation" / "live_frame.pdb").write_bytes(topology.read_bytes())
     try:
+        from fastmdxplora.gui.live_frames import live_frame_text
+
+        # Made whole about the protein, as the Viewer is sent it.
         live, key = _viewer_structure(study, "live", with_solvent=False)
-        assert live == topology.read_bytes() and key[0].endswith("|live|False")
+        assert live == live_frame_text(study / "simulation").encode("utf-8")
+        assert key[0].endswith("|live|False")
     finally:
         (study / "simulation" / "live_frame.pdb").unlink()
     assert _viewer_structure(tmp_path, "structure", with_solvent=False) == (None, ("", 0, 0))

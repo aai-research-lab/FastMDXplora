@@ -70,8 +70,16 @@ def viewer_structure(root: Path, of: str, *, with_solvent: bool
         return None, ("", 0, 0)
     try:
         stat = target.stat()
-        data = (target.read_bytes() if of in ("frames", "live") or with_solvent
-                else display_structure_bytes(target))
+        if of == "live":
+            from fastmdxplora.gui.live_frames import live_frame_text
+
+            text = live_frame_text(target.parent)
+            if text is None:
+                return None, ("", 0, 0)
+            data = text.encode("utf-8")
+        else:
+            data = (target.read_bytes() if of == "frames" or with_solvent
+                    else display_structure_bytes(target))
     except OSError:
         return None, ("", 0, 0)
     key = (f"{target.resolve()}|{of}|{with_solvent}", int(stat.st_mtime_ns), int(stat.st_size))
