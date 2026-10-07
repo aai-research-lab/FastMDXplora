@@ -5651,7 +5651,8 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 
 /* A button that is its line icon alone, named on hover: Close in a
    dialog's top right corner, Clear selection beside the sequence's words,
-   the views of All studies. */
+   Look in another folder and Open a shared study on All studies (the
+   latter shown pressed while its form is open). */
 .line-btn {
     display: inline-flex; align-items: center; justify-content: center;
     flex: none; width: 28px; height: 28px; padding: 0; margin: 0;
@@ -5661,6 +5662,7 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .line-btn:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .line-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .line-btn[hidden] { display: none; }
+.line-btn[aria-expanded="true"] { color: var(--text-primary); background: color-mix(in srgb, var(--text-primary) 7%, transparent); }
 .line-icon { width: 16px; height: 16px; display: block; }
 .agent-dialog-head .dialog-x { margin: -4px -6px 0 0; }
 .again-ask { position: relative; }

@@ -4,6 +4,9 @@ Asked for (10-06): Close, Cards and Table, and Clear selection as line
 icons; each Close in its dialog's top right corner; Clear selection beside
 the sequence's words, not on a row of its own; a magnifier inside each
 search field, on the left.
+
+And (10-07): Look in another folder and Open a shared study as line icons,
+"so there should be enough space" for the header on one line.
 """
 
 from __future__ import annotations
@@ -48,6 +51,28 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
             page.wait_for_selector("#studies-search", state="visible")
             views = page.evaluate("""() => [...document.querySelectorAll('[data-studies-view]')]
                 .map(b => [b.getAttribute('aria-label'), !!b.querySelector('svg'), b.textContent.trim()])""")
+            folders = page.evaluate("""() => ['studies-look-in', 'studies-open-shared'].map(id => {
+                const b = document.getElementById(id);
+                return [b.getAttribute('aria-label'), b.title, !!b.querySelector('svg.line-icon'),
+                        b.textContent.trim()];
+            })""")
+            page.click("#studies-open-shared")
+            pressed = page.get_attribute("#studies-open-shared", "aria-expanded")
+            page.click("#studies-open-shared")
+            # The header's actions on one line beside the name, none over
+            # another, in a window 1,100 px wide with both side columns
+            # open: as words, the two buttons ran out over the name.
+            page.set_viewport_size({"width": 1100, "height": 900})
+            page.wait_for_timeout(300)
+            row = page.evaluate("""() => {
+                const head = document.querySelector('section[data-page="studies"] .page-header');
+                const name = head.querySelector('.page-title').getBoundingClientRect();
+                const all = [...head.querySelectorAll('.page-header-actions > *')]
+                    .filter(e => e.offsetParent).map(e => e.getBoundingClientRect());
+                return {beside: all.every(r => r.left > name.right),
+                        apart: all.every((r, i) => i === 0 || r.left >= all[i - 1].right),
+                        oneRow: all.every(r => Math.abs(r.top - all[0].top) < 4)};
+            }""")
             search = page.evaluate("""() => {
                 const field = document.getElementById('studies-search').getBoundingClientRect();
                 const glass = document.getElementById('studies-search').parentNode
@@ -67,6 +92,10 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
         assert said == {"icon": True, "words": "", "name": "Close", "right": True, "top": True,
                         "closed": True}, dialog
     assert views == [["Cards", True, ""], ["Table", True, ""]]
+    assert folders == [["Look in another folder", "Look in another folder", True, ""],
+                       ["Open a shared study", "Open a shared study", True, ""]]
+    assert pressed == "true"
+    assert row == {"beside": True, "apart": True, "oneRow": True}
     assert search
     # Shown once residues are chosen (test_the_sequence_is_above_the_molecule).
     assert clear == {"inHead": True, "hidden": True, "icon": True, "name": "Clear selection"}

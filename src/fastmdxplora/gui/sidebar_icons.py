@@ -68,6 +68,13 @@ ICONS: dict[str, str] = {
     "tag": '<path d="M3.5 12.2V4h8.2l8.8 8.8-8.2 8.2z"/><circle cx="8" cy="8.5" r="1.4"/>',
     "erase": ('<path d="M8.5 20H20M4.6 15.4l9.9-9.9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 18'
               'H7.2z"/><path d="M9.5 10.5l5 5"/>'),
+    # A folder searched: Look in another folder.
+    "lookin": ('<path d="M11 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>'
+               '<circle cx="16.5" cy="15.5" r="3"/><path d="M18.7 17.7l2.3 2.3"/>'),
+    # An archive opened, its contents coming out: Open a shared study.
+    "unpack": ('<rect x="3" y="4" width="18" height="4" rx="1"/>'
+               '<path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/>'
+               '<path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/>'),
     "copy": ('<rect x="8" y="8" width="12" height="12" rx="2"/>'
              '<path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),
 }

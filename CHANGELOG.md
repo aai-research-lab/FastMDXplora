@@ -453,6 +453,16 @@ began, its first means and its tags, sorted by any column's head (a study
 without the value last either way), narrowed by the search as the cards
 are, and kept as chosen.
 
+### Look in another folder and Open a shared study as line icons
+
+**Changed:** on All studies, **Look in another folder** (a folder with a
+magnifier) and **Open a shared study** (an archive with an arrow, shown
+pressed while its form is open) are line icons named on hover. As words
+they took 284 px, and the header's actions ran out over the page's name
+and under the sidebar in a window narrower than about 1,250 px with both
+side columns open; they now keep to one line beside the name down to
+about 1,100 px.
+
 ### The search on All studies beside its buttons
 
 **Fixed:** the search field on All studies ran over the **Cards** and
