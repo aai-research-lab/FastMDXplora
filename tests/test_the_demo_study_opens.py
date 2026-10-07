@@ -103,6 +103,37 @@ def test_the_report_s_downloads_are_left_out_and_what_it_shows_kept(tmp_path) ->
     assert (out / "simulation" / "live_metrics.csv").is_file()
 
 
+def test_what_a_finished_study_is_not_shown_from_is_left_out(tmp_path) -> None:
+    """Packaged, the 3PTB study was 74 MB: 51 MB of it the snapshots a run
+    writes while it goes, the rest the SVGs beside every figure, the
+    clusters' medoids as structures and the standalone page. None is what
+    the GUI shows a finished study from."""
+    study = _finished(tmp_path / "made")
+    snapshots = study / "simulation" / "live_frames"
+    snapshots.mkdir()
+    for k in range(8):
+        (snapshots / f"frame_{k:06d}.pdb").write_text("END\n")
+    (study / "simulation" / "live_frame_history.json").write_text("{}")
+    (study / "simulation" / "live_frame.pdb").write_text("END\n")
+    (study / "analysis" / "cluster").mkdir()
+    (study / "analysis" / "cluster" / "cluster_kmeans_medoid_0.pdb").write_text("END\n")
+    (study / "analysis" / "cluster" / "cluster_kmeans.png").write_bytes(b"png")
+    (study / "analysis" / "cluster" / "cluster_kmeans.svg").write_text("<svg/>")
+    (study / "report").mkdir()
+    (study / "report" / "dashboard.html").write_text("<html/>")
+    out = tmp_path / "out"
+    done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(study),
+                           "--out", str(out)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert not (out / "simulation" / "live_frames").exists()
+    assert not (out / "simulation" / "live_frame_history.json").exists()
+    # The last snapshot alone stays: it is the structure shown as the run ended.
+    assert (out / "simulation" / "live_frame.pdb").is_file()
+    assert sorted(p.name for p in (out / "analysis" / "cluster").iterdir()) == ["cluster_kmeans.png"]
+    assert not (out / "report" / "dashboard.html").exists()
+    assert "simulation/live_frames/ (8 files)" in done.stdout
+
+
 def test_an_unfinished_study_is_refused(tmp_path) -> None:
     study = _write_study(tmp_path / "unfinished")
     done = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_demo.py"), str(study),

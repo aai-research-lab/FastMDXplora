@@ -7,7 +7,10 @@ no water saved). This copies what the GUI shows of it into
 ``src/fastmdxplora/demo/3ptb/``: the records, the prepared structure, the
 live record, the production's frames, the analyses and the report, leaving
 out what only a run needs (the solvated system, the force field's XML, the
-checkpoints) and any other file over the size given. It writes
+checkpoints), what a finished study is not shown from (the snapshots a run
+writes while it goes, the SVG beside each figure, the clusters' medoids as
+structures, the standalone page), the report's downloads, and any other
+file over the size given. It writes
 ``demo.json``: the release that packaged it, the folder it was made in
 (each path the records name there is made the copy's when a person opens
 the demo, ``fastmdxplora.demo.copy_demo``), when, and how many frames.
@@ -39,8 +42,17 @@ MOST_FRAMES = 100
 #: and the report's downloads, which the Report page offers only where they
 #: exist (the 3PTB study's bundle was 40 MB, its PDF and slides 5 MB each).
 LEFT_OUT = {"system.xml", "state.xml", "solvated.pdb", "integrator.xml",
-            "project_bundle.zip", "report.pdf", "slides.pptx", "analysis_summary.svg"}
-LEFT_OUT_SUFFIXES = {".chk", ".nc", ".xtc"}
+            "project_bundle.zip", "report.pdf", "slides.pptx", "dashboard.html",
+            "live_frame_history.json"}
+#: Every figure is shown from its PNG; the SVGs beside them are downloads.
+LEFT_OUT_SUFFIXES = {".chk", ".nc", ".xtc", ".svg"}
+#: Folders a finished study is not shown from: the snapshots a run writes
+#: while it goes (the 3PTB study's were 200 of 256 KB, 51 MB), played only
+#: until the run has finished, and a phase set aside.
+LEFT_OUT_FOLDERS = ("previous/", "simulation/live_frames/")
+#: A cluster's medoid as a structure: the Viewer shows the medoid's frame of
+#: the trajectory, never these.
+LEFT_OUT_NAMED = ("*_medoid_*.pdb",)
 #: Kept whatever their size: the frames the Viewer plays, the structure they
 #: are played on, the system as simulated, which the Viewer renders first
 #: and reads the ligand from (`prepared.pdb` is the protein alone), the
@@ -80,6 +92,27 @@ def finished(study: Path) -> list[str]:
     return wrong
 
 
+def left_out(relative: str) -> bool:
+    """Whether a file of the study is left out of the demo whatever its size."""
+    from fnmatch import fnmatch
+
+    name = relative.rsplit("/", 1)[-1]
+    return (name in LEFT_OUT or Path(name).suffix in LEFT_OUT_SUFFIXES
+            or relative.startswith(LEFT_OUT_FOLDERS)
+            or any(fnmatch(name, pattern) for pattern in LEFT_OUT_NAMED))
+
+
+def said_briefly(names: list[str]) -> str:
+    """The files left out, a folder of many said once with its count."""
+    from collections import Counter
+
+    folders = Counter(name.rsplit("/", 1)[0] for name in names if "/" in name)
+    many = {folder for folder, count in folders.items() if count > 5}
+    said = [f"{folder}/ ({folders[folder]} files)" for folder in sorted(many)]
+    said += [name for name in names if not ("/" in name and name.rsplit("/", 1)[0] in many)]
+    return ", ".join(said)
+
+
 def package(study: Path, out: Path, most_bytes: int) -> dict:
     study = study.resolve()
     wrong = finished(study)
@@ -91,15 +124,16 @@ def package(study: Path, out: Path, most_bytes: int) -> dict:
                          f"{MOST_FRAMES}. Run it as src/fastmdxplora/demo/3ptb.yml says.")
     if out.exists():
         shutil.rmtree(out)
-    kept, left = [], []
+    kept, left, by_rule = [], [], set()
     for path in sorted(study.rglob("*")):
         if not path.is_file():
             continue
         relative = path.relative_to(study).as_posix()
         size = path.stat().st_size
-        if relative in KEPT or not (
-                path.name in LEFT_OUT or path.suffix in LEFT_OUT_SUFFIXES
-                or relative.startswith("previous/") or size > most_bytes):
+        ruled_out = left_out(relative)
+        if ruled_out:
+            by_rule.add(relative)
+        if relative in KEPT or not (ruled_out or size > most_bytes):
             target = out / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
@@ -107,8 +141,7 @@ def package(study: Path, out: Path, most_bytes: int) -> dict:
         else:
             left.append((relative, size))
     missing = [name for name, size in left
-               if name.startswith(SHOWN) and size > most_bytes
-               and Path(name).name not in LEFT_OUT]
+               if name.startswith(SHOWN) and size > most_bytes and name not in by_rule]
     if missing:
         shutil.rmtree(out)
         raise SystemExit("These are shown by the GUI and are over the size given; raise "
@@ -139,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     record = package(args.study, args.out, args.most_kb * 1024)
     print(f"Wrote {args.out}: {record['frames']} frames, {record['bytes'] / 1e6:.1f} MB.")
     if record["left_out"]:
-        print("Left out: " + ", ".join(record["left_out"]))
+        print("Left out: " + said_briefly(record["left_out"]))
     return 0
 
 
