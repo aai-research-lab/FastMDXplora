@@ -3465,6 +3465,19 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-choice.is-chosen { opacity: 1; border-color: var(--accent-cyan); }
 .agent-choice-name { font-weight: 600; }
 .agent-choice-facts { font-size: var(--text-xs); color: var(--text-muted); }
+/* A question that waits for a yes, with its answers as buttons. */
+.agent-confirm { max-width: 780px; border: 1px solid var(--border-primary); border-radius: 12px;
+    background: var(--panel-glass); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.agent-confirm-q { font-size: var(--text-md); color: var(--text-primary); }
+.agent-confirm-facts { font-size: var(--text-xs); color: var(--text-muted); }
+.agent-confirm-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.agent-confirm-btn:disabled { opacity: .55; cursor: default; }
+.agent-confirm-btn.is-chosen { opacity: 1; }
+/* A study running, under the message that started it. */
+.agent-running { max-width: 780px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    border: 1px solid var(--border-primary); border-radius: 12px; background: var(--panel-glass);
+    padding: 10px 14px; font-size: var(--text-sm); }
+.agent-running .recent-light { display: inline-block; }
 /* A refusal by the software, in view: what it said, and that it was written again. */
 .agent-refused { border-left: 3px solid var(--status-waiting); padding: 6px 10px; font-size: var(--text-sm);
     color: var(--text-secondary); background: var(--background-elevated); border-radius: 0 8px 8px 0; }

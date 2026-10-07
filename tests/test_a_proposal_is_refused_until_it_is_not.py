@@ -769,12 +769,14 @@ class TestThePersonsInstructionIsTheClick(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('note(box, "Stop the run" + (where ? " at " + where : "") + "? Say yes.");', script)
+        self.assertIn('confirmCard(box, stopQuestion(where), STOP_FACTS, "Stop it", "Keep running");',
+                      script)
         self.assertIn("function confirmStop(typed, box)", script)
         self.assertIn('fetch("/api/explore/stop", { method: "POST" })', script)
         # Run goes through the button's own handler, so the mode's gates
         # apply to a word in the thread as they do to a press.
-        self.assertIn('runBtn.click();', script)
+        self.assertIn('newest().launch(box, entry);', script)
+        self.assertIn("made.launch(box, null);", script)
         # And "no" is anything that is not yes.
         self.assertIn('note(box, "Not stopped.");', script)
 
@@ -793,9 +795,10 @@ class TestRunItKnowsWhatIsAlreadyRunning(unittest.TestCase):
         # Run here pressed by hand, then "run it" typed: the Agent said
         # "Starting the run" while clicking a disabled button.
         script = self.script()
-        self.assertIn('note(box, "It is already running.");', script)
+        self.assertIn('note(box, "A study is already running here.");', script)
         run = script[script.index('if (action === "run") {'):script.index('if (action === "stop") {')]
-        self.assertLess(run.index("runBtn.disabled"), run.index("Starting the run"))
+        # By the server's word as well as the button's (10-07).
+        self.assertLess(run.index("runGoing || runBtn.disabled"), run.index("newest().launch("))
 
     def test_a_stopped_study_can_run_again(self):
         script = self.script()

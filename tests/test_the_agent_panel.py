@@ -834,7 +834,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         # It checks the budget an autonomous run needs and records the
         # mode, which the builder's start does not.
         script = self.script()
-        run = script[script.index("runBtn.onclick = function () {"):]
+        run = script[script.index("made.launch = function (here, entry) {"):]
         run = run[:run.index("};", run.index("post("))]
         self.assertIn('post("/api/agent/run"', run)
 
@@ -2457,7 +2457,7 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         self.assertIn("if (o.loaded_study && !loaded) {", script)
         self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
         # Saved before the launch, so the move carries the last exchange.
-        run = script[script.index("runBtn.onclick = function () {"):]
+        run = script[script.index("made.launch = function (here, entry) {"):]
         run = run[:run.index("\n  }\n", run.index("started.error"))]
         self.assertLess(run.index("persist().then("), run.index('post("/api/agent/run"'))
         self.assertIn("This conversation now belongs to the new study.", script)
@@ -2559,7 +2559,7 @@ class TestAStopIsRecordedWhenItHappens(unittest.TestCase):
         script = self.script()
         block = script[script.index('if (data.action === "stop") {'):script.index("act(data.action, data.where")]
         self.assertIn('kind: "question"', block)
-        self.assertIn("? Say yes.", block)
+        self.assertIn('confirm: "stop"', block)
 
     def test_the_stop_is_recorded_on_confirmation(self):
         script = self.script()
@@ -2570,7 +2570,8 @@ class TestAStopIsRecordedWhenItHappens(unittest.TestCase):
     def test_a_reload_keeps_a_pending_stop(self):
         script = self.script()
         replay = script[script.index("function replay(entries)"):script.index("document.addEventListener")]
-        self.assertIn("stopPending = /^Stop the run.*\\? Say yes\\.$/.test(e.text", replay)
+        self.assertIn('stopPending = e.confirm === "stop" || /^Stop the run.*\\? Say yes\\.$/.test(e.text',
+                      replay)
         self.assertIn("var last = entries[entries.length - 1];", replay)
 
     def test_replay_never_says_did_stop(self):

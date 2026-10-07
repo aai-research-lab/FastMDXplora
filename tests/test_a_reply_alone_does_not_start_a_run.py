@@ -110,8 +110,10 @@ class TestInTheBrowser:
 
     def _say(self, ui, text: str) -> None:
         page = ui.page
-        # "Accepted first time" is not said (10-07): a config is a reply done.
-        shown = ".agent-attempt, .agent-answer, .agent-msg-agent[data-state=done]"
+        # A config is its study card: "Accepted first time" is not said (10-07);
+        # a question waiting for a yes is its card, and a run its line.
+        shown = (".agent-attempt, .agent-answer, .agent-study:not([hidden]), .agent-confirm, "
+                 ".agent-running")
         count = page.eval_on_selector_all(shown, "n => n.length")
         page.fill("#agent-request", text)
         page.click("#agent-propose")
@@ -129,7 +131,7 @@ class TestInTheBrowser:
         self._say(ui, "simulate 1UAO")
         self._say(ui, "summarise the attached file")
         assert ui.launches == []
-        assert "Run the study above? Say yes." in self._thread(ui)
+        assert "Run version 1 on this machine?" in self._thread(ui)
 
         self._say(ui, "yes")
         ui.page.wait_for_timeout(500)
@@ -149,7 +151,7 @@ class TestInTheBrowser:
         self._say(ui, "simulate 1UAO")
         self._say(ui, "run it")
         assert ui.launches == []
-        assert "Run the study above? Say yes." in self._thread(ui)
+        assert "Run version 1 on this machine?" in self._thread(ui)
 
     def test_a_plain_instruction_runs(self, ui) -> None:
         ui.replies += [self.CONFIG,
@@ -158,7 +160,9 @@ class TestInTheBrowser:
         self._say(ui, "run it")
         ui.page.wait_for_timeout(500)
         assert len(ui.launches) == 1
-        assert "Starting the run." in self._thread(ui)
+        # Said under "run it", where it was asked for.
+        last = ui.page.locator("#agent-thread .agent-msg-agent").last.inner_text()
+        assert "counted, not started" in last
 
 
 def test_the_prompt_says_the_software_confirms_it() -> None:

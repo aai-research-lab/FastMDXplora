@@ -401,8 +401,13 @@
 
   /* A question's candidates are spent once anything else is said. */
   function spendChoices() {
-    Array.prototype.forEach.call(document.querySelectorAll("#agent-thread .agent-choice"),
+    Array.prototype.forEach.call(
+      document.querySelectorAll("#agent-thread .agent-choice, #agent-thread .agent-confirm-btn"),
       function (b) { b.disabled = true; });
+    /* Nothing waits for the person once they have said something. */
+    Array.prototype.forEach.call(
+      document.querySelectorAll('#agent-thread .agent-msg-agent[data-state="waiting"]'),
+      function (n) { n.setAttribute("data-state", "done"); });
   }
 
   /* What the Agent is doing, said by its icon beside the reply. */
@@ -1023,21 +1028,29 @@
                             text: data.fix ? fixQuestion(data.fix)
                                            : data.refused || "Nothing here to run." });
         } else if (confirmRunFirst) {
-          transcript.push({ role: "agent", kind: "question", text: RUN_QUESTION });
+          transcript.push({ role: "agent", kind: "question", confirm: "run",
+                            text: runQuestion(), facts: runFacts() });
         } else if (data.action === "stop") {
           /* Asked, not done. A stop is recorded when it is confirmed, so
            * a reloaded thread never says "Did: stop" about a run that was
            * never stopped -- which it did, and the person's "yes" then
            * went to the AI model as a new message. */
-          transcript.push({ role: "agent", kind: "question",
-                            text: "Stop the run" + (data.where ? " at " + data.where : "") + "? Say yes." });
-        } else {
-          transcript.push({ role: "agent", kind: "action", action: data.action, where: data.where || "",
-                            receipt: receipt });
+          transcript.push({ role: "agent", kind: "question", confirm: "stop",
+                            text: stopQuestion(data.where), facts: STOP_FACTS });
+        }
+        /* A run is kept once it has started (or said why not), by the
+         * launch: kept before, a run refused read back as "Did: run". */
+        var done = null;
+        if (data.action !== "stop" && data.action !== "run" && !data.fix && !data.refused &&
+            ["run the fix", "rerun windows", "analyze again", "write the report again"]
+              .indexOf(data.action) < 0) {
+          done = { role: "agent", kind: "action", action: data.action, where: data.where || "",
+                   receipt: receipt };
+          transcript.push(done);
         }
         persist();
         act(data.action, data.where || "", box, r, confirmRunFirst, data.fix || null,
-            data.refused || "");
+            data.refused || "", done);
         scrollToEnd();
         return;
       }
@@ -1259,7 +1272,161 @@
   var stopPending = null;
   var runPending = null;
   var fixPending = null;
+  /* Asked before 10-07 as text to answer with yes; a conversation kept
+   * then is still read so. */
   var RUN_QUESTION = "Run the study above? Say yes.";
+  var STOP_FACTS = "What it has written so far is kept.";
+
+  function newest() { return versions[versions.length - 1] || null; }
+
+  /* Whether a study is running here, by the server's word (`app-state`). */
+  var runGoing = false;
+
+  /* A run ended: its version can be run again, and its line no longer
+   * offers Stop. */
+  function runEnded() {
+    versions.forEach(function (v) {
+      var button = v.r.part("run");
+      if (button && button.textContent === "Running") {
+        button.textContent = "Run again";
+        button.disabled = false;
+      }
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("#agent-thread .agent-running"),
+      function (line) {
+        var stop = line.querySelector(".agent-running-stop");
+        if (stop) stop.remove();
+        var light = line.querySelector(".recent-light");
+        if (light) light.setAttribute("data-state", "not started");
+        var said = line.querySelector(".agent-running-said");
+        if (said) said.textContent = said.textContent.replace(/^Running version/, "Ran version");
+      });
+  }
+
+  /* A run asked about: which version, and what it is, from its plan. */
+  function runQuestion() {
+    var v = newest();
+    return v ? "Run version " + v.number + " on this machine?" : "Run the study on this machine?";
+  }
+
+  function runFacts() {
+    var v = newest();
+    if (!v) return "";
+    var said = [];
+    Array.prototype.forEach.call(v.r.part("plan").querySelectorAll("dt"), function (term) {
+      var label = term.textContent;
+      if (["System", "Conditions", "Production", "Size", "Time here"].indexOf(label) < 0) return;
+      var value = term.nextElementSibling;
+      var shown = value && value.querySelector(".agent-plan-value");
+      said.push(label === "Time here" ? "time here: " + (shown || value).textContent
+                                      : (shown || value).textContent);
+    });
+    return said.join(" \u00b7 ");
+  }
+
+  function stopQuestion(where) {
+    return "Stop the run" + (where ? " at " + where : "") + "?";
+  }
+
+  /* A question that waits for the person, with its two answers as
+   * buttons. A press says the answer in the thread, as typing it does
+   * (typing "yes" or "no" still works). Spent once anything is said. */
+  function confirmCard(box, question, facts, yes, no, spent) {
+    var card = document.createElement("div");
+    card.className = "agent-confirm";
+    var asked = document.createElement("div");
+    asked.className = "agent-confirm-q";
+    asked.textContent = question;
+    card.appendChild(asked);
+    if (facts) {
+      var said = document.createElement("div");
+      said.className = "agent-confirm-facts";
+      said.textContent = facts;
+      card.appendChild(said);
+    }
+    var row = document.createElement("div");
+    row.className = "agent-confirm-row";
+    [[yes, "yes", "primary-btn"], [no, "no", "ctl-btn"]].forEach(function (b) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = b[2] + " agent-confirm-btn";
+      button.textContent = b[0];
+      button.setAttribute("data-answer", b[1]);
+      button.disabled = !!spent;
+      button.addEventListener("click", function () {
+        if (writing) return;
+        button.classList.add("is-chosen");
+        el("agent-request").value = b[1];
+        draft();
+      });
+      row.appendChild(button);
+    });
+    card.appendChild(row);
+    box.appendChild(card);
+    return card;
+  }
+
+  /* The study running, said under the message that started it: which
+   * version, since when, a way to watch it and to stop it. Read again from
+   * a kept conversation, it says when it started and nothing more. */
+  function runLine(box, number, started, live) {
+    var line = document.createElement("div");
+    line.className = "agent-running";
+    /* The study's own light, as Recent shows it. */
+    var light = document.createElement("span");
+    light.className = "recent-light";
+    light.setAttribute("data-state", live ? "running" : "not started");
+    light.setAttribute("aria-hidden", "true");
+    var said = document.createElement("span");
+    said.className = "agent-running-said";
+    var when = started ? new Date(started) : null;
+    var at = when && !isNaN(when.getTime())
+      ? when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    said.textContent = (live ? "Running version " : "Started version ") + (number || "")
+      + (at ? (live ? ", started " : " at ") + at : "");
+    line.append(light, said);
+    var spacer = document.createElement("span");
+    spacer.className = "agent-spacer";
+    line.appendChild(spacer);
+    var watch = document.createElement("button");
+    watch.type = "button";
+    watch.className = "ctl-btn";
+    watch.textContent = "Watch on the Overview";
+    watch.addEventListener("click", function () {
+      if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+        window.FastMDXDashboard.navigate("overview");
+      } else {
+        window.location.hash = "#overview";
+      }
+    });
+    line.appendChild(watch);
+    if (live) {
+      var stop = document.createElement("button");
+      stop.type = "button";
+      stop.className = "ctl-btn agent-running-stop";
+      stop.textContent = "Stop";
+      stop.addEventListener("click", function () {
+        if (writing) return;
+        /* Asked first, as every stop is; nothing else still waits. */
+        runPending = null; fixPending = null;
+        var asked = "Stop the run";
+        spendChoices();
+        say(asked, []);
+        history.push({ role: "user", text: asked });
+        transcript.push({ role: "user", text: asked });
+        var r = reply();
+        whoIs(r, "waiting");
+        transcript.push({ role: "agent", kind: "question", confirm: "stop",
+                          text: stopQuestion(""), facts: STOP_FACTS });
+        persist();
+        act("stop", "", r.part("attempts"), r);
+        scrollToEnd();
+      });
+      line.appendChild(stop);
+    }
+    box.appendChild(line);
+    return line;
+  }
 
   /* Yes, or the verb being confirmed: "stop it" confirms a stop and not
    * a run, and "run it" a run and not a stop. */
@@ -1268,7 +1435,7 @@
       .test(typed);
   }
 
-  function act(action, where, box, r, confirmFirst, fix, refused) {
+  function act(action, where, box, r, confirmFirst, fix, refused, entry) {
     if (action === "analyze again" || action === "write the report again") {
       /* The study's analyses or report run again in its folder, checked
        * by the server against the study; asked, or said why not. */
@@ -1277,7 +1444,7 @@
         return;
       }
       fixPending = fix;
-      note(box, fixQuestion(fix));
+      fixCard(box, fix);
       return;
     }
     if (action === "rerun windows") {
@@ -1288,7 +1455,7 @@
         return;
       }
       fixPending = fix;
-      note(box, fixQuestion(fix));
+      fixCard(box, fix);
       return;
     }
     if (action === "run the fix") {
@@ -1300,7 +1467,7 @@
         return;
       }
       fixPending = fix;
-      note(box, fixQuestion(fix));
+      fixCard(box, fix);
       return;
     }
     if (action === "run") {
@@ -1309,11 +1476,14 @@
         return;
       }
       var runBtn = lastReply.part("run");
-      if (runBtn.disabled) {
-        /* Already pressed, by hand or by a word. Clicking a disabled
-         * button does nothing, and "Starting the run" over nothing was
-         * a lie -- reported after Run on this machine had been pressed first. */
-        note(box, "It is already running.");
+      if (runGoing || runBtn.disabled) {
+        /* A study running here, by the server's word (`app-state`), or this
+         * one just pressed. The button alone went stale both ways: still
+         * "Running" after the run ended, and pressable again after a
+         * reload while it ran (review, 10-07). */
+        note(box, "A study is already running here.");
+        transcript.push({ role: "agent", kind: "answer", text: "A study is already running here." });
+        persist();
         return;
       }
       if (confirmFirst) {
@@ -1321,18 +1491,19 @@
          * be wrong or be told what to say. Starting work on this machine
          * waits for the person, as a stop does. */
         runPending = true;
-        note(box, RUN_QUESTION);
+        confirmCard(box, runQuestion(), runFacts(), "Run it", "Not now");
         return;
       }
-      note(box, "Starting the run.", true);
-      runBtn.click();
+      /* Started here, and said here, under the message that asked: it was
+       * said in the config's card, two messages up. */
+      newest().launch(box, entry);
       return;
     }
     if (action === "stop") {
       /* Irreversible, so it is confirmed in the thread. The next message
        * that says yes stops it; anything else is taken as no. */
       stopPending = true;
-      note(box, "Stop the run" + (where ? " at " + where : "") + "? Say yes.");
+      confirmCard(box, stopQuestion(where), STOP_FACTS, "Stop it", "Keep running");
       return;
     }
     if (action.indexOf("open ") === 0) {
@@ -1362,12 +1533,19 @@
     note(box, "I do not know how to " + action + ".");
   }
 
+  /* A fix asked about with its price, as the two buttons. */
+  function fixCard(box, fix) {
+    var what = fix.request ? String(fix.fix || "").replace(/\.$/, "") : "Run " + fix.command;
+    confirmCard(box, what + "?", fix.price_said ? "It costs " + fix.price_said + "." : "",
+                "Run it", "Not now");
+  }
+
   function fixQuestion(fix) {
     /* Windows named by the person are said as what will run, with the
      * values; a fix from the record as its command. */
     var what = fix.request ? String(fix.fix || "").replace(/\.$/, "") : "Run " + fix.command;
     return what + "?" +
-      (fix.price_said ? " It costs " + fix.price_said + "." : "") + " Say yes.";
+      (fix.price_said ? " It costs " + fix.price_said + "." : "");
   }
 
   function confirmFix(typed, box) {
@@ -1407,10 +1585,9 @@
       persist();
       return;
     }
-    transcript.push({ role: "agent", kind: "action", action: "run", where: "" });
     history.push({ role: "agent", text: "DO: run" });
     persist();
-    act("run", "", box, null, false);
+    act("run", "", box, null, false, null, null, null);
   }
 
   function confirmStop(typed, box) {
@@ -1745,7 +1922,11 @@
         })).then(function () { window.location.hash = "#run"; });
       });
     };
-    runBtn.onclick = function () {
+    /* Started from the card's button, or from a message ("run it", a "yes"):
+     * said in `here`, the reply to that message, or the card's own. The
+     * conversation records it with the version and when it started. */
+    made.launch = function (here, entry) {
+      here = here || box;
       runBtn.disabled = true;
       /* The thread is saved before the launch, and the launch is told
        * which conversation to move and where it is now. The launch
@@ -1765,7 +1946,17 @@
            * folder and was refused for the folder being occupied. The
            * button says what happened and stays put. */
           runBtn.textContent = "Running";
-          note(box, "Started. Watch it in the sidebar and the Overview.", true);
+          var at = new Date().toISOString();
+          runLine(here, made.number, at, true);
+          if (!entry) {
+            entry = { role: "agent", kind: "action", action: "run", where: "" };
+            transcript.push(entry);
+            history.push({ role: "agent", text: "Started version " + made.number + "." });
+          }
+          entry.version = made.number;
+          entry.started = at;
+          entry.output = started.output || null;
+          persist();
           /* The conversation that launched a study belongs with it. Without
            * this the thread would vanish from view the moment the page
            * switched to the new study's empty list. */
@@ -1774,15 +1965,25 @@
               study: started.output, id: convId, from_study: fromStudy
             }).then(function (m) {
               if (m && m.ok && m.id) { convId = m.id; convStudy = m.study || started.output; }
-              if (m && m.moved) note(box, "This conversation now belongs to the new study.", true);
+              if (m && m.moved) note(here, "This conversation now belongs to the new study.", true);
             }).catch(function () {});
           }
         } else {
           runBtn.disabled = false;
           noteEl.textContent = started.error;
+          if (here !== box) note(here, started.error || "It did not start.");
+          transcript.push({ role: "agent", kind: "error", text: started.error || "It did not start." });
+          persist();
           runFix(r.part("fix"), started, data);
         }
       });
+    };
+    runBtn.onclick = function () {
+      /* A press is the person's own word: nothing still waiting for a yes
+       * takes the next message. */
+      stopPending = null; runPending = null; fixPending = null;
+      spendChoices();
+      made.launch(box, null);
     };
     /* More: a menu, put away by a choice in it, a click elsewhere or Escape. */
     var more = r.part("more");
@@ -1893,14 +2094,19 @@
           var last = e === entries[entries.length - 1];
           if (last) whoIs(r, "waiting");
           if (e.asked) asking(box, e.asked, e.choices || [], !last);
-          else note(box, e.text);
+          else if (e.confirm === "run") confirmCard(box, e.text, e.facts, "Run it", "Not now", !last);
+          else if (e.confirm === "stop") {
+            confirmCard(box, e.text, e.facts, "Stop it", "Keep running", !last);
+          } else note(box, e.text);
           history.push({ role: "agent", text: e.text });
-          // A stop confirmation that was the last thing said is still
+          // A stop or run confirmation that was the last thing said is still
           // waiting for its yes after a reload.
-          stopPending = /^Stop the run.*\? Say yes\.$/.test(e.text || "") ? true : null;
-          runPending = e.text === RUN_QUESTION ? true : null;
+          stopPending = e.confirm === "stop" || /^Stop the run.*\? Say yes\.$/.test(e.text || "")
+            ? true : null;
+          runPending = e.confirm === "run" || e.text === RUN_QUESTION ? true : null;
         } else if (e.kind === "action") {
-          note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
+          if (e.action === "run" && e.started) runLine(box, e.version, e.started, false);
+          else note(box, e.action === "stop" ? "Stopped the run." : "Did: " + e.action + ".", true);
           history.push({ role: "agent", text: "DO: " + e.action });
         } else {
           note(box, e.text || "");
@@ -1910,10 +2116,12 @@
       // Only a stop question that is the final entry keeps its pending
       // state; anything said after it answered or superseded it.
       var last = entries[entries.length - 1];
-      if (!(last && last.kind === "question" && /^Stop the run.*\? Say yes\.$/.test(last.text || ""))) {
+      if (!(last && last.kind === "question" && (last.confirm === "stop" ||
+            /^Stop the run.*\? Say yes\.$/.test(last.text || "")))) {
         stopPending = null;
       }
-      if (!(last && last.kind === "question" && last.text === RUN_QUESTION)) {
+      if (!(last && last.kind === "question" && (last.confirm === "run" ||
+            last.text === RUN_QUESTION))) {
         runPending = null;
       }
       scrollToEnd();
@@ -1921,6 +2129,13 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     restore();
+    if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
+      window.FastMDXDashboard.on("app-state", function (s) {
+        var going = !!(s && (s.process_running || s.status === "running" || s.running_elsewhere));
+        if (runGoing && !going) runEnded();
+        runGoing = going;
+      });
+    }
     /* A study's More menu is put away by a click anywhere else. */
     document.addEventListener("click", function (e) {
       Array.prototype.forEach.call(document.querySelectorAll(".agent-more[open]"), function (m) {

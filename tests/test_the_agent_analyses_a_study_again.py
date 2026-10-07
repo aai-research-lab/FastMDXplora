@@ -145,8 +145,8 @@ def test_the_agent_asks_then_writes_the_report_again(tmp_path, monkeypatch) -> N
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.fill("#agent-request", "write its report again")
             page.keyboard.press("Enter")
-            page.wait_for_selector("#agent-thread .agent-attempt:has-text('Say yes')")
-            asked = page.locator("#agent-thread .agent-attempt").last.text_content()
+            page.wait_for_selector("#agent-thread .agent-confirm")
+            asked = page.locator("#agent-thread .agent-confirm-q").last.text_content()
             assert ran == []
             page.fill("#agent-request", "yes")
             page.keyboard.press("Enter")
@@ -157,7 +157,7 @@ def test_the_agent_asks_then_writes_the_report_again(tmp_path, monkeypatch) -> N
     finally:
         session.server.shutdown()
     assert asked == ("Write the report again from this study's records, keeping the report "
-                     "there now in previous/? Say yes.")
+                     "there now in previous/?")
     assert ran == [{"phases": ["report"], "analyses": None}]
     assert f"fastmdx report --output {root.resolve()} --rerun" in started
     assert errors == []

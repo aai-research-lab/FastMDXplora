@@ -226,8 +226,9 @@ def test_the_agent_asks_then_runs_it(stopped, monkeypatch) -> None:
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.fill("#agent-request", "resume it")
             page.keyboard.press("Enter")
-            page.wait_for_selector("#agent-thread .agent-attempt:has-text('Say yes')")
-            asked = page.locator("#agent-thread .agent-attempt").last.text_content()
+            page.wait_for_selector("#agent-thread .agent-confirm")
+            asked = page.locator("#agent-thread .agent-confirm-q").last.text_content()
+            price = page.locator("#agent-thread .agent-confirm-facts").last.text_content()
             assert ran == []
             page.fill("#agent-request", "yes")
             page.keyboard.press("Enter")
@@ -238,7 +239,8 @@ def test_the_agent_asks_then_runs_it(stopped, monkeypatch) -> None:
             browser.close()
     finally:
         session.server.shutdown()
-    assert asked == (f"Run fastmdx resume {stopped.resolve()}? It costs 0.3 ns of production; "
-                     "at this study's own speed on CUDA, about 15 min. Say yes.")
+    assert asked == f"Run fastmdx resume {stopped.resolve()}?"
+    assert price == ("It costs 0.3 ns of production; at this study's own speed on CUDA, "
+                     "about 15 min.")
     assert ran == [{"index": 0}]
     assert errors == []

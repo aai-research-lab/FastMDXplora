@@ -263,8 +263,9 @@ def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.fill("#agent-request", "rerun window 2 at 6000")
             page.keyboard.press("Enter")
-            page.wait_for_selector("#agent-thread .agent-attempt:has-text('Say yes')")
-            asked = page.locator("#agent-thread .agent-attempt").last.text_content()
+            page.wait_for_selector("#agent-thread .agent-confirm")
+            asked = " ".join(page.locator("#agent-thread .agent-confirm").last
+                             .locator(".agent-confirm-q, .agent-confirm-facts").all_text_contents())
             assert ran == []
             page.fill("#agent-request", "yes")
             page.keyboard.press("Enter")
@@ -276,6 +277,6 @@ def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
     assert asked.startswith("Run window 2 again, held at 6000 kJ/mol/nm^2, keeping every "
                             "other window, and recombine the free energy? It costs 2 ns of "
                             "production and 1.5 ns of equilibration")
-    assert asked.endswith("Say yes.")
+    assert "Say yes" not in asked
     assert ran == [{"windows": [2], "force_constant": 6000.0, "duration_ns": None}]
     assert errors == []
