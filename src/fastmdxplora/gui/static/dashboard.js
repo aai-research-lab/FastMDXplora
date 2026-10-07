@@ -2123,6 +2123,8 @@
      * by its analysis's name. */
     /* The settings as the fields say them, as "settings-updated" sends. */
     settings: () => currentSettings(),
+    /* The page's notice, seen and read out (icons.js says a copy in it). */
+    toast: (message, kind) => showToast(message, kind),
     figureChip: (name, made) => provenanceChip(name, made),
     listenForFigureChips: (host, lookup) => listenForProvenance(host, lookup),
     /* A name shortened in its middle to the width given (studies.js). */

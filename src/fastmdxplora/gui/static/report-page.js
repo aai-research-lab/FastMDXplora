@@ -17,9 +17,7 @@
   var KINDS = { pdf: "the report, to read or print", slides: "a deck to present",
                 bundle: "the report, its figures and data, zipped",
                 markdown: "the report as text, to edit", summary: "one figure of the whole study" };
-  var DOWNLOAD_ICON = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
-    + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
-    + 'aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/></svg>';
+  var DOWNLOAD_ICON = window.FastMDXIcons.svg("download");
 
   function item(tag, label, kind) {
     var line = document.createElement(tag);

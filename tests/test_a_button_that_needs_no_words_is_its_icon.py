@@ -141,3 +141,66 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
     assert search
     # Shown once residues are chosen (test_the_sequence_is_above_the_molecule).
     assert clear == {"inHead": True, "hidden": True, "icon": True, "name": "Clear selection"}
+
+
+def test_the_scripts_draw_from_the_page_s_own_icons(tmp_path) -> None:
+    """A button a script makes is drawn from the set the template's are
+    (sidebar_icons.ICONS through icons.js), never from a copy that drifts:
+    four scripts had their own copies of Close, Download, the pencil, the
+    bin and the magnifier."""
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.gui.sidebar_icons import ICONS
+
+    static = Path(__file__).resolve().parent.parent / "src" / "fastmdxplora" / "gui" / "static"
+    copied = sorted(p.name for p in static.glob("*.js")
+                    if p.name != "icons.js" and 'class="line-icon" viewBox' in p.read_text())
+    study = _write_study(tmp_path / "study")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page()
+            page.goto(session.url + "#overview", wait_until="domcontentloaded")
+            drawn = page.evaluate("""(names) => names.filter(n =>
+                window.FastMDXIcons.svg(n).replace(/<svg[^>]*>|<\\/svg>/g, '').length > 10)""",
+                                  sorted(ICONS))
+            page.wait_for_function("() => document.body.classList.contains('state-ready')")
+            made = page.evaluate("""() => {
+                const b = window.FastMDXIcons.button('copy', 'Copy the command');
+                const named = [b.getAttribute('aria-label'), b.title, b.textContent.trim(),
+                               b.classList.contains('line-btn')];
+                b.id = 'probe-copy';
+                b.title = 'Copy the command: for a terminal';
+                Object.assign(b.style, {position: 'fixed', left: '400px', top: '400px', zIndex: 9999});
+                document.body.appendChild(b);
+                return named;
+            }""")
+            # Copied twice while the pointer is on it (tooltips.js holds its
+            # hover text then): its name says so, and both its name and its
+            # hover text are back once the pointer leaves.
+            page.hover("#probe-copy")
+            said = page.evaluate("""() => {
+                const b = document.getElementById('probe-copy');
+                window.FastMDXIcons.flash(b, true, 'Copied');
+                window.FastMDXIcons.flash(b, true, 'Copied');
+                return b.getAttribute('aria-label');
+            }""")
+            page.wait_for_timeout(2000)
+            page.mouse.move(5, 5)
+            page.wait_for_timeout(200)
+            after = page.evaluate("""() => {
+                const b = document.getElementById('probe-copy');
+                return [b.getAttribute('aria-label'), b.title, 'label' in b.dataset];
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert copied == []
+    assert drawn == sorted(ICONS)
+    assert made == ["Copy the command", "Copy the command", "", True]
+    assert said == "Copied"
+    assert after == ["Copy the command", "Copy the command: for a terminal", False]

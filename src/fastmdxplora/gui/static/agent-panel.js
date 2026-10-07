@@ -2419,12 +2419,9 @@
      * deletes it, and only it, after asking. */
     var list = el("agent-conv-list");
     function hideList() { if (list) list.hidden = true; }
-    var LINE = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
-      + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" '
-      + 'aria-hidden="true">';
-    var PENCIL = LINE + '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
-    var BIN = LINE + '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>';
-    var SEARCH = LINE + '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>';
+    var PENCIL = window.FastMDXIcons.svg("edit");
+    var BIN = window.FastMDXIcons.svg("bin");
+    var SEARCH = window.FastMDXIcons.svg("search");
 
     function node(tag, cls, text) {
       var made = document.createElement(tag);

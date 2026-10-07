@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["ICONS", "icon", "with_icons"]
+__all__ = ["ICONS", "icon", "icons_json", "with_icons"]
 
 ICONS: dict[str, str] = {
     "studies": ('<rect x="3" y="3" width="7" height="7" rx="1.5"/>'
@@ -75,6 +75,35 @@ ICONS: dict[str, str] = {
     "unpack": ('<rect x="3" y="4" width="18" height="4" rx="1"/>'
                '<path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/>'
                '<path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/>'),
+    # Open this study here: into the box.
+    "open": '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M4 12h11M11 8l4 4-4 4"/>',
+    # Open in a tab of its own.
+    "external": ('<path d="M14 4h6v6M20 4l-9 9"/>'
+                 '<path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>'),
+    # Done: copied, saved.
+    "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    "edit": '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+    "bin": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
+    # Back to what it was: a setting's default, every setting's.
+    "undo": '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    # The whole of it in view again: a chart's zoom undone.
+    "fit": '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    "compare": ('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>'
+                '<path d="M7.5 10L5.5 12l2 2M16.5 10l2 2-2 2"/>'),
+    "back": '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+    "eye": ('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/>'
+            '<circle cx="12" cy="12" r="2.8"/>'),
+    # Centred on it.
+    "crosshair": '<circle cx="12" cy="12" r="7"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>',
+    # Kept to come back to: a view saved.
+    "bookmark": '<path d="M7 4h10v16l-5-4-5 4z"/>',
+    # The command for a terminal.
+    "terminal": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15H17"/>',
+    # The study as a Python script.
+    "script": ('<path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/>'
+               '<path d="M11 12l-2 2 2 2M14 12l2 2-2 2"/>'),
+    # The Agent as a page of its own.
+    "expand": '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
     "copy": ('<rect x="8" y="8" width="12" height="12" rx="2"/>'
              '<path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),
 }
@@ -90,6 +119,16 @@ def icon(name: str, cls: str = "nav-icon") -> str:
             f'stroke-linejoin="round" aria-hidden="true">{ICONS[name]}</svg>')
 
 
+def icons_json() -> str:
+    """The icons as JSON for the page's scripts (``static/icons.js``), so a
+    button a script makes draws from this set and not a copy of it."""
+    import json
+
+    return json.dumps(ICONS, separators=(",", ":")).replace("</", "<\\/")
+
+
 def with_icons(html: str) -> str:
-    """A page with each ``<!--icon:name:class-->`` marker made the icon."""
+    """A page with each ``<!--icon:name:class-->`` marker made the icon, and
+    ``<!--icons-json-->`` the set for its scripts."""
+    html = html.replace("<!--icons-json-->", icons_json())
     return _MARKER.sub(lambda m: icon(m.group(1), m.group(2)), html)

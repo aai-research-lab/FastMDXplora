@@ -13,10 +13,9 @@
   "use strict";
 
   var studies = [];
-  /* The sidebar's close icon (sidebar_icons.py "close"). */
-  var CLOSE_ICON = '<svg class="line-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" '
-    + 'stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">'
-    + '<path d="M6 6l12 12M18 6L6 18"/></svg>';
+  /* The page's own line icons (icons.js, from sidebar_icons.py). */
+  var ICONS = window.FastMDXIcons;
+  var CLOSE_ICON = ICONS.svg("close");
   var chosen = [];
   var lookedIn = "";
   var loading = null;

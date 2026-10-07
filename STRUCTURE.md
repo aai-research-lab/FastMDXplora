@@ -196,7 +196,8 @@ FastMDXplora/
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, files-page.js, files-actions.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
-│       │   │                      #   beside any page), tooltips.js (hints in the page's
+│       │   │                      #   beside any page), icons.js (the line icons for the
+│       │   │                      #   scripts), tooltips.js (hints in the page's
 │       │   │                      #   own style), charts.js, overview.js (the Overview's
 │       │   │                      #   results, run and clock),
 │       │   │                      #   molecule-viewer.js, and the viewer:
