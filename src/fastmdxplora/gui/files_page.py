@@ -36,7 +36,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from fastmdxplora.study_files import FILTERS, PHASES, filter_of, kind_of, label_of, place
+from fastmdxplora.study_files import FILTERS, PHASES, STORED, filter_of, kind_of, label_of, place
 
 __all__ = ["FOLDED", "Links", "files_model", "human_size", "render", "render_folders"]
 
@@ -328,14 +328,15 @@ def _tiles_of(root: Path, prefix: str, run: str,
                       "name": "trajectory"})
     report = there("report/report.pdf") or there("report/report.md")
     if report is not None:
-        what = f"Written {_when(report['mtime'])[0]}"
+        what = "Written"
         if report["path"].endswith(".md") and there("report/report.pdf") is None:
             for item in (_load_json_list(root / prefix / "report" / "not_produced.json")):
                 if str(item.get("artifact")) == "report.pdf":
                     what += " · no PDF: " + str(item.get("reason") or "").split(". ")[0].rstrip(".")
                     break
         tiles.append({"key": "report", "run": run, "icon": "doc", "title": "Report",
-                      "what": what, "paths": [report["path"]], "read": True})
+                      "what": what, "when": report["mtime"], "paths": [report["path"]],
+                      "read": True})
     bundle = there("report/project_bundle.zip")
     if bundle is not None:
         tiles.append({"key": "bundle", "run": run, "icon": "archive", "title": "Everything, zipped",
@@ -610,9 +611,22 @@ def _tile(tile: dict[str, Any], by_path: dict[str, dict[str, Any]], links: Links
         f'data-run="{_attr(tile["run"])}" data-key="{_attr(tile["key"])}">'
         f'<div class="files-tile-head">{icon(tile["icon"], "files-tile-ic")}<div>'
         f'<div class="files-tile-title">{escape(tile["title"])}{run}</div>'
-        f'<div class="files-tile-what">{escape(tile["what"])}</div></div></div>'
+        f'<div class="files-tile-what">{_said_with_when(tile)}</div></div></div>'
         f'<div class="files-tile-meta">{meta}</div>'
         f'<div class="files-tile-acts">{"".join(buttons)}</div></div>')
+
+
+def _said_with_when(tile: dict[str, Any]) -> str:
+    """A tile's line, "Written" followed by when, in the reader's time once
+    the page's script has run."""
+    what = escape(tile["what"])
+    if "when" not in tile:
+        return what
+    when, iso = _when(tile["when"])
+    stamp = (f'<time datetime="{_attr(iso)}" data-when="{float(tile["when"]):.0f}">'
+             f'{escape(when)}</time>')
+    head, _, rest = what.partition(" · ")
+    return f"{head} {stamp}" + (f" · {rest}" if rest else "")
 
 
 def _section(key: str, title: str, meta: str, body: str, extra: str = "") -> str:
@@ -863,11 +877,6 @@ def reveal_word() -> str:
     return "folder"
 
 
-#: Kept as they are in a zip: compressing them again gains nothing.
-_STORED = frozenset({".dcd", ".xtc", ".trr", ".nc", ".h5", ".png", ".jpg", ".jpeg", ".gif",
-                     ".webp", ".zip", ".gz", ".pptx", ".npz", ".chk", ".mp4", ".webm", ".pdf"})
-
-
 def zip_entries(out: Any, entries: list[tuple[Path, str]], *,
                 extra: list[tuple[str, bytes]] | None = None) -> None:
     """Write a zip of ``entries`` (each a file and its name in the zip) to
@@ -879,7 +888,7 @@ def zip_entries(out: Any, entries: list[tuple[Path, str]], *,
 
     with zipfile.ZipFile(out, mode="w", allowZip64=True) as archive:
         for source, name in entries:
-            stored = source.suffix.lower() in _STORED
+            stored = source.suffix.lower() in STORED
             info = zipfile.ZipInfo.from_file(source, arcname=name)
             info.compress_type = zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED
             with source.open("rb") as handle, archive.open(info, "w", force_zip64=True) as sink:

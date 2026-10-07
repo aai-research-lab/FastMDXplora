@@ -1428,6 +1428,29 @@ button {
 .files-menu [role="menuitem"]:hover, .files-menu [role="menuitem"]:focus-visible { background: var(--panel-hover); outline: none; }
 .files-menu-path { display: block; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
 
+.files-deposit-panel { width: min(760px, 100%); }
+#files-deposit-dialog .agent-dialog-foot, #files-clear-dialog .agent-dialog-foot { gap: 8px; align-items: center; flex-wrap: wrap; }
+#files-deposit-done { margin-top: 12px; }
+.files-dep-list { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; margin: 0; padding: 0; }
+.files-dep-row {
+    display: grid; grid-template-columns: 18px minmax(0, 1fr) 76px; gap: 10px; align-items: center; padding: 8px 12px;
+    font-size: var(--text-xs); color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle); cursor: pointer;
+}
+.files-dep-row:last-child { border-bottom: 0; }
+.files-dep-row b { color: var(--text-primary); font-weight: 600; }
+.files-dep-row select { font-size: var(--text-xs); margin-left: 4px; }
+.files-dep-row.files-off { cursor: default; }
+.files-dep-row.files-off b { color: var(--text-secondary); }
+.files-dep-size { font-family: var(--font-mono); font-size: var(--text-2xs); text-align: right; color: var(--text-muted); }
+.files-dep-readme { margin-top: 12px; }
+.files-dep-readme-title { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 6px; }
+.files-dep-readme pre {
+    margin: 0; font-family: var(--font-mono); font-size: var(--text-2xs); line-height: 1.5; padding: 10px 12px;
+    border-radius: 8px; background: color-mix(in srgb, var(--text-primary) 4%, transparent); color: var(--text-secondary);
+    max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.files-dep-total { margin-right: auto; font-size: var(--text-xs); color: var(--text-muted); }
+.files-sha { overflow-wrap: anywhere; font-size: var(--text-2xs); }
 .files-dialog-said { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
 .files-dialog-kept { margin: 10px 0 0; padding-left: 18px; font-size: var(--text-xs); color: var(--text-muted); }
 

@@ -15,8 +15,8 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
-__all__ = ["FILTERS", "KINDS", "PHASES", "filter_of", "is_scratch", "kind_of", "label_of",
-           "place"]
+__all__ = ["FILTERS", "KINDS", "PHASES", "STORED", "filter_of", "is_scratch", "kind_of",
+           "label_of", "place"]
 
 #: The phases in the order a study runs, then what is kept beside them.
 PHASES: tuple[tuple[str, str], ...] = (
@@ -150,6 +150,12 @@ FILTERS: tuple[tuple[str, str, frozenset[str]], ...] = (
 )
 
 
+#: Kept as they are in a zip: compressed already, or binary that
+#: compressing again gains little on.
+STORED = frozenset({".dcd", ".xtc", ".trr", ".nc", ".h5", ".png", ".jpg", ".jpeg", ".gif",
+                    ".webp", ".zip", ".gz", ".pptx", ".npz", ".chk", ".mp4", ".webm", ".pdf"})
+
+
 def filter_of(kind: str) -> str:
     """The filter a kind of file is shown under."""
     for key, _, kinds in FILTERS:
@@ -246,6 +252,8 @@ def label_of(inner: str) -> str:
         return f"Live view snapshot: {path.name}"
     if "frames_pieces" in parts:
         return f"Frames sent to the Viewer, in pieces: {path.name}"
+    if parts[:1] == ("deposit",) and path.suffix == ".zip":
+        return "Data deposit: the files ticked, a README and SHA256SUMS"
     if parts[:1] == ("scenes",):
         return f"Scene: {path.stem}"
     if parts[:1] == ("movies",):

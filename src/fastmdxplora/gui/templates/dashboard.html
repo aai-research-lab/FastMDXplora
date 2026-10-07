@@ -215,6 +215,37 @@
       </div>
     </div>
   </div>
+  <!-- A data deposit of the study (files-actions.js, deposit.py): the
+       sets ticked, the README written from the records, then one zip. -->
+  <div id="files-deposit-dialog" class="agent-dialog" hidden>
+    <div class="agent-dialog-panel files-deposit-panel" role="dialog" aria-modal="true"
+         aria-labelledby="files-deposit-title">
+      <div class="agent-dialog-head">
+        <div>
+          <div class="builder-label" id="files-deposit-title">Prepare a data deposit</div>
+          <div class="builder-card-note">One zip for Zenodo, a journal's data repository or a
+            colleague: the files ticked, a README written from the study's records, and a
+            SHA-256 for every file.</div>
+        </div>
+        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
+      </div>
+      <div class="agent-dialog-body">
+        <fieldset class="files-dep-list" id="files-deposit-sets">
+          <legend class="files-sr">What goes in the deposit</legend>
+        </fieldset>
+        <div class="files-dep-readme">
+          <div class="files-dep-readme-title">README.md, written from the study's records</div>
+          <pre id="files-deposit-readme" tabindex="0" role="region" aria-label="The README the deposit is written with">Reading the study…</pre>
+        </div>
+        <p class="files-dialog-said" id="files-deposit-done" hidden></p>
+      </div>
+      <div class="agent-dialog-foot">
+        <span class="files-dep-total" id="files-deposit-said"></span>
+        <button type="button" class="ghost-btn" data-dialog-close>Cancel</button>
+        <button type="button" class="primary-btn" id="files-deposit-go" disabled>Write the deposit</button>
+      </div>
+    </div>
+  </div>
   <!-- Clearing the scratch of the Viewer and the live view
        (files-actions.js): what would go is asked for first, and said. -->
   <div id="files-clear-dialog" class="agent-dialog" hidden>
@@ -1667,7 +1698,7 @@
 
           <!-- Rendered by the server (gui/files_page.py), the same page the
                standalone dashboard carries; files-page.js finds, filters,
-               sorts and folds it, files-actions.js clears the scratch. -->
+               sorts and folds it, files-actions.js deposits and clears. -->
           <div id="files-page" class="files-page" data-source="/api/files-page">
             <div class="files-empty">Reading the study's files…</div>
           </div>

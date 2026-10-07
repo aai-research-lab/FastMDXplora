@@ -31,7 +31,15 @@ the snapshots go for good, judging each run by its own record: never
 what a run still going needs, nor the snapshots of a run with no
 trajectory or one that failed or ended without saying so.
 **Find a file**, a filter by kind, a sort, **Folder view**, and a run
-picker for a study of several runs. Rendered by the server
+picker for a study of several runs. **Prepare a data deposit** writes
+one zip for a data repository into the study's `deposit/` folder: the
+files ticked by what they are, a `README.md` written from the study's
+records (its methods, software, how to read the trajectory, every file
+and what it is, how to cite) and `SHA256SUMS` for `sha256sum -c`; never
+the scratch, what was set aside, the bundle or an earlier deposit; the
+checkpoint and a joined study's segments only when ticked; a figure
+without a twin of the kind chosen, and the report's pictures, kept; not
+while the study runs (`deposit.py`). Rendered by the server
 (`gui/files_page.py`, `GET /api/files-page`), compressed for a remote
 browser, and rendered again only when the study's files change.
 
@@ -48,7 +56,8 @@ download resumes, and not again while the browser's copy is current.
 The project bundle carried the live view's 200 snapshots (52 MB beside a
 7.8 MB trajectory); the Viewer's and the live view's scratch, the windows
 set aside and data deposits are left out of it. One reading of what
-each file is (`study_files.py`) serves the page and the bundle.
+each file is (`study_files.py`) serves the page, the bundle and the
+deposit.
 
 ### The demo study is fetched the first time it is opened
 

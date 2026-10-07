@@ -854,6 +854,19 @@ def make_handler(
                 view = (parse_qs(parsed.query).get("view") or ["phases"])[0]
                 self._send_files_page(root, "folders" if view == "folders" else "phases")
                 return
+            if path == "/api/files/deposit":
+                # What a data deposit of the study would carry, and the
+                # README it would be written with (`fastmdxplora.deposit`).
+                from fastmdxplora.deposit import deposit_plan
+
+                query = parse_qs(parsed.query)
+                sets = query.get("sets")
+                self._send_json(deposit_plan(
+                    root, _artifact_records(root),
+                    figures=(query.get("figures") or ["svg"])[0],
+                    sets=None if sets is None else [k for k in ",".join(sets).split(",") if k]),
+                    verbatim=("readme",))
+                return
             if path == "/api/files/sha256":
                 # A file's SHA-256, for a record or a deposit: read once a
                 # version of the file. Loopback, like every route not
@@ -1264,6 +1277,28 @@ def make_handler(
                     return
                 shown, detail = _reveal_local_path(target)
                 self._send_json({"ok": shown, "error": "" if shown else detail})
+                return
+            if path == "/api/files/deposit":
+                # The deposit written into the study's deposit/ folder: it
+                # writes on this machine, so loopback, as every route not
+                # listed, or a hosted GUI's own study.
+                from fastmdxplora.deposit import write_deposit
+
+                root = app_runtime.data_root()
+                if _no_study(root):
+                    self._send_json({"ok": False, "error": "No study is open."})
+                    return
+                if app_runtime.snapshot().get("process_running"):
+                    self._send_json({"ok": False, "error": "The study is running: a deposit of "
+                                     "it now would carry what is still being written."})
+                    return
+                asked = payload if isinstance(payload, dict) else {}
+                said = write_deposit(root, _artifact_records(root),
+                                     sets=[str(k) for k in asked.get("sets") or []],
+                                     figures=str(asked.get("figures") or "svg"))
+                if said.get("ok"):
+                    said["href"] = f"/artifacts/{quote(said['path'])}?download=1"
+                self._send_json(said)
                 return
             if path == "/api/files/clear-scratch":
                 # The Viewer's and the live view's scratch removed, after the
@@ -1974,7 +2009,7 @@ def make_handler(
 
             own = allow_control and hosting is None
             return Links(can={"zip": allow_control, "reveal": own, "sha": allow_control,
-                              "clear": own},
+                              "clear": own, "deposit": allow_control},
                          reveal_word=reveal_word())
 
         def _send_files_page(self, root: Path, view: str) -> None:
