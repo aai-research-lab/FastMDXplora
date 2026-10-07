@@ -314,30 +314,41 @@ def completion_for(choice: ModelChoice | None = None, *,
         if on_text is not None:
             body["stream"] = True
 
-        request = urllib.request.Request(
-            settled.url, method="POST",
-            data=json.dumps(body).encode(), headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                if on_text is not None:
-                    return _streamed(response, on_text, settled.url)
-                answer = json.loads(response.read())
-        except urllib.error.HTTPError as exc:
-            # The provider's own reason, and never the request that carried
-            # the key. An error message is the easiest place for a secret
-            # to escape into a log.
-            detail = exc.read().decode("utf-8", "replace")[:400]
-            raise StudyError(
-                f"{PROVIDERS[settled.provider]['label']} refused the "
-                f"request ({exc.code}): {detail}",
-                code="environment.service.unusable_response",
-                url=settled.url,
-            ) from None
-        except urllib.error.URLError as exc:
-            raise StudyError(
-                f"Could not reach {settled.url}: {exc.reason}",
-                code="environment.service.unreachable", url=settled.url,
-            ) from None
+        from fastmdxplora.agent import turns
+
+        for attempt in range(turns.MOST_TRIES):
+            request = urllib.request.Request(
+                settled.url, method="POST",
+                data=json.dumps(body).encode(), headers=headers)
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    if on_text is not None:
+                        return _streamed(response, on_text, settled.url)
+                    answer = json.loads(response.read())
+                break
+            except urllib.error.HTTPError as exc:
+                # Asked again where the provider says to (a rate limit, an
+                # overloaded service), after the wait it gives.
+                if exc.code in turns.RETRIED and attempt < turns.MOST_TRIES - 1:
+                    exc.read()
+                    turns._sleep(turns._wait_for(exc, attempt))
+                    continue
+                # The provider's own reason, and never the request that carried
+                # the key. An error message is the easiest place for a secret
+                # to escape into a log.
+                detail = turns.redacted(exc.read().decode("utf-8", "replace")[:400],
+                                        [key])
+                raise StudyError(
+                    f"{PROVIDERS[settled.provider]['label']} refused the "
+                    f"request ({exc.code}): {detail}",
+                    code="environment.service.unusable_response",
+                    url=settled.url,
+                ) from None
+            except urllib.error.URLError as exc:
+                raise StudyError(
+                    f"Could not reach {settled.url}: {exc.reason}",
+                    code="environment.service.unreachable", url=settled.url,
+                ) from None
 
         if "content" in answer:  # Anthropic
             return "".join(part.get("text", "")
@@ -355,7 +366,83 @@ def completion_for(choice: ModelChoice | None = None, *,
     # Said on the function, so a caller can tell a completion that streams
     # from one that answers whole (a test's, or another's).
     complete.streams = True  # type: ignore[attr-defined]
+
+    def turn(system: str, messages: list[dict[str, Any]], tools: list[Any], *,
+             on_text: Callable[[str], None] | None = None,
+             on_call: Callable[[str], None] | None = None) -> Any:
+        """One turn with the tools declared to the provider
+        (:mod:`fastmdxplora.agent.turns`). A server that turns tools away
+        raises :class:`~fastmdxplora.agent.turns.NoToolCalling`, for the
+        conversation to be asked in text; it is noted only by
+        ``turned_away``, which the loop calls when that was its first turn."""
+        from fastmdxplora.agent.turns import take_turn
+
+        key = _key_for(settled, path)
+        if settled.auth_style == "x-api-key":
+            headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+            shape = "blocks"
+        else:
+            headers = {"Authorization": f"Bearer {key}"}
+            shape = "chat"
+        return take_turn(url=settled.url, headers=headers, shape=shape,
+                         model=settled.model, system=system, messages=messages,
+                         tools=tools, label=str(PROVIDERS[settled.provider]["label"]),
+                         timeout=timeout, on_text=on_text, on_call=on_call,
+                         usage_in_stream=settled.provider == "openai")
+
+    def turned_away() -> None:
+        """The server turned tools away on a conversation's first turn:
+        noted, so later conversations with it use the text protocol from
+        the start rather than being refused once each."""
+        _note_no_tool_calling(path, settled)
+
+    # Only where this server has not turned tools away before.
+    if _takes_tools(path):
+        complete.turn = turn  # type: ignore[attr-defined]
+        complete.turned_away = turned_away  # type: ignore[attr-defined]
     return complete
+
+
+def _takes_tools(path: Path | None = None) -> bool:
+    """False once the chosen server has turned tools away (`tool_use: false`
+    in the stored choice, beside the provider, AI model and address it was
+    said of); True for any other choice, so a flag left from one server is
+    never read as another's."""
+    try:
+        record = json.loads((path or model_path()).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True
+    if record.get("tool_use") is not False:
+        return True
+    said_of = record.get("tool_use_of")
+    now = {"provider": str(record.get("provider", "")), "model": str(record.get("model", "")),
+           "base_url": str(record.get("base_url", ""))}
+    return not isinstance(said_of, dict) or said_of != now
+
+
+def _note_no_tool_calling(path: Path | None = None,
+                          choice: ModelChoice | None = None) -> None:
+    """Record that the chosen server takes no tools, and which server that
+    was, keeping everything else in the file, the key included, and its
+    owner-only permissions. Not written where the file now holds another
+    choice than the one that was asked."""
+    target = path or model_path()
+    try:
+        record = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    of = {"provider": str(record.get("provider", "")), "model": str(record.get("model", "")),
+          "base_url": str(record.get("base_url", ""))}
+    if choice is not None and of != {"provider": choice.provider, "model": choice.model,
+                                     "base_url": choice.base_url}:
+        return
+    record["tool_use"] = False
+    record["tool_use_of"] = of
+    try:
+        target.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        target.chmod(0o600)
+    except OSError:  # pragma: no cover - a read-only settings folder
+        pass
 
 
 def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
@@ -402,7 +489,11 @@ def describe_choice(path: Path | None = None) -> str:
     env_name = str(PROVIDERS[settled.provider]["env"])
     where = ("the environment" if os.environ.get(env_name)
              else "the stored file" if _has_stored_key(path) else "nowhere")
-    return f"{settled}\nKey read from: {where} ({env_name})"
+    said = f"{settled}\nKey read from: {where} ({env_name})"
+    if not _takes_tools(path):
+        said += ("\nThis server does not take tool calls, so the Agent writes to it "
+                 "in plain text.")
+    return said
 
 
 def _has_stored_key(path: Path | None = None) -> bool:
