@@ -22,7 +22,7 @@ import zipfile
 from dataclasses import dataclass
 from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -2487,7 +2487,48 @@ def _artifact_records(root: Path) -> list[dict[str, str]]:
                 "group": group,
             }
         )
+    _pair_the_trajectories(records)
     return records
+
+
+def trajectory_topology(simulation: str, have: set[str]) -> str | None:
+    """The topology a trajectory in ``simulation`` (a study's folder, as
+    the listing says it) is read with: the atoms it saved where it saved
+    some (`trajectory_topology.pdb`), else the whole system's."""
+    for name in ("trajectory_topology.pdb", "topology.pdb"):
+        if f"{simulation}/{name}" in have:
+            return f"{simulation}/{name}"
+    return None
+
+
+def _pair_the_trajectories(records: list[dict[str, str]]) -> None:
+    """Each trajectory names the topology it is read with.
+
+    A run saves the trajectory without its water by default, so
+    `production.dcd` holds the protein, its ligand and ions, and only
+    `trajectory_topology.pdb` describes it. The list offered
+    `topology.pdb` beside it, the solvated system of 18,320 atoms against
+    the trajectory's 3,257, and put the one that loads it unlabelled in the
+    folded record."""
+    have = {record["path"] for record in records}
+    by_path = {record["path"]: record for record in records}
+    for record in records:
+        path = PurePosixPath(record["path"])
+        if path.name != "production.dcd" or path.parent.name not in ("simulation", "joined"):
+            continue
+        simulation = (path.parent.parent / "simulation").as_posix() \
+            if path.parent.name == "joined" else path.parent.as_posix()
+        if simulation.startswith("./"):
+            simulation = simulation[2:]
+        topology = trajectory_topology(simulation, have)
+        if topology is None:
+            continue
+        record["opens_with"] = topology
+        record["label"] = f"{record['label']}, read with {PurePosixPath(topology).name}"
+        whole = by_path.get(f"{simulation}/topology.pdb")
+        if topology.endswith("/trajectory_topology.pdb") and whole is not None \
+                and "not the trajectory's" not in whole["label"]:
+            whole["label"] = f"{whole['label']}: not the trajectory's topology"
 
 
 def _compact_path(path: str, *, keep: int = 2) -> str:
@@ -3034,6 +3075,9 @@ _ARTIFACT_LABELS = {
     "report/project_bundle.zip": ("Everything, zipped", "deliverables"),
     "simulation/production.dcd": ("Production trajectory", "simulation"),
     "simulation/topology.pdb": ("Simulated system, solvated", "simulation"),
+    "simulation/trajectory_topology.pdb": ("Topology of the trajectory: the atoms it saved",
+                                           "simulation"),
+    "joined/production.dcd": ("The whole trajectory, its segments joined", "simulation"),
     "simulation/state_final.xml": ("Final state: positions, velocities, box", "simulation"),
     "simulation/state_minimized.xml": ("State after minimisation", "simulation"),
     "simulation/checkpoint.chk": ("Checkpoint: positions and velocities, for recovery by hand", "simulation"),
