@@ -122,6 +122,73 @@ with the same mapping as YAML or JSON.
 
 ---
 
+## Your defaults: `fastmdx-defaults.yml`
+
+FastMDXplora's own defaults (300 K, a 2 fs timestep, pH 7.4) are written in
+the schema. A lab has its usual choices too: its assays run at 310 K, it
+prepares at pH 7.0, it always uses one force field. Written once in a file
+called `fastmdx-defaults.yml` in the folder your studies are kept in, they
+fill what a new study leaves unset:
+
+```yaml
+# fastmdx-defaults.yml, beside your studies
+simulation:
+  temperature_K: 310
+setup:
+  ph: 7.0
+decisions:
+  simulation.temperature_K:
+    why: Our assays run at body temperature.
+```
+
+The file holds the blocks that say how a study is simulated (`setup`,
+`simulation`, `analysis`, `report`, `execution`), each setting checked as
+a Config's is, and a `why` for any of them. It never says what is
+simulated: `systems`, `output`, `sweep` and the study's own keys are
+refused in it.
+
+**Which file.** The nearest `fastmdx-defaults.yml` in the study's folder or
+a folder above it, as git finds its repository, stopping at your home
+folder. A study written to `~/lab/studies/trpcage` reads
+`~/lab/studies/fastmdx-defaults.yml`, or `~/lab/fastmdx-defaults.yml`
+where there is none closer.
+
+**What it fills, and what it leaves.**
+
+- Only a setting the Config does not give. A value the Config gives is the
+  study's, `null` included (FastMDXplora's default, chosen).
+- Not a setting the study sweeps: the sweep gives it.
+- Not a study that continues another (`simulation.resume_from`): it keeps
+  that study's settings. A study prepared from another
+  (`simulation.setup_from`) keeps that one's `setup`.
+- Not a phase run again on a study that has run, from its record or from
+  a Config: its record holds every value it ran with, and the terminal says
+  your defaults were not filled in.
+- Not one of two settings that answer one question where the Config gives
+  the other: the file's `analysis.include` is not filled beside the
+  study's `analysis.exclude`.
+
+**Each value it fills is said.** The terminal names each one as the run
+starts. The study's `decisions` records it with `source:
+fastmdx-defaults.yml` and the file's `why` (or "Your usual value, from
+fastmdx-defaults.yml."), so the report's **Why these settings** says
+which values were your lab's. The resolved config records the value itself,
+so the study runs the same again without the file.
+
+**Everywhere a study starts.** `fastmdx explore` and the phase commands,
+the GUI's Run (which runs `fastmdx explore`), the Config Builder (which
+marks such a field **Your default**), the Agent (which is told them, cites
+them, and has them filled in what it writes) and an AI app (`check_study`
+and `save_study` fill them). `fastmdx config` names them under the template
+it writes, since the template shows FastMDXplora's own. A file that is
+there and wrong is said and the study does not start; it is never passed
+over. A Config the validator accepts that your defaults would make it
+refuse is refused with the file named, before anything runs.
+
+To run one study without them, `fastmdx explore --no-defaults`.
+
+---
+
 ## `systems`
 
 Always a list, even for one system. Each entry:

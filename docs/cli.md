@@ -89,7 +89,7 @@ with its phase prefix.
 
 ### Input and output
 
-These five are on `explore` and on each of the four phase commands.
+These six are on `explore` and on each of the four phase commands.
 
 Each phase command is `explore` with one phase: `fastmdx analyze` is
 `fastmdx explore --include-phase analysis`, its flags those of `explore`
@@ -109,6 +109,7 @@ so a study moved or extended since runs on its own frames.
 | `--output DIR` | Where everything goes |
 | `--verbose` | Also stream debug logging to the terminal |
 | `--no-explain` | Turn off the running explanations. There is no positive `--explain`; they are on by default |
+| `--no-defaults` | Run without your defaults: the nearest `fastmdx-defaults.yml` in the study's folder or one above it, which otherwise fills what the Config leaves unset ([Your defaults](config.md#your-defaults-fastmdx-defaultsyml)) |
 
 The single-dash long forms (`-system`, `-config`) are there because GROMACS,
 AMBER and NAMD all spell flags that way.
@@ -405,6 +406,11 @@ fastmdx agent                                            # opens the GUI Agent p
 
 The three mode flags are mutually exclusive.
 
+[Your defaults](config.md#your-defaults-fastmdx-defaultsyml) are read from
+the folder `--output` writes into, or from here: the Agent is told them, and
+the Config it writes has them filled in. The studies it can list are those
+in the folder it is run in.
+
 ---
 
 ## `gui`
@@ -486,7 +492,10 @@ fastmdx config -f study.yml --force-overwrite      # overwrite
 ```
 
 Refuses an existing file with exit 2 unless `--force-overwrite`. The old
-name, `fastmdx init-config`, stops with exit 2 and names this one.
+name, `fastmdx init-config`, stops with exit 2 and names this one. The
+template shows FastMDXplora's own defaults; where a `fastmdx-defaults.yml`
+applies to the folder it is written in, the command names the values it
+will fill when the study runs.
 
 ---
 

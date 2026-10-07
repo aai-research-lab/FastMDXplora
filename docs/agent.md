@@ -82,7 +82,7 @@ $ fastmdx agent model
     [2] OpenAI
     [3] Other (any OpenAI-compatible URL)
   > 1
-  AI model [claude-sonnet-4-6]:
+  AI model [claude-sonnet-5-5]:
   API key (leave blank to read ANTHROPIC_API_KEY from the environment instead):
   > sk-ant-...
 
@@ -90,11 +90,17 @@ $ fastmdx agent model
   ✓ Key stored there, readable only by you. It is never written into a study.
 ```
 
-| Provider | Default AI model | Environment variable |
+| Provider | AI model offered first | Environment variable |
 |---|---|---|
-| `anthropic` | `claude-sonnet-4-6` | `ANTHROPIC_API_KEY` |
-| `openai` | `gpt-5` | `OPENAI_API_KEY` |
+| `anthropic` | the newest `claude-sonnet` it offers (`claude-sonnet-4-6` where it cannot be asked) | `ANTHROPIC_API_KEY` |
+| `openai` | the newest `gpt-N` it offers (`gpt-5` where it cannot be asked) | `OPENAI_API_KEY` |
 | `compatible` | whatever you name | `FASTMDX_MODEL_API_KEY` |
+
+The AI model offered first is read from the provider's own list, asked with
+the key in the environment or the one stored, and kept to one family: a
+provider's newest may be its largest and dearest, or its smallest. Any other
+it lists can be chosen, and any name typed. A stored key is sent only to the
+provider and address it was stored for, never to another being looked at.
 
 Option 3 covers DeepSeek, vLLM, Ollama, OpenRouter and most local servers,
 because they speak the OpenAI chat shape. One entry rather than one per vendor:
@@ -364,8 +370,16 @@ most of what is sent is read from the cache. What each reply cost is
 recorded, and `fastmdx agent` says it:
 
 ```
-  AI model: 2 calls, 31,204 tokens in (28,770 cached), 412 out
+  AI model: 1 call, 17,899 tokens in (17,806 written to the cache), 498 out
+  AI model: 2 calls, 29,170 tokens in (28,770 cached, 300 written to the cache), 412 out
 ```
+
+The first message of a conversation writes the instructions to the cache
+(at a little more than the usual price); a message after it within a few
+minutes reads them from there (at about a tenth). `fastmdx agent` says the
+reply as a terminal shows it: "Asking the AI model...", the answer without
+its Markdown emphasis, a link as its words and its address, and "Accepted
+first time." or "Accepted after 2 attempts." for a Config.
 
 A server that does not take tool calls (some local ones) says so on the
 first message of a conversation, and is asked in the text protocol from
@@ -543,8 +557,9 @@ fastmdx.FastMDXplora(config_data=proposal.config, output_dir="runs/study").explo
 
 Each request goes to the AI model with three things beside the schema:
 
-- **The conversation so far**, the last twelve turns each way, so a request
-  that refers to one can be read.
+- **The conversation so far**, the last twelve turns whole, and up to 48
+  before them by their first sentence, so a request that refers to one can
+  be read and what was settled early in a long thread is not lost.
 - **The current Config**, the last one the Agent wrote. A request is a change
   to it unless it plainly describes a different study: the whole Config comes
   back with the change applied and everything else kept. "Make it 5 ns" is an
@@ -561,6 +576,15 @@ Each request goes to the AI model with three things beside the schema:
   "Is the
   RMSD converged?" is answered from those numbers, "why did it stop?" from
   the error, and "how far along?" from the step, not from a guess.
+- **Your defaults**, the values in the
+  [`fastmdx-defaults.yml`](config.md#your-defaults-fastmdx-defaultsyml) that
+  applies where the study will be written, each with its `why`. The Agent
+  uses one where the request leaves the setting open, and says it is yours
+  ("310 K, your default"); a value the request states is the request's.
+  The Config it writes has them filled in, recorded in `decisions` with the
+  file as their source, as a run would. Where they do not fit the study
+  (a setting that the rest of the Config refuses), the Config is kept
+  without them and that is said under it.
 - **A file you attached.** The `+` at the left of the composer opens a
   picker on the study's own folder, or the workspace for a thread about no
   study. A chosen file goes with that message as context: text types only,
@@ -569,8 +593,9 @@ Each request goes to the AI model with three things beside the schema:
   bytes. The Agent is told to cite a file when it uses it: *the setup
   manifest records `ligand_pose: auto`*, not a paraphrase.
 
-The Agent does not open files on its own, with two exceptions: its tools read
-a structure you name and a study's record (below), and nothing else. What else it needs, it is
+The Agent does not open files on its own: its tools read a structure you
+name, the PDB's and AlphaFold DB's records, the studies in the workspace and
+their records (below), and nothing else. What else it needs, it is
 handed; what you want it to see, you attach.
 
 A reply is one of four things:
@@ -589,20 +614,45 @@ four times per reply:
 
 | Tool | What the software tells it |
 |---|---|
+| `find_structure` | The PDB entries a name answers to ("lysozyme", "trp-cage"), by the names the entries give their molecules or their titles: grouped by protein with the most studied first, each by its best-resolved entry of the protein alone (unmutated, unfused, with no other protein) and the first such entry determined (1VII for the villin headpiece), with method, resolution, year, organism, chains and ligands; for a name of no protein (a designed peptide), the entries the first determined first (1L2Y for trp-cage). AlphaFold DB's predicted models, with their mean pLDDT, where the PDB holds none or where asked. A PDB identifier is described as it is |
 | `inspect_structure` | The chains, protein residues, ligands, ions and water a structure holds (a PDB identifier or a PDB or mmCIF file), the residues whose protonation state a study may set, any side chain within 3 Å of a structural metal, and what is worth knowing about it |
 | `preview_setup` | What setup will build from a Config (particles, box, solute, water, ions, a padding grown for the cutoff) and how long the whole study takes on this machine, where it has been timed: what the builder says under a structure |
 | `check_config` | Whether the validator accepts a Config, and if not, why and what would fix it; if so, the plan you will read, defaults marked |
 | `check_selection` | How many atoms, and which residues, an MDTraj selection matches in a structure, as `fastmdx select` says |
 | `read_study` | Another study's record, not the one on screen: its Config, what its analyses found, the checks it was held to, how long it ran and why, and what would fix it |
 | `methods_of_study` | A study's methods paragraphs as its report gives them, written from what it recorded, to quote when asked how it was set up, simulated or analysed, or for a methods section |
+| `list_studies` | The studies in the workspace, newest first, each with its system, state, length, force field, tags, your note and the means it recorded; optionally only those with a tag |
+| `compare_studies` | How two studies differ: each setting one asks for and the other does not, and their means side by side, a difference called resolved only where it is more than the stated multiple of its combined standard error |
 
-It is told to look rather than guess: to preview before stating a size or a
+It is told to look rather than guess: to find a structure named in words
+before writing its PDB identifier, to preview before stating a size or a
 time, to inspect a structure before choosing its chains, ligand or a residue's
 state, to check a selection before writing one into a Config, and to quote
 what the software said rather than a number of its own. The tools only look:
 nothing is run, written or started by one, and a look is not one of the
 attempts a Config is allowed. Hosted, a tool reads inside the workspace only,
 as the builder does.
+
+`list_studies` and `compare_studies` are the ones an AI app calls through
+`fastmdx mcp`, written once, so the Agent and an AI app give the same
+answer. A study holding a link out of the workspace is neither listed nor
+read.
+
+#### A structure named in words
+
+The Agent was once given six names and their identifiers in its
+instructions, and an AI model recalled the rest: "trpcage" was written as
+1UAO, which is chignolin, and the study validated perfectly. Now no
+identifier is recalled. A system named in words is looked up with
+`find_structure`, and the identifier is named back with what it is ("1L2Y,
+the NMR structure of trp-cage"), so a wrong one is visible. Where more than
+one entry fits (hen egg-white or T4 lysozyme, an NMR or a crystal
+structure), the Agent asks which, naming the entries found. A model from
+AlphaFold DB is said as a prediction, with its confidence, and its file is
+yours to download into the workspace. Where the PDB cannot be reached, or
+answers with an error, nothing is guessed in its place: the Agent asks for
+the identifier or a structure file. A search takes at most a minute in all,
+and an answer is kept for a week, so a conversation does not ask twice.
 
 What it looked at is folded under its reply, **Checked with the software**,
 each tool with what was asked and what the software said, and kept with the

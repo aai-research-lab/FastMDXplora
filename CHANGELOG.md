@@ -222,6 +222,53 @@ loaded its config into the builder to price itself, over whatever was being
 written there; it now reads its own. **Run here** is **Run on this
 machine**.
 
+### Your defaults, and the Agent finds a structure by its name
+
+**Added:** `fastmdx-defaults.yml`, your lab's usual values (310 K, a pH,
+a force field) written once in the folder your studies are kept in. The
+nearest one up from a study's folder, stopping at the home folder, fills
+what a new study leaves unset, from the command line, the GUI's Run, the
+Config Builder (marked **Your default**), the Agent and an AI app
+(`check_study`, `save_study`). A value the config gives, `null` included,
+is kept; a swept setting, a continuation and a phase run again (from the
+study's record or a config) are left alone; `analysis.include` is not filled
+beside a study's `analysis.exclude`; a config they would make the validator
+refuse is refused naming the file; the file never says what is simulated. Each value filled is said
+as the run starts and recorded in `decisions` with `source:
+fastmdx-defaults.yml`, so **Why these settings** names it.
+`fastmdx explore --no-defaults` runs without them; `fastmdx config` names
+them under its template (`config/defaults_file.py`).
+
+**Added:** `find_structure`, for the Agent and for `fastmdx mcp`: the PDB
+entries a name answers to, by the names entries give their molecules or
+their titles, grouped by protein with the most studied first, each by its
+best-resolved entry of the protein alone and the first such entry
+determined (2VB1 and 1LYZ for hen lysozyme, 2RJY and 1VII for the villin
+headpiece), with its method, resolution, chains and ligands; for a designed
+peptide, the entries the first determined first (1L2Y for trp-cage);
+AlphaFold DB's models, with their mean pLDDT, where the PDB holds none or
+where asked. Offline, or answered with an error, it says so and offers
+nothing; a search takes at most a minute; answers are kept for a week
+(`structure_search.py`). The
+six names and identifiers written into the Agent's instructions are gone:
+"trpcage" had been written as 1UAO, chignolin. The Agent looks a name up,
+names the identifier back with what it is, and asks which where more than
+one fits.
+
+**Added:** `list_studies` and `compare_studies` for the Agent, the ones
+`fastmdx mcp` has, written once for both (`workspace_studies.py`); a study
+holding a link out of the workspace is neither listed nor read by the
+Agent either.
+
+**Changed:** the turns of a conversation before its last 12 are kept by
+their first sentence (up to 48), not dropped. The AI model offered first
+is the newest of the default's family the provider lists (the newest
+`claude-sonnet`, the newest `gpt-N`), the written one only where the
+provider cannot be asked; a stored key is sent only to the provider and
+address it was stored for. `fastmdx agent` says a reply as a terminal shows
+it: "Asking the AI model...", no Markdown emphasis, "Accepted first time.",
+and the tokens written to the cache said apart from those read from it.
+
 ### The Agent replies by tool calls
 
 **Changed:** where the AI model takes tool calls, the Agent declares its
