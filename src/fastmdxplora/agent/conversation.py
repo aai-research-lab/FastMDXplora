@@ -330,7 +330,7 @@ def propose_with_tools(request: str, turn: Any, *, phases: list[str] | None,
                        max_cycles: int, verbose_schema: bool,
                        history: list[dict[str, str]] | None, current_config: str | None,
                        run_status: str | None, attachments: list[dict[str, Any]] | None,
-                       tools: Any) -> Any:
+                       tools: Any, defaults: Any = None) -> Any:
     """Ask by tool calls until a reply is made, or the attempts run out.
 
     ``turn`` is the completion's ``turn``: a system prompt, the conversation
@@ -359,7 +359,8 @@ def propose_with_tools(request: str, turn: Any, *, phases: list[str] | None,
     messages: list[dict[str, Any]] = _history(history) + [{
         "role": "user", "text": _this_message(request, current_config=current_config,
                                               run_status=run_status,
-                                              attachments=attachments)}]
+                                              attachments=attachments,
+                                              defaults=defaults)}]
     usage = Usage()
     attempts: list[Attempt] = []
     refusal: Refusal | None = None

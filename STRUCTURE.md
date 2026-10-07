@@ -235,6 +235,7 @@ FastMDXplora/
 │       │   ├── languages.py       # One study as a config file, a command and a script
 │       │   ├── diff.py            # What differs between two studies' settings
 │       │   ├── recorded.py        # A study's recorded settings, as the base for its phases run again
+│       │   ├── defaults_file.py   # Your defaults: fastmdx-defaults.yml filling what a new study leaves unset
 │       │   ├── phase_settings.py, phase_settings_types.py  # Each phase's settings, from the schema
 │       │   └── agent_modes.py     # Which phases a model wrote, and which were checked
 │       ├── validation/            # Checks of the software against independent references

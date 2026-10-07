@@ -451,7 +451,8 @@ def _ask_agent(ctx: Context, args: dict[str, Any]) -> str:
     try:
         proposal = propose_config(args["request"], written,
                                   phases=args.get("phases") or list(_AGENT_PHASES),
-                                  current_config=current, run_status=status, tools=box)
+                                  current_config=current, run_status=status, tools=box,
+                                  defaults=_your_defaults(ctx))
     except StudyError as exc:
         raise ToolError(refusal_of(exc).message) from None
     except NotLent as exc:
@@ -594,10 +595,43 @@ def _preview_setup(ctx: Context, args: dict[str, Any]) -> str:
     return _looked(ctx, "preview_setup", {"config": config})
 
 
+def _your_defaults(ctx: Context) -> Any:
+    """The workspace's fastmdx-defaults.yml, read and checked, or None; a
+    file that is there and wrong is said, never passed over."""
+    from fastmdxplora.config.defaults_file import defaults_for
+    from fastmdxplora.config.loader import ConfigError
+
+    try:
+        return defaults_for(ctx.workspace.root)
+    except ConfigError as exc:
+        raise ToolError(str(exc)) from None
+
+
+def _filled(ctx: Context, config: dict[str, Any]) -> tuple[dict[str, Any], list[str], Any]:
+    """The config as it will run: your defaults filling what it leaves
+    unset, the settings they filled, and the defaults themselves. Checked
+    as it will run: a config the validator accepts that your defaults make
+    it refuse is refused here, naming the file, not once it is saved."""
+    from fastmdxplora.config.defaults_file import refused_with, with_defaults
+
+    defaults = _your_defaults(ctx)
+    filled, names = with_defaults(config, defaults)
+    refusal = refused_with(config, filled, defaults)
+    if refusal is not None:
+        raise ToolError(_refused(refusal))
+    return filled, names, defaults
+
+
 def _check_study(ctx: Context, args: dict[str, Any]) -> str:
     config, file = _config_from(ctx, args["config"])
     continuing = _accepted(ctx, config)
+    # The plan of what will run: the workspace's defaults fill what the
+    # config leaves unset when it is saved and run.
+    config, filled, defaults = _filled(ctx, config)
     lines = ["Accepted by the validator. The plan:", *_plan_lines(config)]
+    if filled:
+        lines.append(f"Your defaults ({defaults.path.name}) fill what it leaves unset: "
+                     + ", ".join(filled) + ".")
     if continuing is not None:
         lines.append(f"It continues the study at {ctx.workspace.shown(continuing)} in place: "
                      "its next segment, joined to the others, with the analyses rerun "
@@ -640,6 +674,14 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     if not by_hand:
         app = ctx.call.client_name if ctx.call is not None else None
         text, config = _as_assisted(text, config, app)
+    # Saved as it will run, your defaults filled in and each recorded in
+    # `decisions`: the plan agreed to is the file, and the file is what runs.
+    # Added as lines, so the comments and order written stay as written.
+    before = config
+    config, filled, _defaults = _filled(ctx, config)
+    if filled:
+        _accepted(ctx, config)
+        text = _with_lines_for(text, before, config, filled)
     target = ctx.workspace.root / f"{stem}.yml"
     try:
         with target.open("x", encoding="utf-8") as out:
@@ -658,6 +700,46 @@ def _save_study(ctx: Context, args: dict[str, Any]) -> str:
     return "\n".join([f"Saved to {ctx.workspace.shown(target)}; accepted by the validator. "
                       f"{whose} Nothing has been run.", "The plan:", *_plan_lines(config), "",
                       _plan_id_line(ctx, target)])
+
+
+def _with_lines_for(text: str, before: dict[str, Any], config: dict[str, Any],
+                    filled: list[str]) -> str:
+    """``text`` with the settings your defaults filled, and their
+    decisions, added under their blocks (or as blocks of their own at the
+    end), so what was written stays as written; where that would not read
+    back as ``config``, the whole is written out again."""
+    import yaml
+
+    added: dict[str, dict[str, Any]] = {}
+    for name in filled:
+        block, key = name.split(".", 1)
+        added.setdefault(block, {})[key] = config[block][key]
+    decided = {name: config["decisions"][name] for name in filled
+               if name in (config.get("decisions") or {})
+               and name not in (before.get("decisions") or {})}
+    if decided:
+        added["decisions"] = decided
+    lines = text.rstrip("\n").splitlines()
+    for block, settings in added.items():
+        written = yaml.safe_dump(settings, sort_keys=False).splitlines()
+        at = next((n for n, line in enumerate(lines)
+                   if re.match(rf"^{re.escape(block)}:\s*(#.*)?$", line)), None)
+        if at is None:
+            lines += [f"{block}:", *("  " + line for line in written)]
+            continue
+        indent = next((len(line) - len(line.lstrip()) for line in lines[at + 1:]
+                       if line.strip() and not line.lstrip().startswith("#")), 0)
+        if indent == 0:
+            lines = []
+            break
+        lines[at + 1:at + 1] = [" " * indent + line for line in written]
+    out = "\n".join(lines) + "\n"
+    try:
+        if lines and yaml.safe_load(out) == config:
+            return out
+    except yaml.YAMLError:
+        pass
+    return yaml.safe_dump(config, sort_keys=False)
 
 
 def _as_assisted(text: str, config: dict[str, Any],

@@ -719,6 +719,16 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
             "once the steps are familiar."
         ),
     )
+    src.add_argument(
+        "--no-defaults",
+        dest="no_defaults",
+        action="store_true",
+        help=(
+            "Run without your defaults: the nearest fastmdx-defaults.yml in "
+            "the study's folder or a folder above it, which otherwise fills "
+            "what the config leaves unset."
+        ),
+    )
     dash = p.add_argument_group("dashboard")
     dash.add_argument(
         "--dashboard",
@@ -1624,10 +1634,12 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
 
     # Start from the file, if any; else, given no system, from the study
     # the --output folder holds, as it recorded itself.
+    recorded = None
     if getattr(args, "config", None):
         config = load_config_file(args.config)
     else:
-        config = _the_study_s_config(args) or {}
+        recorded = _the_study_s_config(args)
+        config = recorded or {}
 
     # The execution block, on the same terms: what the flag says beats what
     # the file says, and an unset flag leaves the file alone.
@@ -1715,7 +1727,48 @@ def _build_explore_config(args: argparse.Namespace) -> dict[str, Any]:
 
         config = windows_held_at(config, args.rerun_windows, held)
 
+    # Your defaults fill what a new study leaves unset. Not a study's own
+    # record: it holds every value it ran with, and a phase run again runs
+    # with those.
+    if recorded is None and not getattr(args, "no_defaults", False):
+        config = _with_your_defaults(config, args)
     return config
+
+
+def _with_your_defaults(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """The config with the nearest fastmdx-defaults.yml filling what it
+    leaves unset, said on the terminal setting by setting. Looked for from
+    the study's folder up, else from the config file's, else from here."""
+    from fastmdxplora.config.defaults_file import defaults_for, refused_with, with_defaults
+    from fastmdxplora.config.recorded import RECORDED
+
+    output = config.get("output") or getattr(args, "output_dir", None)
+    if output:
+        start = Path(str(output)).expanduser()
+    elif getattr(args, "config", None):
+        start = Path(args.config).expanduser().resolve().parent
+    else:
+        start = Path.cwd()
+    defaults = defaults_for(start)
+    if defaults is None:
+        return config
+    if output and (start / RECORDED).is_file():
+        # A study that has run, given a config for a phase run again: its
+        # record holds every value it ran with, and yours are not laid over.
+        print(f"Your defaults ({defaults.path}) are not filled in: {start} has run, "
+              f"and {RECORDED} holds the values it ran with.")
+        return config
+    filled_config, filled = with_defaults(config, defaults)
+    refusal = refused_with(config, filled_config, defaults)
+    if refusal is not None:
+        raise type(refusal)(f"{refusal} --no-defaults runs without them.",
+                            code=refusal.code, **refusal.refusal.details)
+    if filled:
+        values = dict(defaults.settings())
+        print(f"Your defaults ({defaults.path}) fill what the config leaves unset: "
+              + ", ".join(f"{name} {values[name]}" for name in filled)
+              + ". --no-defaults runs without them.")
+    return filled_config
 
 
 def _the_study_s_config(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -2797,6 +2850,19 @@ def _cmd_config(args: argparse.Namespace) -> int:
     kind = "minimal" if args.minimal else "comprehensive"
     print(f"Wrote {kind} config template to {out_path}")
     print(f"Edit it, then run:  fastmdx explore --config {out_path}")
+    # Said here, since the template shows FastMDXplora's own defaults and the
+    # run fills yours where the config leaves a setting unset.
+    from fastmdxplora.config.defaults_file import defaults_for
+    from fastmdxplora.config.loader import ConfigError
+
+    try:
+        defaults = defaults_for(out_path.expanduser().resolve().parent)
+    except ConfigError as exc:
+        print(f"Your defaults cannot be used: {exc}")
+        return 0
+    if defaults is not None and defaults.values:
+        print(f"Your defaults ({defaults.path}) fill what it leaves unset when it runs: "
+              + ", ".join(f"{name} {value}" for name, value in defaults.settings()) + ".")
     return 0
 
 
@@ -3093,6 +3159,17 @@ def _run_agent(args: Any) -> int:
 
     from fastmdxplora.agent.tools import Toolbox
 
+    # Your defaults, from where the config will be written (or here): the
+    # Agent is told them, and the config it writes has them filled in.
+    from fastmdxplora.config.defaults_file import defaults_for
+    from fastmdxplora.config.loader import ConfigError
+
+    try:
+        defaults = defaults_for(_Path(args.agent_output).expanduser().resolve().parent
+                                if args.agent_output else _Path.cwd())
+    except ConfigError as exc:
+        print(str(exc))
+        return 1
     # Not "Writing a config": the reply may be an answer, a question or an
     # action, and which is known only once it comes.
     print("Asking the AI model...")
@@ -3102,7 +3179,7 @@ def _run_agent(args: Any) -> int:
             phases=[p.strip() for p in args.phases.split(",") if p.strip()],
             max_cycles=(DEFAULT_ATTEMPTS if args.attempts is None
                         else int(args.attempts)),
-            tools=Toolbox())
+            tools=Toolbox(), defaults=defaults)
     except StudyError as exc:
         print(refusal_of(exc).message)
         return 1

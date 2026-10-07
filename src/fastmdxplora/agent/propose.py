@@ -223,6 +223,14 @@ and ask rather than picking one; a config that silently simulates the
 wrong molecule wastes a run and can be missed.""",
      None),
     ("""\
+Where the message lists your defaults (the workspace's
+fastmdx-defaults.yml), they fill what a study leaves unset, wherever it
+runs. Leave a setting the request does not state to them, rather than
+writing FastMDXplora's default or a value of your own, and say so beside
+the config ("310 K, your default"). A value the request states wins over
+them; one the request leaves open that you would change, say why.""",
+     None),
+    ("""\
 Continuing a study leaves one study, not two. The extra production runs
 as that study's next segment, inside it; every finished segment is then
 joined into one trajectory; and the analyses and the report are rerun
@@ -509,7 +517,7 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
                current_config: str | None = None,
                run_status: str | None = None,
                attachments: list[dict[str, Any]] | None = None,
-               tools: Any = None) -> str:
+               tools: Any = None, defaults: Any = None) -> str:
     """The first prompt: what the language is, and what is wanted.
 
     The schema description is generated, so it cannot name a setting
@@ -529,13 +537,15 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
             parts.append(f"{who}: {str(turn.get('text') or '').strip()}\n")
         parts.append("\n")
     parts.append(_this_message(request, current_config=current_config,
-                               run_status=run_status, attachments=attachments))
+                               run_status=run_status, attachments=attachments,
+                               defaults=defaults))
     return "".join(parts)
 
 
 def _this_message(request: str, *, current_config: str | None = None,
                   run_status: str | None = None,
-                  attachments: list[dict[str, Any]] | None = None) -> str:
+                  attachments: list[dict[str, Any]] | None = None,
+                  defaults: Any = None) -> str:
     """What changes from one message to the next: the current config, what
     the run is doing, the files attached, and what the person asked. Last
     in either protocol, after everything that stays the same."""
@@ -550,6 +560,8 @@ def _this_message(request: str, *, current_config: str | None = None,
             name = str(a.get("name") or "file")
             note = " (head and tail; the middle was cut)" if a.get("truncated") else ""
             parts.append(f"### {name}{note}\n```\n{str(a.get('text') or '').strip()}\n```\n\n")
+    if defaults is not None and defaults.values:
+        parts.append(f"## Your defaults ({defaults.path.name})\n{defaults.said()}\n\n")
     parts.append(f"## The study wanted\n{request}\n")
     return "".join(parts)
 
@@ -913,6 +925,7 @@ def propose_config(
     attachments: list[dict[str, Any]] | None = None,
     tools: Any = None,
     as_registered: bool = False,
+    defaults: Any = None,
 ) -> Proposal:
     """Ask for a config, and keep asking until it validates or the cap.
 
@@ -942,6 +955,13 @@ def propose_config(
         whose counts are comparable only under the protocol they were
         written for.
 
+    defaults
+        Your defaults (:mod:`fastmdxplora.config.defaults_file`), where the
+        workspace keeps a fastmdx-defaults.yml: listed to the AI model in
+        the message, and filled into an accepted config's unset settings,
+        each recorded in its `decisions`, so the config shown is the one
+        that runs.
+
     Returns
     -------
     Proposal
@@ -958,6 +978,58 @@ def propose_config(
     a question the software declined to guess at, which is the behaviour
     this design exists to prevent.
     """
+    proposal = _asked(request, complete, phases=phases, max_cycles=max_cycles,
+                      verbose_schema=verbose_schema, history=history,
+                      current_config=current_config, run_status=run_status,
+                      attachments=attachments, tools=tools, as_registered=as_registered,
+                      defaults=defaults)
+    return _with_your_defaults(proposal, defaults)
+
+
+def _with_your_defaults(proposal: Proposal, defaults: Any) -> Proposal:
+    """An accepted config with your defaults filling what it leaves unset.
+
+    Validated again filled: a default that does not fit the study the AI
+    model wrote (a barostat's setting beside an NVT run, say) leaves the
+    config as accepted, and the note says which file disagreed and why, so
+    the run, which fills the same defaults, is not the first to say so."""
+    if proposal.config is None or defaults is None:
+        return proposal
+    import dataclasses
+
+    from fastmdxplora.config.defaults_file import with_defaults
+
+    filled, names = with_defaults(proposal.config, defaults)
+    if not names:
+        return proposal
+    try:
+        import copy
+
+        validate_config(copy.deepcopy(filled), require_systems=True)
+    except ConfigError as exc:
+        said = (f"Your defaults ({defaults.path.name}) do not fit this study, so they "
+                f"are not filled in: {exc}")
+        return dataclasses.replace(
+            proposal, note=f"{proposal.note}\n\n{said}" if proposal.note else said)
+    return dataclasses.replace(proposal, config=filled)
+
+
+def _asked(
+    request: str,
+    complete: Completion,
+    *,
+    phases: list[str] | None = None,
+    max_cycles: int = DEFAULT_ATTEMPTS,
+    verbose_schema: bool = True,
+    history: list[dict[str, str]] | None = None,
+    current_config: str | None = None,
+    run_status: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+    tools: Any = None,
+    as_registered: bool = False,
+    defaults: Any = None,
+) -> Proposal:
+    """The loop behind :func:`propose_config`, before your defaults."""
     from fastmdxplora.agent.tools import MOST_LOOKS, use_in
 
     turn = None if as_registered else getattr(complete, "turn", None)
@@ -973,7 +1045,7 @@ def propose_config(
                 request, turn, phases=phases, max_cycles=max_cycles,
                 verbose_schema=verbose_schema, history=history,
                 current_config=current_config, run_status=run_status,
-                attachments=attachments, tools=tools)
+                attachments=attachments, tools=tools, defaults=defaults)
         except NoToolCalling:
             # Turned away on the first turn: this conversation is asked in
             # text, and the next starts in text, where the completion can
@@ -985,7 +1057,8 @@ def propose_config(
     attempts: list[Attempt] = []
     first = prompt_for(request, phases=phases, verbose=verbose_schema,
                        history=history, current_config=current_config,
-                       run_status=run_status, attachments=attachments, tools=tools)
+                       run_status=run_status, attachments=attachments, tools=tools,
+                       defaults=defaults)
     prompt = first
     refusal: Refusal | None = None
 

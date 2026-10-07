@@ -403,8 +403,12 @@ def _checks() -> list[str]:
     return [said for _key, said, _short in CHECKS]
 
 
-def schema_payload() -> dict[str, Any]:
-    """Every setting the software accepts, ready to be drawn."""
+def schema_payload(defaults: Any = None) -> dict[str, Any]:
+    """Every setting the software accepts, ready to be drawn.
+
+    With ``defaults`` (the workspace's fastmdx-defaults.yml), each setting
+    it gives is offered at that value as its default, marked as yours
+    (``default_from``), since a study that leaves it unset runs with it."""
     from fastmdxplora.config.schema import grouped_fields
 
     phases = {
@@ -442,7 +446,7 @@ def schema_payload() -> dict[str, Any]:
                   for field in group.fields if field.type is not dict]
     from fastmdxplora.gui.starters import starters_payload
 
-    return {
+    payload = {
         "phases": phases,
         "run_options": run_options,
         "execution_options": execution_options,
@@ -454,6 +458,31 @@ def schema_payload() -> dict[str, Any]:
         # ticks and the Agent's plan states, for the form's review.
         "checks": _checks(),
     }
+    return payload if defaults is None else _with_your_defaults(payload, defaults)
+
+
+def _with_your_defaults(payload: dict[str, Any], defaults: Any) -> dict[str, Any]:
+    """The payload with each setting your defaults give offered at their
+    value, marked with the file it comes from."""
+    given = dict(defaults.settings())
+    name = defaults.path.name
+
+    def mark(field: dict[str, Any], block: str) -> None:
+        dotted = f"{block}.{field['name']}"
+        if dotted in given:
+            field["default"] = _jsonable(given[dotted])
+            field["default_from"] = name
+
+    for block, group in payload["phases"].items():
+        for field in group["fields"]:
+            mark(field, block)
+        for section in group["groups"]:
+            for field in section["fields"]:
+                mark(field, block)
+    for field in payload["execution_options"]:
+        mark(field, "execution")
+    payload["defaults_from"] = name
+    return payload
 
 
 def _when_chosen() -> str:

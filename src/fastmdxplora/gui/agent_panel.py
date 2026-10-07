@@ -126,6 +126,7 @@ def propose_endpoint(payload: dict[str, Any],
     """
     from fastmdxplora.agent import completion_for, propose_config
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
+    from fastmdxplora.config.loader import ConfigError
     from fastmdxplora.refusals import StudyError, refusal_of
 
     request = str(payload.get("request") or "").strip()
@@ -166,6 +167,12 @@ def propose_endpoint(payload: dict[str, Any],
     ][:6]
     from fastmdxplora.agent.tools import Toolbox
 
+    # Your defaults, from where this GUI puts new studies: the Agent is told
+    # them and an accepted config has them filled in, as the run will.
+    try:
+        defaults = your_defaults(runtime)
+    except ConfigError as exc:
+        return {"ok": False, "error": str(exc), "code": exc.code}
     tools = Toolbox(path_for=path_for)
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
@@ -176,7 +183,7 @@ def propose_endpoint(payload: dict[str, Any],
             max_cycles=int(payload.get("attempts") or DEFAULT_ATTEMPTS),
             history=history or None, current_config=current,
             run_status=_run_status(runtime), attachments=attachments or None,
-            tools=tools)
+            tools=tools, defaults=defaults)
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
@@ -184,6 +191,16 @@ def propose_endpoint(payload: dict[str, Any],
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
     return answer
+
+
+def your_defaults(runtime: Any) -> Any:
+    """The fastmdx-defaults.yml that applies where this GUI puts new
+    studies, read and checked, or None. Raises ConfigError for a file
+    that is there and wrong, so it is said rather than ignored."""
+    from fastmdxplora.config.defaults_file import defaults_for
+
+    where = getattr(runtime, "exploration_root", None)
+    return defaults_for(where) if where else None
 
 
 def _written_as_it_goes(complete: Any, emit: Any) -> Any:

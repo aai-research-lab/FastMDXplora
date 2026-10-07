@@ -628,8 +628,9 @@
     revert.addEventListener("click", () => revertSetting(phase, field.name));
     head.appendChild(revert);
     if (field.default !== null && field.default !== undefined && field.control !== "stopping") {
+      // Your default (the workspace's fastmdx-defaults.yml) is said as yours.
       head.appendChild(node("span", "builder-default",
-        "Default " + said(field.default, field.unit)));
+        (field.default_from ? "Your default " : "Default ") + said(field.default, field.unit)));
     }
     wrap.appendChild(head);
 
