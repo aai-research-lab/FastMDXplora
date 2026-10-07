@@ -473,8 +473,7 @@ def _settings_listed(params: dict[str, Any], project_root: Path) -> list[str]:
             continue
         said = _code_text(_from_the_study(value, project_root))
         if key == "random_seed" and value is None and drawn is not None:
-            lines.append(f"- **{_md_text(key)}**: `{_code_text(drawn)}` (drawn, as none "
-                         "was given)")
+            lines.append(f"- **{_md_text(key)}**: `{_code_text(drawn)}`, drawn for this study")
             continue
         lines.append(f"- **{_md_text(key)}**: `{said}`")
     return lines

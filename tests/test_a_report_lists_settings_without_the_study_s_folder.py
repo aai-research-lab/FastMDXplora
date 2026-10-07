@@ -28,7 +28,7 @@ def test_internal_settings_are_left_out_and_paths_named_from_the_study(tmp_path)
     assert str(tmp_path) not in said
     assert "**\\_" not in said and "retained" not in said
     assert "- **ligand**: `['setup/ligands/BEN.sdf']`" in lines
-    assert "- **random\\_seed**: `1909657446` (drawn, as none was given)" in lines
+    assert "- **random\\_seed**: `1909657446`, drawn for this study" in lines
     assert "- **fixed\\_pdb**: `None`" in lines
 
 
