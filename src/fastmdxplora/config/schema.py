@@ -1237,6 +1237,71 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
 }
 
 
+#: What a setting with no default does when nobody sets it, in a few words,
+#: keyed by its dotted name (a top-level setting by its own name). A form
+#: offers it as the value to leave alone: a list of choices with no default
+#: showed its first choice, so a protein in water read as embedded in POPC,
+#: and an empty box beside an example ("e.g. 5") said nothing about what an
+#: empty box does. The help says it at length; this says it in a line.
+UNSET_MEANS: dict[str, str] = {
+    "agent": "a person wrote it",
+    "agent_model": "no AI model involved",
+    "budget_hours": "no ceiling",
+    "decisions": "none recorded",
+    "setup.agent": "as the study says",
+    "simulation.agent": "as the study says",
+    "analysis.agent": "as the study says",
+    "report.agent": "as the study says",
+    "setup.model": "the first model",
+    "setup.chains": "the biological assembly",
+    "setup.fixed_pdb": "repaired here",
+    "setup.water_model": "from the force field",
+    "setup.ligand_forcefield": "from the force field",
+    "setup.ligand_net_charge": "read from the chemistry file",
+    "setup.membrane": "no membrane",
+    "setup.membrane_center_z_nm": "fitted",
+    "setup.random_seed": "a seed is drawn and recorded",
+    "setup.nonbonded_cutoff_nm": "the force field's own",
+    "setup.use_switching_function": "as the force field was developed",
+    "setup.switch_distance_nm": "the force field's own",
+    "setup.hydrogen_mass_amu": "off",
+    "setup.mutation_chain": "the first chain",
+    "simulation.duration_ns": "2 ns",
+    "simulation.nvt_duration_ns": "500 ps",
+    "simulation.npt_duration_ns": "1 ns",
+    "simulation.ensemble": "as the NPT stage implies",
+    "simulation.random_seed": "a different seed each run",
+    "simulation.trajectory_interval_steps": "about 2,000 frames a run",
+    "simulation.restraint_release": "1000, 500, 100, 0",
+    "analysis.trajectory": "the study's production",
+    "analysis.topology": "the study's topology",
+    "analysis.last": "the last frame",
+    "report.title": "named for the system",
+    "execution.workers": "one per device, or the CPU count",
+}
+
+#: The settings a form shows first in each group; the rest wait behind a
+#: "show more". Chosen for what a study is most often about: the structure
+#: prepared, its protonation, the box and the force field; how long and
+#: under what conditions it runs; what is written. Everything else is left
+#: at its default by most studies, and a setting changed is shown whatever
+#: its tier, so nothing chosen is ever hidden.
+ESSENTIAL: dict[str, tuple[str, ...]] = {
+    "(top-level)": ("budget_hours",),
+    "setup": ("model", "chains", "heterogens", "ph", "residue_states",
+              "ligand", "ligand_net_charge", "membrane",
+              "box_shape", "solvent_padding_nm", "ion_concentration_M",
+              "neutralize", "forcefield"),
+    "simulation": ("duration_ns", "stop_when", "temperature_K",
+                   "pressure_bar", "ensemble", "timestep_fs",
+                   "umbrella", "steered", "metadynamics", "plumed",
+                   "platform", "trajectory_interval_steps", "save_selection"),
+    "analysis": ("figure_width",),
+    "report": ("title", "author", "document", "pdf", "slides", "bundle"),
+    "execution": ("mode",),
+}
+
+
 def grouped_fields(phase: str) -> tuple[tuple[str, str, tuple[Field, ...]], ...]:
     """A phase's settings in named groups, in the order they are declared.
 

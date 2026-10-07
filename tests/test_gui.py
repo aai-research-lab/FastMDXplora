@@ -3947,10 +3947,12 @@ class TestFifteenAnalysesReadAsAFewKinds:
         )
 
     def test_the_protein_ligand_analyses_are_together(self) -> None:
+        """Under the Analysis page's own theme for them."""
         payload = self._options()
         together = {name for name, group in payload["categories"].items()
-                    if group == "Protein and ligand together"}
-        assert {"pl_contacts", "pl_hbonds", "pl_interactions"} <= together
+                    if group == "The ligand"}
+        assert {"pl_contacts", "pl_hbonds", "pl_interactions",
+                "ligand_rmsd", "ligand_rmsf"} <= together
 
     def test_the_page_groups_them(self) -> None:
         import pathlib
@@ -4155,7 +4157,7 @@ class TestTheProteinLigandAnalysesShareANaming:
             import pytest
 
             pytest.skip(payload["reason"])
-        assert payload["categories"]["pl_contacts"] == "Protein and ligand together"
+        assert payload["categories"]["pl_contacts"] == payload["categories"]["pl_hbonds"]
 
 
 class TestASettingsBlockCanBeWrittenInTheBrowser:
