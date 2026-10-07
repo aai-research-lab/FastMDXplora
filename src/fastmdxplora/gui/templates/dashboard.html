@@ -95,9 +95,9 @@
           <label class="builder-field">
             <span class="builder-label">Mode</span>
             <select id="agent-mode">
-              <option value="assisted">Assisted — you approve it</option>
-              <option value="autonomous">Autonomous — runs unattended</option>
-              <option value="unvalidated">Unvalidated — outside the schema</option>
+              <option value="assisted">Assisted: you approve it</option>
+              <option value="autonomous">Autonomous: runs unattended</option>
+              <option value="unvalidated">Unvalidated: outside the schema</option>
             </select>
             <p class="builder-card-note" id="agent-mode-note"></p>
           </label>
@@ -379,6 +379,9 @@
            gives one, sits under its name. -->
       <div class="sidebar-top">
         <div class="sidebar-brand">
+          <!-- On a phone, the bar carries FastMDXplora's mark, white on
+               black, in place of the name. -->
+          <!--__FASTMDX_PHONE_MARK__-->
           <div class="brand-text">
             <div class="brand-product">__FASTMDX_PRODUCT__</div>
             <div class="brand-tagline">__FASTMDX_BRAND_LINE__</div>
@@ -398,6 +401,10 @@
             <button type="button" class="nav-beside" id="agent-beside-open" title="The Agent beside this page (Ctrl J)" aria-label="The Agent beside this page"><!--icon:beside:nav-icon--></button>
           </div>
         </nav>
+        <!-- On a phone, the conversations behind one icon in the bar: the
+             sidebar's lists of them would fill the bar. -->
+        <button type="button" class="line-btn phone-convs" id="phone-convs" title="Conversations"
+                aria-label="Conversations"><!--icon:chat:line-icon--></button>
       </div>
 
       <!-- The newest studies of the workspace, one click from each; folded

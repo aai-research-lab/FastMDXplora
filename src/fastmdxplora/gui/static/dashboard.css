@@ -1995,6 +1995,17 @@ body.state-ready .loading-screen {
     transition: border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
 }
 
+/* The Agent's settings: choices in the page's font, the key field styled as
+   the others (it had the browser's own); an address and a key in mono. */
+#agent-settings .builder-field select,
+#agent-settings .builder-field input[type="number"] { font-family: var(--font-stack); }
+#agent-settings .builder-field input[type="password"] {
+    width: 100%; min-height: 38px; padding: 8px 10px; color: var(--text-primary);
+    border: 1px solid var(--border-primary); border-radius: 8px; outline: none;
+    background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
+    font-family: var(--font-mono);
+}
+
 .builder-field input:focus,
 .builder-field select:focus {
     border-color: color-mix(in srgb, var(--accent-cyan) 62%, transparent);
@@ -3454,6 +3465,16 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-step::before { content: "\2713"; color: var(--status-completed); margin-right: 7px; }
 .agent-step.is-now { color: var(--text-secondary); }
 .agent-step.is-now::before { content: "\2026"; color: var(--status-live); }
+/* Under a reply: Useful or Wrong, and what it took. */
+.agent-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+    font-size: var(--text-xs); color: var(--text-muted); }
+.agent-feedback { border: 1px solid transparent; background: none; color: var(--text-muted);
+    border-radius: 999px; padding: 1px 8px; font: inherit; cursor: pointer; }
+.agent-feedback:hover { color: var(--text-primary); }
+.agent-feedback[aria-pressed="true"] { color: var(--accent-text); border-color: var(--accent-cyan); }
+.agent-feedback[data-feedback="wrong"][aria-pressed="true"] { color: var(--status-error);
+    border-color: var(--status-error); }
+.agent-usage { font-variant-numeric: tabular-nums; }
 /* A question's candidates, as buttons: the identifier, then what it is. */
 .agent-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 8px; max-width: 760px; }
@@ -5244,11 +5265,18 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
     .sidebar { position: relative; }
 }
 
-/* On a phone the sidebar is the bar across the top: the name, the study,
-   New study, the Agent and All studies as icons, and the settings on one
-   line; the study's pages under it. Recent and the folder are left to a
-   wider screen. */
+/* On a phone the sidebar is the bar across the top: FastMDXplora's mark,
+   the study, New study, the Agent, All studies and the conversations as
+   icons, and the settings on one line; the study's pages under it. Recent,
+   the folder and the lists of conversations are left to a wider screen
+   (the lists had filled the bar, 10-07). */
+.brand-mark-tile, .sidebar .phone-convs { display: none; }
 @media (max-width: 800px) {
+    .sidebar .brand-mark-tile { display: block; width: 30px; height: 30px; border-radius: 7px; flex: none; }
+    .sidebar .sidebar-brand .brand-text { display: none; }
+    .sidebar .sidebar-convs, .sidebar .sidebar-chats { display: none !important; }
+    .sidebar .phone-convs { display: inline-flex; order: 3; padding: 8px; }
+    .sidebar .phone-convs svg.line-icon { display: block; width: 18px; height: 18px; }
     .sidebar .sidebar-top { display: contents; }
     .sidebar-recent, .sidebar-study > .nav-heading, .study-folder { display: none !important; }
     .sidebar .sidebar-brand { order: 1; }

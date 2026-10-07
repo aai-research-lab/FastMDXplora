@@ -35,10 +35,10 @@
    * a command is a GUI that has given up. */
   var KEY_HELP = {
     anthropic: "Get one at platform.claude.com, under Settings \u2192 API " +
-               "keys. A developer account \u2014 a chat subscription is " +
+               "keys. A developer account: a chat subscription is " +
                "not the same thing.",
     openai: "Get one at platform.openai.com, under API keys.",
-    compatible: "A local server usually needs none \u2014 leave this blank."
+    compatible: "A local server usually needs none; leave this blank."
   };
 
   /* Refusals written for the command line, said the way this surface can
@@ -410,6 +410,54 @@
       function (n) { n.setAttribute("data-state", "done"); });
   }
 
+  /* Under a reply: Useful or Wrong, kept with the conversation for the
+   * Agent's evaluation (a second press takes it back), and what the reply
+   * took, in tokens. */
+  function usageSaid(u) {
+    if (!u || !(u.input_tokens || u.cache_read_tokens || u.cache_write_tokens)) return "";
+    var sent = (u.input_tokens || 0) + (u.cache_read_tokens || 0) + (u.cache_write_tokens || 0);
+    var kept = [];
+    if (u.cache_read_tokens) kept.push(u.cache_read_tokens.toLocaleString("en-US") + " from the cache");
+    if (u.cache_write_tokens) {
+      kept.push(u.cache_write_tokens.toLocaleString("en-US") + " written to the cache");
+    }
+    return sent.toLocaleString("en-US") + " tokens in" + (kept.length ? " (" + kept.join(", ") + ")" : "")
+      + " \u00b7 " + (u.output_tokens || 0).toLocaleString("en-US") + " out";
+  }
+
+  function meta(r, entry) {
+    var body = r.part("body") || r.node;
+    var row = document.createElement("div");
+    row.className = "agent-meta";
+    ["useful", "wrong"].forEach(function (kind) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "agent-feedback";
+      b.setAttribute("data-feedback", kind);
+      b.textContent = kind === "useful" ? "Useful" : "Wrong";
+      b.setAttribute("aria-pressed", entry.feedback === kind ? "true" : "false");
+      b.addEventListener("click", function () {
+        entry.feedback = entry.feedback === kind ? null : kind;
+        Array.prototype.forEach.call(row.querySelectorAll(".agent-feedback"), function (x) {
+          x.setAttribute("aria-pressed", x.getAttribute("data-feedback") === entry.feedback
+            ? "true" : "false");
+        });
+        persist();
+      });
+      row.appendChild(b);
+    });
+    var used = usageSaid(entry.usage);
+    if (used) {
+      var said = document.createElement("span");
+      said.className = "agent-usage";
+      said.textContent = used;
+      row.appendChild(said);
+    }
+    var tools = body.querySelector(".agent-msg-tools");
+    body.insertBefore(row, tools);
+    return row;
+  }
+
   /* What the Agent is doing, said by its icon beside the reply. */
   var STATES = { working: "Working", waiting: "Waiting for you", done: "Done",
                  stopped: "Could not finish" };
@@ -605,7 +653,7 @@
       "by you, and never written into a config, a manifest or a log.";
     el("agent-url-examples").textContent =
       (spec.examples || []).map(function (e) {
-        return e.label + " \u2014 " + e.url;
+        return e.label + ": " + e.url;
       }).join("  \u00b7  ");
   }
 
@@ -1065,10 +1113,12 @@
         cite(box, data.cites);
         history.push({ role: "agent", text: data.answer });
         var answered = { role: "agent", kind: "answer", text: data.answer,
-                         cites: data.cites || [], looks: data.looks || [], receipt: receipt };
+                         cites: data.cites || [], looks: data.looks || [], receipt: receipt,
+                         usage: data.usage || null };
         if (data.scene) answered.scene = data.scene;
         transcript.push(answered);
         sceneCard(box, data.scene, answered);
+        meta(r, answered);
         persist();
         area.focus();
         scrollToEnd();
@@ -1078,9 +1128,11 @@
         whoIs(r, "waiting");
         asking(box, data.asked || data.question, data.choices || []);
         history.push({ role: "agent", text: data.question });
-        transcript.push({ role: "agent", kind: "question", text: data.question,
-                          asked: data.asked || null, choices: data.choices || [],
-                          looks: data.looks || [], receipt: receipt });
+        var asked = { role: "agent", kind: "question", text: data.question,
+                      asked: data.asked || null, choices: data.choices || [],
+                      looks: data.looks || [], receipt: receipt, usage: data.usage || null };
+        transcript.push(asked);
+        meta(r, asked);
         persist();
         area.focus();
         scrollToEnd();
@@ -1103,14 +1155,17 @@
                      + "Wrote a config:\n" + data.yaml });
       currentConfig = data.yaml;
       var made = wireActions(r, data, box);
-      transcript.push({ role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+      var wrote = { role: "agent", kind: "config", yaml: data.yaml, config: data.config,
+                        usage: data.usage || null,
                         note: data.note || null, version: made.number,
                         changes: data.changes || null,
                         plan: data.plan || [], looks: data.looks || [], receipt: receipt,
                         cycles: data.cycles, attempts: (data.attempts || []).map(function (a) {
                           return a.refusal ? { refusal: { message: a.refusal.message,
                                                           code: a.refusal.code || null } } : {};
-                        }) });
+                        }) };
+      transcript.push(wrote);
+      meta(r, wrote);
       persist();
       scrollToEnd();
     }).catch(function (error) {
@@ -2210,6 +2265,7 @@
           currentConfig = e.yaml;
           wireActions(r, { yaml: e.yaml, config: e.config, cycles: e.cycles,
                            plan: e.plan || [], changes: e.changes || null }, box, e.version);
+          if (e.again == null) meta(r, e);
         } else if (e.kind === "answer") {
           var p = document.createElement("div");
           p.className = "agent-answer";
@@ -2217,13 +2273,14 @@
           box.appendChild(p);
           cite(box, e.cites);
           sceneCard(box, e.scene, e);
+          if (e.cites !== undefined || e.usage) meta(r, e);
           history.push({ role: "agent", text: e.text });
         } else if (e.kind === "question") {
           // Waiting for you only while it is the last thing said; its
           // candidates pressable only then.
           var last = e === entries[entries.length - 1];
           if (last) whoIs(r, "waiting");
-          if (e.asked) asking(box, e.asked, e.choices || [], !last);
+          if (e.asked) { asking(box, e.asked, e.choices || [], !last); meta(r, e); }
           else if (e.confirm === "run") confirmCard(box, e.text, e.facts, "Run it", "Not now", !last);
           else if (e.confirm === "stop") {
             confirmCard(box, e.text, e.facts, "Stop it", "Keep running", !last);
@@ -2492,6 +2549,21 @@
         list.hidden = false;
         if (typed) box.focus();
       }).catch(function () {});
+    }
+    /* The phone bar's conversations icon: the Agent page, its list open. */
+    var phoneConvs = el("phone-convs");
+    if (phoneConvs && list) {
+      phoneConvs.addEventListener("click", function () {
+        if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+          window.FastMDXDashboard.navigate("agent");
+        } else {
+          window.location.hash = "#agent";
+        }
+        showList().then(function () {
+          var head = list.querySelector("input");
+          if (head) head.focus();
+        });
+      });
     }
     var convs = el("agent-conversations");
     if (convs && list) {

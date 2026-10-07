@@ -520,6 +520,9 @@ def make_handler(
     html = html.replace("<!--__FASTMDX_STRIP_MARK__-->", (
         f'<img class="strip-mark" src="{_escape(own_logo)}" alt="">' if own_logo
         else _icon("mark", "strip-mark")))
+    html = html.replace("<!--__FASTMDX_PHONE_MARK__-->", (
+        f'<img class="brand-mark-tile" src="{_escape(own_logo)}" alt="">' if own_logo
+        else f'<img class="brand-mark-tile" src="/static/{PRODUCT_MARK}" alt="">'))
     avatar = own_logo or f"/static/{LAB_LOGO}"
     logo_mark = f'<img class="sidebar-account-logo" src="{_escape(avatar)}" alt="">'
     logo_spot = f"__FASTMDX_LOGO_{_secrets.token_hex(8)}__"
