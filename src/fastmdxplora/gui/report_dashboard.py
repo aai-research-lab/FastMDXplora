@@ -2031,7 +2031,7 @@ def _render_files_page(
         # The run record is mostly manifests and scratch: kept, folded.
         body = (f'<details class="file-fold" data-fold="{escape(key)}"><summary>'
                 f"{len(files)} files, {escape(total)}</summary>{grid}</details>"
-                if key == "record" else grid)
+                if key in ("record", "previous") else grid)
         cards.append(
             '<div class="card"><div class="card-header">'
             f'<h2 class="card-title">{escape(title)}</h2>'

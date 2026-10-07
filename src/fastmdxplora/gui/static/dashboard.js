@@ -1604,6 +1604,7 @@
     ["analysis", "Analysis data"],
     ["figures", "Figures"],
     ["record", "Run record"],
+    ["previous", "Set aside by --rerun"],
   ];
 
   /* The same two rules the side panel's preview applies, so the centre
@@ -1643,7 +1644,7 @@
       if (!files.length) return "";
       // The run record is mostly scratch and manifests -- worth keeping, not
       // worth putting between somebody and the trajectory.
-      const folded = key === "record";
+      const folded = key === "record" || key === "previous";
       const bytes = files.reduce((total, item) => total + (parseInt(item.size, 10) || 0), 0);
       const rows = files.map(fileRowHtml).join("");
       // The rows are always a two-across grid; a folded group puts that

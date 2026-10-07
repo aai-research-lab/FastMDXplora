@@ -3063,6 +3063,7 @@ ARTIFACT_GROUPS = (
     ("analysis", "Analysis data"),
     ("figures", "Figures"),
     ("record", "Run record"),
+    ("previous", "Set aside by --rerun"),
 )
 
 #: Files whose purpose is not guessable from the name.
@@ -3108,6 +3109,17 @@ def _artifact_label(rel: str) -> tuple[str, str]:
         return named
 
     path = Path(rel)
+    if path.parts[:1] in (("previous",), ("superseded",)) and len(path.parts) > 1:
+        # What `--rerun` replaced (`previous/<phase>`) and the windows a
+        # study of windows ran again (`superseded/`): kept, and apart. They
+        # were listed with the analyses and figures they were replaced by,
+        # two of each title and nothing to say which was which.
+        inner = Path(*path.parts[1:]).as_posix()
+        if path.parts[0] == "superseded":
+            inner = Path(*path.parts[2:]).as_posix() if len(path.parts) > 2 else inner
+        said, _ = _artifact_label(inner)
+        return (f"{said}, set aside" if path.parts[0] == "previous"
+                else f"{said}, of a window run again", "previous")
     if path.parts[:1] == ("viewer_beside",):
         return (f"Another study's frames fitted beside this one's for the Viewer: {path.name}",
                 "record")
