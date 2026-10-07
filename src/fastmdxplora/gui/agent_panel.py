@@ -29,7 +29,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     and, if a key came with it, the key.
     """
     from fastmdxplora.agent.models import (
-        PROVIDERS, ModelChoice, _takes_tools, load_choice, model_path, save_choice,
+        PROVIDERS, ModelChoice, _takes_tools, default_model, load_choice, model_path,
+        save_choice,
     )
 
     if not payload.get("provider"):
@@ -52,7 +53,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
             "ok": True,
             "providers": [
                 {"id": name, "label": spec["label"],
-                 "default_model": spec["default_model"],
+                 "default_model": default_model(name, live.get(name)),
                  "models": live.get(name) or list(spec.get("models") or ()),
                  "environment_variable": spec["env"],
                  "needs_url": not spec["url"],
@@ -83,7 +84,7 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                           "such as http://localhost:11434/v1 for Ollama."),
                 "code": "config.option.missing_companion"}
 
-    model = str(payload.get("model") or PROVIDERS[provider]["default_model"])
+    model = str(payload.get("model") or default_model(provider))
     if not model:
         return {"ok": False, "error": "An AI model name is needed.",
                 "code": "config.option.missing_companion"}
@@ -152,10 +153,12 @@ def propose_endpoint(payload: dict[str, Any],
     # The conversation, the current config and the run, so the Agent can
     # modify rather than restart, and answer rather than write. The
     # browser sends the first two; the server knows the third.
+    from fastmdxplora.agent.propose import KEPT_IN_BRIEF, KEPT_WHOLE
+
     history = [
         {"role": str(h.get("role") or "user"), "text": str(h.get("text") or "")}
         for h in (payload.get("history") or []) if isinstance(h, dict)
-    ][-12:]
+    ][-(KEPT_WHOLE + KEPT_IN_BRIEF):]
     current = payload.get("current_config")
     current = str(current) if current else None
     # Files attached to this message: the browser sends what read_attachment

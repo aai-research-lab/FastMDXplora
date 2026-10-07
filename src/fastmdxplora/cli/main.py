@@ -3325,6 +3325,7 @@ def _choose_model() -> int:
     from fastmdxplora.agent import (
         PROVIDERS, ModelChoice, describe_choice, load_choice, save_choice,
     )
+    from fastmdxplora.agent.models import default_model, list_models
 
     # What is in use first, so a look at the choice is not a change to it:
     # nothing is saved unless an AI model is picked below.
@@ -3352,9 +3353,15 @@ def _choose_model() -> int:
             print("A base URL is needed for an OpenAI-compatible server.")
             return 1
 
-    default_model = str(PROVIDERS[picked]["default_model"])
-    prompt = (f"AI model [{default_model}]: " if default_model else "AI model: ")
-    model = input(prompt).strip() or default_model
+    # The newest of the default's family the provider offers, where there
+    # is a key in the environment to ask it with; the written one otherwise.
+    try:
+        offered = list_models(ModelChoice(picked, "", base_url))
+    except Exception:  # noqa: BLE001 - the written default still works
+        offered = ()
+    suggested = default_model(picked, offered)
+    prompt = (f"AI model [{suggested}]: " if suggested else "AI model: ")
+    model = input(prompt).strip() or suggested
     if not model:
         print("An AI model name is needed.")
         return 1

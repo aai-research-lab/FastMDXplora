@@ -132,9 +132,15 @@ def system_prompt(*, phases: list[str] | None, verbose: bool, tools: Any) -> str
 
 
 def _history(history: list[dict[str, str]] | None) -> list[dict[str, Any]]:
-    """The conversation so far as turns: the person's and the Agent's."""
+    """The conversation so far as turns: the person's and the Agent's, the
+    latest whole and those before by their first sentence."""
+    from fastmdxplora.agent.propose import KEPT_WHOLE, earlier_in_brief
+
     turns: list[dict[str, Any]] = []
-    for said in (history or [])[-12:]:
+    brief = earlier_in_brief(history)
+    if brief:
+        turns.append({"role": "user", "text": brief.rstrip()})
+    for said in (history or [])[-KEPT_WHOLE:]:
         text = str(said.get("text") or "").strip()
         if not text:
             continue

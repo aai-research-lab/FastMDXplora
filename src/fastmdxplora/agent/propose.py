@@ -513,6 +513,40 @@ say plainly when it stopped at its ceiling with a quantity not determined.
 """
 
 
+#: The turns of a conversation the AI model is given whole, the latest.
+KEPT_WHOLE = 12
+#: The turns before those it is given by their first sentence, so a long
+#: thread still knows what was settled in it ("the force field settled at the start").
+KEPT_IN_BRIEF = 48
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s")
+
+
+def _first_sentence(text: str, most: int = 200) -> str:
+    text = " ".join(str(text or "").split())
+    if text.startswith("Wrote a config:"):
+        return "Wrote a config."
+    first = _SENTENCE_END.split(text, maxsplit=1)[0]
+    return first if len(first) <= most else first[:most - 3].rstrip() + "..."
+
+
+def earlier_in_brief(history: list[dict[str, str]] | None) -> str:
+    """The turns before the last :data:`KEPT_WHOLE`, each by its first
+    sentence, or nothing where there are none. They were dropped: in a long
+    thread the Agent forgot the force field settled twenty turns back."""
+    earlier = list(history or [])[:-KEPT_WHOLE][-KEPT_IN_BRIEF:]
+    lines = []
+    for turn in earlier:
+        said = _first_sentence(turn.get("text") or "")
+        if said:
+            who = "Person" if turn.get("role") == "user" else "Agent"
+            lines.append(f"- {who}: {said}")
+    if not lines:
+        return ""
+    return ("## Earlier in this conversation\n"
+            f"Each turn before the last {KEPT_WHOLE} by its first sentence; ask the "
+            "person where one matters and its words are not here.\n" + "\n".join(lines) + "\n")
+
+
 def prompt_for(request: str, *, phases: list[str] | None = None,
                verbose: bool = True,
                history: list[dict[str, str]] | None = None,
@@ -532,9 +566,12 @@ def prompt_for(request: str, *, phases: list[str] | None = None,
     if tools is not None:
         parts += [tools.describe(), "\n"]
     parts += [describe_schema(phases=phases, verbose=verbose), "\n\n"]
+    brief = earlier_in_brief(history)
+    if brief:
+        parts += [brief, "\n"]
     if history:
         parts.append("## The conversation so far\n")
-        for turn in history[-12:]:
+        for turn in history[-KEPT_WHOLE:]:
             who = "Person" if turn.get("role") == "user" else "Agent"
             parts.append(f"{who}: {str(turn.get('text') or '').strip()}\n")
         parts.append("\n")

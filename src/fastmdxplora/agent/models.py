@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
@@ -47,6 +48,7 @@ from fastmdxplora.user_dir import user_config_dir
 
 __all__ = [
     "list_models",
+    "default_model",
     "ModelChoice",
     "PROVIDERS",
     "model_path",
@@ -142,6 +144,44 @@ class ModelChoice:
         return f"{PROVIDERS[self.provider]['label']}, {self.model}{where}"
 
 
+#: The family each provider's default belongs to, and its version read from
+#: a name: the newest of it a provider offers is the default.
+_FAMILIES: dict[str, re.Pattern[str]] = {
+    # claude-sonnet-4-6, claude-sonnet-4-5-20250929, claude-sonnet-5
+    "anthropic": re.compile(r"^claude-sonnet-(\d+)(?:-(\d{1,2})(?!\d))?(?:-\d{8})?$"),
+    # gpt-5, gpt-5.1; not gpt-5-mini or gpt-4o, which are other families
+    "openai": re.compile(r"^gpt-(\d+)(?:\.(\d+))?$"),
+}
+
+
+def default_model(provider: str, offered: Any = ()) -> str:
+    """The AI model to offer first: the newest of the family FastMDXplora's
+    written default belongs to among those the provider offers, or the
+    written default where it offers none of them (no key yet, or offline).
+
+    The default was written in (`claude-sonnet-4-6`, `gpt-5`) and stayed
+    there as newer ones came out; a new person was offered last year's AI
+    model with nothing to say there was another. The family is kept, not
+    the newest of everything: a provider's newest may be its largest and
+    dearest, or its smallest."""
+    spec = PROVIDERS.get(provider) or {}
+    written = str(spec.get("default_model") or "")
+    family = _FAMILIES.get(provider)
+    if family is None:
+        return written
+    best: tuple[tuple[int, int], int, str] | None = None
+    for name in offered or ():
+        found = family.match(str(name))
+        if found is None:
+            continue
+        version = (int(found.group(1)), int(found.group(2) or 0))
+        # Of one version, the shortest name: the alias, not a dated snapshot.
+        ranked = (version, -len(str(name)), str(name))
+        if best is None or ranked > best:
+            best = ranked
+    return best[2] if best is not None else written
+
+
 def model_path() -> Path:
     """Where the choice is stored. Outside any study, on purpose."""
     return user_config_dir() / "model.json"
@@ -202,8 +242,11 @@ def _key_for(choice: ModelChoice, path: Path | None = None) -> str:
         record = json.loads((path or model_path()).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         record = {}
+    # A stored key is the stored choice's: never sent to another provider,
+    # or another server, while a different one is being looked at.
     stored = str(record.get("api_key", ""))
-    if stored:
+    if stored and str(record.get("provider", "")) == choice.provider \
+            and str(record.get("base_url", "")) == choice.base_url:
         return stored
     raise StudyError(
         f"No API key for {PROVIDERS[choice.provider]['label']}. Set "
