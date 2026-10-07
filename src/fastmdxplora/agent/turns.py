@@ -105,11 +105,19 @@ class Usage:
                 "output_tokens": self.output_tokens}
 
     def said(self) -> str:
-        """As a person reads it: '2 calls, 31,204 tokens in (28,770 cached), 412 out'."""
+        """As a person reads it: '2 calls, 31,204 tokens in (28,770 cached), 412 out'.
+        Tokens the provider kept for the next message are said too ("written
+        to the cache"): they cost a little more once, and are why the next
+        message reads most of its tokens from the cache."""
         sent = self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
-        cached = f" ({self.cache_read_tokens:,} cached)" if self.cache_read_tokens else ""
+        parts = []
+        if self.cache_read_tokens:
+            parts.append(f"{self.cache_read_tokens:,} cached")
+        if self.cache_write_tokens:
+            parts.append(f"{self.cache_write_tokens:,} written to the cache")
+        kept = f" ({', '.join(parts)})" if parts else ""
         return (f"{self.calls} call{'' if self.calls == 1 else 's'}, {sent:,} tokens in"
-                f"{cached}, {self.output_tokens:,} out")
+                f"{kept}, {self.output_tokens:,} out")
 
 
 @dataclass(frozen=True)

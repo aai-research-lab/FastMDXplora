@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -3092,7 +3093,9 @@ def _run_agent(args: Any) -> int:
 
     from fastmdxplora.agent.tools import Toolbox
 
-    print("Writing a config...")
+    # Not "Writing a config": the reply may be an answer, a question or an
+    # action, and which is known only once it comes.
+    print("Asking the AI model...")
     try:
         proposal = propose_config(
             request, complete,
@@ -3122,7 +3125,7 @@ def _run_agent(args: Any) -> int:
 
     if proposal.answer:
         # A question was asked rather than a study: the answer is the reply.
-        print(f"\n{proposal.answer}")
+        print(f"\n{_in_plain_text(proposal.answer)}")
         return 0
     if proposal.action:
         # The command line writes studies; it carries out nothing it is told.
@@ -3134,14 +3137,14 @@ def _run_agent(args: Any) -> int:
         # Not a failure. The request is short of something only the person
         # can supply -- a structure, most often -- and guessing one would
         # produce a study of the wrong molecule that validates perfectly.
-        print(f"\n  ? {proposal.question}")
+        print(f"\n  ? {_in_plain_text(proposal.question)}")
         for choice in proposal.choices:
             print(f"      - {choice}")
         print("\nAdd that to the request and try again.")
         return 2
     if not proposal.accepted:
-        print(f"\nGave up after {proposal.cycles} attempt(s). The last "
-              "refusal is above.")
+        print(f"\nGave up after {proposal.cycles} attempt"
+              f"{'' if proposal.cycles == 1 else 's'}. The last refusal is above.")
         return 1
 
     import yaml
@@ -3157,9 +3160,11 @@ def _run_agent(args: Any) -> int:
     if chosen is not None:
         config["agent_model"] = f"{chosen.provider}/{chosen.model}"
     text = yaml.safe_dump(config, sort_keys=False)
-    print(f"  ✓ Accepted after {proposal.cycles} attempt(s)\n")
+    # As the page says it, so the two read alike.
+    print("  ✓ Accepted first time.\n" if proposal.cycles == 1
+          else f"  ✓ Accepted after {proposal.cycles} attempts.\n")
     if proposal.note:
-        print(f"  {proposal.note}\n")
+        print(f"  {_in_plain_text(proposal.note)}\n")
     print(text)
     if args.agent_mode == "autonomous":
         if args.budget_hours is None:
@@ -3180,6 +3185,33 @@ def _run_agent(args: Any) -> int:
               "`fastmdx explore -config FILE`.")
     return 0
 
+
+
+_EMPHASIS = re.compile(
+    r"(?<![\w*])\*\*(?=\S)(.+?)(?<=\S)\*\*(?![\w*])"
+    r"|(?<![\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])"
+    r"|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
+_LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
+_CODE = re.compile(r"(`+)[^`\n]*?\1")
+
+
+def _in_plain_text(text: str) -> str:
+    """A reply written for the page, as a terminal shows it: emphasis
+    without its asterisks, a link as its words and address. Code in
+    backticks is kept as written, since it is what to type (`*.pdb`,
+    `src/__init__.py`), and so is a name with underscores in it."""
+    out, at = [], 0
+    for code in _CODE.finditer(text or ""):
+        out.append(_plain(text[at:code.start()]))
+        out.append(code.group(0))
+        at = code.end()
+    out.append(_plain((text or "")[at:]))
+    return "".join(out)
+
+
+def _plain(text: str) -> str:
+    text = _LINK.sub(lambda m: f"{m.group(1)} ({m.group(2)})", text)
+    return _EMPHASIS.sub(lambda m: next(g for g in m.groups() if g is not None), text)
 
 
 def _run_staged(args: Any, config: dict) -> int:

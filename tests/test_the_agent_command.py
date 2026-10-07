@@ -224,7 +224,7 @@ class TestTheCommand(unittest.TestCase):
         code, out = self.run_command(
             ["agent", "simulate ubiquitin at pH 6.5 for 50 ns"], reply=VALID)
         self.assertEqual(code, 0)
-        self.assertIn("Accepted after 1 attempt", out)
+        self.assertIn("Accepted first time.", out)
         self.assertIn("duration_ns: 50", out)
 
     def test_the_corrections_are_shown_rather_than_hidden(self):
