@@ -111,6 +111,80 @@ def test_a_change_inside_a_system_is_said() -> None:
     assert changes_between({"setup": {"ph": None}}, {"setup": {}}) == []
 
 
+def test_a_change_inside_a_system_is_said_beside_another_change() -> None:
+    """Found by the fourth review (10-07): a system's own change was still
+    hidden when the list changed in any other way (another system renamed
+    or added), and an empty override read as a change."""
+    p = {"id": "p", "system": "1L2Y", "setup": {"residue_states": {"A:57": "HIP"}}}
+    q = {"id": "q", "system": "1UBQ"}
+    after = [dict(p, setup={"residue_states": {"A:57": "HID"}}), dict(q, id="r")]
+    said = changes_between({"systems": [p, q]}, {"systems": after})
+    assert len(said) == 1
+    assert "HIP" in said[0]["before"] and "HID" in said[0]["after"]
+    assert "r (1UBQ)" in said[0]["after"]
+    moved = changes_between({"systems": [{"id": "p", "system": "/v1/a.pdb"}]},
+                            {"systems": [{"id": "p", "system": "/v2/a.pdb"}, q]})
+    assert "/v1/a.pdb" in moved[0]["before"] and "/v2/a.pdb" in moved[0]["after"]
+    # Unset either way is no change, inside a system too (third and fourth
+    # reviews, 10-07).
+    plain = {"id": "p", "system": "1L2Y"}
+    for empty in ({"setup": {}}, {"setup": None}, {"setup": {"ph": None}}):
+        assert changes_between({"systems": [plain]}, {"systems": [dict(plain, **empty)]}) == []
+
+
+def test_a_system_s_own_settings_are_said_whatever_else_changed() -> None:
+    """Found by the fifth and sixth reviews (10-07): a system's own change
+    was hidden when its file or name changed too, and two systems on one
+    structure without names were taken for one."""
+    def pair(before, after):
+        said = changes_between({"systems": before}, {"systems": after})
+        assert len(said) == 1
+        return said[0]["before"], said[0]["after"]
+
+    was, now = pair([{"id": "p", "system": "a.pdb", "setup": {"ph": 7}}],
+                    [{"id": "p", "system": "b.pdb", "setup": {"ph": 5}}])
+    assert '"ph": 7' in was and '"ph": 5' in now and "b.pdb" in now
+    was, now = pair([{"id": "a", "system": "1L2Y", "setup": {"ph": 7}}],
+                    [{"id": "a2", "system": "1L2Y", "setup": {"ph": 5}}])
+    assert '"ph": 7' in was and now.startswith("a2") and '"ph": 5' in now
+    was, now = pair([{"system": "1UAO", "setup": {"ph": 7}}],
+                    [{"system": "1L2Y", "setup": {"ph": 5}}])
+    assert '"ph": 7' in was and '"ph": 5' in now
+    twins = [{"system": "1L2Y", "setup": {"x": 1}}, {"system": "1L2Y", "setup": {"x": 2}}]
+    was, now = pair(twins, [{"system": "1L2Y", "setup": {"x": 9}}, twins[1]])
+    assert '"x": 1' in was and '"x": 9' in now
+    # A system added beside an unchanged one is said in brief.
+    assert pair([{"id": "p", "system": "1L2Y"}],
+                [{"id": "p", "system": "1L2Y"}, {"id": "q", "system": "1UBQ"}]) == (
+        "p (1L2Y)", "p (1L2Y), q (1UBQ)")
+
+
+def test_a_list_of_settings_that_are_not_systems_is_said_once() -> None:
+    """Found by the eighth review (10-08): a restraint's change was said
+    twice over, as Python and as JSON, once systems were paired."""
+    restraint = {"kind": "position", "selection": "backbone", "force_constant": 1000.0}
+    said = changes_between({"simulation": {"restrain": [restraint]}},
+                           {"simulation": {"restrain": [dict(restraint, force_constant=500.0)]}})
+    assert len(said) == 1 and said[0]["before"].count("1000") == 1
+    assert said[0]["after"].count("500") == 1 and "'kind'" not in said[0]["after"]
+
+
+def test_a_system_removed_beside_its_twin_is_said_in_full() -> None:
+    """Found by the eighth review (10-08): of two unnamed systems on one
+    file, the plain one removed read as a pH added to the other."""
+    twins = [{"system": "a.pdb"}, {"system": "a.pdb", "setup": {"ph": 7}}]
+    said = changes_between({"systems": twins},
+                           {"systems": [{"system": "a.pdb", "setup": {"ph": 7}}]})
+    assert said[0]["before"] == 'a.pdb, a.pdb {"setup": {"ph": 7}}'
+    assert said[0]["after"] == 'a.pdb {"setup": {"ph": 7}}'
+
+
+def test_a_block_unset_inside_either_way_is_no_change() -> None:
+    """Found by the seventh review (10-08): a block holding only unset
+    values, three levels down, read as a change from not set."""
+    assert changes_between({"report": {"formats": {"pdf": {"dpi": None}}}}, {"report": {}}) == []
+
+
 def test_a_switch_a_list_a_sweep_and_a_block_are_said_plainly() -> None:
     said = changes_between(
         {"setup": {"use_switching_function": True},

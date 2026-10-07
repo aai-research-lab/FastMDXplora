@@ -329,7 +329,9 @@ def changes_between(before: Any, after: dict[str, Any]) -> list[dict[str, str]]:
         if key.split(".")[0] in _NOT_A_CHANGE:
             continue
         was, now = old.get(key, _MISSING), new.get(key, _MISSING)
-        if was == now:
+        if _plain(was) == _plain(now):
+            # The same, once what is unset inside is left out (an empty
+            # override on a system: third and fourth reviews, 10-07).
             continue
         from fastmdxplora.gui.schema_payload import label_and_unit
 
@@ -339,17 +341,12 @@ def changes_between(before: Any, after: dict[str, Any]) -> list[dict[str, str]]:
             label, unit = _LABELLED[key], ""
         elif key.startswith("sweep."):
             label = f"Varied {label.lower()}"
-        if _unset(was) and _unset(now):
+        if _unset(_plain(was)) and _unset(_plain(now)):
             # Unset either way (missing, None, an empty block): not a change.
             continue
-        before, after = _said(was, unit), _said(now, unit)
+        before, after = _said_both(was, now, unit)
         if before == after:
-            # Said the same in brief, yet not the same: a system's own
-            # settings, or its file in another folder. Said in full, so the
-            # change is seen (second review, 10-07).
-            before, after = _said(was, unit, whole=True), _said(now, unit, whole=True)
-            if before == after:
-                continue
+            continue
         changes.append({"setting": key, "label": label, "before": before, "after": after})
     return changes
 
@@ -369,6 +366,96 @@ def _unset(value: Any) -> bool:
     return value is _MISSING or value is None or value == {}
 
 
+def _plain(value: Any) -> Any:
+    """The value with what is unset inside it left out, at any depth."""
+    if isinstance(value, dict):
+        kept = {k: _plain(v) for k, v in value.items()}
+        return {k: v for k, v in kept.items() if not _unset(v)}
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    return value
+
+
+def _own(system: dict[str, Any]) -> Any:
+    """A system's own settings: what it says beside its name and file."""
+    return _plain({k: v for k, v in system.items() if k not in ("id", "system")})
+
+
+def _is_system(value: Any) -> bool:
+    return isinstance(value, dict) and ("system" in value or "id" in value)
+
+
+def _system_name(value: dict[str, Any]) -> str:
+    return str(value.get("id") or value.get("system"))
+
+
+def _paired(was: list[Any], now: list[Any]) -> list[tuple[int, int]]:
+    """Each system of one version with its own in the next, as places in
+    the two lists: by its name (or its file, unnamed), the first with the
+    first of that name, and the rest in the order they come. A system with
+    no other is added or removed."""
+    def keyed(values: list[Any]) -> dict[tuple[str, int], int]:
+        seen: dict[str, int] = {}
+        out = {}
+        for at, v in enumerate(values):
+            if _is_system(v):
+                name = _system_name(v)
+                seen[name] = seen.get(name, 0) + 1
+                out[(name, seen[name])] = at
+        return out
+
+    olds, news = keyed(was), keyed(now)
+    pairs = [(olds[k], news[k]) for k in olds if k in news]
+    rest = zip([at for k, at in olds.items() if k not in news],
+               [at for k, at in news.items() if k not in olds])
+    return pairs + list(rest)
+
+
+def _said_both(was: Any, now: Any, unit: str) -> tuple[str, str]:
+    """A setting before and after, in brief, and in full where the brief
+    reads the same yet the values differ: a system's own settings, or its
+    file in another folder (second review, 10-07). Judged system by system,
+    so one is said in full beside another's rename (fourth review, 10-07);
+    and every system of a name whose count changed, so which one went is
+    seen (eighth review, 10-08). A list of other settings (restraints, the
+    variables of a bias) is said as any value is."""
+    if (isinstance(was, list) and isinstance(now, list)
+            and any(_is_system(v) for v in [*was, *now])):
+        full_was: set[int] = set()
+        full_now: set[int] = set()
+        for i, j in _paired(was, now):
+            old, new = was[i], now[j]
+            if (_own(old) != _own(new)
+                    or (_system_said(old) == _system_said(new) and _plain(old) != _plain(new))):
+                full_was.add(i)
+                full_now.add(j)
+
+        def counted(values: list[Any]) -> dict[str, int]:
+            names: dict[str, int] = {}
+            for v in values:
+                if _is_system(v):
+                    names[_system_name(v)] = names.get(_system_name(v), 0) + 1
+            return names
+
+        olds, news = counted(was), counted(now)
+        changed = {n for n in {*olds, *news} if olds.get(n, 0) != news.get(n, 0)
+                   and olds.get(n) and news.get(n)}
+        full_was.update(i for i, v in enumerate(was) if _is_system(v)
+                        and _system_name(v) in changed)
+        full_now.update(j for j, v in enumerate(now) if _is_system(v)
+                        and _system_name(v) in changed)
+
+        def said(values: list[Any], full: set[int]) -> str:
+            return ", ".join(_system_said(v, whole=at in full) if _is_system(v)
+                             else _said(v, "") for at, v in enumerate(values)) or "none"
+
+        return said(was, full_was), said(now, full_now)
+    before, after = _said(was, unit), _said(now, unit)
+    if before == after:
+        before, after = _said(was, unit, whole=True), _said(now, unit, whole=True)
+    return before, after
+
+
 def _said(value: Any, unit: str, *, whole: bool = False) -> str:
     if _unset(value):
         return "not set"
@@ -377,7 +464,8 @@ def _said(value: Any, unit: str, *, whole: bool = False) -> str:
     if isinstance(value, (int, float)):
         return f"{_number(value)} {unit}".strip()
     if isinstance(value, list):
-        return ", ".join(_system_said(v, whole=whole) if isinstance(v, dict) else str(v)
+        return ", ".join(_system_said(v, whole=whole) if _is_system(v)
+                         else _said(v, "", whole=whole) if isinstance(v, dict) else str(v)
                          for v in value) or "none"
     if isinstance(value, dict):
         import json
@@ -398,7 +486,7 @@ def _system_said(system: dict[str, Any], *, whole: bool = False) -> str:
     if whole:
         import json
 
-        own = {k: v for k, v in system.items() if k not in ("id", "system")}
+        own = _own(system)
         if own:
             said += " " + json.dumps(own, separators=(", ", ": "), default=str,
                                      sort_keys=True)
