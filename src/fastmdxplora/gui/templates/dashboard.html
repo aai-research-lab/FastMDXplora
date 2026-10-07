@@ -660,7 +660,8 @@
               <span class="builder-draft muted small" id="run-draft" hidden>Draft saved in this browser</span>
               <input type="search" class="builder-find" id="run-find" autocomplete="off"
                      placeholder="Find a setting" aria-label="Find a setting">
-              <button type="button" class="ghost-btn" id="run-reset" title="Every setting back to its default, and the draft discarded">Reset</button>
+              <button type="button" class="line-btn" id="run-reset" aria-label="Reset"
+                      title="Reset: every setting back to its default, and the draft discarded"><!--icon:undo:line-icon--></button>
             </div>
           </div>
 
@@ -722,7 +723,8 @@
                     </div>
                     <span class="builder-help" id="run-config-verdict"></span>
                     <div class="builder-actions-row">
-                      <button type="button" class="ghost-btn" id="run-open-config" disabled>Open and change it</button>
+                      <button type="button" class="line-btn" id="run-open-config" disabled aria-label="Open and change it"
+                              title="Open and change it"><!--icon:edit:line-icon--></button>
                       <button type="button" class="primary-btn" id="run-as-is" disabled>Run on this machine as it is</button>
                       <!--__FASTMDX_RUN_AS_IS_ELSEWHERE__-->
                     </div>
@@ -814,11 +816,12 @@
                 <button type="button" class="primary-btn builder-run" id="run-start-button" disabled>Run on this machine</button>
                 <button type="button" class="danger-btn builder-run" id="run-stop" hidden>Stop the run</button>
                 <div class="builder-actions-row">
-                  <button type="button" class="ghost-btn" id="run-download" disabled>Download config</button>
-                  <button type="button" class="ghost-btn" id="run-copy-command" disabled
-                          title="The fastmdx invocation that runs this study, for a terminal or a batch script.">Copy command</button>
-                  <button type="button" class="ghost-btn" id="run-download-script" disabled
-                          title="The same study as a Python script, using the documented API.">Python script</button>
+                  <button type="button" class="line-btn" id="run-download" disabled aria-label="Download config"
+                          title="Download config"><!--icon:download:line-icon--></button>
+                  <button type="button" class="line-btn" id="run-copy-command" disabled aria-label="Copy the command"
+                          title="Copy the command: the fastmdx invocation that runs this study, for a terminal or a batch script"><!--icon:terminal:line-icon--></button>
+                  <button type="button" class="line-btn" id="run-download-script" disabled aria-label="Download a script"
+                          title="Download a script: the same study as a Python script, using the documented API"><!--icon:script:line-icon--></button>
                   <!--__FASTMDX_RUN_ELSEWHERE__-->
                 </div>
                 <div class="builder-card-note" id="run-note" role="status"></div>
@@ -1660,7 +1663,8 @@
                 <h2 class="analysis-results-title" id="analysis-results-title">What the analyses determined</h2>
                 <p class="analysis-results-summary muted small" id="analysis-results-summary"></p>
               </div>
-              <button type="button" class="file-action" data-results-download title="Every quantity in this table, with its standard error and unit, as CSV">Download CSV</button>
+              <button type="button" class="line-btn" data-results-download aria-label="Download CSV"
+                      title="Download CSV: every quantity in this table, with its standard error and unit"><!--icon:download:line-icon--></button>
             </div>
             <div class="analysis-results-scroll">
               <table class="analysis-results-table" id="analysis-results-table">
@@ -1921,8 +1925,10 @@
               <button type="button" class="mode-btn" data-mode="view">View</button>
               <button type="button" class="mode-btn" data-mode="code">Code</button>
             </div>
-            <a class="ghost-btn side-preview-download" id="side-preview-download" href="#" download>Download</a>
-            <a class="ghost-btn" id="side-preview-open" href="#" target="_blank" rel="noopener">Open</a>
+            <a class="line-btn side-preview-download" id="side-preview-download" href="#" download
+               aria-label="Download" title="Download"><!--icon:download:line-icon--></a>
+            <a class="line-btn" id="side-preview-open" href="#" target="_blank" rel="noopener"
+               aria-label="Open in a new tab" title="Open in a new tab"><!--icon:external:line-icon--></a>
           </div>
           <div class="side-preview-body" id="side-preview-body"></div>
         </div>

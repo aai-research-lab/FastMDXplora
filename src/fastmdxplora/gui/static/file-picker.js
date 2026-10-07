@@ -220,10 +220,8 @@
       input.dataset.picksWired = "true";
 
       const kind = input.getAttribute("data-picks");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "ghost-btn picker-button";
-      button.textContent = "Browse\u2026";
+      const button = window.FastMDXIcons.button("files", "Browse", "picker-button");
+      button.title = "Browse this computer for it";
       button.addEventListener("click", () =>
         open({ into: input.id, kind: kind === "folder" ? null : kind })
       );

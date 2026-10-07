@@ -1425,7 +1425,8 @@
       (again
         ? `<p class="figure-provenance-how">${escapeHTML(how)}</p>` + choose +
           `<pre class="figure-provenance-command">${escapeHTML(again)}</pre>` +
-          '<button type="button" class="file-action figure-provenance-copy">Copy</button>' + older
+          '<button type="button" class="line-btn figure-provenance-copy" aria-label="Copy the command" ' +
+          'title="Copy the command">' + window.FastMDXIcons.svg("copy") + "</button>" + older
         : "");
   }
 

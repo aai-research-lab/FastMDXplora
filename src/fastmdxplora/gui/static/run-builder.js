@@ -345,9 +345,7 @@
     const holds = node("span", "builder-system-holds muted small");
     holds.textContent = factsSaid(row);
 
-    const remove = node("button", "builder-icon-btn", "×");
-    remove.type = "button";
-    remove.setAttribute("aria-label", "Remove system " + (index + 1));
+    const remove = window.FastMDXIcons.button("close", "Remove system " + (index + 1), "builder-icon-btn");
     remove.disabled = state.systems.length < 2;
     remove.addEventListener("click", () => {
       state.systems.splice(index, 1);
@@ -371,9 +369,7 @@
       owned.forEach(([phase, key, value]) => {
         const chip = node("span", "builder-chip");
         chip.appendChild(node("span", "mono", `${phase}.${key}: ${said(value)}`));
-        const drop = node("button", "builder-icon-btn", "×");
-        drop.type = "button";
-        drop.setAttribute("aria-label", `Remove ${phase}.${key} for this system`);
+        const drop = window.FastMDXIcons.button("close", `Remove ${phase}.${key} for this system`, "builder-icon-btn");
         drop.addEventListener("click", () => {
           delete own[phase][key];
           if (!Object.keys(own[phase]).length) delete own[phase];
@@ -621,10 +617,7 @@
     head.appendChild(label);
     if (field.unit) head.appendChild(node("span", "builder-unit", field.unit));
     head.appendChild(node("span", "builder-dot"));
-    const revert = node("button", "builder-revert", "↺");
-    revert.type = "button";
-    revert.title = "Back to the default";
-    revert.setAttribute("aria-label", `${field.label || field.name} back to the default`);
+    const revert = window.FastMDXIcons.button("undo", `${field.label || field.name} back to the default`, "builder-revert");
     revert.addEventListener("click", () => revertSetting(phase, field.name));
     head.appendChild(revert);
     if (field.default !== null && field.default !== undefined && field.control !== "stopping") {
@@ -928,8 +921,7 @@
         from.push("set aside: " + decision.alternatives.join(", "));
       }
       if (from.length) said.appendChild(node("span", "builder-why-from", from.join(" · ")));
-      const edit = node("button", "builder-linkish", "Edit");
-      edit.type = "button";
+      const edit = window.FastMDXIcons.button("edit", "Edit the reason", "builder-why-edit");
       edit.addEventListener("click", () => box.replaceWith(decisionEditor(phase, field)));
       said.appendChild(edit);
       box.appendChild(said);
@@ -970,8 +962,7 @@
     alternatives.addEventListener("input", () => { editing.alternatives = alternatives.value; });
     const save = node("button", "ghost-btn", "Save the reason");
     save.type = "button";
-    const drop = node("button", "builder-linkish", "Remove");
-    drop.type = "button";
+    const drop = window.FastMDXIcons.button("bin", "Remove the reason", "builder-why-drop");
     const done = () => {
       state.editing = null;
       box.replaceWith(decisionFor(phase, field));
@@ -1404,9 +1395,7 @@
       row.values = values.value;
       afterChange();
     });
-    const remove = node("button", "run-sweep-remove builder-icon-btn", "×");
-    remove.type = "button";
-    remove.setAttribute("aria-label", "Remove this setting");
+    const remove = window.FastMDXIcons.button("close", "Remove this setting", "run-sweep-remove builder-icon-btn");
     remove.addEventListener("click", () => {
       state.sweep.splice(state.sweep.indexOf(row), 1);
       renderSteps();
@@ -1576,9 +1565,7 @@
         row.amount = amount.value.trim();
         commit(false);
       });
-      const remove = node("button", "run-sweep-remove builder-icon-btn", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "Remove this quantity");
+      const remove = window.FastMDXIcons.button("close", "Remove this quantity", "run-sweep-remove builder-icon-btn");
       remove.addEventListener("click", (event) => {
         event.preventDefault();
         draft.rows.splice(index, 1);
@@ -1831,9 +1818,7 @@
         commit();
       });
       line.appendChild(pick);
-      const remove = node("button", "run-sweep-remove builder-icon-btn", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", `Leave ${key} to setup`);
+      const remove = window.FastMDXIcons.button("close", `Leave ${key} to setup`, "run-sweep-remove builder-icon-btn");
       remove.addEventListener("click", (event) => {
         event.preventDefault();
         delete chosen[key];
@@ -2658,10 +2643,7 @@
       const item = node("li");
       item.appendChild(node("span", "builder-changed-label", entry.label));
       item.appendChild(node("span", "mono builder-changed-value", entry.value));
-      const back = node("button", "builder-revert", "↺");
-      back.type = "button";
-      back.title = "Back to the default";
-      back.setAttribute("aria-label", `${entry.label} back to the default`);
+      const back = window.FastMDXIcons.button("undo", `${entry.label} back to the default`, "builder-revert");
       back.addEventListener("click", entry.back);
       item.appendChild(back);
       list.appendChild(item);

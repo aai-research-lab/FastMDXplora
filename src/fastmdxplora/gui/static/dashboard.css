@@ -1334,11 +1334,6 @@ button {
 }
 .files-act:hover, .files-act:focus-visible { border-color: var(--border-primary); color: var(--text-primary); }
 .files-act .files-ic { width: 15px; height: 15px; }
-.files-btn {
-    padding: 3px 10px; font-size: var(--text-xs); border-radius: var(--radius-control); white-space: nowrap;
-    border: 1px solid var(--border-primary); color: var(--text-secondary); background: transparent; cursor: pointer;
-}
-.files-btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
 .files-theme { font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: 10px 14px 4px; }
 .files-sorted > .files-theme { display: none; }
 .files-arow { border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent); }
@@ -1418,7 +1413,6 @@ button {
     .files-thumbs, .files-thumb { width: 64px; height: 44px; }
     .files-arow-head .files-size, .files-arow-head .files-chips { display: none; }
     .files-usage-note { display: none; }
-    .files-wide { display: none; }
     .files-arow .files-name { white-space: normal; }
     .files-arow .files-val { display: block; margin-left: 0; margin-top: 2px; }
     .files-arow-files { margin-left: 0; }
@@ -3111,7 +3105,6 @@ a.settings-item:hover { background: var(--background-secondary); color: var(--te
     padding: 8px 14px; border-bottom: 1px solid var(--border-subtle);
 }
 .side-preview-name { font-size: var(--text-2xs); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-preview-head .ghost-btn { padding: 4px 9px; font-size: var(--text-2xs); }
 /* min-height: 0 so the body can be shorter than its content, and a
    definite height for the percentage below to resolve against. */
 .side-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; }
@@ -6176,7 +6169,7 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     background: color-mix(in srgb, var(--accent-cyan) 8%, transparent);
     display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline;
 }
-.page[data-page="run"] .builder-why .builder-linkish { margin-left: auto; font-size: var(--text-xs); }
+.page[data-page="run"] .builder-why .builder-why-edit { margin: -4px 0 -4px auto; }
 .page[data-page="run"] .builder-why-k { font-weight: 600; color: var(--accent-text); }
 .page[data-page="run"] .builder-why-from { color: var(--text-muted); font-size: var(--text-2xs); }
 .page[data-page="run"] .builder-decision-edit { display: grid; gap: 6px; }
@@ -6230,6 +6223,11 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     padding: 0 4px; border: 0; background: none; color: var(--text-muted); font-size: var(--text-lg); line-height: 1; cursor: pointer;
 }
 .page[data-page="run"] .builder-icon-btn:hover:not(:disabled) { color: var(--text-primary); }
+.page[data-page="run"] .builder-icon-btn .line-icon,
+.page[data-page="run"] .builder-revert .line-icon { width: 14px; height: 14px; }
+/* Drawn by icons.js as line buttons, at the builder's own small size. */
+.page[data-page="run"] .builder-icon-btn,
+.page[data-page="run"] .builder-revert { width: auto; height: auto; }
 .page[data-page="run"] .builder-icon-btn:disabled { opacity: .35; cursor: default; }
 .page[data-page="run"] .builder-add { margin-top: 8px; }
 

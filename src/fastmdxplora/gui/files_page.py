@@ -36,6 +36,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import quote, urlencode
 
+from fastmdxplora.gui.sidebar_icons import ICONS as SIDEBAR_ICONS
 from fastmdxplora.study_files import FILTERS, PHASES, STORED, filter_of, kind_of, label_of, place
 
 __all__ = ["FOLDED", "Links", "files_model", "human_size", "render", "render_folders"]
@@ -423,6 +424,8 @@ _ICON = {
     "folder": '<path d="M3.5 6.5h6l2 2h9v10h-17z"/>',
     "copy": '<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5v-3h-11v11h4"/>',
     "chev": '<path d="M9 6l6 6-6 6"/>',
+    # Open in Analysis: the sidebar's Analysis icon, from its own set.
+    "analysis": SIDEBAR_ICONS["analysis"],
     "box": '<path d="M12 3.5l8 4v9l-8 4-8-4v-9z"/><path d="M4 7.5l8 4 8-4M12 11.5v9"/>',
     "list": '<path d="M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01"/>',
 }
@@ -560,9 +563,9 @@ def _analysis_row(group: dict[str, Any], entries: list[dict[str, Any]], links: L
     zipped = links.zipped(group["files"], f"{group['folder']}{'-' + group['run'] if group['run'] else ''}")
     acts = []
     if not links.standalone and not group["run"]:
-        acts.append(f'<button type="button" class="files-btn" data-open-analysis='
-                    f'"{_attr(group["folder"])}">Open<span class="files-wide"> in Analysis'
-                    f'</span></button>')
+        acts.append(f'<button type="button" class="files-act" data-open-analysis='
+                    f'"{_attr(group["folder"])}" title="Open in Analysis" aria-label="Open '
+                    f'{_attr(group["title"])} in Analysis">{icon("analysis")}</button>')
     if zipped:
         acts.append(f'<a class="files-act" href="{_attr(zipped)}" download title="Download '
                     f'this analysis\'s files as a zip" aria-label="Download {_attr(group["title"])}'

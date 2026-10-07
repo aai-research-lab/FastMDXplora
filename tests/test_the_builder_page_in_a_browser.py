@@ -224,7 +224,7 @@ class TestFindingAndChanging:
             window.FastMDXRun.renderSettings();
         }""")
         ph = '#run-settings [data-setting="ph"]'
-        page.click(f"{ph} .builder-decision .builder-linkish")
+        page.click(f"{ph} .builder-decision .builder-why-edit")
         page.fill(f"{ph} .builder-decision-edit textarea", "The assay buffer is pH 7.0.")
         page.click(f"{ph} .builder-decision-edit .ghost-btn")
         assert _config(page)["decisions"]["setup.ph"]["source"] == "person"
@@ -367,3 +367,32 @@ class TestTheSummary:
         page.evaluate("() => window.FastMDXDashboard.navigate('run')")
         page.wait_for_function("() => document.body.classList.contains('panel-collapsed')")
         page.context.close()
+
+
+class TestItsIcons:
+    """The builder's everyday buttons are their icons, named on hover and to
+    a screen reader by the names the docs give them, and its small ones keep
+    their size beside a setting's name."""
+
+    def test_each_is_named_and_the_small_ones_stay_small(self, site):
+        page = _open(site)
+        ph = '#run-settings [data-setting="ph"]'
+        page.fill(f"{ph} input", "7.0")
+        page.dispatch_event(f"{ph} input", "change")
+        named = page.evaluate("""(ids) => ids.map(id => {
+            const b = document.getElementById(id);
+            return [b.getAttribute('aria-label'), b.title.split(':')[0],
+                    !!b.querySelector('svg.line-icon'), b.textContent.trim()];
+        })""", ["run-download", "run-copy-command", "run-download-script", "run-open-config"])
+        small = page.evaluate("""(ph) => {
+            const b = document.querySelector(ph + ' .builder-revert');
+            const r = b.getBoundingClientRect();
+            return [b.getAttribute('aria-label'), b.title, !!b.querySelector('svg.line-icon'),
+                    r.height <= 20];
+        }""", ph)
+        page.context.close()
+        assert named == [["Download config", "Download config", True, ""],
+                         ["Copy the command", "Copy the command", True, ""],
+                         ["Download a script", "Download a script", True, ""],
+                         ["Open and change it", "Open and change it", True, ""]]
+        assert small == ["pH back to the default", "pH back to the default", True, True]
