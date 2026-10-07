@@ -1584,11 +1584,11 @@ class TestTheAgentIsAConversation(unittest.TestCase):
         self.assertIn("node.querySelector('[data-role=\"' + role + '\"]')", script)
 
     def test_a_question_carries_the_request_into_the_answer(self):
-        # The loop is stateless. "simulate chignolin for 2 ns" then "1UAO"
-        # goes back as one request the loop can write a study from.
+        # It was joined to the question, whatever it said; the conversation
+        # carries the question now, so a message goes as it is (10-07).
         script = self.script()
-        self.assertIn("var request = pending ? pending + \"\\n\" + typed : typed;", script)
-        self.assertIn("pending = request;", script)
+        self.assertIn("var request = typed;", script)
+        self.assertNotIn("pending = request;", script)
 
     def test_run_here_runs_once(self):
         # A second press started it again into the same folder and was

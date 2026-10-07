@@ -3454,6 +3454,17 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-step::before { content: "\2713"; color: var(--status-completed); margin-right: 7px; }
 .agent-step.is-now { color: var(--text-secondary); }
 .agent-step.is-now::before { content: "\2026"; color: var(--status-live); }
+/* A question's candidates, as buttons: the identifier, then what it is. */
+.agent-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px; max-width: 760px; }
+.agent-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+    padding: 9px 12px; border: 1px solid var(--border-primary); border-radius: 10px;
+    background: var(--panel-glass); color: var(--text-primary); cursor: pointer; font: inherit; }
+.agent-choice:hover:not(:disabled) { border-color: var(--accent-cyan); }
+.agent-choice:disabled { cursor: default; opacity: .6; }
+.agent-choice.is-chosen { opacity: 1; border-color: var(--accent-cyan); }
+.agent-choice-name { font-weight: 600; }
+.agent-choice-facts { font-size: var(--text-xs); color: var(--text-muted); }
 /* A refusal by the software, in view: what it said, and that it was written again. */
 .agent-refused { border-left: 3px solid var(--status-waiting); padding: 6px 10px; font-size: var(--text-sm);
     color: var(--text-secondary); background: var(--background-elevated); border-radius: 0 8px 8px 0; }

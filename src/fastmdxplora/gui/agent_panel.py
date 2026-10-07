@@ -424,7 +424,8 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
         choices = list(getattr(proposal, "choices", ()) or ())
         question = proposal.question + (
             "\n\nCandidates: " + "; ".join(choices) + "." if choices else "")
-        return {"ok": False, "question": question, "choices": choices,
+        return {"ok": False, "question": question, "asked": proposal.question,
+                "choices": choices,
                 "code": "config.option.missing_companion",
                 "error": question, "attempts": attempts}
     if not proposal.accepted:

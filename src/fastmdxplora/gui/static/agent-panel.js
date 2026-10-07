@@ -352,6 +352,59 @@
     return shown;
   }
 
+  /* A question the Agent asks, with the candidates it named as buttons:
+   * "2VB1 hen egg-white, X-ray 0.65 A, 2007" shows its identifier first,
+   * and a press answers with it. Typing answers too. A question answered,
+   * or followed by anything else, keeps its candidates, not pressable. */
+  var PDB_ID = /^([0-9][A-Za-z0-9]{3})\b[\s,:;.-]*(.*)$/;
+
+  function asking(box, question, choices, spent) {
+    var said = document.createElement("div");
+    said.className = "agent-answer agent-question";
+    said.innerHTML = prose(question);
+    box.appendChild(said);
+    if (!choices || !choices.length) return said;
+    var grid = document.createElement("div");
+    grid.className = "agent-choices";
+    choices.forEach(function (choice) {
+      var text = String(choice || "");
+      var id = PDB_ID.exec(text);
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "agent-choice";
+      var name = document.createElement("span");
+      name.className = "agent-choice-name";
+      name.textContent = id ? id[1] : text;
+      button.appendChild(name);
+      if (id && id[2]) {
+        var facts = document.createElement("span");
+        facts.className = "agent-choice-facts";
+        facts.textContent = id[2];
+        button.appendChild(facts);
+      }
+      button.disabled = !!spent;
+      button.addEventListener("click", function () {
+        if (writing) return;
+        Array.prototype.forEach.call(grid.querySelectorAll("button"), function (b) {
+          b.disabled = true;
+        });
+        button.classList.add("is-chosen");
+        var area = el("agent-request");
+        area.value = id ? id[1] : text;
+        draft();
+      });
+      grid.appendChild(button);
+    });
+    box.appendChild(grid);
+    return said;
+  }
+
+  /* A question's candidates are spent once anything else is said. */
+  function spendChoices() {
+    Array.prototype.forEach.call(document.querySelectorAll("#agent-thread .agent-choice"),
+      function (b) { b.disabled = true; });
+  }
+
   /* What the Agent is doing, said by its icon beside the reply. */
   var STATES = { working: "Working", waiting: "Waiting for you", done: "Done",
                  stopped: "Could not finish" };
@@ -647,11 +700,6 @@
 
   /* ---- The conversation ---------------------------------------------- */
 
-  /* When the Agent asked a question, the next message answers it. The
-   * proposing loop is stateless, so the answer goes back with the request
-   * it answers, joined -- "simulate chignolin for 2 ns" plus "1UAO" is a
-   * request the loop can write a study from. */
-  var pending = null;
   /* The conversation, as the Agent sees it: what was said each way. And
    * the last config it wrote, so "make it 5 ns" is a change to it rather
    * than a study from nothing. */
@@ -763,7 +811,6 @@
       if (seenT === userIndex) { transcript.length = k; break; }
     }
     persist();
-    pending = null;
     stopPending = null;
     runPending = null;
     fixPending = null;
@@ -901,8 +948,11 @@
     var area = el("agent-request");
     var typed = area.value.trim();
     if (!typed || writing) return;
-    var request = pending ? pending + "\n" + typed : typed;
-    pending = null;
+    /* Sent as typed. It used to be joined to a question the Agent had
+     * asked, whatever it said ("which lysozyme...?" and "Has it run long
+     * enough?" went as one request); the conversation goes with every
+     * message, the question in it, so an answer is read as one. */
+    var request = typed;
 
     var files = pendingFiles.slice();
     pendingFiles = [];
@@ -910,6 +960,7 @@
     var record = files.map(function (f) {
       return { name: f.name, path: f.path, size: f.size, sha256: f.sha256, truncated: !!f.truncated };
     });
+    spendChoices();
     say(typed, record);
     var historyText = typed + (record.length ? "\n[attached: " + record.map(function (a) { return a.name; }).join(", ") + "]" : "");
     history.push({ role: "user", text: historyText });
@@ -1011,12 +1062,12 @@
       }
       if (data.question) {
         whoIs(r, "waiting");
-        note(box, data.question);
+        asking(box, data.asked || data.question, data.choices || []);
         history.push({ role: "agent", text: data.question });
         transcript.push({ role: "agent", kind: "question", text: data.question,
+                          asked: data.asked || null, choices: data.choices || [],
                           looks: data.looks || [], receipt: receipt });
         persist();
-        pending = request;
         area.focus();
         scrollToEnd();
         return;
@@ -1555,6 +1606,7 @@
     if (writing) return;
     /* A new choice, so nothing still waiting for a yes takes it. */
     stopPending = null; runPending = null; fixPending = null;
+    spendChoices();
     var asked = "Use version " + v.number;
     say(asked, []);
     history.push({ role: "user", text: asked });
@@ -1783,7 +1835,7 @@
     ask.addEventListener("click", function () {
       ask.disabled = true;
       /* A new instruction, so nothing still waiting for a yes takes it. */
-      pending = null; stopPending = null; runPending = null; fixPending = null;
+      stopPending = null; runPending = null; fixPending = null;
       currentConfig = data.yaml;
       var area = el("agent-request");
       area.value = "Running it was refused: " + (started.error || remedy.why || "") +
@@ -1836,9 +1888,12 @@
           sceneCard(box, e.scene, e);
           history.push({ role: "agent", text: e.text });
         } else if (e.kind === "question") {
-          // Waiting for you only while it is the last thing said.
-          if (e === entries[entries.length - 1]) whoIs(r, "waiting");
-          note(box, e.text);
+          // Waiting for you only while it is the last thing said; its
+          // candidates pressable only then.
+          var last = e === entries[entries.length - 1];
+          if (last) whoIs(r, "waiting");
+          if (e.asked) asking(box, e.asked, e.choices || [], !last);
+          else note(box, e.text);
           history.push({ role: "agent", text: e.text });
           // A stop confirmation that was the last thing said is still
           // waiting for its yes after a reload.
@@ -1876,7 +1931,7 @@
      * the list. Nothing is lost, so nothing is confirmed. */
     function resetThread() {
       el("agent-thread").innerHTML = "";
-      history = []; transcript = []; currentConfig = null; pending = null;
+      history = []; transcript = []; currentConfig = null;
       stopPending = null; runPending = null; fixPending = null; lastReply = null;
       versions = [];
     }
