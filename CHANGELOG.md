@@ -7,6 +7,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study shared as one file
+
+**Added:** `fastmdx report --output STUDY --share FILE` packs a finished
+study as one zip in a published format, RO-Crate 1.2: its files as its
+folder lays them out (by default what its pages read; `--share-all` for
+every file) and `ro-crate-metadata.json`, which lists each with its role,
+size and SHA-256, under a profile of FastMDXplora's own
+(`https://w3id.org/fastmdxplora/study/1.0`, `docs/sharing.md`), with the
+licence (`--share-license`, CC-BY-4.0) and authors (`--share-author
+"NAME;ORCID"`). Never in it: the Agent's conversations, the record of the
+process that ran it, tags and notes, the Viewer's scratch, what `--rerun`
+set aside, deposits, dot files. The study's folder, any home folder and the
+computer's name are said as placeholders in every text file, and the
+archive is not written while one is left (`environment.share.unscrubbed`).
+The same study packed the same day is the same bytes.
+
 ### A frame is shown at the time it was written
 
 **Fixed:** the Viewer spread a trajectory's frames evenly from 0 to the

@@ -156,6 +156,7 @@ hosting
 
 manifest
 results
+sharing
 analyses
 interactions
 refusals

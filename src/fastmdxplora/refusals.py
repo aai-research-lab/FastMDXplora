@@ -309,6 +309,22 @@ CODES: tuple[Code, ...] = (
     Code("environment.demo.unverified",
          "What was fetched as the demo study is not the one this release expects.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("environment.share.not_finished",
+         "A study asked to be shared is running, stopped short, or is a study of "
+         "several runs.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.share.unscrubbed",
+         "A file of a study being shared still names its folder, a home folder or "
+         "the computer after they were replaced.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, detail_keys=("path",)),
+    Code("environment.share.not_a_study",
+         "What was named is not a shared FastMDXplora study, or one of a profile "
+         "version this release does not read.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("environment.share.unsafe",
+         "A shared study's archive names a path outside itself, a link or a device, "
+         "or unpacks to more than the limit.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("environment.path.exists",
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,

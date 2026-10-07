@@ -1019,6 +1019,8 @@ def _build_parser() -> argparse.ArgumentParser:
         _overwrite_args(pp)
         _attach_phase_options(pp, opts, group_title=f"{phase} options",
                               phase=phase)
+        if phase == "report":
+            _share_args(pp)
 
     info = sub.add_parser(
         "info",
@@ -2000,6 +2002,65 @@ def _stopped_by_ctrl_c(results: list[Any]) -> bool:
     return False
 
 
+def _share_args(parser: argparse.ArgumentParser) -> None:
+    """`fastmdx report --share`: the study packed as one file another
+    FastMDXplora opens (docs/sharing.md)."""
+    share = parser.add_argument_group(
+        "sharing the study",
+        "Pack the finished study in --output as one zip, an RO-Crate another "
+        "FastMDXplora opens with `fastmdx gui --open`. The report is not written "
+        "again. See docs/sharing.md.")
+    share.add_argument("--share", default=None, metavar="FILE",
+                       help="Write the study, as its pages show it, to FILE.")
+    share.add_argument("--share-all", action="store_true",
+                       help="With --share: every file of the study, not only what its "
+                            "pages read.")
+    share.add_argument("--share-license", default=None, metavar="ID",
+                       help="With --share: the licence it is shared under, as an SPDX "
+                            "identifier (default CC-BY-4.0).")
+    share.add_argument("--share-author", action="append", default=[], metavar="NAME",
+                       help="With --share: an author, given once for each; NAME;ORCID "
+                            "adds an ORCID. Default: the report's --author.")
+
+
+def _cmd_share(args: argparse.Namespace) -> int:
+    """`fastmdx report --output STUDY --share FILE`."""
+    import re
+
+    from fastmdxplora.refusals import CodedError
+    from fastmdxplora.sharing.pack import DEFAULT_LICENSE, share_study
+
+    if not getattr(args, "output_dir", None):
+        print("fastmdx report: --share packs the study in --output; name it.",
+              file=sys.stderr)
+        return 2
+    if not str(args.share).lower().endswith(".zip"):
+        print("fastmdx report: --share writes a zip; give its name ending in .zip.",
+              file=sys.stderr)
+        return 2
+    authors = []
+    for given in args.share_author or ([args.author] if getattr(args, "author", None) else []):
+        name, _, orcid = str(given).partition(";")
+        orcid = orcid.strip().removeprefix("https://orcid.org/")
+        if orcid and not re.fullmatch(r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]", orcid):
+            print(f"fastmdx report: {orcid!r} is not an ORCID iD "
+                  "(four groups of four digits, the last may be X).", file=sys.stderr)
+            return 2
+        authors.append((name.strip(), orcid))
+    if not authors:
+        print("fastmdx report: --share needs an author: --share-author NAME, given once "
+              "for each.", file=sys.stderr)
+        return 2
+    try:
+        share_study(args.output_dir, args.share, everything=args.share_all,
+                    license_id=args.share_license or DEFAULT_LICENSE, authors=authors,
+                    said=print)
+    except CodedError as exc:
+        print(f"fastmdx report: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def _cmd_phase(phase: str, args: argparse.Namespace) -> int:
     """`fastmdx <phase>`: `fastmdx explore --include-phase <phase>`, run
     through it. The phase's flags are its own unprefixed; they are read as
@@ -2007,6 +2068,8 @@ def _cmd_phase(phase: str, args: argparse.Namespace) -> int:
     one code path with one set of rules: the study a folder holds read from
     its record, a folder that holds the phase's output written into only
     with --force-overwrite or --rerun."""
+    if phase == "report" and getattr(args, "share", None):
+        return _cmd_share(args)
     explored = _build_parser().parse_args(["explore"])
     for name, value in vars(args).items():
         if hasattr(explored, name) and name not in ("command", "agent"):

@@ -359,6 +359,21 @@ Writing a report over one the study has needs `--force-overwrite` or
 fastmdx report --output runs/study --rerun --no-slides --no-bundle
 ```
 
+**Sharing it.** `--share FILE` packs the finished study as one zip another
+FastMDXplora opens; the report is not written again.
+Full documentation: [Sharing a study](sharing.md).
+
+```bash
+fastmdx report --output runs/study --share study.zip --share-author "A. Researcher"
+```
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--share FILE` | none | Write the study, as its pages show it, to `FILE` |
+| `--share-all` | off | Every file of the study, not only what its pages read |
+| `--share-license ID` | `CC-BY-4.0` | The licence, as an SPDX identifier |
+| `--share-author NAME` | the report's `--author` | An author, given once for each; `"NAME;ORCID"` adds an ORCID iD |
+
 ---
 
 ## `agent`
@@ -407,8 +422,8 @@ fastmdx gui --output runs/study    # open a run, live or finished
 | `--ligand-resname NAME` | auto-detected | Which residue the viewer treats as the ligand |
 | `--binding-pocket-cutoff-A X` | `5.0` | How near counts as the pocket |
 
-**These six are the whole of `fastmdx gui`.** The dashboard flags below —
-`--dashboard-host`, `--dashboard-port` and the rest — belong to `explore` and
+**These, and the flags for serving it to someone else ([hosting](hosting.md)), are the whole of `fastmdx gui`.** The dashboard flags below
+(`--dashboard-host`, `--dashboard-port` and the rest) belong to `explore` and
 the four phase commands, not to this one.
 
 ---
