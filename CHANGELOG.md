@@ -160,6 +160,15 @@ not signed, with the same sentence, recorded with the other signatures. Its
 verdict is the status `Contributor agreement / co-authors` on the pull
 request; one comment there says who is left.
 
+### A saved view says what it shows
+
+**A note in a line with a saved view.** Saving a view in the Viewer's Saved
+views now takes a note beside its name ("the loop open at 4 ns"), kept in
+`viewer_views.json` (one line, at most 500 characters; anything else is
+refused and said), shown under the list when the view is chosen and on
+hover over its name, and listed to an AI app by `views_of_study`. From the
+research bookmarks of Prince Otegbulu (#51) and Derrick Kwan (#52).
+
 ### The demo study is fetched the first time it is opened
 
 **Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the

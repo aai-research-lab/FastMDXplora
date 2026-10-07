@@ -835,7 +835,10 @@ def _views_of_study(ctx: Context, args: dict[str, Any]) -> str:
     selections = selections_of(folder)["selections"]
     lines = [f"Views saved with {shown} in the GUI: {len(views)}"
              + (" (write_scene starts from one by its name)." if views else ".")]
-    lines += [f"- {view['name']}: {_view_said(view)}" for view in views]
+    # A note is the person's words about the view, said as theirs.
+    lines += [f"- {view['name']}: {_view_said(view)}"
+              + (f". The person's note: {json.dumps(view['note'])}" if view.get("note") else "")
+              for view in views]
     lines.append(f"Selections the person named: {len(selections)}"
                  + (" (every scene shows them)." if selections else "."))
     for selection in selections:

@@ -21,6 +21,16 @@
     if (live) live.textContent = text;
   }
 
+  /** The note of the view chosen, under the list, or nothing. */
+  function sayTheNote() {
+    var select = byId("viewer-views");
+    var said = byId("viewer-view-said");
+    if (!said) return;
+    var view = select && views.filter(function (v) { return v.name === select.value; })[0];
+    said.textContent = view && view.note ? view.note : "";
+    said.hidden = !said.textContent;
+  }
+
   function list(chosen) {
     var select = byId("viewer-views");
     if (!select) return;
@@ -33,11 +43,13 @@
       var option = document.createElement("option");
       option.value = view.name;
       option.textContent = view.name;
+      if (view.note) option.title = view.note;
       select.appendChild(option);
     });
     select.value = chosen && views.some(function (v) { return v.name === chosen; }) ? chosen : "";
     var forget = byId("viewer-view-forget");
     if (forget) forget.disabled = !select.value;
+    sayTheNote();
   }
 
   function load(chosen) {
@@ -129,6 +141,12 @@
     var input = byId("viewer-view-name");
     if (!span || !input) return;
     span.hidden = !open;
+    var note = byId("viewer-view-note");
+    if (note) {
+      // A note is a view's: a scene file says what it shows by itself.
+      note.hidden = (what || "view") !== "view";
+      note.value = "";
+    }
     if (open) {
       namingFor = what || "view";
       input.setAttribute("aria-label", namingFor === "scene" ? "Name of the scene" : "Name of the view");
@@ -188,6 +206,9 @@
       keepScene(name, shown);
       return;
     }
+    var note = byId("viewer-view-note");
+    var written = note ? note.value.trim() : "";
+    if (written) shown = Object.assign({}, shown, { note: written });
     post({ action: "save", name: name, view: shown }).then(function (said) {
       if (!said || !said.ok) {
         say("The view was not saved: " + ((said && (said.reason || said.error)) || "no reason given"));
@@ -206,6 +227,7 @@
     select.addEventListener("change", function () {
       var forget = byId("viewer-view-forget");
       if (forget) forget.disabled = !select.value;
+      sayTheNote();
       var view = views.filter(function (v) { return v.name === select.value; })[0];
       if (view && viewer() && viewer().showView) {
         viewer().showView(view).then(function (shown) {
@@ -220,11 +242,15 @@
       naming(byId("viewer-view-naming").hidden || namingFor !== "scene", "scene");
     });
     byId("viewer-view-keep").addEventListener("click", keep);
-    byId("viewer-view-name").addEventListener("keydown", function (event) {
-      // The Viewer's own keys (Space, the arrows, M) are not for a name.
-      event.stopPropagation();
-      if (event.key === "Enter") { event.preventDefault(); keep(); }
-      if (event.key === "Escape") { event.preventDefault(); naming(false); }
+    ["viewer-view-name", "viewer-view-note"].forEach(function (id) {
+      var field = byId(id);
+      if (!field) return;
+      field.addEventListener("keydown", function (event) {
+        // The Viewer's own keys (Space, the arrows, M) are not for typing.
+        event.stopPropagation();
+        if (event.key === "Enter") { event.preventDefault(); keep(); }
+        if (event.key === "Escape") { event.preventDefault(); naming(false); }
+      });
     });
     byId("viewer-view-forget").addEventListener("click", function () {
       var name = select.value;

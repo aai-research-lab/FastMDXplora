@@ -174,7 +174,8 @@ def test_a_view_is_saved_and_shown_again_in_the_viewer(study):
             hooks.tool(page, "side-saved")
             page.click("#viewer-view-save")
             page.fill("#viewer-view-name", "Frame four, sticks")
-            page.press("#viewer-view-name", "Enter")
+            page.fill("#viewer-view-note", "  The loop <b>open</b> at frame four  ")
+            page.press("#viewer-view-note", "Enter")
             page.wait_for_function("() => document.getElementById('viewer-views').value"
                                    " === 'Frame four, sticks'")
             # Everything changed back.
@@ -200,6 +201,12 @@ def test_a_view_is_saved_and_shown_again_in_the_viewer(study):
                     .getAttribute('aria-pressed'),
                 rep: document.getElementById('viewer-rep').value}})""")
             saved = views_of(study)["views"][0]
+            note = page.evaluate("() => { const p = document.getElementById('viewer-view-said');"
+                                 " return {text: p.textContent, hidden: p.hidden,"
+                                 " bold: !!p.querySelector('b')}; }")
+            page.select_option("#viewer-views", "")
+            unchosen = page.evaluate("() => document.getElementById('viewer-view-said').hidden")
+            page.select_option("#viewer-views", "Frame four, sticks")
             page.click("#viewer-view-forget")
             page.wait_for_function("() => document.getElementById('viewer-views').options"
                                    ".length === 1")
@@ -209,8 +216,27 @@ def test_a_view_is_saved_and_shown_again_in_the_viewer(study):
     assert shown["publication"] is True and shown["background"] == 0xFFFFFF
     assert shown["pressed"] == "true" and shown["rep"] == "sticks"
     assert saved["frame"] == 4 and saved["representation"] == "sticks"
+    # The note kept as one line of text, shown as text under the list.
+    assert saved["note"] == "The loop <b>open</b> at frame four"
+    assert note == {"text": "The loop <b>open</b> at frame four", "hidden": False, "bold": False}
+    assert unchosen is True
     assert saved["camera"]["target"] == pytest.approx([30, 32, 12], abs=1e-3)
     for key in ("position", "target", "up"):
         assert shown["camera"][key] == pytest.approx(saved["camera"][key], abs=1e-3)
     assert views_of(study)["views"] == []
     assert errors == []
+
+
+def test_a_note_is_one_line_of_text(tmp_path):
+    from fastmdxplora.gui.saved_views import MOST_NOTE
+
+    for note, kept in (("Pocket open", "Pocket open"), ("  padded  ", "padded"),
+                       ("", None), ("   ", None), ("x" * MOST_NOTE, "x" * MOST_NOTE)):
+        name = f"v{len(views_of(tmp_path)['views'])}"
+        assert save_view(tmp_path, name, {"camera": CAMERA, "note": note})["ok"]
+        assert views_of(tmp_path)["views"][-1].get("note") == kept, note
+    # What is not a note is said, never saved without it.
+    for note in ("two\nlines", 42, "x" * (MOST_NOTE + 1)):
+        said = save_view(tmp_path, "refused", {"camera": CAMERA, "note": note})
+        assert not said["ok"] and said["reason"] == "A note is one line of at most 500 characters."
+    assert "refused" not in [view["name"] for view in views_of(tmp_path)["views"]]

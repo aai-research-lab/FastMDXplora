@@ -1105,6 +1105,8 @@ button {
 .viewer-views select { max-width: 11rem; }
 .viewer-view-naming { display: inline-flex; align-items: center; gap: 4px; }
 .viewer-view-naming input { width: 9rem; font-size: var(--text-2xs); }
+.viewer-view-naming #viewer-view-note { width: 14rem; }
+.viewer-view-said { margin: 2px 0 0; flex-basis: 100%; overflow-wrap: anywhere; }
 .icon-group {
     display: inline-flex; align-items: center; gap: 2px; padding: 2px;
     border: 1px solid var(--border-subtle); border-radius: 8px;

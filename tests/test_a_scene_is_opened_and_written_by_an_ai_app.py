@@ -223,7 +223,10 @@ def test_an_ai_app_reads_the_views_and_scenes_of_a_study(wire, workspace):
     save_view(study, "fitted late", {
         "camera": {"position": [0, 0, 80], "target": [0, 0, 0], "up": [0, 1, 0]},
         "frame": 5, "colour": "chain", "representation": "sticks", "superposed": "backbone",
-        "superposed_to": "deposited", "smoothed_over": 3, "publication": True})
+        "superposed_to": "deposited", "smoothed_over": 3, "publication": True,
+        "note": "The \"open\" loop"})
+    save_view(study, "as it opens", {
+        "camera": {"position": [0, 0, 80], "target": [0, 0, 0], "up": [0, 1, 0]}})
     save_selection(study, "helix", {"kind": "expression", "expression": "resSeq 3 to 18"})
     write_scene(study, "for the person", {"frame": 2})
     said = wire.request("tools/call", {"name": "views_of_study",
@@ -231,6 +234,8 @@ def test_an_ai_app_reads_the_views_and_scenes_of_a_study(wire, workspace):
     text = _text(said)
     assert not said.get("isError"), text
     assert ("- fitted late: frame 5, representation sticks, colour chain, superposed on "
-            "backbone, fitted to deposited, smoothed over 3, publication look") in text
+            "backbone, fitted to deposited, smoothed over 3, publication look. "
+            'The person\'s note: "The \\"open\\" loop"') in text
+    assert "- as it opens: the structure as it opens\n" in text
     assert "- helix: resSeq 3 to 18" in text
     assert "- for the person: haemoglobin/scenes/for the person.mvsx" in text

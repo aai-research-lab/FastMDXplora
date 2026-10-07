@@ -1467,9 +1467,11 @@
                       <button class="icon-btn" type="button" id="viewer-scene-save" aria-label="Save as a scene file" title="Save this view as a scene file (MolViewSpec, .mvsx) with the study and download it: it opens as it is shown here in any viewer built on Mol*, such as molstar.org"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></button>
                       <span class="viewer-view-naming" id="viewer-view-naming" hidden>
                         <input id="viewer-view-name" maxlength="60" aria-label="Name of the view" placeholder="Name">
+                        <input id="viewer-view-note" maxlength="500" aria-label="Note on the view, optional" placeholder="What it shows (optional)">
                         <button class="chip-btn" type="button" id="viewer-view-keep">Save</button>
                       </span>
                     </div>
+                    <p class="muted small viewer-view-said" id="viewer-view-said" hidden></p>
                     <div class="icon-group text-group viewer-views" role="group" aria-label="Scenes">
                       <label class="control-label" for="viewer-scenes">Scenes</label>
                       <select id="viewer-scenes"><option value="">No scenes written</option></select>

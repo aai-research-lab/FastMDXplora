@@ -6,7 +6,8 @@ second picture of the same view for a revised figure meant making it again
 by eye. A view is saved under a name in the study (``viewer_views.json``),
 and showing it again sets every one of those choices and the camera as they
 were. Only what the Viewer can set is kept, each value checked, so the file
-holds nothing a page could not have chosen.
+holds nothing a page could not have chosen; with it, a note in a line of
+what the view shows, given when it is saved and shown when it is chosen.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-__all__ = ["MOST_VIEWS", "VIEWS_FILE", "delete_view", "save_view", "views_of"]
+__all__ = ["MOST_NOTE", "MOST_VIEWS", "VIEWS_FILE", "delete_view", "save_view", "views_of"]
 
 VIEWS_FILE = "viewer_views.json"
 MOST_VIEWS = 50
@@ -29,6 +30,9 @@ _WORD = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 # A colouring is a word, or one of the study's results ("result:rmsf").
 _COLOURING = re.compile(r"^(result:)?[A-Za-z0-9_-]{1,40}$")
 _SHOWN = ("protein", "ligand", "pocket", "water", "ions", "hydrogens", "box")
+#: A note on a view: one line, as the page's field takes it.
+MOST_NOTE = 500
+_NOTE = re.compile(r"^[^\x00-\x1f\x7f]{1,%d}$" % MOST_NOTE)
 _LOCK = threading.Lock()
 
 
@@ -55,6 +59,11 @@ def save_view(root: Path | str, name: Any, view: Any) -> dict[str, Any]:
     clean = _checked(view)
     if clean is None:
         return {"ok": False, "reason": "That is not a view the Viewer can show."}
+    note = view.get("note")
+    if note not in (None, "") and "note" not in clean and str(note).strip():
+        # Said, not dropped: a note is the person's own words.
+        return {"ok": False, "reason": f"A note is one line of at most {MOST_NOTE} "
+                                       "characters."}
     with _LOCK:
         views = [v for v in views_of(root)["views"] if v["name"] != name]
         if len(views) >= MOST_VIEWS:
@@ -136,4 +145,7 @@ def _checked(view: Any) -> dict[str, Any] | None:
         clean["publication"] = view["publication"]
     if view.get("ground") in ("dark", "white"):
         clean["ground"] = view["ground"]
+    note = view.get("note")
+    if isinstance(note, str) and _NOTE.match(note.strip()):
+        clean["note"] = note.strip()
     return clean
