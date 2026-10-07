@@ -624,7 +624,6 @@
     state.playbackSignature = null;
     if (window.FastMDXCharts) window.FastMDXCharts.update([]);
     renderLiveProgress({});
-    renderRunSummary({});
     renderStructureTab({valid: false, reason: "missing"});
     renderLigandTab({});
     renderSimulationTab({});
@@ -1202,8 +1201,6 @@
     renderMethods(payload);
     renderAnalysisSections(payload);
     renderAnalysis(payload);
-    renderFiles(payload);
-    renderRunSummary(payload);
     renderSimulationTab(state.structureInfo || {});
     emit("results-updated", payload);
   }
@@ -1598,158 +1595,9 @@
       </article>`;
   }
 
-  const FILE_GROUPS = [
-    ["deliverables", "Reports and deliverables"],
-    ["simulation", "Simulation data"],
-    ["analysis", "Analysis data"],
-    ["figures", "Figures"],
-    ["record", "Run record"],
-    ["previous", "Set aside by --rerun"],
-  ];
-
-  /* The same two rules the side panel's preview applies, so the centre
-   * Files page and the panel agree on what can be read here and what the
-   * browser shows itself. View reads the file in the panel; Open is for
-   * what the browser has its own viewer for; Download is always there,
-   * since the study may be on a machine the browser is not. */
-  const VIEW_IN_PANEL = new Set(["yml", "yaml", "json", "log", "md", "markdown", "txt", "csv", "tsv",
-    "dat", "pdb", "cif", "py", "toml", "ini", "cfg", "xml", "sdf", "mol2", "sha256",
-    "png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
-  const OPEN_IN_BROWSER = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "pdf", "html"]);
-
-  /* The page rebuilt its HTML on every poll, and a rebuilt <details>
-   * comes back closed: two seconds after the run record was expanded,
-   * the poll closed it. Rebuild only when the files changed, and carry
-   * every open fold across the rebuild. */
-  let lastFilesSignature = null;
-
-  function renderFiles(payload) {
-    const signature = JSON.stringify((payload && payload.artifacts) || null);
-    if (signature === lastFilesSignature) return;
-    lastFilesSignature = signature;
-    const openFolds = new Set($$("details.file-fold[open]").map((d) => d.getAttribute("data-fold")));
-    renderFilesNow(payload);
-    $$("details.file-fold").forEach((d) => {
-      if (openFolds.has(d.getAttribute("data-fold"))) d.open = true;
-    });
-  }
-
-  function renderFilesNow(payload) {
-    const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
-    const host = byId("file-groups");
-    if (!host) return;
-
-    const cards = FILE_GROUPS.map(([key, title]) => {
-      const files = artifacts.filter((item) => (item.group || "record") === key);
-      if (!files.length) return "";
-      // The run record is mostly scratch and manifests -- worth keeping, not
-      // worth putting between somebody and the trajectory.
-      const folded = key === "record" || key === "previous";
-      const bytes = files.reduce((total, item) => total + (parseInt(item.size, 10) || 0), 0);
-      const rows = files.map(fileRowHtml).join("");
-      // The rows are always a two-across grid; a folded group puts that
-      // grid inside its <details>, so the run record unfolds into the
-      // same layout as every other group rather than a single column.
-      const grid = `<div class="files-list">${rows}</div>`;
-      const body = folded
-        ? `<details class="file-fold" data-fold="${escapeAttr(key)}"><summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${grid}</details>`
-        : grid;
-      return `
-        <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">${escapeHTML(title)}</h2>
-            <span class="muted small mono">${files.length} · ${escapeHTML(humanSize(bytes))}</span>
-          </div>
-          ${body}
-        </div>`;
-    }).filter(Boolean);
-
-    host.innerHTML = cards.length
-      ? cards.join("")
-      : '<div class="card"><div class="muted small">This run has not written any files yet.</div></div>';
-    wireCopyActions();
-  }
-
-  function fileRowHtml(file) {
-    // What the file is, above where it lives. A reader deciding whether to
-    // download 85 MB should not have to know that `production.dcd` is the
-    // trajectory, or that of sixteen files called `options.json` this one
-    // belongs to rmsd.
-    const within = String(file.path || "").split("/").slice(1).join("/");
-    const title = file.label || within || file.name || "Artifact";
-    const subtitle = within && within !== title ? within : "";
-    const size = file.size != null ? humanSize(parseInt(file.size, 10)) : "—";
-    const mtime = file.mtime != null
-      ? new Date(parseFloat(file.mtime) * 1000).toLocaleString()
-      : "—";
-    const href = file.href || `/artifacts/${encodeURI(file.path || "")}`;
-    const downloadHref = file.download_href || `${href}${href.includes("?") ? "&" : "?"}download=1`;
-    const ext = String(file.name || file.path || "").split(".").pop().toLowerCase();
-    return `
-      <div class="file-row" data-path="${escapeAttr(file.absolute_path || file.path || "")}">
-        <div class="file-title" title="${escapeAttr(file.path || "")}">${escapeHTML(title)}</div>
-        ${subtitle ? `<div class="file-subtitle mono">${escapeHTML(subtitle)}</div>` : ""}
-        <div class="file-meta">
-          <span>${escapeHTML(size)}</span>
-          <span class="muted">${escapeHTML(mtime)}</span>
-          <div class="file-actions">
-            ${VIEW_IN_PANEL.has(ext) ? `<button class="file-action" type="button" data-view-file>View</button>` : ""}
-            ${OPEN_IN_BROWSER.has(ext) ? `<a class="file-action" href="${escapeAttr(href)}" target="_blank" rel="noopener">Open</a>` : ""}
-            <a class="file-action" href="${escapeAttr(downloadHref)}" download>Download</a>
-            <button class="file-action" type="button" data-copy-path>Copy path</button>
-          </div>
-        </div>
-      </div>`;
-  }
-
-  function wireViewActions() {
-    /* View sends the file to the side panel's reader: the panel's Files
-     * tab shows, the file opens there, and the list follows. The centre
-     * page is the catalogue; the panel is where a file is read. */
-    $$('[data-view-file]').forEach((button) => {
-      button.addEventListener("click", () => {
-        const row = button.closest(".file-row");
-        const path = row?.querySelector(".file-title")?.getAttribute("title") || "";
-        if (!path || !window.FastMDXFrame || !window.FastMDXFrame.previewPath) return;
-        window.FastMDXFrame.previewPath(path);
-      });
-    });
-  }
-
-  function wireCopyActions() {
-    wireViewActions();
-    $$('[data-copy-path]').forEach((button) => {
-      button.addEventListener("click", async () => {
-        const row = button.closest(".file-row");
-        const path = row?.getAttribute("data-path") || "";
-        const copied = await copyText(path);
-        showToast(copied ? "File path copied." : "Could not copy the file path.", copied ? "ok" : "warning");
-      });
-    });
-  }
-
-  function renderRunSummary(payload) {
-    const card = byId("summary-card");
-    if (!card) return;
-    const analyses = Array.isArray(payload.analyses) ? payload.analyses : [];
-    const plots = Array.isArray(payload.plots) ? payload.plots : [];
-    const reports = Array.isArray(payload.reports) ? payload.reports : [];
-    const hasResults = payload.has_report || payload.has_analysis || reports.length || analyses.length;
-    card.hidden = !hasResults;
-    if (!hasResults) return;
-    const stats = [
-      {label: "Analyses", value: String(analyses.length)},
-      {label: "Figures", value: String(plots.length)},
-      {label: "Report formats", value: String(reports.length)},
-      {label: "Result bundle", value: reports.some((item) => item.path?.endsWith(".zip")) ? "ready" : "—"},
-    ];
-    const grid = byId("summary-grid");
-    if (grid) grid.innerHTML = stats.map((item) => `
-      <div class="summary-stat">
-        <span class="summary-stat-label">${escapeHTML(item.label)}</span>
-        <span class="summary-stat-value">${escapeHTML(item.value)}</span>
-      </div>`).join("");
-  }
+  /* The Files page is files-page.js's, rendered by the server
+   * (gui/files_page.py): asked for when it is opened and when the study
+   * changes while it is shown. */
 
   /* ------------------------------------------------------------------ */
   /* Structure and playback                                              */
@@ -2117,14 +1965,6 @@
   function setWidth(id, value) {
     const element = byId(id);
     if (element) element.style.width = value == null ? "0%" : `${Math.max(0, Math.min(100, value))}%`;
-  }
-
-  function humanSize(bytes) {
-    if (!Number.isFinite(bytes)) return "—";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
-    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
   }
 
   function humanise(value) {

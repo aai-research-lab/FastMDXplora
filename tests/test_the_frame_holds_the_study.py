@@ -1080,26 +1080,23 @@ class TestTheTwoFilesSurfacesAgree(unittest.TestCase):
 
         import fastmdxplora.gui as gui
 
-        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
-        self.assertIn("const VIEW_IN_PANEL = new Set(", dash)
-        self.assertIn("const OPEN_IN_BROWSER = new Set(", dash)
-        self.assertIn('data-view-file', dash)
-        self.assertIn("window.FastMDXFrame.previewPath(path)", dash)
+        page = (pathlib.Path(gui.__file__).parent / "static" / "files-page.js").read_text(encoding="utf-8")
+        self.assertIn("window.FastMDXFrame.previewPath(path)", page)
+        from fastmdxplora.gui.files_page import PREVIEWED
+
+        self.assertIn("pdb", PREVIEWED)
         frame = _script()
         self.assertIn("function previewPath(path)", frame)
         self.assertIn("previewPath: previewPath", frame)
 
     def test_the_two_rules_match_the_panels(self):
-        import pathlib
         import re
 
-        import fastmdxplora.gui as gui
+        from fastmdxplora.gui.files_page import OPENED
 
-        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
-        page_open = set(re.search(r'OPEN_IN_BROWSER = new Set\(\[(.*?)\]\)', dash, re.S).group(1).replace('"', "").replace(" ", "").split(","))
         frame = _script()
         panel_open = set(re.search(r'side-preview-open"\)\.hidden = \[(.*?)\]', frame).group(1).replace('"', "").replace(" ", "").split(","))
-        self.assertEqual(page_open, panel_open)
+        self.assertEqual(set(OPENED), panel_open)
 
     def test_every_type_the_plus_accepts_has_a_view_or_is_code(self):
         # Every text type either has a View renderer or is Code-only on
@@ -1122,55 +1119,26 @@ class TestTheTwoFilesSurfacesAgree(unittest.TestCase):
 
 
 class TestTheFilesPageHoldsStill(unittest.TestCase):
-    """The page rebuilt its HTML on every poll, and a rebuilt <details>
-    comes back closed: two seconds after the run record was expanded,
-    the poll closed it. The page rebuilds only when the files changed,
-    and carries every open fold across a rebuild."""
+    """The page rebuilt its HTML on every poll, and a rebuilt fold came
+    back closed: two seconds after the run record was opened, the poll
+    closed it. The page is rendered again only when what the server renders
+    has changed, and what was opened, typed and chosen is put back."""
 
-    def test_rebuild_only_on_change_and_folds_survive(self):
+    def test_rendered_again_only_on_change_and_folds_kept(self):
         import pathlib
 
         import fastmdxplora.gui as gui
 
-        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
-        self.assertIn("if (signature === lastFilesSignature) return;", dash)
-        self.assertIn('data-fold="${escapeAttr(key)}"', dash)
-        self.assertIn('if (openFolds.has(d.getAttribute("data-fold"))) d.open = true;', dash)
-
-    def test_copy_path_is_one_line(self):
-        css = _css()
-        rule = css[css.index(".file-action {"):css.index("}", css.index(".file-action {"))]
-        self.assertIn("white-space: nowrap", rule)
-        # The buttons stay whole; the row of them may wrap in a narrow cell.
-        self.assertIn(".file-row .file-actions { display: flex; gap: 4px; flex-wrap: wrap; }", css)
-
-    def test_two_across_including_the_run_record(self):
-        css = _css()
-        grid = css[css.index(".files-list {"):css.index("}", css.index(".files-list {"))]
-        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr))", grid)
-        # The rule, not the comment that explains why auto-fill is gone.
-        rules = "\n".join(line for line in grid.splitlines() if not line.strip().startswith(("/*", "*", "//")))
-        self.assertNotIn("auto-fill", rules)
-        import pathlib
-
-        import fastmdxplora.gui as gui
-
-        dash = (pathlib.Path(gui.__file__).parent / "static" / "dashboard.js").read_text(encoding="utf-8")
-        # The folded group puts the same grid inside its <details>.
-        self.assertIn('<summary>${files.length} files, ${escapeHTML(humanSize(bytes))}</summary>${grid}</details>', dash)
-
-    def test_a_card_stacks_title_path_meta_then_buttons(self):
-        css = _css()
-        row = css[css.index(".file-row {"):css.index("}", css.index(".file-row {"))]
-        self.assertIn("flex-direction: column", row)
-        self.assertNotIn("grid-template-columns: 1fr auto", row)
-        self.assertIn(".file-row .file-meta .file-actions { flex-basis: 100%;", css)
+        page = (pathlib.Path(gui.__file__).parent / "static" / "files-page.js").read_text(encoding="utf-8")
+        self.assertIn("if (said.html === shown) return;", page)
+        self.assertIn("kept.open[key] = open;", page)
+        self.assertIn("(key in kept.open ? kept.open[key]", page)
 
 
 @unittest.skipUnless(_HAVE_PLAYWRIGHT, "playwright not installed")
 class TestTheRunRecordStaysOpenRendered(unittest.TestCase):
 
-    def test_expanded_it_stays_expanded_across_polls(self):
+    def test_opened_it_stays_open_across_polls(self):
         import sys
 
         from playwright.sync_api import sync_playwright
@@ -1184,26 +1152,18 @@ class TestTheRunRecordStaysOpenRendered(unittest.TestCase):
                 browser = pw.chromium.launch()
                 page = browser.new_page(viewport={"width": 1400, "height": 900})
                 page.goto(session.url + "#files", wait_until="domcontentloaded")
-                page.wait_for_selector("details.file-fold", timeout=20000)
-                page.evaluate("() => { document.querySelector('details.file-fold').open = true; }")
+                page.wait_for_selector('[data-phase="record"] .files-fold', timeout=20000)
+                page.click('[data-phase="record"] .files-fold')
                 page.wait_for_timeout(7000)  # two or three polls
-                self.assertTrue(page.eval_on_selector("details.file-fold", "el => el.open"))
-                tall = page.eval_on_selector_all(
-                    ".file-action", "els => els.filter(e => e.getBoundingClientRect().height > 28).length")
-                self.assertEqual(tall, 0, "a file action button wrapped onto two lines")
-                # Two across, and nothing leaves its card.
-                # Only grids on the page: a rebuild leaves detached ones behind
-                # that report a default three columns and are not shown.
-                cols = page.evaluate(
-                    "() => Array.from(document.querySelectorAll('.files-list'))"
-                    ".filter(e => e.offsetParent !== null)"
-                    ".map(e => getComputedStyle(e).gridTemplateColumns.split(' ').length)")
-                self.assertTrue(cols, "no visible file grids")
-                self.assertEqual(set(cols), {2})
+                self.assertEqual(page.eval_on_selector('[data-phase="record"] .files-fold',
+                                                       "el => el.getAttribute('aria-expanded')"), "true")
+                # Nothing runs out of its row.
                 over = page.eval_on_selector_all(
-                    ".file-row", "els => els.filter(e => { const r = e.getBoundingClientRect();"
-                    " return Array.from(e.querySelectorAll('.file-action, .file-title')).some(a => a.getBoundingClientRect().right > r.right + 1); }).length")
-                self.assertEqual(over, 0, "something ran out of its card")
+                    ".files-row", "els => els.filter(e => e.offsetParent !== null).filter(e => {"
+                    " const r = e.getBoundingClientRect();"
+                    " return Array.from(e.querySelectorAll('.files-act, .files-name'))"
+                    ".some(a => a.getBoundingClientRect().right > r.right + 1); }).length")
+                self.assertEqual(over, 0, "something ran out of its row")
                 browser.close()
         finally:
             session.server.shutdown()

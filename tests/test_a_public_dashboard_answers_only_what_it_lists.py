@@ -253,6 +253,8 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/app-state", "/api/explore/state", "/api/schema",
             "/api/status", "/api/metrics", "/api/events", "/api/report",
             "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
+            # The Files page, rendered from the listing the two above give.
+            "/api/files-page",
             "/api/file-text", "/api/protein-preview", "/api/structure-info",
             "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
             "/api/series", "/api/runs-compared", "/api/selection",

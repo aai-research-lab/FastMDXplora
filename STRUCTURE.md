@@ -173,6 +173,7 @@ FastMDXplora/
 │       │   ├── stream.py          # Telling an open page when the study it shows has changed
 │       │   ├── hosting.py         # The GUI served to someone else, behind a signing-in proxy
 │       │   ├── route_imports.py   # The package's modules the GUI's routes can reach
+│       │   ├── files_page.py      # The Files page: the study's files in the order it ran, for the GUI and the report
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
 │       │   │                      #   frame.js (columns, side panel, theme), theme-first.js
@@ -180,7 +181,7 @@ FastMDXplora/
 │       │   │                      #   JetBrains Mono, SIL OFL 1.1), studies.js,
 │       │   │                      #   preferences.js (the dialogs, preferences kept),
 │       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
-│       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, runs-compared.js, stopping.js,
+│       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, files-page.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
 │       │   │                      #   beside any page), tooltips.js (hints in the page's
 │       │   │                      #   own style), charts.js, overview.js (the Overview's

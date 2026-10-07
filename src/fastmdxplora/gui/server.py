@@ -143,7 +143,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/", "/index", "/results", "/live",
     "/api/app-state", "/api/explore/state", "/api/schema",
     "/api/status", "/api/metrics", "/api/events", "/api/report", "/api/methods",
-    "/api/artifacts", "/api/files", "/api/results", "/api/analyses",
+    "/api/artifacts", "/api/files", "/api/files-page", "/api/results", "/api/analyses",
     "/api/file-text", "/api/protein-preview", "/api/structure-info",
     "/api/ligands", "/api/live-frame-index", "/api/live-coordinates",
     "/api/series", "/api/runs-compared", "/api/selection",
@@ -848,6 +848,20 @@ def make_handler(
                 self._send_json(methods_payload(
                     root, may_read=(None if hosting is None
                                     else lambda path: hosting.inside(str(path)) is not None)))
+                return
+            if path == "/api/files-page":
+                # The Files page, rendered (`gui/files_page.py`).
+                view = (parse_qs(parsed.query).get("view") or ["phases"])[0]
+                self._send_files_page(root, "folders" if view == "folders" else "phases")
+                return
+            if path == "/api/files/zip":
+                # Files of the study in one zip: a trajectory and its
+                # topology, an analysis's folder. Loopback, like every route
+                # not listed: it is work the server does, and a zip of a
+                # trajectory is as large as the trajectory.
+                query = parse_qs(parsed.query)
+                self._send_zip(root, query.get("path") or [],
+                               (query.get("name") or ["files"])[0])
                 return
             if path == "/api/artifacts" or path == "/api/files":
                 self._send_json({"artifacts": self._where_each_is(root, _artifact_records(root))})
@@ -1910,6 +1924,104 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
+        def _files_links(self) -> Any:
+            from fastmdxplora.gui.files_page import Links, reveal_word
+
+            return Links(can={"zip": allow_control}, reveal_word=reveal_word())
+
+        def _send_files_page(self, root: Path, view: str) -> None:
+            from fastmdxplora.gui.files_page import files_model, render
+
+            links = self._files_links()
+            records = self._where_each_is(root, _artifact_records(root))
+            model = files_model(root, records, values=_determined_values(root, records))
+            payload = {"ok": True, "html": render(model, links, view=view), "view": view,
+                       "can": links.can, "reveal_word": links.reveal_word,
+                       "runs": model["runs"], "files": len(model["files"])}
+            body = json.dumps(payload).encode("utf-8")
+            if hosting is not None:
+                self._send_json(payload)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            if "gzip" in (self.headers.get("Accept-Encoding") or "") and len(body) > 16384:
+                import gzip
+
+                # 435 files are about 700 KB of rows, and 30 KB compressed:
+                # the difference, on every change, over an SSH tunnel.
+                body = gzip.compress(body, compresslevel=5, mtime=0)
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_zip(self, root: Path, paths: list[str], name: str) -> None:
+            """Several of the study's files in one zip, written as it is sent:
+            no copy of a trajectory is made on the disk or in memory."""
+            from fastmdxplora.gui.files_page import zip_entries
+
+            found = []
+            # The paths as `parse_qs` decoded them, once: decoded again, a
+            # file called `a%41.dat` was asked for as `aA.dat`. The
+            # refusals name no path: one carrying a line break would have
+            # been a header of the answer.
+            for rel in dict.fromkeys(paths):
+                try:
+                    target = (root / rel).resolve()
+                    inside = target.relative_to(root.resolve())
+                except (OSError, ValueError):
+                    self.send_error(403, "A file named is outside the study")
+                    return
+                if not target.is_file() or _private(inside.parts):
+                    self.send_error(404, "A file named is not a file of this study")
+                    return
+                found.append((target, inside.as_posix()))
+            if not found:
+                self.send_error(404, "No file was named")
+                return
+            # Each file opened before the answer starts: one that cannot be
+            # read is refused, not found out halfway through the zip.
+            for target, _ in found:
+                try:
+                    with target.open("rb"):
+                        pass
+                except OSError:
+                    self.send_error(404, "A file named cannot be read")
+                    return
+            safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in name)[:80] or "files"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Disposition", attachment_named(f"{safe}.zip"))
+            self.end_headers()
+            # HTTP/1.0: the end of the zip is the end of the connection.
+            self.close_connection = True
+            try:
+                zip_entries(self.wfile, found)
+            except ConnectionError:
+                raise
+            except Exception:  # noqa: BLE001 - said to the browser as a failed download
+                # A file gone or failing halfway. The headers are sent, so
+                # no error can be: the connection is reset instead of
+                # closed, which a browser reports as a failed download
+                # rather than a finished one of a broken zip.
+                logger.warning("a zip of %d files stopped partway", len(found), exc_info=True)
+                import socket
+                import struct
+
+                try:
+                    self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                               struct.pack("ii", 1, 0))
+                    # Closed here, both its files first, so the close is
+                    # the socket's own and not the polite one after.
+                    self.rfile.close()
+                    self.wfile.close()
+                    self.connection.close()
+                except OSError:
+                    pass
+
         def _where_each_is(self, root: Path,
                            records: list[dict[str, str]]) -> list[dict[str, str]]:
             """Each file's full path on this computer, which Copy path
@@ -2443,6 +2555,27 @@ def start_test_server(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _determined_values(root: Path, records: list[dict[str, str]]) -> dict[str, str]:
+    """Each analysis's recorded mean, where its error was determined, as the
+    Analysis page's table says it: beside the analysis on the Files page.
+    None for a study with no analysis, and none where it cannot be read."""
+    if not any(record["path"].startswith("analysis/") for record in records):
+        return {}
+    try:
+        from fastmdxplora.gui.analysis_overview import overview_of
+
+        rows = overview_of(root).get("rows") or []
+    except Exception:  # noqa: BLE001 - a value beside a file is not load-bearing
+        logger.debug("the analyses' values could not be read for the Files page", exc_info=True)
+        return {}
+    said = {}
+    for row in rows:
+        mean = row.get("mean") if isinstance(row, dict) else None
+        if isinstance(mean, dict) and mean.get("determined") and mean.get("said"):
+            said[str(row.get("analysis"))] = str(mean["said"])
+    return said
 
 
 def _artifact_records(root: Path) -> list[dict[str, str]]:

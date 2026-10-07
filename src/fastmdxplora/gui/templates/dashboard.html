@@ -1639,23 +1639,15 @@
           <div class="page-header">
             <div>
               <h1 class="page-title">Files</h1>
-              <div class="page-subtitle">Everything the run wrote, grouped by phase</div>
+              <div class="page-subtitle">Everything the study wrote, in the order it ran</div>
             </div>
           </div>
 
-          <div class="card summary-card" id="summary-card" hidden>
-            <div class="card-header"><h2 class="card-title">Exploration completed</h2></div>
-            <div class="summary-grid mono" id="summary-grid"></div>
-          </div>
-
-          <!-- Grouped by what a reader came for, not by which directory the
-               file happens to sit in. The cards are built from the payload so
-               a group with nothing in it does not appear at all. -->
-          <div id="file-groups"></div>
-          <div hidden>
-            <div class="files-list" id="reports-files"></div>
-            <div class="files-list" id="simulation-files"></div>
-            <div class="files-list" id="analysis-files"></div>
+          <!-- Rendered by the server (gui/files_page.py), the same page the
+               standalone dashboard carries; files-page.js finds, filters,
+               sorts and folds it. -->
+          <div id="files-page" class="files-page" data-source="/api/files-page">
+            <div class="files-empty">Reading the study's files…</div>
           </div>
         </section>
 
@@ -1842,6 +1834,7 @@
     <script src="/static/report-page.js"></script>
     <script src="/static/analyze-again.js"></script>
     <script src="/static/dashboard.js"></script>
+    <script src="/static/files-page.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
   <script src="/static/charts.js"></script>

@@ -1029,13 +1029,11 @@ def test_frontend_assets_wire_functional_dashboard_sections() -> None:
     charts_js = (root / "static" / "charts.js").read_text(encoding="utf-8")
     viewer_js = (root / "static" / "molecule-viewer.js").read_text(encoding="utf-8")
 
-    assert 'id="reports-files"' in html
-    assert 'id="simulation-files"' in html
-    assert 'id="analysis-files"' in html
+    assert 'id="files-page" class="files-page" data-source="/api/files-page"' in html
+    assert '<script src="/static/files-page.js"></script>' in html
     assert 'id="mini-preview-canvas"' in html
     assert "[hidden]" in css and "display: none !important" in css
     assert "/api/results" in dashboard_js
-    assert "renderFiles" in dashboard_js
     assert "renderAnalysis" in dashboard_js
     assert "ResizeObserver" in charts_js
     assert "mini-preview-canvas" in viewer_js

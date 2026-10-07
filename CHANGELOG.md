@@ -7,6 +7,42 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Files page, in the order the study ran
+
+**Changed:** the Files page was every file in cards of two across, grouped
+by kind, a figure in one card and its data in another: 9,700 pixels for a
+study of 435 files. It now opens with **What you came for**: the
+trajectory with the topology it is read with (its frames, time and atoms
+said, a zip of the two, and the `md.load` line that reads them), the
+report, the bundle, the system as simulated, the final state and the
+configuration. Then the space each phase takes, and the phases in the
+order the study ran them, a row a file: what it is in words, where it is,
+its size and when it was written, with a preview in the side panel, a
+download, and a menu to open it in a tab or copy its path. Each analysis
+is a row under what it studies, with its figure, the mean it recorded
+where its error was determined, its files and **Open in Analysis**. The
+run record, what `--rerun` set aside and the scratch the Viewer and the
+live view write again are folded, the live view's snapshots one row.
+**Find a file**, a filter by kind, a sort, **Folder view**, and a run
+picker for a study of several runs. Rendered by the server
+(`gui/files_page.py`, `GET /api/files-page`), compressed for a remote
+browser, and rendered again only when the study's files change.
+
+**Fixed:** `production.dcd` holds the atoms the run saved, without the
+water by default, and only `trajectory_topology.pdb` describes them; the
+page offered the solvated `topology.pdb` beside it and listed the file
+that loads it unlabelled in the folded record. Each trajectory now names
+the topology it is read with. What `--rerun` set aside was listed among the
+analyses and figures that replaced it, two of every title. Copy path
+copied the path inside the study; on the person's own computer it copies
+the full path. A file was read whole into memory to be sent, with
+`no-store`; it is sent a megabyte at a time, a range on request so a
+download resumes, and not again while the browser's copy is current.
+The project bundle carried the live view's 200 snapshots (52 MB beside a
+7.8 MB trajectory); the Viewer's and the live view's scratch, the windows
+set aside and data deposits are left out of it. One reading of what
+each file is (`study_files.py`) serves the page and the bundle.
+
 ### The demo study is fetched the first time it is opened
 
 **Changed:** the demo study (trypsin with benzamidine, 3PTB) is not in the

@@ -1122,10 +1122,22 @@ class TestTheFileListCanBeReadWithoutGuessing:
         filename they were sixteen identical rows, told apart only by their
         byte counts -- and the payload already carried the path that
         distinguishes them."""
-        js = self._text("dashboard.js")
-        row = js.split("function fileRowHtml(file) {", 1)[1].split("\n  }", 1)[0]
-        assert 'String(file.path || "").split("/").slice(1)' in row
-        assert row.index("within") < row.index("file.name")
+        from fastmdxplora.gui.files_page import Links, files_model, render
+        from fastmdxplora.gui.server import _artifact_records
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for analysis in ("rmsd", "rmsf"):
+                (root / "analysis" / analysis).mkdir(parents=True)
+                (root / "analysis" / analysis / "options.json").write_text("{}", encoding="utf-8")
+            html = render(files_model(root, _artifact_records(root)), Links())
+        # Each row says whose options it is, above the path that says where.
+        for analysis in ("rmsd", "rmsf"):
+            row = html[html.index(f'data-path="analysis/{analysis}/options.json"'):]
+            assert row.index(f"{analysis}: options used") < row.index(
+                f"analysis/{analysis}/options.json</div>")
 
     def test_the_payload_carries_the_path_that_distinguishes_them(
         self, tmp_path: Path
@@ -1159,10 +1171,11 @@ class TestTheFileListCanBeReadWithoutGuessing:
         assert group == "record"
         assert "scratch" in label.lower()
 
-        js = self._text("dashboard.js")
-        assert 'key === "record"' in js
-        assert "file-fold" in js
-        assert ".file-fold" in self._text("dashboard.css")
+        from fastmdxplora.gui.files_page import FOLDED
+        from fastmdxplora.study_files import place
+
+        assert place("simulation/live_frames/frame_000001_nvt_000000001000.pdb")[0] == "scratch"
+        assert {"record", "scratch"} <= FOLDED
 
     def test_a_row_says_what_the_file_is(self) -> None:
         """Deciding whether to download 85 MB should not require knowing that
