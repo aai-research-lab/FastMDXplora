@@ -173,7 +173,10 @@ def propose_endpoint(payload: dict[str, Any],
         defaults = your_defaults(runtime)
     except ConfigError as exc:
         return {"ok": False, "error": str(exc), "code": exc.code}
-    tools = Toolbox(path_for=path_for)
+    from fastmdxplora.workspace_studies import folder_of_studies
+
+    tools = Toolbox(path_for=path_for,
+                    workspace=folder_of_studies(getattr(runtime, "exploration_root", None)))
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)

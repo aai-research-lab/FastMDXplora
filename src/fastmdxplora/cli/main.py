@@ -3158,6 +3158,7 @@ def _run_agent(args: Any) -> int:
     from fastmdxplora.agent.propose import DEFAULT_ATTEMPTS
 
     from fastmdxplora.agent.tools import Toolbox
+    from fastmdxplora.workspace_studies import folder_of_studies
 
     # Your defaults, from where the config will be written (or here): the
     # Agent is told them, and the config it writes has them filled in.
@@ -3179,7 +3180,7 @@ def _run_agent(args: Any) -> int:
             phases=[p.strip() for p in args.phases.split(",") if p.strip()],
             max_cycles=(DEFAULT_ATTEMPTS if args.attempts is None
                         else int(args.attempts)),
-            tools=Toolbox(), defaults=defaults)
+            tools=Toolbox(workspace=folder_of_studies(_Path.cwd())), defaults=defaults)
     except StudyError as exc:
         print(refusal_of(exc).message)
         return 1

@@ -112,11 +112,15 @@ class Toolbox:
     workspace, when hosted), the same rule the builder's preview is held to;
     ``None`` from it means refused. ``extra`` adds tools for this toolbox
     only, after those here and those installed packages provide.
+    ``workspace`` is the folder of studies, for list_studies.
     """
 
     path_for: Callable[[Any], str | None] | None = None
     looks: list[Look] = field(default_factory=list)
     extra: tuple[AgentTool, ...] = ()
+    #: The folder of studies list_studies lists (a
+    #: :class:`fastmdxplora.mcp.workspace.Workspace`), where there is one.
+    workspace: Any = None
 
     def _table(self) -> dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]]:
         """Every tool this toolbox has: those here, then installed, then extra."""
@@ -505,6 +509,60 @@ def _check_selection(box: Toolbox, asked: dict[str, Any]) -> str:
             f"{', '.join(named)}{more}")
 
 
+def _a_study(box: Toolbox, given: str, argument: str) -> Path:
+    """The study folder ``given`` names, held to the server's rule for paths."""
+    from fastmdxplora.gui.browse import is_study
+
+    if not given:
+        raise _Refused(f"Name the study as `{argument}`: its folder, as given to --output.")
+    if box.path_for is not None:
+        named = box.path_for(given)
+    elif box.workspace is not None and not Path(given).expanduser().is_absolute():
+        # As list_studies names them: relative to the folder of studies,
+        # wherever FastMDXplora was started.
+        named = str(box.workspace.root / given)
+    else:
+        named = given
+    if named is None:
+        raise _Refused(f"{given} is outside the workspace.")
+    folder = Path(named).expanduser()
+    if not folder.is_dir() or not is_study(folder):
+        raise _Refused(f"{given} is not a study folder (one holding a manifest, a "
+                       "resolved config, or simulation, analysis or report).")
+    if box.workspace is not None and box.workspace.inside(folder) is not None:
+        from fastmdxplora.workspace_studies import links_out
+
+        leaving = links_out(box.workspace, folder.resolve())
+        if leaving is not None:
+            raise _Refused(f"{box.workspace.shown(leaving)} links out of the workspace, "
+                           f"so {given} is not read.")
+    return folder
+
+
+def _list_studies(box: Toolbox, asked: dict[str, Any]) -> str:
+    """The studies in the workspace, newest first, as an AI app lists them."""
+    from fastmdxplora.workspace_studies import listed
+
+    if box.workspace is None:
+        raise _Refused("There is no folder of studies here to list: FastMDXplora was "
+                       "started in the home folder or at the top of the file system. "
+                       "Name a study's folder to read_study instead.")
+    return listed(box.workspace, str(asked.get("tag") or "") or None)
+
+
+def _compare_studies(box: Toolbox, asked: dict[str, Any]) -> str:
+    """How two studies differ, in settings and in what each recorded."""
+    from fastmdxplora.workspace_studies import compared
+
+    first = _a_study(box, str(asked.get("first") or "").strip(), "first")
+    second = _a_study(box, str(asked.get("second") or "").strip(), "second")
+    shown = box.workspace.shown if box.workspace is not None else str
+    said, could = compared(first, second, shown)
+    if not could:
+        raise _Refused(said)
+    return said
+
+
 def _read_study(box: Toolbox, asked: dict[str, Any]) -> str:
     """Another study's record: its config, what its analyses found, the
     checks it was held to, how long it ran and why, and what would fix it."""
@@ -515,18 +573,9 @@ def _read_study(box: Toolbox, asked: dict[str, Any]) -> str:
         _results_summary,
         _stopping_summary,
     )
-    from fastmdxplora.gui.browse import is_study
 
     given = str(asked.get("study") or "").strip()
-    if not given:
-        raise _Refused("Name the study as `study`: its folder, as given to --output.")
-    named = box.path_for(given) if box.path_for is not None else given
-    if named is None:
-        raise _Refused(f"{given} is outside the workspace.")
-    folder = Path(named).expanduser()
-    if not folder.is_dir() or not is_study(folder):
-        raise _Refused(f"{given} is not a study folder (one holding a manifest, a "
-                       "resolved config, or simulation, analysis or report).")
+    folder = _a_study(box, given, "study")
     config = _config_the_run_used(folder)
     parts = [f"the study at {given}"]
     if config:
@@ -542,19 +591,10 @@ def _read_study(box: Toolbox, asked: dict[str, Any]) -> str:
 
 def _methods_of_study(box: Toolbox, asked: dict[str, Any]) -> str:
     """A study's methods paragraphs, as its report gives them."""
-    from fastmdxplora.gui.browse import is_study
     from fastmdxplora.report.document import methods_prose
 
     given = str(asked.get("study") or "").strip()
-    if not given:
-        raise _Refused("Name the study as `study`: its folder, as given to --output.")
-    named = box.path_for(given) if box.path_for is not None else given
-    if named is None:
-        raise _Refused(f"{given} is outside the workspace.")
-    folder = Path(named).expanduser()
-    if not folder.is_dir() or not is_study(folder):
-        raise _Refused(f"{given} is not a study folder (one holding a manifest, a "
-                       "resolved config, or simulation, analysis or report).")
+    folder = _a_study(box, given, "study")
     if (folder / "batch_manifest.json").is_file():
         raise _Refused(f"{given} is a study of several runs; each run's report gives its "
                        "own methods. Name one of its runs.")
@@ -648,6 +688,20 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "were determined, any rule it ran until, an AI model's part, the software. "
         "Look here before you write or answer about a methods section.",
         _methods_of_study),
+    "list_studies": (
+        "optionally `tag` (only the studies tagged so).",
+        "the studies in the workspace, newest first: each one's system, kind, "
+        "state, length, force field, tags, the person's note and what its "
+        "analyses recorded (means with their errors); then the YAML files at "
+        "its top.",
+        _list_studies),
+    "compare_studies": (
+        "`first` and `second` (two studies' folders).",
+        "how two studies differ: each setting one asks for that the other does not, "
+        "and what each recorded side by side, a difference called resolved only "
+        "where it is more than the stated multiple of its combined standard error. "
+        "Quote it rather than comparing means yourself.",
+        _compare_studies),
     "check_selection": (
         "`system` and `expression` (an MDTraj selection).",
         "how many atoms and which residues the selection matches in that "
@@ -685,6 +739,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                    "required": ["study"]},
     "methods_of_study": {"type": "object", "properties": {"study": _A_FOLDER},
                          "required": ["study"]},
+    "list_studies": {"type": "object", "properties": {
+        "tag": {"type": "string", "description": "Only the studies tagged so."}}},
+    "compare_studies": {"type": "object", "properties": {
+        "first": _A_FOLDER, "second": _A_FOLDER}, "required": ["first", "second"]},
     "check_selection": {"type": "object", "properties": {
         "system": _A_STRUCTURE,
         "expression": {"type": "string", "description": "An MDTraj selection."}},
