@@ -197,6 +197,18 @@ def cli_command(config: dict[str, Any]) -> str:
         entries = config.get("systems") or []
         if len(entries) == 1 and isinstance(entries[0], dict):
             system = entries[0].get("system")
+            # A name, or settings for this system alone, are what the
+            # command line has no place for: `--system` alone ran the study
+            # as `s1` with the system's own settings gone.
+            carried = sorted(key for key in entries[0] if key != "system"
+                             and not (key == "id" and entries[0]["id"] in (None, "", "s1")))
+            if carried:
+                raise UntranslatableSetting(
+                    "This study gives its system " + " and ".join(
+                        "a name" if key == "id" else f"its own `{key}` settings"
+                        for key in carried)
+                    + ", which the command line cannot carry; use the config file."
+                )
         elif len(entries) > 1:
             raise UntranslatableSetting(
                 f"This study names {len(entries)} systems, and the command "
@@ -322,7 +334,14 @@ def python_script(config: dict[str, Any]) -> str:
                                "verbose", "explain")
                if config.get(key) is not None
                and config.get(key) != _top_level_default(key)]
-    several = len(config.get("systems") or []) > 1
+    entries = config.get("systems") or []
+    # One system with a name or settings of its own is a whole study too:
+    # the keyword form takes the structure alone, and the script dropped the
+    # name the config gave it.
+    several = len(entries) > 1 or (
+        len(entries) == 1 and isinstance(entries[0], dict)
+        and any(key != "system" and not (key == "id" and entries[0]["id"] in (None, "", "s1"))
+                for key in entries[0]))
     # An umbrella block is a set of windows, expanded as a whole study is;
     # given to the keyword form, which runs one study directly, it ran one.
     windows = isinstance((config.get("simulation") or {}).get("umbrella"), dict)

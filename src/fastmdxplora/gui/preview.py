@@ -65,6 +65,11 @@ def preview_of_config(config: dict[str, Any], *,
         return {"ok": False, "reason": str(exc)}
 
     setup = dict(config.get("setup") or {})
+    # The first system's own setup settings, over the study's, as setup
+    # applies them to that system.
+    first = systems[0] if systems and isinstance(systems[0], dict) else {}
+    if isinstance(first.get("setup"), dict):
+        setup.update(first["setup"])
     try:
         estimate = estimate_system(structure, setup)
     except (OSError, ValueError) as exc:

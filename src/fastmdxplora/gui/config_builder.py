@@ -207,13 +207,19 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
     # shape. The page offers a single system; the file it writes is the same
     # file a batch would use, with one entry in the list.
     system = state.get("system")
-    if system:
+    if state.get("systems"):
+        # The form's list of systems, each with its name and any settings
+        # for it alone. Before, the form held one structure, and a study of
+        # several opened here came back as its first, its names and its
+        # per-system settings gone without a word.
+        config["systems"] = [entry for entry in (
+            _system_entry(raw) for raw in state["systems"] if isinstance(raw, dict))
+            if entry]
+    elif system:
         entry: dict[str, Any] = {"system": system}
         if state.get("system_id"):
             entry["id"] = state["system_id"]
         config["systems"] = [entry]
-    elif state.get("systems"):
-        config["systems"] = state["systems"]
 
     # A full config records what the run will use, so it names every phase the
     # run includes -- not only the ones the form happened to touch. A phase
@@ -325,6 +331,38 @@ def build_config(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]
             block["options"] = defaults
 
     return config
+
+
+def _system_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """One row of the form's systems as the config writes it: the
+    structure, its name where given, and its own settings, each brought in
+    from text as the study's settings are."""
+    structure = str(raw.get("system") or "").strip()
+    if not structure:
+        return None
+    entry: dict[str, Any] = {"system": structure}
+    name = str(raw.get("id") or "").strip()
+    if name:
+        entry["id"] = name
+    for phase, group in PHASE_SCHEMAS.items():
+        block = raw.get(phase)
+        if not isinstance(block, dict):
+            continue
+        fields = {f.name: f for f in group.fields}
+        kept = {}
+        for key, value in block.items():
+            field = fields.get(key)
+            coerced = _coerce(value, field) if field is not None else value
+            if coerced is not None:
+                kept[key] = coerced
+        if kept:
+            entry[phase] = kept
+    # Anything else a row carries (a key a later release adds) is passed on
+    # for the validator to judge, not dropped here.
+    for key, value in raw.items():
+        if key not in entry and key not in ("system", "id", *PHASE_SCHEMAS):
+            entry[key] = value
+    return entry
 
 
 def config_yaml(state: dict[str, Any], *, full: bool = False) -> dict[str, Any]:
@@ -595,6 +633,9 @@ def state_from_config(
     analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
 
     state: dict[str, Any] = {
+        # Every system, whole: its structure, its name and its own settings.
+        "systems": [dict(entry) for entry in systems if isinstance(entry, dict)]
+        if isinstance(systems, list) else [],
         "system": str(first.get("system") or "") if isinstance(first, dict) else "",
         "system_id": str(first.get("id") or "") if isinstance(first, dict) else "",
         "output": str(data.get("output") or ""),
