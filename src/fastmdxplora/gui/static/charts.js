@@ -70,7 +70,10 @@
       // An empty cell is a gap, not a zero: Number("") is 0 and finite, so
       // a metric the run has not sampled would have read 0.0000.
       const cell = latest ? latest[config.key] : null;
-      const raw = cell === "" || cell == null ? NaN : Number(cell);
+      let raw = cell === "" || cell == null ? NaN : Number(cell);
+      // A speed of 0 is none measured (a run that failed before it took a
+      // step): "0.0000" beside "no speed has been measured here".
+      if (config.key === "speed" && raw === 0) raw = NaN;
       // No unit here -- the title beside it already carries one, and the row
       // read "Potential energy (kJ/mol)  -506551 kJ/mol".
       target.textContent = Number.isFinite(raw) ? formatValue(raw) : "—";
@@ -96,7 +99,7 @@
    * clock (ns), so every plot reads time from it, equilibration before 0;
    * the production means and the temperature asked for. From
    * /api/overview, by way of overview.js. */
-  const clock = {startNs: null, means: {}, target: null, timed: false};
+  const clock = {startNs: null, means: {}, target: null, nptFrom: null, timed: false};
   /* The moment every plot marks, on the production's clock (ns), or the
    * sample pointed at where there is no clock. */
   let crosshair = null;
@@ -133,6 +136,7 @@
       clock.means = (thermo && thermo.means) || {};
       clock.target = thermo && Number.isFinite(thermo.target_temperature_K)
         ? thermo.target_temperature_K : null;
+      clock.nptFrom = thermo && Number.isFinite(thermo.npt_from_ns) ? thermo.npt_from_ns : null;
       update(lastMetrics);
     });
     window.addEventListener("fmx:crosshair", (event) => {
@@ -233,9 +237,13 @@
     const anyData = Array.from(states.values()).some((entry) => entry.points.length > 0);
     empty.style.display = anyData ? "none" : "block";
     if (!anyData) {
+      // A run that has ended will sample nothing more: said "will appear"
+      // of one stopped in minimisation.
+      const over = window.FastMDXOverview && window.FastMDXOverview.ended();
       empty.textContent = lastMetrics.length
         ? "Telemetry samples exist, but none contain chartable values."
-        : "Live telemetry will appear after the first sample.";
+        : over ? "The run recorded no sample before it ended."
+          : "Live telemetry will appear after the first sample.";
     }
   }
 
@@ -292,8 +300,16 @@
     // off is seen to be.
     if (config.key === "temperature" && clock.target != null) fit.push(clock.target);
     const {minY, maxY} = valueBounds(fit);
-    const minX = Math.min(...points.map((point) => point.x));
-    const maxX = Math.max(...points.map((point) => point.x));
+    let minX = Math.min(...points.map((point) => point.x));
+    let maxX = Math.max(...points.map((point) => point.x));
+    // One sample, or every sample at one moment, spans nothing: the axis
+    // reaches to where production began (0), or 1 ps past it, so its
+    // ticks have room. Each tick was put where a 1 ns span would put it,
+    // all at one place ("04ps").
+    if (!(maxX > minX)) {
+      if (clock.timed && minX !== 0) { minX = Math.min(minX, 0); maxX = Math.max(maxX, 0); }
+      else { minX -= clock.timed ? 0 : 1; maxX += clock.timed ? 0.001 : 1; }
+    }
     const bounds = {minY, maxY, minX, maxX};
     entry.bounds = bounds;
 
@@ -314,18 +330,23 @@
     const x = (value) => area.left + area.width * ((value - bounds.minX) / ((bounds.maxX - bounds.minX) || 1));
     ctx.fillStyle = hexToRgba(color("axis"), 0.12);
     ctx.fillRect(area.left, area.top, Math.max(0, x(Math.min(0, bounds.maxX)) - area.left), area.height);
-    for (let i = 1; i < points.length; i += 1) {
+    // Where the run changed NVT for NPT, from the lengths it planned; the
+    // first NPT sample came a sampling interval or so after it.
+    let change = clock.nptFrom;
+    for (let i = 1; change == null && i < points.length; i += 1) {
       const was = points[i - 1].stage, now = points[i].stage;
-      if (points[i].x < 0 && was.startsWith("nvt") && now.startsWith("npt")) {
-        ctx.strokeStyle = color("grid");
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(x(points[i].x), area.top);
-        ctx.lineTo(x(points[i].x), area.bottom);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        break;
-      }
+      if (points[i].x < 0 && was.startsWith("nvt") && now.startsWith("npt")) change = points[i].x;
+    }
+    bounds.npt = null;
+    if (change != null && change > bounds.minX && change < Math.min(0, bounds.maxX)) {
+      bounds.npt = change;
+      ctx.strokeStyle = color("grid");
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x(change), area.top);
+      ctx.lineTo(x(change), area.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
   }
 
@@ -477,12 +498,29 @@
     const ticks = niceTicks(bounds.minX * scale, bounds.maxX * scale, 5);
     if (bounds.minX < 0 && !ticks.includes(0)) ticks.push(0);
     const spanX = bounds.maxX - bounds.minX || 1;
+    // Each label's box, from the last (which carries the unit) back: one
+    // that would touch the label after it is left out, as on a narrow card
+    // "6" sat under "8 ps".
+    const labels = [];
     ticks.sort((a, b) => a - b).forEach((tick, index) => {
       const x = area.left + area.width * ((tick / scale - bounds.minX) / spanX);
       if (x < area.left - 1 || x > area.right + 1) return;
-      ctx.textAlign = x < area.left + 12 ? "left" : x > area.right - 24 ? "right" : "center";
-      const last = index === ticks.length - 1;
-      ctx.fillText(`${+tick.toFixed(3)}${last ? (ps ? " ps" : " ns") : ""}`, x, rect.height - 4);
+      const align = x < area.left + 12 ? "left" : x > area.right - 24 ? "right" : "center";
+      const text = `${+tick.toFixed(3)}${index === ticks.length - 1 ? (ps ? " ps" : " ns") : ""}`;
+      const width = ctx.measureText(text).width;
+      const left = align === "left" ? x : align === "right" ? x - width : x - width / 2;
+      labels.push({tick, x, align, text, left, right: left + width});
+    });
+    const kept = [];
+    for (let i = labels.length - 1; i >= 0; i -= 1) {
+      const next = kept[0];
+      if (next && labels[i].right + 6 > next.left) continue;
+      kept.unshift(labels[i]);
+    }
+    bounds.ticks = kept.map(({tick, x, left, right}) => ({tick, x, left, right}));
+    kept.forEach((label) => {
+      ctx.textAlign = label.align;
+      ctx.fillText(label.text, label.x, rect.height - 4);
     });
   }
 
@@ -562,5 +600,8 @@
     return "JetBrains Mono, SFMono-Regular, IBM Plex Mono, Consolas, Menlo, monospace";
   }
 
-  window.FastMDXCharts = {update, draw: drawAll, valueBounds};
+  // `drawn` is what a chart last put on its axes (its bounds, ticks and
+  // where NPT began), for the tests.
+  window.FastMDXCharts = {update, draw: drawAll, valueBounds,
+                          drawn: (key) => states.get(key)?.bounds || null};
 }());

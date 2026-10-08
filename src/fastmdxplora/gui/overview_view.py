@@ -238,7 +238,18 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
         means[key] = _mean_of(values, unit)
     target = _number(status.get("target_temperature_K"))
     return {"production_start_ns": start, "target_temperature_K": target,
+            "npt_from_ns": _npt_from_ns(times, start),
             "means": means, "samples": len(production)}
+
+
+def _npt_from_ns(times: dict[str, Any], start: float | None) -> float | None:
+    """Where NPT began on the production's clock: the NVT the run planned
+    after the start of the record. The live record samples every few ps, so
+    its first NPT sample came that much after the change."""
+    nvt, npt = _number(times.get("nvt_ns")), _number(times.get("npt_ns"))
+    if start is None or nvt is None or not npt:
+        return None
+    return nvt - start
 
 
 def _metric_rows(root: Path) -> list[dict[str, Any]]:

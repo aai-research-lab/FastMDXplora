@@ -2636,11 +2636,15 @@ body.state-ready .loading-screen {
 }
 .chart-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 0 12px;
     flex: 0 0 auto;
 }
+/* A card narrowed by the Agent beside it cut its mean at the edge
+   ("-506,52"): the mean goes under the title instead, at the right. */
+.chart-head .chart-latest { margin-left: auto; max-width: 100%; white-space: normal; text-align: right; line-height: 1.25; }
 .chart-head .chart-title {
     margin: 0;
 }

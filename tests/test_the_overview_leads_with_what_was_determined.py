@@ -437,3 +437,101 @@ def test_the_copy_is_not_in_the_fold_s_summary() -> None:
     summary = fold[fold.index("<summary"):fold.index("</summary>")]
     assert "<button" not in summary
     assert 'id="overview-methods-copy"' in fold
+
+
+class TestTheEquilibrationOnTheClock:
+    """The NVT/NPT line was drawn at the first NPT sample, a sampling
+    interval after the change; a chart of one sample put every tick where
+    a 1 ns span would, on top of each other ("04ps")."""
+
+    def test_npt_begins_where_the_plan_puts_it(self, study) -> None:
+        # 0.001 ns of NVT planned, production from 0.002 ns.
+        assert overview_payload(study)["thermodynamics"]["npt_from_ns"] == pytest.approx(-0.001)
+
+    def test_without_a_plan_no_moment_is_said(self, tmp_path) -> None:
+        root = tmp_path / "study"
+        _metrics(root)
+        _status(root, planned=False)
+        assert overview_payload(root)["thermodynamics"]["npt_from_ns"] is None
+
+    def test_the_line_and_the_ticks_in_a_browser(self, tmp_path) -> None:
+        pytest.importorskip("playwright.sync_api")
+        whole = _browser_study(tmp_path / "whole", "completed")
+        one = _browser_study(tmp_path / "one", "failed")
+        rows = (one / "simulation" / "live_metrics.csv").read_text(encoding="utf-8").splitlines()
+        (one / "simulation" / "live_metrics.csv").write_text(
+            "\n".join([rows[0], next(r for r in rows if ",NVT equilibration," in r)]) + "\n",
+            encoding="utf-8")
+
+        def check(page):
+            page.wait_for_function(
+                "() => { const d = window.FastMDXCharts.drawn('temperature'); "
+                "return d && d.ticks && d.ticks.length; }")
+            return page.evaluate("() => window.FastMDXCharts.drawn('temperature')")
+
+        drawn, errors = _open(whole, check)
+        assert not errors, errors
+        assert drawn["npt"] == pytest.approx(-0.001)
+        drawn, errors = _open(one, check)
+        assert not errors, errors
+        assert drawn["maxX"] > drawn["minX"]
+        places = sorted(tick["x"] for tick in drawn["ticks"])
+        assert len(places) >= 2 and min(b - a for a, b in zip(places, places[1:])) > 15
+
+
+def test_a_mean_is_whole_on_a_card_narrowed_by_the_agent(tmp_path) -> None:
+    """At 1100 px with the Agent beside, the potential energy's mean ran
+    past its card's edge ("-506,52")."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _browser_study(tmp_path / "study", "completed")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1100, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#overview", wait_until="domcontentloaded")
+            page.wait_for_selector("#overview-tiles .overview-tile")
+            page.keyboard.press("Control+j")
+            page.wait_for_function("() => document.body.classList.contains('agent-beside')")
+            page.wait_for_function("() => document.querySelector("
+                                   "'[data-chart-value=\"potential_energy\"]').textContent !== '\\u2014'")
+            page.wait_for_timeout(600)
+            edges = page.evaluate("""() => [...document.querySelectorAll('.chart-latest')]
+              .filter((v) => v.offsetParent)
+              .map((v) => [v.getBoundingClientRect().right,
+                           v.closest('.chart-row').getBoundingClientRect().right])""")
+            # Nor do the time axis's labels touch ("6" sat under "8 ps").
+            ticks = page.evaluate("() => window.FastMDXCharts.drawn('potential_energy').ticks")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert edges and all(value <= row + 0.5 for value, row in edges), edges
+    assert len(ticks) >= 2 and ticks[-1]["tick"] > 0
+    assert all(a["right"] < b["left"] for a, b in zip(ticks, ticks[1:])), ticks
+
+
+def test_a_speed_of_nothing_is_no_speed(tmp_path) -> None:
+    """A run that failed before it took a step showed "0.0000" for its
+    speed beside "no speed has been measured here"."""
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", "failed")
+    path = root / "simulation" / "live_metrics.csv"
+    rows = path.read_text(encoding="utf-8").splitlines()
+    head = rows[0].split(",")
+    cells = rows[-1].split(",")
+    cells[head.index("speed")] = "0"
+    path.write_text("\n".join(rows[:-1] + [",".join(cells)]) + "\n", encoding="utf-8")
+
+    def check(page):
+        page.wait_for_function("() => document.querySelector("
+                               "'[data-chart-value=\"temperature\"]').textContent !== '\\u2014'")
+        return page.text_content('[data-chart-value="speed"]')
+
+    said, errors = _open(root, check)
+    assert not errors, errors
+    assert said == "\u2014"
