@@ -295,7 +295,13 @@ def _sending_to(machine_name: str):
         yield
         return
     with open(folder / f".sending-{machine_name}.lock", "a+") as held:
-        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(held, fcntl.LOCK_EX)
+        except OSError:
+            # A file system that keeps no locks (an NFS home without its
+            # lock service): the send goes ahead with the check alone.
+            yield
+            return
         try:
             yield
         finally:
@@ -468,6 +474,13 @@ def status(name: str, *, transport: Transport | None = None,
     With ``max_age_s``, an answer recorded less than that long ago is
     returned as it is, and the machine is not asked.
     """
+    if max_age_s > 0:
+        # A kept answer is read without waiting on a fetch of the same job.
+        job = load_job(name)
+        asked_at = job.extra.get("asked_at")
+        if (job.state != ABANDONED and isinstance(asked_at, (int, float))
+                and 0 <= time.time() - asked_at < max_age_s):
+            return job
     with held(name):
         return _status(name, transport, max_age_s)
 
@@ -510,7 +523,7 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
 
 @dataclass(frozen=True)
 class FetchSizes:
-    """What a fetch would bring, in bytes, as the machine's ``du`` counts."""
+    """What a fetch would bring, in bytes, as the machine gives each file's size."""
 
     results: int
     trajectory: int
@@ -527,9 +540,12 @@ def _sizes_script(job: Job) -> str:
     names = " -o ".join(f"-name '{p}'" for p in TRAJECTORY_PATTERNS)
     return (f"cd {shlex.quote(job.remote_dir)} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
             "cd run 2>/dev/null || { echo fmdx:norun=1; exit 0; }\n"
-            "echo \"fmdx:total=$(du -sk . | cut -f1)\"\n"
-            f"echo \"fmdx:trajectory=$(find . -type f \\( {names} \\) -exec du -k {{}} + "
-            "2>/dev/null | awk '{s+=$1} END {print s+0}')\"\n"
+            # Bytes, from each file's own size: `du` counts the blocks it
+            # takes, less than its size on a compressed or sparse file.
+            "echo \"fmdx:total=$(find . -type f -exec ls -ln {} + 2>/dev/null "
+            "| awk '{s+=$5} END {print s+0}')\"\n"
+            f"echo \"fmdx:trajectory=$(find . -type f \\( {names} \\) -exec ls -ln {{}} + "
+            "2>/dev/null | awk '{s+=$5} END {print s+0}')\"\n"
             f"echo \"fmdx:files=$(find . -type f \\( {names} \\) | wc -l | tr -d ' ')\"\n")
 
 
@@ -548,13 +564,13 @@ def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
         return FetchSizes(results=0, trajectory=0, trajectory_files=0,
                           run_written=False)
 
-    def kb(key: str) -> int:
+    def number(key: str) -> int:
         text = (found.get(key) or ["0"])[0].strip()
         return int(text) if text.isdigit() else 0
 
-    trajectory = kb("trajectory") * 1024
-    return FetchSizes(results=max(kb("total") * 1024 - trajectory, 0),
-                      trajectory=trajectory, trajectory_files=kb("files"))
+    trajectory = number("trajectory")
+    return FetchSizes(results=max(number("total") - trajectory, 0),
+                      trajectory=trajectory, trajectory_files=number("files"))
 
 
 def fetch(name: str, *, with_trajectory: bool = False,
@@ -603,6 +619,12 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
                           *" -o ".join(f"-name {p}" for p in TRAJECTORY_PATTERNS
                                        ).split(), ")"])
         left = [line for line in found.stdout.splitlines() if line.strip()]
+    over: list[str] = []
+    if most_bytes is not None:
+        # What the cap leaves behind is said, never left out unsaid.
+        found_over = link.run(["find", job.run_dir, "-type", "f", "-size",
+                               f"+{max(int(most_bytes), 1)}c"])
+        over = [line for line in found_over.stdout.splitlines() if line.strip()]
     copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{target}/", *excludes),
                       runner=local_runner, what="fetching a study")
     # 24 is rsync's "some source files vanished": a file removed between
@@ -617,6 +639,12 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
              runner=local_runner, what="fetching a study")
 
     warnings: list[str] = []
+    warnings += _only_files_and_folders(target)
+    if over:
+        warnings.append(
+            f"{len(over)} file(s) larger than the whole fetch was said to be stayed "
+            f"on {job.machine}: {', '.join(over[:5])}"
+            + (" and more" if len(over) > 5 else "") + ".")
     if left:
         job.extra["left_on_machine"] = left
         warnings.append(
@@ -689,6 +717,34 @@ def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
     return warnings
 
 
+def _only_files_and_folders(target: Path) -> list[str]:
+    """Take out of what was fetched anything but files and folders (a named
+    pipe left there would stop whatever reads it), and the set-id and
+    others-may-write bits; say what was taken out."""
+    import stat
+
+    removed: list[str] = []
+    for top, dirs, files in os.walk(target, followlinks=False):
+        for name in dirs + files:
+            entry = Path(top) / name
+            try:
+                mode = entry.lstat().st_mode
+            except OSError:
+                continue
+            if stat.S_ISREG(mode) or (stat.S_ISDIR(mode) and not entry.is_symlink()):
+                loose = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
+                if mode & loose:
+                    entry.chmod(stat.S_IMODE(mode) & ~loose)
+                continue
+            entry.unlink(missing_ok=True)
+            removed.append(str(entry.relative_to(target)))
+    if not removed:
+        return []
+    return [f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} that "
+            f"{'is' if len(removed) == 1 else 'are'} neither a file nor a folder "
+            f"came back and were removed: {', '.join(removed[:5])}."]
+
+
 def _written_into(folder: Path, name: str, text: str) -> None:
     """``text`` as the file ``name`` in ``folder``, written beside it and
     moved into place: a link of that name is replaced, never written
@@ -723,7 +779,10 @@ def _cancel(name: str, transport: Transport | None) -> Job:
         return job
     link = transport or Transport(job.machine)
     job = _status(name, link, 0)
-    if job.state in FINISHED:
+    # A process's number may be another's once it has ended; a SLURM job's
+    # is not reused, and a queue that did not answer reads as ended, so
+    # there only a job seen done is let be.
+    if job.state in FINISHED and (job.scheduler != "slurm" or job.state == DONE):
         return job
     if job.scheduler == "slurm":
         link.run(["scancel", job.handle])

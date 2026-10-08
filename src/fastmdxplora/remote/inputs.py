@@ -19,7 +19,8 @@ outside the folder holding it is refused, not sent, whoever wrote the config:
 a config an AI model wrote naming ``~/.ssh/id_ed25519`` would otherwise copy
 the key to the machine. Links are resolved first, so a link in the folder
 pointing out of it is outside too, and a folder that travels is refused if
-any link in it points out of it, since the copy follows links. One
+a link in it, or in a folder one of its links leads to, points out of it or
+back into itself, since the copy follows links. One
 exception: a prepared study named by ``simulation.setup_from`` or
 ``simulation.resume_from`` may sit beside the folder, where a study usually
 does (anywhere in the folder holding the study's folder), when it holds a
@@ -78,50 +79,68 @@ def _inside(path: Path, folder: Path) -> bool:
     return path == folder or folder in path.parents
 
 
-def link_out_of(path: Path, folder: Path) -> Path | None:
-    """The first link in ``path`` that leads out of ``folder``, if any.
+def _walked(path: Path):
+    """Each folder and file under ``path`` as a copy that follows links
+    reaches it: the place it is reached at, and where it really is (``None``
+    where a link leads nowhere, or back into a folder it is inside, which
+    the copy would follow without end)."""
+    within: dict[Path, tuple[Path, ...]] = {}
+    for top, dirs, files in os.walk(path, followlinks=True):
+        here = Path(top)
+        real = here.resolve()
+        above = within.get(here.parent, ()) if here != path else ()
+        if real in above:
+            dirs[:] = []
+            yield here, None
+            continue
+        within[here] = (*above, real)
+        yield here, real
+        for name in files:
+            entry = here / name
+            try:
+                yield entry, entry.resolve(strict=True)
+            except (OSError, RuntimeError):
+                yield entry, None
+        for name in list(dirs):
+            entry = here / name
+            if entry.is_symlink() and not entry.exists():
+                dirs.remove(name)
+                yield entry, None
 
-    ``path`` is a file or a folder already resolved inside ``folder``. A
-    folder is walked without following its links; each link is resolved,
-    and one leading outside ``folder`` (or nowhere that resolves) is
-    returned, since a copy that follows links would send what it names.
+
+def link_out_of(path: Path, folder: Path) -> Path | None:
+    """The first place in ``path`` a copy that follows links would be led
+    out of ``folder`` by, if any.
+
+    ``path`` is a file or a folder. Its links are followed as the copy
+    follows them, through a folder a link leads to and the links in it in
+    turn, and every file and folder reached is resolved: one outside
+    ``folder``, one a link leads nowhere, or a folder reached twice (a
+    link back into itself, which the copy would follow without end) is
+    returned.
     """
-    if path.is_symlink():
-        # Resolved when gathered, so a link here now was made since.
-        try:
-            target = path.resolve(strict=True)
-        except (OSError, RuntimeError):
-            return path
-        if not _inside(target, folder):
-            return path
+    try:
+        real = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return path
+    if not _inside(real, folder):
+        return path
     if not path.is_dir():
         return None
-    for top, dirs, files in os.walk(path, followlinks=False):
-        for name in dirs + files:
-            entry = Path(top) / name
-            if not entry.is_symlink():
-                continue
-            try:
-                target = entry.resolve(strict=True)
-            except (OSError, RuntimeError):
-                return entry
-            if not _inside(target, folder):
-                return entry
+    for entry, real in _walked(path):
+        if real is None or not _inside(real, folder):
+            return entry
     return None
 
 
 def size_of(path: Path) -> int:
-    """Bytes in a file, or in a folder's files, links not followed."""
+    """Bytes in a file, or in the files a copy that follows links sends of
+    a folder."""
     try:
         if not path.is_dir():
             return path.stat().st_size
-        total = 0
-        for top, _, files in os.walk(path, followlinks=False):
-            for name in files:
-                entry = Path(top) / name
-                if not entry.is_symlink():
-                    total += entry.stat().st_size
-        return total
+        return sum(real.stat().st_size for _, real in _walked(path)
+                   if real is not None and real.is_file())
     except OSError:
         return 0
 

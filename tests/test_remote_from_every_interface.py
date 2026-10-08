@@ -40,19 +40,22 @@ class TestOneAtATime:
     def test_a_second_study_is_refused_while_the_first_runs(self, machine, tmp_path):
         machine.env["FAKE_SLEEP"] = "30"
         first = _send(machine)
-        # Planned, so a dry run still shows what it would do, and said.
-        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                         code=RELEASE, transport=machine.transport())
-        assert second.busy == first.name
-        assert any("fastmdx remote cancel trial" in note for note in second.notes)
-        with pytest.raises(ValueError) as caught:
-            send(second, transport=machine.transport(), local_runner=machine.local,
-                 code=RELEASE)
-        found = refusal_of(caught.value)
-        assert found.code == "remote.machine.busy"
-        assert found.details["job"] == first.name
-        assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
-        cancel(first.name, transport=machine.transport())
+        try:
+            # Planned, so a dry run still shows what it would do, and said.
+            second = prepare(machine.study, "box",
+                             output=str(tmp_path / "back" / "second"),
+                             code=RELEASE, transport=machine.transport())
+            assert second.busy == first.name
+            assert any("fastmdx remote cancel trial" in note for note in second.notes)
+            with pytest.raises(ValueError) as caught:
+                send(second, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            found = refusal_of(caught.value)
+            assert found.code == "remote.machine.busy"
+            assert found.details["job"] == first.name
+            assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
+        finally:
+            cancel(first.name, transport=machine.transport())
         again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
                         code=RELEASE, transport=machine.transport())
         assert again.busy == ""
@@ -72,7 +75,7 @@ class TestOneAtATime:
             cancel(first.name, transport=machine.transport())
 
     def test_a_job_that_ended_is_asked_about_and_frees_the_machine(self, machine, tmp_path):
-        machine.env["FAKE_SLEEP"] = "1"
+        machine.env["FAKE_SLEEP"] = "5"
         first = _send(machine)
         # An answer kept from while it ran, under 30 s old, is not the answer.
         assert status(first.name, transport=machine.transport(),
@@ -492,3 +495,120 @@ class TestAnAIAppAndOtherFolders:
         monkeypatch.setattr(api, "plan_send", unreachable)
         _, done = _start(app, answer=YES)
         assert "`fastmdx remote --machine box` in a terminal" in _text(done)
+
+
+# ---------------------------------------------------------------------------
+# The second review's cases
+# ---------------------------------------------------------------------------
+class TestSecondReview:
+    def test_a_file_s_size_is_its_bytes_not_its_blocks(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        with open(Path(job.run_dir) / "sparse.csv", "wb") as out:
+            out.truncate(5_000_000)          # 5 MB said, almost no blocks
+        sizes = api.fetch_sizes(job.name, transport=machine.transport())
+        assert sizes.results >= 5_000_000
+
+    def test_what_a_cap_leaves_behind_is_said(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "huge.bin").write_bytes(b"x" * 200_000)
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE, most_bytes=100_000)
+        assert any("larger than the whole fetch" in w and "huge.bin" in w
+                   for w in warnings)
+
+    def test_a_named_pipe_that_comes_back_is_taken_out_before_anything_reads(
+            self, machine):
+        import os
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("no named pipes here")
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "manifest.json").unlink()
+        os.mkfifo(Path(job.run_dir) / "manifest.json")
+        (Path(job.run_dir) / "open.sh").write_text("x")
+        (Path(job.run_dir) / "open.sh").chmod(0o4777)
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        assert not (machine.back / "manifest.json").exists()
+        assert any("neither a file nor a folder" in w for w in warnings)
+        assert (machine.back / "open.sh").stat().st_mode & 0o4002 == 0
+
+    def test_a_home_that_keeps_no_locks_still_sends(self, machine, monkeypatch):
+        import errno
+
+        import fcntl
+
+        def no_locks(handle, how):
+            raise OSError(errno.ENOLCK, "No locks available")
+
+        monkeypatch.setattr(fcntl, "flock", no_locks)
+        assert _send(machine).state == "running"
+
+    def test_a_kept_answer_is_read_while_a_fetch_holds_the_job(self, machine):
+        import threading
+
+        from fastmdxplora.remote.jobs import held
+
+        machine.env["FAKE_SLEEP"] = "30"
+        job = _send(machine)
+        try:
+            status(job.name, transport=machine.transport(), max_age_s=STATUS_KEPT_S)
+            release = threading.Event()
+
+            def hold() -> None:
+                with held(job.name):
+                    release.wait(10)
+
+            holder = threading.Thread(target=hold)
+            holder.start()
+            started = time.monotonic()
+            assert status(job.name, transport=machine.transport(),
+                          max_age_s=STATUS_KEPT_S).state == "running"
+            assert time.monotonic() - started < 2
+            release.set()
+            holder.join()
+        finally:
+            cancel(job.name, transport=machine.transport())
+
+    def test_nothing_outside_the_workspace_is_sent_from_an_ai_app(self, app, tmp_path):
+        import json
+
+        # A link in the workspace, and a value that folds `link/..` away.
+        reference = app.root.parent / "elsewhere" / "secret"
+        (reference / "setup").mkdir(parents=True)
+        (reference / "manifest.json").write_text(json.dumps({"phases": []}))
+        (app.root / "lnk").symlink_to(app.root.parent / "elsewhere")
+        (app.root / "more.yml").write_text(
+            "systems:\n  - system: ghg.pdb\nsimulation:\n"
+            "  setup_from: lnk/../elsewhere/secret\noutput: more_run\n")
+        _, done = _start(app, config="more.yml", answer=YES)
+        assert done["isError"]
+        assert "outside the workspace" in _text(done)
+        assert not _sent(app)
+
+    def test_a_study_beside_but_outside_the_workspace_is_not_sent(self, app):
+        import json
+
+        reference = app.root.parent / "reference"
+        (reference / "setup").mkdir(parents=True)
+        (reference / "manifest.json").write_text(json.dumps({"phases": []}))
+        (app.root / "beside.yml").write_text(
+            "systems:\n  - system: ghg.pdb\nsimulation:\n"
+            f"  setup_from: {reference}\noutput: beside_run\n")
+        _, done = _start(app, config="beside.yml", answer=YES)
+        assert done["isError"] and "outside the workspace" in _text(done)
+        assert not _sent(app)

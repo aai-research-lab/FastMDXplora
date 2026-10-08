@@ -19,6 +19,7 @@ given one folder never reads or stops a job sent for another.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -164,16 +165,15 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
         sending = api.plan_send(file, machine, output=where)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, machine)
+    outside = [source for source in sending.inputs.files.values()
+               if ctx.workspace.inside(source) is None]
+    if outside:
+        raise ToolError(f"{outside[0]} would be sent with the study, and it is outside the "
+                        f"workspace ({ctx.workspace.root}); nothing outside it is sent from "
+                        "here. Copy it into the config's folder and name it there.",
+                        code="remote.input.outside")
     if sending.busy:
-        # Named only where its results come back here: a job sent for
-        # another folder is not this AI app's to know of.
-        ours = any(job.name == sending.busy for job in api.jobs(under=ctx.workspace.root))
-        raise ToolError(
-            (f"{machine} is running {sending.busy}, sent from here; remote_status "
-             "says when it ends, and cancel_study stops it." if ours else
-             f"{machine} is running a study sent from this computer.")
-            + " One study runs on a workstation at a time.",
-            code="remote.machine.busy")
+        _busy(ctx, machine, sending.busy)
 
     shown = ctx.workspace.shown(where)
     travels = [f"  {ctx.workspace.shown(source)} ({_size(_bytes(source))})"
@@ -188,8 +188,13 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
           if sending.inputs.fetched else []),
         f"Results come back to {shown} when fetched.",
     ])
+    # The answer is to this send: what travels, each size, where it runs.
+    sent = hashlib.sha256("\n".join([
+        sending.installation.path, sending.remote_dir,
+        *(f"{name}={source}={_bytes(source)}"
+          for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
     agreed = _went_ahead(ctx, "send", message,
-                         f"start_study:{file}:{plan_id}:{machine}:{where}")
+                         f"start_study:{file}:{plan_id}:{machine}:{where}:{sent}")
     if agreed is None:
         raise ToolError(
             "This AI app cannot ask the person, and a study is sent to another machine "
@@ -207,12 +212,30 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     try:
         job = api.send_planned(sending)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+        found = refusal_of(exc)
+        if found.code == "remote.machine.busy":
+            _busy(ctx, machine, str(found.details.get("job") or ""))
         _refuse_there(exc, machine)
     how = "SLURM job" if job.scheduler == "slurm" else "process"
     return (f"Sent to {machine} as job {job.name} ({how} {job.handle}); it runs there "
             "on its own, whether or not this AI app stays open. remote_status says how "
             f"it is doing; fetch_study brings its results to {shown} once it has "
             f"finished; cancel_study stops it. Its folder there: {job.remote_dir}.")
+
+
+def _busy(ctx: Context, machine: str, running: str) -> NoReturn:
+    """A workstation is running a study: named only where its results come
+    back here, since a job sent for another folder is not this AI app's to
+    know of."""
+    from fastmdxplora.remote import api
+
+    ours = any(job.name == running for job in api.jobs(under=ctx.workspace.root))
+    raise ToolError(
+        (f"{machine} is running {running}, sent from here; remote_status says when "
+         "it ends, and cancel_study stops it." if ours else
+         f"{machine} is running a study sent from this computer.")
+        + " One study runs on a workstation at a time.",
+        code="remote.machine.busy")
 
 
 def _bytes(path: Path) -> int:
@@ -227,7 +250,9 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
     job = _job_here(ctx, args["job"])
     with_trajectory = bool(args.get("with_trajectory"))
     try:
-        job = api.status(job.name, max_age_s=0)
+        # The answer kept under 30 s says whether it may have ended; the
+        # fetch itself asks the machine again before it copies anything.
+        job = api.status(job.name)
         if job.state in ("ready", "running"):
             return (f"{job.name} is still {job.state}"
                     + (f" ({job.detail})" if job.detail else "")

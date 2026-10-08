@@ -213,8 +213,9 @@ Config. A file named outside it is refused (`remote.input.outside`) and nothing
 is sent, whoever wrote the Config: one written by an AI model naming
 `~/.ssh/id_ed25519` would otherwise copy the key to the machine. Links are
 resolved first, so a link in the folder leading out of it is outside too, and a
-folder that travels is refused if any link in it leads out of it, since the
-copy follows links. Copy the file into the study's folder and name it there.
+folder that travels is refused if a link in it, or in a folder one of its links
+leads to, leads out of it or back into itself, since the copy follows links.
+Copy the file into the study's folder and name it there.
 
 The one exception is a prepared study named by `simulation.setup_from` or
 `simulation.resume_from`, which usually sits beside the study's folder: it
@@ -290,8 +291,10 @@ job log as `remote_job.log`, ready to open with `fastmdx gui --output`.
 Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
 given; fetch says how many it left and where. It also reads the run's manifest
 and says so if the code that ran is not the code that sent it. A link left in
-the run on the machine is not copied, so nothing fetch writes or reads here
-afterwards leads out of the job's folder.
+the run on the machine is not copied, and anything else neither a file nor a
+folder is taken out (said), so nothing fetch writes or reads here afterwards
+leads out of the job's folder. An AI app's fetch is said in bytes first, and a
+file larger than the whole it said stays on the machine, named.
 
 A study sent with a prepared system (`simulation.setup_from`) names it there as
 `inputs/<name>`. Fetch writes `fetched.json` beside the results, recording the

@@ -245,4 +245,44 @@ def test_a_study_of_its_own_files_is_sent_and_sizes_are_shown(machine):
                for line in describe_sending(sending))
     job = _send(machine)
     assert (Path(job.remote_dir) / "inputs" / "top.pdb").is_file()
+    travels._until_finished(machine, job.name)
     shutil.rmtree(job.remote_dir)
+
+
+@needs_links
+class TestLinksFollowedAsTheCopyFollowsThem:
+    def test_a_link_inside_to_a_folder_whose_link_leads_out(self, folders):
+        study, elsewhere = folders
+        (study / "ff").mkdir()
+        (study / "other").mkdir()
+        (study / "ff" / "sub").symlink_to(study / "other")
+        (study / "other" / "key").symlink_to(elsewhere / "id_ed25519")
+        said = _refused({"setup": {"forcefield_files": ["ff"]}}, study)
+        assert "key" in said["message"]
+
+    def test_a_link_back_up_to_the_folder_holding_a_link_out(self, folders):
+        study, elsewhere = folders
+        (study / "ff").mkdir()
+        (study / "ff" / "up").symlink_to(study)
+        (study / "loose").symlink_to(elsewhere / "id_ed25519")
+        _refused({"setup": {"forcefield_files": ["ff"]}}, study)
+
+    def test_a_link_into_itself_is_refused_not_followed_for_ever(self, folders):
+        study, _ = folders
+        (study / "ff").mkdir()
+        (study / "ff" / "again").symlink_to(study / "ff")
+        _refused({"setup": {"forcefield_files": ["ff"]}}, study)
+
+    def test_a_folder_linked_twice_inside_travels(self, folders):
+        from fastmdxplora.remote.inputs import size_of
+
+        study, _ = folders
+        (study / "ff").mkdir()
+        (study / "data").mkdir()
+        (study / "data" / "a.xml").write_text("x" * 2000)
+        (study / "ff" / "one").symlink_to(study / "data")
+        (study / "ff" / "two").symlink_to(study / "data")
+        found = gather_inputs({"setup": {"forcefield_files": ["ff"]}}, study)
+        assert list(found.files) == ["ff"]
+        # As much as the copy sends: the file twice, through each link.
+        assert size_of(found.files["ff"]) == 4000

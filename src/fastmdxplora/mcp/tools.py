@@ -203,8 +203,11 @@ def _confined(ctx: Context, config: Any, where: str = "") -> None:
         return
     # As a reader of the value would take it: stripped, and with `//` and
     # `/./` gone, which is what pathlib makes of them anyway. A value still
-    # holding a line break after that is text, not a file name.
-    text = os.path.normpath(config.strip())
+    # holding a line break after that is text, not a file name. `..` is read
+    # in the value as given: normpath folds `link/..` away without following
+    # the link, where a reader of the path follows it first.
+    given = config.strip()
+    text = os.path.normpath(given)
     if "\n" in text:
         return
     try:
@@ -212,8 +215,8 @@ def _confined(ctx: Context, config: Any, where: str = "") -> None:
         exists = (named if named.is_absolute() else ctx.workspace.root / named).exists()
     except (OSError, RuntimeError, ValueError):
         named, exists = Path(text), False
-    if (exists or named.is_absolute() or text.startswith("~") or ".." in Path(text).parts) \
-            and ctx.workspace.inside(text) is None:
+    if (exists or named.is_absolute() or text.startswith("~") or ".." in Path(given).parts) \
+            and (ctx.workspace.inside(text) is None or ctx.workspace.inside(given) is None):
         raise ToolError(f"`{where}` names {text}, outside the workspace "
                         f"({ctx.workspace.root}). Copy it into the workspace and name it "
                         "there.")
