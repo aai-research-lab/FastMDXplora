@@ -1114,6 +1114,14 @@
         offerToStart: false,
       };
     }
+    if (app.analysed_only) {
+      return {
+        title: "A trajectory analysed",
+        body: "This study analysed a trajectory and ran no simulation, so there is no "
+          + "record of a run to show. What its analyses determined is on the Analysis page.",
+        offerToStart: false,
+      };
+    }
     return {
       title: "No live record",
       body: "This study kept no record of its simulation as it ran: it stopped before "

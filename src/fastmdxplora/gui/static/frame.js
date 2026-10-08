@@ -244,6 +244,16 @@
     setCollapsed(!live, false);
   }
 
+  /* A study with no live record, nothing going and nothing narrated (a
+   * trajectory analysed) has no narration to show: the panel is closed,
+   * not open and empty. Either may be learned first, so both ask here. */
+  var noLiveRecord = false;
+  var nothingNarrated = false;
+  var processGoing = false;
+  function closeIfSilent() {
+    if (noLiveRecord && nothingNarrated && !processGoing) followTheStudy(false);
+  }
+
   function setSidebarCollapsed(yes, chosen) {
     if (onTheViewer && chosen !== false) {
       keptOnTheViewer.sidebar = !yes;
@@ -389,6 +399,8 @@
     return fetch("/api/events").then(function (r) { return r.json(); }).then(function (d) {
       cachedEvents = Array.isArray(d.events) ? d.events : [];
       renderLog(cachedEvents);
+      nothingNarrated = !cachedEvents.length;
+      closeIfSilent();
     }).catch(function () { /* the panel is not load-bearing */ });
   }
 
@@ -934,15 +946,15 @@
     }
     el("side-expand").addEventListener("click", keepThePanel);
     if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
-      var processRunning = false;
       window.FastMDXDashboard.on("app-state", function (s) {
-        processRunning = !!(s && s.process_running);
-        if (processRunning) followTheStudy(true);
+        processGoing = !!(s && s.process_running);
+        if (processGoing) followTheStudy(true);
       });
       window.FastMDXDashboard.on("status-updated", function (update) {
         var status = String(((update || {}).status || {}).status || "").toLowerCase();
-        if (!status) return;
-        followTheStudy(processRunning || status === "running" || status === "starting");
+        noLiveRecord = !status;
+        if (!status) { closeIfSilent(); return; }
+        followTheStudy(processGoing || status === "running" || status === "starting");
       });
     }
     setSidebarCollapsed(store.get("sidebarCollapsed", "0") === "1", false);

@@ -194,6 +194,10 @@ class TestInTheBrowser:
     def test_the_overview_and_the_file_list(self, page) -> None:
         page.wait_for_function("!!(window.FastMDXFrame && window.FastMDXFrame.showTab)")
         page.evaluate("window.FastMDXFrame.showTab('files')")
+        # A study with no live record has no narration, so its side panel
+        # closes when the study's first state arrives, which can come after
+        # any look here: kept open, as a person who opened it would.
+        page.evaluate("() => document.getElementById('side-expand').click()")
         page.wait_for_selector("#side-files .side-file", timeout=20000)
         assert self._ran(page) == []
 

@@ -878,6 +878,9 @@ class DashboardRuntime:
                 # The runs of a study of several, each with its state, so the
                 # page can list them and open one. None for a study of one.
                 "runs": runs_of_a_study(open_root) if open_root else None,
+                # A study that analysed a trajectory and ran no simulation
+                # here, so has no record of one to show or narrate.
+                "analysed_only": _analysed_only(open_root) if open_root else False,
                 "run_of": study_a_run_belongs_to(open_root) if open_root else None,
                 "command": list(self.command),
                 "can_launch": not running,
@@ -1690,3 +1693,27 @@ def _demo_to_fetch() -> int:
     from fastmdxplora.demo import cached, packaged, source
 
     return 0 if packaged() or cached() else source()["bytes"]
+
+
+def _analysed_only(root: Path | str) -> bool:
+    """Whether a study's record lists the phases it ran and simulation is
+    not among them, nor among those its settings asked for: a trajectory
+    analysed, not a run that stopped before its simulation began."""
+    import yaml
+
+    base = Path(root)
+    try:
+        manifest = json.loads((base / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    if not isinstance(phases, list) or not phases:
+        return False
+    if any(isinstance(p, dict) and p.get("name") == "simulation" for p in phases):
+        return False
+    try:
+        config = yaml.safe_load((base / "resolved_config.yml").read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return False
+    asked = config.get("include_phase") if isinstance(config, dict) else None
+    return isinstance(asked, list) and "simulation" not in asked
