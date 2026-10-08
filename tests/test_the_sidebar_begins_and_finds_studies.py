@@ -105,7 +105,14 @@ def test_folded_it_is_a_strip_of_icons_that_still_take_you_there(browser, sessio
             && el.getBoundingClientRect().width > 0;
         return {width: Math.round(sidebar.getBoundingClientRect().width),
                 icons: [...sidebar.querySelectorAll('.nav-link')].filter(a => shown(a.querySelector('svg'))).length,
-                words: [...sidebar.querySelectorAll('.nav-link > span')].filter(shown).length,
+                // Out of sight, the words stay each link's name (one pixel,
+                // clipped, as a screen reader's text is).
+                words: [...sidebar.querySelectorAll('.nav-link > span')]
+                    .filter(s => shown(s) && s.getBoundingClientRect().width > 1).length,
+                named: [...sidebar.querySelectorAll('.nav-link')].every(a =>
+                    (a.getAttribute('aria-label') || [...a.querySelectorAll(':scope > span')]
+                        .filter(s => getComputedStyle(s).display !== 'none')
+                        .map(s => s.textContent).join('')).trim().length > 0),
                 card: shown(document.getElementById('study-card')),
                 mark: shown(document.querySelector('#sidebar-expand .strip-mark'))};
     }""")
@@ -119,7 +126,8 @@ def test_folded_it_is_a_strip_of_icons_that_still_take_you_there(browser, sessio
     tab.click("#sidebar-expand")
     tab.context.close()
     # Recent and Chats among them, as icons.
-    assert said == {"width": 56, "icons": 10, "words": 0, "card": False, "mark": True}
+    assert said == {"width": 56, "icons": 10, "words": 0, "named": True, "card": False,
+                    "mark": True}
     assert page == "analysis" and not peeked
 
 

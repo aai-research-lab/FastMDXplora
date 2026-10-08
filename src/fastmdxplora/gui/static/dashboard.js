@@ -527,11 +527,14 @@
     // five empty views.
     $$("[data-requires-run]").forEach((element) => {
       element.classList.toggle("nav-link-pending", !activeRun);
-      if (activeRun) {
-        element.removeAttribute("title");
-      } else {
-        element.setAttribute("title", "Available once an exploration exists in this workspace");
-      }
+      // Named by its own word, to a screen reader and on hover: folded to
+      // a strip of icons, its word is hidden, and once a study was open the
+      // links of its pages were left with no name at all.
+      const word = element.dataset.word
+        || (element.dataset.word = (element.querySelector("span")?.textContent || "").trim());
+      if (word) element.setAttribute("aria-label", word);
+      element.setAttribute("title", activeRun ? word
+        : `${word}: available once a study is open in this workspace`);
     });
     emit("app-state", payload || {});
   }

@@ -5221,8 +5221,14 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
     }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar :is(.brand-text, .sidebar-collapse,
         .sidebar-study, .sidebar-progress, .nav-count, .sidebar-convs,
-        .nav-link > span, .sidebar-account-text, .sidebar-account-gear) {
+        .sidebar-account-text, .sidebar-account-gear) {
         display: none;
+    }
+    /* A link's word is out of sight on the strip but still its name: hidden
+       from the eye only, where `display: none` left the icons nameless. */
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .nav-link > span {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
     }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-top { margin: 0 -8px; padding: 0 8px 6px; }
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .nav-link {
