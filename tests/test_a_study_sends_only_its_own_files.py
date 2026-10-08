@@ -127,7 +127,7 @@ def _prepared(where: Path, manifest: bool = True) -> Path:
     (where / "setup").mkdir(parents=True)
     (where / "setup" / "system.xml").write_text("<system/>")
     if manifest:
-        (where / "manifest.json").write_text(json.dumps({"version": "1.0"}))
+        (where / "manifest.json").write_text(json.dumps({"version": "1.0", "phases": []}))
     return where
 
 
@@ -155,6 +155,28 @@ class TestAPreparedStudyBeside:
         study, _ = folders
         _prepared(study.parent / "reference", manifest=False)
         _refused({"simulation": {"setup_from": "../reference"}}, study)
+
+    def test_a_manifest_another_program_wrote_is_refused(self, folders):
+        study, _ = folders
+        reference = _prepared(study.parent / "reference", manifest=False)
+        (reference / "manifest.json").write_text(json.dumps({"name": "a web app"}))
+        _refused({"simulation": {"setup_from": "../reference"}}, study)
+
+    def test_a_study_far_from_the_folder_is_refused(self, folders, tmp_path_factory):
+        study, _ = folders
+        far = _prepared(tmp_path_factory.mktemp("far") / "reference")
+        _refused({"simulation": {"setup_from": str(far)}}, study)
+
+    def test_a_study_further_down_beside_it_travels(self, folders):
+        study, _ = folders
+        reference = _prepared(study.parent / "runs" / "reference")
+        found = gather_inputs({"simulation": {"setup_from": "../runs/reference"}}, study)
+        assert found.files == {"reference": reference.resolve()}
+
+    def test_the_name_alone_elsewhere_is_not_the_setting(self, folders):
+        study, _ = folders
+        _prepared(study.parent / "reference")
+        _refused({"notes": {"setup_from": "../reference"}}, study)
 
     def test_a_manifest_that_is_not_one_is_refused(self, folders):
         study, _ = folders

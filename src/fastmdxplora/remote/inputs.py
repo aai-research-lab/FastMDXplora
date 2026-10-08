@@ -20,9 +20,10 @@ a config an AI model wrote naming ``~/.ssh/id_ed25519`` would otherwise copy
 the key to the machine. Links are resolved first, so a link in the folder
 pointing out of it is outside too, and a folder that travels is refused if
 any link in it points out of it, since the copy follows links. One
-exception: a prepared study named by ``setup_from`` or ``resume_from`` may
-sit beside the folder, where a study usually does, when its manifest reads
-as a study's; links in it are held to that study's folder.
+exception: a prepared study named by ``simulation.setup_from`` or
+``simulation.resume_from`` may sit beside the folder, where a study usually
+does (anywhere in the folder holding the study's folder), when it holds a
+manifest FastMDXplora wrote; links in it are held to that study's folder.
 """
 
 from __future__ import annotations
@@ -126,13 +127,14 @@ def size_of(path: Path) -> int:
 
 
 def _study_folder(path: Path) -> Path | None:
-    """The study ``path`` is or is the setup folder of, by its manifest."""
+    """The study ``path`` is or is the setup folder of, by its manifest:
+    one FastMDXplora wrote, which lists the phases it ran."""
     for folder in (path, path.parent) if path.name == "setup" else (path,):
         try:
             record = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(record, dict):
+        if isinstance(record, dict) and isinstance(record.get("phases"), list):
             return folder
     return None
 
@@ -184,7 +186,9 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
     def allowed(path: Path, key: str, where: str, given: str) -> Path:
         """The folder ``path``'s links are held to, or a refusal."""
         held_to = folder if _inside(path, folder) else None
-        if held_to is None and key in _STUDIES_NAMED and path.is_dir():
+        if (held_to is None and key in _STUDIES_NAMED and path.is_dir()
+                and where.endswith(f"simulation.{key}")
+                and folder.parent in path.parents):
             held_to = _study_folder(path)
         link = None if held_to is None else link_out_of(path, held_to)
         if held_to is None or link is not None:

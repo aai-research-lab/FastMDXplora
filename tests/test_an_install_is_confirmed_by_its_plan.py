@@ -129,3 +129,34 @@ def test_a_plan_with_no_route_has_no_yes(machine):
     with pytest.raises(ValueError) as caught:
         plan_yes("box", InstallPlan(version="1.0", blocked="nothing to do it with"))
     assert refusal_of(caught.value).code == "remote.machine.not_ready"
+
+
+def test_a_step_here_reaches_the_machine_without_a_prompt(behind, monkeypatch):
+    from fastmdxplora.remote.plan import InstallPlan, Step
+
+    shown = InstallPlan(version="1.0.dev2", route="image",
+                        steps=[Step("here", "true")])
+    monkeypatch.setattr("fastmdxplora.remote.installer.plan_for",
+                        lambda machine, code: shown)
+    seen: list[dict] = []
+
+    def here(command, **kwargs):
+        seen.append(kwargs.get("env") or {})
+        return behind.local(command)
+
+    install("box", confirm=confirmed_by("box", plan_yes("box", shown)),
+            transport=behind.transport(), code=WANTED, local_runner=here)
+    assert "BatchMode=yes" in seen[0]["RSYNC_RSH"]
+    assert "ControlPath=" in seen[0]["RSYNC_RSH"]
+
+
+def test_an_image_is_copied_into_the_home_the_machine_has():
+    from fastmdxplora.remote.identity import CodeIdentity
+    from fastmdxplora.remote.plan import install_plan
+    from fastmdxplora.remote.probe import Inspection
+
+    plan = install_plan(Inspection(os="Linux", arch="x86_64", internet="no",
+                                   container="/usr/bin/apptainer"),
+                        CodeIdentity("2.5.6"), "box")
+    copy = next(s.command for s in plan.steps if s.command.startswith("rsync"))
+    assert copy.endswith(" box:.fastmdxplora/images/")

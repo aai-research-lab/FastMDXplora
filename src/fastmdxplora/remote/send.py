@@ -21,8 +21,14 @@ copy, which follows them.
 **One study at a time on a workstation.** A job sent there holds its GPU,
 not this computer's, so this computer's own one-at-a-time rule does not
 cover it; a second send while one sent from here is waiting or running is
-refused, the first asked about again before it is. A cluster's scheduler
-queues, so there any number may be sent.
+refused, the first asked about again before it is (``prepare`` notes it,
+so a dry run still shows its plan; ``send`` refuses, holding a lock for
+the machine from the check until the job is recorded). A cluster's
+scheduler queues, so there any number may be sent.
+
+**What comes back is written only into the job's own folder.** A link the
+machine left in the run is not copied (``--no-links``), so nothing written
+or read here afterwards follows one out of the folder.
 
 **A machine is asked about a job at most every 30 s** where the caller says
 so (every interface but the command line, where a person typed the
@@ -44,6 +50,7 @@ import re
 import shlex
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -61,6 +68,7 @@ from fastmdxplora.remote.jobs import (
     RUNNING,
     Job,
     check_job_name,
+    held,
     load_job,
     save_job,
 )
@@ -111,6 +119,9 @@ class Sending:
     force: bool = False
     name_from_time: bool = False
     notes: list[str] = field(default_factory=list)
+    #: The job sent from here that the workstation is running, if any: the
+    #: send is refused while it runs.
+    busy: str = ""
 
 
 def _refresh(machine: Machine, link: Transport) -> Machine:
@@ -195,8 +206,7 @@ def prepare(config_path: str | Path, machine_name: str, *,
             code="remote.machine.not_ready",
             machine=machine_name, reason=verdict.summary,
         )
-    if machine.inspection.kind != "slurm":
-        _not_busy(machine_name, link)
+    busy = _busy_with(machine_name, link) if machine.inspection.kind != "slurm" else None
     candidates = (machine.inspection.holding(code)
                   or machine.inspection.installations())
     env = verdict.installation or (candidates[0] if candidates else None)
@@ -218,7 +228,9 @@ def prepare(config_path: str | Path, machine_name: str, *,
     name = check_job_name(Path(output).name if output else (
         Path(str(raw.get("output"))).name if raw.get("output")
         else default_output_name(system_of(loaded))))
-    local_output = str(Path(output) if output else Path.cwd() / name)
+    # Absolute, so the record says the same folder whatever folder a later
+    # caller asks from.
+    local_output = str((Path(output) if output else Path.cwd() / name).resolve())
     found = machine.inspection
     base = found.scratch or found.home
     remote_dir = f"{base}/fastmdxplora-jobs/{name}"
@@ -232,6 +244,9 @@ def prepare(config_path: str | Path, machine_name: str, *,
                       remote_dir=remote_dir, local_output=local_output,
                       scheduler=scheduler, config_text=config_text,
                       script=script, inputs=inputs, force=force)
+    if busy is not None:
+        sending.busy = busy.name
+        sending.notes.append(_busy_said(machine_name, busy))
     sending.name_from_time = not output and not raw.get("output")
     if sending.name_from_time:
         sending.notes.append(
@@ -243,24 +258,48 @@ def prepare(config_path: str | Path, machine_name: str, *,
     return sending
 
 
-def _not_busy(machine_name: str, link: Transport) -> None:
-    """Refuse a second study on a workstation while one sent from here is
-    waiting or running there, asking about each first."""
+def _busy_with(machine_name: str, link: Transport) -> Job | None:
+    """The job sent from here that a workstation is waiting on or running,
+    each such record asked about there and then."""
     from fastmdxplora.remote.jobs import job_names
 
     for name in job_names():
         job = load_job(name)
         if job.machine != machine_name or job.state not in (READY, RUNNING):
             continue
-        job = status(name, transport=link, max_age_s=STATUS_KEPT_S)
+        job = status(name, transport=link)
         if job.state in (READY, RUNNING):
-            raise StudyError(
-                f"{machine_name} is running {job.name}, sent from here"
-                + (f" ({job.detail})" if job.detail else "")
-                + ". One study runs on a workstation at a time: wait for it "
-                f"(`fastmdx remote status {job.name}`), or stop it "
-                f"(`fastmdx remote cancel {job.name}`).",
-                code="remote.machine.busy", machine=machine_name, job=job.name)
+            return job
+    return None
+
+
+def _busy_said(machine_name: str, job: Job) -> str:
+    return (f"{machine_name} is running {job.name}, sent from here"
+            + (f" ({job.detail})" if job.detail else "")
+            + ". One study runs on a workstation at a time: wait for it "
+            f"(`fastmdx remote status {job.name}`), or stop it "
+            f"(`fastmdx remote cancel {job.name}`).")
+
+
+@contextmanager
+def _sending_to(machine_name: str):
+    """Held from the check that a workstation is free until the job is
+    recorded, so two sends at once do not both find it free."""
+    from fastmdxplora.remote.jobs import jobs_dir
+
+    folder = jobs_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+    except ImportError:  # Windows: one sender at a time is not enforced
+        yield
+        return
+    with open(folder / f".sending-{machine_name}.lock", "a+") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(held, fcntl.LOCK_UN)
 
 
 def send(sending: Sending, *, transport: Transport | None = None,
@@ -269,15 +308,25 @@ def send(sending: Sending, *, transport: Transport | None = None,
     from fastmdxplora.remote.jobs import job_names
 
     code = code or this_code()
-    name, where = sending.job_name, sending.remote_dir
     link = transport or Transport(sending.machine.name)
+    with _sending_to(sending.machine.name):
+        return _send_held(sending, link, local_runner, code, job_names)
+
+
+def _send_held(sending: Sending, link: Transport, local_runner,
+               code: CodeIdentity, job_names) -> Job:
+    name, where = sending.job_name, sending.remote_dir
     if name in job_names() and not sending.force:
         raise StudyError(
             f"A job called {name} was already sent from here. Give another "
             "--output, or --force-overwrite to replace it.",
             code="environment.path.exists", path=name)
-    if sending.scheduler != "slurm":
-        _not_busy(sending.machine.name, link)
+    busy = (_busy_with(sending.machine.name, link)
+            if sending.scheduler != "slurm" else None)
+    if busy is not None:
+        raise StudyError(_busy_said(sending.machine.name, busy),
+                         code="remote.machine.busy",
+                         machine=sending.machine.name, job=busy.name)
     exists = link.run(["test", "-e", f"{where}/run"]).returncode == 0
     if exists and not sending.force:
         raise StudyError(
@@ -419,6 +468,11 @@ def status(name: str, *, transport: Transport | None = None,
     With ``max_age_s``, an answer recorded less than that long ago is
     returned as it is, and the machine is not asked.
     """
+    with held(name):
+        return _status(name, transport, max_age_s)
+
+
+def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     job = load_job(name)
     if job.state == ABANDONED:
         return job
@@ -461,6 +515,9 @@ class FetchSizes:
     results: int
     trajectory: int
     trajectory_files: int
+    #: False where the job ended before its run wrote anything: its folder
+    #: holds only the job's log, which says why.
+    run_written: bool = True
 
     def bringing(self, with_trajectory: bool) -> int:
         return self.results + (self.trajectory if with_trajectory else 0)
@@ -468,7 +525,8 @@ class FetchSizes:
 
 def _sizes_script(job: Job) -> str:
     names = " -o ".join(f"-name '{p}'" for p in TRAJECTORY_PATTERNS)
-    return (f"cd {shlex.quote(job.run_dir)} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
+    return (f"cd {shlex.quote(job.remote_dir)} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
+            "cd run 2>/dev/null || { echo fmdx:norun=1; exit 0; }\n"
             "echo \"fmdx:total=$(du -sk . | cut -f1)\"\n"
             f"echo \"fmdx:trajectory=$(find . -type f \\( {names} \\) -exec du -k {{}} + "
             "2>/dev/null | awk '{s+=$1} END {print s+0}')\"\n"
@@ -483,9 +541,12 @@ def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
     found = _read(link.run(["sh", "-s"], stdin=_sizes_script(job)).stdout)
     if "gone" in found:
         raise StudyError(
-            f"{job.run_dir} is not on {job.machine} any more, so {name} has "
+            f"{job.remote_dir} is not on {job.machine} any more, so {name} has "
             "nothing to fetch.",
             code="remote.job.gone", given=name, machine=job.machine)
+    if "norun" in found:
+        return FetchSizes(results=0, trajectory=0, trajectory_files=0,
+                          run_written=False)
 
     def kb(key: str) -> int:
         text = (found.get(key) or ["0"])[0].strip()
@@ -498,8 +559,23 @@ def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
 
 def fetch(name: str, *, with_trajectory: bool = False,
           transport: Transport | None = None, local_runner=None,
-          code: CodeIdentity | None = None) -> tuple[Job, list[str]]:
-    """Bring a job's run folder back. Returns the job and any warnings."""
+          code: CodeIdentity | None = None,
+          most_bytes: int | None = None) -> tuple[Job, list[str]]:
+    """Bring a job's run folder back. Returns the job and any warnings.
+
+    ``most_bytes``, where given, is the most any one file brought may be:
+    the sizes a caller showed before asking, so a machine that said less
+    than it holds cannot send more in one file than the whole was said to
+    be.
+    """
+    with held(name):
+        return _fetch(name, with_trajectory, transport, local_runner, code,
+                      most_bytes)
+
+
+def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
+           local_runner, code: CodeIdentity | None,
+           most_bytes: int | None) -> tuple[Job, list[str]]:
     link = transport or Transport(load_job(name).machine)
     # A running study is still writing, and rotating its live frames, so a
     # copy of it is a copy of nothing in particular. Asked again rather than
@@ -514,7 +590,11 @@ def fetch(name: str, *, with_trajectory: bool = False,
             code="remote.job.unfinished", given=name, state=job.state)
     target = Path(job.local_output)
     target.mkdir(parents=True, exist_ok=True)
-    excludes: list[str] = []
+    # A link the machine left is not copied: written through or read here,
+    # it would lead out of the job's folder.
+    excludes: list[str] = ["--no-links"]
+    if most_bytes is not None:
+        excludes.append(f"--max-size={max(int(most_bytes), 1)}")
     left: list[str] = []
     if not with_trajectory:
         for pattern in TRAJECTORY_PATTERNS:
@@ -533,7 +613,7 @@ def fetch(name: str, *, with_trajectory: bool = False,
             code="environment.service.machine_unreachable",
             machine=job.machine, reason=f"rsync exit {copied}")
     run_here(link.rsync_command(f":{job.remote_dir}/job.log",
-                                f"{target}/remote_job.log"),
+                                f"{target}/remote_job.log", "--no-links"),
              runner=local_runner, what="fetching a study")
 
     warnings: list[str] = []
@@ -579,10 +659,10 @@ def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
     from fastmdxplora.refusals import CodedError
     from fastmdxplora.simulation.pipeline import FETCHED_RECORD, setup_records_of
 
-    (target / FETCHED_RECORD).write_text(json.dumps({
+    _written_into(target, FETCHED_RECORD, json.dumps({
         "job": job.name, "machine": job.machine, "remote_dir": job.remote_dir,
         "fetched_at": job.fetched_at, "inputs": job.extra.get("inputs") or {},
-    }, indent=2), encoding="utf-8")
+    }, indent=2))
 
     runs = [target] + sorted(p for p in (target / "runs").glob("*") if p.is_dir())
     warnings: list[str] = []
@@ -609,12 +689,42 @@ def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
     return warnings
 
 
+def _written_into(folder: Path, name: str, text: str) -> None:
+    """``text`` as the file ``name`` in ``folder``, written beside it and
+    moved into place: a link of that name is replaced, never written
+    through."""
+    handle, scratch = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".part")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(text)
+        os.replace(scratch, folder / name)
+    except OSError as exc:
+        Path(scratch).unlink(missing_ok=True)
+        raise StudyError(
+            f"{folder / name} could not be written ({exc.strerror or exc}): "
+            "something else of that name is there.",
+            code="environment.path.exists", path=str(folder / name)) from exc
+
+
 def cancel(name: str, *, transport: Transport | None = None) -> Job:
-    """Stop a job. Its folder on the machine is left as it is."""
+    """Stop a job. Its folder on the machine is left as it is.
+
+    The machine is asked first: a job that ended since its record was
+    written is not signalled, since its process number may by now be
+    another's.
+    """
+    with held(name):
+        return _cancel(name, transport)
+
+
+def _cancel(name: str, transport: Transport | None) -> Job:
     job = load_job(name)
     if job.state in FINISHED:
         return job
     link = transport or Transport(job.machine)
+    job = _status(name, link, 0)
+    if job.state in FINISHED:
+        return job
     if job.scheduler == "slurm":
         link.run(["scancel", job.handle])
     else:
@@ -645,7 +755,7 @@ def describe_sending(sending: Sending) -> list[str]:
 
 
 def _megabytes(size: int) -> str:
-    return f"{size / 1e6:.1f} MB" if size >= 100_000 else f"{size / 1e3:.0f} kB"
+    return f"{size / 1e6:.1f} MB" if size >= 1_000_000 else f"{size / 1e3:.0f} kB"
 
 
 def job_line(job: Job) -> str:

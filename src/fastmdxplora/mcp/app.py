@@ -55,9 +55,13 @@ def _instructions(workspace: Workspace, runs: bool) -> str:
         "model where the AI app lends it, and otherwise with a second AI model on the "
         "person's own API key. Use it only when the person asks for the Agent.",
     ]
+    lines.append("- list_machines names the person's other machines, inspected by them at a "
+                 "terminal; remote_status says how a study sent to one is doing.")
     if runs:
         lines.append("- start_study only when the person has agreed to that plan: a study "
-                     "can take hours of this machine's GPU.")
+                     "can take hours of this machine's GPU. With `machine` it is sent to "
+                     "one of theirs instead, only once they agree when asked here; "
+                     "fetch_study brings it back once they agree to how much it brings.")
         lines.append("- run_phases_again only when the person asks to analyse a study again, "
                      "add an analysis to it, or write its report again.")
     else:

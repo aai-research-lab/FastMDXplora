@@ -147,6 +147,11 @@ class Transport:
         return ["ssh", *self.ssh_options(sockets), "--", self.name,
                 shlex.join(list(remote))]
 
+    def rsync_shell(self) -> str:
+        """The ``ssh`` rsync reaches the machine with, as one command line:
+        this connection's options, its kept connection included."""
+        return shlex.join(["ssh", *self.ssh_options(_socket_dir())])
+
     def rsync_command(self, source: str, destination: str,
                       *extra: str) -> list[str]:
         """An rsync between this computer and the machine over the same ssh.
@@ -154,7 +159,7 @@ class Transport:
         ``source`` or ``destination`` names the machine's side with a
         leading ``:``, as in ``":/scratch/me/job/run/"``.
         """
-        shell = shlex.join(["ssh", *self.ssh_options(_socket_dir())])
+        shell = self.rsync_shell()
         def side(path: str) -> str:
             return f"{self.name}{path}" if path.startswith(":") else path
         return ["rsync", "-az", "-e", shell, *extra, side(source),
@@ -205,7 +210,8 @@ class Transport:
 
 
 def run_here(command: Sequence[str], *, runner: Runner | None = None,
-             timeout: float = 3600, what: str = "") -> int:
+             timeout: float = 3600, what: str = "",
+             env: dict[str, str] | None = None) -> int:
     """Run a command on this computer, printing as it goes; its exit code.
 
     For the steps of a plan that happen here -- fetching a release image,
@@ -213,8 +219,9 @@ def run_here(command: Sequence[str], *, runner: Runner | None = None,
     naming it, not a traceback.
     """
     try:
+        more = {"env": env} if env is not None else {}
         done = (runner or subprocess.run)(list(command), text=True,
-                                          timeout=timeout, check=False)
+                                          timeout=timeout, check=False, **more)
     except FileNotFoundError as exc:
         name = command[0]
         raise StudyError(

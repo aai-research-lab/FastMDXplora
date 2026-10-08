@@ -22,6 +22,17 @@ machine = travels.machine
 machine_path = travels.machine_path
 
 
+def _ended_there(job) -> None:
+    """Wait for the job to write its exit code on the machine, its record
+    left as it was."""
+    from pathlib import Path
+
+    deadline = time.monotonic() + 30
+    while not (Path(job.remote_dir) / "exit_code").is_file():
+        assert time.monotonic() < deadline, "the job never ended"
+        time.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # One study at a time on a workstation
 # ---------------------------------------------------------------------------
@@ -29,16 +40,22 @@ class TestOneAtATime:
     def test_a_second_study_is_refused_while_the_first_runs(self, machine, tmp_path):
         machine.env["FAKE_SLEEP"] = "30"
         first = _send(machine)
+        # Planned, so a dry run still shows what it would do, and said.
+        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
+                         code=RELEASE, transport=machine.transport())
+        assert second.busy == first.name
+        assert any("fastmdx remote cancel trial" in note for note in second.notes)
         with pytest.raises(ValueError) as caught:
-            prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                    code=RELEASE, transport=machine.transport())
+            send(second, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
         found = refusal_of(caught.value)
         assert found.code == "remote.machine.busy"
         assert found.details["job"] == first.name
-        assert "fastmdx remote cancel trial" in found.message
+        assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
         cancel(first.name, transport=machine.transport())
-        prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                code=RELEASE, transport=machine.transport())
+        again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
+                        code=RELEASE, transport=machine.transport())
+        assert again.busy == ""
 
     def test_one_prepared_before_the_first_was_sent_is_refused_at_the_send(
             self, machine, tmp_path):
@@ -55,11 +72,15 @@ class TestOneAtATime:
             cancel(first.name, transport=machine.transport())
 
     def test_a_job_that_ended_is_asked_about_and_frees_the_machine(self, machine, tmp_path):
-        _send(machine)
-        time.sleep(0.5)
-        # Its record still says running; the machine is asked, and says done.
-        prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                code=RELEASE, transport=machine.transport())
+        machine.env["FAKE_SLEEP"] = "1"
+        first = _send(machine)
+        # An answer kept from while it ran, under 30 s old, is not the answer.
+        assert status(first.name, transport=machine.transport(),
+                      max_age_s=STATUS_KEPT_S).state == "running"
+        _ended_there(first)
+        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
+                         code=RELEASE, transport=machine.transport())
+        assert second.busy == ""
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +352,143 @@ class TestAnAIApp:
             wire.close()
         assert {"list_machines", "remote_status"} <= names
         assert not {"start_study", "fetch_study", "cancel_study"} & names
+
+
+# ---------------------------------------------------------------------------
+# What comes back stays in the job's folder; records under many callers
+# ---------------------------------------------------------------------------
+class TestWhatComesBack:
+    def test_a_link_the_machine_left_is_neither_copied_nor_written_through(
+            self, machine, tmp_path):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        victim = tmp_path / "victim.txt"
+        victim.write_text("mine\n")
+        folder = tmp_path / "victim-folder"
+        folder.mkdir()
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        run = Path(job.run_dir)
+        (run / "fetched.json").symlink_to(victim)
+        (run / "remote_job.log").symlink_to(folder)
+        (run / "secret").symlink_to(victim)
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        assert victim.read_text() == "mine\n"
+        assert list(folder.iterdir()) == []
+        assert not (machine.back / "secret").exists()
+        assert not (machine.back / "fetched.json").is_symlink()
+        assert (machine.back / "remote_job.log").read_text().strip() == "working"
+
+    def test_no_file_larger_than_said_is_brought(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "huge.bin").write_bytes(b"x" * 200_000)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE, most_bytes=100_000)
+        assert (machine.back / "manifest.json").is_file()
+        assert not (machine.back / "huge.bin").exists()
+
+    def test_a_job_that_wrote_no_run_has_no_sizes_to_give(self, machine):
+        import shutil
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        shutil.rmtree(Path(job.run_dir))
+        sizes = api.fetch_sizes(job.name, transport=machine.transport())
+        assert sizes.run_written is False and sizes.bringing(True) == 0
+
+    def test_a_job_that_ended_unseen_is_not_signalled(self, machine):
+        job = _send(machine)
+        _ended_there(job)
+        asked = len(machine.commands)
+        stopped = cancel(job.name, transport=machine.transport())
+        assert stopped.state == "done"
+        assert not any("kill" in c for c in machine.commands[asked:])
+
+    def test_the_results_folder_is_recorded_whole(self, machine, monkeypatch, tmp_path):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        monkeypatch.chdir(tmp_path)
+        sending = prepare(machine.study, "box", output="back/relative", code=RELEASE,
+                          transport=machine.transport())
+        assert sending.local_output == str(tmp_path / "back" / "relative")
+        assert Path(sending.local_output).is_absolute()
+        # A record from before, relative, is not taken for any folder's.
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        save_job(Job("old", "box", "/x", "process", "1", "t", {}, "relative/old",
+                     state="running"))
+        assert [j.name for j in api.jobs(under=tmp_path)] == []
+
+    def test_records_written_at_once_are_written_whole(self, machine):
+        import threading
+
+        from fastmdxplora.remote.jobs import Job, load_job, save_job
+
+        job = Job("many", "box", "/x", "process", "1", "t", {}, "/tmp/many")
+        failed: list[BaseException] = []
+
+        def write(n: int) -> None:
+            try:
+                for i in range(20):
+                    save_job(Job(**{**job.__dict__, "detail": f"{n}-{i}"}))
+            except BaseException as exc:  # noqa: BLE001 - collected for the assert
+                failed.append(exc)
+
+        threads = [threading.Thread(target=write, args=(n,)) for n in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert failed == []
+        assert load_job("many").detail.endswith("-19")
+
+
+class TestAnAIAppAndOtherFolders:
+    def test_a_busy_machine_is_said_without_another_folder_s_job(self, app):
+        app.machine.env["FAKE_SLEEP"] = "30"
+        other = _send(app.machine)          # results go outside the workspace
+        try:
+            _, done = _start(app, answer=YES)
+            assert done["isError"]
+            said = _text(done)
+            assert said.startswith("box is running a study sent from this computer.")
+            assert other.name not in said
+        finally:
+            cancel(other.name, transport=app.machine.transport())
+
+    def test_a_job_that_wrote_nothing_says_why_from_its_log(self, app):
+        import shutil
+        from pathlib import Path
+
+        _start(app, answer=YES)
+        job = _finished(app)
+        shutil.rmtree(Path(job.run_dir))
+        said = _text(_call(app, "fetch_study", job="ghg_run"))
+        assert "before its run wrote anything on box" in said
+        assert "working" in said
+
+    def test_a_machine_that_cannot_be_reached_says_how_to_sign_in(self, app, monkeypatch):
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.remote import api
+
+        def unreachable(*args, **kwargs):
+            raise StudyError("Could not reach box over ssh: Permission denied.",
+                             code="environment.service.machine_unreachable",
+                             machine="box", reason="denied")
+
+        monkeypatch.setattr(api, "plan_send", unreachable)
+        _, done = _start(app, answer=YES)
+        assert "`fastmdx remote --machine box` in a terminal" in _text(done)

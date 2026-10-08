@@ -42,7 +42,7 @@ LARGE_BYTES = 100 * 1000 * 1000
 def _size(size: int) -> str:
     if size >= 1e9:
         return f"{size / 1e9:.1f} GB"
-    return f"{size / 1e6:.1f} MB" if size >= 100_000 else f"{size / 1e3:.0f} kB"
+    return f"{size / 1e6:.1f} MB" if size >= 1_000_000 else f"{size / 1e3:.0f} kB"
 
 
 def _said_there(exc: BaseException, machine: str = "") -> tuple[str, str]:
@@ -54,9 +54,10 @@ def _said_there(exc: BaseException, machine: str = "") -> tuple[str, str]:
         # person signs in at a terminal, and the connection kept then is
         # used while it lasts.
         said += (f" A machine that asks for a password or a second factor is "
-                 f"reached from here only while a terminal sign-in is kept open: "
-                 f"the person runs `ssh {machine}` in a terminal, then asks again "
-                 "within ten minutes.")
+                 "reached from here only while FastMDXplora's own connection to it "
+                 "is open: the person runs `fastmdx remote --machine "
+                 f"{machine}` in a terminal and signs in there, which keeps it "
+                 "open for ten minutes, then asks again within that time.")
     return said, found.code
 
 
@@ -163,6 +164,16 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
         sending = api.plan_send(file, machine, output=where)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, machine)
+    if sending.busy:
+        # Named only where its results come back here: a job sent for
+        # another folder is not this AI app's to know of.
+        ours = any(job.name == sending.busy for job in api.jobs(under=ctx.workspace.root))
+        raise ToolError(
+            (f"{machine} is running {sending.busy}, sent from here; remote_status "
+             "says when it ends, and cancel_study stops it." if ours else
+             f"{machine} is running a study sent from this computer.")
+            + " One study runs on a workstation at a time.",
+            code="remote.machine.busy")
 
     shown = ctx.workspace.shown(where)
     travels = [f"  {ctx.workspace.shown(source)} ({_size(_bytes(source))})"
@@ -224,6 +235,13 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
         sizes = api.fetch_sizes(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
+    if not sizes.run_written:
+        tail = job.extra.get("log_tail") or []
+        return "\n".join([
+            f"{job.name} ended ({job.state}"
+            + (f", {job.detail}" if job.detail else "")
+            + f") before its run wrote anything on {job.machine}, so there is nothing "
+            "to fetch. The end of its log:", *[f"  {line}" for line in tail[-8:]]])
     bringing = sizes.bringing(with_trajectory)
     shown = ctx.workspace.shown(job.local_output)
     staying = (f"Trajectories and checkpoints come too ({sizes.trajectory_files} "
@@ -247,7 +265,9 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
     if ctx.call is not None and ctx.call.cancelled:
         return "Not fetched: the call was cancelled."
     try:
-        job, warnings = api.fetch(job.name, with_trajectory=with_trajectory)
+        # No file larger than the whole was said to be, and a margin.
+        job, warnings = api.fetch(job.name, with_trajectory=with_trajectory,
+                                  most_bytes=bringing + bringing // 10 + 1_000_000)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
     return "\n".join([f"Fetched {job.name} into {shown} ({_size(bringing)}). "
@@ -259,6 +279,12 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.remote.jobs import FINISHED
 
     job = _job_here(ctx, args["job"])
+    try:
+        # Asked now: a record that still says running may be an hour old,
+        # and an ended job's process number may be another's by now.
+        job = api.status(job.name, max_age_s=0)
+    except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+        _refuse_there(exc, job.machine)
     if job.state in FINISHED:
         return f"{job.name} has ended already ({job.state})."
     agreed = _went_ahead(ctx, "cancel", (
@@ -301,8 +327,9 @@ REMOTE_TOOLS: tuple[Tool, ...] = (
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
           "openWorldHint": True}, _fetch_study, acts=True),
     Tool("cancel_study", "Stop a study on another machine",
-         "Stop a job sent from here, once the person agrees. Its folder on the machine "
-         "stays.",
+         "Stop a job sent from here. Where the AI app can ask, the person is asked "
+         "first; where it cannot, its own approval of the call is the gate. Its folder "
+         "on the machine stays.",
          {"job": _JOB}, ("job",),
          {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
           "openWorldHint": True}, _cancel_study, acts=True),

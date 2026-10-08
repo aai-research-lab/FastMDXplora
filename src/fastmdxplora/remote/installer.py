@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sys
 import threading
@@ -98,8 +99,12 @@ def install(name: str, *, confirm: Callable[[InstallPlan], bool],
         print(f"\n[{'this computer' if step.where == 'here' else name}] "
               f"{step.command}", flush=True)
         if step.where == "here":
+            # A step here that copies to the machine (rsync) reaches it as
+            # every other command does: its kept connection, and no prompt
+            # where nobody is there to answer one.
             returncode = run_here(["sh", "-c", step.command],
-                                  runner=local_runner, timeout=STEP_TIMEOUT_S)
+                                  runner=local_runner, timeout=STEP_TIMEOUT_S,
+                                  env={**os.environ, "RSYNC_RSH": link.rsync_shell()})
         else:
             returncode = link.run(["sh", "-c", step.command],
                                   timeout=STEP_TIMEOUT_S, show=True).returncode

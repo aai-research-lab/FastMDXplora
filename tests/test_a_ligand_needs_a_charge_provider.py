@@ -319,7 +319,7 @@ class TestARemoteMachineIsHeldToIt:
         verdict = readiness(machine, CodeIdentity("9.9.9"))
         assert not verdict.ready and "AM1-BCC charges" in verdict.summary
         plan = backends_plan(inspection, env.path, ["am1bcc"], "box")
-        assert '"ambertools"' in plan.steps[0].command
+        assert "ambertools" in plan.steps[0].command.split()
 
 
 class TestEveryDeclarationOfTheStackCarriesAmberTools:

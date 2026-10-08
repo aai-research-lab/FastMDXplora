@@ -94,8 +94,10 @@ runs on a GPU node.
 Everything `~/.ssh/config` says applies: `ProxyJump` through a login node, keys,
 an agent, certificates. Where a cluster asks for a password or a second factor,
 you are asked once: the first connection is kept open for ten minutes and later
-commands reuse it. From a script, with no terminal to answer, a connection that
-needs a password fails at once instead of waiting.
+commands reuse it. From a script, an AI app or the Python API, with no
+terminal to answer, a connection that needs a password fails at once instead of
+waiting; sign in with `fastmdx remote --machine <name>` at a terminal first,
+and they use the connection it keeps open for the next ten minutes.
 
 ---
 
@@ -216,10 +218,11 @@ copy follows links. Copy the file into the study's folder and name it there.
 
 The one exception is a prepared study named by `simulation.setup_from` or
 `simulation.resume_from`, which usually sits beside the study's folder: it
-travels from where it is when its `manifest.json` reads as a study's (for
-`setup_from` naming a study's `setup` folder, the study's), with every link in
-it held to that study's folder. A checkpoint file named by `resume_from`
-outside the folder is refused; name the study instead.
+travels from anywhere in the folder holding the study's folder when it holds a
+`manifest.json` FastMDXplora wrote (for `setup_from` naming a study's `setup`
+folder, the study's), with every link in it held to that study's folder. A
+checkpoint file named by `resume_from` outside the folder is refused; name the
+study instead.
 
 `--dry-run` shows all of it, including the job script, and sends nothing:
 
@@ -251,11 +254,14 @@ are passed to it, and without `--time` the partition's default applies. Either
 way the job writes its exit code beside itself when it ends, so a finished run
 and a killed one are told apart.
 
-`--force-overwrite` replaces a job of the same name, here and on the machine.
+`--force-overwrite` replaces a job of the same name, here and on the machine,
+once it has ended; on a workstation one still running there is refused, so
+cancel it first.
 
 **One study at a time on a workstation.** A second send to a workstation
 while a job sent from here is waiting or running there is refused
-(`remote.machine.busy`), after asking the machine about that job. A cluster's
+(`remote.machine.busy`), after asking the machine about that job there and
+then. `--dry-run` still shows the plan, with a line saying so. A cluster's
 scheduler queues, so any number may be sent to a cluster.
 
 ---
@@ -283,7 +289,9 @@ still waiting or running is refused, since it is still writing), with the machin
 job log as `remote_job.log`, ready to open with `fastmdx gui --output`.
 Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
 given; fetch says how many it left and where. It also reads the run's manifest
-and says so if the code that ran is not the code that sent it.
+and says so if the code that ran is not the code that sent it. A link left in
+the run on the machine is not copied, so nothing fetch writes or reads here
+afterwards leads out of the job's folder.
 
 A study sent with a prepared system (`simulation.setup_from`) names it there as
 `inputs/<name>`. Fetch writes `fetched.json` beside the results, recording the

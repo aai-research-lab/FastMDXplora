@@ -394,8 +394,9 @@ same as for a run started from the command line.
 `fastmdxplora.remote.api` does what [`fastmdx remote`](remote.md) does at a
 terminal, for a program. It reaches only machines inspected at a terminal
 first (`fastmdx remote --machine gpu-box`), never prompts (a machine whose
-`ssh` asks for a password fails at once; a key, an agent or a sign-in kept
-open from a terminal works), and moves nothing it has not said first:
+`ssh` asks for a password fails at once; a key, an agent, or the connection
+`fastmdx remote --machine gpu-box` keeps open for ten minutes after you sign in
+at a terminal works), and moves nothing it has not said first:
 
 ```python
 from fastmdxplora.remote import api
@@ -408,7 +409,8 @@ job = api.send_planned(sending)
 
 api.status(job.name)               # asked of the machine at most every 30 s
 sizes = api.fetch_sizes(job.name)  # bytes, with and without trajectories
-job, warnings = api.fetch(job.name, with_trajectory=False)
+job, warnings = api.fetch(job.name, with_trajectory=False,
+                          most_bytes=sizes.bringing(False))  # caps any one file
 api.cancel(job.name)
 api.jobs(under="runs")             # the jobs whose results come back under runs/
 ```

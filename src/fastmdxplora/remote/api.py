@@ -1,7 +1,7 @@
 """Other machines from a program: the Python API.
 
-What ``fastmdx remote`` does at a terminal, for a program, the GUI and an AI
-app, under the same rules (docs/remote.md):
+What ``fastmdx remote`` does at a terminal, for a program and for an AI app
+(``fastmdx mcp``), under the same rules (docs/remote.md):
 
 - **Machines only from records** a person made at a terminal with
   ``fastmdx remote --machine NAME``. Nothing here inspects a machine it has
@@ -9,7 +9,8 @@ app, under the same rules (docs/remote.md):
 - **No prompt, ever.** Every connection is made with ``BatchMode``, so a
   machine whose ``ssh`` asks for a password or a second factor fails at once
   rather than waiting on a question nobody here can answer; a key, an agent,
-  or the connection a terminal sign-in keeps open for ten minutes works.
+  or the connection ``fastmdx remote`` keeps open for ten minutes after a
+  sign-in at a terminal works.
 - **Confirming is the caller's.** :func:`plan_send` and :func:`fetch_sizes`
   say what a send or a fetch would do and move, so the caller can ask before
   calling :func:`send_planned` or :func:`fetch`. An install runs only with a
@@ -157,9 +158,11 @@ def jobs(*, under: str | Path | None = None) -> list[Job]:
     if under is None:
         return found
     root = Path(under).resolve()
-    return [job for job in found
-            if root == Path(job.local_output).resolve()
-            or root in Path(job.local_output).resolve().parents]
+    # A record written before outputs were kept absolute names a folder
+    # relative to wherever it was sent from, which is not known: left out.
+    return [job for job in found if Path(job.local_output).is_absolute()
+            and (root == Path(job.local_output).resolve()
+                 or root in Path(job.local_output).resolve().parents)]
 
 
 def status(job: str, *, max_age_s: float = STATUS_KEPT_S,
@@ -176,13 +179,18 @@ def fetch_sizes(job: str, *, transport: Transport | None = None) -> FetchSizes:
 
 
 def fetch(job: str, *, with_trajectory: bool = False,
-          transport: Transport | None = None, local_runner=None,
+          most_bytes: int | None = None, transport: Transport | None = None,
+          local_runner=None,
           code: CodeIdentity | None = None) -> tuple[Job, list[str]]:
     """Bring a finished job's results into its own output folder; the
-    job's record and anything worth saying about what came back."""
+    job's record and anything worth saying about what came back.
+
+    ``most_bytes`` caps any one file brought, for a caller that showed the
+    sizes :func:`fetch_sizes` gave before asking.
+    """
     return _fetch(job, with_trajectory=with_trajectory,
                   transport=_link(load_job(job).machine, transport),
-                  local_runner=local_runner, code=code)
+                  local_runner=local_runner, code=code, most_bytes=most_bytes)
 
 
 def cancel(job: str, *, transport: Transport | None = None) -> Job:

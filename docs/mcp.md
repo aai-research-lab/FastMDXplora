@@ -71,7 +71,7 @@ one tool that calls another AI model is `ask_agent` (below).
 | `stop_study` | A running study stopped at its next frame, with a checkpoint there |
 | `remote_status` | How a job sent to another machine is doing, and the last lines of its log; asked of the machine at most every 30 s |
 | `fetch_study` | A finished job's results brought into its folder in the workspace, each size said first (below); not offered by a read-only server |
-| `cancel_study` | A job on another machine stopped, once you agree; its folder there stays; not offered by a read-only server |
+| `cancel_study` | A job on another machine stopped, the machine asked first whether it is still going; you are asked where the AI app can ask (as `stop_study`); its folder there stays; not offered by a read-only server |
 | `run_phases_again` | A study's analysis, its report or both run again in its folder from the settings it recorded, simulating nothing, once you agree: the analyses you name (by default those it ran last), the report written again too where it has one, what is replaced kept in `previous/`, a study of several runs run by run with its comparison built again; setup and simulation are not run again in place; not offered by a read-only server |
 | `list_studies` | The studies in the workspace, newest first, with their state, the means they recorded, and the tags and note you gave each (or only those with a tag); and the config files not yet run |
 | `tag_study` | Tags added to a study as you ask, kept in its folder and shown on its card in the GUI; it only adds: removing a tag, or writing the study's note, is yours in the GUI; not offered by a read-only server |
@@ -190,7 +190,8 @@ does:
   gpu-box`), listed by `list_machines`. An AI app never adds a machine, never
   installs FastMDXplora on one (it names `fastmdx remote install` for you to
   run), and never types a password: a machine whose `ssh` asks for one is
-  reached only while a sign-in you made at a terminal is kept open, ten minutes.
+  reached only for ten minutes after you sign in to it at a terminal with
+  `fastmdx remote --machine gpu-box`, which keeps its connection open.
 - **Only once you agree here.** You are asked with the plan, the machine, what
   runs it there, and every file sent with its size. Where the AI app cannot put
   that question to you, nothing is sent: its own approval of the call is not

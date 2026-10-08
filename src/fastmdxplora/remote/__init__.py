@@ -2,9 +2,9 @@
 
 Inspecting a machine, installing FastMDXplora there with the user's
 confirmation, and sending a study's config to run, watching it, fetching
-the results and stopping it (:mod:`fastmdxplora.remote.send`). A program,
-the GUI and an AI app reach all of it through :mod:`fastmdxplora.remote.api`,
-which never prompts and reaches only machines inspected at a terminal.
+the results and stopping it (:mod:`fastmdxplora.remote.send`). A program
+and an AI app reach all of it through :mod:`fastmdxplora.remote.api`, which
+never prompts and reaches only machines inspected at a terminal.
 
 A study's config never names a machine. The config is what runs anywhere;
 which machine it runs on is a fact about this user and this computer, and is

@@ -370,7 +370,10 @@ def install_plan(inspection: Inspection, code: CodeIdentity,
         plan.steps += [
             Step("here", _command("curl", "-fL", "-o", image, url)),
             Step("host", _command("mkdir", "-p", folder)),
-            Step("here", _command("rsync", "-P", image, f"{machine}:{folder}/")),
+            # rsync reads a path on the machine from its home, and a newer
+            # one does not let the machine's shell expand `$HOME`.
+            Step("here", _command("rsync", "-P", image, f"{machine}:"
+                                  + folder.removeprefix("$HOME/") + "/")),
             Step("host", _command(tool, "test", f"{folder}/{image}")),
         ]
         plan.check = Step("host", _command(tool, "exec", f"{folder}/{image}",

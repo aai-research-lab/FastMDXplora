@@ -14,7 +14,12 @@ wherever it is listed.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,8 +27,8 @@ from typing import Any
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.user_dir import user_config_dir
 
-__all__ = ["Job", "UnknownJob", "check_job_name", "job_names", "jobs_dir",
-           "load_job", "save_job"]
+__all__ = ["Job", "UnknownJob", "check_job_name", "held", "job_names",
+           "jobs_dir", "load_job", "save_job"]
 
 READY = "ready"
 RUNNING = "running"
@@ -89,12 +94,34 @@ def _path_for(name: str) -> Path:
     return jobs_dir() / f"{check_job_name(name)}.json"
 
 
+_HELD: dict[str, threading.RLock] = {}
+_HELD_LOCK = threading.Lock()
+
+
+@contextmanager
+def held(name: str) -> Iterator[None]:
+    """One reader-and-writer of a job's record at a time in this process:
+    an AI app's calls are served in threads, and a status written over a
+    fetch's record would lose what the fetch wrote."""
+    with _HELD_LOCK:
+        lock = _HELD.setdefault(name, threading.RLock())
+    with lock:
+        yield
+
+
 def save_job(job: Job) -> Path:
     target = _path_for(job.name)
     target.parent.mkdir(parents=True, exist_ok=True)
-    scratch = target.with_suffix(".json.part")
-    scratch.write_text(json.dumps(asdict(job), indent=2) + "\n", encoding="utf-8")
-    scratch.replace(target)
+    # A scratch file of its own, so two writers never share one.
+    handle, scratch = tempfile.mkstemp(dir=target.parent, prefix=f".{job.name}.",
+                                       suffix=".part")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(json.dumps(asdict(job), indent=2) + "\n")
+        os.replace(scratch, target)
+    except BaseException:
+        Path(scratch).unlink(missing_ok=True)
+        raise
     return target
 
 
