@@ -403,7 +403,11 @@ def test_on_a_phone_the_page_does_not_scroll_sideways(dashboard) -> None:
             const page = document.querySelector('.page[data-page="analysis"]');
             const heading = [...page.querySelectorAll('.page-header button, .page-header a')]
                 .map(b => Math.round(b.getBoundingClientRect().right));
-            return {wider: document.scrollingElement.scrollWidth - innerWidth,
+            // The centre column scrolls, not the document: measured on the
+            // document, a card 440 px wide ran past the screen unseen.
+            const main = document.querySelector('.main');
+            return {wider: Math.max(document.scrollingElement.scrollWidth - innerWidth,
+                                    main.scrollWidth - main.clientWidth),
                     statusRight: Math.round(status.right),
                     headingRight: Math.max(0, ...heading),
                     width: innerWidth};
@@ -425,3 +429,80 @@ def test_on_a_phone_the_page_does_not_scroll_sideways(dashboard) -> None:
     assert facts["wider"] <= 0, facts
     assert facts["statusRight"] <= facts["width"], facts
     assert facts["headingRight"] <= facts["width"], facts
+
+
+def test_on_a_phone_the_report_s_actions_sit_in_its_header(tmp_path) -> None:
+    """At 390 pixels the Report's Download, a full-size button in a row
+    wrapped beside the page's name, rose over the page tabs."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = tmp_path / "study"
+    _manifest(root, {"rmsd": {"status": "ok"}})
+    _analysis(root, "rmsd", 0.30 + 0.002 * _ar1(2000, 0.5, 1))
+    (root / "report").mkdir(parents=True, exist_ok=True)
+    (root / "report" / "report.md").write_text("# A study\n\nIts report.\n", encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            opened = browser.new_page(viewport={"width": 390, "height": 844})
+            opened.goto(session.url + "#report", wait_until="domcontentloaded")
+            opened.wait_for_selector("#report-download summary", timeout=60000)
+            opened.wait_for_timeout(300)
+            facts = opened.evaluate("""() => {
+                const page = document.querySelector('.page[data-page="report"]');
+                const header = page.querySelector('.page-header').getBoundingClientRect();
+                const download = document.querySelector('#report-download summary')
+                    .getBoundingClientRect();
+                const main = document.querySelector('.main');
+                return {top: Math.round(header.top), downloadTop: Math.round(download.top),
+                        height: Math.round(download.height), right: Math.round(download.right),
+                        wider: main.scrollWidth - main.clientWidth, width: innerWidth};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert facts["downloadTop"] >= facts["top"], facts
+    assert facts["height"] <= 30, facts      # the size of the header's other buttons
+    assert facts["right"] <= facts["width"] and facts["wider"] <= 0, facts
+
+
+def test_on_a_phone_a_wide_report_table_scrolls_in_its_own_box(tmp_path) -> None:
+    """The Convergence table's Mean, Uncertainty and Equilibrated were cut
+    off at 390 pixels: the card hid what ran past it."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = tmp_path / "study"
+    _manifest(root, {"rmsd": {"status": "ok"}})
+    _analysis(root, "rmsd", 0.30 + 0.002 * _ar1(2000, 0.5, 1))
+    (root / "report").mkdir(parents=True, exist_ok=True)
+    head = "| Observable | Frames | Discarded | Independent | Mean | Uncertainty | Equilibrated |"
+    row = "| potential_energy | 50 | 4 | 33.7 | -45,427.12 | 30.5 | yes |"
+    (root / "report" / "report.md").write_text(
+        f"# A study\n\n## Convergence\n\n{head}\n|---|---|---|---|---|---|---|\n{row}\n",
+        encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            opened = browser.new_page(viewport={"width": 390, "height": 844})
+            opened.goto(session.url + "#report", wait_until="domcontentloaded")
+            opened.wait_for_selector(".report-document table", timeout=60000)
+            facts = opened.evaluate("""() => {
+                const table = document.querySelector('.report-document table');
+                const last = table.querySelector('tr td:last-child');
+                table.scrollLeft = table.scrollWidth;
+                const box = table.getBoundingClientRect(), cell = last.getBoundingClientRect();
+                return {scrolls: getComputedStyle(table).overflowX,
+                        seen: cell.right <= box.right + 1 && cell.left >= box.left - 1};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert facts == {"scrolls": "auto", "seen": True}, facts

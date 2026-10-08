@@ -1539,7 +1539,7 @@ def test_analysis_cards_show_the_publication_figure() -> None:
     # A 180px-tall frame scaled a 1950px-wide figure to about 14%, which made
     # axis labels illegible regardless of source DPI.
     assert "aspect-ratio: 6.5 / 4.2;" in css
-    assert "minmax(440px, 1fr)" in css
+    assert "minmax(min(440px, 100%), 1fr)" in css
 
 
 def test_pressure_is_not_advertised_as_a_live_metric(tmp_path: Path) -> None:
