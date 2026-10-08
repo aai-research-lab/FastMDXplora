@@ -311,7 +311,8 @@ the run on the machine is not copied, and anything else neither a file nor a
 folder is taken out (said), each folder that came back is given its owner's
 read, write and search, set-id bits are cleared and your file-creation mask
 applied, and the run's own records of the process it ran as are left out (here
-they would name a process on this computer). What was in the folder before the
+they would name a process on this computer), as is any `fastmdx-defaults.yml`
+(said: here it would fill the settings of studies made below it). What was in the folder before the
 fetch is left as it was, apart from entries of the same name as the run's. The
 copy goes into a folder of its own inside the results folder
 (`.fetching-<job>`, which only you can enter), and is moved into place only
