@@ -811,8 +811,21 @@ def unit_of(name: str, found: dict[str, Any] | None = None) -> str:
     known for its name."""
     recorded = found.get("unit") if isinstance(found, dict) else None
     if isinstance(recorded, str):
-        return recorded
+        return unit_as_written(recorded)
     return _UNITS.get(name, "")
+
+
+#: Powers as a page writes them: the thermodynamics records its volume in
+#: "nm^3", which the Overview said beside the SASA's "nm\u00b2".
+_POWERS = {"^-1": "\u207b\u00b9", "^-2": "\u207b\u00b2", "^-3": "\u207b\u00b3",
+           "^2": "\u00b2", "^3": "\u00b3"}
+
+
+def unit_as_written(unit: str) -> str:
+    """A unit with its powers raised: "nm^3" as "nm\u00b3"."""
+    for caret, raised in _POWERS.items():
+        unit = unit.replace(caret, raised)
+    return unit
 
 
 def _what_the_analysis_found(data_path: Path) -> str | None:

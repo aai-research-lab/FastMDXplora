@@ -237,7 +237,11 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     else:
         said = four_figures(value) + suffix
     from_ns = None
-    if n and timed:
+    if constant:
+        # The same in every frame: no start to say ("0 in every frame \u00b7
+        # from 67 ps").
+        discard = None
+    if n and timed and discard is not None:
         _, x, label = analysed_axis(root, n)
         if label == "Time (ns)" and discard < len(x):
             from_ns = x[discard]
@@ -321,6 +325,21 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
         return {"ok": False, "reason": result.get("reason") or "too short a series"}
     recorded_start = _count(found.get("discard"))
     start = (result.get("equilibration") or {}).get("discard_frames")
+    # The mean as the table above the panel gives it: its error only where
+    # the record stands behind it. The panel gave "0.0881 \u00b1 0.00199 nm"
+    # under the table's "0.08811 nm, Not determined", the record holding
+    # both an error and the reason it is not one.
+    from fastmdxplora.statistics import four_figures, with_its_error
+
+    mean, error = _finite(found.get("mean")), _finite(found.get("standard_error"))
+    withheld = bool(found.get("not_a_measurement"))
+    if withheld:
+        error = None
+    unit = unit_of(analysis, found)
+    said = None
+    if mean is not None:
+        said = (with_its_error(mean, error) if error is not None else four_figures(mean))
+        said = f"{said} {unit}".strip()
     result.update({
         "analysis": analysis,
         "label": ANALYSIS_SECTION_BY_FOLDER.get(analysis, analysis),
@@ -328,8 +347,9 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
         "x_label": x_label,
         "time_unit": "ns" if timed else None,
         "recorded": {
-            "mean": _finite(found.get("mean")),
-            "standard_error": _finite(found.get("standard_error")),
+            "mean": mean,
+            "standard_error": error,
+            "said": said,
             "not_a_measurement": str(found["not_a_measurement"])
             if found.get("not_a_measurement") else None,
             "error_withheld_because": found.get("error_withheld_because") or None,

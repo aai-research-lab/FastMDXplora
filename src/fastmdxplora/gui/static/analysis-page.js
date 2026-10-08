@@ -101,11 +101,16 @@
       return sum + (Array.isArray(s.panels) ? s.panels.length : 0);
     }, 0);
     var previous = (byId("analysis-filter") || {}).value || "";
+    // What to type, from this study's own analyses and themes: "the
+    // ligand" was suggested for studies with none, and found nothing.
+    var hint = sectionsShown.slice(0, 2).map(function (s) { return s.title; })
+      .concat(themes.length > 1 ? [themes[themes.length - 1].toLowerCase()] : [])
+      .join(", ");
     index.innerHTML =
       '<div class="analysis-index-head">' +
         '<label class="analysis-filter-label" for="analysis-filter">Find an analysis</label>' +
         '<input type="search" id="analysis-filter" class="analysis-filter" autocomplete="off" ' +
-          'placeholder="RMSD, hydrogen bonds, the ligand…" value="' + escapeHTML(previous) + '">' +
+          'placeholder="' + escapeHTML(hint ? hint + "\u2026" : "") + '" value="' + escapeHTML(previous) + '">' +
         '<span class="analysis-index-count muted small" id="analysis-index-count">' +
           sectionsShown.length + " analys" + (sectionsShown.length === 1 ? "is" : "es") + ", " +
           figures + " figure" + (figures === 1 ? "" : "s") + "</span>" +
@@ -198,10 +203,22 @@
       "<p>" + escapeHTML(why) + "</p></details></td>";
   }
 
+  /* A simulated time as every page says one: picoseconds under one
+   * nanosecond (43 ps, not 0.0430 ns), to a tenth of one
+   * (`simulated_time.say_length`, the Overview's tiles). */
+  function sayLength(ns) {
+    var ps = Math.abs(ns) * 1000;
+    // Under a tenth of a picosecond, to two figures: a correlation time of
+    // 0.013 ps read "0 ps".
+    if (ps > 0 && ps < 0.1) return Number((ns * 1000).toPrecision(2)) + " ps";
+    if (Math.abs(ns) < 1) return (Math.round(ns * 10000) / 10) + " ps";
+    return (Math.round(ns * 10000) / 10000) + " ns";
+  }
+
   function quantityRow(row, quantity, label, indented) {
     var status = statusOf(quantity);
     var from = quantity.from_ns != null && quantity.from_frame
-      ? "from " + format(quantity.from_ns) + " ns"
+      ? "from " + sayLength(quantity.from_ns)
       : (quantity.from_frame ? "from frame " + count(quantity.from_frame) : "");
     var frames = quantity.of_frames != null
       ? count(quantity.of_frames - (quantity.from_frame || 0)) + " of " + count(quantity.of_frames)
@@ -464,7 +481,7 @@
     var parts = [];
     if (eq.discard_frames) {
       parts.push("Equilibrated from " + (timed && eq.start_time != null
-        ? format(eq.start_time) + " ns" : "frame " + count(eq.discard_frames)) +
+        ? sayLength(eq.start_time) : "frame " + count(eq.discard_frames)) +
         ": the first " + count(eq.discard_frames) + " of " + count(data.n_values) +
         " frames are left out.");
     } else {
@@ -474,15 +491,18 @@
       var auto = data.autocorrelation || {};
       parts.push("Statistical inefficiency " + Number(eq.statistical_inefficiency).toPrecision(3) + " frames" +
         (auto.tau_int_time != null && timed ? " (integrated correlation time " +
-          Number(auto.tau_int_time).toPrecision(2) + " ns)" : "") +
+          sayLength(auto.tau_int_time) + ")" : "") +
         ", so about " + count(Math.round(eq.effective_samples || 0)) + " independent samples.");
     }
+    // As the table above says it (`recorded.said`, the server's): an error
+    // only where the record stands behind it.
     if (recorded.mean != null && recorded.standard_error != null) {
-      parts.push("Recorded mean " + format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit + ".");
+      parts.push("Recorded mean " + (recorded.said ||
+        format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit) + ".");
     } else if (recorded.mean != null) {
       var why = recorded.not_a_measurement || eq.withheld;
-      parts.push("Recorded mean " + format(recorded.mean) + unit + ", no error bar" +
-        (why ? ": " + firstSentence(why) : "") + ".");
+      parts.push("Recorded mean " + (recorded.said || format(recorded.mean) + unit) +
+        ", not determined" + (why ? ": " + firstSentence(why) : "") + ".");
     }
     if (recorded.start_shared_with_replicas) {
       parts.push("The recorded mean starts where the study's replicas equilibrate together, at frame " +
@@ -490,8 +510,11 @@
     } else if (recorded.same_start === false) {
       parts.push("The recorded mean starts at frame " + count(recorded.discard_frames) + ".");
     }
-    parts.push("Block averages longer than the correlation time reach the error of the mean; " +
-      "the recorded error is the line to read them against.");
+    // The line to read them against only where the record gives an error:
+    // under a mean not determined it pointed at a line not drawn.
+    parts.push("Block averages longer than the correlation time reach the error of the mean" +
+      (recorded.standard_error != null
+        ? "; the recorded error is the line to read them against." : "."));
     return parts.join(" ");
   }
 
@@ -538,7 +561,7 @@
       lines: [{ y: auto.correlation || [], colour: c.line }],
       level: { y: 0, colour: c.axis },
       mark: auto.tau_int_time != null && timed
-        ? { x: auto.tau_int_time, label: "τ " + format(auto.tau_int_time) + " ns", colour: c.mean }
+        ? { x: auto.tau_int_time, label: "τ " + sayLength(auto.tau_int_time), colour: c.mean }
         : (auto.tau_int_frames != null ? { x: auto.tau_int_frames, label: "τ " + format(auto.tau_int_frames), colour: c.mean } : null),
       describe: "Normalised autocorrelation of the equilibrated frames",
     });
