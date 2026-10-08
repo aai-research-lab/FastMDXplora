@@ -24,6 +24,33 @@ ABSENT = object()
 #: asked for: two copies of one study differ in these and nothing else.
 WHERE_IT_WAS_WRITTEN = frozenset({"output", "agent_model"})
 
+#: Settings the run works out from the others (the force field's files,
+#: the water model, the cutoff and the seed setup chose; step counts from
+#: the lengths and the timestep, the ensemble, the files analysed) and
+#: writes into the study's record as it reaches them. A record that never
+#: reached them (a run stopped early, the first piece of a resumed study, a
+#: trajectory analysed) holds null there: it did not ask for something
+#: else, it never recorded it.
+WORKED_OUT_BY_THE_RUN = frozenset({
+    "setup.force_field", "setup.water_model", "setup.ligand_forcefield",
+    "setup.nonbonded_cutoff_nm", "setup.use_switching_function", "setup.random_seed",
+    "simulation.nvt_steps", "simulation.npt_steps", "simulation.production_steps",
+    "simulation.ensemble", "simulation.pressure_bar",
+    "simulation.trajectory_interval_steps",
+    "analysis.trajectory", "analysis.topology",
+})
+
+#: Settings that follow from others, said only where those agree: two runs
+#: of different lengths differ in their step counts because they differ in
+#: their lengths, which are listed (as are their timesteps).
+FOLLOWS_FROM = {
+    "simulation.nvt_steps": ("simulation.nvt_duration_ns", "simulation.timestep_fs"),
+    "simulation.npt_steps": ("simulation.npt_duration_ns", "simulation.timestep_fs"),
+    "simulation.production_steps": ("simulation.duration_ns", "simulation.timestep_fs"),
+    "simulation.trajectory_interval_steps": ("simulation.duration_ns",
+                                             "simulation.timestep_fs"),
+}
+
 
 @dataclass(frozen=True)
 class Difference:
@@ -34,6 +61,12 @@ class Difference:
     @property
     def where_only(self) -> bool:
         return self.setting in WHERE_IT_WAS_WRITTEN
+
+    @property
+    def unrecorded(self) -> bool:
+        """A setting the run works out, which one side never recorded."""
+        return self.setting in WORKED_OUT_BY_THE_RUN and (
+            _unset(self.first) != _unset(self.second))
 
     def as_record(self) -> dict[str, Any]:
         return {"setting": self.setting,
@@ -91,9 +124,21 @@ def settings_of(config: dict[str, Any]) -> dict[str, Any]:
                 flat[key] = "<output>"
             elif value.startswith(root):
                 flat[key] = "<output>/" + value[len(root):]
+            elif value.startswith(Path(output).name + "/simulation/"):
+                # Recorded under the folder's name, relative to where it ran:
+                # "trpcage/simulation/production.dcd" is its own trajectory.
+                flat[key] = "<output>/" + value[len(Path(output).name) + 1:]
     for phase, schema in PHASE_SCHEMAS.items():
         for field in schema.fields:
             flat.setdefault(f"{phase}.{field.name}", field.default)
+    # No phases named is every phase, none excluded is none: a study that
+    # wrote the list out asked for the same as one that left it out.
+    from fastmdxplora.orchestrator import PHASES
+
+    if flat.get("include_phase") is None:
+        flat["include_phase"] = list(PHASES)
+    if not flat.get("exclude_phase"):
+        flat["exclude_phase"] = []
     return flat
 
 
@@ -105,11 +150,20 @@ def differences(first: dict[str, Any], second: dict[str, Any]) -> list[Differenc
         left, right = a.get(setting, ABSENT), b.get(setting, ABSENT)
         if not _same(left, right):
             found.append(Difference(setting, left, right))
-    return found
+    differing = {d.setting for d in found}
+    return [d for d in found
+            if not any(source in differing for source in FOLLOWS_FROM.get(d.setting, ()))]
+
+
+def _unset(value: Any) -> bool:
+    return value is ABSENT or value is None
 
 
 def _same(left: Any, right: Any) -> bool:
-    """Equal as settings: 2 and 2.0 are one duration."""
+    """Equal as settings: 2 and 2.0 are one duration; a setting left out
+    and one written as null are one setting not set."""
+    if _unset(left) and _unset(right):
+        return True
     if isinstance(left, bool) or isinstance(right, bool):
         # true and 1 are not one setting written two ways.
         return left is right

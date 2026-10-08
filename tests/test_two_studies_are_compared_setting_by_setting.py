@@ -62,6 +62,56 @@ class TestTheDifferences:
         assert [(d.setting, d.where_only) for d in found] == [("output", True)]
 
 
+    def test_left_out_and_null_are_one_setting_not_set(self):
+        # "exclude_phase not set vs null", and every phase named against
+        # none named, were listed as differences.
+        same = {"report": {"title": "A study"}}
+        assert differences(dict(same, exclude_phase=None), same) == []
+        assert differences(dict(same, include_phase=["setup", "simulation", "analysis",
+                                                     "report"]),
+                           dict(same, include_phase=None)) == []
+        assert [d.setting for d in differences(dict(same, include_phase=["analysis"]),
+                                               same)] == ["include_phase"]
+
+    def test_what_the_run_works_out_is_unrecorded_not_different(self):
+        found = differences({"simulation": {"ensemble": None, "production_steps": None}},
+                            {"simulation": {"ensemble": "npt", "production_steps": 5000}})
+        assert sorted(d.setting for d in found) == ["simulation.ensemble",
+                                                    "simulation.production_steps"]
+        assert all(d.unrecorded for d in found)
+        # And what setup works out: the force field's files, the seed.
+        [seed] = differences({"setup": {"random_seed": None}}, {"setup": {"random_seed": 7}})
+        assert seed.unrecorded
+        # Recorded on both sides and different, it is a difference.
+        [both] = differences({"simulation": {"production_steps": 4000}},
+                             {"simulation": {"production_steps": 5000}})
+        assert not both.unrecorded
+        # A setting asked for, left unset on one side, is a difference.
+        [asked] = differences({"report": {"title": None}}, {"report": {"title": "A study"}})
+        assert not asked.unrecorded
+
+
+class TestTheStudiesPage:
+    def test_the_page_says_only_what_was_asked_differently(self, tmp_path):
+        from fastmdxplora.gui.workspace import studies_compared
+
+        first = _study(tmp_path / "first", {
+            "include_phase": ["setup", "simulation", "analysis", "report"],
+            "simulation": {"duration_ns": 0.02, "ensemble": None}})
+        second = _study(tmp_path / "second", {
+            "simulation": {"duration_ns": 0.01, "ensemble": "npt"}, "exclude_phase": None})
+        said = studies_compared(first, second)
+        assert [d["setting"] for d in said["settings"]] == ["simulation.duration_ns"]
+        assert said["unrecorded"] == ["simulation.ensemble"]
+
+    def test_an_analysis_is_named_by_its_heading(self, tmp_path):
+        from fastmdxplora.gui.workspace import _label_of
+
+        assert _label_of("end_to_end") == "End-to-end distance"
+        assert _label_of("rmsd") == "RMSD"
+        assert _label_of("made_up_thing") == "Made up thing"
+
+
 class TestWhatIsRead:
     def test_a_study_is_read_from_its_resolved_config(self, tmp_path):
         folder = _study(tmp_path / "a", {"simulation": {"temperature_K": 300}})
@@ -124,3 +174,17 @@ class TestTheCommand:
 
         assert main(["diff", str(tmp_path), str(tmp_path)]) == 2
         assert "holds no resolved_config.yml" in capsys.readouterr().err
+
+
+def test_what_follows_from_a_listed_difference_is_not_listed_again():
+    """Two lengths listed their step counts beside them; a trajectory
+    recorded under its folder's name read as another study's."""
+    found = differences(
+        {"output": "/a/trpcage", "simulation": {"duration_ns": 0.1, "production_steps": 50000},
+         "analysis": {"trajectory": "trpcage/simulation/production.dcd"}},
+        {"output": "/b/run-short", "simulation": {"duration_ns": 0.01, "production_steps": 5000},
+         "analysis": {"trajectory": "/b/run-short/simulation/production.dcd"}})
+    assert [d.setting for d in found if not d.where_only] == ["simulation.duration_ns"]
+    # Chosen by a person, the analyses are compared even where one is unset.
+    [chosen] = differences({"analysis": {"include": None}}, {"analysis": {"include": ["rmsd"]}})
+    assert not chosen.unrecorded

@@ -52,13 +52,26 @@
       found.push({ group: "Recent study", label: name.split(",")[0], hint: name,
                    run: function () { item.click(); } });
     });
-    var named = {};
-    Array.prototype.forEach.call(document.querySelectorAll(".analysis-card[data-analysis]"), function (card) {
+    // Each analysis once, by its section's heading on the Analysis page:
+    // the Report page's figures are cards too, and a section's first card
+    // is titled by its figure ("KMeans trajectory scatter" was listed for
+    // the clustering and again for its own figure).
+    var named = {}, said = {};
+    // Only the analyses' own sections: the cards of the clustering's
+    // figures below them were listed as analyses ("KMeans population")
+    // and opened the page at its top.
+    var cards = document.querySelectorAll(
+      '.page[data-page="analysis"] .analysis-section .analysis-card[data-analysis]');
+    Array.prototype.forEach.call(cards, function (card) {
       var name = card.getAttribute("data-analysis");
-      if (named[name]) return;
+      var section = card.closest(".analysis-section");
+      var link = section && section.id
+        ? document.querySelector('.analysis-index-link[href="#' + section.id + '"]') : null;
+      var title = ((link || card.querySelector(".ac-title") || {}).textContent || name).trim();
+      if (named[name] || said[title.toLowerCase()]) return;
       named[name] = true;
-      var title = (card.querySelector(".ac-title") || {}).textContent || name;
-      found.push({ group: "Analysis", label: title.trim(),
+      said[title.toLowerCase()] = true;
+      found.push({ group: "Analysis", label: title,
                    run: function () { if (dashboard()) dashboard().showAnalysis(name); } });
     });
     Array.prototype.forEach.call(document.querySelectorAll("#viewer-rail-tools .rail-btn"), function (button) {

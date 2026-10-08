@@ -728,8 +728,8 @@
         // twenty are shown and the rest on asking.
         if (i >= SHOWN_FIRST) row.hidden = true;
         row.appendChild(make("td", "mono", d.setting));
-        row.appendChild(make("td", "mono", d.in_first ? JSON.stringify(d.first) : "not set"));
-        row.appendChild(make("td", "mono", d.in_second ? JSON.stringify(d.second) : "not set"));
+        row.appendChild(make("td", "mono", settingSaid(d.first)));
+        row.appendChild(make("td", "mono", settingSaid(d.second)));
         table.appendChild(row);
       });
       host.appendChild(table);
@@ -743,6 +743,16 @@
         });
         host.appendChild(more);
       }
+    }
+
+    var unrecorded = data.unrecorded || [];
+    if (unrecorded.length) {
+      host.appendChild(make("p", "muted small",
+        "Not compared: " + unrecorded.join(", ") + ". The run works " +
+        (unrecorded.length === 1 ? "it" : "these") + " out from the other settings, " +
+        "and one of the studies never recorded " +
+        (unrecorded.length === 1 ? "it" : "them") +
+        " (it stopped or failed before them, or analysed a trajectory and ran no simulation)."));
     }
 
     host.appendChild(make("h3", "studies-compared-title", "What they recorded"));
@@ -779,6 +789,11 @@
     host.appendChild(make("p", "muted small",
       "A difference is resolved past " + data.resolved_at + " times the two studies' " +
       "combined standard error. A mean an analysis did not stand behind is not compared."));
+  }
+
+  /* A setting's value as written, "not set" for one left out or null. */
+  function settingSaid(value) {
+    return value == null ? "not set" : JSON.stringify(value);
   }
 
   function openStudy(path, button) {
@@ -1002,10 +1017,18 @@
           data ? "No studies in this workspace yet." : "The studies could not be listed."));
         return;
       }
+      // Several studies of one structure share its ID: each is named by
+      // its folder too, or Recent, and ⌘K from it, list "1L2Y" twice.
+      var times = {};
+      recent.forEach(function (study) {
+        var id = shownId(study) || study.name;
+        times[id] = (times[id] || 0) + 1;
+      });
       list.replaceChildren.apply(list, recent.map(function (study) {
         var here = sameFolder(study.path, open);
         var word = stateWord(study.state);
         var name = shownId(study) || study.name;
+        if (times[name] > 1 && study.name && study.name !== name) name += " \u00b7 " + study.name;
         var item = make("button", "sidebar-recent-item");
         item.type = "button";
         item.title = (word ? word + "\n" : "") + study.path;

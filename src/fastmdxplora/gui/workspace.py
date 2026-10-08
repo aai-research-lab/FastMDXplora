@@ -235,7 +235,9 @@ def studies_compared(first: Path | str, second: Path | str) -> dict[str, Any]:
         from fastmdxplora.refusals import refusal_of
 
         return {"ok": False, "reason": refusal_of(exc).message}
-    settings = [d.as_record() for d in differences(left, right) if not d.where_only]
+    found = [d for d in differences(left, right) if not d.where_only]
+    settings = [d.as_record() for d in found if not d.unrecorded]
+    unrecorded = [d.setting for d in found if d.unrecorded]
 
     mine, theirs = dict(_means(a)), dict(_means(b))
     measures = []
@@ -253,7 +255,8 @@ def studies_compared(first: Path | str, second: Path | str) -> dict[str, Any]:
                              "resolved": error > 0 and abs(difference) > RESOLVED_AT * error}
         measures.append(row)
     return {"ok": True, "first": card_of(a), "second": card_of(b),
-            "settings": settings, "measures": measures, "resolved_at": RESOLVED_AT}
+            "settings": settings, "unrecorded": unrecorded, "measures": measures,
+            "resolved_at": RESOLVED_AT}
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +265,6 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
     recorded, the measures a card names first leading."""
     from fastmdxplora.batch.aggregate import read_member_findings
     from fastmdxplora.gui.report_dashboard import unit_of
-    from fastmdxplora.gui.series import SERIES
 
     try:
         found = read_member_findings(base)
@@ -276,13 +278,24 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
             continue
         withheld = mean.get("not_a_measurement") or None
         out.append((name, {
-            "label": SERIES.get(name, (name.replace("_", " "), ""))[0],
+            "label": _label_of(name),
             "mean": _finite(mean.get("mean")),
             "error": None if withheld else _finite(mean.get("standard_error")),
             "unit": unit_of(name, mean),
             "withheld": str(withheld) if withheld else None,
         }))
     return out
+
+
+def _label_of(name: str) -> str:
+    """An analysis by the name its series has, else its Analysis page
+    heading: "end to end" was its folder's name."""
+    from fastmdxplora.gui.report_dashboard import ANALYSIS_SECTION_BY_FOLDER
+    from fastmdxplora.gui.series import SERIES
+
+    if name in SERIES:
+        return SERIES[name][0]
+    return ANALYSIS_SECTION_BY_FOLDER.get(name) or name.replace("_", " ").capitalize()
 
 
 def _in_order(names: Any) -> list[str]:

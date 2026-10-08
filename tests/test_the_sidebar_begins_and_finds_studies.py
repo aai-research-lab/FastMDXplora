@@ -279,3 +279,25 @@ def test_the_window_does_not_scroll_past_its_columns(browser, session, width, he
         tall[page] = tab.evaluate("() => document.scrollingElement.scrollHeight - innerHeight")
     context.close()
     assert all(over <= 0 for over in tall.values()), tall
+
+
+def test_studies_of_one_structure_are_told_apart(browser, tmp_path) -> None:
+    """Six studies of 1L2Y were six lines reading "1L2Y" in Recent and in
+    the search (Cmd+K) built from it."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    _study(tmp_path / "trp-short", system="1L2Y", started="2026-09-01T10:00:00+00:00")
+    _study(tmp_path / "trp-long", system="1L2Y", started="2026-09-02T10:00:00+00:00")
+    _study(tmp_path / "ubiquitin", system="1UBQ", started="2026-09-03T10:00:00+00:00")
+    session = start_dashboard_session(output=str(tmp_path / "ubiquitin"),
+                                      host="127.0.0.1", port=0)
+    try:
+        tab = _open(browser, session)
+        names = tab.eval_on_selector_all("#sidebar-recent-list .sidebar-recent-item",
+                                         "(all) => all.map((b) => b.getAttribute('aria-label'))")
+        tab.context.close()
+    finally:
+        session.server.shutdown()
+    shown = [name.split(",")[0] for name in names]
+    assert "1L2Y · trp-short" in shown and "1L2Y · trp-long" in shown
+    assert "1UBQ" in shown
