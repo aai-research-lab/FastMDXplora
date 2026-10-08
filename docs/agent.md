@@ -522,7 +522,7 @@ at the value the run will take, with the ones the Config leaves to their
 defaults marked; and the checks the run will be held to (each observable
 equilibrated, its correlation time resolved, at least ten independent
 samples per mean, the temperature within 5 K of its target, the potential
-energy's range per ns per atom), which the report ticks after the run and the
+energy's trend per ns per atom), which the report ticks after the run and the
 Agent is given ticked. It ends with what setup would build, about how many
 particles in what box, and how long the study would take on this machine
 where the machine has been timed, worked out as the builder works them out,

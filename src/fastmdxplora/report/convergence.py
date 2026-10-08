@@ -67,9 +67,9 @@ CHECKS: tuple[tuple[str, str, str], ...] = (
      f"at least {_ENOUGH_SAMPLES:g} independent samples per mean"),
     ("temperature", f"the mean temperature is within {_TEMPERATURE_LIMIT_K:g} K of the target",
      f"temperature within {_TEMPERATURE_LIMIT_K:g} K of the target"),
-    ("energy", f"the potential energy's range stays under {_ENERGY_DRIFT_LIMIT:g} kJ/mol "
+    ("energy", f"the potential energy's trend stays under {_ENERGY_DRIFT_LIMIT:g} kJ/mol "
                "per ns per atom",
-     f"potential energy range under {_ENERGY_DRIFT_LIMIT:g} kJ/mol per ns per atom"),
+     f"potential energy trend under {_ENERGY_DRIFT_LIMIT:g} kJ/mol per ns per atom"),
 )
 
 
@@ -104,17 +104,28 @@ class Assessment:
     #: claim from no evidence -- the same defect as reporting independence that
     #: was never measured.
     drift_is_measurable: bool = True
+    #: Why the analyses' record gives this mean no error, where it gives
+    #: none (`statistics.summarise`); None where the mean is determined.
+    withheld: str | None = None
 
     @property
     def standard_error(self) -> float:
-        """Uncertainty on the mean, counting independent samples.
+        """Uncertainty on the mean, counting independent samples, where the
+        analyses' record gives one; NaN where it withholds it. The table
+        printed an error for every mean, so it gave one beside a mean the
+        Analysis page said was not determined.
 
         Dividing by the frame count instead would understate it by the square
         root of the correlation time -- a factor of three or four is ordinary.
         """
-        if self.effective_samples < 2:
+        if self.withheld is not None or self.effective_samples < 2:
             return float("nan")
         return float(self.spread / np.sqrt(self.effective_samples))
+
+    @property
+    def is_determined(self) -> bool:
+        """Whether the mean is determined, as every page says it."""
+        return self.withheld is None and np.isfinite(self.standard_error)
 
     @property
     def is_sampled_enough(self) -> bool:
@@ -154,13 +165,18 @@ class Assessment:
         return {
             "observable": self.name,
             "frames": self.n_frames,
-            "mean": round(self.mean, 5),
-            "spread": round(self.spread, 5),
+            # Six significant figures at least, not five places: an error of
+            # 0.0017484 kept as 0.00175 was given as 0.0018 in the report's
+            # table and 0.0017 on every other page.
+            "mean": _six_figures(self.mean),
+            "spread": _six_figures(self.spread),
             "frames_per_independent_sample": round(self.correlation_frames, 2),
             "effective_samples": round(self.effective_samples, 2),
             "discard": self.discard,
             "standard_error": (None if np.isnan(self.standard_error)
-                               else round(self.standard_error, 5)),
+                               else _six_figures(self.standard_error)),
+            "determined": self.is_determined,
+            "withheld": self.withheld,
             "sampled_enough": self.is_sampled_enough,
             "correlation_measurable": self.correlation_is_measurable,
             # Both spellings. `equilibrated` is the name; `settled` is what
@@ -194,23 +210,11 @@ def autocorrelation_time(values: Any) -> float:
 
 
 def _drift_in_noise(values: Any) -> float:
-    """How far the series moved, measured against how much it wobbles.
+    """How far the series moved, against how much it wobbles: one
+    implementation, the analyses' (`statistics.drift_in_spread`)."""
+    from fastmdxplora.statistics import drift_in_spread
 
-    A raw slope says nothing without a scale: 0.01 nm of drift is large for a
-    stable fold and small for one still relaxing. Comparing the ends against
-    the noise within them gives a number that means the same thing for any
-    observable.
-    """
-    series = np.asarray(values, dtype=np.float64)
-    if series.size < 6:
-        return 0.0
-    third = series.size // 3
-    first, last = series[:third], series[-third:]
-    noise = np.sqrt((first.var() + last.var()) / 2)
-    if noise <= 0:
-        return 0.0 if np.isclose(first.mean(), last.mean()) else float("inf")
-    return float((last.mean() - first.mean()) / noise)
-
+    return drift_in_spread(values)
 
 
 def _replace_summary(equilibrated, **changes):
@@ -229,26 +233,26 @@ def _replace_summary(equilibrated, **changes):
 
 
 def assess_series(name: str, values: Any,
-                  joins: "list[int] | tuple[int, ...] | None" = None
-                  ) -> Assessment:
-    """What one series says about how well it was sampled."""
+                  joins: "list[int] | tuple[int, ...] | None" = None,
+                  record: "dict[str, Any] | None" = None) -> Assessment:
+    """What one series says about how well it was sampled, by the rules the
+    analyses record a mean with (`statistics.summarise`), so the report
+    judges a mean as the Overview, the Analysis page and the Agent do.
+
+    ``record`` is the analysis's own record of this series' mean, where it
+    wrote one (`statistics.mean_record`): its mean, discard, independent
+    samples and verdict are taken as written, so one mean has one verdict.
+    """
     series = np.asarray(values, dtype=np.float64)
     series = series[np.isfinite(series)]
     n = series.size
     if n == 0:
-        return Assessment(name, 0, 0, float("nan"), float("nan"), 1.0, 0.0, 0.0)
+        return Assessment(name, 0, 0, float("nan"), float("nan"), 1.0, 0.0, 0.0,
+                          withheld="There is nothing to average.")
 
-    from fastmdxplora.statistics import correlation_is_resolved, summarise
+    from fastmdxplora.statistics import summarise
 
-    # The mean is taken over the equilibrated part, which is what the
-    # findings report. Taken over the whole series here, the same observable
-    # appeared twice in one document with two different means and nothing to
-    # say why: the RMSD of a real study read 0.08895 in this table and 0.09461
-    # in its own section, both labelled the mean.
-    #
-    # Drift is still measured over the whole series. It is the question of
-    # whether the run was still relaxing, and discarding the equilibration
-    # before asking would answer it by construction.
+    reason: Any = None
     if joins:
         # A joined run read as a single series loses most of it: the
         # equilibration detector finds a join, calls it a transient, and
@@ -257,7 +261,7 @@ def assess_series(name: str, values: Any,
         # from the truth and a standard error saying otherwise.
         from fastmdxplora.statistics import summarise_segments
 
-        pooled, _withheld = summarise_segments(series, joins)
+        pooled, withheld = summarise_segments(series, joins)
         if pooled is None:
             # The joined run supports no mean -- drifting segments, or too
             # few independent samples once the joins are accounted for.
@@ -267,6 +271,7 @@ def assess_series(name: str, values: Any,
             equilibrated, _reason = summarise(series)
             equilibrated = _replace_summary(
                 equilibrated, mean=float("nan"), standard_error=float("nan"))
+            reason = withheld or "The joined run supports no mean."
         else:
             equilibrated = pooled.segments[0] if pooled.segments else None
             # The pooled mean and error are what the run supports. The
@@ -277,46 +282,81 @@ def assess_series(name: str, values: Any,
                 equilibrated, mean=pooled.mean,
                 standard_error=pooled.standard_error,
                 effective_samples=pooled.effective_samples)
+            reason = withheld
     else:
-        equilibrated, _reason = summarise(series)
-    correlation = autocorrelation_time(series)
-    # Whether the series can see how long its own memory is. A correlation
-    # approaching what the sum can reach is a floor rather than a measurement,
-    # and the effective-sample count that follows is the independence the
-    # estimate failed to rule out.
-    #
-    # The rule here was a tenth of the run, which is the usual working limit
-    # and lets the flattering case through: a series with a true correlation
-    # of 2000 measured 361 over 4000 frames, and 361 is under a tenth of 4000.
-    # Asking whether the series holds 25 of its own inefficiencies catches it
-    # (361 over 4000 frames is 11 at most), and it is the same criterion the analyses
-    # apply -- one run should not be measurable in the report and unresolved
-    # in the findings.
-    measurable = correlation_is_resolved(series)
-    # Drift is compared between the first and last thirds, so a series that
-    # cannot be divided into thirds with anything in them says nothing about
-    # trend. Six is the least that gives two points per third.
-    drift_measurable = n >= 6
+        equilibrated, reason = summarise(series)
+    if isinstance(record, dict) and _number(record.get("mean")) is not None:
+        # The analysis's own record, as written.
+        discard = int(_number(record.get("discard")) or 0)
+        effective = _number(record.get("effective_samples"))
+        spread = _number(record.get("standard_deviation"))
+        equilibrated = _replace_summary(
+            equilibrated, mean=float(record["mean"]), discard=discard,
+            effective_samples=effective if effective is not None else (
+                equilibrated.effective_samples if equilibrated else 1.0),
+            standard_deviation=spread if spread is not None else (
+                equilibrated.standard_deviation if equilibrated else 0.0))
+        reason = record.get("not_a_measurement") or None
+        if reason is None and _number(record.get("standard_error")) is None:
+            reason = "No error was recorded."
+    code = str(getattr(getattr(reason, "refusal", None), "code", "") or "")
+    if not code and isinstance(reason, str) and reason.startswith(
+            "This run is not long against its own correlation time"):
+        code = "analysis.sampling.correlation_unresolved"
+    discard = int(equilibrated.discard) if equilibrated else 0
+    kept = series[discard:] if discard < n else series[-1:]
+    effective = (float(equilibrated.effective_samples) if equilibrated
+                 else float(n / autocorrelation_time(series)))
     return Assessment(
         name=name,
         n_frames=int(n),
-        discard=int(equilibrated.discard) if equilibrated else 0,
+        discard=discard,
         mean=float(equilibrated.mean) if equilibrated else float(series.mean()),
         spread=(float(equilibrated.standard_deviation) if equilibrated
                 else (float(series.std(ddof=1)) if n > 1 else 0.0)),
-        correlation_frames=(float(equilibrated.inefficiency) if equilibrated
-                            else correlation),
-        effective_samples=(float(equilibrated.effective_samples) if equilibrated
-                           else float(n / correlation)),
-        drift_in_noise=_drift_in_noise(series),
-        correlation_is_measurable=bool(measurable),
-        drift_is_measurable=bool(drift_measurable),
+        correlation_frames=(float(kept.size / effective) if effective > 0
+                            else float(kept.size)),
+        effective_samples=effective,
+        # Drift over the frames the mean is taken over: what was discarded
+        # is the equilibration, which moves by definition.
+        drift_in_noise=_drift_in_noise(kept),
+        # Resolved as the analyses resolve it, after the equilibration: the
+        # report asked the whole series, transient and all, and called the
+        # correlation of an RMSD the Analysis page had determined
+        # unresolved.
+        correlation_is_measurable=code != "analysis.sampling.correlation_unresolved",
+        drift_is_measurable=bool(kept.size >= 6),
+        withheld=str(reason) if reason else None,
     )
+
+
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if np.isfinite(value) else None
+
+
+#: An observable as a reader says it, where its record's key is not.
+_SAID_AS = {"potential_energy": "potential energy", "rmsd": "RMSD", "rg": "Rg",
+            "sasa": "SASA", "total_energy": "total energy",
+            "kinetic_energy": "kinetic energy"}
+
+
+def said_as(name: str) -> str:
+    """An observable's key as a reader says it: potential_energy is
+    "potential energy", rmsd "RMSD"."""
+    return _SAID_AS.get(name, name.replace("_", " "))
+
+
+def _named(names: "list[str]") -> str:
+    return ", ".join(said_as(name) for name in sorted(names))
 
 
 def assess_run(
     series: dict[str, Any],
     *,
+    records: "dict[str, dict[str, Any]] | None" = None,
     joins: "list[int] | tuple[int, ...] | None" = None,
     duration_ns: float | None = None,
     n_atoms: int | None = None,
@@ -334,7 +374,8 @@ def assess_run(
     have to carry it separately. Absent for a run that went through in one
     piece, which is most of them.
     """
-    assessments = {name: assess_series(name, values, joins=joins)
+    records = records or {}
+    assessments = {name: assess_series(name, values, joins=joins, record=records.get(name))
                    for name, values in series.items() if values is not None}
 
     findings: list[str] = []
@@ -348,15 +389,32 @@ def assess_run(
     if (energy is not None and energy.n_frames >= 6
             and duration_ns and n_atoms and duration_ns > 0):
         # Drift per nanosecond per atom, which is how the conventional limit
-        # is quoted and the only form comparable between systems.
-        span = float(np.ptp(np.asarray(list(series["potential_energy"]),
-                                       dtype=np.float64)))
-        drift = abs(energy.mean and (span / duration_ns / max(n_atoms, 1)))
-        verdicts["energy"] = (drift <= _ENERGY_DRIFT_LIMIT,
+        # is quoted and the only form comparable between systems. The
+        # trend's slope, fitted over the run, not its range: the range of a
+        # thermostatted energy is its fluctuation, which over 100 ps of a
+        # small protein read 2.2 kJ/mol per ns per atom and failed a run
+        # whose energy had no trend at all.
+        energies = np.asarray(list(series["potential_energy"]), dtype=np.float64)
+        energies = energies[np.isfinite(energies)]
+        times = np.linspace(0.0, float(duration_ns), energies.size)
+        slope, error = 0.0, 0.0
+        if energies.size >= 6:
+            fitted = np.polyfit(times, energies, 1)
+            slope = float(fitted[0])
+            residual = energies - np.polyval(fitted, times)
+            spread = float(np.sum((times - times.mean()) ** 2))
+            error = (float(np.sqrt(np.sum(residual ** 2) / (energies.size - 2) / spread))
+                     if spread > 0 else 0.0)
+        moved = slope * float(duration_ns)
+        drift = abs(slope) / max(n_atoms, 1)
+        # A trend only past twice its error: the noise of a short run fits
+        # a slope of its own, and failed a run with none.
+        trend = abs(slope) > 2.0 * error
+        verdicts["energy"] = (not trend or drift <= _ENERGY_DRIFT_LIMIT,
                               f"{drift:.2g} kJ/mol per ns per atom")
-        if drift > _ENERGY_DRIFT_LIMIT:
+        if trend and drift > _ENERGY_DRIFT_LIMIT:
             findings.append(
-                f"The potential energy moved by {span:,.0f} kJ/mol over "
+                f"The potential energy's trend moved it by {moved:,.0f} kJ/mol over "
                 f"{duration_ns:.3g} ns, which is {drift:.2g} kJ/mol per ns "
                 f"per atom. Above about {_ENERGY_DRIFT_LIMIT} the integration "
                 "is usually the cause rather than the system: check the "
@@ -382,7 +440,7 @@ def assess_run(
                    if a.has_equilibrated is None]
     if still_drifting:
         findings.append(
-            "Still moving in one direction: " + ", ".join(sorted(still_drifting))
+            "Still moving in one direction: " + _named(still_drifting)
             + ". The run has not finished equilibrating, so averages over it "
             "describe the approach rather than the state."
         )
@@ -390,7 +448,7 @@ def assess_run(
     if undecidable:
         findings.append(
             "Too short to say whether it has equilibrated: "
-            + ", ".join(sorted(undecidable))
+            + _named(undecidable)
             + ". Drift is judged by comparing the start of the run against "
             "the end, and a series this short has no start and end to "
             "compare."
@@ -401,7 +459,7 @@ def assess_run(
     if unmeasurable:
         findings.append(
             "Too short to tell how correlated it is: "
-            + ", ".join(sorted(unmeasurable))
+            + _named(unmeasurable)
             + ". The correlation time is estimated by summing until the "
             "series forgets itself, and a run this length cannot see a memory "
             "longer than half of it. Any independence reported here is the "
@@ -414,29 +472,29 @@ def assess_run(
     if thin:
         findings.append(
             "Too few independent samples to average: "
-            + ", ".join(sorted(thin))
+            + _named(thin)
             + ". Consecutive frames are nearly the same structure, so the "
             "number of independent observations is set by how fast the "
             "observable forgets, not by how often it was written out."
         )
 
     if still_drifting:
-        verdicts["equilibrated"] = (False, "still moving: " + ", ".join(sorted(still_drifting)))
+        verdicts["equilibrated"] = (False, "still moving: " + _named(still_drifting))
     elif undecidable:
-        verdicts["equilibrated"] = (None, "too short to say: " + ", ".join(sorted(undecidable)))
+        verdicts["equilibrated"] = (None, "too short to say: " + _named(undecidable))
     elif assessments:
-        verdicts["equilibrated"] = (True, "on " + ", ".join(sorted(assessments)))
+        verdicts["equilibrated"] = (True, "on " + _named(list(assessments)))
     if unmeasurable:
-        verdicts["correlation"] = (False, "not resolved: " + ", ".join(sorted(unmeasurable)))
+        verdicts["correlation"] = (False, "not resolved: " + _named(unmeasurable))
     elif assessments:
-        verdicts["correlation"] = (True, "on " + ", ".join(sorted(assessments)))
+        verdicts["correlation"] = (True, "on " + _named(list(assessments)))
     measurable = [a for a in assessments.values() if a.correlation_is_measurable]
     if thin:
-        verdicts["sampled"] = (False, "too few: " + ", ".join(sorted(thin)))
+        verdicts["sampled"] = (False, "too few: " + _named(thin))
     elif measurable:
         verdicts["sampled"] = (
             None if unmeasurable else True,
-            "fewest: " + min(measurable, key=lambda a: a.effective_samples).name
+            "fewest: " + said_as(min(measurable, key=lambda a: a.effective_samples).name)
             + f", {min(a.effective_samples for a in measurable):.0f}"
             + ("; the rest cannot be counted" if unmeasurable else ""))
     elif assessments:
@@ -467,3 +525,12 @@ def assess_run(
         "interpretable": not (thin or still_drifting or unmeasurable
                               or undecidable),
     }
+
+
+def _six_figures(value: float) -> float:
+    """A number kept to five places, or to six significant figures where
+    that keeps more (NaN and infinities as they are)."""
+    value = float(value)
+    if not np.isfinite(value) or value == 0:
+        return value
+    return round(value, max(5, 5 - int(np.floor(np.log10(abs(value))))))

@@ -214,7 +214,12 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
     start = _production_start_ns(rows, times)
     production = [row for row in rows if _is_production(row)]
     recorded = _recorded_thermodynamics(root)
-    volumes = [v for v in (_number(row.get("volume")) for row in production) if v is not None]
+    # Production's own energy file, where it wrote one: the series the
+    # thermodynamics analysis and the report's convergence table average,
+    # so a mean the analysis did not record is the report's, not one taken
+    # from the live record's coarser samples, which gave another number.
+    averaged = _production_energies(root) or production
+    volumes = [v for v in (_number(row.get("volume")) for row in averaged) if v is not None]
     held = len(volumes) > 1 and max(volumes) - min(volumes) <= 1e-9 * max(abs(max(volumes)), 1e-30)
     means: dict[str, Any] = {}
     for key, _label, unit in THERMODYNAMICS:
@@ -222,7 +227,7 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
         if isinstance(entry, dict) and ("mean" in entry or "not_a_measurement" in entry):
             means[key] = _said(entry, unit, _count(recorded.get("samples")))
             continue
-        values = [v for v in (_number(row.get(key)) for row in production) if v is not None]
+        values = [v for v in (_number(row.get(key)) for row in averaged) if v is not None]
         if key == "density" and held and len(values) > 1:
             means[key] = _said({"value": sum(values) / len(values),
                                 "not_a_measurement": HELD_DENSITY}, unit, len(values))
@@ -238,6 +243,17 @@ def _metric_rows(root: Path) -> list[dict[str, Any]]:
         with (root / "simulation" / "live_metrics.csv").open(newline="", encoding="utf-8") as fh:
             return list(csv.DictReader(fh))
     except (OSError, UnicodeDecodeError, csv.Error):
+        return []
+
+
+def _production_energies(root: Path) -> list[dict[str, Any]]:
+    """The production's samples from OpenMM's ``energy.csv``, by the live
+    record's names (`telemetry._read_energy_rows`)."""
+    from fastmdxplora.gui.telemetry import _read_energy_rows
+
+    try:
+        return _read_energy_rows(root / "simulation" / "energy.csv")
+    except Exception:  # noqa: BLE001 - the live record stands in
         return []
 
 
@@ -325,12 +341,11 @@ def _said(record: dict[str, Any], unit: str, of: int | None) -> dict[str, Any] |
 
 
 def _four_figures(value: float) -> str:
-    """A value to four significant figures, grouped, never as an exponent:
-    -45,472 rather than -4.547e+04."""
-    if value == 0 or not math.isfinite(value):
-        return f"{value:g}"
-    places = max(0, 3 - math.floor(math.log10(abs(value))))
-    return f"{value:,.{places}f}"
+    """A value to four significant figures, grouped: -45,472 rather than
+    -4.547e+04, as every page gives it (`statistics.four_figures`)."""
+    from fastmdxplora.statistics import four_figures
+
+    return four_figures(value)
 
 
 # ---------------------------------------------------------------------------

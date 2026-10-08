@@ -196,7 +196,7 @@ def _is_a_mean_record(value: Any) -> bool:
 
 def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
               timed: bool = True) -> dict[str, Any]:
-    from fastmdxplora.statistics import RESOLVED_SAMPLES, with_its_error
+    from fastmdxplora.statistics import RESOLVED_SAMPLES, four_figures, with_its_error
 
     unit = unit_of(name, found)
     value = _finite(found.get("mean"))
@@ -225,7 +225,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     elif determined:
         said = with_its_error(value, error) + suffix
     else:
-        said = f"{value:.4g}{suffix}"
+        said = four_figures(value) + suffix
     from_ns = None
     if n and timed:
         _, x, label = analysed_axis(root, n)
@@ -241,7 +241,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
 
 
 def _reweighted(name: str, item: dict[str, Any], found: dict[str, Any] | None) -> dict[str, Any]:
-    from fastmdxplora.statistics import with_its_error
+    from fastmdxplora.statistics import four_figures, with_its_error
 
     unit = unit_of(name, found)
     value = _finite(item.get("reweighted_mean"))
@@ -254,7 +254,7 @@ def _reweighted(name: str, item: dict[str, Any], found: dict[str, Any] | None) -
     elif determined:
         said, why = with_its_error(value, error) + suffix, None
     else:
-        said = f"{value:.4g}{suffix}"
+        said = four_figures(value) + suffix
         why = ("Reweighted from the biased run; too few independent samples "
                "behind the weights for an error bar.")
     return {

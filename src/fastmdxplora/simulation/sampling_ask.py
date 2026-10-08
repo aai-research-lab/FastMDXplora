@@ -43,7 +43,7 @@ class SamplingAsk:
     platform: str = ""
 
     def as_text(self) -> str:
-        names = list(self.analyses)
+        names = [_named(name) for name in self.analyses]
         said = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
         one = len(names) == 1
         amount = f"{'at least ' if self.lower_bound else ''}{_ns(self.more_ns)} more production"
@@ -155,3 +155,13 @@ def _duration(seconds: float) -> str:
     if hours < 48:
         return f"{hours} h {minutes} min" if minutes else f"{hours} h"
     return f"{hours / 24:.1f} days"
+
+
+def _named(analysis: str) -> str:
+    """An analysis by its heading on the Analysis page ("rg" was said as
+    "rg withheld its mean")."""
+    try:
+        from fastmdxplora.gui.report_dashboard import ANALYSIS_SECTION_BY_FOLDER
+    except Exception:  # noqa: BLE001 - a name, never a failure
+        return analysis
+    return ANALYSIS_SECTION_BY_FOLDER.get(analysis, analysis.replace("_", " "))

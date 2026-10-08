@@ -1579,8 +1579,9 @@ class TestConvergenceSaysWhatARunCanSupport:
         from fastmdxplora.report.convergence import assess_series
 
         rng = np.random.RandomState(0)
-        smoothed = np.convolve(rng.normal(size=1200), np.ones(40) / 40,
-                               mode="valid")[:400]
+        # Long enough to resolve its own correlation, as an error needs.
+        smoothed = np.convolve(rng.normal(size=6000), np.ones(40) / 40,
+                               mode="valid")[:4000]
         found = assess_series("correlated", smoothed)
         naive = found.spread / np.sqrt(found.n_frames)
         assert found.standard_error > naive * 2, (
@@ -1702,7 +1703,7 @@ class TestTheReportSaysHowMuchTheRunSupports:
 
         text = _convergence_section(self._a_run(tmp_path))
         assert "## Convergence" in text
-        assert "rmsd" in text and "rg" in text
+        assert "RMSD" in text and "Rg" in text
 
     def test_it_reports_independent_samples_not_frames(self, tmp_path) -> None:
         from fastmdxplora.report.document import _convergence_section
@@ -2611,12 +2612,13 @@ class TestOneMeanPerObservable:
         assert assessed.mean < float(series.mean()), (
             "a decaying series averaged from the start reads high")
 
-    def test_drift_is_still_measured_over_the_whole_run(self) -> None:
-        """It is the question of whether the run was still relaxing, and
-        discarding the relaxation before asking would answer it by
-        construction. A series that relaxes and then settles: measured over
-        the whole run its drift stands well clear of the noise; measured
-        over the settled part alone it would vanish."""
+    def test_drift_is_measured_over_what_is_averaged(self) -> None:
+        """Over the frames the mean is taken over, as the analyses' record
+        judges it. Measured over the whole run, the relaxation the mean
+        leaves out read as drift, and the report said "still moving" of a
+        mean every page called determined. A series that relaxes and then
+        settles: its relaxation is set aside, and what is averaged has no
+        drift."""
         from fastmdxplora.report.convergence import _drift_in_noise, assess_series
 
         series = self._relaxing(n=200)
@@ -2624,12 +2626,10 @@ class TestOneMeanPerObservable:
         assert assessed.discard > 0                          # the relaxation was set aside
         over_the_whole_run = _drift_in_noise(series)
         over_the_settled_part = _drift_in_noise(series[assessed.discard:])
-        assert assessed.drift_in_noise == pytest.approx(over_the_whole_run)
-        # Signed: it decays. Over the whole run it is several noise widths;
-        # over the settled part it is within one, which "no drift" means.
+        assert assessed.drift_in_noise == pytest.approx(over_the_settled_part)
         assert abs(over_the_whole_run) > 2.0
         assert abs(over_the_settled_part) < 1.0
-        assert abs(over_the_whole_run) > 2 * abs(over_the_settled_part)
+        assert assessed.has_equilibrated is True
 
     def test_the_table_says_what_it_discarded(self, tmp_path) -> None:
         # A series that relaxes before it settles: the table carries how many
@@ -2643,11 +2643,19 @@ class TestOneMeanPerObservable:
         (root / "analysis" / "rmsd" / "rmsd.dat").write_text(
             "# frame rmsd\n" + "".join(f"{i} {v:.6f}\n" for i, v in zip(frames, relaxing)),
             encoding="utf-8")
+        # The analysis's record of the series it wrote: the table reads it.
+        from fastmdxplora.statistics import mean_record
+
+        record = {k: (str(v) if k == "not_a_measurement" else v)
+                  for k, v in mean_record(relaxing).items()}
+        (root / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+            {"analysis": "rmsd", "findings": {"mean": record}}), encoding="utf-8")
         text = _convergence_section(root)
         assert "| observable | frames | discarded | independent" in text
-        row = next(r for r in _rows(text) if r.startswith("| rmsd |"))
+        row = next(r for r in _rows(text) if r.startswith("| RMSD |"))
         shown = int(row.split("|")[3].strip().replace(",", ""))
         expected = assess_run({"rmsd": list(relaxing)})["observables"]["rmsd"]["discard"]
+        assert expected == record["discard"]
         assert shown == expected and 0 < shown < 400, (shown, expected)
 
 class TestEquilibratedIsNotTheSameAsSampled:
@@ -2691,7 +2699,7 @@ class TestEquilibratedIsNotTheSameAsSampled:
             said = _what_the_run_supports(Path("/nowhere"))
 
         assert "too few" not in said
-        assert "enough independent samples" in said
+        assert "each mean is determined" in said
 class TestReproducibilitySaysWhatItReproduces:
     """What running the configuration again gives, read from the study's
     records. Setup records the random seed it placed hydrogens and ions with

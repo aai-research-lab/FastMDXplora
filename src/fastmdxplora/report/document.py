@@ -206,26 +206,35 @@ def _what_the_run_supports(project_root: Path) -> str | None:
     # and ten
     # independent samples -- at or under the point where a mean stops
     # describing the system -- and the summary said only the first.
-    thin = sum(1 for r in records if not r.get("sampled_enough", True))
+    # A mean not determined, as every page says it: too few independent
+    # samples, or a correlation time the run does not resolve. The summary
+    # said "too few independent samples" of means its own table gave 18 of.
+    # Of those that equilibrated only: one not judged, or not equilibrated,
+    # has no mean already, and counting it again said "3 could not be
+    # judged, the mean of 6 more is not determined" of six in all.
+    thin = sum(1 for r in records
+               if r.get("equilibrated", r.get("settled")) is True
+               and not r.get("determined", r.get("sampled_enough", True)))
 
     what = "observable" if total == 1 else "observables"
     if equilibrated == total and not thin:
-        return (f"All {total} {what} assessed had equilibrated and hold "
-                "enough independent samples to average.")
+        return (f"All {total} {what} assessed had equilibrated, and each mean is "
+                "determined.")
     if equilibrated == total:
-        return (f"All {total} {what} assessed had equilibrated, but {thin} "
-                "hold too few independent samples for the mean to describe "
-                "the system rather than this run; see [Convergence](#convergence).")
+        return (f"All {total} {what} assessed had equilibrated, but the mean of {thin} "
+                "is not determined: the run holds too few independent samples of it, "
+                "or does not resolve its correlation time; see "
+                "[Convergence](#convergence).")
 
     parts = []
     if equilibrated:
-        parts.append(f"{equilibrated} had equilibrated")
+        parts.append(f"{equilibrated} had equilibrated"
+                     + (f" (the mean of {thin} of {'it' if equilibrated == 1 else 'them'} "
+                        "not determined)" if thin else ""))
     if drifting:
         parts.append(f"{drifting} had not")
     if unjudged:
         parts.append(f"{unjudged} could not be judged from a run this length")
-    if thin:
-        parts.append(f"{thin} hold too few independent samples to average")
     return (f"Of {total} {what} assessed, " + ", ".join(parts)
             + "; see [Convergence](#convergence) before using any average from this run.")
 
@@ -841,11 +850,28 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     if not series:
         return None
 
+    # The analyses' own records of these means, so the report judges each as
+    # every page does: the convergence table gave an error the Analysis page
+    # withheld, and called unresolved a correlation the analyses resolved.
+    records: dict[str, dict[str, Any]] = {}
+    for name in ("rmsd", "rg", "sasa"):
+        found = (_load_json_safely(project_root / "analysis" / name / "options.json")
+                 or {}).get("findings")
+        if isinstance(found, dict) and isinstance(found.get("mean"), dict):
+            records[name] = found["mean"]
+    thermo = ((_load_json_safely(project_root / "analysis" / "thermodynamics" / "options.json")
+               or {}).get("findings") or {}).get("thermodynamics")
+    if isinstance(thermo, dict):
+        for name in ("potential_energy", "temperature", "density"):
+            if isinstance(thermo.get(name), dict):
+                records[name] = thermo[name]
+
     setup = _setup_record(project_root)
     sim = _load_json_safely(
         project_root / "simulation" / "simulation_parameters.json") or {}
     return assess_run(
         series,
+        records=records,
         duration_ns=sim.get("duration_ns_actual"),
         n_atoms=setup.get("n_atoms_solvated"),
         target_temperature_K=(sim.get("parameters") or {}).get("temperature_K"),
@@ -878,13 +904,23 @@ def _convergence_section(project_root: Path) -> str:
         "| equilibrated |"
     )
     lines.append("|---|---|---|---|---|---|---|")
+    from fastmdxplora.report.convergence import said_as
+    from fastmdxplora.statistics import four_figures, with_its_error
+
     for record in assessed["observables"].values():
         error = record["standard_error"]
+        determined = record.get("determined", error is not None) and error is not None
+        # The mean to the place its error allows, as every page gives it,
+        # and no error where the analyses withheld one.
+        said = with_its_error(record["mean"], error if determined else None)
+        mean, _, uncertainty = said.partition(" \u00b1 ")
+        if not determined:
+            mean, uncertainty = four_figures(record["mean"]), "not determined"
         lines.append(
-            f"| {record['observable']} | {record['frames']:,} | "
+            f"| {said_as(record['observable'])} | {record['frames']:,} | "
             f"{record.get('discard', 0):,} | "
-            f"{record['effective_samples']:.1f} | {record['mean']:.4g} | "
-            + (f"{error:.3g}" if error is not None else "not enough to say")
+            f"{record['effective_samples']:.1f} | {mean} | "
+            + (uncertainty or "not determined")
             + " | "
             + {True: "yes", False: "no", None: "too short to say"}[
                 record.get("equilibrated", record.get("settled"))]

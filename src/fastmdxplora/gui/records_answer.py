@@ -67,51 +67,77 @@ def _supports(base: Path) -> str:
 
 
 def _means(base: Path) -> list[str]:
-    """Each analysis's mean with its error, or why it gave none, from the
-    findings each analysis recorded: a line a person reads, where the Agent's
-    AI model is given the whole record (`agent_panel._results_summary`)."""
-    import json
+    """Each mean the analyses recorded, as the Analysis page gives it
+    (`analysis_overview.overview_of`): its name as the page says it, the
+    mean to the place its error allows where it is determined, and else the
+    mean alone with why not. Read from the page's own gathering, so the
+    answer cannot give an error the page withholds, or a record's key
+    ("hydrophobic_sasa") for its name; the thermodynamics analysis's means,
+    a group of their own, were left out."""
     import math
 
-    from fastmdxplora.gui.report_dashboard import unit_of
-    from fastmdxplora.gui.series import SERIES
-    from fastmdxplora.statistics import with_its_error
+    from fastmdxplora.gui.analysis_overview import overview_of
 
+    try:
+        rows = overview_of(base).get("rows") or []
+    except Exception:  # noqa: BLE001 - the rest of the answer stands
+        return []
     lines: list[str] = []
-    for options in sorted((base / "analysis").glob("*/options.json")):
-        try:
-            record = json.loads(options.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        name = str(record.get("analysis") or options.parent.name)
-        findings = record.get("findings") if isinstance(record.get("findings"), dict) else {}
-        for key, found in findings.items():
-            if not isinstance(found, dict):
+    for row in rows:
+        for quantity in row.get("quantities") or []:
+            if not isinstance(quantity, dict):
                 continue
-            own = key in ("mean", name)
-            label = SERIES.get(name, (name,))[0] + ("" if own else f" {key}")
-            why = _first_clause(found.get("not_a_measurement"))
-            mean = found.get("mean")
-            if isinstance(mean, bool) or not isinstance(mean, (int, float)):
-                if why:
+            label = quantity.get("label") or row.get("title") or row.get("analysis")
+            key = str(quantity.get("key") or "")
+            # A group's quantity (the thermodynamics analysis's density) is
+            # named by itself; another of an analysis's means with it.
+            if key != "mean" and "." not in key and row.get("title") not in (None, label):
+                label = f"{row['title']}, {label[:1].lower()}{label[1:]}"
+            said = str(quantity.get("said") or "")
+            why = _first_clause(quantity.get("why"))
+            if quantity.get("value") is None:
+                if why.startswith("no mean"):
+                    lines.append(f"{label}: {why}.")
+                elif why:
                     lines.append(f"{label}: no mean; {why}.")
                 continue
-            error = found.get("standard_error")
-            error = error if isinstance(error, (int, float)) and not isinstance(error, bool) \
-                and math.isfinite(error) else None
-            unit = unit_of(name, found) if own else (
-                found["unit"] if isinstance(found.get("unit"), str) else "")
-            said = with_its_error(mean, error) + (f" {unit}" if unit else "")
-            if why:
-                lines.append(f"{label}: {said}, not determined; {why}.")
+            if not quantity.get("determined"):
+                lines.append(f"{label}: {said}, not determined" + (f"; {why}." if why else "."))
                 continue
-            samples = found.get("effective_samples")
-            discard, frames = found.get("discard"), found.get("n_frames")
+            samples = quantity.get("samples")
+            discard, frames = quantity.get("from_frame"), quantity.get("of_frames")
             if isinstance(samples, (int, float)) and math.isfinite(samples):
                 said += f", {samples:.0f} independent samples"
             if isinstance(discard, int) and isinstance(frames, int) and discard > 0:
                 said += f", after the first {discard} of {frames} frames"
             lines.append(f"{label}: {said}.")
+    if not any(row.get("analysis") == "thermodynamics" for row in rows):
+        lines += _thermodynamic_means(base)
+    return lines
+
+
+def _thermodynamic_means(base: Path) -> list[str]:
+    """The production's thermodynamic means as the Overview gives them, for
+    a study with no thermodynamics analysis: the summary named none while
+    the Overview and the report gave each."""
+    from fastmdxplora.gui.overview_view import THERMODYNAMICS, overview_payload
+
+    try:
+        means = (overview_payload(base).get("thermodynamics") or {}).get("means") or {}
+    except Exception:  # noqa: BLE001 - the rest of the answer stands
+        return []
+    lines = []
+    for key, label, _unit in THERMODYNAMICS:
+        said = means.get(key)
+        if not isinstance(said, dict) or not said.get("said"):
+            continue
+        if said.get("determined"):
+            samples = said.get("samples")
+            more = f", {samples:.0f} independent samples" if isinstance(samples, (int, float)) else ""
+            lines.append(f"{label}: {said['said']}{more}.")
+        else:
+            why = _first_clause(said.get("why"))
+            lines.append(f"{label}: {said['said']}, not determined" + (f"; {why}." if why else "."))
     return lines
 
 
@@ -178,6 +204,27 @@ NO_FIGURE = ("Its analyses recorded no figure for how much more production they 
              "release records it where it can.")
 
 
+#: Where a mean was withheld because it still drifts: no figure says how
+#: much longer, and analysing again records none (it was told to).
+STILL_DRIFTING = ("A mean still drifting over the frames it averages has no figure for how "
+                  "much longer: carry the run on until it stops drifting, then analyse it "
+                  "again.")
+
+
+def _no_figure(base: Path) -> str:
+    """Why no figure says how much more production the means need."""
+    from fastmdxplora.gui.analysis_overview import overview_of
+
+    try:
+        rows = overview_of(base).get("rows") or []
+    except Exception:  # noqa: BLE001 - the plainer answer stands
+        return NO_FIGURE
+    drifting = any(str(q.get("why") or "").startswith("Still drifting")
+                   for row in rows for q in (row.get("quantities") or [])
+                   if isinstance(q, dict))
+    return STILL_DRIFTING if drifting else NO_FIGURE
+
+
 def _determined(supports: str) -> bool:
     """Whether the report's line says every observable equilibrated and holds
     enough independent samples to average."""
@@ -199,7 +246,7 @@ def _long_enough(base: Path) -> str:
         parts.append("By its records, yes. " + supports)
     elif supports:
         parts.append("Not by its records. " + supports)
-        parts.append(NO_FIGURE)
+        parts.append(_no_figure(base))
     else:
         parts.append("Its records do not say yet: no analysis has judged whether its "
                      "series equilibrated.")
@@ -225,7 +272,7 @@ def _strengthen(base: Path) -> str:
                      "precision but not a check.")
     elif supports:
         parts.append("A longer run first. " + supports)
-        parts.append(NO_FIGURE)
+        parts.append(_no_figure(base))
     of = study_a_run_belongs_to(base)
     if of:
         parts.append(f"This run is one of the study {of.get('study')}. Its Report page "

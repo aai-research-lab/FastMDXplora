@@ -48,10 +48,11 @@ THIN = ("Of 2 observables assessed, 1 had equilibrated, 1 could not be judged fr
 
 def test_each_mean_is_said_with_its_error_or_why_it_has_none(tmp_path):
     lines = records_answer._means(_study(tmp_path / "study"))
+    # As the Analysis page gives them, in its order.
     assert lines == [
+        "RMSD: 0.1123 ± 0.0021 nm, 21 independent samples, after the first 62 of 100 frames.",
         "Radius of gyration: 0.3281 nm, not determined; this run is not long against its "
-        "own correlation time.",
-        "RMSD: 0.1123 ± 0.0021 nm, 21 independent samples, after the first 62 of 100 frames."]
+        "own correlation time."]
 
 
 def test_what_it_found(tmp_path, monkeypatch):
@@ -66,11 +67,11 @@ def test_long_enough_with_a_figure_and_the_command(tmp_path, monkeypatch):
     study = _study(tmp_path / "study")
     monkeypatch.setattr(records_answer, "_supports", lambda base: THIN)
     monkeypatch.setattr(records_answer, "_ask", lambda base: (
-        "rg withheld its mean for want of sampling: 2 ns more production should give it 10 "
-        "independent samples.", "fastmdx explore --simulate-resume-from /s --simulate-extra-ns 2"))
+        "Radius of gyration withheld its mean for want of sampling: 2 ns more production "
+        "should give it 10 independent samples.", "fastmdx explore --simulate-resume-from /s --simulate-extra-ns 2"))
     said = answer_from_the_records(study, "long_enough")
     assert "Not for all of its means. " + THIN in said
-    assert "What they need: rg withheld its mean" in said
+    assert "What they need: Radius of gyration withheld its mean" in said
     assert "`fastmdx explore --simulate-resume-from /s --simulate-extra-ns 2`" in said
     assert said.endswith(TRAPPED)
 
@@ -204,7 +205,7 @@ def test_from_real_records_with_the_command_that_extends_it():
 
     study = _withheld_with_a_figure(_extendable())
     said = answer_from_the_records(study, "long_enough")
-    assert "What they need: rg withheld its mean for want of sampling: 2 ns" in said
+    assert "What they need: Radius of gyration withheld its mean for want of sampling: 2 ns" in said
     assert (f"`fastmdx explore --simulate-resume-from {study.resolve()} "
             "--simulate-extra-ns 2`") in said
     said = answer_from_the_records(study, "strengthen")
@@ -214,7 +215,7 @@ def test_from_real_records_with_the_command_that_extends_it():
 def test_from_real_records_that_cannot_be_extended(tmp_path):
     study = _withheld_with_a_figure(tmp_path / "study")
     said = answer_from_the_records(study, "long_enough")
-    assert "What they need: rg withheld its mean" in said
+    assert "What they need: Radius of gyration withheld its mean" in said
     assert "fastmdx explore" not in said
 
 
@@ -235,7 +236,10 @@ def test_records_that_cannot_be_read_are_passed_over(tmp_path, monkeypatch):
     folder.mkdir()
     (folder / "options.json").write_text(json.dumps(
         {"analysis": "rmsd", "findings": {"mean": "unrecorded", "other": 3}}), encoding="utf-8")
-    assert records_answer._means(study) == ["Total SASA: no mean; the series is empty."]
+    # As the Analysis page says them: a mean recorded as no number has none.
+    assert records_answer._means(study) == [
+        "Q-value: no mean was recorded.",
+        "Solvent accessible surface area: no mean; the series is empty."]
 
     def broken(base):
         raise ValueError("no convergence record")
@@ -263,3 +267,33 @@ def test_no_study_open_is_no_answer(tmp_path):
     runtime = SimpleNamespace(snapshot=lambda: {"active_run": None})
     assert records_answer.answered_from_the_records({"records_question": "found"},
                                                     runtime) is None
+
+
+def test_the_thermodynamic_means_without_a_thermodynamics_analysis(tmp_path):
+    """"Summarise what this study found" named no energy, temperature or
+    density for a study with no thermodynamics analysis, while the Overview
+    and the report gave each."""
+    from tests.test_the_overview_leads_with_what_was_determined import _metrics, _status
+
+    root = _study(tmp_path / "study")
+    _metrics(root, production=2000)
+    _status(root)
+    lines = records_answer._means(root)
+    temperature = next(line for line in lines if line.startswith("Temperature: "))
+    assert " ± " in temperature and temperature.endswith("independent samples.")
+    assert any(line.startswith("Potential energy: ") for line in lines)
+
+
+def test_a_drifting_mean_is_not_sent_to_be_analysed_again(tmp_path, monkeypatch):
+    """"Is this run long enough?" told a study analysed with this release to
+    analyse it again with this release: a mean withheld as still drifting
+    records no figure for how much longer."""
+    monkeypatch.setattr(records_answer, "_supports", lambda base: THIN)
+    monkeypatch.setattr(records_answer, "_ask", lambda base: None)
+    study = _study(tmp_path / "study")
+    _findings(study, "rg", {"mean": 0.33, "unit": "nm", "effective_samples": 30.0,
+                            "not_a_measurement": "Still drifting after its equilibration: "
+                                                 "the remedy is a longer run."})
+    said = answer_from_the_records(study, "long_enough")
+    assert records_answer.STILL_DRIFTING in said
+    assert records_answer.NO_FIGURE not in said

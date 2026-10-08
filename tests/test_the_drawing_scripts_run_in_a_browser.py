@@ -335,13 +335,20 @@ def test_water_during_playback_is_an_overlay_that_follows_the_frames(page) -> No
 
 
 def test_the_charts_draw_the_energy_log(overview) -> None:
+    # The run has ended, so once the Overview has its means the cells give
+    # production's mean beside the newest sample's place; wait for that, or
+    # the test reads whichever of the two came first.
+    overview.wait_for_function(
+        "() => (document.querySelector('[data-chart-note=\"potential_energy\"]')"
+        " || {}).textContent?.startsWith('production mean')")
     latest = overview.evaluate(
         "() => Object.fromEntries([...document.querySelectorAll('[data-chart-value]')]"
         ".map(cell => [cell.dataset.chartValue, cell.textContent]))")
-    # The last row, grouped where it is large, and a gap where the run did not
-    # sample: an empty cell is not a zero.
-    assert latest == {"potential_energy": "-506,501", "total_energy": "-400,095",
-                      "temperature": "300.00", "density": "\u2014", "speed": "120.50"}
+    # Production's means, grouped where they are large; the speed, which has
+    # no mean, from the last row; and a gap where the run did not sample: an
+    # empty cell is not a zero.
+    assert latest == {"potential_energy": "-506,526", "total_energy": "-400,098",
+                      "temperature": "299.8", "density": "\u2014", "speed": "120.50"}
     drawn = overview.evaluate(
         "() => { const c = document.querySelector('canvas[data-chart=\"temperature\"]');"
         " const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"

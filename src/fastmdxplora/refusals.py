@@ -782,6 +782,11 @@ CODES: tuple[Code, ...] = (
          "independent-sample count is an upper bound.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
          detail_keys=("frames", "independent", "statistical_inefficiency", "needed")),
+    Code("analysis.sampling.still_drifting",
+         "The frames averaged still move in one direction: their last third's "
+         "mean differs from their first third's by at least twice their spread.",
+         Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
+         detail_keys=("frames", "drift_in_spread", "needed")),
     Code("analysis.sampling.drifting",
          "The segment means move in order across the run, so it had not "
          "equilibrated at the scale of the whole run.",

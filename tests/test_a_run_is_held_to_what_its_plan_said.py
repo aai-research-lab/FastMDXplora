@@ -55,11 +55,11 @@ class TestTheTicks:
     def test_a_measure_still_moving_fails(self):
         rising = list(np.linspace(0.1, 0.5, 500) + 0.005 * np.random.RandomState(0).normal(size=500))
         passed, detail = _checks(assess_run({"rmsd": rising}))["equilibrated"]
-        assert passed is False and detail == "still moving: rmsd"
+        assert passed is False and detail == "still moving: RMSD"
 
     def test_too_short_to_say_is_not_a_pass(self):
         checks = _checks(assess_run({"rmsd": [0.1, 0.2, 0.3]}))
-        assert checks["equilibrated"] == (None, "too short to say: rmsd")
+        assert checks["equilibrated"] == (None, "too short to say: RMSD")
         assert checks["sampled"][0] is False
 
     @pytest.mark.parametrize("mean, passed", [(304.9, True), (305.1, False)])
@@ -70,14 +70,17 @@ class TestTheTicks:
         assert any("mean temperature" in f for f in result["findings"]) is (not passed)
 
     def test_the_energy_agrees_with_the_finding(self):
-        wide = assess_run({"potential_energy": _steady(centre=-1e5, width=500)},
-                          duration_ns=0.01, n_atoms=6000)
-        assert _checks(wide)["energy"][0] is False
-        assert any("potential energy moved" in f for f in wide["findings"])
-        narrow = assess_run({"potential_energy": _steady(centre=-1e5, width=500)},
-                            duration_ns=100, n_atoms=6000)
-        assert _checks(narrow)["energy"][0] is True
-        assert not any("potential energy moved" in f for f in narrow["findings"])
+        # Judged by its trend, not its range: a wide steady energy has none.
+        climbing = list(np.asarray(_steady(centre=-1e5, width=50)) + np.linspace(0, 500, 500))
+        short = assess_run({"potential_energy": climbing}, duration_ns=0.01, n_atoms=6000)
+        assert _checks(short)["energy"][0] is False
+        assert any("potential energy's trend moved" in f for f in short["findings"])
+        long = assess_run({"potential_energy": climbing}, duration_ns=100, n_atoms=6000)
+        assert _checks(long)["energy"][0] is True
+        assert not any("trend moved" in f for f in long["findings"])
+        steady = assess_run({"potential_energy": _steady(centre=-1e5, width=500)},
+                            duration_ns=0.01, n_atoms=6000)
+        assert _checks(steady)["energy"][0] is True
 
     def test_what_could_not_be_judged_says_why(self):
         checks = _checks(assess_run({"rmsd": _steady(centre=0.2, width=0.01)}))
@@ -132,7 +135,7 @@ class TestTickedAfter:
         section = _convergence_section(_study(tmp_path / "study"))
         assert "### The checks this run was held to" in section
         assert ("| Each observable equilibrates before it is averaged | **failed** "
-                "| still moving: rmsd |") in section
+                "| still moving: RMSD |") in section
         assert "| The mean temperature is within 5 K of the target | passed |" in section
 
     def test_to_the_agent(self, tmp_path):
@@ -149,7 +152,7 @@ class TestTickedAfter:
         status = _run_status(Runtime())
         assert "the checks this run was held to (as the report ticks them):" in status
         assert ("FAILED: each observable equilibrates before it is averaged "
-                "(still moving: rmsd)") in status
+                "(still moving: RMSD)") in status
         assert "passed: the mean temperature is within 5 K of the target" in status
 
     def test_nothing_to_tick_says_nothing(self, tmp_path):

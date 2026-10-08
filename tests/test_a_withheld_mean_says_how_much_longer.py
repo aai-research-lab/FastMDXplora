@@ -150,7 +150,8 @@ class TestTheStudyAsks:
         # 2.6 ns at 2 fs is 1.3 million steps, at 0.02 s a step.
         assert ask.seconds == pytest.approx(1.3e6 * 0.02)
         assert ask.as_text() == (
-            "rg and hbonds withheld their means for want of sampling: 2.6 ns more "
+            "Radius of gyration and Hydrogen bonds withheld their means for want of "
+            "sampling: 2.6 ns more "
             "production should give each 10 independent samples; at this run's own "
             "speed on CPU, about 7 h 13 min.")
 
@@ -161,7 +162,8 @@ class TestTheStudyAsks:
             "rg": {"more_frames": 257, "more_ns": 2.57},
             "hbonds": {"more_frames": 40, "more_ns": 0.4, "lower_bound": True}}))
         assert ask.lower_bound and ask.seconds is None
-        assert ask.as_text().startswith("rg and hbonds withheld their means for want of "
+        assert ask.as_text().startswith("Radius of gyration and Hydrogen bonds withheld their "
+                                        "means for want of "
                                         "sampling: at least 2.6 ns more production")
         assert "estimate again" in ask.as_text()
 
@@ -210,7 +212,7 @@ class TestItIsSaid:
         monkeypatch.setattr(resume, "continuation_of",
                             lambda *a, **k: type("C", (), {"possible": True})())
         text = _sampling_summary(root)
-        assert text.startswith("what the withheld means need: rg withheld its mean")
+        assert text.startswith("what the withheld means need: Radius of gyration withheld its mean")
         assert "extra_ns: 2.6" in text and f"resume_from: {root.resolve()}" in text
 
     def test_to_the_agent_without_one_where_it_cannot_continue(self, tmp_path):
@@ -225,7 +227,7 @@ class TestItIsSaid:
                 return {"active_run": str(root), "status": "idle"}
 
         status = _run_status(Runtime())
-        assert "what the withheld means need: rg withheld its mean" in status
+        assert "what the withheld means need: Radius of gyration withheld its mean" in status
         assert "extra_ns" not in status
 
     def test_in_the_report(self, tmp_path):
@@ -238,6 +240,6 @@ class TestItIsSaid:
         (data / "rmsd.dat").write_text("".join(f"{v:.5f}\n" for v in 0.2 + 0.01 * _ar(60, 0.95)),
                                        encoding="utf-8")
         section = _convergence_section(root)
-        assert "**What would support it.** Rg withheld its mean for want of sampling: " \
-               "2.6 ns more production" in section
+        assert ("**What would support it.** Radius of gyration withheld its mean for want "
+                "of sampling: 2.6 ns more production") in section
         assert "extra_ns: 2.6" in section

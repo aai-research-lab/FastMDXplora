@@ -58,9 +58,11 @@ __all__ = [
     "correlation_is_resolved",
     "detect_equilibration",
     "summarise",
+    "drift_in_spread",
     "mean_record",
     "shared_start",
     "with_its_error",
+    "four_figures",
     "convergence_of",
 ]
 
@@ -84,6 +86,18 @@ RESOLVED_SAMPLES = 25.0
 #: keeps the most leaves the most of a relaxation in the mean: on a transient
 #: shared by three replicas it left a bias about the size of their error.
 EQUILIBRATION_TOLERANCE = 0.1
+
+#: A series whose averaged frames still move by this many times their own
+#: spread between their first and last thirds is still drifting, and its
+#: mean is not one of a state. Against the frames' spread, not the mean's
+#: error: on a stationary series long enough to resolve its correlation the
+#: two thirds' means differ by about half a spread at most, so this is
+#: crossed by a trend, almost never by noise.
+DRIFT_IN_SPREAD = 2.0
+
+#: The fewest frames averaged that can be split into thirds with two in
+#: each, the least that says anything about a trend.
+DRIFT_FRAMES = 6
 
 #: The error of a mean after a discard is taken from the whole run, scaled to
 #: the frames kept, unless discarding gained at least this many times the
@@ -426,6 +440,24 @@ class Withholding(str):
         return obj
 
 
+def drift_in_spread(values: Any) -> float:
+    """How far a series moved between its first and last thirds, against
+    how much it wobbles within them: the last third's mean less the first's,
+    over the root-mean-square of their spreads. A raw slope says nothing
+    without a scale, and this means the same for any observable. Zero for a
+    series too short to split into thirds with two frames in each."""
+    series = np.asarray(values, dtype=np.float64)
+    series = series[np.isfinite(series)]
+    if series.size < DRIFT_FRAMES:
+        return 0.0
+    third = series.size // 3
+    first, last = series[:third], series[-third:]
+    noise = np.sqrt((first.var() + last.var()) / 2)
+    if noise <= 0:
+        return 0.0 if np.isclose(first.mean(), last.mean()) else float("inf")
+    return float((last.mean() - first.mean()) / noise)
+
+
 def summarise(
     series: np.ndarray,
     *,
@@ -525,6 +557,25 @@ def _summary(
             frames=int(kept.size), independent=float(effective),
             statistical_inefficiency=float(equilibrated.inefficiency),
             needed=float(RESOLVED_SAMPLES),
+        )
+
+    drift = drift_in_spread(kept)
+    if kept.size >= DRIFT_FRAMES and abs(drift) >= DRIFT_IN_SPREAD:
+        # Its own error cannot say so: a series moving steadily through the
+        # frames averaged holds the start of a trend, not a state, and the
+        # report said "still moving" beside a mean every page called
+        # determined.
+        import dataclasses
+
+        return dataclasses.replace(equilibrated, standard_error=float("nan")), Withholding(
+            f"Still drifting after its equilibration: over the {kept.size} frames "
+            f"averaged, the last third's mean differs from the first third's by "
+            f"{abs(drift):.1f} times their spread. A mean of a quantity still moving "
+            "describes where the run happened to stop, not a state; the remedy is a "
+            "longer run.",
+            code="analysis.sampling.still_drifting",
+            frames=int(kept.size), drift_in_spread=round(float(drift), 2),
+            needed=DRIFT_IN_SPREAD,
         )
 
     if effective < minimum_effective_samples:
@@ -1104,6 +1155,22 @@ def heterogeneity_ratio(means: np.ndarray, weights: np.ndarray) -> float:
     return q / (means.size - 1)
 
 
+def four_figures(value: float) -> str:
+    """A value to four significant figures, grouped, and as an exponent only
+    where it is very large or very small: -45,472 rather than -4.547e+04,
+    which the Overview, the report and the Agent each printed differently;
+    trailing zeros dropped, as `{:.4g}` drops them."""
+    if not math.isfinite(value) or value == 0:
+        return f"{value:g}"
+    magnitude = math.floor(math.log10(abs(value)))
+    if magnitude >= 6 or magnitude < -4:
+        return f"{value:.4g}"
+    places = max(0, 3 - magnitude)
+    said = f"{value:,.{places}f}"
+    # As `{:.4g}` gives it: no zeros after the last figure that is not one.
+    return said.rstrip("0").rstrip(".") if "." in said else said
+
+
 def with_its_error(value: float, error: float | None, *, sign: bool = False) -> str:
     """A value and its standard error as every page gives them: the error to
     two figures and the value to the same decimal place, so neither says
@@ -1117,9 +1184,9 @@ def with_its_error(value: float, error: float | None, *, sign: bool = False) -> 
     does not have.
     """
     if error is None or not math.isfinite(error) or error < 0:
-        said = f"{value:.4g}"
+        said = four_figures(value)
     elif error == 0:
-        said = f"{value:.4g} \u00b1 0"
+        said = f"{four_figures(value)} \u00b1 0"
     else:
         places = max(0, 1 - math.floor(math.log10(error)))
         said = f"{value:,.{places}f} \u00b1 {error:,.{places}f}"

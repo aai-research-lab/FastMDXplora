@@ -430,15 +430,22 @@ class TestOneRunGetsOneVerdict:
             .correlation_is_measurable
 
     def test_the_report_and_the_analyses_agree(self) -> None:
+        """Resolved as the analyses' record resolves it: after the
+        equilibration, by `summarise`. The report asked the whole series,
+        transient and all, and called unresolved a correlation the record
+        had resolved."""
         from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import mean_record
 
         rng = np.random.RandomState(0)
         for series in (rng.normal(size=5000),
                        _correlated(0.9, 20000, seed=1),
                        _correlated(0.999, 4000, seed=2),
                        _correlated(0.999, 20000, seed=3)):
+            withheld = mean_record(series).get("not_a_measurement")
+            code = getattr(getattr(withheld, "refusal", None), "code", "")
             assert (assess_series("cv", series).correlation_is_measurable
-                    == correlation_is_resolved(series))
+                    == (code != "analysis.sampling.correlation_unresolved"))
 
 
 class TestOneMissingValueDoesNotMakeFramesIndependent:

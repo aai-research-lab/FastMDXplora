@@ -288,6 +288,10 @@ def _browser_study(root: Path, status: str) -> Path:
     from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
 
     _write_study(root)
+    # Its production is the live record written below: the Overview averages
+    # production's energy file where a run wrote one, and the study borrowed
+    # here wrote a short one of its own.
+    (root / "simulation" / "energy.csv").unlink(missing_ok=True)
     _manifest(root, {"rmsd": {"status": "ok"}, "rg": {"status": "ok"},
                      "rmsf": {"status": "ok"}})
     _analysis(root, "rmsd", 0.30 + 0.002 * _ar1(2000, 0.5, 1))
