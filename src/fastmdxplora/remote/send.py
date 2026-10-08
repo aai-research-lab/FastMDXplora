@@ -254,9 +254,17 @@ def prepare(config_path: str | Path, machine_name: str, *,
             given=inputs.fetched, machine=machine_name,
         )
 
-    name = check_job_name(Path(output).name if output else (
+    given = Path(output).name if output else (
         Path(str(raw.get("output"))).name if raw.get("output")
-        else default_output_name(system_of(loaded))))
+        else default_output_name(system_of(loaded)))
+    try:
+        name = check_job_name(given)
+    except StudyError as exc:
+        # The job is named after the results folder: say where that is set.
+        raise StudyError(
+            f"{exc} The job takes the name of the study's results folder: set "
+            "`output` in the config (or give --output) to such a name.",
+            code="remote.job.unusable_name", given=given) from None
     # Absolute, so the record says the same folder whatever folder a later
     # caller asks from.
     local_output = str((Path(output) if output else Path.cwd() / name).resolve())
@@ -684,6 +692,7 @@ def fetch(name: str, *, with_trajectory: bool = False,
     than it holds cannot send more in one file than the whole was said to
     be.
     """
+    load_job(name)  # a name never sent is refused before anything is made for it
     with held(name), _fetching(name):
         return _fetch(name, with_trajectory, transport, local_runner, code,
                       most_bytes)

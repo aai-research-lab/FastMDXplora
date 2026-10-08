@@ -1342,3 +1342,86 @@ class TestSeventhReview:
                  code=RELEASE)
         assert "credentials" in str(caught.value)
         assert not any("mkdir" in c for c in machine.commands)
+
+
+class TestSeventhReviewRecords:
+    def _record(self, machine, **changed):
+        import json
+
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        record = json.loads((jobs_dir() / f"{job.name}.json").read_text())
+        record.update(changed, name="other")
+        (jobs_dir() / "other.json").write_text(json.dumps(record))
+        return job
+
+    @pytest.mark.parametrize("changed", [{"local_output": None}, {"local_output": 5},
+                                         {"extra": []}, {"code": "x"}])
+    def test_a_damaged_record_is_left_out_of_the_jobs(self, machine, changed):
+        from fastmdxplora.remote import api
+
+        job = self._record(machine, **changed)
+        assert [j.name for j in api.jobs(under=machine.back.parent)] == [job.name]
+        assert [j.name for j in api.jobs()] == [job.name]
+
+    @pytest.mark.parametrize("changed", [{"local_output": None}, {"extra": []}])
+    def test_a_damaged_record_is_refused_by_name(self, machine, changed):
+        from fastmdxplora.remote import api
+
+        self._record(machine, **changed)
+        for asked in (api.status, api.cancel, api.fetch_sizes):
+            with pytest.raises(ValueError) as caught:
+                asked("other", transport=machine.transport())
+            assert refusal_of(caught.value).code == "remote.job.unknown"
+
+    def test_a_record_of_a_name_only_is_refused(self, machine):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        jobs_dir().mkdir(parents=True, exist_ok=True)
+        (jobs_dir() / "trial.json").write_text('{"name": "trial"}')
+        with pytest.raises(ValueError) as caught:
+            api.status("trial", transport=machine.transport())
+        assert refusal_of(caught.value).code == "remote.job.unknown"
+
+    def test_a_damaged_machine_record_is_left_out(self, machine):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.machines import machines_dir
+
+        (machines_dir() / "broken.json").write_text("[]")
+        assert [m.name for m in api.machines(code=RELEASE)] == ["box"]
+
+    @pytest.mark.parametrize("name", ["a/b", "../x", "typo"])
+    def test_fetching_a_name_never_sent_is_refused_and_leaves_nothing(self, machine,
+                                                                       name):
+        from fastmdxplora.remote.jobs import jobs_dir
+        from fastmdxplora.remote.send import fetch
+
+        jobs_dir().mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ValueError) as caught:
+            fetch(name, transport=machine.transport(), local_runner=machine.local)
+        assert refusal_of(caught.value).code == "remote.job.unknown"
+        assert not list(jobs_dir().glob(".fetching-*"))
+
+    def test_a_job_name_that_cannot_be_used_says_where_it_is_set(self, machine):
+        with pytest.raises(ValueError) as caught:
+            prepare(machine.study, "box", output=str(machine.back.parent / "my study"),
+                    code=RELEASE, transport=machine.transport())
+        assert "`output`" in str(caught.value)
+
+    def test_a_damaged_record_leaves_an_ai_app_s_tools_working(self, app):
+        import json
+
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        _start(app, answer=YES)
+        _finished(app)
+        record = json.loads((jobs_dir() / "ghg_run.json").read_text())
+        record.update(name="other", local_output=None)
+        (jobs_dir() / "other.json").write_text(json.dumps(record))
+        for tool, arguments in (("list_machines", {}), ("remote_status", {}),
+                                ("remote_status", {"job": "ghg_run"})):
+            result = _call(app, tool, **arguments)
+            assert not result.get("isError"), _text(result)

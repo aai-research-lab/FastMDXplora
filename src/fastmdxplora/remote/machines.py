@@ -145,7 +145,14 @@ def load_machine(name: str) -> Machine:
             f"Inspect the machine again to rewrite it.",
             given=name, permitted=machine_names(),
         ) from exc
-    return Machine.from_record(record)
+    try:
+        return Machine.from_record(record)
+    except (KeyError, TypeError, AttributeError, ValueError) as exc:
+        raise UnknownMachine(
+            f"The record for {name!r} at {target} is not a machine's record. "
+            "Inspect the machine again to rewrite it.",
+            given=name, permitted=machine_names(),
+        ) from exc
 
 
 def forget_machine(name: str) -> Path:

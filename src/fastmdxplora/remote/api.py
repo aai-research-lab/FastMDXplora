@@ -93,7 +93,10 @@ def machines(*, code: CodeIdentity | None = None) -> list[RunTarget]:
     code = code or this_code()
     found = []
     for name in machine_names():
-        machine = load_machine(name)
+        try:
+            machine = load_machine(name)
+        except ValueError:
+            continue  # a record that cannot be read is no machine to offer
         verdict = readiness(machine, code)
         found.append(RunTarget(name=name, kind=machine.inspection.kind,
                                ready=verdict.ready, summary=verdict.summary,
@@ -154,20 +157,23 @@ def send(config: str | Path, machine: str, *, output: str | Path | None = None,
 def jobs(*, under: str | Path | None = None) -> list[Job]:
     """The jobs sent from this computer, as last recorded; only those whose
     results come back inside ``under``, where given."""
+    root = None if under is None else Path(under).resolve()
     found = []
     for name in job_names():
         try:
-            found.append(load_job(name))
-        except (ValueError, TypeError, AttributeError):
+            job = load_job(name)
+            # A record written before outputs were kept absolute names a
+            # folder relative to wherever it was sent from, which is not
+            # known: left out.
+            if root is not None and not (
+                    Path(job.local_output).is_absolute()
+                    and (root == Path(job.local_output).resolve()
+                         or root in Path(job.local_output).resolve().parents)):
+                continue
+        except (ValueError, TypeError, AttributeError, OSError):
             continue  # a record that cannot be read is not a job to offer
-    if under is None:
-        return found
-    root = Path(under).resolve()
-    # A record written before outputs were kept absolute names a folder
-    # relative to wherever it was sent from, which is not known: left out.
-    return [job for job in found if Path(job.local_output).is_absolute()
-            and (root == Path(job.local_output).resolve()
-                 or root in Path(job.local_output).resolve().parents)]
+        found.append(job)
+    return found
 
 
 def status(job: str, *, max_age_s: float = STATUS_KEPT_S,

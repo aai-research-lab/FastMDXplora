@@ -140,8 +140,34 @@ def load_job(name: str) -> Job:
             f"{', '.join(known) or 'none yet'}).",
             given=name, permitted=known,
         ) from None
-    if not isinstance(record, dict):
-        raise UnknownJob(f"The record of {name!r} is not a job's record.",
-                         given=name, permitted=job_names())
+    wrong = _wrong_in(record)
+    if wrong:
+        raise UnknownJob(
+            f"The record of {name!r} at {_path_for(name)} is not a job's record "
+            f"({wrong}); it was written by something else, or damaged.",
+            given=name, permitted=job_names())
     fields = Job.__dataclass_fields__
     return Job(**{k: v for k, v in record.items() if k in fields})
+
+
+#: What each field of a job's record holds.
+_TEXT = ("name", "machine", "remote_dir", "scheduler", "handle", "submitted_at",
+         "local_output", "state", "detail", "fetched_at")
+_REQUIRED = ("name", "machine", "remote_dir", "scheduler", "handle", "submitted_at",
+             "code", "local_output")
+
+
+def _wrong_in(record: Any) -> str:
+    """What makes ``record`` no job's record, or nothing."""
+    if not isinstance(record, dict):
+        return "not a mapping"
+    missing = [key for key in _REQUIRED if key not in record]
+    if missing:
+        return f"no {', '.join(missing)}"
+    for key in _TEXT:
+        if key in record and not isinstance(record[key], str):
+            return f"{key} is not text"
+    for key in ("code", "extra"):
+        if key in record and not isinstance(record[key], dict):
+            return f"{key} is not a mapping"
+    return ""
