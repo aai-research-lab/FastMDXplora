@@ -160,3 +160,174 @@ class TestThePythonAPI:
         with pytest.raises(ValueError) as caught:
             api.fetch_sizes(job.name, transport=machine.transport())
         assert refusal_of(caught.value).code == "remote.job.gone"
+
+
+# ---------------------------------------------------------------------------
+# An AI app
+# ---------------------------------------------------------------------------
+STUDY = "systems:\n  - system: ghg.pdb\nsimulation:\n  duration_ns: 5\noutput: ghg_run\n"
+ELICIT = {"elicitation": {"form": {}}}
+YES = {"action": "accept", "content": {"go": True}}
+
+
+@pytest.fixture
+def app(machine, monkeypatch):
+    """An MCP server on the study's folder, reaching the stand-in machine."""
+    from fastmdxplora.mcp import App, Workspace
+    from fastmdxplora.remote import api
+    from fastmdxplora.remote import send as sending
+    from tests._mcp_wire import Wire
+    from tests.test_an_ai_app_reads_and_checks_studies import _structure
+
+    root = machine.study.parent
+    _structure(root / "ghg.pdb")
+    (root / "ghg.yml").write_text(STUDY)
+    monkeypatch.setenv("FASTMDXPLORA_CACHE_DIR", str(root.parent / "cache"))
+    monkeypatch.setattr(api, "_link", lambda name, transport: machine.transport())
+    monkeypatch.setattr(api, "this_code", lambda: RELEASE)
+    monkeypatch.setattr(sending, "this_code", lambda: RELEASE)
+    real = sending.run_here
+    monkeypatch.setattr(sending, "run_here", lambda command, runner=None, **more:
+                        real(command, runner=machine.local, **more))
+    wire = Wire(App(Workspace.at(root)).server())
+    wire.root, wire.machine = root, machine
+    yield wire
+    wire.close()
+
+
+def _call(wire, tool, capabilities=None, **arguments):
+    return wire.request("tools/call", {"name": tool, "arguments": arguments},
+                        capabilities=capabilities)["result"]
+
+
+def _text(result) -> str:
+    return result["content"][0]["text"]
+
+
+def _start(wire, capabilities=ELICIT, answer=None, config="ghg.yml"):
+    from fastmdxplora.mcp.tools import plan_id_of
+
+    arguments = {"config": config, "plan_id": plan_id_of(wire.root / config),
+                 "machine": "box"}
+    first = wire.request("tools/call", {"name": "start_study", "arguments": arguments},
+                         capabilities=capabilities)["result"]
+    if answer is None or first.get("resultType") != "input_required":
+        return first, first
+    done = wire.request("tools/call", {
+        "name": "start_study", "arguments": arguments, "inputResponses": {"send": answer},
+        "requestState": first["requestState"]}, capabilities=capabilities)["result"]
+    return first, done
+
+
+def _sent(wire) -> bool:
+    return any(c.startswith("mkdir") for c in wire.machine.commands)
+
+
+def _finished(wire):
+    return travels._until_finished(wire.machine, "ghg_run")
+
+
+class TestAnAIApp:
+    def test_the_machines_are_listed_from_their_records(self, app):
+        said = _text(_call(app, "list_machines"))
+        assert "  box (workstation, no GPU found): not ready" in said
+        assert app.machine.commands == []
+
+    def test_a_study_is_sent_once_the_person_says_so(self, app):
+        first, done = _start(app, answer=YES)
+        asked = first["inputRequests"]["send"]["params"]["message"]
+        assert asked.startswith("Send the study in ghg.yml to box and run it there?\n")
+        assert "Sent with it:\n  ghg.pdb (" in asked
+        assert "Results come back to ghg_run when fetched." in asked
+        assert _text(done).startswith("Sent to box as job ghg_run (process ")
+        sent = app.machine.home / "fastmdxplora-jobs" / "ghg_run"
+        assert (sent / "inputs" / "ghg.pdb").is_file()
+        assert "ghg_run on box" in _text(_call(app, "list_machines"))
+
+    @pytest.mark.parametrize("answer", [{"action": "decline"},
+                                        {"action": "accept", "content": {"go": False}}])
+    def test_anything_but_a_yes_sends_nothing(self, app, answer):
+        _, done = _start(app, answer=answer)
+        assert _text(done) == "Not sent: the person did not go ahead."
+        assert not _sent(app)
+
+    def test_an_ai_app_that_cannot_ask_sends_nothing(self, app):
+        _, done = _start(app, capabilities={})
+        assert done["isError"]
+        assert "cannot ask the person" in _text(done)
+        assert "fastmdx remote send -c ghg.yml --machine box" in _text(done)
+        assert not _sent(app)
+
+    def test_a_machine_without_a_record_is_refused(self, app):
+        from fastmdxplora.mcp.tools import plan_id_of
+
+        result = _call(app, "start_study", config="ghg.yml",
+                       plan_id=plan_id_of(app.root / "ghg.yml"), machine="gpu-box")
+        assert result["isError"] and "gpu-box" in _text(result)
+        assert app.machine.commands == []
+
+    def test_a_file_outside_the_config_s_folder_is_not_sent(self, app):
+        (app.root / "sub").mkdir()
+        # Inside the workspace, and outside the folder the config is in.
+        (app.root / "sub" / "far.yml").write_text(
+            STUDY.replace("ghg.pdb", str(app.root / "ghg.pdb")))
+        _, done = _start(app, config="sub/far.yml", answer=YES)
+        assert done["isError"]
+        assert "outside the study's folder" in _text(done)
+        assert not _sent(app)
+
+    def test_status_fetch_and_the_answer_kept(self, app):
+        _start(app, answer=YES)
+        _finished(app)
+        asked = len(app.machine.commands)
+        said = _text(_call(app, "remote_status", job="ghg_run"))
+        assert said.startswith("  ghg_run on box: done")
+        assert "fetch_study brings its results here." in said
+        assert len(app.machine.commands) == asked   # under 30 s old: not asked again
+        fetched = _text(_call(app, "fetch_study", job="ghg_run"))
+        assert fetched.startswith("Fetched ghg_run into ghg_run (")
+        assert (app.root / "ghg_run" / "manifest.json").is_file()
+
+    def test_a_fetch_says_each_size_before_anything_moves(self, app):
+        _start(app, answer=YES)
+        _finished(app)
+        first = _call(app, "fetch_study", capabilities=ELICIT, job="ghg_run")
+        asked = first["inputRequests"]["fetch"]["params"]["message"]
+        assert asked.startswith("Fetch ghg_run from box into ghg_run?\nResults: ")
+        assert "Trajectories and checkpoints stay on box (1 files, " in asked
+        assert not (app.root / "ghg_run").exists()
+
+    def test_a_large_fetch_is_not_made_unasked(self, app, monkeypatch):
+        monkeypatch.setattr("fastmdxplora.mcp.remote_tools.LARGE_BYTES", 0)
+        _start(app, answer=YES)
+        _finished(app)
+        result = _call(app, "fetch_study", job="ghg_run")
+        assert result["isError"] and "cannot ask the person first" in _text(result)
+        assert not (app.root / "ghg_run").exists()
+
+    def test_a_job_for_another_folder_is_not_reached(self, app, tmp_path):
+        _send(app.machine)      # its results go to tmp_path/back, not the workspace
+        for tool in ("remote_status", "fetch_study", "cancel_study"):
+            result = _call(app, tool, job="trial")
+            assert result["isError"] and "No job called 'trial'" in _text(result)
+
+    def test_a_job_is_cancelled_once_the_person_agrees(self, app):
+        app.machine.env["FAKE_SLEEP"] = "30"
+        _start(app, answer=YES)
+        first = _call(app, "cancel_study", capabilities=ELICIT, job="ghg_run")
+        assert first["inputRequests"]["cancel"]["params"]["message"].startswith(
+            "Stop ghg_run on box?")
+        said = _text(_call(app, "cancel_study", job="ghg_run"))
+        assert said.startswith("Stopped ghg_run on box.")
+
+    def test_a_read_only_server_offers_the_looks_only(self, machine):
+        from fastmdxplora.mcp import App, Workspace
+        from tests._mcp_wire import Wire
+
+        wire = Wire(App(Workspace.at(machine.study.parent), runs=False).server())
+        try:
+            names = {t["name"] for t in wire.request("tools/list")["result"]["tools"]}
+        finally:
+            wire.close()
+        assert {"list_machines", "remote_status"} <= names
+        assert not {"start_study", "fetch_study", "cancel_study"} & names

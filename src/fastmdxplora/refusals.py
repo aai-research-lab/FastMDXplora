@@ -841,6 +841,14 @@ CODES: tuple[Code, ...] = (
          "An install that nobody confirmed.",
          Kind.STRUCTURAL, Disclosure.ACTION,
          detail_keys=("machine",)),
+    Code("remote.send.unconfirmed",
+         "A study was to be sent to another machine by an AI app that cannot "
+         "ask the person.",
+         Kind.STRUCTURAL, Disclosure.ACTION),
+    Code("remote.fetch.unconfirmed",
+         "A large fetch was asked for by an AI app that cannot ask the person "
+         "first.",
+         Kind.STRUCTURAL, Disclosure.ACTION),
     Code("remote.input.not_available",
          "A study needs something fetched from the internet by a machine "
          "that cannot reach it.",

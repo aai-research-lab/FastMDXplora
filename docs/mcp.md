@@ -66,8 +66,12 @@ one tool that calls another AI model is `ask_agent` (below).
 | `preview_setup` | What setup will build (particles, box, solute, water, ions) and how long the study takes on this machine, where it has been timed |
 | `check_study` | Whether the validator accepts a config, and if not why and what would fix it; if so the plan, defaults marked, [your defaults](config.md#your-defaults-fastmdx-defaultsyml) filled where it leaves a setting unset (each named, and a config they would make the validator refuse refused here, naming the file), whether this machine can run it, and its `plan_id` |
 | `save_study` | A config written as a new file, once the validator accepts it, with your defaults filled in (added under its blocks, its comments and order kept) and recorded in its `decisions`, its plan and `plan_id`; a file is never written over. Recorded as written in an AI app (`agent: assisted`, and in `agent_model` the AI app, as it names itself; it does not name its model) unless the config says otherwise, or `by_hand` says you wrote it |
-| `start_study` | A checked config run on this machine (below) |
+| `list_machines` | The machines inspected from this computer, as last recorded, each with its GPUs and whether it is ready for this computer's code, and the jobs whose results come back into the workspace; nothing is asked of the machines |
+| `start_study` | A checked config run on this machine, or with `machine` sent to run on one of yours (below) |
 | `stop_study` | A running study stopped at its next frame, with a checkpoint there |
+| `remote_status` | How a job sent to another machine is doing, and the last lines of its log; asked of the machine at most every 30 s |
+| `fetch_study` | A finished job's results brought into its folder in the workspace, each size said first (below); not offered by a read-only server |
+| `cancel_study` | A job on another machine stopped, once you agree; its folder there stays; not offered by a read-only server |
 | `run_phases_again` | A study's analysis, its report or both run again in its folder from the settings it recorded, simulating nothing, once you agree: the analyses you name (by default those it ran last), the report written again too where it has one, what is replaced kept in `previous/`, a study of several runs run by run with its comparison built again; setup and simulation are not run again in place; not offered by a read-only server |
 | `list_studies` | The studies in the workspace, newest first, with their state, the means they recorded, and the tags and note you gave each (or only those with a tag); and the config files not yet run |
 | `tag_study` | Tags added to a study as you ask, kept in its folder and shown on its card in the GUI; it only adds: removing a tag, or writing the study's note, is yours in the GUI; not offered by a read-only server |
@@ -175,6 +179,36 @@ the folder it puts new studies in (never your home folder): give the AI app
 either as `--workspace` and the two take turns. An AI app also finds a run
 started by hand in its workspace, by the record the run keeps; the GUI goes by
 the list.
+
+## Running on another machine
+
+`start_study` with `machine` sends the checked config to run on one of your
+machines instead, over your own `ssh`, as [`fastmdx remote send`](remote.md)
+does:
+
+- **Only machines you inspected at a terminal** (`fastmdx remote --machine
+  gpu-box`), listed by `list_machines`. An AI app never adds a machine, never
+  installs FastMDXplora on one (it names `fastmdx remote install` for you to
+  run), and never types a password: a machine whose `ssh` asks for one is
+  reached only while a sign-in you made at a terminal is kept open, ten minutes.
+- **Only once you agree here.** You are asked with the plan, the machine, what
+  runs it there, and every file sent with its size. Where the AI app cannot put
+  that question to you, nothing is sent: its own approval of the call is not
+  enough to send a study off this computer (`remote.send.unconfirmed`), and you
+  are given the `fastmdx remote send` command instead.
+- **Only the files in the config's own folder travel**, never one elsewhere in
+  the workspace or outside it (`remote.input.outside`). A prepared study named
+  by `setup_from` or `resume_from` may sit beside it.
+- **One study at a time on a workstation** (`remote.machine.busy`); a cluster
+  queues.
+
+The results come back to the config's `output`, or a folder named after the
+file, inside the workspace and not already used. `remote_status` says how the
+job is doing; `fetch_study` brings it back once it has finished, saying first
+how much it brings, with the trajectories and checkpoints left on the machine
+unless asked for. Where the AI app cannot ask you, only a fetch under 100 MB goes
+ahead (`remote.fetch.unconfirmed`). The AI app reaches only jobs whose results
+come back into its workspace.
 
 ## The protocol
 

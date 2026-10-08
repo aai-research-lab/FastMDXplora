@@ -1024,6 +1024,10 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
                         "runs, so its record would be wrong. Save it with `agent: assisted` "
                         "to run it here, or run it unseen with `fastmdx explore --config "
                         f"{ctx.workspace.shown(file)}`.")
+    if args.get("machine"):
+        from fastmdxplora.mcp.remote_tools import start_on_machine
+
+        return start_on_machine(ctx, file, config, now, args["machine"])
     lacking = _cannot_run_here(config)
     if lacking:
         raise ToolError(f"This machine cannot run it yet: {lacking}")
@@ -1242,6 +1246,10 @@ def _stop_study(ctx: Context, args: dict[str, Any]) -> str:
 _LOOKS = {"readOnlyHint": True, "openWorldHint": True}
 _READS = {"readOnlyHint": True, "openWorldHint": False}
 
+# Here, once every helper they use is defined: other machines, over
+# `fastmdxplora.remote.api`.
+from fastmdxplora.mcp.remote_tools import LIST_MACHINES, REMOTE_TOOLS  # noqa: E402
+
 #: In the order they are listed, which is the order to reach for them; the
 #: Agent last, as it is optional and calls an AI model of the person's own.
 TOOLS: tuple[Tool, ...] = (
@@ -1295,14 +1303,21 @@ TOOLS: tuple[Tool, ...] = (
          ("name", "config"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": False}, _save_study),
+    LIST_MACHINES,
     Tool("start_study", "Start a study",
          "Run a checked config on this machine, in the workspace, once the person has "
          "agreed to its plan. Needs the plan_id check_study gave for the file as it is "
          "now. Where the AI app can ask, the person is asked here too. Results go to the "
          "config's `output`, or a folder named after the file beside it, never one in "
-         "use. The run goes on after the AI app closes; one study runs at a time.",
+         "use. The run goes on after the AI app closes; one study runs at a time. With "
+         "`machine`, it is sent to run on that machine instead, only once the person "
+         "agrees here (where they cannot be asked, nothing is sent), with only the "
+         "files in the config's folder; fetch_study brings the results back.",
          {"config": {"type": "string", "description": "A config file in the workspace."},
-          "plan_id": {"type": "string", "description": "From check_study, for this file."}},
+          "plan_id": {"type": "string", "description": "From check_study, for this file."},
+          "machine": {"type": "string", "description": (
+              "A ready machine from list_machines, to run it there instead of on this "
+              "one.")}},
          ("config", "plan_id"),
          {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False,
           "openWorldHint": True}, _start_study, acts=True),
@@ -1331,6 +1346,7 @@ TOOLS: tuple[Tool, ...] = (
          {"study": _STUDY}, ("study",),
          {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True,
           "openWorldHint": False}, _stop_study, acts=True),
+    *REMOTE_TOOLS,
     Tool("list_studies", "List the studies here",
          "The studies in the workspace, newest first, each with its system, state, the "
          "means it recorded with their errors, and the tags and note the person gave it; "
