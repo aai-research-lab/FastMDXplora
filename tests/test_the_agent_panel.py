@@ -2456,12 +2456,18 @@ class TestConversationsBelongToStudies(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('post("/api/agent/conversation/open", { id: id, study: study })', script)
         self.assertIn("openConversation(c.id, g.study, g.loaded || g.chats);", script)
-        self.assertIn("if (o.loaded_study && !loaded) {", script)
-        self.assertIn('study: started.output, id: convId, from_study: fromStudy', script)
-        # Saved before the launch, so the move carries the last exchange.
+        self.assertIn("if (o.loaded_study && (!loaded || (o.study || null) !== (study || null))) {",
+                      script)
+        # The launch names the conversation and its place; the server moves
+        # it as the run starts (tenth review, 10-08).
+        self.assertIn("conversation: c.id ? { id: c.id, study: c.study || null, "
+                      "run: entry.eid } : null", script)
+        # The run's entry saved before the launch, so the move carries the
+        # last exchange and the run itself.
         run = script[script.index("made.launch = function (here, entry) {"):]
         run = run[:run.index("\n  }\n", run.index("started.error"))]
-        self.assertLess(run.index("persist().then("), run.index('post("/api/agent/run"'))
+        self.assertLess(run.index("persistOf(c, sent).then("),
+                        run.index('post("/api/agent/run"'))
         self.assertIn("This conversation now belongs to the new study.", script)
 
 
@@ -2758,7 +2764,7 @@ class TestThePickerServesTheAgentToo(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn('start: convStudy || workspaceRoot || ""', script)
+        self.assertIn('start: conv.study || workspaceRoot || ""', script)
 
 class TestTheWordsAndTheRows(unittest.TestCase):
 

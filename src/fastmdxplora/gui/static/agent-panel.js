@@ -209,6 +209,9 @@
     show.addEventListener("click", function () { shown(entry.scene_written); });
     write.addEventListener("click", function () {
       var named = name.value.trim();
+      /* Saved in the thread it was asked in, whatever is on screen when
+       * the server answers (seventeenth review, 10-08). */
+      var c = conv, t = transcript;
       write.disabled = true;
       said.textContent = "Writing the scene\u2026";
       var view = {};
@@ -229,7 +232,7 @@
             return;
           }
           entry.scene_written = done.name;
-          persist();
+          persistOf(c, t);
           write.textContent = "Written";
           name.disabled = true;
           show.hidden = false;
@@ -765,9 +768,33 @@
    * only in the browser's memory, and a refresh emptied it. */
   var transcript = [];
   /* Which conversation this is and where it lives, from the last save or
-   * restore, so a launch can name it exactly when moving it. */
-  var convId = null;
-  var convStudy = null;
+   * restore, so a launch can name it exactly when moving it. One object per
+   * thread, replaced (never changed) when another thread is shown: a save
+   * or a launch keeps the thread it was made for, and its late answer
+   * changes that thread alone (eleventh and twelfth reviews, 10-08: a
+   * thread switched while a save waited was written over). */
+  var conv = threadOf(null, null, []);
+
+  /* A thread's own record: where it lives, every entry it has held (by
+   * `eid`), how many of its saves are waiting, and whether it was deleted
+   * elsewhere. */
+  function threadOf(id, study, entries) {
+    var t = { id: id || null, study: study || null, known: {}, confirmed: {}, waiting: 0,
+              gone: false, key: newEid(), entries: null };
+    (entries || []).forEach(function (e) {
+      if (e && e.eid) { t.known[e.eid] = true; t.confirmed[e.eid] = JSON.stringify(e); }
+    });
+    return t;
+  }
+
+  /* Threads with saves still waiting, so a page closing sends them all. */
+  var waitingThreads = [];
+
+  var eids = 0;
+  function newEid() {
+    eids += 1;
+    return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + eids;
+  }
   /* Files attached to the next message: what read_attachment returned. */
   var pendingFiles = [];
   var fromStarter = null;
@@ -808,18 +835,289 @@
   }
 
   /* Saved where it lives: a chat of no study stays one while a study is
-   * open, and a study's conversation stays its study's. */
-  function persist() {
-    var body = convId ? { entries: transcript, id: convId, study: convStudy || null }
-      : { entries: transcript };
-    return post("/api/agent/conversation", body).then(function (d) {
-      if (d && d.ok) {
-        convId = d.id || convId;
-        if (d.study !== undefined) convStudy = d.study;
-        window.dispatchEvent(new CustomEvent("fmx:conversation-saved"));
+   * open, and a study's conversation stays its study's. The server keeps
+   * the conversation and merges each save into it: the page sends its
+   * entries and every entry it has held, so another tab's entries, and
+   * where a run went, are kept, and what the page cut goes (tenth to
+   * fourteenth reviews, 10-08: whole lists written over each other lost
+   * entries). Saves, and opening or starting a thread, go one at a time:
+   * one sent before the first had named the thread made two. */
+  var saving = Promise.resolve();
+  function inTurn(job) {
+    var done = saving.then(job);
+    saving = done.catch(function () {});
+    return done;
+  }
+
+  function persist() { return persistOf(conv, transcript); }
+
+  function saveBody(c, entries) {
+    entries.forEach(function (e) {
+      if (!e.eid) e.eid = newEid();
+      c.known[e.eid] = true;
+    });
+    /* Current only for the thread on screen: a save of another made it
+     * the one a reload opened (sixteenth review, 10-08). */
+    var body = { entries: entries, seen: Object.keys(c.known), current: c === conv };
+    if (c.id) {
+      body.id = c.id; body.study = c.study || null;
+    } else {
+      body.key = c.key;
+      /* A thread begun in a place of its own (a chat of no study while a
+       * study is open) is made there by its first save too (nineteenth
+       * review, 10-08: made in the open study's folder). */
+      if (c.placed) body.study = c.study || null;
+    }
+    return body;
+  }
+
+  /* A thread saved: `c` is where it is, `entries` what it says. */
+  function persistOf(c, entries) {
+    /* Deleted: written again only as a new conversation, once the person
+     * has said something since (twentieth review, 10-08: a mark meeting the
+     * delete first left every later message unsaved). */
+    if (c.gone) return keptAsNew(c, entries) || Promise.resolve(null);
+    c.waiting += 1;
+    c.entries = entries;
+    if (waitingThreads.indexOf(c) < 0) waitingThreads.push(c);
+    return inTurn(function () {
+      if (c.gone) { keptAsNew(c, entries); return null; }
+      var body = saveBody(c, entries);
+      /* Each entry as it went: a field set on it while the save was on its
+       * way (a scene written, a mark) is not confirmed by this save
+       * (nineteenth review, 10-08). */
+      var sent = {}, as = {};
+      body.entries.forEach(function (e) {
+        sent[e.eid] = true;
+        as[e.eid] = JSON.parse(JSON.stringify(e));
+      });
+      return post("/api/agent/conversation", body).then(function (d) {
+        if (d && d.ok) {
+          c.id = d.id || c.id;
+          if (d.study !== undefined) c.study = d.study;
+          takeIn(c, entries, d.entries || [], sent, as, d.cut || []);
+          window.dispatchEvent(new CustomEvent("fmx:conversation-saved"));
+        } else if (d && d.gone) {
+          /* Deleted elsewhere: not written again, unless the person has
+           * said something since. */
+          c.gone = true;
+          keptAsNew(c, entries);
+        }
+        return d;
+      }).catch(function () {});
+    }).then(function (d) { settled(c); return d; }, function () { settled(c); });
+  }
+
+  function settled(c) {
+    c.waiting -= 1;
+    if (!c.waiting) waitingThreads = waitingThreads.filter(function (t) { return t !== c; });
+  }
+
+  /* A thread deleted in another window while the person went on in it:
+   * what they said since is not dropped. The thread is kept as a new
+   * conversation, where it was, and the thread says so (nineteenth review,
+   * 10-08: everything typed after the delete was lost without a word). A
+   * thread nobody spoke in since (a run's summary, a mark) stays deleted. */
+  var DELETED_ELSEWHERE = "This conversation was deleted in another window. " +
+    "What is here is kept as a new conversation.";
+  /* Conversations this page deleted: nothing of theirs is kept as new
+   * (twentieth review, 10-08: one deleted here while its answer was
+   * written came back, said to be deleted "in another window"). */
+  var deletedHere = {};
+  /* The person's own word this page holds and no save has confirmed: a
+   * message, or a run they started. Another tab's entries are confirmed
+   * as they are taken in, so they are not this person's word here. */
+  function spokeSince(c, entries) {
+    return entries.some(function (e) {
+      return !(e.eid && e.eid in c.confirmed) &&
+        (e.role === "user" || (e.kind === "action" && e.action === "run"));
+    });
+  }
+  function keptAsNew(c, entries) {
+    if (deletedHere[c.id] || !spokeSince(c, entries)) return null;
+    /* What was confirmed stays so: a page closing before the new one is
+     * saved sends only what is new, not the whole thread (twenty-first
+     * review, 10-08). */
+    c.id = null;
+    c.key = newEid();
+    c.placed = true;
+    c.known = {};
+    c.gone = false;
+    entries.push({ role: "agent", kind: "note", text: DELETED_ELSEWHERE });
+    if (c === conv && entries === transcript) {
+      var r = reply();
+      whoIs(r, "done");
+      note(r.part("attempts"), DELETED_ELSEWHERE);
+      scrollToEnd();
+    }
+    return persistOf(c, entries);
+  }
+
+  /* What the server kept, taken in: a field it wrote into an entry (where
+   * a run went), and the entries this page never held (another tab's),
+   * drawn when the thread is the one on screen. */
+  function takeIn(c, entries, merged, sent, as, cutThere) {
+    var mine = {};
+    entries.forEach(function (e) { if (e.eid) mine[e.eid] = e; });
+    var kept = {};
+    var others = false;
+    merged.forEach(function (e) {
+      if (!e || !e.eid) return;
+      kept[e.eid] = true;
+      var held = mine[e.eid];
+      if (held) {
+        var went = (as && as[e.eid]) || {};
+        Object.keys(e).forEach(function (k) {
+          if (!(k in held)) held[k] = e[k];
+          if (!(k in went)) went[k] = e[k];
+        });
+        c.confirmed[e.eid] = JSON.stringify(went);
+        c.known[e.eid] = true;
+      } else {
+        /* Another tab's, as the server keeps it. */
+        c.confirmed[e.eid] = JSON.stringify(e);
+        if (!c.known[e.eid]) others = true;
       }
-      return d;
-    }).catch(function () {});
+    });
+    /* Cut by another tab: sent, and cut there. Sent and not kept is not
+     * enough: past the length kept, the oldest go too, and every save
+     * then drew the thread again (nineteenth review, 10-08). */
+    var cutAt = {};
+    (cutThere || []).forEach(function (eid) { cutAt[eid] = true; });
+    var cut = entries.some(function (e) { return sent[e.eid] && !kept[e.eid] && cutAt[e.eid]; });
+    if (!others && !cut) return;
+    var onScreen = c === conv && entries === transcript;
+    if (onScreen && (writing || launching)) {
+      /* A reply or a run being started would be drawn into a thread
+       * redrawn under it: the redraw waits for it (seventeenth and
+       * eighteenth reviews, 10-08), and comes with the next save. */
+      c.redrawWanted = true;
+      return;
+    }
+    /* Another tab changed it: the thread as the server keeps it, in its
+     * order, then what was said here since this save went (fifteenth and
+     * sixteenth reviews, 10-08: drawn at the bottom, a cut here took the
+     * other tab's entries with it). What this page cut after the save
+     * went is not brought back (eighteenth review, 10-08). */
+    var since = entries.filter(function (e) { return !sent[e.eid] && !kept[e.eid]; });
+    var whole = merged.filter(function (e) {
+      return e && e.eid && !(sent[e.eid] && !mine[e.eid]);
+    }).map(function (e) { return mine[e.eid] || e; }).concat(since);
+    whole.forEach(function (e) { c.known[e.eid] = true; });
+    c.redrawWanted = false;
+    if (onScreen) {
+      redraw(whole);
+    } else {
+      entries.length = 0;
+      whole.forEach(function (e) { entries.push(e); });
+    }
+  }
+
+  /* A redraw put off for a reply or a launch: asked for again by a save
+   * once both have settled. */
+  function redrawIfWanted() {
+    if (conv.redrawWanted && !writing && !launching) {
+      conv.redrawWanted = false;
+      persist();
+    }
+  }
+
+  /* A page closed or reloaded with saves still waiting: the thread on
+   * screen sent as it is, so what was said is kept (thirteenth and
+   * fourteenth reviews, 10-08). Merged as any save is, so a save that
+   * also lands does no harm. */
+  /* The page is going: what comes back late (an answer, a launch's word)
+   * is not said, nor saved, by it (nineteenth review, 10-08: a reload
+   * during a launch saved "I could not read the software's answer"). */
+  var leaving = false;
+  window.addEventListener("pageshow", function (event) {
+    if (!event.persisted) return;
+    leaving = false;
+    try { sessionStorage.removeItem(UNSENT); } catch (e) { /* none */ }
+  });
+  window.addEventListener("pagehide", function (event) {
+    if (!event.persisted) {
+      leaving = true;
+      /* A question whose answer is still being written: kept, with the
+       * answer said as stopped, as pressing Stop says it (nineteenth
+       * review, 10-08: the question was saved only with its answer, and a
+       * reload lost it). */
+      if (writing && answering && transcript.indexOf(answering) >= 0) {
+        history.push({ role: "agent", text: "(stopped before answering)" });
+        transcript.push({ role: "agent", kind: "answer", text: "Stopped before it finished." });
+        answering = null;
+      }
+    }
+    /* Only what the server has not confirmed, as additions that cut
+     * nothing: small enough to go as the page closes (a whole thread over
+     * 64 KB did not), and harmless if it lands late (fifteenth and
+     * sixteenth reviews, 10-08). Every thread with saves waiting, and the
+     * one on screen, which may hold what no save has carried yet. */
+    conv.entries = transcript;
+    var threads = waitingThreads.slice();
+    if (threads.indexOf(conv) < 0) threads.push(conv);
+    var unsent = [];
+    threads.forEach(function (c) {
+      if (!c.entries || deletedHere[c.id]) return;
+      var spoke = spokeSince(c, c.entries);
+      /* Deleted elsewhere, and nothing said since: stays deleted. Said
+       * since: sent as below, with its old id and a key to keep it by;
+       * the whole thread would be too large to go as the page closes
+       * (twenty-first review, 10-08). */
+      if (c.gone && !spoke) return;
+      var body = saveBody(c, c.entries);
+      body.entries = body.entries.filter(function (e) {
+        return c.confirmed[e.eid] !== JSON.stringify(e);
+      });
+      /* Which conversation a reload opens is left to the tabs still
+       * open; a thread with no id yet is the one this tab was in
+       * (twentieth review, 10-08: a tab closing took the current one from
+       * another). */
+      body.current = !c.id;
+      /* Deleted elsewhere before this was heard: what the person said
+       * here is kept as a new conversation all the same. */
+      /* Not for a page kept to come back to: it keeps its thread, and
+       * says it again as it goes on (twenty-first review, 10-08). */
+      if (c.id && spoke && !event.persisted) {
+        body.keep = newEid();
+        body.keep_current = c === conv;
+      }
+      /* What this page cut and the server may not know yet (a retry with
+       * its save still waiting; eighteenth review, 10-08). */
+      var held = {};
+      c.entries.forEach(function (e) { held[e.eid] = true; });
+      body.cut = Object.keys(c.known).filter(function (eid) { return !held[eid]; });
+      if (!body.entries.length && !body.cut.length) return;
+      body.append = true;
+      unsent.push(body);
+      try {
+        fetch("/api/agent/conversation", {
+          method: "POST", keepalive: true,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        }).catch(function () {});
+      } catch (e) { /* kept below for the page that comes next */ }
+    });
+    /* Kept for the page that comes next in this tab too: a request sent
+     * as a page goes can be held back by the browser. Sent again on load,
+     * before the thread is read; adding twice adds once. */
+    if (unsent.length) {
+      try { sessionStorage.setItem(UNSENT, JSON.stringify(unsent)); } catch (e) { /* none */ }
+    }
+  });
+
+  var UNSENT = "fmx-agent-unsent";
+  function sendUnsent() {
+    var raw = null;
+    try {
+      raw = sessionStorage.getItem(UNSENT);
+      sessionStorage.removeItem(UNSENT);
+    } catch (e) { return; }
+    var bodies = [];
+    try { bodies = JSON.parse(raw || "[]"); } catch (e) { return; }
+    bodies.forEach(function (body) {
+      inTurn(function () { return post("/api/agent/conversation", body).catch(function () {}); });
+    });
   }
 
   function tools(msg, items) {
@@ -847,6 +1145,13 @@
     var nodes = Array.prototype.slice.call(thread.children);
     var at = nodes.indexOf(msg);
     if (at === -1) return;
+    /* A reply still being written is to a question cut here. */
+    stopWriting();
+    /* A run being started from what is cut started all the same: its
+     * entry stays, after what is left, so where it went is written into
+     * it (nineteenth review, 10-08: cut while it started, and an answer
+     * the page could not read, and the thread forgot the run). */
+    var starting = startingRuns.filter(function (e) { return transcript.indexOf(e) >= 0; });
     var userIndex = nodes.slice(0, at + 1).filter(function (n) {
       return n.classList.contains("agent-msg-user");
     }).length - 1;
@@ -861,6 +1166,7 @@
       if (transcript[k].role === "user") seenT += 1;
       if (seenT === userIndex) { transcript.length = k; break; }
     }
+    starting.forEach(function (e) { if (transcript.indexOf(e) < 0) transcript.push(e); });
     persist();
     stopPending = null;
     runPending = null;
@@ -1000,6 +1306,9 @@
     var area = el("agent-request");
     var typed = area.value.trim();
     if (!typed || writing) return;
+    /* Not before the thread has been read: sent first, it went into a
+     * second conversation (seventeenth review, 10-08). Sent once it has. */
+    if (!threadRead) { firstRead.then(draft); return; }
     /* Sent as typed. It used to be joined to a question the Agent had
      * asked, whatever it said ("which lysozyme...?" and "Has it run long
      * enough?" went as one request); the conversation goes with every
@@ -1016,9 +1325,22 @@
     say(typed, record);
     var historyText = typed + (record.length ? "\n[attached: " + record.map(function (a) { return a.name; }).join(", ") + "]" : "");
     history.push({ role: "user", text: historyText });
-    transcript.push(record.length ? { role: "user", text: typed, attachments: record } : { role: "user", text: typed });
+    var said = record.length ? { role: "user", text: typed, attachments: record }
+      : { role: "user", text: typed };
+    transcript.push(said);
     area.value = "";
     autosize(area);
+    /* The thread this was said in. Another shown before the answer came
+     * stops the answer, which is said in this one, not the one on screen
+     * (sixteenth review, 10-08: it was written into the other thread). */
+    var mine = conv, saidHere = transcript, heardHere = history;
+    function elsewhere() {
+      if (conv === mine) return false;
+      heardHere.push({ role: "agent", text: "(stopped before answering)" });
+      saidHere.push({ role: "agent", kind: "answer", text: "Stopped before it finished." });
+      persistOf(mine, saidHere);
+      return true;
+    }
     var r = reply();
     var box = r.part("attempts");
     if (stopPending || runPending || fixPending) whoIs(r, "done");
@@ -1041,6 +1363,14 @@
 
     var asked = fromStarter && fromStarter.prompt === typed ? fromStarter.key : null;
     fromStarter = null;
+    /* An answer is said only while its question stands: a retry or an
+     * edit above cut it, and the answer, coming after, was saved with no
+     * question (nineteenth review, 10-08). Nor once the page is going. */
+    function stands() {
+      if (answering === said) answering = null;
+      return !leaving && saidHere.indexOf(said) >= 0;
+    }
+    answering = said;
     propose({
       request: request,
       records_question: asked,
@@ -1051,6 +1381,7 @@
       current_view: window.FastMDXMoleculeViewer?.currentViewHints
         ? window.FastMDXMoleculeViewer.currentViewHints() : null
     }, box).then(function (data) {
+      if (!stands() || elsewhere()) return;
       box.innerHTML = "";
       looked(box, data.looks);
       refusals(box, data.attempts, !!data.ok);
@@ -1167,6 +1498,7 @@
       persist();
       scrollToEnd();
     }).catch(function (error) {
+      if (!stands() || elsewhere()) return;
       box.innerHTML = "";
       whoIs(r, "stopped");
       if (error && error.name === "AbortError") {
@@ -1200,6 +1532,19 @@
    * end, the same as `/api/agent/propose` gives. The send button stops it
    * while it is written. A browser without streams asks for it whole. */
   var writing = null;
+  /* The question whose answer is being written. */
+  var answering = null;
+
+  /* The reply being written stopped, and the box free at once: a retry or
+   * an edit sends its own straight after (nineteenth review, 10-08: it
+   * waited in the box). */
+  function stopWriting() {
+    if (!writing) return;
+    var was = writing;
+    writing = null;
+    writingState(false);
+    was.abort();
+  }
 
   function writingState(on) {
     setTimeout(placeholder, 0);
@@ -1259,7 +1604,7 @@
       writingState(true);
       return post("/api/agent/propose", body).finally(function () { writingState(false); });
     }
-    writing = new AbortController();
+    var mine = writing = new AbortController();
     writingState(true);
     var shown = steps.writing;
     var raw = "";
@@ -1314,8 +1659,12 @@
       }
       return pump();
     }).finally(function () {
-      writing = null;
-      writingState(false);
+      /* Not another reply's: one sent after this was stopped is writing. */
+      if (writing === mine) {
+        writing = null;
+        writingState(false);
+      }
+      setTimeout(redrawIfWanted, 0);
     });
   }
 
@@ -1336,6 +1685,10 @@
 
   /* Whether a study is running here, by the server's word (`app-state`). */
   var runGoing = false;
+  /* Runs being started from this page, until each launch has answered. */
+  var launching = 0;
+  /* The run entries of launches not yet answered. */
+  var startingRuns = [];
 
   /* The newest run of a version, from the transcript. */
   function latestRunOf(number) {
@@ -1675,32 +2028,44 @@
     var run = runAwaitingSummary();
     if (!run || summaryAsked) return;
     summaryAsked = true;
+    /* The thread the run is in: another may be shown before the answer
+     * (seventeenth and eighteenth reviews, 10-08). */
+    var c = conv, t = transcript, h = history;
     post("/api/agent/run-summary", { study: run.output }).then(function (s) {
       summaryAsked = false;
       if (s && !s.ok) {
         // No study there any more: not asked again.
         run.no_summary = true;
-        persist();
+        persistOf(c, t);
         return;
       }
       if (!s || !s.ended) return;
+      /* One summary of a run, whichever tab asked: two tabs' copies are
+       * one entry (eighteenth review, 10-08: both kept their own). */
+      var eid = "sum-" + (run.eid || run.started || run.output);
       /* The server's word for that folder: this run has ended, whatever
        * else runs. A run that ended before a poll saw it going stayed
        * "Running", with Stop, and the next run was refused (second
        * review, 10-07); its own line alone, as a later run may be going
        * (third to sixth reviews, 10-07). */
+      var entry = { eid: eid, role: "agent", kind: "summary", study: run.output, head: s.head,
+                    status: s.status, found: s.found, long_enough: s.long_enough,
+                    strengthen: s.strengthen };
+      if (conv !== c) {
+        /* Not on screen: kept with its thread, not drawn. */
+        if (!t.some(function (e) { return e.eid === eid; })) t.push(entry);
+        persistOf(c, t);
+        return;
+      }
       runEnded(run);
       if (runAwaitingSummary() !== run) return;
       var r = reply();
       whoIs(r, STOPPED_AS.test(s.status || "") ? "stopped" : "done");
       summaryCard(r.part("attempts"), s);
-      var entry = { role: "agent", kind: "summary", study: run.output, head: s.head,
-                    status: s.status, found: s.found, long_enough: s.long_enough,
-                    strengthen: s.strengthen };
-      transcript.push(entry);
-      history.push({ role: "agent", text: s.head + ".\n" + [s.found, s.long_enough,
-                     s.strengthen].filter(Boolean).join("\n") });
-      persist();
+      t.push(entry);
+      h.push({ role: "agent", text: s.head + ".\n" + [s.found, s.long_enough,
+               s.strengthen].filter(Boolean).join("\n") });
+      persistOf(c, t);
       placeholder();
       scrollToEnd();
     }).catch(function () { summaryAsked = false; });
@@ -1762,6 +2127,7 @@
       persist();
       return;
     }
+    var c = conv, t = transcript, h = history;
     fetch(fix.route || "/api/fix", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1770,12 +2136,12 @@
       var started = d && d.ok;
       var said = started ? "Started: " + fix.command + "." : (d && d.error) || "Could not start it.";
       note(box, said, started);
-      history.push({ role: "agent", text: said });
-      transcript.push(started ? { role: "agent", kind: "action",
-                                  action: fix.action || (fix.request ? "rerun windows" : "run the fix"),
-                                  where: "" }
-                              : { role: "agent", kind: "error", text: said });
-      persist();
+      h.push({ role: "agent", text: said });
+      t.push(started ? { role: "agent", kind: "action",
+                         action: fix.action || (fix.request ? "rerun windows" : "run the fix"),
+                         where: "" }
+                     : { role: "agent", kind: "error", text: said });
+      persistOf(c, t);
       if (started && window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
         window.FastMDXDashboard.navigate("overview");
       }
@@ -1804,16 +2170,19 @@
       persist();
       return;
     }
+    /* Said in the thread it was asked in, whatever is on screen when the
+     * stop answers (eighteenth review, 10-08). */
+    var c = conv, t = transcript, h = history;
     fetch("/api/explore/stop", { method: "POST" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var stopped = d && d.ok !== false;
         note(box, stopped ? "Stopped the run." : (d && d.error) || "Could not stop it.", true);
-        history.push({ role: "agent", text: stopped ? "Stopped the run." : "Could not stop the run." });
-        transcript.push(stopped ? { role: "agent", kind: "action", action: "stop", where: "" }
-                                : { role: "agent", kind: "error", text: "Could not stop the run." });
-        persist();
-        if (stopped && lastReply) {
+        h.push({ role: "agent", text: stopped ? "Stopped the run." : "Could not stop the run." });
+        t.push(stopped ? { role: "agent", kind: "action", action: "stop", where: "" }
+                       : { role: "agent", kind: "error", text: "Could not stop the run." });
+        persistOf(c, t);
+        if (stopped && lastReply && conv === c) {
           /* The same config can run again; each launch gets its own
            * timestamped folder, so the stopped run's output stays. */
           var again = lastReply.part("run");
@@ -2134,18 +2503,55 @@
       here = here || box;
       runBtn.disabled = true;
       /* The thread is saved before the launch, and the launch is told
-       * which conversation to move and where it is now. The launch
-       * switches the loaded study before the move runs, so "the current
-       * conversation" is the new study's -- none -- and the first version
-       * moved nothing; the next save then started a fresh thread in the
-       * new study from whatever the browser held, minus a race. */
-      var fromStudy = convStudy;
-      persist().then(function () {
+       * which conversation to move and where it is now: the server moves
+       * it as the run starts, and says where it went (tenth review, 10-08:
+       * moved by the page afterwards, it raced the page's own saves and
+       * its switch to the new study, and a slow disk lost the thread).
+       * The thread that started it is the one it is said in: the person
+       * may open another, or a new one, before the launch answers. */
+      var c = conv, sent = transcript, said = history;
+      /* The run's entry goes in first, saved before the run is asked for;
+       * the server writes where the run went into it as it moves the
+       * thread, so a reload while the run starts keeps the run. Other
+       * saves do not wait for the launch (twelfth to fourteenth reviews,
+       * 10-08). */
+      if (!entry) {
+        entry = { role: "agent", kind: "action", action: "run", where: "" };
+        sent.push(entry);
+      }
+      entry.version = made.number;
+      entry.eid = entry.eid || newEid();
+      launching += 1;
+      startingRuns.push(entry);
+      function answered() {
+        launching -= 1;
+        startingRuns = startingRuns.filter(function (e) { return e !== entry; });
+        /* Said where the person can see it: the reply it was asked in may
+         * have been cut by a retry while it started. */
+        if (!here.isConnected && c === conv && sent === transcript) {
+          var again = reply();
+          whoIs(again, "done");
+          here = again.part("attempts");
+        }
+      }
+      persistOf(c, sent).then(function () {
+        /* After the saves queued behind it: a thread deleted elsewhere is
+         * kept anew by one, and the run takes that one with it
+         * (twenty-first review, 10-08). */
+        return saving;
+      }).then(function () {
         return post("/api/agent/run", {
           config: data.config,
-          budget_hours: el("agent-budget").value
+          budget_hours: el("agent-budget").value,
+          conversation: c.id ? { id: c.id, study: c.study || null, run: entry.eid } : null
         });
       }).then(function (started) {
+        answered();
+        var moved = started && started.conversation;
+        if (moved && moved.ok && moved.id) {
+          c.id = moved.id;
+          c.study = moved.study || started.output;
+        }
         if (started.ok) {
           /* Started once. A second press started it again into the same
            * folder and was refused for the folder being occupied. The
@@ -2153,34 +2559,49 @@
           runBtn.textContent = "Running";
           var at = new Date().toISOString();
           runLine(here, made.number, at, true);
-          if (!entry) {
-            entry = { role: "agent", kind: "action", action: "run", where: "" };
-            transcript.push(entry);
-            history.push({ role: "agent", text: "Started version " + made.number + "." });
-          }
-          entry.version = made.number;
+          said.push({ role: "agent", text: "Started version " + made.number + "." });
           entry.started = at;
           entry.output = started.output || null;
-          persist();
-          /* The conversation that launched a study belongs with it. Without
-           * this the thread would vanish from view the moment the page
-           * switched to the new study's empty list. */
-          if (started.output) {
-            post("/api/agent/conversation/attach", {
-              study: started.output, id: convId, from_study: fromStudy
-            }).then(function (m) {
-              if (m && m.ok && m.id) { convId = m.id; convStudy = m.study || started.output; }
-              if (m && m.moved) note(here, "This conversation now belongs to the new study.", true);
-            }).catch(function () {});
+          if (sent.indexOf(entry) < 0) {
+            /* An edit or a retry above it cut the run's entry while the
+             * run started: the run started all the same, so it is said
+             * again, under a new eid (the cut one stays cut; eighteenth
+             * review, 10-08). */
+            entry.eid = newEid();
+            sent.push(entry);
+          }
+          persistOf(c, sent);
+          if (moved && moved.moved) {
+            note(here, "This conversation now belongs to the new study.", true);
           }
         } else {
+          /* Not started: no run in the thread, and why. */
+          var placed = sent.indexOf(entry);
+          if (placed >= 0) sent.splice(placed, 1);
           runBtn.disabled = false;
           noteEl.textContent = started.error;
           if (here !== box) note(here, started.error || "It did not start.");
-          transcript.push({ role: "agent", kind: "error", text: started.error || "It did not start." });
-          persist();
+          sent.push({ role: "agent", kind: "error", text: started.error || "It did not start." });
+          persistOf(c, sent);
           runFix(r.part("fix"), started, data);
         }
+        redrawIfWanted();
+      }, function () {
+        /* No answer the page could read (an error page, a dropped
+         * connection): the run may have started, so it is not said that
+         * it did not; where it went is filled in by the server if it did
+         * (thirteenth and fourteenth reviews, 10-08). A page going as it
+         * started (a reload) has nothing to say: the next one reads where
+         * the run went (nineteenth review, 10-08). */
+        if (leaving) { launching -= 1; return; }
+        answered();
+        runBtn.disabled = false;
+        var why = "I could not read the software's answer to starting the run. " +
+                  "If it started, the Overview shows it running.";
+        note(here, why);
+        sent.push({ role: "agent", kind: "answer", text: why });
+        persistOf(c, sent);
+        redrawIfWanted();
       });
     };
     runBtn.onclick = function () {
@@ -2251,19 +2672,71 @@
     host.appendChild(ask);
   }
 
+  /* Another thread on screen: a reply still being written for this one is
+   * stopped (and said in this one), and saves still waiting keep the
+   * thread they were for. */
+  function clearThread() {
+    stopWriting();
+    el("agent-thread").innerHTML = "";
+    conv = threadOf(null, conv.study, []);
+    history = []; transcript = []; currentConfig = null;
+    stopPending = null; runPending = null; fixPending = null; lastReply = null;
+    versions = [];
+    placeholder();
+  }
+
+  /* The same thread drawn again, as the server keeps it: the arrays stay
+   * the ones the thread's saves and launches hold. */
+  function redraw(entries) {
+    var keep = entries.slice();
+    el("agent-thread").innerHTML = "";
+    transcript.length = 0;
+    history.length = 0;
+    currentConfig = null;
+    stopPending = null; runPending = null; fixPending = null; lastReply = null;
+    versions = [];
+    replay(keep);
+    placeholder();
+  }
+
   /* Draw a saved thread again. Each entry renders the way it rendered
    * the first time; a config gets its actions back, wired to the stored
    * config, so Run on this machine on a restored thread runs what was written. */
-  function restore() {
-    fetch("/api/agent/conversation").then(function (r) { return r.json(); }).then(function (d) {
-      if (d && d.ok) { convId = d.id || null; convStudy = d.study || null; }
-      replay((d && d.entries) || []);
-    }).catch(function () {});
+  var threadRead = false;
+  var readFirst;
+  var firstRead = new Promise(function (done) { readFirst = done; });
+  function restore(swap) {
+    /* After the saves still waiting: read before them, the thread on
+     * screen missed what they said (fourteenth review, 10-08). With
+     * `swap`, the thread on screen is replaced only when the other has
+     * come, so what is typed meanwhile is said in the one it was typed in
+     * (fifteenth review, 10-08). */
+    var was = conv;
+    return inTurn(function () {
+      return fetch("/api/agent/conversation").then(function (r) { return r.json(); });
+    }).then(function (d) {
+      var entries = (d && d.entries) || [];
+      /* Another thread put on screen while this was read (New pressed
+       * as the page opened) stays (nineteenth review, 10-08: the old one
+       * was drawn over it). */
+      if (!swap && conv !== was) return;
+      if (swap) clearThread();
+      if (d && d.ok) conv = threadOf(d.id, d.study, entries);
+      replay(entries);
+    }).catch(function () {}).then(function () { threadRead = true; readFirst(); });
   }
 
   function replay(entries) {
       if (!entries.length) return;
       entries.forEach(function (e) {
+        /* A run asked for with no word yet that it started (the page went
+         * as it was asked for): kept, and not said, nor told to the Agent,
+         * until the server writes where it went (sixteenth review, 10-08:
+         * one never started read as asked, and as done to the Agent). */
+        if (e.kind === "action" && e.action === "run" && !e.started && !e.output) {
+          transcript.push(e);
+          return;
+        }
         if (e.role === "user") {
           say(e.text || "", e.attachments || []);
           var htext = (e.text || "") + ((e.attachments || []).length
@@ -2342,6 +2815,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    sendUnsent();
     restore();
     if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
       window.FastMDXDashboard.on("app-state", function (s) {
@@ -2358,24 +2832,28 @@
     });
     /* Start fresh: the thread on screen is already saved and stays in
      * the list. Nothing is lost, so nothing is confirmed. */
-    function resetThread() {
-      el("agent-thread").innerHTML = "";
-      history = []; transcript = []; currentConfig = null;
-      stopPending = null; runPending = null; fixPending = null; lastReply = null;
-      versions = [];
-      placeholder();
-    }
+    function resetThread() { clearThread(); }
     /* A fresh thread: where the GUI is, or, given `study` (null for a
      * chat of no study), there. */
     function freshConversation(study) {
       var body = study === undefined ? {} : { study: study };
-      return post("/api/agent/conversation/new", body).then(function (d) {
-        if (d && d.ok) {
-          convId = d.id || null;
-          convStudy = d.study === undefined ? convStudy : d.study;
+      /* The new thread is on screen at once, so what is typed next is
+       * said in it; it takes its id when the server has made it, after
+       * the saves still waiting (fourteenth review, 10-08). */
+      resetThread();
+      var c = conv;
+      if (study !== undefined) { c.study = study; c.placed = true; }
+      /* The thread's key: a page closing before /new is sent saves into
+       * the same conversation /new makes (eighteenth review, 10-08). */
+      body.key = c.key;
+      hideList();
+      return inTurn(function () {
+        return post("/api/agent/conversation/new", body);
+      }).then(function (d) {
+        if (d && d.ok && !c.id) {
+          c.id = d.id || null;
+          if (d.study !== undefined) c.study = d.study;
         }
-        resetThread();
-        hideList();
         told();
         return d;
       });
@@ -2392,14 +2870,21 @@
      * study's loads that study: the page reloads so every panel reads it,
      * and the conversation is current there on return. */
     function openConversation(id, study, loaded) {
-      return post("/api/agent/conversation/open", { id: id, study: study }).then(function (o) {
+      /* After the saves still waiting, so a reload keeps them and the
+       * thread opened says all they said (thirteenth and fourteenth
+       * reviews, 10-08). */
+      return inTurn(function () {
+        return post("/api/agent/conversation/open", { id: id, study: study });
+      }).then(function (o) {
         if (!o || !o.ok) { window.alert((o && o.error) || "Could not open it."); return o; }
-        if (o.loaded_study && !loaded) {
+        /* Loaded elsewhere than the list said (a run took it with it):
+         * the page reads that study too. */
+        if (o.loaded_study && (!loaded || (o.study || null) !== (study || null))) {
           location.reload();
           return o;
         }
-        convId = o.id || null; convStudy = o.study || null;
         resetThread();
+        conv = threadOf(o.id, o.study, o.entries || []);
         hideList();
         replay(o.entries || []);
         told();
@@ -2435,7 +2920,7 @@
     }
 
     function row(c, g) {
-      var here = c.id === convId && (c.study || null) === (convStudy || null);
+      var here = c.id === conv.id && (c.study || null) === (conv.study || null);
       var line = node("div", "agent-conv-row" + (here ? " current" : ""));
       line.dataset.id = c.id;
       var title = node("button", "title", c.title);
@@ -2460,8 +2945,19 @@
       del.innerHTML = BIN;
       del.addEventListener("click", function () {
         if (!window.confirm("Delete “" + c.title + "”? This cannot be undone.")) return;
-        post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function () {
-          if (here) { convId = null; resetThread(); }
+        /* Deleted by the person here: a save of it still on its way is
+         * not taken for words said after a delete elsewhere. */
+        deletedHere[c.id] = true;
+        post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function (d) {
+          if (!d || !d.ok) {
+            delete deletedHere[c.id];
+            window.alert((d && d.error) || "Could not delete it.");
+            return;
+          }
+          /* The thread on screen, by its id now: the row may have been
+           * drawn before its first save named it (twenty-first review,
+           * 10-08: left on screen, what was typed next was dropped). */
+          if (c.id === conv.id) resetThread();
           told();
           showList();
         });
@@ -2599,7 +3095,7 @@
      * written, named or deleted (chats.js). */
     function told() {
       window.dispatchEvent(new CustomEvent("fmx:conversations", {
-        detail: { id: convId, study: convStudy } }));
+        detail: { id: conv.id, study: conv.study } }));
     }
     window.addEventListener("fmx:conversation-saved", told);
 
@@ -2607,19 +3103,20 @@
      * opened on it would show it. A chat of no study goes on as it is. */
     window.addEventListener("dashboard:run-changed", function (event) {
       var detail = event.detail || {};
-      if (detail.first || !convStudy) return;
-      if (String(detail.activeRun || "") === String(convStudy)) return;
-      resetThread();
+      if (detail.first || !conv.study) return;
+      /* A run starting: the GUI has switched to its folder, and the
+       * conversation is on its way there (tenth review, 10-08). */
+      if (launching) return;
+      if (String(detail.activeRun || "") === String(conv.study)) return;
       hideList();
-      restore();
-      told();
+      restore(true).then(told);
     });
 
     window.FastMDXAgentPanel = {
       open: function (id, study, loaded) { return openConversation(id, study, loaded); },
       fresh: freshConversation,
       list: function () { return showList(); },
-      get current() { return { id: convId, study: convStudy }; },
+      get current() { return { id: conv.id, study: conv.study }; },
     };
 
     if (!el("agent-provider")) return;
@@ -2651,7 +3148,7 @@
         /* Open where this conversation lives: the study's own folder for
          * a thread about a study, the workspace for a general one. */
         window.FastMDXPicker.open({ into: "agent-attach-path", mode: "file",
-                                    start: convStudy || workspaceRoot || "" });
+                                    start: conv.study || workspaceRoot || "" });
       });
       attachPath.addEventListener("change", function () {
         var p = attachPath.value.trim();

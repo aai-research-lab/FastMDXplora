@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -472,6 +473,23 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
     }
 
 
+#: One writer at a time: a page's save, a move into a run's folder, a
+#: deletion. Each reads the conversation and writes it whole.
+_CONVERSATIONS = threading.RLock()
+_NOTHING_HELD = nullcontext()
+
+
+def _one_writer(write: Any) -> Any:
+    import functools
+
+    @functools.wraps(write)
+    def held(*args: Any, **kwargs: Any) -> Any:
+        with _CONVERSATIONS:
+            return write(*args, **kwargs)
+
+    return held
+
+
 def run_endpoint(payload: dict[str, Any], runtime: Any,
                  *, dashboard_url: str | None = None) -> dict[str, Any]:
     """Start the study the panel just drafted, on this machine.
@@ -535,15 +553,61 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
     if payload.get("output_dir"):
         config = dict(config)
         config["output"] = str(payload["output_dir"])
-    try:
-        return _with_its_fix(runtime.launch_from_config(None, config=config,
-                                                        dashboard_url=dashboard_url))
-    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
-        from fastmdxplora.gui.config_builder import refused
+    # The conversation that started the run goes with it, moved here as the
+    # run starts: moved by the page afterwards, it raced the page's own
+    # saves and its switch to the new study, and a slow disk lost the
+    # thread (tenth review, 10-08). The writers' lock is held from before
+    # the launch, which switches the GUI to the run's folder, until the
+    # move: a reload or another tab in between read an empty thread there
+    # and began a second one (sixteenth review, 10-08).
+    moving = payload.get("conversation")
+    moving = moving if isinstance(moving, dict) and moving.get("id") else None
+    with _CONVERSATIONS if moving else _NOTHING_HELD:
+        try:
+            started = _with_its_fix(runtime.launch_from_config(None, config=config,
+                                                               dashboard_url=dashboard_url))
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            from fastmdxplora.gui.config_builder import refused
 
-        said = refused(exc)
-        return {"ok": False, "error": said["refusal"]["message"],
-                "code": said["refusal"]["code"], **said}
+            said = refused(exc)
+            return {"ok": False, "error": said["refusal"]["message"],
+                    "code": said["refusal"]["code"], **said}
+        if moving and started.get("ok") and started.get("output"):
+            cid = str(moving["id"])
+            workspace, _ = _scope(runtime)
+            # From where it lives, whatever place the page last heard of
+            # (fifteenth review, 10-08: a stale tab's run left it behind).
+            place = _where_it_lives(workspace, cid, runtime)
+            source = (str(place[0]) if place[0] else None) if place else moving.get("study")
+            started["conversation"] = attach_conversation(
+                runtime, started["output"], cid, source)
+            # The page saved the run's entry before it asked for the run;
+            # where it went is written into that entry here, so a reload
+            # before the page hears keeps the run (twelfth review, 10-08).
+            _say_where_it_ran(runtime, cid, moving.get("run"), str(started["output"]))
+    return started
+
+
+def _say_where_it_ran(runtime: Any, cid: str, eid: Any, output: str) -> None:
+    from datetime import datetime, timezone
+
+    if not eid:
+        return
+    workspace, _ = _scope(runtime)
+    place = _where_it_lives(workspace, cid, runtime)
+    if place is None:
+        return
+    _, store = place
+    try:
+        entries = _read_one(store, cid)
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("eid") == eid:
+                entry["output"] = output
+                entry.setdefault("started", datetime.now(timezone.utc).isoformat())
+                _write_one(store, cid, entries)
+                return
+    except OSError:
+        return
 
 
 #: How a run that has ended is said at the head of its summary.
@@ -1213,9 +1277,17 @@ def _is_study(path: Any) -> bool:
                               for m in ("manifest.json", "simulation", "analysis", "report", "setup"))
 
 
+def _holds_conversations(path: Any) -> bool:
+    """A study, or a folder a run the Agent started was given that has
+    written nothing else yet: its conversation was moved there (eighth
+    review, 10-08: Stop in the first second left such a folder, and the
+    thread could be neither saved nor found)."""
+    return bool(path) and (_is_study(path) or (Path(path) / CONVERSATIONS_SUBDIR).is_dir())
+
+
 def _store_for(workspace: Any, study: Any) -> Path:
     """Where a scope's conversations are kept."""
-    if study is not None and _is_study(study):
+    if study is not None and _holds_conversations(study):
         return Path(study) / CONVERSATIONS_SUBDIR
     return Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
 
@@ -1224,7 +1296,7 @@ def _scope(runtime: Any) -> tuple[Path, Path | None]:
     """(workspace, study-or-None) for the runtime's current view."""
     workspace = Path(getattr(runtime, "exploration_root", None) or ".")
     study = getattr(runtime, "active_root", None)
-    return workspace, (Path(study) if study and _is_study(study) else None)
+    return workspace, (Path(study) if study and _holds_conversations(study) else None)
 
 
 def _migrate_single_file(workspace: Any) -> None:
@@ -1284,24 +1356,43 @@ def _read_record(store: Path, cid: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+#: How many cut entries a conversation remembers, so a tab that still holds
+#: one does not bring it back.
+CUT_KEPT = 2000
+
+
+def _with_eids(cid: str, entries: list) -> list:
+    """Entries saved before each carried an ``eid`` given one by where it
+    stands, the same for every tab that reads them (fifteenth and sixteenth
+    reviews, 10-08: each tab gave its own, and two tabs kept two copies)."""
+    return [dict(e, eid=f"{cid}-{i}") if isinstance(e, dict) and not e.get("eid") else e
+            for i, e in enumerate(entries)]
+
+
 def _read_one(store: Path, cid: str) -> list:
     entries = _read_record(store, cid).get("entries")
     return entries[-CONVERSATION_KEEP:] if isinstance(entries, list) else []
 
 
-def _write_one(store: Path, cid: str, entries: list, title: Any = _HERE) -> None:
+def _write_one(store: Path, cid: str, entries: list, title: Any = _HERE,
+               cut: Any = _HERE) -> None:
     """The conversation written whole; the name given to it kept unless
-    another is given (``title``, '' for none)."""
+    another is given (``title``, '' for none), and so the entries cut from
+    it (``cut``, their eids)."""
     import json
     import os
 
     clean = [e for e in entries if isinstance(e, dict) and e.get("role") in ("user", "agent")]
     clean = clean[-CONVERSATION_KEEP:]
-    if title is _HERE:
-        title = _read_record(store, cid).get("title")
+    if title is _HERE or cut is _HERE:
+        was = _read_record(store, cid)
+        title = was.get("title") if title is _HERE else title
+        cut = was.get("cut") if cut is _HERE else cut
     record: dict[str, Any] = {"version": 3, "id": cid, "entries": clean}
     if isinstance(title, str) and title.strip():
         record["title"] = title.strip()[:TITLE_LENGTH]
+    if isinstance(cut, list) and cut:
+        record["cut"] = [str(e) for e in cut][-CUT_KEPT:]
     store.mkdir(parents=True, exist_ok=True)
     path = store / f"{cid}.json"
     tmp = path.with_suffix(".tmp")
@@ -1472,8 +1563,11 @@ def _study_label(study: Path) -> str:
 
 # ---- the API the endpoints call, all scoped by the runtime's view ---------
 
+@_one_writer
 def read_conversation(runtime: Any) -> dict[str, Any]:
-    """The current conversation in the current scope, or an empty one."""
+    """The current conversation in the current scope, or an empty one. Read
+    under the writers' lock, so never in the middle of a run's move
+    (sixteenth review, 10-08)."""
     workspace, study = _scope(runtime)
     _migrate_single_file(workspace)
     store = _store_for(workspace, study)
@@ -1482,7 +1576,7 @@ def read_conversation(runtime: Any) -> dict[str, Any]:
              "study_label": _study_label(study) if study else None}
     if cid is None:
         return {"ok": True, "id": None, "entries": [], **scope}
-    return {"ok": True, "id": cid, "entries": _read_one(store, cid), **scope}
+    return {"ok": True, "id": cid, "entries": _with_eids(cid, _read_one(store, cid)), **scope}
 
 
 def _named_place(runtime: Any, study: Any) -> tuple[Path | None, Path] | None:
@@ -1491,11 +1585,227 @@ def _named_place(runtime: Any, study: Any) -> tuple[Path | None, Path] | None:
     study."""
     workspace, _ = _scope(runtime)
     target = Path(study) if study else None
-    if target is not None and not _is_study(target):
+    if target is not None and not _holds_conversations(target):
         return None
     return target, _store_for(workspace, target)
 
 
+
+
+#: The conversation made for each unnamed thread of a page, by the key the
+#: page gave it: its first save and the one sent as the page closes are one
+#: conversation (fifteenth and sixteenth reviews, 10-08). Kept in the store
+#: in the workspace's own store (``MADE_FOR_FILE``), so a save sent again
+#: after the GUI restarted is still that one (twentieth review, 10-08).
+_MADE_FOR: dict[str, str] = {}
+MADE_FOR_FILE = "made_for.json"
+
+#: Said in a conversation kept after it was deleted elsewhere, from what a
+#: closing page sent (twentieth review, 10-08).
+KEPT_AFTER_DELETE = ("This conversation was deleted in another window. "
+                     "What was said after is kept here.")
+
+
+#: Kept in the workspace's own store: each conversation deleted, with the
+#: entries it held, so a closing page's save sent again later does not
+#: bring it back (twenty-first review, 10-08); and where each conversation
+#: a run took with it went, so one in a folder outside the workspace is
+#: found once the GUI holds another (twenty-first review, 10-08).
+DELETED_FILE = "deleted.json"
+MOVED_FILE = "moved.json"
+INDEX_KEPT = 500
+
+
+def _index(workspace: Any, name: str) -> dict:
+    import json
+
+    try:
+        known = json.loads((Path(workspace) / WORKSPACE_CONVERSATIONS_DIR / name).read_text(
+            encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return known if isinstance(known, dict) else {}
+
+
+def _remember(workspace: Any, name: str, cid: str, value: Any) -> None:
+    import json
+
+    known = _index(workspace, name)
+    known.pop(str(cid), None)
+    known[str(cid)] = value
+    store = Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
+    try:
+        store.mkdir(parents=True, exist_ok=True)
+        _written(store / name, json.dumps(dict(list(known.items())[-INDEX_KEPT:])))
+    except OSError:
+        pass
+
+
+def _remember_key(runtime: Any, key: Any, cid: str) -> None:
+    if not key:
+        return
+    _MADE_FOR[str(key)] = cid
+    workspace, _ = _scope(runtime)
+    _remember(workspace, MADE_FOR_FILE, str(key), cid)
+
+
+def _made_for(runtime: Any, key: Any) -> str | None:
+    """The conversation already made for a page's key, if any: kept
+    somewhere, or deleted since (then a save for it is told it is gone)."""
+    if not key:
+        return None
+    workspace, _ = _scope(runtime)
+    cid = _MADE_FOR.get(str(key)) or _index(workspace, MADE_FOR_FILE).get(str(key))
+    if not isinstance(cid, str) or not _valid_id(cid):
+        return None
+    # A key's conversation deleted since is that one still, and gone: a
+    # save sent again does not make it anew (twenty-first review, 10-08).
+    if _where_it_lives(workspace, cid, runtime) is None and \
+            cid not in _index(workspace, DELETED_FILE):
+        return None
+    _MADE_FOR[str(key)] = cid
+    return cid
+
+
+def merge_conversation(runtime: Any, entries: Any, seen: Any, cid: Any = None,
+                       study: Any = _HERE, *, key: Any = None, current: bool = True,
+                       append: bool = False, dropped: Any = None, keep: Any = None,
+                       keep_current: bool = False) -> dict[str, Any]:
+    """A page's save, merged into what is kept (tenth to sixteenth reviews,
+    10-08: the page wrote its whole list, and a reload, a second tab, a
+    delete or a run's move racing it lost entries).
+
+    Each entry carries an ``eid``. ``seen`` names every entry the page has
+    held. Kept: the page's entries in its order, each over what was kept
+    (a field only the server set, such as where a run went, stays); then
+    every kept entry the page never held (another tab's). An entry the page
+    held and no longer has was cut: it goes, and is remembered as cut, so a
+    tab that still holds it does not bring it back. ``append`` (a page
+    closing) only adds and updates, and cuts only what it names as
+    ``dropped``. Named, the conversation is
+    written where it now lives, and one that lives nowhere was deleted: not
+    written again. Unnamed, a new one is made for the page's ``key`` (the
+    same one for every save of that thread), never written over the one
+    current where the GUI is. ``current`` false leaves which conversation
+    is current alone (a thread no longer on screen). ``keep``, a key, sent
+    by a closing page holding what the person said: if the conversation
+    was deleted elsewhere, what it sent is kept as a new one, made for that
+    key, where it was (current if ``keep_current``)."""
+    if not isinstance(entries, list) or not isinstance(seen, list):
+        return {"ok": False, "error": "entries and seen must be lists"}
+    with _CONVERSATIONS:
+        workspace, study_open = _scope(runtime)
+        _migrate_single_file(workspace)
+        if cid is None and key:
+            made = _made_for(runtime, key)
+            if made is not None:
+                cid, study = made, _HERE
+        if cid is None:
+            # Made where the thread was begun, if it named a place (a chat
+            # of no study while a study is open; nineteenth review, 10-08),
+            # else where the GUI is.
+            place = None if study is _HERE else _named_place(runtime, study)
+            made_in, store = place or (study_open, _store_for(workspace, study_open))
+            cid = _new_id()
+            try:
+                _write_one(store, cid, entries)
+                if current:
+                    (store / "current").write_text(cid, encoding="utf-8")
+            except OSError as exc:
+                return {"ok": False, "error": f"Could not save the conversation: {exc}"}
+            _remember_key(runtime, key, cid)
+            return {"ok": True, "id": cid, "entries": _with_eids(cid, _read_one(store, cid)),
+                    "study": str(made_in) if made_in else None}
+        if not _valid_id(cid):
+            return {"ok": False, "error": "No such conversation."}
+        place = (study_open, _store_for(workspace, study_open)) if study is _HERE \
+            else _named_place(runtime, study)
+        if place is None or not (place[1] / f"{cid}.json").is_file():
+            place = _where_it_lives(workspace, str(cid), runtime)
+        if place is None and append and keep:
+            # Deleted elsewhere while the person went on in it: what the
+            # closing page sent is kept, once, as a new conversation
+            # (twentieth review, 10-08).
+            # Only what the deleted conversation never held: what it held
+            # was deleted with it (twenty-first review, 10-08).
+            held = set(map(str, _index(workspace, DELETED_FILE).get(str(cid)) or ()))
+            said = [e for e in entries if isinstance(e, dict)
+                    and e.get("eid") not in set(map(str, dropped or ()))
+                    and str(e.get("eid")) not in held]
+            if not any(e.get("role") == "user" or e.get("action") == "run" for e in said):
+                return {"ok": False, "error": "No such conversation.", "gone": True}
+            if not any(e.get("text") == KEPT_AFTER_DELETE for e in said):
+                said.append({"eid": f"kept-{keep}", "role": "agent", "kind": "note",
+                             "text": KEPT_AFTER_DELETE})
+            return merge_conversation(runtime, said, [], None, study, key=keep,
+                                      current=keep_current, append=True)
+        if place is None:
+            return {"ok": False, "error": "No such conversation.", "gone": True}
+        named, store = place
+        record = _read_record(store, str(cid))
+        kept = _with_eids(str(cid), _read_one(store, str(cid)))
+        cut = [str(e) for e in record.get("cut") or ()]
+        if append:
+            # A closing page's cuts too (a retry with its save waiting).
+            cut += [str(e) for e in (dropped or ()) if str(e) not in cut]
+            merged = [e for e in _added(kept, entries, set(cut))
+                      if not (isinstance(e, dict) and e.get("eid") in set(cut))]
+        else:
+            held = {e.get("eid") for e in entries if isinstance(e, dict)}
+            cut += [e for e in map(str, seen) if e not in held and e not in cut]
+            merged = _merged(kept, entries, set(map(str, seen)), set(cut))
+        try:
+            _write_one(store, str(cid), merged, cut=cut)
+            if current:
+                (store / "current").write_text(str(cid), encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": f"Could not save the conversation: {exc}"}
+        # What of the page's is cut here, so the page tells a cut (another
+        # tab's retry) from the oldest entries past the length kept
+        # (nineteenth review, 10-08: every save drew the thread again).
+        held_here = {str(e) for e in seen} | {
+            str(e.get("eid")) for e in entries if isinstance(e, dict)}
+        return {"ok": True, "id": str(cid),
+                "entries": _with_eids(str(cid), _read_one(store, str(cid))),
+                "study": str(named) if named else None,
+                "cut": [e for e in cut if e in held_here]}
+
+
+def _merged(kept: list, page: list, seen: set[str], cut: set[str]) -> list:
+    by_eid = {e["eid"]: e for e in kept if isinstance(e, dict) and e.get("eid")}
+    out, held = [], set()
+    for entry in page:
+        if not isinstance(entry, dict) or entry.get("eid") in cut:
+            continue
+        eid = entry.get("eid")
+        if eid in held:
+            # One entry, though the page held it twice (a summary another
+            # tab kept too; nineteenth review, 10-08).
+            continue
+        if eid:
+            held.add(eid)
+        out.append({**by_eid[eid], **entry} if eid in by_eid else entry)
+    out += [e for e in kept if isinstance(e, dict) and e.get("eid")
+            and e["eid"] not in held and e["eid"] not in seen and e["eid"] not in cut]
+    return out
+
+
+def _added(kept: list, page: list, cut: set[str]) -> list:
+    """A closing page's entries: each updates its kept self, or is added."""
+    out = list(kept)
+    at = {e.get("eid"): i for i, e in enumerate(out) if isinstance(e, dict)}
+    for entry in page:
+        if not isinstance(entry, dict) or not entry.get("eid") or entry["eid"] in cut:
+            continue
+        if entry["eid"] in at:
+            out[at[entry["eid"]]] = {**out[at[entry["eid"]]], **entry}
+        else:
+            at[entry["eid"]] = len(out)
+            out.append(entry)
+    return out
+
+
+@_one_writer
 def write_conversation(runtime: Any, entries: Any, cid: Any = None,
                        study: Any = _HERE) -> dict[str, Any]:
     """Replace a conversation with what the browser holds: the one it names
@@ -1513,6 +1823,11 @@ def write_conversation(runtime: Any, entries: Any, cid: Any = None,
         if place is None:
             return {"ok": False, "error": "No such study."}
         named, store = place
+        if not (store / f"{cid}.json").is_file():
+            # Moved since the page last heard (a run started from another
+            # tab took it with it): written where it lives, and said, so the
+            # page follows (twelfth review, 10-08: two copies under one id).
+            named, store = _where_it_lives(workspace, str(cid), runtime) or (named, store)
         try:
             _write_one(store, str(cid), entries)
             (store / "current").write_text(str(cid), encoding="utf-8")
@@ -1535,9 +1850,41 @@ def write_conversation(runtime: Any, entries: Any, cid: Any = None,
             "study": str(study) if study else None}
 
 
-def new_conversation(runtime: Any, study: Any = _HERE) -> dict[str, Any]:
+def _where_it_lives(workspace: Path, cid: str,
+                    runtime: Any = None) -> tuple[Path | None, Path] | None:
+    """The place a conversation is kept: the workspace's Chats, a folder
+    the GUI holds (a run's, which may be outside the workspace), or a folder
+    in the workspace holding it. None if nowhere."""
+    chats = Path(workspace) / WORKSPACE_CONVERSATIONS_DIR
+    if (chats / f"{cid}.json").is_file():
+        return None, chats
+    held = [getattr(runtime, name, None) for name in ("running_root", "active_root")]
+    folders = [Path(f) for f in held if f]
+    folders += list(Path(workspace).iterdir()) if Path(workspace).is_dir() else []
+    for folder in folders:
+        store = folder / CONVERSATIONS_SUBDIR
+        if (store / f"{cid}.json").is_file():
+            return folder, store
+    went = _index(workspace, MOVED_FILE).get(str(cid))
+    if isinstance(went, str) and (Path(went) / CONVERSATIONS_SUBDIR / f"{cid}.json").is_file():
+        return Path(went), Path(went) / CONVERSATIONS_SUBDIR
+    return None
+
+
+@_one_writer
+def new_conversation(runtime: Any, study: Any = _HERE, *, key: Any = None) -> dict[str, Any]:
     """A fresh thread where the GUI is, or in ``study`` (None: a chat of no
-    study, whatever is open). The last one stays."""
+    study, whatever is open). The last one stays. ``key``, the page's for
+    the thread, names it for a save sent before this answer is heard (a
+    page closing; eighteenth review, 10-08); made already by such a save,
+    it is that one."""
+    made = _made_for(runtime, key)
+    if made is not None:
+        workspace, _ = _scope(runtime)
+        place = _where_it_lives(workspace, made, runtime)
+        if place is not None:
+            return {"ok": True, "id": made, "entries": _with_eids(made, _read_one(place[1], made)),
+                    "study": str(place[0]) if place[0] else None}
     workspace, study_open = _scope(runtime)
     if study is _HERE:
         study, store = study_open, _store_for(workspace, study_open)
@@ -1552,9 +1899,11 @@ def new_conversation(runtime: Any, study: Any = _HERE) -> dict[str, Any]:
         (store / "current").write_text(cid, encoding="utf-8")
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
+    _remember_key(runtime, key, cid)
     return {"ok": True, "id": cid, "entries": [], "study": str(study) if study else None}
 
 
+@_one_writer
 def rename_conversation(runtime: Any, cid: Any, study: Any = None,
                         title: Any = "") -> dict[str, Any]:
     """A name of the person's own for a conversation; '' gives it back its
@@ -1564,9 +1913,14 @@ def rename_conversation(runtime: Any, cid: Any, study: Any = None,
     place = _named_place(runtime, study)
     if place is None:
         return {"ok": False, "error": "No such study."}
-    _, store = place
-    if not (store / f"{cid}.json").is_file():
+    if not (place[1] / f"{cid}.json").is_file():
+        # Moved since the list was drawn (a run took it with it): named
+        # where it lives (seventeenth review, 10-08).
+        workspace, _ = _scope(runtime)
+        place = _where_it_lives(workspace, str(cid), runtime)
+    if place is None:
         return {"ok": False, "error": "No such conversation."}
+    _, store = place
     text = " ".join(str(title or "").split())
     if len(text) > TITLE_LENGTH:
         return {"ok": False, "error": f"A name is at most {TITLE_LENGTH} characters."}
@@ -1627,7 +1981,7 @@ def list_conversations(runtime: Any) -> dict[str, Any]:
     for folder in sorted(workspace.iterdir() if workspace.is_dir() else [], reverse=True):
         if study is not None and folder.resolve() == study.resolve():
             continue
-        if _is_study(folder):
+        if _holds_conversations(folder):
             rows = rows_in(folder / CONVERSATIONS_SUBDIR, folder)
             if rows:
                 others.append(group(folder, False, rows))
@@ -1642,6 +1996,7 @@ def list_conversations(runtime: Any) -> dict[str, Any]:
     return {"ok": True, "groups": groups}
 
 
+@_one_writer
 def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
     """Make a conversation current. If it belongs to another study, load
     that study first, so the thread and the Agent's context agree."""
@@ -1649,9 +2004,24 @@ def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, An
         return {"ok": False, "error": "No such conversation."}
     workspace, current_study = _scope(runtime)
     target = Path(study) if study else None
-    if target is not None and not _is_study(target):
+    if target is not None and not _holds_conversations(target):
         return {"ok": False, "error": "No such study."}
-    if target is not None and (current_study is None or target.resolve() != current_study.resolve()):
+    if not (_store_for(workspace, target) / f"{cid}.json").is_file():
+        # Moved since the list was drawn (a run took it with it): opened
+        # where it lives, as naming and deleting it do (nineteenth review,
+        # 10-08).
+        place = _where_it_lives(workspace, str(cid), runtime)
+        if place is None:
+            return {"ok": False, "error": "No such conversation."}
+        target = place[0]
+    # A folder that is no study yet (a run that wrote nothing) holds its
+    # conversation; it is opened, and the GUI stays where it is.
+    from fastmdxplora.gui.browse import is_study
+
+    # What the GUI can load, as its switch judges it: a study of several
+    # runs too (ninth and tenth reviews, 10-08).
+    loads = target is not None and is_study(target)
+    if loads and (current_study is None or target.resolve() != current_study.resolve()):
         switched = runtime.switch_to(target) if hasattr(runtime, "switch_to") else {"ok": False}
         if not switched.get("ok"):
             return {"ok": False, "error": switched.get("error") or "Could not load that study."}
@@ -1659,10 +2029,11 @@ def open_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, An
     if not (store / f"{cid}.json").is_file():
         return {"ok": False, "error": "No such conversation."}
     (store / "current").write_text(str(cid), encoding="utf-8")
-    return {"ok": True, "id": str(cid), "entries": _read_one(store, str(cid)),
-            "study": str(target) if target else None, "loaded_study": target is not None}
+    return {"ok": True, "id": str(cid), "entries": _with_eids(str(cid), _read_one(store, str(cid))),
+            "study": str(target) if target else None, "loaded_study": loads}
 
 
+@_one_writer
 def attach_conversation(runtime: Any, study: Any, cid: Any = None,
                         from_study: Any = None) -> dict[str, Any]:
     """Move a conversation into the study it just launched.
@@ -1682,7 +2053,7 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
         return {"ok": False, "error": "No such study."}
     workspace, _ = _scope(runtime)
     source_study = Path(from_study) if from_study else None
-    if source_study is not None and not _is_study(source_study):
+    if source_study is not None and not _holds_conversations(source_study):
         return {"ok": False, "error": "No such source study."}
     source = _store_for(workspace, source_study)
     if cid is not None and not _valid_id(cid):
@@ -1696,6 +2067,7 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
     try:
         dest.mkdir(parents=True, exist_ok=True)
         os.replace(source / f"{cid}.json", dest / f"{cid}.json")
+        _remember(workspace, MOVED_FILE, cid, str(target))
         (dest / "current").write_text(cid, encoding="utf-8")
         if _current_in(source) is None:
             (source / "current").unlink(missing_ok=True)
@@ -1704,6 +2076,7 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
     return {"ok": True, "moved": True, "id": cid, "study": str(target)}
 
 
+@_one_writer
 def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
     """Delete one conversation, wherever it is. Asked for, per
     conversation, never a side effect of anything else."""
@@ -1714,9 +2087,18 @@ def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, 
     store = _store_for(workspace, target)
     path = store / f"{cid}.json"
     if not path.is_file():
-        return {"ok": False, "error": "No such conversation."}
+        # Moved since the list was drawn (a run took it with it): deleted
+        # where it lives (sixteenth review, 10-08).
+        place = _where_it_lives(workspace, str(cid), runtime)
+        if place is None:
+            return {"ok": False, "error": "No such conversation."}
+        store = place[1]
+        path = store / f"{cid}.json"
+    held = [e.get("eid") for e in _with_eids(str(cid), _read_one(store, str(cid)))
+            if isinstance(e, dict) and e.get("eid")]
     try:
         path.unlink()
+        _remember(workspace, DELETED_FILE, str(cid), held)
         if _current_in(store) is None:
             (store / "current").unlink(missing_ok=True)
     except OSError as exc:

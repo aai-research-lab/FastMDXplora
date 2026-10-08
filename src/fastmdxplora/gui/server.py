@@ -1630,6 +1630,25 @@ def make_handler(
                 asked = payload or {}
                 # Named, the conversation is written where it lives, a chat
                 # of no study (study null) included; else where the GUI is.
+                if "seen" in asked:
+                    # The page's save, merged into what is kept: its entries,
+                    # the ones it has held (`merge_conversation`).
+                    from fastmdxplora.gui.agent_panel import _HERE, merge_conversation
+
+                    study = _HERE
+                    if (asked.get("id") or asked.get("key")) and "study" in asked:
+                        study = self._optional_path_for(asked.get("study"))
+                        if study is False:
+                            return
+                    self._send_json(merge_conversation(
+                        app_runtime, asked.get("entries"), asked.get("seen"),
+                        asked.get("id") or None, study, key=asked.get("key"),
+                        current=asked.get("current") is not False,
+                        append=asked.get("append") is True,
+                        dropped=asked.get("cut") if isinstance(asked.get("cut"), list) else None,
+                        keep=asked.get("keep") if isinstance(asked.get("keep"), str) else None,
+                        keep_current=asked.get("keep_current") is True))
+                    return
                 if asked.get("id") and "study" in asked:
                     study = self._optional_path_for(asked.get("study"))
                     if study is False:
@@ -1652,9 +1671,10 @@ def make_handler(
                     study = self._optional_path_for(asked.get("study"))
                     if study is False:
                         return
-                    self._send_json(new_conversation(app_runtime, study))
+                    self._send_json(new_conversation(app_runtime, study,
+                                                     key=asked.get("key")))
                     return
-                self._send_json(new_conversation(app_runtime))
+                self._send_json(new_conversation(app_runtime, key=asked.get("key")))
                 return
             if path == "/api/agent/conversation/rename":
                 from fastmdxplora.gui.agent_panel import rename_conversation
