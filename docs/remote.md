@@ -174,7 +174,7 @@ something, the plan adds just that to the same environment:
 ```
 To add them to that environment:
   [on gpu-box]
-    /opt/conda/bin/mamba install -y -p /home/me/.conda/envs/fastmdx-gpu -c conda-forge "openmm" "cuda-version=12.6"
+    /opt/conda/bin/mamba install -y -p /home/me/.conda/envs/fastmdx-gpu -c conda-forge openmm cuda-version=12.6
 ```
 
 ---
@@ -190,12 +190,29 @@ it, so a refusal costs seconds rather than a copy and a wait. The machine is
 probed again, and **nothing is sent to a machine that is not ready** for this
 computer's code.
 
+### What travels
+
 **The files the Config names travel with it.** Every setting naming a file or
 folder that exists, relative to the Config's own folder, is copied under
 `inputs/` and the copy of the Config names it there: the structure, a ligand's
 SDF, force field XMLs, a trajectory, a prepared study to continue from. A
 structure given by PDB ID is fetched by the machine, which is refused where the
 machine has no internet.
+
+**Only files in the study's own folder travel,** the folder holding the
+Config. A file named outside it is refused (`remote.input.outside`) and nothing
+is sent, whoever wrote the Config: one written by an AI model naming
+`~/.ssh/id_ed25519` would otherwise copy the key to the machine. Links are
+resolved first, so a link in the folder leading out of it is outside too, and a
+folder that travels is refused if any link in it leads out of it, since the
+copy follows links. Copy the file into the study's folder and name it there.
+
+The one exception is a prepared study named by `simulation.setup_from` or
+`simulation.resume_from`, which usually sits beside the study's folder: it
+travels from where it is when its `manifest.json` reads as a study's (for
+`setup_from` naming a study's `setup` folder, the study's), with every link in
+it held to that study's folder. A checkpoint file named by `resume_from`
+outside the folder is refused; name the study instead.
 
 `--dry-run` shows all of it, including the job script, and sends nothing:
 
@@ -205,7 +222,7 @@ Sending lysozyme to gpu-box
   folder       /home/me/fastmdxplora-jobs/lysozyme
   scheduler    a detached process
   results to   /Users/me/runs/lysozyme (with fetch)
-  inputs       /Users/me/runs/181L.pdb as inputs/181L.pdb
+  inputs       /Users/me/runs/181L.pdb as inputs/181L.pdb (238 kB)
 
 job.sh:
   #!/bin/sh

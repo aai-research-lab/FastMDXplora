@@ -14,6 +14,10 @@ than halfway through a run.
 planned on this computer, so a refusal costs seconds, not a copy and a
 queue wait.
 
+**Only the study's own files travel** (:mod:`fastmdxplora.remote.inputs`),
+and the links in a folder that travels are looked at again just before the
+copy, which follows them.
+
 A job on a workstation runs as a detached process in its own process group,
 so it outlives the connection and can be stopped whole. On a cluster it is
 an ``sbatch`` job asking for one GPU. Either way it writes its exit code
@@ -35,7 +39,7 @@ import yaml
 
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.remote.identity import CodeIdentity, same_code, this_code
-from fastmdxplora.remote.inputs import Inputs, gather_inputs
+from fastmdxplora.remote.inputs import Inputs, gather_inputs, link_out_of, size_of
 from fastmdxplora.remote.jobs import (
     ABANDONED,
     DONE,
@@ -158,6 +162,9 @@ def prepare(config_path: str | Path, machine_name: str, *,
     # refused there, after the copy and the wait.
     loaded = load_config_file(str(config_path))
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    # Before the machine is reached: a file that may not travel is refused
+    # here, having connected to nothing.
+    inputs = gather_inputs(raw, config_path.resolve().parent)
 
     machine = load_machine(machine_name)
     link = transport or Transport(machine_name)
@@ -181,7 +188,6 @@ def prepare(config_path: str | Path, machine_name: str, *,
             "in.", code="remote.machine.not_ready",
             machine=machine_name, reason="no installation")
 
-    inputs = gather_inputs(raw, config_path.resolve().parent)
     if inputs.fetched and machine.inspection.internet != "yes":
         raise StudyError(
             f"{', '.join(inputs.fetched)} would be fetched from RCSB by "
@@ -238,6 +244,19 @@ def send(sending: Sending, *, transport: Transport | None = None,
             f"{sending.machine.name} already holds {where}/run. Give another "
             "--output, or --force-overwrite to replace it.",
             code="environment.path.exists", path=f"{where}/run")
+
+    # Again, just before the copy: a link made since `prepare` would be
+    # followed by it.
+    for travelled, source in sending.inputs.files.items():
+        held_to = sending.inputs.held_to.get(travelled, source)
+        leading_out = link_out_of(source, held_to)
+        if leading_out is not None:
+            raise StudyError(
+                f"{leading_out} is a link leading out of {held_to}, so "
+                f"{source} is not sent: what it points at would travel with "
+                "the study. Copy the file in its place.",
+                code="remote.input.outside", given=str(source),
+                where=f"inputs/{travelled}", folder=str(held_to))
 
     with tempfile.TemporaryDirectory() as staging:
         stage = Path(staging)
@@ -524,12 +543,17 @@ def describe_sending(sending: Sending) -> list[str]:
              f"  results to   {sending.local_output} (with fetch)"]
     if sending.inputs.files:
         lines.append("  inputs       " + ", ".join(
-            f"{src} as inputs/{name}" for name, src in sending.inputs.files.items()))
+            f"{src} as inputs/{name} ({_megabytes(size_of(src))})"
+            for name, src in sending.inputs.files.items()))
     if sending.inputs.fetched:
         lines.append(f"  fetched there {', '.join(sending.inputs.fetched)} (from RCSB)")
     lines += ["", "job.sh:"] + [f"  {line}" for line in sending.script.splitlines()]
     lines += [f"  {note}" for note in sending.notes]
     return lines
+
+
+def _megabytes(size: int) -> str:
+    return f"{size / 1e6:.1f} MB" if size >= 100_000 else f"{size / 1e3:.0f} kB"
 
 
 def job_line(job: Job) -> str:

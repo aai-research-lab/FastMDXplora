@@ -841,6 +841,11 @@ CODES: tuple[Code, ...] = (
          "that cannot reach it.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("given", "machine")),
+    Code("remote.input.outside",
+         "A config sent to another machine names a file outside the "
+         "study's folder, or a folder with a link leading out of it.",
+         Kind.STRUCTURAL, Disclosure.ACTION,
+         detail_keys=("given", "where", "folder")),
     Code("remote.job.unknown",
          "A job was named that this computer did not send.",
          Kind.STRUCTURAL, Disclosure.PERMITTED_VALUES,
