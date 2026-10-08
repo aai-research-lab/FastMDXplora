@@ -71,6 +71,20 @@ STOPPED_EXPLANATION = (
     "carried on. What it wrote up to then is kept, and fastmdx resume "
     "carries it on from there."
 )
+#: Stopped while the trajectory was analysed or the report written: the
+#: simulation is kept whole, and nothing is carried on.
+STOPPED_IN_A_PHASE_AFTER_EXPLANATION = (
+    "It was asked to stop while its trajectory was analysed or its report "
+    "written. The simulation is finished and kept; Analyze again or Write it "
+    "again runs that part once more."
+)
+#: Stopped before production, where no checkpoint is written: said beside a
+#: message that says so, it read "ended where it can be carried on".
+STOPPED_BEFORE_PRODUCTION_EXPLANATION = (
+    "It was asked to stop (Ctrl+C, or Stop) before its production began. "
+    "What it wrote up to then is kept, and fastmdx resume runs it again from "
+    "the start."
+)
 
 SILENT_EXPLANATION = (
     "Its last update said it was still going, and no process on this machine "
@@ -126,6 +140,12 @@ class TelemetryWriter:
     precision_applied: bool | None = None
     target_temperature_K: float | None = None
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    #: For a study analysed or reported again: the record is its
+    #: simulation's, so only the analysis and report stages, the status and
+    #: the error are written into it; its stages, times and date stay the
+    #: run's. With no writer at all the page said "Completed ... nothing is
+    #: being recorded any more" while the analysis ran, beside Stop.
+    phases_only: bool = False
     _last_status: dict[str, Any] = field(default_factory=dict, init=False)
 
     @property
@@ -154,6 +174,9 @@ class TelemetryWriter:
         none of these values are read back into OpenMM.
         """
         if not self.enabled:
+            return
+        if self.phases_only:
+            self._write_phases(updates)
             return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -215,6 +238,56 @@ class TelemetryWriter:
         except Exception:
             return
 
+    def _write_phases(self, updates: dict[str, Any]) -> None:
+        """Only the analysis and report stages, the status and the error,
+        over the simulation's record as it stands."""
+        try:
+            status = _read_status_path(self.status_path)
+            if not status:
+                return
+            if not self._last_status:
+                # How the run had ended, said again once these phases end
+                # well: a failed run analysed again is still a failed run.
+                # Kept in the record (`ended_as`) until then, so a rerun
+                # stopped or failed, and run again, still knows it.
+                ended = status.get("ended_as")
+                if isinstance(ended, dict):
+                    self._last_status = dict(ended)
+                elif str(status.get("status") or "").lower() in _GOING_STATUSES:
+                    # A run stopped in its own analysis or report: the
+                    # record says it is going, which is not how it ended.
+                    # Its simulation had finished, so these phases ending
+                    # well end the study well (it read "Running" for good).
+                    self._last_status = {"status": "completed", "latest_error": None}
+                else:
+                    self._last_status = {
+                        "status": status.get("status"),
+                        "latest_error": status.get("latest_error"),
+                        "stage": status.get("stage")}
+                status["ended_as"] = dict(self._last_status)
+            if updates.get("status") == "completed":
+                updates = {**updates, **self._last_status}
+                status.pop("ended_as", None)
+            stage = str(updates.get("stage") or "").lower()
+            if stage and (stage in _PHASES_AFTER
+                          or stage == str(self._last_status.get("stage") or "")):
+                status["stage"] = updates.get("stage")
+            states = dict(status.get("stage_states") or {})
+            for name, state in (updates.get("stage_states") or {}).items():
+                if name in _PHASES_AFTER:
+                    states[name] = str(state).lower()
+            status["stage_states"] = states
+            if updates.get("status"):
+                status["status"] = updates["status"]
+            if "latest_error" in updates:
+                status["latest_error"] = updates["latest_error"]
+            status["phases_updated_at"] = _utc_now()
+            tmp = self.status_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
+            os.replace(tmp, self.status_path)
+        except Exception:
+            return
+
     def mark_stage(
         self,
         stage: str,
@@ -267,6 +340,10 @@ class TelemetryWriter:
                 fh.write(f"{_utc_now()}\t{level}\t{message}\n")
         except Exception:
             return
+
+
+#: The phases run again over a simulation's record (`phases_only`).
+_PHASES_AFTER = ("analysis", "report")
 
 
 def _read_status_path(path: Path) -> dict[str, Any]:
@@ -373,6 +450,22 @@ def _offsets_of(root: Path, first: dict[str, Any], pieces: list[Path]) -> list[t
     return offsets
 
 
+def _phases_since(root: Path, record: dict[str, Any]) -> dict[str, str]:
+    """The study's analysis and report as its Manifest says them, where the
+    Manifest was written after ``record``: completed, failed or skipped."""
+    written = _parse_iso_datetime(str(record.get("last_update_timestamp") or ""))
+    manifest = root / "manifest.json"
+    try:
+        if written is not None and manifest.stat().st_mtime < written.timestamp():
+            return {}
+        phases = json.loads(manifest.read_text(encoding="utf-8")).get("phases") or []
+    except (OSError, ValueError, AttributeError):
+        return {}
+    said = {"ok": "completed", "error": "failed", "skipped": "skipped"}
+    return {str(p.get("name")): said.get(str(p.get("status")), "waiting")
+            for p in phases if isinstance(p, dict) and p.get("name") in ("analysis", "report")}
+
+
 def _newer(one: dict[str, Any], other: dict[str, Any]) -> bool:
     first = _parse_iso_datetime(str(one.get("last_update_timestamp") or ""))
     second = _parse_iso_datetime(str(other.get("last_update_timestamp") or ""))
@@ -410,9 +503,49 @@ def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
         states["production"] = ("current" if said in _GOING_STATUSES
                                 else str((last.get("stage_states") or {}).get(
                                     "production") or said or "waiting"))
+        # The phases after it are the study's own, run over the joined
+        # trajectory once the piece ended: as its Manifest says them, where
+        # it was written since; else still to come.
+        after = _phases_since(root, last) if said == "completed" else {}
+        # The phases the study asks for: the first piece's record can say
+        # them skipped (it stopped before them), and the sidebar counted
+        # "Stage 5 of 5" through the joined trajectory's analysis.
+        asked = phases_asked(root)
         for later in ("analysis", "report"):
-            if states.get(later) not in (None, "skipped"):
-                states[later] = "waiting"
+            if asked and later not in asked:
+                continue
+            if not asked and states.get(later) in (None, "skipped"):
+                continue
+            states[later] = after.get(later, "waiting")
+        if after and all(after.get(name) == "completed" for name in after):
+            whole["stage"] = list(after)[-1]
+        # The joined trajectory analysed and reported as the study's own,
+        # marked in its record since the piece last wrote: while they run
+        # the study is running (it read "Completed" with its analysis going).
+        phases_at = _parse_iso_datetime(first.get("phases_updated_at"))
+        piece_at = _parse_iso_datetime(last.get("last_update_timestamp"))
+        if phases_at and (piece_at is None or phases_at > piece_at):
+            marked = first.get("stage_states") if isinstance(
+                first.get("stage_states"), dict) else {}
+            for later in ("analysis", "report"):
+                if str(marked.get(later) or "skipped").lower() != "skipped":
+                    states[later] = str(marked[later]).lower()
+            first_said = str(first.get("status") or "").lower()
+            first_stage = str(first.get("stage") or "").lower()
+            if first_said in _GOING_STATUSES:
+                whole["status"] = first.get("status")
+                if first_stage in ("analysis", "report"):
+                    whole["stage"] = first_stage
+            elif first_said in ("stopped", "failed") and first_stage in ("analysis", "report"):
+                # The joined trajectory's analysis or report stopped or
+                # failed since the piece ended: the study is where they
+                # left it (a stop there read "Completed").
+                whole["status"] = first.get("status")
+                whole["stage"] = first_stage
+                whole["latest_error"] = first.get("latest_error")
+            elif all(states.get(name) in ("completed", "skipped")
+                     for name in ("analysis", "report")):
+                whole["stage"] = "report" if states.get("report") == "completed" else "analysis"
         whole["stage_states"] = states
         elapsed = [value for value in (first.get("elapsed_wall_time_s"),
                                        last.get("elapsed_wall_time_s"))
@@ -433,6 +566,25 @@ def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
     if isinstance(produced, (int, float)):
         whole["production_steps_planned"] = int(steps_before - (whole.get(
             "nvt_steps_planned") or 0) - (whole.get("npt_steps_planned") or 0) + produced)
+    if (str(whole.get("status") or "").lower() in {"stopped", "interrupted"}
+            and str(whole.get("stage") or "").lower() == "production"):
+        # Stopped again while carried on: counted to the checkpoint the
+        # piece wrote, as a run of one piece is (the record lags it).
+        try:
+            from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+            side = read_checkpoint_sidecar(newest / "simulation" / "checkpoint.chk") or {}
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            side = {}
+        step, interval = side.get("step"), side.get("trajectory_interval_steps")
+        if (side.get("stage") == "production" and isinstance(step, (int, float))
+                and isinstance(interval, (int, float)) and interval > 0):
+            current = whole.get("current_step")
+            if not isinstance(current, (int, float)) or steps_before + step > current:
+                whole["current_step"] = int(steps_before + step)
+            frames = whole.get("current_frame_count")
+            if not isinstance(frames, (int, float)) or frames_before + int(step) // int(interval) > frames:
+                whole["current_frame_count"] = int(frames_before + int(step) // int(interval))
     step, timestep = whole.get("current_step"), whole.get("timestep_fs")
     if isinstance(step, (int, float)) and isinstance(timestep, (int, float)):
         whole["simulation_time_completed_ns"] = float(step) * float(timestep) / 1_000_000.0
@@ -455,7 +607,71 @@ def read_study_status(project_root: str | Path) -> dict[str, Any]:
         whole = dict(first)
     if "current_checkpoint_path" in whole:
         whole["current_checkpoint_path"] = _checkpoint_here(root, whole)
+    if not whole.get("piece"):
+        whole = _as_far_as_it_wrote(root, whole)
+    elif (str(whole.get("status") or "").lower() == "stopped"
+          and str(whole.get("stage") or "").lower() == "production"):
+        whole["latest_error"] = _stopped_as_one_run(root, whole)
     return whole
+
+
+def _stopped_as_one_run(root: Path, whole: dict[str, Any]) -> str | None:
+    """A study stopped again while carried on, said as the study: the
+    piece's own words gave its own steps ("step 3,800 of 0.015 ns") and
+    `fastmdx resume <study>/segment-001`, which would carry the piece on as a
+    study of its own, beside the study's figures and command."""
+    from fastmdxplora.gui.simulated_time import say_length
+
+    # Production's own steps and time, as the first stop said them: the
+    # whole run's clock counted the equilibration as production.
+    equilibration = sum(int(whole.get(key) or 0)
+                        for key in ("nvt_steps_planned", "npt_steps_planned"))
+    step, total = whole.get("current_step"), whole.get("production_steps_planned")
+    timestep = whole.get("timestep_fs")
+    where = ""
+    if (isinstance(step, (int, float)) and isinstance(total, (int, float))
+            and isinstance(timestep, (int, float)) and total > 0):
+        produced = max(int(step) - equilibration, 0)
+        where = (f" at step {produced:,} of {int(total):,} "
+                 f"({say_length(produced * timestep / 1e6)} of "
+                 f"{say_length(total * timestep / 1e6)})")
+    return (f"Production was stopped{where}, as asked, while the study was carried on. "
+            f"`fastmdx resume {root}` carries it on from its last checkpoint.")
+
+
+def _as_far_as_it_wrote(root: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A run stopped in production, counted to the checkpoint it wrote.
+
+    Asked to stop, a run steps on to its next frame and writes its
+    checkpoint there; its record was last written before that, so the page
+    said 5.2 ps and 26 frames of a run whose trajectory held 28 (5.6 ps).
+    """
+    if (str(status.get("status") or "").lower() not in {"stopped", "interrupted"}
+            or str(status.get("stage") or "").lower() != "production"):
+        return status
+    try:
+        from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+        side = read_checkpoint_sidecar(root / "simulation" / "checkpoint.chk") or {}
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return status
+    step, interval = side.get("step"), side.get("trajectory_interval_steps")
+    if (side.get("stage") != "production" or not isinstance(step, (int, float))
+            or not isinstance(interval, (int, float)) or interval <= 0):
+        return status
+    equilibration = sum(int(status.get(key) or 0)
+                        for key in ("nvt_steps_planned", "npt_steps_planned"))
+    said = dict(status)
+    current = status.get("current_step")
+    if isinstance(current, (int, float)) and equilibration + step > current:
+        said["current_step"] = int(equilibration + step)
+        timestep = status.get("timestep_fs")
+        if isinstance(timestep, (int, float)):
+            said["simulation_time_completed_ns"] = said["current_step"] * float(timestep) / 1e6
+    frames = status.get("current_frame_count")
+    if isinstance(frames, (int, float)) and int(step) // int(interval) > frames:
+        said["current_frame_count"] = int(step) // int(interval)
+    return said
 
 
 def _checkpoint_here(root: Path, status: dict[str, Any]) -> str | None:
@@ -677,8 +893,6 @@ def run_phases(project_root: str | Path) -> list[str]:
     because hiding a stage that turns out to run is worse than showing one
     that does not.
     """
-    import yaml
-
     root = Path(project_root)
 
     # What ran, where that is recorded, beats any inference about what was
@@ -695,7 +909,15 @@ def run_phases(project_root: str | Path) -> list[str]:
         ]
         if ran:
             return ran
+    return phases_asked(root)
 
+
+def phases_asked(project_root: str | Path) -> list[str]:
+    """The phases the study's config asks for (`include_phase`, or every
+    phase but `exclude_phase`), or empty where it says neither."""
+    import yaml
+
+    root = Path(project_root)
     for name in _CONFIG_NAMES:
         path = root / name
         if not path.is_file():
@@ -732,9 +954,31 @@ def run_phases(project_root: str | Path) -> list[str]:
     return []
 
 
+def _phases_recorded(project_root: str | Path) -> list[str]:
+    """The phases the live record says have run or are running: a study
+    carried on, or analysed or reported again, runs phases its Manifest
+    does not list yet (a stopped first piece's Manifest ends at the
+    simulation, and a rerun writes its own), and the sidebar said "Stage 5
+    of 5" while the analysis ran."""
+    try:
+        status = read_study_status(project_root)
+    except Exception:  # noqa: BLE001 - the Manifest's phases stand alone
+        return []
+    states = status.get("stage_states") if isinstance(status, dict) else None
+    states = states if isinstance(states, dict) else {}
+    stage = str((status or {}).get("stage") or "").lower()
+    return [phase for phase, stages in PHASE_STAGES.items()
+            if stage in stages or any(
+                str(states.get(name) or "waiting").lower() not in ("waiting", "skipped")
+                for name in stages)]
+
+
 def run_stages(project_root: str | Path) -> list[str]:
     """The timeline stages this run can actually reach."""
     phases = run_phases(project_root)
+    if phases:
+        recorded = set(phases) | set(_phases_recorded(project_root))
+        phases = [phase for phase in PHASE_STAGES if phase in recorded]
     if not phases:
         return [stage for stages in PHASE_STAGES.values() for stage in stages]
     return [
@@ -889,11 +1133,29 @@ def _normalise_energy_header(header: str) -> str | None:
 
 
 def read_events(project_root: str | Path, *, limit: int = 100) -> list[dict[str, str]]:
-    path = _simulation_dir(project_root) / EVENTS_FILE
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
+    """The run's narration, the newest ``limit`` lines; a study carried on
+    in pieces narrates each piece in its own folder, read in with the
+    study's own by time (the carry-on was never shown)."""
+    paths = [_simulation_dir(project_root) / EVENTS_FILE]
+    paths += [piece / "simulation" / EVENTS_FILE for piece in _pieces_of(Path(project_root))]
+    lines: list[str] = []
+    for path in paths:
+        try:
+            lines += path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+    if len(paths) > 1:
+        # Each event begins with its UTC time in ISO form, which sorts as
+        # text; a line without one (a citation under its explanation) goes
+        # with the event above it, where it sorted to the end on its own.
+        blocks: list[list[str]] = []
+        for line in lines:
+            if blocks and "\t" not in line:
+                blocks[-1].append(line)
+            else:
+                blocks.append([line])
+        blocks.sort(key=lambda block: block[0].split("\t", 1)[0])
+        lines = [line for block in blocks for line in block]
     events: list[dict[str, str]] = []
     for line in lines[-limit:]:
         parts = line.split("\t", 2)
@@ -928,13 +1190,30 @@ def analyze_health(
     runs one level down, nothing at all, or a run that recorded none.
     """
     latest_error = status.get("latest_error")
+    stage = str(status.get("stage") or "").lower()
+    if str(status.get("status", "")).lower() in _GOING_STATUSES and stage in _PHASES_AFTER:
+        # The trajectory analysed or the report written, again or for the
+        # first time: nothing of the simulation is being sampled, so its
+        # record is not stale, and a failed run analysed again is running.
+        # Said "Telemetry is stale ... may have crashed" beside Stop.
+        return {
+            "state": "ok",
+            "headline": "Analysing" if stage == "analysis" else "Writing the report",
+            "message": ("The trajectory is being analysed." if stage == "analysis"
+                        else "The report is being written."),
+            "explanation": "The simulation has ended; its record is kept as it ended.",
+        }
     if str(status.get("status", "")).lower() == "stopped":
         # Asked to stop, not failed: its message says where it stopped.
         return {
             "state": "stopped",
             "headline": "Stopped",
             "message": str(latest_error or "The run was stopped."),
-            "explanation": STOPPED_EXPLANATION,
+            "explanation": (STOPPED_BEFORE_PRODUCTION_EXPLANATION
+                            if stage in ("setup", "minimization", "nvt", "npt")
+                            else STOPPED_IN_A_PHASE_AFTER_EXPLANATION
+                            if stage in _PHASES_AFTER
+                            else STOPPED_EXPLANATION),
         }
     if latest_error or str(status.get("status", "")).lower() == "failed":
         # The explanation used to be NUMERIC_EXPLANATION for every failure,

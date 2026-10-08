@@ -804,8 +804,9 @@
     setText("topbar-total", valueOrDash(status.total_planned_steps));
     const pct = progressPercent(status);
     setText("topbar-progress", pct != null ? `${pct.toFixed(1)}%` : "—");
-    // A run that has ended has no time left, whatever its last step.
-    setText("topbar-eta", run === "interrupted" ? "\u2014" : computeETA(status));
+    // A run that has ended has no time left, whatever its last step: a
+    // stopped run kept saying "5m 2s".
+    setText("topbar-eta", run === "running" ? computeETA(status) : "\u2014");
 
     const platform = status.platform || state.simManifest.platform || "";
     setText("sidebar-platform", platform || "\u2014");
@@ -1108,7 +1109,8 @@
      * hours between. */
     const wall = state.times?.wall_s ?? status.elapsed_wall_time_s;
     setText("live-elapsed-cell", wall != null ? fmtDuration(wall) : "—");
-    setText("live-eta-cell", computeETA(status));
+    setText("live-eta-cell", runState(status, String(status.status || "").toLowerCase()) === "running"
+      ? computeETA(status) : "\u2014");
     // Where the checkpoint is, from the study, and when the record was last
     // written, to the minute: the absolute path and the full date and time
     // were cut off in their cells. Both are kept whole in the cell's title.
@@ -1788,12 +1790,40 @@
     return hours ? `${hours}h ${minutes}m` : `${minutes}m ${secs}s`;
   }
 
+  /* Time left at the speed the run is stepping now: the steps left over
+   * the steps a second of its recent samples. The run's whole time so far
+   * includes building the system and the first, slow samples, so early in
+   * a run it said 33 minutes with about six left. Past its steps (analysis,
+   * report), or with no speed to go by, nothing is said. */
   function computeETA(status) {
     const step = Number(status.current_step);
     const total = Number(status.total_planned_steps);
-    const elapsed = Number(status.elapsed_wall_time_s);
-    if (!(step > 0) || !(total > 0) || !(elapsed >= 0) || step >= total) return step >= total ? "0m 0s" : "—";
-    return fmtDuration(elapsed * (total / step - 1));
+    if (!(step > 0) || !(total > 0) || step >= total) return "\u2014";
+    // Only from the steps the record saw taken: the run's whole time,
+    // setup and minimisation in it, said 39 minutes where 5 were left.
+    const rate = stepsPerSecond();
+    return rate > 0 ? fmtDuration((total - step) / rate) : "\u2014";
+  }
+
+  function stepsPerSecond() {
+    let samples = (state.metrics || []).map((row) => ({
+      step: Number(row.step), at: Date.parse(row.timestamp || ""),
+    })).filter((s) => s.step >= 0 && Number.isFinite(s.at));
+    // From where the steps began (the last sample at step 0, minimisation's
+    // end), and since the last long pause: a study carried on in pieces
+    // has the time between them in its record, and its rate jumped.
+    const began = samples.map((s) => s.step).lastIndexOf(0);
+    if (began > 0) samples = samples.slice(began);
+    let recent = samples.slice(-12);
+    const gaps = recent.slice(1).map((s, i) => s.at - recent[i].at);
+    const usual = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)] || 0;
+    const pause = gaps.reduce((at, gap, i) => (gap > Math.max(60000, 5 * usual) ? i + 1 : at), 0);
+    recent = recent.slice(pause);
+    if (recent.length < 2) return 0;
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const seconds = (last.at - first.at) / 1000;
+    return seconds > 0 && last.step > first.step ? (last.step - first.step) / seconds : 0;
   }
 
   function normaliseStage(value) {
@@ -1911,6 +1941,18 @@
       return {label: "Production",
         value: planned != null ? `0 of ${sayLength(planned)}` : sayLength(0),
         note: where + eq};
+    }
+    if (times.ended_in) {
+      // Ended before production began: how far its equilibration got, not
+      // the equilibration it planned, said as done.
+      const words = {setup: "setup", loading: "setup", minimization: "minimisation",
+                     nvt: "NVT equilibration", npt: "NPT equilibration"};
+      const eqPlanned = times.equilibration_planned_ns;
+      return {label: "Production",
+        value: planned != null ? `0 of ${sayLength(planned)}` : sayLength(0),
+        note: `ended in ${words[times.ended_in] || "its preparation"}` + (eqPlanned
+          ? `, ${sayLength(times.equilibration_ns || 0)} of the ${sayLength(eqPlanned)} of equilibration planned`
+          : "")};
     }
     const value = running && planned != null && done < planned
       ? `${sayLength(done)} of ${sayLength(planned)}` : sayLength(done);

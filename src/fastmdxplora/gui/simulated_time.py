@@ -100,7 +100,12 @@ def simulated_times(root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
         if extended:
             production_ns, pieces = extended
     equilibrating = running and stage in EQUILIBRATING and not production_ns
+    # Ended before its production began: its equilibration was not all done,
+    # and saying "0 ps production after 10 ps of equilibration" said it was.
+    ended_in = (stage if not running and stage in EQUILIBRATING + ("setup",)
+                and not production_ns and pieces == 1 else None)
     return {
+        "ended_in": ended_in,
         "production_ns": production_ns,
         "production_planned_ns": steps_to_ns(production_planned),
         "equilibration_ns": equilibration_ns,
@@ -124,6 +129,8 @@ def equilibration_said(times: dict[str, Any]) -> str:
     nothing is known of it."""
     if (times.get("pieces") or 1) > 1:
         return f"in {times['pieces']} pieces"
+    if times.get("ended_in"):
+        return ended_before_production(times)
     total = times.get("equilibration_planned_ns")
     if not total:
         return ""
@@ -131,6 +138,21 @@ def equilibration_said(times: dict[str, Any]) -> str:
              if times.get(key)]
     tail = f" ({', '.join(parts)})" if len(parts) > 1 else ""
     return f"after {say_length(total)} of equilibration{tail}"
+
+
+#: A stage before production, as a sentence says it.
+STAGE_SAID = {"setup": "setup", "loading": "setup", "minimization": "minimisation",
+              "nvt": "NVT equilibration", "npt": "NPT equilibration"}
+
+
+def ended_before_production(times: dict[str, Any]) -> str:
+    """"ended in NVT equilibration, 2 ps of the 10 ps planned" for a run
+    that ended before its production began."""
+    said = f"ended in {STAGE_SAID.get(times.get('ended_in') or '', 'its preparation')}"
+    done, planned = times.get("equilibration_ns"), times.get("equilibration_planned_ns")
+    if planned:
+        said += f", {say_length(done or 0.0)} of the {say_length(planned)} of equilibration planned"
+    return said
 
 
 def _when(value: Any) -> datetime:

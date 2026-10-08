@@ -1046,11 +1046,18 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 f"{where}` carries the run on from it, running again the steps "
                 "after it.")
     raise StudyError(
-        f"Production was stopped by {stop.name} at step {step:,} "
+        f"Production was stopped by {_who_asked(stop.name)} at step {step:,} "
         f"({done_ns:.3f} of {planned_ns:.3f} ns). {said}",
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
+
+
+def _who_asked(signal_name: str) -> str:
+    """A stop by what asked for it: Stop in the GUI, a scheduler and `kill`
+    all send SIGTERM, which the page said as "stopped by SIGTERM"."""
+    return {"SIGINT": "Ctrl+C",
+            "SIGTERM": "a request to stop (SIGTERM)"}.get(signal_name, signal_name)
 
 
 def _attach_checkpoint_reporter(

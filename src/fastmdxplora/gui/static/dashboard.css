@@ -5555,6 +5555,8 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .overview-phase[data-state="failed"] { border-top-color: var(--status-error); }
 .overview-phase[data-state="failed"] .phase-time { color: var(--status-error); }
 .overview-phase[data-state="skipped"] { border-top-style: dashed; }
+.overview-phase[data-state="stopped"] { border-top-color: var(--status-waiting); }
+.overview-phase[data-state="stopped"] .phase-time { color: var(--status-waiting); }
 /* Its facts as a list, each said once. */
 .overview-strip.overview-run-list {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px;

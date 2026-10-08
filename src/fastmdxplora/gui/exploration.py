@@ -642,7 +642,21 @@ class DashboardRuntime:
 
     def _process_failure_message(self) -> str:
         detail = ""
-        if self.log_path is not None:
+        # The run's own word on why it failed, where it recorded one: the
+        # log's last line was "Manifest: .../manifest.json" for a run that
+        # became unstable in NVT.
+        where = self.running_root or self.active_root
+        if where is not None:
+            try:
+                from fastmdxplora.gui.telemetry import read_study_status
+
+                recorded = read_study_status(Path(where))
+                if str(recorded.get("status") or "").lower() == "failed" \
+                        and recorded.get("latest_error"):
+                    detail = str(recorded["latest_error"]).strip().splitlines()[0]
+            except Exception:  # noqa: BLE001 - the log stands in
+                detail = ""
+        if self.log_path is not None and not detail:
             try:
                 lines = [
                     line.strip()
@@ -1642,6 +1656,15 @@ def _record_the_stop(root: Path) -> None:
             str(read_status(root / str(piece)).get("status") or "").lower() in _GOING_STATUSES \
             else root
         stage = str(status.get("stage") or "")
+        if stage in ("analysis", "report"):
+            # The simulation ended long since: only its status and reason
+            # are written, its times and stages left as the run left them
+            # (a full write made its time 78 hours and its date today's).
+            TelemetryWriter(root / "simulation", phases_only=True).write_status(
+                status="stopped",
+                latest_error=(f"Stopped here in the {'analysis' if stage == 'analysis' else 'report'}"
+                              ", as asked. The simulation is finished and kept."))
+            return
         said = {"minimization": "minimisation", "nvt": "NVT equilibration",
                 "npt": "NPT equilibration", "production": "production"}.get(stage, stage or "its run")
         before = stage in {"setup", "minimization", "nvt", "npt"}

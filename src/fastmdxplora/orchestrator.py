@@ -639,7 +639,7 @@ class FastMDXplora:
 
         merged_options = self._merge_options(options)
         dashboard_writer = self._dashboard_writer(merged_options, plan)
-        if dashboard_writer is not None:
+        if dashboard_writer is not None and not dashboard_writer.phases_only:
             self._initialize_dashboard_timeline(dashboard_writer, plan)
 
         # Remember the resolved phase selection + merged options so the
@@ -974,6 +974,11 @@ class FastMDXplora:
 
         if not active:
             return None
+        # Analysed or reported again: the record is the simulation's, and
+        # writing this run's phases into it called every stage before them
+        # skipped, its time the hours since the run began and its date
+        # today's. Only the phases run now are marked in it.
+        phases_only = not simulates and _a_simulation_recorded(self.output_dir)
 
         try:
             from fastmdxplora.gui.telemetry import TelemetryWriter
@@ -981,6 +986,7 @@ class FastMDXplora:
             return TelemetryWriter(
                 self.output_dir / "simulation",
                 enabled=True,
+                phases_only=phases_only,
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug(
@@ -1723,6 +1729,24 @@ def _same_directory(first: Path, second: Path) -> bool:
         return Path(first).resolve() == Path(second).resolve()
     except OSError:
         return False
+
+
+def _a_simulation_recorded(output_dir: Path) -> bool:
+    """Whether the study's live record is of a simulation it ran: a stage
+    of one was taken, or the record counts its steps."""
+    import json
+
+    try:
+        record = json.loads((Path(output_dir) / "simulation" / "live_status.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    states = record.get("stage_states") if isinstance(record.get("stage_states"), dict) else {}
+    taken = any(str(states.get(name) or "").lower() not in ("", "waiting", "skipped")
+                for name in ("minimization", "nvt", "npt", "production"))
+    return taken or bool(record.get("total_planned_steps"))
 
 
 RUN_PROCESS_FILE = ".fastmdxplora_run.json"

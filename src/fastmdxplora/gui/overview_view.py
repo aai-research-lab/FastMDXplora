@@ -363,6 +363,21 @@ def _phases(root: Path) -> list[dict[str, Any]]:
     except (OSError, ValueError):
         return []
     found = [p for p in (manifest.get("phases") or []) if isinstance(p, dict) and p.get("name")]
+    # A study being carried on in a piece: its Manifest still says how the
+    # first piece ended ("Simulation stopped" the whole carry-on through).
+    carried_on = None
+    if any(root.glob("segment-*")):
+        from fastmdxplora.gui.telemetry import status_as_it_stands
+
+        going = status_as_it_stands(root)
+        production = str((going.get("stage_states") or {}).get("production") or "").lower()
+        if going.get("piece"):
+            # Its simulation finished in the piece, while the joined
+            # trajectory is analysed and reported ("Simulation stopped"
+            # read until the end); or still going in it.
+            carried_on = ("ok" if production == "completed" else "running"
+                          if str(going.get("status") or "").lower() in ("running", "starting")
+                          else None)
     order = {name: i for i, name in enumerate(_PHASES)}
     found.sort(key=lambda p: order.get(str(p.get("name")), len(order)))
     phases = []
@@ -374,8 +389,15 @@ def _phases(root: Path) -> list[dict[str, Any]]:
             seconds = max(0.0, (ended - began).total_seconds())
         except (KeyError, ValueError, TypeError):
             pass
-        phases.append({"name": str(phase["name"]), "status": str(phase.get("status") or ""),
-                       "seconds": seconds})
+        status = str(phase.get("status") or "")
+        if status == "error" and str((phase.get("refusal") or {}).get("code") or "") \
+                == "simulation.run.stopped":
+            # Asked to stop, as the health card beside it says: it read
+            # "Simulation failed" beside "Stopped".
+            status = "stopped"
+        if carried_on and phase.get("name") == "simulation" and status in ("stopped", "error"):
+            status = carried_on
+        phases.append({"name": str(phase["name"]), "status": status, "seconds": seconds})
     return phases
 
 

@@ -327,7 +327,11 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     from fastmdxplora.simulation.resume import _still_running
 
     try:
-        if _still_running(root):
+        # A study carried on keeps the record of its process in the piece
+        # being run: it was offered to be carried on again while it was.
+        if _still_running(root) or any(_still_running(piece)
+                                       for piece in sorted(root.glob("segment-*"))
+                                       if piece.is_dir()):
             return []
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
@@ -339,6 +343,17 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         # Its record still says it is going: any Manifest is an earlier
         # run's, and says nothing of this one.
         return [interrupted]
+    if any(root.glob("segment-*")):
+        # Stopped again while carried on: the study's Manifest still says
+        # the first stop (its step, its figures); the pieces say this one.
+        from fastmdxplora.gui.telemetry import status_as_it_stands
+
+        try:
+            stands = status_as_it_stands(root)
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            stands = {}
+        if stands.get("piece") and stands.get("status") == "stopped":
+            return _stopped_unrecorded(root)
     manifest = _read(root / "manifest.json")
     if not isinstance(manifest, dict):
         return _stopped_unrecorded(root)
@@ -362,8 +377,16 @@ def _stopped_unrecorded(root: Path) -> list[Remedy]:
         return []
     if stands.get("status") != "stopped":
         return []
+    if str(stands.get("stage") or "").lower() in ("analysis", "report"):
+        # Stopped while analysed or reported again: the simulation is whole,
+        # and `fastmdx resume` made an empty piece of it and failed. Analyze
+        # again and Write it again are the way back, where they are.
+        return []
     why = str(stands.get("latest_error") or "The run was stopped before it finished.")
-    return [_resume(STOPPED_CODE, why, "the study", [root], root)]
+    # What remains is the newest piece's, where the study was carried on.
+    piece = stands.get("piece")
+    folder = root / piece if isinstance(piece, str) and (root / piece).is_dir() else root
+    return [_resume(STOPPED_CODE, why, "the study", [folder], root)]
 
 
 #: The refusal said of a run that ended without recording its end.
@@ -974,6 +997,60 @@ def _speed(folder: Path | None, study: Path | None) -> tuple[float | None, str]:
             continue
         if seconds is not None and seconds > 0:
             return seconds, platform
+    # A run that stopped wrote no cost record: the speed its live record
+    # measured in production, which the Overview gives beside its platform
+    # ("CPU, 4.314 ns/day") while this said no speed had been measured.
+    for candidate in dict.fromkeys(candidates):
+        rate, platform = _speed_it_recorded(candidate)
+        if rate is not None:
+            return rate, platform
+    return None, ""
+
+
+def _speed_it_recorded(folder: Path) -> tuple[float | None, str]:
+    """Seconds per nanosecond from the last production sample of a run's
+    live record that measured a speed, and its platform."""
+    from datetime import datetime
+
+    from fastmdxplora.gui.telemetry import read_metrics, read_status
+
+    try:
+        rows = read_metrics(folder, limit=None)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return None, ""
+    status = read_status(folder)
+    platform = str(status.get("platform") or "")
+    # From the production's own steps and times: the live record's speed
+    # is an average from the run's start, setup and minimisation in it, and
+    # priced a stop's remainder three times what the sidebar's time left
+    # said.
+    timestep = status.get("timestep_fs")
+    taken = []
+    for row in rows:
+        if "production" not in str(row.get("stage") or "").lower():
+            continue
+        try:
+            step = float(row.get("step"))
+            when = datetime.fromisoformat(str(row.get("timestamp")).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        taken.append((when, step))
+    if isinstance(timestep, (int, float)) and timestep > 0 and len(taken) >= 2:
+        (began, first), (ended, last) = taken[0], taken[-1]
+        seconds = (ended - began).total_seconds()
+        ns = (last - first) * timestep * 1e-6
+        # Seconds apart at least, or the clock's resolution is the rate.
+        if seconds >= 5 and ns > 0:
+            return seconds / ns, platform
+    for row in reversed(rows):
+        if "production" not in str(row.get("stage") or "").lower():
+            continue
+        try:
+            speed = float(row.get("speed") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if speed > 0:
+            return 86400.0 / speed, platform
     return None, ""
 
 

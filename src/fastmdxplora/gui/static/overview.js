@@ -243,7 +243,9 @@
       item.dataset.state = status === "ok" ? "done" : status === "error" ? "failed" : status;
       item.appendChild(make("span", "phase-name", PHASE_WORDS[phase.name] || phase.name));
       item.appendChild(make("span", "phase-time mono",
-        status === "error" ? "failed" : status === "skipped" ? "skipped" : duration(phase.seconds)));
+        status === "error" ? "failed" : status === "stopped" ? "stopped"
+          : status === "running" ? "running"
+          : status === "skipped" ? "skipped" : duration(phase.seconds)));
       return item;
     }));
   }
@@ -266,8 +268,11 @@
     var known = platform && platform !== "—";
     if (prow) prow.hidden = !known;
     if (known) {
+      // No speed where none was measured: a run that failed before its
+      // first sample read "CPU · 0.0000 ns/day".
+      var measured = speed && speed !== "\u2014" && parseFloat(speed.replace(/,/g, "")) > 0;
       byId("overview-platform-cell").textContent = platform +
-        (speed && speed !== "—" ? " · " + speed + " ns/day" : "");
+        (measured ? " · " + speed + " ns/day" : "");
     }
     renderVerdict();
   }
