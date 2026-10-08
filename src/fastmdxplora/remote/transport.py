@@ -178,8 +178,12 @@ class Transport:
         # than leaving a person looking at nothing for ten minutes.
         capture = {} if show else {"capture_output": True}
         try:
+            # A machine's answer is read as UTF-8 with anything else replaced:
+            # a log cut inside a character, or written in another encoding,
+            # is still read.
             done = self._run(command, input=stdin, text=True, timeout=timeout,
-                             check=False, **capture)
+                             check=False, encoding="utf-8", errors="replace",
+                             **capture)
         except FileNotFoundError as exc:
             raise StudyError(
                 "There is no ssh command on this computer, and FastMDXplora "
@@ -198,7 +202,7 @@ class Transport:
             ) from exc
         if done.returncode == 255:
             said = (done.stderr or "").strip().splitlines()
-            reason = said[-1] if said else "ssh exited without saying why"
+            reason = said[-1][-300:] if said else "ssh exited without saying why"
             raise StudyError(
                 f"Could not reach {self.name} over ssh: {reason}. Check that "
                 f"`ssh {self.name}` works from this terminal.",

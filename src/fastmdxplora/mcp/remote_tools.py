@@ -106,8 +106,8 @@ def _list_machines(ctx: Context, args: dict[str, Any]) -> str:
         gpus = machine.gpus or ("no GPU on the login node" if machine.kind == "slurm"
                                 else "no GPU found")
         when = machine.inspected_at.replace("T", " ").replace("Z", " UTC")
-        lines.append(f"  {machine.name} ({machine.kind}, {gpus}): {state}: "
-                     f"{machine.summary} (inspected {when})")
+        lines.append(f"  {machine.name} ({machine.kind}, {gpus[:200]}): {state}: "
+                     f"{machine.summary[:300]} (inspected {when})")
         if not machine.ready:
             lines.append(f"    The person makes it ready at a terminal: `fastmdx remote "
                          f"install --machine {machine.name}`.")
@@ -188,7 +188,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     message = "\n".join([
         f"Send the study in {ctx.workspace.shown(file)} to {machine} and run it there?",
         *_plan_lines(config),
-        f"Runs in: {sending.installation.path} on {machine}"
+        f"Runs in: {sending.installation.path[:200]} on {machine}"
         f" ({'SLURM' if sending.scheduler == 'slurm' else 'a detached process'})",
         *(["Sent with it:", *travels] if travels else []),
         *([f"Fetched there from RCSB: {', '.join(sending.inputs.fetched)}"]
@@ -197,7 +197,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     ])
     # The answer is to this send: what travels, each size, where it runs.
     sent = hashlib.sha256("\n".join([
-        sending.installation.path, sending.remote_dir,
+        sending.installation.path, sending.remote_dir, sending.config_text,
         *(f"{name}={source}={_bytes(source)}"
           for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
     agreed = _went_ahead(ctx, "send", message,

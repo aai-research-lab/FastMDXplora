@@ -263,7 +263,9 @@ cancel it first.
 while a job sent from here is waiting or running there is refused
 (`remote.machine.busy`), after asking the machine about that job there and
 then; a job cancelled from here counts until its processes have stopped (a run
-in production stops at its next frame). `--dry-run` still shows the plan, with
+in production stops at its next frame), for up to an hour, where the machine
+has `setsid` to start a job in a process group of its own (a Linux machine
+does; without it, a cancelled job counts as stopped at once). `--dry-run` still shows the plan, with
 a line saying so. A cluster's
 scheduler queues, so any number may be sent to a cluster.
 
@@ -297,8 +299,11 @@ and says so if the code that ran is not the code that sent it. A link left in
 the run on the machine is not copied, and anything else neither a file nor a
 folder is taken out (said), each folder that came back is given its owner's
 read, write and search, and set-id bits are cleared; what was in the folder
-before the fetch is left as it was. So nothing fetch writes or reads here
-afterwards leads out of the job's folder. An AI app's fetch is said in bytes first, and a
+before the fetch is left as it was. The copy goes into a folder of its own
+inside the results folder, which only you can enter, and is moved into place
+only once all of it has been looked over, so a fetch that fails leaves nothing
+behind. So nothing fetch writes or reads here afterwards leads out of the job's
+folder. An AI app's fetch is said in bytes first, and a
 file larger than the whole it said stays on the machine, named.
 
 A study sent with a prepared system (`simulation.setup_from`) names it there as

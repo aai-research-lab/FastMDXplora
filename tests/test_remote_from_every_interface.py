@@ -713,7 +713,7 @@ class TestThirdReview:
     def test_a_job_cancelled_and_still_stopping_keeps_the_machine_busy(
             self, machine, tmp_path):
         env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
-        travels._tool(env, "trap '' TERM\nsleep 3")
+        travels._tool(env, "trap '' TERM\nsleep 6")
         first = _send(machine)
         time.sleep(0.3)
         cancel(first.name, transport=machine.transport())
@@ -763,3 +763,121 @@ class TestThirdReview:
         assert first["isError"]
         assert "Set `output` in the config to a new folder name" in _text(first)
         assert not _sent(app)
+
+
+# ---------------------------------------------------------------------------
+# The fourth review's cases
+# ---------------------------------------------------------------------------
+class TestFourthReview:
+    def test_the_results_folder_does_not_take_the_machine_s_mode(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        Path(job.run_dir).chmod(0o3777)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert machine.back.stat().st_mode & 0o7002 == 0
+        assert (machine.back / "manifest.json").is_file()
+
+    def test_a_fetch_that_fails_leaves_nothing_of_itself(self, machine):
+        import os
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        os.mkfifo(Path(job.run_dir) / "pipe")
+
+        def copies_then_fails(command, **kwargs):
+            machine.local(command, **kwargs)
+            return type("Done", (), {"returncode": 23})()
+
+        with pytest.raises(ValueError):
+            fetch(job.name, transport=machine.transport(),
+                  local_runner=copies_then_fails, code=RELEASE)
+        assert list(machine.back.iterdir()) == []
+
+    def test_a_log_cut_inside_a_character_is_still_read(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import JOB_LOG_KEPT, fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        # Three bytes a tick: the last MiB starts inside one.
+        (Path(job.remote_dir) / "job.log").write_text("✓" * (JOB_LOG_KEPT // 3 + 2),
+                                                      encoding="utf-8")
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert (machine.back / "remote_job.log").read_text(encoding="utf-8").endswith(
+            "✓")
+
+    def test_an_exit_code_that_is_not_one_is_not_kept_whole(self, machine):
+        from pathlib import Path
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.remote_dir) / "exit_code").write_text("x" * 200_000)
+        job = status(job.name, transport=machine.transport())
+        assert job.state == "failed" and len(job.detail) < 100
+
+    def test_a_record_that_cannot_be_read_stops_nothing(self, machine, tmp_path):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        jobs_dir().mkdir(parents=True, exist_ok=True)
+        (jobs_dir() / "broken.json").write_text("{not json")
+        (jobs_dir() / "partial.json").write_text('{"name": "partial"}')
+        sending = prepare(machine.study, "box", output=str(tmp_path / "back" / "x"),
+                          code=RELEASE, transport=machine.transport())
+        assert sending.busy == ""
+        assert api.jobs(under=tmp_path) == []
+
+    def test_what_a_fetch_writes_is_readable_as_any_file_here(self, machine):
+        import os
+        import stat
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        mask = os.umask(0o022)
+        try:
+            fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+                  code=RELEASE)
+        finally:
+            os.umask(mask)
+        for name in ("fetched.json", "remote_job.log"):
+            assert stat.S_IMODE((machine.back / name).stat().st_mode) & 0o044 == 0o044
+
+    def test_two_sends_at_once_put_one_study_on_a_workstation(self, machine, tmp_path):
+        import threading
+
+        machine.env["FAKE_SLEEP"] = "30"
+        planned = [prepare(machine.study, "box", output=str(tmp_path / "back" / f"s{i}"),
+                           code=RELEASE, transport=machine.transport()) for i in range(2)]
+        outcomes: list[object] = []
+
+        def go(sending) -> None:
+            try:
+                outcomes.append(send(sending, transport=machine.transport(),
+                                     local_runner=machine.local, code=RELEASE))
+            except ValueError as exc:
+                outcomes.append(refusal_of(exc).code)
+
+        threads = [threading.Thread(target=go, args=(p,)) for p in planned]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        sent = [o for o in outcomes if not isinstance(o, str)]
+        try:
+            assert len(sent) == 1
+            assert outcomes.count("remote.machine.busy") == 1
+        finally:
+            for job in sent:
+                cancel(job.name, transport=machine.transport())

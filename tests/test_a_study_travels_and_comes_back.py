@@ -93,6 +93,7 @@ class Here:
         remote = command[-1]
         self.commands.append(remote)
         return subprocess.run(["sh", "-c", remote], input=input, text=True,
+                              encoding=kwargs.get("encoding"), errors=kwargs.get("errors"),
                               capture_output=kwargs.get("capture_output", True),
                               env=self.env, timeout=60, check=False)
 

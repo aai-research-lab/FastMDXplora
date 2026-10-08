@@ -154,7 +154,12 @@ def send(config: str | Path, machine: str, *, output: str | Path | None = None,
 def jobs(*, under: str | Path | None = None) -> list[Job]:
     """The jobs sent from this computer, as last recorded; only those whose
     results come back inside ``under``, where given."""
-    found = [load_job(name) for name in job_names()]
+    found = []
+    for name in job_names():
+        try:
+            found.append(load_job(name))
+        except (ValueError, TypeError):
+            continue  # a record that cannot be read is not a job to offer
     if under is None:
         return found
     root = Path(under).resolve()

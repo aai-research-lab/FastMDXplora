@@ -89,6 +89,10 @@ __all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "FetchSizes", "Sending",
 #: How long an answer about a job is kept for a caller that asks for it.
 STATUS_KEPT_S = 30.0
 
+#: The process's file-creation mask, read once while nothing else runs.
+_UMASK = os.umask(0o022)
+os.umask(_UMASK)
+
 #: How much of a job's own log a fetch brings, from its end.
 JOB_LOG_KEPT = 1 << 20
 
@@ -275,7 +279,10 @@ def _busy_with(machine_name: str, link: Transport) -> Job | None:
     from fastmdxplora.remote.jobs import job_names
 
     for name in job_names():
-        job = load_job(name)
+        try:
+            job = load_job(name)
+        except (ValueError, TypeError):
+            continue  # a record that cannot be read names no machine
         if job.machine != machine_name:
             continue
         if job.state == ABANDONED and job.scheduler == "process":
@@ -413,7 +420,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
     if started.returncode != 0 or not handle.isdigit():
         raise StudyError(
             f"{sending.machine.name} did not start the job: "
-            f"{(started.stderr or started.stdout).strip() or 'no answer'}",
+            f"{(started.stderr or started.stdout).strip()[-_SAID_CHARS:] or 'no answer'}",
             code="environment.service.machine_unreachable",
             machine=sending.machine.name, reason="the job did not start")
 
@@ -452,11 +459,15 @@ def _status_script(job: Job) -> str:
 
 
 def _read(text: str) -> dict[str, list[str]]:
+    """The ``fmdx:`` lines of a machine's answer, bounded: each value at
+    most 4 kB, each key at most 50 lines, whatever the machine sends."""
     found: dict[str, list[str]] = {}
     for line in text.splitlines():
         if line.startswith("fmdx:"):
             key, _, value = line[5:].partition("=")
-            found.setdefault(key, []).append(value)
+            values = found.setdefault(key[:40], [])
+            if len(values) < 50:
+                values.append(value[:4096])
     return found
 
 
@@ -526,11 +537,15 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
         job.state, job.detail = FAILED, f"{job.remote_dir} is no longer there"
         save_job(job)
         return job
-    exit_code = (found.get("exit_code") or [""])[0].strip()
+    ended_with = (found.get("exit_code") or [""])[0].strip()
+    if not re.fullmatch(r"-?[0-9]{1,6}", ended_with):
+        ended_with = "unreadable" if ended_with else ""
     slurm = (found.get("slurm") or [""])[0].strip().split(" ")[0].rstrip("+")
-    if exit_code:
-        job.state = DONE if exit_code == "0" else FAILED
-        job.detail = "" if exit_code == "0" else f"exit code {exit_code}"
+    if not re.fullmatch(r"[A-Z_]{1,40}", slurm):
+        slurm = ""
+    if ended_with:
+        job.state = DONE if ended_with == "0" else FAILED
+        job.detail = "" if ended_with == "0" else f"exit code {ended_with}"
     elif job.scheduler == "slurm" and slurm:
         job.state = _SLURM_STATES.get(slurm, RUNNING)
         job.detail = slurm.lower()
@@ -633,7 +648,6 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
             code="remote.job.unfinished", given=name, state=job.state)
     target = Path(job.local_output)
     target.mkdir(parents=True, exist_ok=True)
-    before = _entries_in(target)
     # A link the machine left is not copied: written through or read here,
     # it would lead out of the job's folder.
     excludes: list[str] = ["--no-links"]
@@ -646,41 +660,49 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
         found = link.run(["find", job.run_dir, "-type", "f", "(",
                           *" -o ".join(f"-name {p}" for p in TRAJECTORY_PATTERNS
                                        ).split(), ")"])
-        left = [line for line in found.stdout.splitlines() if line.strip()]
+        left = [line[:_SAID_CHARS] for line in found.stdout.splitlines()
+                if line.strip()][:200]
     over: list[str] = []
     if most_bytes is not None:
-        # What the cap leaves behind is said, never left out unsaid.
+        # What the cap leaves behind is said, never left out unsaid;
+        # trajectories left behind are said as such, not as over the cap.
         found_over = link.run(["find", job.run_dir, "-type", "f", "-size",
                                f"+{max(int(most_bytes), 1)}c"])
-        # Trajectories left behind are said as such, not as over the cap.
-        over = [line for line in found_over.stdout.splitlines()
-                if line.strip() and line not in set(left)]
-    copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{target}/", *excludes),
-                      runner=local_runner, what="fetching a study")
-    # 24 is rsync's "some source files vanished": a file removed between
-    # listing and copying. Not a failed copy of what is there.
-    if copied not in (0, 24):
-        raise StudyError(
-            f"Fetching {name} from {job.machine} failed (rsync exit {copied}).",
-            code="environment.service.machine_unreachable",
-            machine=job.machine, reason=f"rsync exit {copied}")
-    # The job's own log, its last MiB, read as text: a file of the machine's
-    # choosing in that place could be anything, a folder or a gigabyte.
-    log = shlex.quote(f"{job.remote_dir}/job.log")
-    said = link.run(["sh", "-c", f"[ -f {log} ] && [ ! -L {log} ] && "
-                                 f"tail -c {JOB_LOG_KEPT} {log}"])
-    if said.returncode == 0:
-        _written_into(target, "remote_job.log", said.stdout)
+        over = [line[:_SAID_CHARS] for line in found_over.stdout.splitlines()
+                if line.strip() and line[:_SAID_CHARS] not in set(left)]
 
     warnings: list[str] = []
-    warnings += _only_files_and_folders(target, before)
+    # Copied into a folder of its own first, which only this user can enter,
+    # and looked over there: nothing reaches the results folder until all of
+    # it has been, and a copy that fails leaves nothing behind.
+    staging = Path(tempfile.mkdtemp(prefix=".fetching-", dir=target))
+    try:
+        arrived = staging / "run"
+        copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{arrived}/",
+                                             *excludes),
+                          runner=local_runner, what="fetching a study")
+        # 24 is rsync's "some source files vanished": a file removed between
+        # listing and copying. Not a failed copy of what is there.
+        if copied not in (0, 24):
+            raise StudyError(
+                f"Fetching {name} from {job.machine} failed (rsync exit {copied}).",
+                code="environment.service.machine_unreachable",
+                machine=job.machine, reason=f"rsync exit {copied}")
+        arrived.mkdir(exist_ok=True)
+        warnings += _only_files_and_folders(arrived)
+        log_said = _job_log(job, link)
+        if log_said is not None:
+            _written_into(arrived, "remote_job.log", log_said)
+        _moved_into(arrived, target)
+    finally:
+        _removed(staging)
     if over:
         warnings.append(
             f"{len(over)} file(s) larger than the whole fetch was said to be stayed "
             f"on {job.machine}: {', '.join(over[:5])}"
             + (" and more" if len(over) > 5 else "") + ".")
     if left:
-        job.extra["left_on_machine"] = [p[:_SAID_CHARS] for p in left[:200]]
+        job.extra["left_on_machine"] = left
         warnings.append(
             f"{len(left)} trajectory and checkpoint file(s) stayed on "
             f"{job.machine} in {job.run_dir}; fetch again with "
@@ -753,59 +775,51 @@ def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
     return warnings
 
 
-def _entries_in(folder: Path) -> dict[str, tuple[int, int]]:
-    """What is in ``folder`` now, each entry by its inode and change time,
-    so what a fetch wrote can be told from what was there."""
-    found: dict[str, tuple[int, int]] = {}
-    for top, dirs, files in os.walk(folder, followlinks=False):
-        for name in dirs + files:
-            entry = Path(top) / name
-            try:
-                info = entry.lstat()
-            except OSError:
-                continue
-            found[str(entry.relative_to(folder))] = (info.st_ino, info.st_ctime_ns)
-    return found
+def _job_log(job: Job, link: Transport) -> str | None:
+    """The end of the job's own log, as text: at most its last MiB, a
+    regular file only, whatever the machine answers."""
+    log = shlex.quote(f"{job.remote_dir}/job.log")
+    try:
+        said = link.run(["sh", "-c", f"[ -f {log} ] && [ ! -L {log} ] && "
+                                     f"tail -c {JOB_LOG_KEPT} {log}"])
+    except StudyError:
+        return None  # the results came; the log is not worth failing them
+    if said.returncode != 0:
+        return None
+    return said.stdout[-JOB_LOG_KEPT:]
 
 
-def _only_files_and_folders(target: Path,
-                            before: dict[str, tuple[int, int]] | None = None) -> list[str]:
-    """Of what a fetch wrote into ``target`` (what is new since ``before``),
-    take out anything but files and folders (a named pipe would stop what
-    reads it), clear set-id, sticky and others-may-write bits, and give
-    every folder its owner's read, write and search, so nothing written is
-    left unseen; say what was taken out.
+def _only_files_and_folders(arrived: Path) -> list[str]:
+    """Of a fetch's copy, take out anything but files and folders (a named
+    pipe would stop what reads it), clear set-id, sticky and others-may-write
+    bits, and give every folder its owner's read, write and search, so
+    nothing in it is left unseen; say what was taken out.
 
     Fails closed: a folder that still cannot be read is a refusal, since
     what is in it could not be looked at.
     """
     import stat
 
-    before = before or {}
     loose = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
     removed: list[str] = []
     for _ in range(64):
         unread: list[str] = []
         opened = False
-        for top, dirs, files in os.walk(target, followlinks=False,
+        for top, dirs, files in os.walk(arrived, followlinks=False,
                                         onerror=lambda e, into=unread: into.append(e.filename)):
             for name in dirs + files:
                 entry = Path(top) / name
-                rel = str(entry.relative_to(target))
                 try:
-                    info = entry.lstat()
+                    mode = entry.lstat().st_mode
                 except OSError:
                     continue
-                if before.get(rel) == (info.st_ino, info.st_ctime_ns):
-                    continue  # there before the fetch: not ours to change
-                mode = info.st_mode
                 if stat.S_ISDIR(mode):
                     wanted = (stat.S_IMODE(mode) | stat.S_IRWXU) & ~loose
                 elif stat.S_ISREG(mode):
                     wanted = (stat.S_IMODE(mode) | stat.S_IRUSR | stat.S_IWUSR) & ~loose
                 else:
                     entry.unlink(missing_ok=True)
-                    removed.append(rel)
+                    removed.append(str(entry.relative_to(arrived))[:_SAID_CHARS])
                     continue
                 if wanted != stat.S_IMODE(mode):
                     try:
@@ -818,13 +832,54 @@ def _only_files_and_folders(target: Path,
         if unread and not opened:
             raise StudyError(
                 f"{unread[0]} came back from the fetch and cannot be read here, so "
-                "what is in it could not be checked. Look at it before using the "
-                "results.", code="environment.path.exists", path=str(unread[0]))
+                "what is in it could not be checked; nothing was fetched.",
+                code="environment.path.exists", path=str(unread[0]))
     if not removed:
         return []
     return [f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} that "
             f"{'is' if len(removed) == 1 else 'are'} neither a file nor a folder "
             f"came back and were removed: {', '.join(removed[:5])}."]
+
+
+def _moved_into(arrived: Path, target: Path) -> None:
+    """Everything under ``arrived`` moved into the same place under
+    ``target``: a file replaces what is there (a link of that name is
+    replaced, never written through), a folder joins a folder there."""
+    for top, dirs, files in os.walk(arrived, followlinks=False):
+        here = target / Path(top).relative_to(arrived)
+        for name in dirs:
+            place = here / name
+            if place.is_symlink() or (place.exists() and not place.is_dir()):
+                place.unlink()
+            place.mkdir(exist_ok=True)
+        for name in files:
+            place = here / name
+            if place.is_dir() and not place.is_symlink():
+                raise StudyError(
+                    f"{place} is a folder here, and the fetch brings a file of that "
+                    "name; nothing of it was put in place. Move the folder aside "
+                    "and fetch again.", code="environment.path.exists",
+                    path=str(place))
+            os.replace(Path(top) / name, place)
+
+
+def _removed(folder: Path) -> None:
+    """A fetch's own folder removed, whatever modes came back in it."""
+    import shutil
+    import stat
+
+    def opened(function, path, _info) -> None:
+        try:
+            os.chmod(os.path.dirname(path), stat.S_IRWXU)
+            os.chmod(path, stat.S_IRWXU)
+        except OSError:
+            pass
+        try:
+            function(path)
+        except OSError:
+            pass
+
+    shutil.rmtree(folder, onerror=opened)
 
 
 def _written_into(folder: Path, name: str, text: str) -> None:
@@ -833,6 +888,8 @@ def _written_into(folder: Path, name: str, text: str) -> None:
     through."""
     handle, scratch = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".part")
     try:
+        # As any file written here would be, not mkstemp's owner-only mode.
+        os.fchmod(handle, 0o666 & ~_UMASK)
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             out.write(text)
         os.replace(scratch, folder / name)
