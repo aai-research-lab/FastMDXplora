@@ -1035,6 +1035,27 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     return notes
 
 
+def _reproduction_section(project_root: Path) -> str:
+    """Where the study was written from a paper, what the paper reports
+    for it beside what this run determined (:mod:`fastmdxplora.paper.reproduction`).
+    A run of a study of several replicas says that the study's own
+    comparison pools them."""
+    try:
+        from fastmdxplora.paper.reproduction import reproduction_lines
+
+        lines = reproduction_lines(project_root)
+    except Exception:  # noqa: BLE001 - a report is worth more than this section
+        return ""
+    if not lines:
+        return ""
+    if project_root.parent.name == "runs" and (
+            project_root.parent.parent / "batch_manifest.json").is_file():
+        lines.insert(2, "_This is one run of the study's replicas, compared alone; the "
+                        "study's comparison report compares the mean of them all._")
+        lines.insert(3, "")
+    return "\n".join(lines).rstrip()
+
+
 def _citation_section() -> str:
     from fastmdxplora import __bibtex__, __citation__
 
@@ -1237,6 +1258,9 @@ def build_document(
     stopping = _stopping_section(project_root)
     if stopping:
         sections.append(stopping)
+    reproduced = _reproduction_section(project_root)
+    if reproduced:
+        sections.append(reproduced)
 
     sections.append(
         "## Discussion\n\n"

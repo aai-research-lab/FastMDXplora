@@ -234,6 +234,21 @@ TOP_LEVEL = PhaseSchema(
               example={"setup.ph": {"why": "the assay buffer is pH 7.0",
                                     "source": "person",
                                     "alternatives": ["7.4"]}}),
+        Field("paper", dict, None,
+              "The paper this study was written from, for a study "
+              "reproducing one (`fastmdx config --paper`): its `doi` and "
+              "`title`, which of its MD studies this is (`study`, `label`), "
+              "the AI model that read it (`read_by`), how each setting came "
+              "from it (`choices`), and what the paper reports for the study "
+              "(`claims`, each a `quantity`, `value`, `error`, `error_kind`, "
+              "`n`, `unit` and the paper's words, `quote`). A record, not a "
+              "setting: no run reads it, and the report sets each claim "
+              "beside what the study determined.",
+              example={"doi": "10.1371/journal.pone.0247841", "study": "S1",
+                       "claims": [{"quantity": "radius_of_gyration", "analysis": "rg",
+                                   "value": 1.422, "error": 0.016,
+                                   "error_kind": "standard_deviation", "n": 3,
+                                   "unit": "nm"}]}),
         Field("explain", bool, True,
               "Say why each step happens as it happens, with a reference "
               "where there is one worth reading. On, because a pipeline that "
@@ -1111,7 +1126,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "Whether an AI model was involved and which one, so the record "
          "identifies the software rather than the category, and why each "
          "setting chosen has its value.",
-         ("agent", "agent_model", "decisions")),
+         ("agent", "agent_model", "decisions", "paper")),
         ("What it may spend",
          "A ceiling for a study nobody is watching, checked after setup "
          "when the particle count -- and so the cost -- is first known.",
@@ -1257,6 +1272,7 @@ UNSET_MEANS: dict[str, str] = {
     "agent_model": "no AI model involved",
     "budget_hours": "no ceiling",
     "decisions": "none recorded",
+    "paper": "not written from a paper",
     "setup.agent": "as the study says",
     "simulation.agent": "as the study says",
     "analysis.agent": "as the study says",

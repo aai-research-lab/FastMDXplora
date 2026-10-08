@@ -332,6 +332,14 @@ CODES: tuple[Code, ...] = (
          "A file of a shared study is missing, unlisted, or not the size or SHA-256 "
          "its packing list gives.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("environment.paper.unreadable",
+         "What was given as a paper is not a file a paper is read from, holds no "
+         "text, or is larger than a paper is.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, detail_keys=("path",)),
+    Code("environment.paper.not_open",
+         "A paper named by its identifier is not open access where it would be "
+         "fetched, so its file is needed.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, detail_keys=("identifier",)),
     Code("environment.path.exists",
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,

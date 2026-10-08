@@ -115,6 +115,7 @@ _ROLES = {
     "agent": "provenance",
     "agent_model": "provenance",
     "decisions": "provenance",
+    "paper": "provenance",
     "setup.agent": "provenance",
     "simulation.agent": "provenance",
     "analysis.agent": "provenance",

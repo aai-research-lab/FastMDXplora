@@ -1537,6 +1537,41 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite the file if it already exists.",
     )
+    cf.add_argument(
+        "--paper",
+        metavar="SOURCE",
+        default=None,
+        help=("Write configs that reproduce a paper's MD studies: a PDF, the "
+              "paper's JATS XML, a Word or text file, or the DOI, PMCID or arXiv "
+              "identifier of an open-access paper. The AI model chosen with "
+              "`fastmdx agent model` lists its studies, and each value it reads "
+              "is checked against the paper's own words. Without "
+              "--paper-studies, the studies are listed and nothing is written."),
+    )
+    cf.add_argument(
+        "--paper-si",
+        metavar="FILE",
+        action="append",
+        default=None,
+        help=("The paper's supporting information (PDF, Word, text), where its "
+              "methods are. Repeat for several files. Fetched with the paper "
+              "where Europe PMC serves it."),
+    )
+    cf.add_argument(
+        "--paper-studies",
+        metavar="IDS",
+        default=None,
+        help=("Which of the paper's studies to write: their ids (S1,S3), or all. "
+              "One study is written to -f FILE, several beside it as "
+              "FILE-s1.yml and so on."),
+    )
+    cf.add_argument(
+        "--paper-until-determined",
+        action="store_true",
+        help=("Run each study until the results the paper reports with an error "
+              "are determined to that error, at most the paper's length, rather "
+              "than for the paper's length."),
+    )
 
     return parser
 
@@ -2835,6 +2870,16 @@ def _remote_job(args: argparse.Namespace) -> int:
 
 def _cmd_config(args: argparse.Namespace) -> int:
     from fastmdxplora.config import generate_template
+
+    if getattr(args, "paper", None):
+        from fastmdxplora.paper.command import config_from_paper
+
+        return config_from_paper(args)
+    if getattr(args, "paper_si", None) or getattr(args, "paper_studies", None) or getattr(
+            args, "paper_until_determined", False):
+        print("fastmdx config: --paper-si, --paper-studies and --paper-until-determined "
+              "go with --paper.", file=sys.stderr)
+        return 2
 
     out_path = Path(args.config_file)
     if out_path.exists() and not args.force:

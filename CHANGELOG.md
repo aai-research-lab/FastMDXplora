@@ -7,6 +7,26 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A paper's MD studies, as configs
+
+**Added:** `fastmdx config --paper` reads a paper (a PDF, a JATS XML, a Word
+file, or an open-access paper by its DOI, PMCID or arXiv id) and lists the
+molecular dynamics studies it reports; `--paper-studies` writes one, several
+or all as configs, `--paper-si` reads its supporting information too, and
+`--paper-until-determined` runs each until its measures are determined
+rather than for the paper's length. The AI model chosen with `fastmdx agent
+model` reads the paper, and each value it gives is used only where the
+paper's own words, quoted, hold it; each setting says whether it is as
+stated, not stated (this software's value), differs (and why) or needs you.
+A study this software cannot run (a method, force field or water model
+OpenMM does not have) is said with why and not written. The config's new
+key `paper` keeps where it came from and the results the paper reports, and
+a study that needs something given will not run until it is. Once it has
+run, its report and a study's comparison report set each result beside the
+mean determined here, with a verdict the numbers allow. A paper free to read
+but not licensed for programs is not fetched (`environment.paper.not_open`).
+Needs `pypdf`. See `docs/papers.md`.
+
 ### The Agent page, as the Agent
 
 **Changed:** the Agent page and `fastmdx agent` speak as the Agent: its AI

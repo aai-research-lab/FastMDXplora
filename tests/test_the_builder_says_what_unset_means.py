@@ -46,7 +46,7 @@ class TestUnsetIsSaid(unittest.TestCase):
         from fastmdxplora.config.loader import settings_named
         from fastmdxplora.config.schema import UNSET_MEANS
 
-        known = settings_named() | {"decisions"}
+        known = settings_named() | {"decisions", "paper"}
         self.assertEqual(sorted(set(UNSET_MEANS) - known), [])
 
 

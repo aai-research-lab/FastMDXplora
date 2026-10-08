@@ -311,7 +311,7 @@ def sourced(lines: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[st
 
 
 #: Keys a change of version does not show: who wrote it and why.
-_NOT_A_CHANGE = ("agent", "agent_model", "decisions")
+_NOT_A_CHANGE = ("agent", "agent_model", "decisions", "paper")
 _MISSING = object()
 _LABELLED = {"systems": "System", "analysis.include": "Analyses",
              "analysis.exclude": "Analyses left out"}

@@ -82,6 +82,9 @@ dependencies = [
     # was in the [pdf] extra, so a pip install without it showed the report
     # in the GUI as plain Markdown, with no figure in it. Pure Python, small.
     "markdown>=3.4",
+    # A paper's text, read to reproduce its MD studies (fastmdxplora.paper):
+    # the PDF a person has of it. Pure Python, small.
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]

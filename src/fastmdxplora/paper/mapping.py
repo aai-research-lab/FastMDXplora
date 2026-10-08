@@ -1,0 +1,1313 @@
+"""A study read from a paper, written as a config this software runs.
+
+Each setting the paper states is set as it states it, with the paper's
+words as its reason (the config's ``decisions``). Each choice is said with
+one of five words (:data:`LABELS`):
+
+``as_stated``     set as the paper states it
+``not_stated``    the paper does not say; this software's own value is used,
+                  or one the paper's other settings imply, with why
+``differs``       the paper states it, and it is done here otherwise (OpenMM
+                  thermostats by Langevin dynamics; a GROMACS force switch is
+                  a potential switch here), with how
+``needs_you``     what the paper gives cannot be set from its words alone:
+                  a structure from a model, a method's collective variables
+``not_possible``  this software cannot run it (a force field OpenMM does not
+                  ship, coarse-grained models, free-energy perturbation)
+
+A study is ``ready`` when every choice is as stated or not stated, ``with
+differences`` when some differ, ``needs you`` when something must be
+supplied before it runs, and ``cannot run`` when anything is not possible;
+a study that cannot run gets no config. A config that needs you is written
+so that it is refused until it is completed: its structure is a file that
+is not there, or its method's block is empty.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from fastmdxplora.paper.quotes import squash
+
+__all__ = ["LABELS", "plan_study", "method_said_by", "ensemble_said_by",
+           "openmm_files", "STRUCTURE_TO_GIVE", "slug"]
+
+LABELS = ("as_stated", "not_stated", "differs", "needs_you", "not_possible")
+
+#: Where a study's structure goes when the paper names none this can fetch:
+#: a file that is not there, so the config is refused until it is given.
+STRUCTURE_TO_GIVE = "GIVE-THE-STARTING-STRUCTURE.pdb"
+
+
+@dataclass
+class Choice:
+    field: str
+    label: str
+    why: str
+    setting: str = ""
+    value: Any = None
+    quote: str = ""
+    where: str = ""
+
+    def as_record(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"field": self.field, "label": self.label, "why": self.why}
+        if self.setting:
+            out["setting"] = self.setting
+            out["value"] = self.value
+        if self.quote:
+            out["quote"] = self.quote
+            out["where"] = self.where
+        return out
+
+
+def slug(text: str, most: int = 40) -> str:
+    out = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+    return (out[:most].rstrip("-") or "study")
+
+
+def distinct(names: list[str]) -> list[str]:
+    """``names`` with each repeat numbered (``s1``, ``s1-2``), so no two
+    files written from one paper are one file."""
+    seen: dict[str, int] = {}
+    out = []
+    taken = set(names)
+    for name in names:
+        seen[name] = seen.get(name, 0) + 1
+        if seen[name] == 1:
+            out.append(name)
+            continue
+        number = seen[name]
+        while f"{name}-{number}" in taken:
+            number += 1
+        taken.add(f"{name}-{number}")
+        out.append(f"{name}-{number}")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# What OpenMM ships
+# ---------------------------------------------------------------------------
+def openmm_files() -> set[str] | None:
+    """The force-field files this installation's OpenMM ships, by name
+    under its data folder (``amber19/protein.ff19SB.xml``), or None where
+    OpenMM is not installed and so cannot be asked."""
+    try:
+        import os
+
+        import openmm.app as app
+    except Exception:  # noqa: BLE001 - absent or broken: unknown
+        return None
+    root = os.path.join(os.path.dirname(app.__file__), "data")
+    found: set[str] = set()
+    for folder, _dirs, files in os.walk(root):
+        for name in files:
+            if name.endswith(".xml"):
+                found.add(os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/"))
+    return found
+
+
+#: Force fields by what the paper calls them. Each: the name said, the
+#: pattern its reduced spelling matches (:func:`~fastmdxplora.paper.quotes.squash`),
+#: the file, the family whose water files go with it, the OpenMM release
+#: that first ships it, or None where OpenMM ships none.
+_PROTEIN = (
+    ("ff14SB only side chains", r"14sbonlysc", None, "", ""),
+    ("ff99SB*-ILDN", r"99sb\*ildn|99sbstarildn", None, "", ""),
+    ("ff99SB-disp", r"99sbdisp", None, "", ""),
+    ("ff99SBnmr2", r"99sbnmr2", None, "", ""),
+    ("ff99SBnmr1", r"99sbnmr1?", "amber99sbnmr.xml", "legacy", "8.0"),
+    ("ff99SB-ILDN", r"99sbildn", "amber99sbildn.xml", "legacy", "8.0"),
+    ("ff99SB", r"99sb", "amber99sb.xml", "legacy", "8.0"),
+    ("ff14SB", r"14sb|amber14(?!sb)", "amber14/protein.ff14SB.xml", "amber14", "8.0"),
+    ("ff19SB", r"19sb|amber19", "amber19/protein.ff19SB.xml", "amber19", "8.3"),
+    ("ff15ipq", r"15ipq", "amber14/protein.ff15ipq.xml", "amber14", "8.0"),
+    ("ff03w", r"03w", None, "", ""),
+    ("ff03*", r"03\*|03star", None, "", ""),
+    ("ff03", r"ff03|amber03", "amber03.xml", "legacy", "8.0"),
+    ("ff10", r"ff10|amber10", "amber10.xml", "legacy", "8.0"),
+    ("ff96", r"ff96|amber96", "amber96.xml", "legacy", "8.0"),
+    ("AMBER-FB15", r"fb15", "amberfb15.xml", "legacy", "8.0"),
+    ("DES-Amber", r"desamber", None, "", ""),
+    ("CHARMM36m", r"charmm36m|c36m", "charmm36_2024.xml", "charmm36_2024", "8.3"),
+    ("CHARMM36", r"charmm36|c36", "charmm36.xml", "charmm36", "8.0"),
+    ("CHARMM22*", r"charmm22\*|c22\*|charmm22star", None, "", ""),
+    ("CHARMM27", r"charmm27|c27", None, "", ""),
+    ("CHARMM22", r"charmm22|c22", None, "", ""),
+    ("OPLS", r"opls", None, "", ""),
+    ("GROMOS", r"gromos|43a1|53a6|54a7", None, "", ""),
+    ("Martini", r"martini", None, "", ""),
+    ("Drude", r"drude|polariz|polaris", None, "", ""),
+    ("AMOEBA", r"amoeba", None, "", ""),
+)
+_NUCLEIC = (
+    ("bsc0", r"bsc0|parmbsc0", None, "", ""),
+    ("Tumuc1", r"tumuc", None, "", ""),
+    ("OL21", r"ol21", "amber19/DNA.OL21.xml", "amber19", "8.3"),
+    ("OL15", r"ol15", "amber14/DNA.OL15.xml", "amber14", "8.0"),
+    ("bsc1", r"bsc1", "amber14/DNA.bsc1.xml", "amber14", "8.0"),
+    ("OL3", r"ol3|chiol3", "amber14/RNA.OL3.xml", "amber14", "8.0"),
+    ("CHARMM36", r"charmm36|c36", "charmm36.xml", "charmm36", "8.0"),
+)
+_LIPID = (
+    ("Lipid14", r"lipid14", None, "", ""),
+    ("Lipid17", r"lipid17", "amber14/lipid17.xml", "amber14", "8.0"),
+    ("Lipid21", r"lipid21", "amber19/lipid21.xml", "amber19", "8.4"),
+    ("CHARMM36", r"charmm36|c36", "charmm36.xml", "charmm36", "8.0"),
+    ("Slipids", r"slipid", None, "", ""),
+    ("Berger", r"berger", None, "", ""),
+    ("GROMOS", r"gromos|43a1|53a6|54a7", None, "", ""),
+    ("Martini", r"martini", None, "", ""),
+)
+#: Water models: name, pattern, the file's stem in each family's folder,
+#: and the geometry OpenMM's Modeller places it with.
+_WATER = (
+    ("CHARMM TIP3P", r"charmmtip3p|mtip3p|tips3p|tip3p\(charmm|charmmmodified", "water", "tip3p"),
+    ("TIP3P-FB", r"tip3pfb", "tip3pfb", "tip3p"),
+    ("TIP4P-FB", r"tip4pfb", "tip4pfb", "tip4pew"),
+    ("TIP4P-Ew", r"tip4pew", "tip4pew", "tip4pew"),
+    ("TIP4P/2005", r"tip4p/?2005", "tip4p2005", "tip4pew"),
+    ("TIP4P-D", r"tip4pd", None, ""),
+    ("TIP5P", r"tip5p", "tip5p", "tip5p"),
+    ("OPC3", r"opc3", "opc3", "tip3p"),
+    ("OPC", r"opc", "opc", "tip4pew"),
+    ("SPC/E", r"spc/?e", "spce", "spce"),
+    ("SPC", r"spc", None, ""),
+    ("TIP4P", r"tip4p", None, ""),
+    ("TIP3P", r"tip3p", "tip3p", "tip3p"),
+)
+#: Which water files each family's folder has.
+_WATERS_IN = {
+    "amber14": {"tip3p", "tip3pfb", "tip4pew", "tip4pfb", "spce", "opc", "opc3"},
+    "amber19": {"tip3p", "tip3pfb", "tip4pew", "tip4pfb", "spce", "opc", "opc3"},
+    "legacy": {"tip3p", "tip3pfb", "tip4pew", "tip4pfb", "tip5p", "spce", "opc", "opc3"},
+    "charmm36": {"water", "spce", "tip4pew", "tip4p2005", "tip5p"},
+    "charmm36_2024": {"water", "spce", "tip4pew", "tip4p2005", "tip5p"},
+}
+
+
+def _match(table: tuple[tuple[Any, ...], ...], said: str) -> tuple[Any, ...] | None:
+    reduced = squash(said)[0]
+    for entry in table:
+        if re.search(entry[1], reduced):
+            return entry
+    return None
+
+
+def _water_file(family: str, stem: str) -> str:
+    if family == "legacy":
+        return f"{stem}.xml"
+    return f"{family}/{stem}.xml"
+
+
+# ---------------------------------------------------------------------------
+# What a name says
+# ---------------------------------------------------------------------------
+_KINDS_OF: dict[str, tuple[tuple[str, str], ...]] = {
+    "thermostat": (("Langevin", r"langevin|stochasticdynamics|baoab|\bsd\b"),
+                   ("Nose-Hoover", r"nosehoover|nose|hoover"),
+                   ("v-rescale", r"vrescale|velocityrescal|bussi|canonicalsampling"),
+                   ("Berendsen", r"berendsen"), ("Andersen", r"andersen")),
+    "barostat": (("Monte Carlo", r"montecarlo|mcbarostat"),
+                 ("Parrinello-Rahman", r"parrinello|rahman"),
+                 ("Berendsen", r"berendsen"), ("Langevin piston", r"langevinpiston|piston"),
+                 ("C-rescale", r"crescale|stochasticcellrescal"),
+                 ("MTK", r"mttk|martyna|tuckerman")),
+    "box_shape": (("octahedron", r"octahedr"), ("dodecahedron", r"dodecahedr"),
+                  ("cube", r"cub(e|ic)"), ("rectangular", r"rectang|orthorhomb|tetragonal"),
+                  ("hexagonal", r"hexagon")),
+    "electrostatics": (("PME", r"pme|particlemesh|smoothparticle"),
+                       ("Gaussian split Ewald", r"gaussiansplit|gse"),
+                       ("Ewald", r"ewald"), ("reaction field", r"reactionfield"),
+                       ("cutoff", r"cutoff|cutoff")),
+    "constraints": (("all bonds", r"allbond|everybond|allcovalent"),
+                    ("bonds to hydrogen", r"hydrogen|hbond|xh"),
+                    ("SHAKE", r"shake"), ("LINCS", r"lincs"), ("SETTLE", r"settle"),
+                    ("RATTLE", r"rattle"), ("M-SHAKE", r"mshake")),
+    "ensemble": (("NPT", r"npt|isothermalisobaric|constantpressure|npat"),
+                 ("NVT", r"nvt|constantvolume|canonical"), ("NVE", r"nve|microcanonical")),
+    "ions": (("Na+", r"\bna\b|na\+|sodium|nacl"), ("K+", r"\bk\b|k\+|potassium|kcl"),
+             ("Cl-", r"\bcl\b|cl-|chloride|nacl|kcl"), ("Mg2+", r"magnesium|mg2|mgcl"),
+             ("Ca2+", r"calcium|ca2|cacl"), ("Zn2+", r"zinc|zn2")),
+    "engine": (("GROMACS", r"gromacs"), ("AMBER", r"amber|pmemd|sander"),
+               ("NAMD", r"namd"), ("OpenMM", r"openmm"), ("CHARMM", r"charmm"),
+               ("Desmond", r"desmond"), ("ACEMD", r"acemd"), ("LAMMPS", r"lammps"),
+               ("Anton", r"anton"), ("GENESIS", r"genesis")),
+}
+
+
+def recognized(field: str, text: str) -> set[str] | None:
+    """The things of their kind ``text`` names for ``field``: the force
+    fields, water models, thermostats, box shapes and the rest it says,
+    by one name each; None for a field that is a description rather than
+    a choice among names (the system, how it was minimised)."""
+    reduced = squash(str(text))[0]
+    tables = {"protein_forcefield": _PROTEIN, "nucleic_forcefield": _NUCLEIC,
+              "lipid_forcefield": _LIPID, "water_model": _WATER}
+    found: set[str] = set()
+    if field in tables:
+        rest = reduced
+        for entry in tables[field]:
+            match = re.search(entry[1], rest)
+            while match:
+                found.add(entry[0])
+                rest = rest[:match.start()] + "|" + rest[match.end():]
+                match = re.search(entry[1], rest)
+        return found
+    if field in _KINDS_OF:
+        words = str(text).lower()
+        for name, pattern in _KINDS_OF[field]:
+            if re.search(pattern, reduced) or re.search(pattern, words):
+                found.add(name)
+        return found
+    if field == "membrane":
+        upper = str(text).upper()
+        found = set(re.findall(r"\b([DP][OPMLSAEY]P[CEGSA])\b", upper))
+        if re.search(r"chol", str(text), re.IGNORECASE):
+            found.add("CHOL")
+        return found
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Words that say a method or an ensemble
+# ---------------------------------------------------------------------------
+_METHOD_WORDS = {
+    "plain": r"md|moleculardynamics|simulation|unbiased|conventional|classical|equilibrium",
+    "umbrella": r"umbrella|wham",
+    "metadynamics": r"metadynamics|metad|opes|ondtheflyprobability|funnel",
+    "replica_exchange": r"replicaexchange|remd|parallel\s*tempering|biasexchange|"
+                        r"simulatedtempering|hrex|rest2|solutetempering",
+    "free_energy": r"freeenergyperturbation|fep|alchemical|thermodynamicintegration|"
+                   r"absolutebinding|decoupl",
+    "accelerated": r"acceleratedmd|acceleratedmolecular|gamd|gaussianaccelerated",
+    "steered": r"steered|smd|pull|targetedmd|tmd",
+    "qm_mm": r"qm/?mm|quantummechanic|dftb|dft",
+    "coarse_grained": r"coarsegrain|martini|cg",
+    "implicit_solvent": r"implicit|generalizedborn|gbsa|obc|gbn",
+    "milestoning": r"milestoning|mmvt|seekr|weightedensemble",
+    "other": r".",
+}
+
+
+def method_said_by(method: str, words: str) -> bool:
+    """Whether ``words`` say the method an AI model named for a study."""
+    pattern = _METHOD_WORDS.get(str(method).strip().lower())
+    return bool(pattern) and bool(re.search(pattern, squash(words)[0]))
+
+
+def ensemble_said_by(ensemble: str, words: str) -> bool:
+    reduced = squash(words)[0]
+    said = squash(ensemble)[0]
+    if said in reduced:
+        return True
+    if said == "npt":
+        return bool(re.search(r"npt|constantpressure|isothermalisobaric|isobaric", reduced))
+    if said == "nvt":
+        return bool(re.search(r"nvt|constantvolume|canonical", reduced))
+    return False
+
+
+def _method_of(said: str) -> str:
+    for method in ("replica_exchange", "free_energy", "milestoning", "qm_mm",
+                   "coarse_grained", "implicit_solvent", "accelerated", "metadynamics",
+                   "umbrella", "steered", "plain"):
+        if str(said).strip().lower() == method:
+            return method
+    reduced = squash(said)[0]
+    for method in ("replica_exchange", "free_energy", "milestoning", "qm_mm",
+                   "coarse_grained", "implicit_solvent", "accelerated", "metadynamics",
+                   "umbrella", "steered"):
+        if re.search(_METHOD_WORDS[method], reduced):
+            return method
+    return "plain" if re.search(_METHOD_WORDS["plain"], reduced) else "other"
+
+
+#: Words in a method's details that make it a method this does not run,
+#: read in the words as written: the details of plain MD name pressures,
+#: analyses and hardware, so nothing shorter or looser.
+_DETAIL_WORDS = {
+    "replica_exchange": r"bias[-\s]*exchange|replica[-\s]*exchange|\bremd\b"
+                        r"|parallel[-\s]*tempering|solute[-\s]*tempering|\brest2?\b|\bh-?rex\b"
+                        r"|simulated[-\s]*tempering",
+    "free_energy": r"free[-\s]*energy[-\s]*perturbation|\bfep\b|alchemical"
+                   r"|thermodynamic[-\s]*integration|decoupl",
+    "accelerated": r"accelerated[-\s]*(?:md|molecular)|\bgamd\b|(?-i:\baMD\b)",
+    "qm_mm": r"\bqm/?mm\b|quantum[-\s]*mechanic|\bdftb\b",
+    "coarse_grained": r"coarse[-\s]*grain|\bmartini\b",
+    "implicit_solvent": r"implicit[-\s]*solv|generali[sz]ed[-\s]*born|\bgbsa\b|\bgb-?obc|\bgbn2?\b",
+    "milestoning": r"milestoning|\bmmvt\b|\bseekr|weighted[-\s]*ensemble",
+}
+
+#: Words just before a method's name that deny it or give it to another
+#: work: "no REMD", "compared with REMD", "from the previous REMD". A
+#: citation after the name ("REST2 (ref 14)") gives it to nobody else.
+_NOT_THIS_STUDY = re.compile(
+    r"(?:\b(?:no|not|without|never|nor|instead\s+of|rather\s+than|compared\s+(?:with|to)"
+    r"|versus|vs\.?|unlike|than)"
+    r"|\b(?:from|of|in|by)\s+(?:our\s+|the\s+|an?\s+|their\s+)?(?:previous|earlier|prior"
+    r"|published|reported))(?:\W+[\w-]+){0,3}?\W*$", re.IGNORECASE)
+
+
+def _method_in_details(words: str) -> str | None:
+    """The method a study's details say it is, where that is one this does
+    not run, unless the words just before its name deny it or give it to
+    another work ("compared with REMD", "taken from the previous REMD")."""
+    for method, pattern in _DETAIL_WORDS.items():
+        for match in re.finditer(pattern, words, re.IGNORECASE):
+            before = words[max(0, match.start() - 60):match.start()]
+            before = re.split(r"[.;:]\s", before)[-1]
+            if not _NOT_THIS_STUDY.search(before):
+                return method
+    return None
+
+_CANNOT = {
+    "replica_exchange": "replica exchange, which this software does not run",
+    "free_energy": "alchemical free-energy calculation, which this software does not run",
+    "accelerated": "accelerated MD, which this software does not run",
+    "qm_mm": "QM/MM, which this software does not run",
+    "coarse_grained": "a coarse-grained model, which this software does not run",
+    "implicit_solvent": "implicit solvent, where this software simulates explicit water",
+    "milestoning": "milestoning or weighted ensemble, built from many short runs, "
+                   "which this software does not run as one study",
+}
+
+
+# ---------------------------------------------------------------------------
+# The plan
+# ---------------------------------------------------------------------------
+class _Plan:
+    def __init__(self, study: dict[str, Any], source: str) -> None:
+        self.study = study
+        self.fields: dict[str, Any] = study.get("fields") or {}
+        self.choices: list[Choice] = []
+        self.config: dict[str, Any] = {"setup": {}, "simulation": {}}
+        self.decisions: dict[str, Any] = {}
+        self.source = source
+
+    # -- reading -----------------------------------------------------------
+    def stated(self, name: str) -> dict[str, Any] | None:
+        record = self.fields.get(name)
+        return record if isinstance(record, dict) and record.get("status") == "stated" else None
+
+    def status(self, name: str) -> str:
+        record = self.fields.get(name)
+        return str(record.get("status")) if isinstance(record, dict) else "not_stated"
+
+    # -- writing -----------------------------------------------------------
+    def set(self, setting: str, value: Any, field: str, label: str, why: str,
+            record: dict[str, Any] | None = None) -> None:
+        phase, _, name = setting.partition(".")
+        if name:
+            self.config.setdefault(phase, {})[name] = value
+        else:
+            self.config[setting] = value
+        quote = (record or {}).get("quote", "")
+        where = (record or {}).get("where", "")
+        self.choices.append(Choice(field, label, why, setting, value, quote, where))
+        reason = why
+        if quote:
+            reason = f'{why} The paper ({where}): "{_short(quote)}"'
+        self.decisions[setting] = {"why": reason, "source": self.source}
+
+    def note(self, field: str, label: str, why: str,
+             record: dict[str, Any] | None = None, setting: str = "") -> None:
+        """A choice that sets nothing: said, and where the person sets it
+        (``setting``) when it needs them."""
+        self.choices.append(Choice(field, label, why, setting, None,
+                                   quote=(record or {}).get("quote", ""),
+                                   where=(record or {}).get("where", "")))
+
+
+def _short(text: str, most: int = 220) -> str:
+    text = re.sub(r"\s+", " ", str(text)).strip()
+    return text if len(text) <= most else text[: most - 1].rstrip() + "…"
+
+
+#: What each way a setting was not read says, where it is said.
+_UNCHECKED = {
+    "not_found": "The AI model gave words for it the paper does not contain, so it "
+                 "is not used:",
+    "unread": "The paper's words the AI model gave do not hold the value it gave, so it "
+              "is not used:",
+    "by_reference": "The paper gives it by reference to another paper:",
+    "in_si": "The paper gives it in its supporting information, which was not read "
+             "(give it with `--paper-si`):",
+}
+
+#: The settings a study always has, which a study the paper is silent on
+#: takes from this software: the field, where it is set, what is used, and
+#: whether a value the paper gives and this could not check needs the person.
+_ALWAYS = (
+    ("temperature", "simulation.temperature_K", "300 K", True),
+    ("pressure", "simulation.pressure_bar", "1 bar", False),
+    ("timestep", "simulation.timestep_fs", "a 2 fs step", True),
+    ("box_shape", "setup.box_shape", "a rhombic dodecahedron", False),
+    ("padding", "setup.solvent_padding_nm", "1.0 nm of water to the nearest image", False),
+    ("salt_concentration", "setup.ion_concentration_M", "0.15 M of NaCl", False),
+    ("constraints", "setup.constraints", "bonds to hydrogen constrained", False),
+    ("electrostatics", "setup.nonbonded_method", "particle-mesh Ewald", False),
+    ("ensemble", "simulation.ensemble", "production at constant pressure", False),
+    ("thermostat", "simulation.integrator", "Langevin dynamics", False),
+    ("nvt_equilibration", "simulation.nvt_duration_ns", "500 ps of NVT equilibration", False),
+    ("npt_equilibration", "simulation.npt_duration_ns", "1 ns of NPT equilibration", False),
+    ("water_model", "", "TIP3P", True),
+    ("replicas", "sweep", "one run", True),
+)
+
+
+def _unstated(plan: _Plan) -> None:
+    """Each setting a study always has that nothing above has said: this
+    software's value, said to be, and where the paper gave one this could
+    not check, said so; a temperature, step or water model so given needs
+    the person."""
+    said = {choice.field for choice in plan.choices}
+    setup = plan.config.get("setup") or {}
+    charmm = "charmm" in str(setup.get("forcefield") or "") + str(setup.get("force_field") or "")
+    for field, setting, used, needed in _ALWAYS:
+        if field in said or plan.status(field) == "stated":
+            continue
+        if field == "water_model":
+            used = "CHARMM's TIP3P" if charmm else "TIP3P"
+        if field == "box_shape" and plan.stated("membrane"):
+            plan.note(field, "not_stated", "Not stated: a bilayer's box is rectangular here.")
+            continue
+        status = plan.status(field)
+        if status in _UNCHECKED and needed:
+            plan.note(field, "needs_you",
+                      f"{_UNCHECKED[status]} set it from the paper"
+                      + (f" in `{setting}`" if setting else "")
+                      + f" (this software's is {used}).",
+                      plan.fields.get(field), setting=setting)
+        elif status in _UNCHECKED:
+            plan.note(field, "not_stated", f"{_UNCHECKED[status]} this software's {used} is "
+                      "used.", plan.fields.get(field), setting=setting)
+        else:
+            plan.note(field, "not_stated", f"Not stated: this software's {used} is used.",
+                      setting=setting)
+
+
+def plan_study(study: dict[str, Any], reading: dict[str, Any], *,
+               until_determined: bool = False, files: set[str] | None = None,
+               output: str | None = None) -> dict[str, Any]:
+    """What a study read from a paper becomes: ``choices`` (each a
+    :class:`Choice` as a record), ``state`` (``ready``, ``with_differences``,
+    ``needs_you``, ``cannot_run``), ``config`` (None where it cannot run),
+    and ``simulated_ns``, the production it asks for over every replica.
+
+    ``files`` is what this OpenMM ships (:func:`openmm_files`), or None
+    where that cannot be known. ``until_determined`` adds a stopping rule
+    to the paper's results with an error, the paper's production its
+    ceiling."""
+    source = reading.get("doi") and f"doi:{reading['doi']}" or "the paper"
+    plan = _Plan(study, source)
+    _structure(plan)
+    _force_field(plan, files)
+    _box_and_ions(plan)
+    _physics(plan)
+    _protocol(plan)
+    method = _method(plan)
+    _unstated(plan)
+    state = _state_of(plan)
+
+    production = (plan.config.get("simulation") or {}).get("duration_ns")
+    replicas = int((plan.stated("replicas") or {}).get("value") or 1)
+    simulated = float(production) * replicas if isinstance(production, (int, float)) else None
+
+    config = None
+    if state != "cannot_run":
+        config = _config(plan, study, reading, method, output)
+        if until_determined:
+            _until_determined(plan, config, study)
+            state = _state_of(plan)
+            needs = [choice.why for choice in plan.choices if choice.label == "needs_you"]
+            if needs:
+                config["paper"]["needs"] = needs
+    return {
+        "id": study.get("id"),
+        "label": study.get("label"),
+        "state": state,
+        "method": method,
+        "choices": [choice.as_record() for choice in plan.choices],
+        "config": config,
+        "simulated_ns": simulated,
+        "replicas": replicas,
+        "claims": [c for c in study.get("claims") or [] if c.get("status") == "stated"],
+    }
+
+
+def _state_of(plan: _Plan) -> str:
+    labels = {choice.label for choice in plan.choices}
+    if "not_possible" in labels:
+        return "cannot_run"
+    if "needs_you" in labels:
+        return "needs_you"
+    if "differs" in labels:
+        return "with_differences"
+    return "ready"
+
+
+def _structure(plan: _Plan) -> None:
+    pdb = plan.stated("pdb_id")
+    origin = plan.stated("structure_source")
+    code = ""
+    if pdb:
+        found = re.findall(r"\b([0-9][A-Za-z0-9]{3})\b", str(pdb.get("value")))
+        code = found[0].upper() if found else ""
+    origin_text = str((origin or {}).get("value") or "") + " " + str((origin or {}).get("quote") or "")
+    if origin and code and (code.lower() in origin_text.lower()
+                            or re.search(r"crystal|x-ray|nmr|deposited|pdb", origin_text, re.I)) \
+            and not re.search(r"model|alphafold|dock|homolog|built|predict|snapshot|previous",
+                              origin_text, re.I):
+        # The entry itself, perhaps with mutations or protonation made in
+        # it, which are their own settings.
+        origin = None
+    if code and not origin:
+        plan.set("systems", [{"system": code}], "pdb_id", "as_stated",
+                 f"The structure is the PDB entry {code}, fetched from the RCSB.", pdb)
+    elif code and origin:
+        plan.set("systems", [{"system": code}], "structure_source", "needs_you",
+                 f"The paper names the PDB entry {code}, and also that its starting "
+                 f"structure was {origin.get('value')}: give that structure's file "
+                 "if it is not the entry as deposited.", origin)
+    elif origin:
+        plan.set("systems", [{"system": STRUCTURE_TO_GIVE}], "structure_source", "needs_you",
+                 f"The starting structure was {origin.get('value')}, which is not a "
+                 "PDB entry this can fetch: give its file (the paper's deposit, if "
+                 "it has one).", origin)
+    else:
+        plan.set("systems", [{"system": STRUCTURE_TO_GIVE}], "pdb_id", "needs_you",
+                 "The paper names no PDB entry for this study: give its starting "
+                 "structure.")
+    chains = plan.stated("chains")
+    if chains:
+        letters = sorted({c for value in _as_list(chains.get("value"))
+                          for c in re.findall(r"\b([A-Za-z])\b", str(value))})
+        if letters:
+            plan.set("setup.chains", letters, "chains", "as_stated",
+                     f"The chains simulated: {', '.join(letters)}.", chains)
+        else:
+            plan.note("chains", "needs_you",
+                      f"The paper says which chains as \"{chains.get('value')}\"; "
+                      "name them by letter in `setup.chains`.", chains, setting="setup.chains")
+    mutations = plan.stated("mutations")
+    if mutations:
+        from fastmdxplora.paper.extract import mutation_forms
+
+        written = []
+        for value in _as_list(mutations.get("value")):
+            forms = sorted(form for form in mutation_forms(str(value))
+                           if re.fullmatch(r"[A-Z]\d+[A-Z]", form))
+            if forms:
+                written.append(forms[0])
+        if written:
+            plan.set("setup.mutations", written, "mutations", "as_stated",
+                     f"The mutations made: {', '.join(written)}. Each side chain is "
+                     "placed by setup, not taken from a structure.", mutations)
+        else:
+            plan.note("mutations", "needs_you",
+                      f"The mutations \"{mutations.get('value')}\" are not written as "
+                      "point substitutions this can make: write them in "
+                      "`setup.mutations`.", mutations, setting="setup.mutations")
+    ligands = plan.stated("ligands")
+    small = _ligands_of(ligands)
+    if ligands and not small:
+        plan.note("ligands", "as_stated",
+                  f"{', '.join(map(str, _as_list(ligands.get('value'))))}: no small molecule "
+                  "to parameterise. Ions bound in the entry are kept by setup.", ligands)
+    elif ligands:
+        if code and not origin:
+            plan.note("ligands", "as_stated",
+                      f"Kept beside the protein: {', '.join(small)}. "
+                      "Setup keeps what the entry holds and can parameterise; its plan "
+                      "says which, and is worth reading against this list.", ligands)
+        else:
+            plan.note("ligands", "needs_you",
+                      f"The study holds {', '.join(small)}, "
+                      "and its structure is not an entry this can fetch them from: "
+                      "give each ligand's file (`setup.ligand`) with the structure.",
+                      ligands, setting="setup.ligand")
+    membrane = plan.stated("membrane")
+    if membrane:
+        from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+        allowed = next(f.choices for f in PHASE_SCHEMAS["setup"].fields if f.name == "membrane")
+        said = str(membrane.get("value"))
+        names = recognized("membrane", said) or set()
+        lipids = names & set(allowed)
+        # Another lipid named in a way the pattern does not read (PIP2,
+        # sphingomyelin) makes a mixture as surely as one it does.
+        others = (names - set(allowed)) | (
+            set(re.findall(r"\b[A-Z][A-Z0-9]{1,4}\b", said)) & _OTHER_LIPIDS)
+        if re.search(r"sphingo|gangliosid|cardiolipin|phosphoinositid|\bpip|mixture|mixed"
+                     r"|\d\s*:\s*\d", said, re.IGNORECASE):
+            others.add("mixture")
+        if not names:
+            plan.note("membrane", "needs_you",
+                      f"The bilayer is {said}, which names no lipid this can build: set "
+                      f"`setup.membrane` to one of {', '.join(allowed)}.", membrane,
+                      setting="setup.membrane")
+        elif len(lipids) == 1 and not others:
+            lipid = lipids.pop()
+            plan.set("setup.membrane", lipid, "membrane", "as_stated",
+                     f"A bilayer of {lipid}.", membrane)
+        else:
+            plan.note("membrane", "not_possible",
+                      f"The bilayer is {said}; this software builds a bilayer of one "
+                      f"lipid, of {', '.join(allowed)}.", membrane)
+    copies = plan.stated("copies")
+    if copies and int(copies.get("value") or 1) > 1:
+        plan.note("copies", "needs_you",
+                  f"The box holds {copies.get('value')} copies; setup simulates the "
+                  "structure as its biological assembly, so give a structure with "
+                  "every copy placed if the entry's assembly is not it.", copies,
+                  setting="systems")
+
+
+def _force_field(plan: _Plan, files: set[str] | None) -> None:
+    protein = plan.stated("protein_forcefield")
+    nucleic = plan.stated("nucleic_forcefield")
+    lipid = plan.stated("lipid_forcefield")
+    water = plan.stated("water_model")
+    ligand_ff = plan.stated("ligand_forcefield")
+    has_ligand = bool(_ligands_of(plan.stated("ligands")))
+    if not any((protein, nucleic, lipid, water)):
+        said = plan.status("protein_forcefield")
+        if said in _UNCHECKED:
+            plan.note("protein_forcefield", "needs_you",
+                      f"{_UNCHECKED[said]} the force field: choose it from the paper in "
+                      "`setup.forcefield` (this software's own is ff14SB with TIP3P).",
+                      plan.fields.get("protein_forcefield"), setting="setup.forcefield")
+            return
+        plan.note("protein_forcefield", "not_stated",
+                  "The paper names no force field: this software's own is used "
+                  "(ff14SB with TIP3P water, and OpenFF Sage for ligands).")
+        return
+    parts = []
+    for role, record, table in (("protein", protein, _PROTEIN), ("nucleic", nucleic, _NUCLEIC),
+                                ("lipid", lipid, _LIPID)):
+        if not record:
+            continue
+        entry = _match(table, str(record.get("value")))
+        name = f"{role}_forcefield"
+        if entry is None:
+            plan.note(name, "needs_you",
+                      f"{record.get('value')} is not a force field this software "
+                      "knows by name: choose the nearest it has, or give its OpenMM "
+                      "files in `setup.force_field`.", record)
+            return
+        if entry[2] is None:
+            plan.note(name, "not_possible",
+                      f"{entry[0]}, a polarizable force field, which this software does "
+                      "not run." if entry[0] in ("Drude", "AMOEBA") else
+                      f"{entry[0]}, which OpenMM does not ship.", record)
+            return
+        parts.append((role, entry, record))
+    if any(role == "protein" and entry[3] == "legacy" for role, entry, _ in parts) \
+            and any(role == "nucleic" for role, _entry, _ in parts):
+        legacy = next(entry for role, entry, _ in parts if role == "protein")
+        plan.note("nucleic_forcefield", "not_possible",
+                  f"{legacy[0]} beside a nucleic-acid force field: OpenMM's {legacy[2]} "
+                  "carries its own nucleic-acid parameters, so the two cannot be loaded "
+                  "together.", nucleic)
+        return
+    families = {entry[3] for _role, entry, _record in parts}
+    if families and families <= {"charmm36", "charmm36_2024"}:
+        # One CHARMM file carries protein, nucleic acids and lipids alike;
+        # CHARMM36m's is the 2024 one, which carries all three too.
+        newest = "charmm36_2024" if "charmm36_2024" in families else "charmm36"
+        chosen = next(entry for _role, entry, _record in parts if entry[3] == newest)
+        parts = [(role, chosen if role == parts[0][0] else entry, record)
+                 for role, entry, record in parts]
+        families = {newest}
+    if len(families - {"amber14", "amber19", "legacy"}) and len(families) > 1:
+        plan.note("protein_forcefield", "not_possible",
+                  "The force fields named come from different families ("
+                  + ", ".join(entry[0] for _r, entry, _rec in parts) + "), which are "
+                  "not combined here.")
+        return
+    family = parts[0][1][3] if parts else "amber14"
+    if "amber19" in families:
+        family = "amber19"
+    water_entry = _match(_WATER, str(water.get("value"))) if water else None
+    if water and water_entry is None:
+        plan.note("water_model", "needs_you",
+                  f"{water.get('value')} is not a water model this software knows.", water)
+        return
+    if water_entry is not None and water_entry[2] is None:
+        plan.note("water_model", "not_possible",
+                  f"{water_entry[0]}, which OpenMM does not ship.", water)
+        return
+    stem = water_entry[2] if water_entry else ("water" if family.startswith("charmm") else "tip3p")
+    if family.startswith("charmm") and stem == "tip3p":
+        stem = "water"  # CHARMM's TIP3P is its own, with hydrogens' Lennard-Jones
+    if not family.startswith("charmm") and stem == "water":
+        plan.note("water_model", "not_possible",
+                  "CHARMM's modified TIP3P beside an AMBER force field, which OpenMM "
+                  "does not ship as a pair.", water)
+        return
+    if stem not in _WATERS_IN.get(family, set()):
+        plan.note("water_model", "not_possible",
+                  f"{water_entry[0] if water_entry else stem} with "
+                  f"{parts[0][1][0] if parts else 'this force field'}, a pair OpenMM "
+                  "does not ship.", water)
+        return
+    geometry = water_entry[3] if water_entry else "tip3p"
+    names = [entry[0] for _role, entry, _record in parts]
+    said_water = water_entry[0] if water_entry else "TIP3P"
+    if stem == "water":
+        said_water = "CHARMM's TIP3P"
+
+    if has_ligand:
+        # A ligand is parameterised here only through `amber-openff`:
+        # AMBER14's files (ff14SB, OL15, OL3, Lipid17), TIP3P and a
+        # small-molecule force field.
+        if families - {"amber14", "amber19", "legacy"}:
+            plan.note("protein_forcefield", "not_possible",
+                      f"{', '.join(names)} with a ligand: a ligand is parameterised here only "
+                      "beside AMBER's ff14SB.", protein or nucleic or lipid)
+            return
+        for role, entry, record in parts:
+            if role != "protein" and entry[0] not in ("OL15", "OL3", "Lipid17"):
+                plan.note(f"{role}_forcefield", "differs",
+                          f"AMBER14's {'OL15 and OL3' if role == 'nucleic' else 'Lipid17'} "
+                          f"in place of the paper's {entry[0]}: beside a ligand this "
+                          "software's force field carries AMBER14's files.", record)
+        protein_entry = next((e for r, e, _ in parts if r == "protein"), None)
+        if protein_entry is None:
+            plan.set("setup.forcefield", "amber-openff", "protein_forcefield", "not_stated",
+                     "The paper names no protein force field: ff14SB is used, with the "
+                     "ligand parameterised beside it.")
+        elif protein_entry[0] not in ("ff14SB",):
+            if protein_entry[3] in ("legacy", "amber14", "amber19"):
+                plan.set("setup.forcefield", "amber-openff", "protein_forcefield", "differs",
+                         f"ff14SB in place of the paper's {protein_entry[0]}: a ligand is "
+                         "parameterised here only beside ff14SB (`amber-openff`). Both are "
+                         "AMBER protein force fields, and ff14SB was refitted from ff99SB.",
+                         protein)
+            else:
+                plan.note("protein_forcefield", "not_possible",
+                          f"{protein_entry[0]} with a ligand: a ligand is parameterised here "
+                          "only beside ff14SB.", protein)
+                return
+        else:
+            plan.set("setup.forcefield", "amber-openff", "protein_forcefield", "as_stated",
+                     "ff14SB for the protein, with the ligand parameterised beside it.",
+                     protein)
+        if said_water != "TIP3P":
+            plan.note("water_model", "differs",
+                      f"TIP3P in place of the paper's {said_water}: beside a ligand this "
+                      "software's force field carries TIP3P.", water)
+        elif water:
+            plan.note("water_model", "as_stated", "TIP3P.", water)
+        _ligand_forcefield(plan, ligand_ff)
+        return
+
+    named = None
+    if (set(names) <= {"ff14SB", "OL15", "OL3", "Lipid17"} and said_water == "TIP3P"):
+        named = "amber14"
+    elif set(names) <= {"CHARMM36"} and names and stem == "water":
+        named = "charmm36"
+    elif names == ["AMBER-FB15"] and said_water == "TIP3P":
+        named = "amber-fb15"
+    if named:
+        label_why = {"amber14": "ff14SB (AMBER14's files, with OL15 DNA, OL3 RNA and Lipid17) "
+                                "with TIP3P.",
+                     "charmm36": "CHARMM36 with CHARMM's TIP3P.",
+                     "amber-fb15": "AMBER-FB15 with TIP3P."}[named]
+        if protein or nucleic or lipid:
+            plan.set("setup.forcefield", named, "protein_forcefield", "as_stated", label_why,
+                     protein or nucleic or lipid)
+        else:
+            plan.set("setup.forcefield", named, "protein_forcefield", "not_stated",
+                     f"The paper names its water model only: {label_why}")
+        if water:
+            plan.note("water_model", "as_stated", f"{said_water}.", water)
+        return
+
+    xmls = list(dict.fromkeys(entry[2] for _role, entry, _record in parts))
+    if family.startswith("charmm"):
+        xmls = [f"{family}.xml"]
+    elif not protein:
+        # No protein force field named: the software's own for any protein,
+        # said so, beside what the paper names.
+        xmls.insert(0, "amber14/protein.ff14SB.xml")
+        if parts:
+            plan.note("protein_forcefield", "not_stated",
+                      "The paper names no protein force field: ff14SB is used for any "
+                      "protein.")
+    xmls.append(_water_file(family, stem))
+    if plan.stated("membrane") and not lipid and not family.startswith("charmm"):
+        # A bilayer needs lipid parameters, which an AMBER list names only in
+        # AMBER14's bundle: Lipid17 beside the paper's, said so.
+        if family != "amber14":
+            xmls.insert(len(xmls) - 1, "amber14/lipid17.xml")
+        plan.note("lipid_forcefield", "not_stated",
+                  "The paper names no lipid force field: Lipid17 is used for the bilayer"
+                  + (f", which was fitted with TIP3P water, not {said_water}."
+                     if said_water != "TIP3P" else "."))
+    missing = sorted(x for x in xmls if files is not None and x not in files)
+    newest = max(([entry[4] for _r, entry, _rec in parts if entry[4]] or ["8.0"]),
+                 key=lambda v: tuple(int(p) for p in v.split(".")))
+    if missing:
+        plan.set("setup.force_field", xmls, "protein_forcefield", "needs_you",
+                 f"{', '.join(names)} with {said_water}: this installation's OpenMM does "
+                 f"not have {', '.join(missing)}; OpenMM {newest} or later does.",
+                 protein or nucleic or lipid)
+    else:
+        why = f"{', '.join(names or ['ff14SB'])} with {said_water}, from the files OpenMM ships."
+        if files is None and newest != "8.0":
+            why += f" Needs OpenMM {newest} or later."
+        plan.set("setup.force_field", xmls, "protein_forcefield",
+                 "as_stated" if (protein or nucleic or lipid) else "not_stated", why,
+                 protein or nucleic or lipid)
+    if geometry != "tip3p":
+        plan.set("setup.water_model", geometry, "water_model", "as_stated",
+                 f"{said_water}, placed with OpenMM's {geometry} geometry.", water)
+    elif water:
+        plan.note("water_model", "as_stated", f"{said_water}.", water)
+    # A list of files carries no cutoff of its own, and setup's fallback
+    # switches: each family's own scheme is written where the paper is
+    # silent, and said to be.
+    cutoff = plan.stated("cutoff")
+    if family.startswith("charmm") and not plan.stated("switch"):
+        if not cutoff:
+            plan.set("setup.nonbonded_cutoff_nm", 1.2, "cutoff", "not_stated",
+                     "Not stated: CHARMM36's own cutoff, 1.2 nm, switched from 1.0 nm.")
+        at = round(float(cutoff["value"]) - 0.2, 6) if cutoff else 1.0
+        plan.set("setup.use_switching_function", True, "switch", "not_stated",
+                 "Not stated: CHARMM36 is developed with switching.")
+        plan.set("setup.switch_distance_nm", at, "switch", "not_stated",
+                 f"Not stated: switched from {at:g} nm, 0.2 nm inside the cutoff, as "
+                 "CHARMM36 is.")
+    elif not family.startswith("charmm"):
+        if not plan.stated("switch"):
+            plan.set("setup.use_switching_function", False, "switch", "not_stated",
+                     "Not stated: AMBER force fields are run with a plain cutoff, never "
+                     "switched.")
+        if not cutoff:
+            plan.set("setup.nonbonded_cutoff_nm", 1.0, "cutoff", "not_stated",
+                     "Not stated: a 1.0 nm cutoff, as AMBER force fields are run here.")
+
+
+def _ligand_forcefield(plan: _Plan, record: dict[str, Any] | None) -> None:
+    if not record:
+        plan.note("ligand_forcefield", "not_stated",
+                  "The paper does not say how the ligand was parameterised: OpenFF "
+                  "Sage 2.2.1 is used.")
+        return
+    reduced = squash(str(record.get("value")))[0]
+    charges = plan.stated("ligand_charges")
+    if re.search(r"gaff2|gaff\-?2", reduced):
+        plan.set("setup.ligand_forcefield", "gaff-2.11", "ligand_forcefield", "as_stated",
+                 "GAFF2 (2.11), with AM1-BCC charges.", record)
+    elif "gaff" in reduced:
+        plan.set("setup.ligand_forcefield", "gaff-1.81", "ligand_forcefield", "as_stated",
+                 "GAFF (1.81), with AM1-BCC charges.", record)
+    elif "openff" in reduced or "sage" in reduced or "parsley" in reduced:
+        version = re.search(r"(\d\.\d(?:\.\d)?)", str(record.get("value")))
+        name = f"openff-{version.group(1)}" if version else "openff-2.2.1"
+        plan.set("setup.ligand_forcefield", name, "ligand_forcefield", "as_stated",
+                 f"OpenFF ({name}).", record)
+        return
+    else:
+        plan.note("ligand_forcefield", "differs",
+                  f"OpenFF Sage 2.2.1 in place of the paper's {record.get('value')}, which "
+                  "this software does not parameterise with.", record)
+        return
+    if charges and re.search(r"resp|hf", squash(str(charges.get("value")))[0]):
+        plan.note("ligand_charges", "differs",
+                  "AM1-BCC charges in place of the paper's RESP, which needs a quantum "
+                  "calculation this software does not run.", charges)
+
+
+def _box_and_ions(plan: _Plan) -> None:
+    shape = plan.stated("box_shape")
+    if shape:
+        reduced = squash(str(shape.get("value")))[0]
+        if "octahedr" in reduced:
+            plan.set("setup.box_shape", "octahedron", "box_shape", "as_stated",
+                     "A truncated octahedron.", shape)
+        elif "dodecahedr" in reduced:
+            plan.set("setup.box_shape", "dodecahedron", "box_shape", "as_stated",
+                     "A rhombic dodecahedron.", shape)
+        elif "cub" in reduced:
+            plan.set("setup.box_shape", "cube", "box_shape", "as_stated", "A cube.", shape)
+        elif plan.stated("membrane"):
+            plan.note("box_shape", "as_stated",
+                      f"{shape.get('value')}: a bilayer's box is rectangular here too.", shape)
+        else:
+            plan.note("box_shape", "differs",
+                      f"The paper's box is {shape.get('value')}; this software makes a "
+                      "cube, a dodecahedron or an octahedron, and the dodecahedron is "
+                      "used.", shape)
+    padding = plan.stated("padding")
+    if padding:
+        to_edge = float(padding["value"])
+        plan.set("setup.solvent_padding_nm", round(2 * to_edge, 6), "padding", "as_stated",
+                 f"{to_edge:g} nm from the solute to the box's edge, as papers measure "
+                 f"it, is {2 * to_edge:g} nm to the nearest periodic image, as padding is "
+                 "measured here: the same box.", padding)
+    salt = plan.stated("salt_concentration")
+    neutralized = plan.stated("neutralized")
+    if salt:
+        plan.set("setup.ion_concentration_M", float(salt["value"]), "salt_concentration",
+                 "as_stated", f"{float(salt['value']):g} M of salt.", salt)
+    elif neutralized and neutralized.get("value"):
+        plan.set("setup.ion_concentration_M", 0.0, "salt_concentration", "not_stated",
+                 "The paper names only the ions that neutralised it, so no salt is "
+                 "added beyond them. Set a concentration if salt was added.", neutralized)
+    if neutralized and neutralized.get("value") is False:
+        plan.set("setup.neutralize", False, "neutralized", "as_stated",
+                 "Not neutralised by counter-ions: the net charge is offset by PME's "
+                 "uniform background.", neutralized)
+    ions = plan.stated("ions")
+    if ions:
+        said = " ".join(map(str, _as_list(ions.get("value"))))
+        reduced = said.lower()
+        positive = ("K+" if re.search(r"\bk\b|k\+|potassium|kcl", reduced) else
+                    "Na+" if re.search(r"\bna\b|na\+|sodium|nacl", reduced) else None)
+        negative = "Cl-" if re.search(r"\bcl\b|cl-|chloride|kcl|nacl", reduced) else None
+        if positive:
+            plan.set("setup.ion_positive", positive, "ions", "as_stated", f"{positive}.", ions)
+        if negative:
+            plan.set("setup.ion_negative", negative, "ions", "as_stated", f"{negative}.", ions)
+        if not positive and not negative:
+            plan.note("ions", "differs",
+                      f"The paper's ions ({said}) are not salt this software adds; Na+ "
+                      "and Cl- are used, and ions bound in the structure are kept by "
+                      "setup.", ions)
+    protonation = plan.stated("protonation")
+    if protonation:
+        ph = re.search(r"\bpH\s*(?:of\s*)?(\d+(?:\.\d+)?)", str(protonation.get("quote", "")))
+        if ph:
+            plan.set("setup.ph", float(ph.group(1)), "protonation", "as_stated",
+                     f"Protonation states for pH {ph.group(1)}.", protonation)
+        else:
+            plan.note("protonation", "needs_you",
+                      f"The paper sets protonation as \"{_short(protonation.get('value'), 120)}\": "
+                      "set each residue's state in `setup.residue_states`, or accept "
+                      "setup's states at pH 7.4.", protonation, setting="setup.residue_states")
+
+
+def _physics(plan: _Plan) -> None:
+    temperature = plan.stated("temperature")
+    if temperature:
+        value = float(temperature["value"])
+        plan.set("simulation.temperature_K", value, "temperature", "as_stated",
+                 f"{value:g} K.", temperature)
+        plan.config["setup"]["temperature_K"] = value
+    pressure = plan.stated("pressure")
+    if pressure:
+        plan.set("simulation.pressure_bar", round(float(pressure["value"]), 6), "pressure",
+                 "as_stated", f"{float(pressure['value']):g} bar.", pressure)
+    ensemble = plan.stated("ensemble")
+    if ensemble:
+        reduced = squash(str(ensemble.get("value")))[0]
+        if "nvt" in reduced or "canonical" in reduced or "constantvolume" in reduced:
+            plan.set("simulation.ensemble", "nvt", "ensemble", "as_stated",
+                     "Production at constant volume, after equilibration at constant "
+                     "pressure.", ensemble)
+        elif "npt" in reduced or "isobaric" in reduced or "constantpressure" in reduced:
+            plan.set("simulation.ensemble", "npt", "ensemble", "as_stated",
+                     "Production at constant pressure.", ensemble)
+    thermostat = plan.stated("thermostat")
+    if thermostat:
+        reduced = squash(str(thermostat.get("value")))[0]
+        if "langevin" in reduced or "stochastic" in reduced or reduced in ("sd", "baoab"):
+            plan.set("simulation.integrator", "langevin_middle", "thermostat", "as_stated",
+                     "Langevin dynamics (OpenMM's LangevinMiddle integrator).", thermostat)
+        else:
+            plan.note("thermostat", "differs",
+                      f"Langevin dynamics in place of the paper's {thermostat.get('value')}: "
+                      "OpenMM's runner here keeps temperature by Langevin dynamics, which "
+                      "samples the same canonical distribution"
+                      + (" (Berendsen's does not, quite)" if "berendsen" in reduced else "")
+                      + ".", thermostat)
+    barostat = plan.stated("barostat")
+    if barostat:
+        reduced = squash(str(barostat.get("value")))[0]
+        if "montecarlo" in reduced or reduced == "mc":
+            plan.note("barostat", "as_stated", "A Monte Carlo barostat.", barostat)
+        else:
+            plan.note("barostat", "differs",
+                      f"A Monte Carlo barostat in place of the paper's {barostat.get('value')}, "
+                      "as OpenMM keeps pressure; it samples the same isobaric "
+                      "distribution" + (" (Berendsen's does not, quite)" if "berendsen" in reduced
+                                        else "") + ".", barostat)
+    timestep = plan.stated("timestep")
+    if timestep:
+        plan.set("simulation.timestep_fs", float(timestep["value"]), "timestep", "as_stated",
+                 f"{float(timestep['value']):g} fs.", timestep)
+    constraints = plan.stated("constraints")
+    if constraints:
+        reduced = squash(str(constraints.get("value")) + " " + str(constraints.get("quote")))[0]
+        if re.search(r"allbonds|allbond|everybond", reduced):
+            plan.set("setup.constraints", "AllBonds", "constraints", "as_stated",
+                     "Every bond constrained.", constraints)
+        elif re.search(r"hydrogen|hbond|tohydrogen|xh|h\-?bonds", reduced):
+            plan.set("setup.constraints", "HBonds", "constraints", "as_stated",
+                     "Bonds to hydrogen constrained (by OpenMM's own algorithm, whatever "
+                     "the paper's program called it).", constraints)
+        elif re.search(r"shake|lincs|settle|rattle", reduced):
+            plan.note("constraints", "not_stated",
+                      "The paper names its constraint algorithm, not which bonds: bonds "
+                      "to hydrogen are constrained, as is usual with it.", constraints)
+        elif re.search(r"none|noconstraint|flexible", reduced):
+            plan.set("setup.constraints", "None", "constraints", "as_stated",
+                     "No bonds constrained.", constraints)
+    hmass = plan.stated("hydrogen_mass")
+    step = plan.stated("timestep")
+    if hmass:
+        plan.set("setup.hydrogen_mass_amu", float(hmass["value"]), "hydrogen_mass", "as_stated",
+                 f"Hydrogen mass repartitioned to {float(hmass['value']):g} amu.", hmass)
+    elif step and float(step["value"]) >= 3.0:
+        plan.note("hydrogen_mass", "needs_you",
+                  f"A {float(step['value']):g} fs step needs hydrogen mass repartitioning, "
+                  "and the paper does not say the mass: set `setup.hydrogen_mass_amu` "
+                  "(AMBER's is 3.024 amu).", setting="setup.hydrogen_mass_amu")
+    cutoff = plan.stated("cutoff")
+    if cutoff:
+        plan.set("setup.nonbonded_cutoff_nm", float(cutoff["value"]), "cutoff", "as_stated",
+                 f"{float(cutoff['value']):g} nm.", cutoff)
+    switch = plan.stated("switch")
+    if switch:
+        force = "force" in squash(str(switch.get("value")) + str(switch.get("quote")))[0]
+        plan.set("setup.use_switching_function", True, "switch",
+                 "differs" if force else "as_stated",
+                 "A switch on the potential: OpenMM switches the van der Waals potential, "
+                 "not the force as GROMACS's force-switch does." if force else
+                 "Van der Waals switched.", switch)
+        plan.set("setup.switch_distance_nm", float(switch["value"]), "switch",
+                 "differs" if force else "as_stated",
+                 f"Switched from {float(switch['value']):g} nm.", switch)
+    electrostatics = plan.stated("electrostatics")
+    if electrostatics:
+        reduced = squash(str(electrostatics.get("value")))[0]
+        if "pme" in reduced or "particlemesh" in reduced or "spme" in reduced:
+            plan.set("setup.nonbonded_method", "PME", "electrostatics", "as_stated",
+                     "Particle-mesh Ewald.", electrostatics)
+        elif "gaussiansplit" in reduced or "gse" in reduced:
+            plan.set("setup.nonbonded_method", "PME", "electrostatics", "differs",
+                     "Particle-mesh Ewald in place of Gaussian split Ewald: both sum "
+                     "the same long-range electrostatics.", electrostatics)
+        elif "ewald" in reduced:
+            plan.set("setup.nonbonded_method", "Ewald", "electrostatics", "as_stated",
+                     "Ewald summation.", electrostatics)
+        else:
+            plan.set("setup.nonbonded_method", "PME", "electrostatics", "differs",
+                     f"Particle-mesh Ewald in place of the paper's {electrostatics.get('value')}, "
+                     "which this software does not do.", electrostatics)
+
+
+def _protocol(plan: _Plan) -> None:
+    for field, setting in (("nvt_equilibration", "simulation.nvt_duration_ns"),
+                           ("npt_equilibration", "simulation.npt_duration_ns")):
+        record = plan.stated(field)
+        if record:
+            plan.set(setting, float(record["value"]), field, "as_stated",
+                     f"{float(record['value']):g} ns.", record)
+    restraints = plan.stated("equilibration_restraints")
+    if restraints:
+        reduced = squash(str(restraints.get("value")))[0]
+        selection = ("protein and backbone" if "backbone" in reduced else
+                     "protein and name CA" if re.search(r"calpha|cα|ca\b|alphacarbon", reduced) else
+                     "protein and not element H" if re.search(r"heavy|nonhydrogen", reduced)
+                     else None)
+        if selection:
+            plan.set("simulation.restrain", selection, "equilibration_restraints", "differs",
+                     f"{selection} held during equilibration, released in this software's "
+                     "steps (1000, 500, 100, 0 kJ/mol/nm²), which may not be the paper's.",
+                     restraints)
+        else:
+            plan.note("equilibration_restraints", "differs",
+                      f"The paper restrained {restraints.get('value')}; equilibration here "
+                      "follows this software's own steps.", restraints)
+    production = plan.stated("production")
+    if production:
+        plan.set("simulation.duration_ns", float(production["value"]), "production",
+                 "as_stated", f"{float(production['value']):g} ns of production"
+                 + (" per replica." if plan.stated("replicas") else "."), production)
+    else:
+        record = plan.fields.get("production")
+        plan.note("production", "needs_you",
+                  "The paper does not state this study's production in words this can "
+                  "read: set `simulation.duration_ns`."
+                  + (f' (It says: "{_short(record.get("quote"), 120)}")'
+                     if isinstance(record, dict) and record.get("quote") else ""),
+                  setting="simulation.duration_ns")
+    replicas = plan.stated("replicas")
+    if replicas and int(replicas["value"]) > 1:
+        plan.note("replicas", "as_stated",
+                  f"{int(replicas['value'])} replicas, each from its own random seed.",
+                  replicas)
+    engine = plan.stated("engine")
+    if engine:
+        said = str(engine.get("value"))
+        if "openmm" in said.lower():
+            plan.note("engine", "as_stated", "OpenMM, as here.", engine)
+        else:
+            plan.note("engine", "differs",
+                      f"Run here in OpenMM; the paper used {said}.", engine)
+
+
+def _method(plan: _Plan) -> str:
+    record = plan.stated("method")
+    method = _method_of(str(record.get("value"))) if record else "plain"
+    details = plan.stated("method_details")
+    if details and method not in _CANNOT:
+        # Bias-exchange metadynamics is replica exchange; walkers of one
+        # metadynamics are not. What the details say outranks the word,
+        # where they name an exchange between replicas and do not deny it:
+        # the details of plain MD name analyses, pressures and hardware too.
+        words = str(details.get("value")) + ". " + str(details.get("quote") or "")
+        said = _method_in_details(words)
+        if said:
+            method = said
+            record = details
+    if method in _CANNOT:
+        plan.note("method", "not_possible", f"The study is {_CANNOT[method]}.", record)
+    elif method in ("umbrella", "metadynamics", "steered"):
+        block = {"umbrella": "umbrella", "metadynamics": "metadynamics",
+                 "steered": "steered"}[method]
+        plan.note("method", "needs_you",
+                  f"The study is {method.replace('_', ' ')} sampling: write its collective "
+                  f"variable and settings in `simulation.{block}` from the paper's"
+                  + (f' "{_short(details.get("value"), 160)}"' if details else " methods")
+                  + ".", record, setting=f"simulation.{block}")
+    elif method == "other":
+        plan.note("method", "needs_you",
+                  f"The study's method is {record.get('value') if record else 'not plain MD'}, "
+                  "which this does not recognise: read the paper's methods before running.",
+                  record)
+    return method
+
+
+def _config(plan: _Plan, study: dict[str, Any], reading: dict[str, Any], method: str,
+            output: str | None) -> dict[str, Any]:
+    config: dict[str, Any] = {}
+    systems = plan.config.pop("systems", None) or [{"system": STRUCTURE_TO_GIVE}]
+    entry = dict(systems[0])
+    entry["id"] = slug(f"{study.get('id')}-{study.get('label')}", 32)
+    config["systems"] = [entry]
+    title = reading.get("title") or "the paper"
+    config["output"] = output or f"runs/{slug(title, 28)}-{slug(str(study.get('id')), 8)}"
+    for phase in ("setup", "simulation"):
+        if plan.config.get(phase):
+            config[phase] = dict(plan.config[phase])
+    replicas = plan.stated("replicas")
+    if replicas and int(replicas["value"]) > 1:
+        config["sweep"] = {"simulation.random_seed": list(range(1, int(replicas["value"]) + 1))}
+        plan.decisions["sweep"] = {
+            "why": f"{int(replicas['value'])} replicas, each from its own random seed. "
+                   f'The paper ({replicas.get("where")}): "{_short(replicas.get("quote"))}"',
+            "source": plan.source}
+    config["report"] = {"title": f"{study.get('label')}: reproducing {_short(title, 90)}"}
+    decisions = dict(plan.decisions)
+    if decisions:
+        config["decisions"] = decisions
+    config["paper"] = {
+        "doi": reading.get("doi") or None,
+        "title": title,
+        "study": study.get("id"),
+        "label": study.get("label"),
+        "read_by": reading.get("model") or None,
+        "read": reading.get("made") or None,
+        "paper_sha256": reading.get("paper_sha256") or None,
+        "choices": [choice.as_record() for choice in plan.choices],
+        "claims": [_claim_record(claim) for claim in study.get("claims") or []
+                   if claim.get("status") == "stated"],
+        # What must be supplied before it runs: the validator refuses the
+        # study while any is left, so none is forgotten.
+        "needs": [choice.why for choice in plan.choices if choice.label == "needs_you"] or None,
+    }
+    config["paper"] = {key: value for key, value in config["paper"].items() if value is not None}
+    return config
+
+
+def _claim_record(claim: dict[str, Any]) -> dict[str, Any]:
+    keep = ("quantity", "analysis", "what", "value", "error", "error_kind", "n", "unit",
+            "quote", "where")
+    return {key: claim[key] for key in keep if claim.get(key) not in (None, "")}
+
+
+def _until_determined(plan: _Plan, config: dict[str, Any], study: dict[str, Any]) -> None:
+    """A stopping rule from the paper's results that carry an error: each to
+    the paper's own standard error, in the analysis's unit; the paper's
+    production the ceiling, and a fifth of it the first piece."""
+    from fastmdxplora.paper.reproduction import paper_standard_error, to_unit_of
+
+    simulation = config.setdefault("simulation", {})
+    ceiling = simulation.get("duration_ns")
+    if not isinstance(ceiling, (int, float)) or ceiling <= 0:
+        plan.note("production", "needs_you",
+                  "Running until the results are determined needs the paper's production "
+                  "as its ceiling, which it does not state.")
+        return
+    measures = []
+    seen = set()
+    for claim in config.get("paper", {}).get("claims", []):
+        analysis = claim.get("analysis")
+        if analysis not in _JUDGEABLE or analysis in seen:
+            continue
+        error = paper_standard_error(claim)
+        if error is None:
+            continue
+        converted = to_unit_of(error, claim.get("unit") or "", analysis)
+        if converted is None or converted <= 0:
+            continue
+        seen.add(analysis)
+        measures.append({"analysis": analysis, "standard_error": round(converted, 6)})
+    if not measures:
+        plan.note("production", "not_stated",
+                  "No result the paper reports carries an error this can stop at, so the "
+                  "study runs the paper's full length.")
+        return
+    simulation["stop_when"] = {"measures": measures, "max_duration_ns": float(ceiling)}
+    if not config.get("sweep"):
+        simulation["stop_when"]["independent_starts"] = "not_required"
+    simulation["duration_ns"] = round(max(float(ceiling) / 5.0, 1.0), 3)
+    plan.choices.append(Choice(
+        "production", "differs",
+        "Run until " + ", ".join(m["analysis"] for m in measures) + " is determined to "
+        "the paper's own error, at most the paper's "
+        f"{float(ceiling):g} ns: a shorter run where that is enough.",
+        "simulation.stop_when", simulation["stop_when"]))
+    config["paper"]["choices"] = [choice.as_record() for choice in plan.choices]
+
+
+#: The analyses a stopping rule can judge: each records one mean.
+_JUDGEABLE = ("rmsd", "rg", "sasa", "end_to_end", "ligand_rmsd", "area_per_lipid",
+              "bilayer_thickness", "hbonds")
+
+
+#: Entries of a study's ligands that are no small molecule to parameterise:
+#: ions, water, and saying there is none.
+_NOT_A_LIGAND = re.compile(
+    r"^\s*(?:none|no\b|n/a|apo\b|removed|without)|\bions?\b|\bwaters?\b|\bsolvent\b"
+    r"|^\s*(?:na|k|cl|mg|ca|zn|mn|fe|cu|co|ni|cd|li|cs|rb|sr|ba|br|i|f)\s*\d*\s*[+-]*\s*$"
+    r"|^\s*(?:sodium|potassium|chloride|magnesium|calcium|zinc|manganese|iron|copper|"
+    r"cobalt|nickel|cadmium|lithium|caesium|cesium)\b", re.IGNORECASE)
+
+
+#: Lipids named by an abbreviation the phospholipid pattern does not read,
+#: each making a bilayer a mixture.
+_OTHER_LIPIDS = {"PIP", "PIP2", "PIP3", "PI4P", "PI", "SM", "SSM", "PSM", "CHL1", "CL",
+                 "CL1", "CL2", "GM1", "GM3", "LPS", "DAG", "CER", "ERG", "PC", "PE", "PG",
+                 "PS", "PA", "LPC"}
+
+
+def _ligands_of(record: dict[str, Any] | None) -> list[str]:
+    """The small molecules among what a study's ligands name: ions, water
+    and "none" set aside, which are no ligand to parameterise."""
+    if not record:
+        return []
+    return [str(item).strip() for item in _as_list(record.get("value"))
+            if str(item).strip() and not _NOT_A_LIGAND.search(str(item))]
+
+
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    return [value] if value not in (None, "") else []

@@ -41,6 +41,18 @@ FastMDXplora/
 │       │   ├── __init__.py
 │       │   └── main.py            # `fastmdx` entry point (explore/xplore/setup/simulate/
 │       │                          #   analyze/report/gui/info/config/remote/mcp/scene)
+│       ├── paper/                 # A paper's MD studies read and written as configs (docs/papers.md)
+│       │   ├── __init__.py        # What a paper that cannot be read or fetched is refused as
+│       │   ├── text.py            # A paper's words as parts: PDF pages, JATS sections and tables, Word
+│       │   ├── fetch.py           # An open-access paper by DOI, PMCID or arXiv id (Europe PMC, bioRxiv, arXiv)
+│       │   ├── fields.py          # What is read of a study: each setting, a result's quantities
+│       │   ├── quotes.py          # Whether an AI model's quote is the paper's own words, and where
+│       │   ├── values.py          # A number and its unit read from those words, in this software's unit
+│       │   ├── extract.py         # The questions to the AI model, and its answers checked
+│       │   ├── mapping.py         # A study as a config: each setting as stated, not stated, differs, needs you
+│       │   ├── studies.py         # Read, plan, choose, write: what every entry point shares
+│       │   ├── command.py         # `fastmdx config --paper`
+│       │   └── reproduction.py    # The paper's results beside what the study determined, with verdicts
 │       ├── sharing/               # A study shared as one file, and opened from it (docs/sharing.md)
 │       │   ├── __init__.py        # The profile, its version and the placeholders a packed record says
 │       │   ├── crate.py           # The packing list: RO-Crate 1.2 with the study profile, and its check

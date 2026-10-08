@@ -566,6 +566,15 @@ def _write_markdown(
         from fastmdxplora.simulation.stopping import stopping_section
 
         lines.extend(stopping_section(root))
+        try:
+            from fastmdxplora.paper.reproduction import reproduction_lines
+
+            reproduced = reproduction_lines(root)
+        except Exception:  # noqa: BLE001 - the comparison is worth more than this
+            reproduced = []
+        if reproduced:
+            lines.append("")
+            lines.extend(reproduced)
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

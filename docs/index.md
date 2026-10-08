@@ -127,6 +127,7 @@ selections
 studies
 membranes
 examples
+papers
 ```
 
 ```{toctree}

@@ -331,7 +331,7 @@ def python_script(config: dict[str, Any]) -> str:
     # the study was written, its budget, why its settings have their values,
     # and the two presentation settings.
     shaped += [key for key in ("agent", "agent_model", "budget_hours", "decisions",
-                               "verbose", "explain")
+                               "paper", "verbose", "explain")
                if config.get(key) is not None
                and config.get(key) != _top_level_default(key)]
     entries = config.get("systems") or []
@@ -355,7 +355,7 @@ def python_script(config: dict[str, Any]) -> str:
             study["systems"] = [{"system": system}]
         for key in ("output", "include_phase", "exclude_phase",
                     "verbose", "explain", "agent", "agent_model", "budget_hours",
-                    "decisions"):
+                    "decisions", "paper"):
             if config.get(key) is not None:
                 study[key] = config[key]
         study.update(blocks)

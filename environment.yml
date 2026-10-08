@@ -74,3 +74,5 @@ dependencies:
   - markdown>=3.4
   # UMAP, for the dimensionality-reduction analysis that offers it.
   - umap-learn>=0.5
+  # Reading a paper's PDF, to reproduce its MD studies.
+  - pypdf>=4.0

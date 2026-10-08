@@ -54,7 +54,7 @@ output: runs/ubiquitin
 
 ---
 
-## The sixteen top-level keys
+## The seventeen top-level keys
 
 Nothing else is accepted at the top level; an unknown key is refused with the
 nearest match.
@@ -96,6 +96,7 @@ Every setting in each is in the [Config reference](config_reference.md).
 | `agent_model` | str | — | Which AI model wrote it, as `provider/model` |
 | `budget_hours` | float | — | A ceiling on GPU hours for the whole study, every run of it. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
 | `decisions` | mapping | none | Why a setting has its value, keyed by the setting's dotted name: `why`, and optionally `source` and `alternatives` |
+| `paper` | mapping | none | The paper a study was written from, by `fastmdx config --paper`: its DOI, which of its studies, how each setting came from it, the results it reports, and what the study still `needs`. See [Reproducing a paper's MD studies](papers.md) |
 
 `agent` and `agent_model` are provenance, not behaviour. They are described in
 [The FastMDXplora Agent](agent.md).

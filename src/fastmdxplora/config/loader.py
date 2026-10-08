@@ -25,6 +25,7 @@ implement (2) beating (3) via their own ``DEFAULTS`` tables.
 from __future__ import annotations
 
 import difflib
+import math
 from pathlib import Path
 from typing import Any
 
@@ -606,6 +607,8 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
 
     if data.get("decisions") is not None:
         _check_decisions(data["decisions"])
+    if data.get("paper") is not None:
+        _check_paper(data["paper"])
 
     # include / exclude mutual exclusion
     if data.get("include_phase") and data.get("exclude_phase"):
@@ -733,9 +736,59 @@ def settings_named() -> set[str]:
     names = {f"{phase}.{field.name}" for phase, schema in PHASE_SCHEMAS.items()
              for field in schema.fields}
     names |= {f"execution.{field.name}" for field in EXECUTION.fields}
-    names |= {field.name for field in TOP_LEVEL.fields if field.name != "decisions"}
+    names |= {field.name for field in TOP_LEVEL.fields
+              if field.name not in ("decisions", "paper")}
     names |= {"systems", "sweep"}
     return names
+
+
+def _check_paper(paper: Any) -> None:
+    """The record of the paper a study was written from: a mapping whose
+    claims are each a mapping with a number for its value, since the
+    report compares them. Its words are a record and are not judged."""
+    if not isinstance(paper, dict):
+        raise ConfigError(
+            "`paper` is a mapping: the paper this study was written from, with "
+            "its `doi`, `study` and `claims`.",
+            code="config.option.wrong_type", option="paper", context="top-level",
+            expected_type="mapping", found_type=type(paper).__name__)
+    known = ("doi", "title", "study", "label", "read_by", "read", "paper_sha256",
+             "choices", "claims", "needs")
+    for key in paper:
+        if key not in known:
+            raise ConfigError(
+                f"`paper` has '{key}'{_suggest(str(key), set(known))}. It records "
+                f"{', '.join(known)}.",
+                code="config.option.unknown", option=str(key), context="paper",
+                permitted=list(known), suggestion=_suggestion_only(str(key), set(known)))
+    for name in ("choices", "claims"):
+        entries = paper.get(name)
+        if entries is None:
+            continue
+        if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+            raise ConfigError(
+                f"`paper.{name}` is a list of mappings.",
+                code="config.option.wrong_type", option=name, context="paper",
+                expected_type="list", found_type=type(entries).__name__)
+    needs = paper.get("needs")
+    if needs:
+        listed = needs if isinstance(needs, list) else [needs]
+        raise ConfigError(
+            "This study was written from a paper and is not complete: "
+            + " ".join(f"({n}) {str(item).strip()}" for n, item in enumerate(listed, start=1))
+            + " Supply each, then delete `paper.needs`.",
+            code="config.option.missing_companion", option="paper.needs", context="paper",
+            requires=[str(item) for item in listed])
+    for number, claim in enumerate(paper.get("claims") or [], start=1):
+        value = claim.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not math.isfinite(value):
+            raise ConfigError(
+                f"`paper.claims` entry {number} has no number for its `value`; a "
+                "claim is kept to be compared, so it is a number.",
+                code="config.option.wrong_type", option="value",
+                context=f"paper.claims[{number}]", expected_type="float",
+                found_type=type(value).__name__)
 
 
 def _check_decisions(decisions: Any) -> None:
@@ -867,7 +920,7 @@ def phase_options(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 #: folded into the phase blocks: `resolve_agent_modes` compares the two to
 #: find the departures, and a phase that agreed with a study value it could
 #: not see was reported as departing from it.
-STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours", "decisions")
+STUDY_LEVEL_KEYS = ("agent", "agent_model", "budget_hours", "decisions", "paper")
 
 
 def study_options(data: dict[str, Any]) -> dict[str, Any]:
