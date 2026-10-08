@@ -236,3 +236,28 @@ def test_without_a_clock_or_an_rmsf(pair, tmp_path):
     theirs = _residues(_atom_lines(_read(bare / "simulation" / "frames_topology.pdb")))
     pairs, _, _ = paired(mine, theirs)
     assert _difference(wild, bare, "bare", mine, theirs, pairs) is None
+
+
+def test_an_unrelated_protein_is_not_paired_with_it(pair, tmp_path):
+    """Trp-cage beside trypsin had 15 of its 20 residues "paired", each
+    alone or in twos, and their RMSF difference was offered as a comparison.
+    Two sequences are one protein's where runs of four or more cover half
+    the shorter."""
+    from fastmdxplora.gui.beside import ONE_LETTER, anchored, beside
+
+    def residues(letters):
+        return [{"letter": letter} for letter in letters]
+
+    assert anchored(residues("ACDEFGHIK"), residues("ACDQFGIK")) == 0
+    assert anchored(residues("ACDEFGHIKLMN"), residues("ACDEFGHQKLMN")) == 11
+    wild, _ = pair
+    three = {letter: name for name, letter in ONE_LETTER.items()
+             if len(name) == 3 and name in ("ASN", "LEU", "TYR", "ILE", "GLN", "TRP",
+                                            "LYS", "ASP", "GLY", "PRO", "SER", "ARG")}
+    protein = _protein()
+    protein = protein.atom_slice(protein.topology.select("resSeq 16 to 35"))
+    for residue, letter in zip(protein.topology.residues, "NLYIQWLKDGGPSSGRPPPS"):
+        residue.name = three[letter]
+    trp_cage = _study(tmp_path / "trp-cage", protein, 10, seed=3, turn=0.2, wobble=0.0)
+    said = beside(wild, trp_cage, most_frames=2000)
+    assert not said.get("ok") and "is not a form of this study's protein" in said["reason"]

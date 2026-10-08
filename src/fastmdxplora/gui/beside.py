@@ -76,6 +76,25 @@ def paired(mine: list[dict[str, Any]], theirs: list[dict[str, Any]]
     return pairs, mutations, unpaired
 
 
+#: Residues matched in runs at least this long are evidence two sequences
+#: are one protein: four letters in a row agree by chance about once in
+#: 160,000 places, where single letters or pairs agree all along any two.
+ANCHOR = 4
+
+#: The share of the shorter sequence such runs must cover.
+RELATED = 0.5
+
+
+def anchored(mine: list[dict[str, Any]], theirs: list[dict[str, Any]]) -> int:
+    """How many residues the two sequences share in runs of :data:`ANCHOR`
+    or more. Trp-cage beside trypsin had 15 of its 20 residues paired, each
+    alone or in twos, and none in a run of four."""
+    first = "".join(r["letter"] for r in mine)
+    second = "".join(r["letter"] for r in theirs)
+    return sum(block.size for block in difflib.SequenceMatcher(
+        None, first, second, autojunk=False).get_matching_blocks() if block.size >= ANCHOR)
+
+
 def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str, Any]:
     """The other study's frames fitted beside this one's and timed to them,
     written once beside this study's frames, with the residues paired and
@@ -122,9 +141,14 @@ def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str
     lines_b = _atom_lines(_read(that / "simulation" / FRAMES_TOPOLOGY))
     residues_a, residues_b = _residues(lines_a), _residues(lines_b)
     pairs, mutations, unpaired = paired(residues_a, residues_b)
-    if len(pairs) < 3:
-        return {"ok": False, "reason": f"{name}'s residues have too little sequence in common "
-                                       "with this study's to be fitted."}
+    shorter = min(len(residues_a), len(residues_b))
+    shared = anchored(residues_a, residues_b)
+    if len(pairs) < 3 or shared < max(3, RELATED * shorter):
+        return {"ok": False, "reason": (
+            f"{name} is not a form of this study's protein: their sequences share "
+            f"{shared} of the shorter one's {shorter} residues in runs of {ANCHOR} or "
+            "more. Compare study plays two forms of one protein, a wild type and a "
+            "mutant, beside each other.")}
     atoms_a = np.array([residues_a[i]["atom"] for i, _ in pairs])
     atoms_b = np.array([residues_b[j]["atom"] for _, j in pairs])
     chosen, timed = _timed(mine, theirs)
