@@ -59,6 +59,7 @@ def _cells(study: Path, checkpoint: str, *, hours: str = "24h") -> dict[str, tup
 def test_the_checkpoint_from_the_study_and_the_time_to_the_minute(tmp_path):
     study = _write_study(tmp_path / "study")
     whole = str(study.resolve() / "simulation" / "checkpoint.chk")
+    Path(whole).write_bytes(b"chk")
     cells = _cells(study, whole)
     assert cells["checkpoint"] == ("simulation/checkpoint.chk", whole)
     said, title = cells["lastupdate"]
@@ -68,13 +69,17 @@ def test_the_checkpoint_from_the_study_and_the_time_to_the_minute(tmp_path):
 
 def test_a_checkpoint_written_through_another_name_for_the_folder(tmp_path):
     study = _write_study(tmp_path / "study")
-    elsewhere = "/private" + str(study.resolve() / "segment-001" / "simulation" / "checkpoint.chk")
+    there = study.resolve() / "segment-001" / "simulation" / "checkpoint.chk"
+    there.parent.mkdir(parents=True)
+    there.write_bytes(b"chk")
+    elsewhere = "/private" + str(there)
     assert _cells(study, elsewhere)["checkpoint"] == (
-        "segment-001/simulation/checkpoint.chk", elsewhere)
+        "segment-001/simulation/checkpoint.chk", str(there))
 
 
 def test_the_time_follows_the_time_setting(tmp_path):
     study = _write_study(tmp_path / "study")
+    (study / "simulation" / "checkpoint.chk").write_bytes(b"chk")
     said, _ = _cells(study, str(study / "simulation" / "checkpoint.chk"),
                      hours="12h")["lastupdate"]
     assert re.fullmatch(r"\d{1,2}:\d{2}\s?[AP]M", said, re.IGNORECASE), said

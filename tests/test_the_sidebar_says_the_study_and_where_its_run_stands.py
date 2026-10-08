@@ -77,6 +77,8 @@ def _sidebar_of(browser, study: Path, height: int = 900):
         page.wait_for_function("() => !document.body.classList.contains('state-loading')")
         page.wait_for_function("() => document.getElementById('nav-studies-count')"
                                ".textContent !== ''")
+        # The fix link is shown once the fixes are known (fixes.js).
+        page.wait_for_function("() => !!document.documentElement.dataset.fixes")
         facts = page.evaluate(_FACTS)
         facts["errors"] = errors
         yield facts, page

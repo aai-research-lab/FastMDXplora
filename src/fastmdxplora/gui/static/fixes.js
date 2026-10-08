@@ -79,6 +79,10 @@
     lastKey = key;
     list.innerHTML = "";
     card.hidden = !fixes.length;
+    // The sidebar's "What would fix it" leads here, so it is shown only
+    // while there is a fix to show: it was shown for every failed run and
+    // led to the Overview's top, its card hidden and empty.
+    document.documentElement.setAttribute("data-fixes", fixes.length ? "some" : "none");
     fixes.forEach(function (fix) {
       var item = el("li", "fix");
       item.setAttribute("data-code", fix.code || "");

@@ -92,6 +92,9 @@ def _stamp(root: Path) -> tuple:
     paths = [root / "manifest.json", root / "simulation" / "live_metrics.csv",
              root / "simulation" / "live_status.json",
              root / "analysis" / "analysis_manifest.json"]
+    # A study carried on in pieces: each piece's live record moves it on.
+    paths += sorted(root.glob("segment-*/simulation/live_status.json"))
+    paths += sorted(root.glob("segment-*/simulation/live_metrics.csv"))
     try:
         paths += sorted((root / "analysis").glob("*/options.json"))
     except OSError:
@@ -198,9 +201,11 @@ def _rmsf(root: Path) -> dict[str, Any] | None:
 
 def _thermodynamics(root: Path) -> dict[str, Any]:
     from fastmdxplora.gui.simulated_time import simulated_times
-    from fastmdxplora.gui.telemetry import read_status
+    from fastmdxplora.gui.telemetry import status_as_it_stands
 
-    status = read_status(root)
+    # As the sidebar and the health card read it: a run that ended without
+    # saying so, and a study carried on in pieces, read as one run.
+    status = status_as_it_stands(root)
     rows = _metric_rows(root)
     try:
         times = simulated_times(root, status)

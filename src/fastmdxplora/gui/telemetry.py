@@ -298,6 +298,199 @@ def read_status(project_root: str | Path) -> dict[str, Any]:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# A study carried on in pieces.
+#
+# `fastmdx resume` and **What would fix it** carry a stopped production on in
+# the study's next segment (`segment-001/`, ...), each with a live record of
+# its own, and then join the pieces and analyse the whole in the study's own
+# folder. The study's record kept saying what its first piece said: the page
+# read "Production stopped" while the resume ran, then "Stopped with an
+# error" (its stop) once every phase had finished, with the first piece's
+# 26 of 100 frames. The GUI reads the study as one run: the stage of
+# whichever record was written last, the newest piece's error and
+# checkpoint, and the steps and frames of every piece counted together.
+# ---------------------------------------------------------------------------
+
+def _pieces_of(root: Path) -> list[Path]:
+    """The study's segments that kept a live record, in the order run."""
+    found: list[tuple[int, Path]] = []
+    for folder in root.glob("segment-*"):
+        try:
+            index = int(folder.name.split("-", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        if index > 0 and (folder / "simulation" / STATUS_FILE).is_file():
+            found.append((index, folder))
+    return [folder for _, folder in sorted(found)]
+
+
+def _frames_kept(folder: Path) -> int | None:
+    """The production frames a piece contributes to the joined trajectory:
+    all it wrote where it finished, those before its last checkpoint where
+    it was stopped (the rest are run again by the next piece)."""
+    from fastmdxplora.analysis.joining import _finished
+    from fastmdxplora.simulation.resume import frames_before_checkpoint
+
+    simulation = folder / "simulation"
+    try:
+        if _finished(simulation):
+            count = read_status(folder).get("current_frame_count")
+            return int(count) if isinstance(count, (int, float)) else None
+        return frames_before_checkpoint(folder)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return None
+
+
+def _interval_of(folder: Path) -> int | None:
+    from fastmdxplora.simulation.resume import trajectory_interval_of
+
+    try:
+        return trajectory_interval_of(folder)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return None
+
+
+def _offsets_of(root: Path, first: dict[str, Any], pieces: list[Path]) -> list[tuple[int, int]] | None:
+    """For each piece, the study's steps and production frames before it
+    began: its equilibration, then what every earlier piece kept. None
+    where a piece's share cannot be counted."""
+    equilibration = 0
+    for key in ("nvt_steps_planned", "npt_steps_planned"):
+        value = first.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            equilibration += int(value)
+    frames = 0
+    steps = equilibration
+    offsets: list[tuple[int, int]] = []
+    for before in [root, *pieces[:-1]]:
+        kept, interval = _frames_kept(before), _interval_of(before)
+        if kept is None or interval is None:
+            return None
+        frames += kept
+        steps += kept * interval
+        offsets.append((steps, frames))
+    return offsets
+
+
+def _newer(one: dict[str, Any], other: dict[str, Any]) -> bool:
+    first = _parse_iso_datetime(str(one.get("last_update_timestamp") or ""))
+    second = _parse_iso_datetime(str(other.get("last_update_timestamp") or ""))
+    if first is None or second is None:
+        return first is not None
+    return first > second
+
+
+def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
+    pieces = _pieces_of(root)
+    if not pieces:
+        return first
+    newest = pieces[-1]
+    last = read_status(newest)
+    if not last:
+        return first
+    whole = dict(first)
+    whole["piece"] = newest.name
+    whole["pieces"] = len(pieces) + 1
+    # What the simulation last said of itself is its newest piece's word.
+    for key in ("latest_error", "latest_warning", "current_checkpoint_path", "platform",
+                "precision", "precision_applied"):
+        if key in last:
+            whole[key] = last.get(key)
+    if _newer(last, first):
+        # The piece is the newest word: the study is where it is.
+        stage = str(last.get("stage") or "").lower()
+        whole["status"] = last.get("status")
+        # A piece only produces, whatever stage it was first marked in.
+        whole["stage"] = stage if stage in {"analysis", "report"} else "production"
+        whole["last_update_timestamp"] = last.get("last_update_timestamp")
+        states = dict(first.get("stage_states") or {}) if isinstance(
+            first.get("stage_states"), dict) else {}
+        said = str(last.get("status") or "").lower()
+        states["production"] = ("current" if said in _GOING_STATUSES
+                                else str((last.get("stage_states") or {}).get(
+                                    "production") or said or "waiting"))
+        for later in ("analysis", "report"):
+            if states.get(later) not in (None, "skipped"):
+                states[later] = "waiting"
+        whole["stage_states"] = states
+        elapsed = [value for value in (first.get("elapsed_wall_time_s"),
+                                       last.get("elapsed_wall_time_s"))
+                   if isinstance(value, (int, float))]
+        if elapsed:
+            whole["elapsed_wall_time_s"] = sum(elapsed)
+    offsets = _offsets_of(root, first, pieces)
+    if offsets is None:
+        return whole
+    steps_before, frames_before = offsets[-1]
+    for key, before in (("current_step", steps_before), ("total_planned_steps", steps_before),
+                        ("current_frame_count", frames_before),
+                        ("planned_frame_count", frames_before)):
+        value = last.get(key)
+        if isinstance(value, (int, float)):
+            whole[key] = int(before + value)
+    produced = last.get("production_steps_planned")
+    if isinstance(produced, (int, float)):
+        whole["production_steps_planned"] = int(steps_before - (whole.get(
+            "nvt_steps_planned") or 0) - (whole.get("npt_steps_planned") or 0) + produced)
+    step, timestep = whole.get("current_step"), whole.get("timestep_fs")
+    if isinstance(step, (int, float)) and isinstance(timestep, (int, float)):
+        whole["simulation_time_completed_ns"] = float(step) * float(timestep) / 1_000_000.0
+    return whole
+
+
+def read_study_status(project_root: str | Path) -> dict[str, Any]:
+    """The study's live record, read as one run across the pieces it was
+    carried on in (`segment-001/`, ...). For the GUI; a run reads its own
+    record with `read_status`."""
+    root = Path(project_root)
+    if root.name == "simulation":
+        root = root.parent
+    first = read_status(root)
+    if not first:
+        return first
+    try:
+        whole = _as_one_run(root, first)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        whole = dict(first)
+    if "current_checkpoint_path" in whole:
+        whole["current_checkpoint_path"] = _checkpoint_here(root, whole)
+    return whole
+
+
+def _checkpoint_here(root: Path, status: dict[str, Any]) -> str | None:
+    """The checkpoint the record names, as a file in this study, or None.
+
+    The record names where the run will write its checkpoint from its
+    start, so a run stopped before production was offered one that did not
+    exist; and it names it as the run was asked to, so a study run as
+    `trpcage` and opened under another name named a file in another folder.
+    """
+    named = str(status.get("current_checkpoint_path") or "").strip()
+    if not named:
+        return None
+    path = Path(named)
+    piece = status.get("piece")
+    folders = [root / str(piece), root] if isinstance(piece, str) and piece else [root]
+    candidates = [path] if path.is_absolute() else []
+    # Read through another name for the folder (macOS's /private/var for
+    # /var), or the study moved: the named path's own last parts, under
+    # the study, from the longest down.
+    tails = [Path(*path.parts[i:]) for i in range(max(len(path.parts) - 3, 1), len(path.parts))]
+    for folder in folders:
+        candidates += [folder / path] + [folder / tail for tail in tails]
+        candidates.append(folder / "simulation" / path.name)
+    root_resolved = root.resolve()
+    for candidate in candidates:
+        try:
+            found = candidate.resolve()
+        except OSError:
+            continue
+        if found.is_file() and (found == root_resolved or root_resolved in found.parents):
+            return str(found)
+    return None
+
+
 #: What a run's record says while the run goes on. A record a run left
 #: saying so when it ended without writing its end (the machine restarted,
 #: or its job was ended by a scheduler or by hand) is not taken at its word.
@@ -412,9 +605,15 @@ def how_the_run_ended(project_root: str | Path,
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 
     root = Path(project_root)
-    status = read_status(root) if status is None else status
+    status = read_study_status(root) if status is None else status
     if str(status.get("status") or "").lower() not in _GOING_STATUSES:
         return None
+    piece = status.get("piece")
+    if (isinstance(piece, str) and piece.startswith("segment-")
+            and str(status.get("stage") or "") == "production"
+            and (root / piece).is_dir()):
+        # The piece being run keeps the record of its process.
+        root = root / piece
     try:
         record = json.loads((root / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -442,7 +641,7 @@ def status_as_it_stands(project_root: str | Path) -> dict[str, Any]:
     known as `ended_by`. What the record said is kept as `recorded_status`.
     For the GUI's own process only; a run reads its record with
     `read_status`."""
-    status = read_status(project_root)
+    status = read_study_status(project_root)
     ended = how_the_run_ended(project_root, status) if status else None
     if ended is None:
         return status
@@ -557,6 +756,64 @@ def read_metrics(project_root: str | Path, *, limit: int | None = 500) -> list[d
     """
 
     simulation_dir = _simulation_dir(project_root)
+    rows = _metrics_of(simulation_dir)
+    root = simulation_dir.parent
+    pieces = _pieces_of(root) if rows else []
+    if pieces:
+        try:
+            rows = _metrics_as_one_run(root, rows, pieces)
+        except Exception:  # noqa: BLE001 - the first piece's samples stand
+            pass
+
+    # The frame count is status-level information in older telemetry schemas.
+    # Attach it to the latest sample so overview metric cards can still render.
+    if rows:
+        status = read_study_status(project_root)
+        frame_count = status.get("current_frame_count")
+        if frame_count is not None and rows[-1].get("current_frame_count") in (None, ""):
+            rows[-1]["current_frame_count"] = str(frame_count)
+    return rows if limit is None else rows[-limit:]
+
+
+def _metrics_as_one_run(root: Path, rows: list[dict[str, Any]],
+                        pieces: list[Path]) -> list[dict[str, Any]]:
+    """The samples of every piece on the study's own clock: the first
+    piece's up to where the next carried on, then each piece's production
+    samples moved on by the steps and frames before it."""
+    offsets = _offsets_of(root, read_status(root), pieces)
+    if offsets is None:
+        return rows
+    first = read_status(root)
+    timestep = _safe_float(first.get("timestep_fs"))
+    total = read_study_status(root).get("total_planned_steps")
+    kept = [row for row in rows
+            if (_safe_float(row.get("step")) or 0.0) <= offsets[0][0]]
+    for index, (piece, (steps, frames)) in enumerate(zip(pieces, offsets)):
+        ends = offsets[index + 1][0] if index + 1 < len(offsets) else None
+        for row in _metrics_of(piece / "simulation"):
+            if "production" not in str(row.get("stage") or "").lower():
+                continue
+            step = _safe_float(row.get("step"))
+            if step is None:
+                continue
+            moved = dict(row)
+            moved["step"] = str(int(steps + step))
+            if ends is not None and steps + step > ends:
+                continue
+            if timestep:
+                moved["simulation_time_ns"] = str((steps + step) * timestep / 1_000_000.0)
+            count = _safe_float(row.get("current_frame_count"))
+            if count is not None:
+                moved["current_frame_count"] = str(int(frames + count))
+            if isinstance(total, (int, float)) and total > 0:
+                moved["progress_percent"] = str(100.0 * (steps + step) / float(total))
+            kept.append(moved)
+    return kept
+
+
+def _metrics_of(simulation_dir: Path) -> list[dict[str, Any]]:
+    """One run's samples: its live record, filled in from OpenMM's
+    ``energy.csv`` where a sample lacks a value."""
     live_rows = _read_csv_rows(simulation_dir / METRICS_FILE)
     energy_rows = _read_energy_rows(simulation_dir / "energy.csv")
 
@@ -577,15 +834,7 @@ def read_metrics(project_root: str | Path, *, limit: int | None = 500) -> list[d
         rows = merged
     else:
         rows = live_rows or energy_rows
-
-    # The frame count is status-level information in older telemetry schemas.
-    # Attach it to the latest sample so overview metric cards can still render.
-    if rows:
-        status = read_status(project_root)
-        frame_count = status.get("current_frame_count")
-        if frame_count is not None and rows[-1].get("current_frame_count") in (None, ""):
-            rows[-1]["current_frame_count"] = str(frame_count)
-    return rows if limit is None else rows[-limit:]
+    return rows
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:

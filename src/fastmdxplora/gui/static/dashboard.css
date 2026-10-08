@@ -3981,9 +3981,9 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     display: none; font-size: var(--text-xs); font-weight: 600;
     color: var(--accent-text); text-decoration: none;
 }
-.sidebar-progress[data-run="stopped"] .sidebar-fix,
-.sidebar-progress[data-run="interrupted"] .sidebar-fix,
-.sidebar-progress[data-run="failed"] .sidebar-fix { display: block; }
+html[data-fixes="some"] .sidebar-progress[data-run="stopped"] .sidebar-fix,
+html[data-fixes="some"] .sidebar-progress[data-run="interrupted"] .sidebar-fix,
+html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { display: block; }
 .sidebar-fix:hover { text-decoration: underline; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }
 .sidebar-controls .sidebar-tool { width: 26px; height: 26px; }

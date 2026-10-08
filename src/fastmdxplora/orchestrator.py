@@ -687,7 +687,8 @@ class FastMDXplora:
             result = self._run_phase(phase, merged_options.get(phase, {}))
             self.results.append(result)
             self._presenter.phase_end(phase, **_how_it_ended(result))
-            self._mark_dashboard_phase_end(dashboard_writer, phase, result)
+            self._mark_dashboard_phase_end(dashboard_writer, phase, result,
+                                           merged_options.get(phase, {}))
             if result.status == "error":
                 logger.error("Phase '%s' failed: %s", phase, result.message)
                 break
@@ -1024,11 +1025,16 @@ class FastMDXplora:
             return
 
         if phase == "simulation":
-            first_stage = (
-                "minimization"
-                if options.get("minimize", True)
-                else "nvt"
-            )
+            # The first stage the run takes: a piece carried on from a
+            # checkpoint neither minimises nor equilibrates, and was marked
+            # in NVT, where its record then ended.
+            first_stage = "production"
+            if options.get("minimize", True):
+                first_stage = "minimization"
+            elif options.get("nvt_steps") != 0:
+                first_stage = "nvt"
+            elif options.get("npt_steps") != 0:
+                first_stage = "npt"
             writer.mark_stage(
                 first_stage,
                 "current",
@@ -1048,6 +1054,7 @@ class FastMDXplora:
         writer: Any,
         phase: str,
         result: PhaseResult,
+        options: dict[str, Any] | None = None,
     ) -> None:
         if writer is None:
             return
@@ -1076,27 +1083,45 @@ class FastMDXplora:
                 else {}
             )
             stages = stages if isinstance(stages, dict) else {}
-
-            for name in (
-                "minimization",
-                "nvt",
-                "npt",
-                "production",
-            ):
-                current_state = str(
-                    stages.get(name, "waiting")
-                ).lower()
-
-                if current_state in {"waiting", "current"}:
-                    writer.mark_stage(
-                        name,
-                        state,
-                        status=(
-                            "failed"
-                            if state == "failed"
-                            else "running"
-                        ),
-                    )
+            stepped = ("minimization", "nvt", "npt", "production")
+            said = {name: str(stages.get(name, "waiting")).lower() for name in stepped}
+            going = [name for name in stepped if said[name] == "current"]
+            if state == "failed" and not going and "failed" not in said.values():
+                # Failed before any stage began: where it failed is the
+                # first stage it was to take.
+                going = [name for name in stepped if said[name] == "waiting"][:1]
+            # Only the stage it was in ends as the phase did, and the record
+            # stays on it. A stage it was not to take was not completed (a
+            # piece carried on from a checkpoint read "NVT" when it ended),
+            # and one it never reached did not fail (a run that blew up in
+            # NVT read "Production failed").
+            options = options if isinstance(options, dict) else {}
+            # How long each equilibration stage runs; zero steps is a stage
+            # not taken (unset is its default length). Nothing here asks
+            # which ensemble production runs in.
+            stage_steps = {"nvt": options.get("nvt_steps"), "npt": options.get("npt_steps")}
+            not_taken = {name for name, steps in stage_steps.items() if steps == 0}
+            if options.get("minimize", True) is False:
+                not_taken.add("minimization")
+            for name in going:
+                writer.mark_stage(
+                    name,
+                    state,
+                    status="failed" if state == "failed" else "running",
+                    **({"latest_error": result.message}
+                       if state == "failed" and not status.get("latest_error") else {}),
+                )
+            if state == "completed":
+                never = [name for name in stepped if said[name] == "waiting"
+                         and name not in going]
+                if never:
+                    # A run without live telemetry marks no stage of its
+                    # own: what it was to take, it took.
+                    now = read_status(writer.root.parent).get("stage_states")
+                    merged = dict(now) if isinstance(now, dict) else dict(stages)
+                    merged.update({name: "skipped" if name in not_taken else "completed"
+                                   for name in never})
+                    writer.write_status(stage_states=merged)
         else:
             writer.mark_stage(
                 phase,

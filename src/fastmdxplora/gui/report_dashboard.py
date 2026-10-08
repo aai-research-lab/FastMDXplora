@@ -267,12 +267,12 @@ def build_dashboard(
     )
     dashboard_assets = _dashboard_summaries(project_root)
     sections = _analysis_sections(project_root, output_dir, dashboard_assets)
-    from fastmdxplora.gui.telemetry import read_status, run_stages
+    from fastmdxplora.gui.telemetry import read_study_status, run_stages
 
     # The live record too, as the GUI reads it: the manifest is written when
     # the run ends, after this page, so a first run's page had every phase
     # "Not run" beside cards saying which had finished.
-    live_status = read_status(project_root) or {}
+    live_status = read_study_status(project_root) or {}
     phase_rows = _phase_rows(manifest, live_status)
     metrics = _metric_rows(project_root, analysis_manifest)
     status = _project_status(manifest)
@@ -337,9 +337,9 @@ def _live_phase_progress(
     there is no telemetry at all, which is a different claim from a run that
     has finished nothing.
     """
-    from fastmdxplora.gui.telemetry import PHASE_STAGES, STAGE_ORDER, read_status
+    from fastmdxplora.gui.telemetry import PHASE_STAGES, STAGE_ORDER, read_study_status
 
-    status = read_status(project_root)
+    status = read_study_status(project_root)
     if not status:
         return {}, []
 
@@ -2129,10 +2129,10 @@ def _render_panel(panel: DashboardPanel, section_title: str = "", analysis: str 
 def _render_static_live_panel(project_root: Path) -> str:
     """The Overview's health card and strip, from the live record the run
     left, worded as the GUI words them (``renderHealth``)."""
-    from fastmdxplora.gui.telemetry import analyze_health, read_metrics, read_status
+    from fastmdxplora.gui.telemetry import analyze_health, read_metrics, read_study_status
 
     serve_command = f"fastmdx gui --output {project_root.as_posix()}"
-    status = read_status(project_root)
+    status = read_study_status(project_root)
     metrics = read_metrics(project_root)
     health = analyze_health(status, metrics)
     state = str(health.get("state") or "unknown").lower()

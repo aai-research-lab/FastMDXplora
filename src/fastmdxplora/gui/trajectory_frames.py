@@ -135,6 +135,10 @@ def _simulation_going(out: Path) -> bool:
         status = _load_json(out / "simulation" / "live_status.json")
     if str(status.get("status") or "").lower() not in _GOING_STATUSES:
         return False
+    if status.get("piece"):
+        # Carried on in a piece of its own (`segment-001/`): the study's own
+        # simulation ended, and its production is what it has to play.
+        return False
     # Analysis and report come after the simulation: its frames are written.
     return str(status.get("stage") or "").lower() not in {"analysis", "report"}
 

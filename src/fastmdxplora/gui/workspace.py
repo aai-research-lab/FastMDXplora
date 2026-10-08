@@ -362,6 +362,12 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
             return "interrupted"
         if said in ("running", "starting", "paused"):
             return "running"
+        # A run whose record says it failed or was stopped, as its Overview
+        # says: a failure found after the run's own end (the GUI's check of
+        # what a run left) is recorded there, and the study was listed
+        # Completed beside an Overview saying "Simulation failed".
+        if said in ("failed", "stopped"):
+            return said
     if isinstance(batch, dict):
         from fastmdxplora.gui.exploration import runs_of_a_study
 

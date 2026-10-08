@@ -592,7 +592,9 @@ class DashboardRuntime:
             if runs:
                 out["percent"] = round(100.0 * sum(fractions) / len(runs), 1)
             return out
-        status = _json_mapping(Path(root) / "simulation" / "live_status.json")
+        from fastmdxplora.gui.telemetry import read_study_status
+
+        status = read_study_status(root)
         step, total = status.get("current_step"), status.get("total_planned_steps")
         out: dict[str, Any] = {"stage": status.get("stage")}
         if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
@@ -614,8 +616,12 @@ class DashboardRuntime:
             # The viewed study is not the one the process is writing; its
             # telemetry is older by definition and that says nothing.
             return False
-        status = _json_mapping(self.active_root / "simulation" / "live_status.json")
-        recorded = status.get("run_started_at") or status.get("last_update_timestamp")
+        from fastmdxplora.gui.telemetry import read_study_status
+
+        status = read_study_status(self.active_root)
+        # A piece carried on is the newest record, written by this process.
+        recorded = ((status.get("last_update_timestamp") if status.get("piece") else None)
+                    or status.get("run_started_at") or status.get("last_update_timestamp"))
         if not recorded:
             return False
         # Both sides through the same parser, which normalises a naive

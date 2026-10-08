@@ -54,6 +54,7 @@ from fastmdxplora.gui.telemetry import (
     read_events,
     read_metrics,
     read_status,
+    read_study_status,
     run_phases,
     run_stages,
     status_as_it_stands,
@@ -1032,8 +1033,7 @@ def make_handler(
                 self._send_json(_ligands_payload(root, cfg))
                 return
             if path == "/api/live-frame-index":
-                sim_dir = root / "simulation"
-                self._send_json(read_live_frame_index(sim_dir))
+                self._send_json(_live_frame_index(root))
                 return
             if path == "/api/live-coordinates":
                 self._send_json(_live_coordinates_payload(root))
@@ -2343,7 +2343,7 @@ def make_handler(
 
             # Made whole, so a bound ligand is shown in its pocket rather
             # than in the copy of the box the snapshot wrapped it into.
-            text = live_frame_text(root / "simulation")
+            text = live_frame_text(_live_dir(root))
             if text is None:
                 self.send_error(404, "Live frame not available")
                 return
@@ -2358,7 +2358,7 @@ def make_handler(
         def _send_live_coordinates(self, root: Path) -> None:
             from fastmdxplora.gui.live_frames import live_frame_coordinates
 
-            said = live_frame_coordinates(root / "simulation")
+            said = live_frame_coordinates(_live_dir(root))
             if said is None:
                 self.send_error(404, "Live frame not available")
                 return
@@ -2875,9 +2875,9 @@ def _report_panels(root: Path) -> dict[str, Any]:
         metrics = _metric_rows(root, analysis_manifest)
         # The live status too: during a run the manifest holds nothing, and
         # a phase with no record is not one that did not happen.
-        from fastmdxplora.gui.telemetry import read_status
+        from fastmdxplora.gui.telemetry import read_study_status
 
-        phases = _phase_rows(manifest, read_status(root))
+        phases = _phase_rows(manifest, read_study_status(root))
     except Exception:  # noqa: BLE001 - a panel must never break the dashboard
         logger.debug("report panels unavailable", exc_info=True)
         return {"summary_cards": [], "metric_rows": [], "phase_rows": []}
@@ -2974,7 +2974,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "summary": summary,
         "system": system,
         "setup": _setup_details(setup_manifest),
-        "simulation": _simulation_details(sim_manifest, read_status(root),
+        "simulation": _simulation_details(sim_manifest, read_study_status(root),
                                           extended=extended),
         "phases": _phase_records(manifest),
         "analyses": _analysis_records(analysis_manifest, artifacts, plots),
@@ -3175,9 +3175,47 @@ def _occupancy_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any
     return {**said, "url": "/structure/occupancy.dx?" + urlencode(asked)}
 
 
-def _live_coordinates_payload(root: Path) -> dict[str, Any]:
-    sim_dir = root / "simulation"
+def _live_dir(root: Path) -> Path:
+    """Where the study's newest live frame is: its newest piece's, where it
+    was carried on (the Viewer showed the first piece's stop beside an
+    Overview saying Completed), else its own."""
+    from fastmdxplora.gui.telemetry import _pieces_of
+
+    for piece in reversed(_pieces_of(Path(root))):
+        if live_frame_exists(piece / "simulation"):
+            return piece / "simulation"
+    return Path(root) / "simulation"
+
+
+def _live_frame_index(root: Path) -> dict[str, Any]:
+    """The live frame's index, its step and time on the study's clock
+    where it is a piece's (a piece counts from its own start)."""
+    sim_dir = _live_dir(root)
     index = read_live_frame_index(sim_dir)
+    if sim_dir.parent == Path(root) or not index.get("live_frame_available"):
+        return index
+    from fastmdxplora.gui.telemetry import _offsets_of, _pieces_of, read_status
+
+    try:
+        pieces = _pieces_of(Path(root))
+        offsets = _offsets_of(Path(root), read_status(root), pieces[:pieces.index(sim_dir.parent) + 1])
+        timestep = read_status(sim_dir.parent).get("timestep_fs")
+    except Exception:  # noqa: BLE001 - the piece's own clock stands
+        return index
+    if not offsets:
+        return index
+    before = offsets[-1][0]
+    step = index.get("live_frame_index")
+    if isinstance(step, (int, float)):
+        index = {**index, "live_frame_index": int(step) + before}
+        if isinstance(timestep, (int, float)):
+            index["simulation_time_ns"] = (int(step) + before) * float(timestep) / 1e6
+    return index
+
+
+def _live_coordinates_payload(root: Path) -> dict[str, Any]:
+    sim_dir = _live_dir(root)
+    index = _live_frame_index(root)
     return {
         "live_frame_exists": live_frame_exists(sim_dir),
         "index": index,
@@ -3514,7 +3552,7 @@ def _system_info(
     analysis_manifest: dict[str, Any],
     sim_manifest: dict[str, Any],
 ) -> dict[str, str]:
-    live_status = read_status(root)
+    live_status = read_study_status(root)
     params = sim_manifest.get("parameters")
     if not isinstance(params, dict):
         params = sim_manifest

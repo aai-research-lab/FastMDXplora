@@ -341,12 +341,29 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         return [interrupted]
     manifest = _read(root / "manifest.json")
     if not isinstance(manifest, dict):
-        return []
+        return _stopped_unrecorded(root)
     failed = _failed_phase(manifest)
     if failed is None:
-        return []
+        return _stopped_unrecorded(root)
     name, refusal = failed
     return [remedy_for(refusal, study=root, where=f"the study's {name}")]
+
+
+def _stopped_unrecorded(root: Path) -> list[Remedy]:
+    """A run stopped where its Manifest does not say so (stopped from the
+    GUI before production, ended before it could write its end), as its
+    live record says: carried on by `fastmdx resume`."""
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    try:
+        stands = status_as_it_stands(root)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return []
+    if stands.get("status") != "stopped":
+        return []
+    why = str(stands.get("latest_error") or "The run was stopped before it finished.")
+    return [_resume(STOPPED_CODE, why, "the study", [root], root)]
 
 
 #: The refusal said of a run that ended without recording its end.
@@ -359,14 +376,18 @@ def _interrupted(root: Path) -> Remedy | None:
     be gone, the GUI may run it; where only a day of silence says so, the
     run may be on another machine, and carrying it on is the person's to
     decide once they have looked there."""
-    from fastmdxplora.gui.telemetry import how_the_run_ended
+    from fastmdxplora.gui.telemetry import status_as_it_stands
 
     try:
-        ended = how_the_run_ended(root)
+        stands = status_as_it_stands(root)
     except Exception:  # noqa: BLE001 - a record, not a verdict
-        ended = None
-    if ended is None:
+        stands = {}
+    # A run that had taken every step it planned before its record went
+    # quiet finished (the Python API writes no end of its own): it was
+    # offered `fastmdx resume` beside a report of the whole run.
+    if stands.get("status") != "interrupted":
         return None
+    ended = stands.get("ended_by")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")
