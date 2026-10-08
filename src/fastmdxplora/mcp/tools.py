@@ -262,6 +262,41 @@ def _looked(ctx: Context, tool: str, asked: dict[str, Any]) -> str:
     return look.said
 
 
+def _paper(ctx: Context, args: dict[str, Any]) -> Any:
+    from fastmdxplora.paper.tools import open_given
+    from fastmdxplora.refusals import CodedError
+
+    try:
+        return open_given(args["paper"], args.get("si") or None, inside=ctx.workspace.inside)
+    except CodedError as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+
+
+def _read_paper(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.paper.tools import how_to_read, page_of
+    from fastmdxplora.refusals import CodedError
+
+    paper = _paper(ctx, args)
+    try:
+        page = page_of(paper, int(args.get("page") or 1))
+    except CodedError as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+    return page + ("\n\n" + how_to_read() if int(args.get("page") or 1) == 1 else "")
+
+
+def _check_paper_studies(ctx: Context, args: dict[str, Any]) -> str:
+    from fastmdxplora.paper.tools import checked_said
+    from fastmdxplora.refusals import CodedError
+
+    paper = _paper(ctx, args)
+    app = ctx.call.client_name if ctx.call is not None else None
+    try:
+        return checked_said(paper, args["reading"], model=str(app or "an AI app"),
+                            until_determined=bool(args.get("until_determined")))
+    except CodedError as exc:
+        raise ToolError(str(exc), code=exc.code) from None
+
+
 def _study(ctx: Context, given: str) -> Path:
     from fastmdxplora.gui.browse import is_study
 
@@ -1278,6 +1313,33 @@ TOOLS: tuple[Tool, ...] = (
          "how long the whole study takes on this machine where it has been timed. An "
          "estimate; setup's own numbers replace it once it has run.",
          {"config": _CONFIG}, ("config",), _LOOKS, _preview_setup),
+    Tool("read_paper", "Read a paper's text",
+         "A paper's text, a page at a time, each part under its label (a section, a "
+         "table, a page), to read the MD studies it reports; page 1 ends with how to give "
+         "them to check_paper_studies. A PDF, JATS XML or Word file in the workspace, or "
+         "the DOI, PMCID or arXiv identifier of an open-access paper, fetched from Europe "
+         "PMC, bioRxiv or arXiv.",
+         {"paper": {"type": "string", "description": (
+             "A paper file in the workspace, or a DOI, PMCID or arXiv identifier.")},
+          "si": {"type": "string",
+                 "description": "Its supporting information's file, in the workspace."},
+          "page": {"type": "integer", "minimum": 1,
+                   "description": "Which page of the text; 1 if not given."}},
+         ("paper",), _LOOKS, _read_paper),
+    Tool("check_paper_studies", "Check a reading of a paper's MD studies",
+         "Your reading of a paper's MD studies, checked against the paper: every value "
+         "kept only where the words you quote are the paper's and hold it, each study "
+         "written as a config with each setting's reason the paper's words, and said as "
+         "ready, runs with differences, needs the person, or cannot run here. Give the "
+         "configs to check_study and save_study as they are.",
+         {"paper": {"type": "string", "description": "The paper read_paper read."},
+          "si": {"type": "string", "description": "Its supporting information, if read."},
+          "reading": {"type": "string", "description": (
+              "Your reading as JSON, in the shape read_paper's first page gives.")},
+          "until_determined": {"type": "boolean", "description": (
+              "Run until the paper's results are determined to its own error, at most "
+              "its length.")}},
+         ("paper", "reading"), _LOOKS, _check_paper_studies),
     Tool("check_study", "Check a study before it runs",
          "Whether the validator accepts a config, and if not why and what would fix it; "
          "if so, the plan to show the person, defaults marked, whether this machine can "

@@ -52,6 +52,7 @@ FastMDXplora/
 │       │   ├── mapping.py         # A study as a config: each setting as stated, not stated, differs, needs you
 │       │   ├── studies.py         # Read, plan, choose, write: what every entry point shares
 │       │   ├── command.py         # `fastmdx config --paper`
+│       │   ├── tools.py           # A paper for the Agent and for an AI app
 │       │   └── reproduction.py    # The paper's results beside what the study determined, with verdicts
 │       ├── sharing/               # A study shared as one file, and opened from it (docs/sharing.md)
 │       │   ├── __init__.py        # The profile, its version and the placeholders a packed record says

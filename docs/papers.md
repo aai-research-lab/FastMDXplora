@@ -22,7 +22,9 @@ then runs as any config does, with `fastmdx explore --config`.
 In the GUI it is **Or reproduce a paper's MD studies** on the Config Builder's
 first step: the paper, its supporting information, **Read the paper**, then
 each study with how each of its settings came from the paper, **Open in the
-builder** for one, and **Download the chosen configs** for several.
+builder** for one, and **Download the chosen configs** for several. The Agent
+reads a paper when asked to reproduce one (its tool `studies_in_paper`), and an
+AI app through the MCP tools `read_paper` and `check_paper_studies`.
 
 ---
 

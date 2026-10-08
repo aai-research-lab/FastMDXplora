@@ -116,6 +116,7 @@ LOOK_WORDS: dict[str, tuple[str, str, str]] = {
     "check_selection": ("Checked a selection", "Checking a selection", ""),
     "read_study": ("Read a study's record", "Reading a study's record", ""),
     "list_studies": ("Listed the studies here", "Listing the studies here", ""),
+    "studies_in_paper": ("Read a paper's MD studies", "Reading a paper's MD studies", ""),
     "compare_studies": ("Compared two studies", "Comparing two studies", ""),
     "methods_of_study": ("Read a study's methods", "Reading a study's methods", ""),
     "current_view": ("Checked what the page shows", "Checking what the page shows", ""),
@@ -804,6 +805,47 @@ def _find_structure(box: Toolbox, asked: dict[str, Any]) -> str:
     return said(found)
 
 
+def _studies_in_paper(box: Toolbox, asked: dict[str, Any]) -> str:
+    """A paper's MD studies, read with the person's AI model and every value
+    checked against the paper's words (:mod:`fastmdxplora.paper`); with
+    `study`, that study's config."""
+    from fastmdxplora.paper.studies import plans_for, studies_in
+    from fastmdxplora.paper.tools import studies_said, study_config_said
+
+    source = " ".join(str(asked.get("paper") or "").split())
+    if not source:
+        raise _Refused("Name the paper as `paper`: a PDF or JATS XML file, or the DOI of "
+                       "an open-access paper.")
+    si = str(asked.get("si") or "").strip()
+
+    def held(given: str) -> str:
+        if box.path_for is None:
+            return given
+        named = box.path_for(given)
+        if named is None:
+            raise _Refused(f"{given} is outside the workspace.")
+        return str(named)
+
+    from fastmdxplora.paper.fetch import identify
+
+    kind, identifier = identify(source)
+    paper, reading = studies_in(held(identifier) if kind == "file" else source,
+                                [held(si)] if si else [])
+    plans = plans_for(reading, until_determined=asked.get("until_determined") is True)
+    wanted = str(asked.get("study") or "").strip().upper()
+    if wanted:
+        wanted = f"S{wanted}" if wanted.isdigit() else wanted
+        plan = next((p for p in plans if str(p["id"]).upper() == wanted), None)
+        if plan is None:
+            raise _Refused(f"The paper has no study {wanted}: "
+                           + ", ".join(str(p["id"]) for p in plans) + ".")
+        if plan.get("config") is None:
+            return studies_said([plan], reading) + "\n\nThis study cannot run here."
+        return study_config_said(plan)
+    return (studies_said(plans, reading) + "\n\nAsk with `study` for one study's config; "
+            "propose it as it is, its settings each with the paper's words as its reason.")
+
+
 def _config_asked(asked: dict[str, Any]) -> dict[str, Any]:
     config = asked.get("config", asked)
     if isinstance(config, str):
@@ -860,6 +902,17 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "were determined, any rule it ran until, an AI model's part, the software. "
         "Look here before you write or answer about a methods section.",
         _methods_of_study),
+    "studies_in_paper": (
+        "`paper` (a PDF or JATS XML file, or the DOI of an open-access paper), and "
+        "optionally `si` (its supporting information's file), `study` (one study's id, "
+        "for its config) and `until_determined` (true to run until the paper's "
+        "results are determined).",
+        "the MD studies a paper reports, read with the person's AI model, every value "
+        "checked against the paper's own words: each study's state (ready, runs with "
+        "differences, needs the person, cannot run here) and why; with `study`, its "
+        "config, each setting's reason the paper's words. Look here when the person "
+        "asks to reproduce a paper; never write a paper's settings from memory.",
+        _studies_in_paper),
     "list_studies": (
         "optionally `tag` (only the studies tagged so).",
         "the studies in the workspace, newest first: each one's system, kind, "
@@ -890,6 +943,17 @@ _A_FOLDER = {"type": "string", "description": "A study's folder, as given to --o
 
 #: Each tool's arguments as the AI model is told them, by name.
 _SCHEMAS: dict[str, dict[str, Any]] = {
+    "studies_in_paper": {"type": "object", "properties": {
+        "paper": {"type": "string",
+                  "description": "A PDF or JATS XML file, or the DOI, PMCID or arXiv "
+                                 "identifier of an open-access paper."},
+        "si": {"type": "string", "description": "The supporting information's file."},
+        "study": {"type": "string", "description": "One study's id, such as S2, for its "
+                                                    "config."},
+        "until_determined": {"type": "boolean",
+                             "description": "Run until the paper's results are determined "
+                                            "to its own error, at most its length."}},
+        "required": ["paper"], "additionalProperties": False},
     "find_structure": {"type": "object", "properties": {
         "query": {"type": "string",
                   "description": "A molecule's name, such as lysozyme or trp-cage, or a "

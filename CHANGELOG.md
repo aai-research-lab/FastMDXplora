@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A paper's studies for the Agent and an AI app
+
+**Added:** the Agent's tool `studies_in_paper`, so asking it to reproduce a
+paper lists its studies and gives one's config, held to the workspace; and
+the MCP tools `read_paper`, for an AI app to read a paper a page at a time,
+and `check_paper_studies`, which checks the app's reading against the
+paper's words as any reading is checked and gives the studies' configs.
+
 ### A paper's studies in the Config Builder
 
 **Added:** **Or reproduce a paper's MD studies** on the Config Builder's first
