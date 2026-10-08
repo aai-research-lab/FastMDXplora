@@ -356,16 +356,22 @@ def test_a_run_is_chosen_in_a_browser(tmp_path: Path):
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1400, "height": 900})
+            # The page is drawn again once the study's first state arrives
+            # (its run, as far as the page knows, changed): a run chosen
+            # before then goes back to every run. So the checks wait for it.
+            page.add_init_script("""window.addEventListener('dashboard:run-changed', () => {
+                window.addEventListener('files:rendered', () => { window.fmxFilesDrawn = true; },
+                                        {once: true});
+            });""")
             page.goto(session.url + "#files", wait_until="domcontentloaded")
-            page.wait_for_selector("[data-run-pick]", timeout=30000)
+            page.wait_for_function("() => window.fmxFilesDrawn === true", timeout=30000)
+            tiles = ("() => [...document.querySelectorAll('.files-tile')].filter(e => e.offsetParent"
+                     " !== null).map(e => e.dataset.run + ':' + e.getAttribute('data-key')).join() === '{}'")
             # Every run: the first run's key files, each run's rows.
+            page.wait_for_function(tiles.format("r1:trajectory"))
             assert page.eval_on_selector_all(".files-tile", shown) == ["trajectory"]
-            assert page.eval_on_selector_all(".files-tile", "els => els.filter(e => e.offsetParent"
-                                             " !== null).map(e => e.dataset.run)") == ["r1"]
             page.select_option("[data-run-pick]", "r2")
-            page.wait_for_timeout(100)
-            assert page.eval_on_selector_all(".files-tile", "els => els.filter(e => e.offsetParent"
-                                             " !== null).map(e => e.dataset.run)") == ["r2"]
+            page.wait_for_function(tiles.format("r2:trajectory"))
             rows = page.eval_on_selector_all('[data-phase="simulation"] .files-row', shown)
             assert rows and all(p.startswith("runs/r2/") for p in rows)
             assert page.inner_text("[data-usage-total]").endswith("in this run")

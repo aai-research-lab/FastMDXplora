@@ -418,7 +418,9 @@ button {
     padding-top: 0;
 }
 .page-header > div:first-child {
-    display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 auto;
+    /* Never narrower than the name: what follows it counts for nothing
+       (below) and gives way first. */
+    display: flex; align-items: baseline; gap: 10px; min-width: min-content; flex: 1 1 0;
     flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
 }
 .page-title {
@@ -439,11 +441,18 @@ button {
 }
 /* What follows the name gives way first: cut with an ellipsis. */
 .page-header > div:first-child > :not(.page-title) {
-    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    flex: 1 1 0; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* The actions on one line where they fit beside the name; where they do
+   not, they wrap within their room, the band a row taller. Held to one
+   line, Studies' ran left over the name and under the sidebar in a narrow
+   centre column (both side columns open, under about 1,080 px). Not capped
+   to a share of the band: the name holds its own width (above), and the
+   subtitle gives way before the actions wrap. */
 .page-header > .page-header-actions {
-    flex: none; flex-wrap: nowrap; gap: 8px; max-width: 70%;
+    flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;
+    gap: 6px 8px;
 }
 .page-header > .page-header-actions > .ghost-btn,
 .page-header > .page-header-actions > .primary-btn,
@@ -4975,7 +4984,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
 /* In the header the magnifier's wrapper gives way, never below the field's
    own least width, and the field fills it: shrunk on its own, the wrapper
    left the field running over the Cards and Table buttons. */
-.page-header-actions > .search-field { flex: 0 1 300px; min-width: 160px; }
+.page-header-actions > .search-field { flex: 1 1 160px; min-width: 160px; max-width: 300px; }
 .page-header-actions > .search-field > .studies-search { width: 100%; min-width: 0; }
 /* Two studies a row, so each card's figure is wide enough to read; one
    on a narrow window. */

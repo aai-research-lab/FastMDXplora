@@ -493,6 +493,16 @@ began, its first means and its tags, sorted by any column's head (a study
 without the value last either way), narrowed by the search as the cards
 are, and kept as chosen.
 
+### A page's actions below its name where they do not fit beside it
+
+**Fixed:** in a narrow centre column (both side columns open, under about
+1,080 px), All studies' actions ran left over the page's name and under
+the sidebar, and at 900 px Analysis's reached its name. A page's actions now
+stay on one line beside the name where they fit and wrap in their own room
+where they do not; the name never gives way, what follows it does; the
+search field on All studies starts at its least width and grows where
+there is room.
+
 ### Look in another folder and Open a shared study as line icons
 
 **Changed:** on All studies, **Look in another folder** (a folder with a

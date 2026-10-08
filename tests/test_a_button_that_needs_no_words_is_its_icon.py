@@ -37,7 +37,11 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
-            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            # Both side columns open, the narrowest the centre column is.
+            context = browser.new_context(viewport={"width": 1440, "height": 900})
+            context.add_init_script(
+                "try { localStorage.setItem('fmx.panelCollapsed', '0'); } catch (e) {}")
+            page = context.new_page()
             page.set_default_timeout(60000)
             page.goto(session.url + "#studies", wait_until="domcontentloaded")
             page.wait_for_function("() => window.FastMDXDialog")
@@ -59,20 +63,34 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
             page.click("#studies-open-shared")
             pressed = page.get_attribute("#studies-open-shared", "aria-expanded")
             page.click("#studies-open-shared")
-            # The header's actions on one line beside the name, none over
-            # another, in a window 1,100 px wide with both side columns
-            # open: as words, the two buttons ran out over the name.
-            page.set_viewport_size({"width": 1100, "height": 900})
-            page.wait_for_timeout(300)
-            row = page.evaluate("""() => {
-                const head = document.querySelector('section[data-page="studies"] .page-header');
-                const name = head.querySelector('.page-title').getBoundingClientRect();
-                const all = [...head.querySelectorAll('.page-header-actions > *')]
-                    .filter(e => e.offsetParent).map(e => e.getBoundingClientRect());
-                return {beside: all.every(r => r.left > name.right),
-                        apart: all.every((r, i) => i === 0 || r.left >= all[i - 1].right),
-                        oneRow: all.every(r => Math.abs(r.top - all[0].top) < 4)};
-            }""")
+            # The header's actions beside the name, the search field not over
+            # the Cards and Table buttons (1469: it ran 64 px over them), none
+            # over the name or out of the band (as words, Look in another
+            # folder and Open a shared study ran over the name): on one line
+            # where they fit, in rows within their room where they do not.
+            def laid_out():
+                return page.evaluate("""() => {
+                    const head = document.querySelector('section[data-page="studies"] .page-header');
+                    const band = head.getBoundingClientRect();
+                    const name = head.querySelector('.page-title').getBoundingClientRect();
+                    const field = document.getElementById('studies-search').getBoundingClientRect();
+                    const views = document.querySelector('.studies-view').getBoundingClientRect();
+                    const all = [...head.querySelectorAll('.page-header-actions > *')]
+                        .filter(e => e.offsetParent).map(e => e.getBoundingClientRect());
+                    const over = (a, b) => a.left < b.right && a.right > b.left
+                        && a.top < b.bottom && a.bottom > b.top;
+                    return {clear: all.every(r => !over(r, name)),
+                            inside: all.every(r => r.left >= band.left && r.right <= band.right + 0.5),
+                            apart: !over(field, views),
+                            // A row is the items that overlap it top to bottom.
+                            rows: all.filter((r, i) => !all.slice(0, i).some(
+                                q => r.top < q.bottom && r.bottom > q.top)).length};
+                }""")
+            row = {}
+            for width in (1440, 1200, 1150, 1100, 1000):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.wait_for_timeout(300)
+                row[width] = laid_out()
             search = page.evaluate("""() => {
                 const field = document.getElementById('studies-search').getBoundingClientRect();
                 const glass = document.getElementById('studies-search').parentNode
@@ -85,6 +103,21 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
                 return {inHead: !!b.closest('summary.seq-head'), hidden: b.hidden,
                         icon: !!b.querySelector('svg'), name: b.getAttribute('aria-label')};
             }""")
+            # New study's header (Reset, and its draft said) on one row at
+            # 900 px: a second row slid its steps bar, held under the top
+            # bar, under the header (the actions held to 70% of the band).
+            page.set_viewport_size({"width": 900, "height": 900})
+            page.evaluate("() => window.FastMDXDashboard.navigate('run')")
+            page.evaluate("() => { document.getElementById('run-draft').hidden = false; }")
+            page.wait_for_timeout(300)
+            draft = page.evaluate("""() => {
+                const head = document.querySelector('section[data-page="run"] .page-header');
+                const all = [...head.querySelectorAll('.page-header-actions > *')]
+                    .filter(e => e.offsetParent).map(e => e.getBoundingClientRect());
+                return [all.length, all.filter((r, i) => !all.slice(0, i).some(
+                    q => r.top < q.bottom && r.bottom > q.top)).length];
+            }""")
+            context.close()
             browser.close()
     finally:
         session.server.shutdown()
@@ -95,7 +128,16 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
     assert folders == [["Look in another folder", "Look in another folder", True, ""],
                        ["Open a shared study", "Open a shared study", True, ""]]
     assert pressed == "true"
-    assert row == {"beside": True, "apart": True, "oneRow": True}
+    assert row[1440] == {"clear": True, "inside": True, "apart": True, "rows": 1}
+    # The field starts at its least width, so one row holds them while that
+    # fits, and grows where there is room.
+    assert row[1200] == {"clear": True, "inside": True, "apart": True, "rows": 1}
+    # The actions take the room the subtitle gives up before they wrap.
+    assert row[1150] == {"clear": True, "inside": True, "apart": True, "rows": 1}
+    assert draft == [3, 1]
+    for width in (1100, 1000):
+        assert {k: v for k, v in row[width].items() if k != "rows"} == {
+            "clear": True, "inside": True, "apart": True}, (width, row[width])
     assert search
     # Shown once residues are chosen (test_the_sequence_is_above_the_molecule).
     assert clear == {"inHead": True, "hidden": True, "icon": True, "name": "Clear selection"}

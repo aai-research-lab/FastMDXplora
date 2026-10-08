@@ -84,12 +84,12 @@ def test_one_conversation_on_the_page_and_beside_it(browser, session, no_model) 
     tab.fill("#agent-request", "Summarise what this study found.")
     tab.click("#agent-propose")
     tab.wait_for_selector("#agent-drawer .agent-msg-user")
-    # With no AI model set, the Agent's settings open to choose one, as the
-    # reply comes (its note and the dialog in one task): looked for before
-    # it, the dialog opened after the look and covered the page (CI).
-    tab.wait_for_selector("#agent-drawer :is(.agent-attempt, .agent-answer)")
-    if tab.evaluate("() => !document.getElementById('agent-settings').hidden"):
-        tab.click("#agent-settings-close")
+    # With no AI model set, the Agent's settings open to choose one when its
+    # reply comes: waited for, not looked for (looked for as the message
+    # went, or at the "Thinking" line under it, the dialog opened after the
+    # look and covered the page, CI).
+    tab.wait_for_selector("#agent-settings", state="visible")
+    tab.click("#agent-settings-close")
     tab.click("#agent-drawer-page")
     tab.wait_for_function("() => document.documentElement.dataset.page === 'agent'")
     on_the_page = tab.evaluate("""() => [
