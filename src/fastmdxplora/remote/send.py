@@ -59,7 +59,8 @@ import yaml
 
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.remote.identity import CodeIdentity, same_code, this_code
-from fastmdxplora.remote.inputs import Inputs, gather_inputs, link_out_of, size_of
+from fastmdxplora.remote.inputs import (Inputs, gather_inputs, link_out_of, private_in,
+                                        size_of)
 from fastmdxplora.remote.jobs import (
     ABANDONED,
     DONE,
@@ -414,19 +415,9 @@ def _send_held(sending: Sending, link: Transport, local_runner,
             "--output, or --force-overwrite to replace it.",
             code="environment.path.exists", path=f"{where}/run")
 
-    # Again, just before the copy: a link made since `prepare` would be
-    # followed by it.
-    for travelled, source in sending.inputs.files.items():
-        held_to = sending.inputs.held_to.get(travelled, source)
-        leading_out = link_out_of(source, held_to)
-        if leading_out is not None:
-            raise StudyError(
-                f"{leading_out} is a link leading out of {held_to}, so "
-                f"{source} is not sent: what it points at would travel with "
-                "the study. Copy the file in its place.",
-                code="remote.input.outside", given=str(source),
-                where=f"inputs/{travelled}", folder=str(held_to))
-
+    # Before anything is made there, and again just before the copy: a link
+    # made since `prepare` would be followed by it.
+    _still_its_own(sending)
     with tempfile.TemporaryDirectory() as staging:
         stage = Path(staging)
         (stage / "study.yml").write_text(sending.config_text, encoding="utf-8")
@@ -436,10 +427,11 @@ def _send_held(sending: Sending, link: Transport, local_runner,
             for travelled, source in sending.inputs.files.items():
                 os.symlink(source, stage / "inputs" / travelled)
         link.run(["mkdir", "-p", where])
+        _still_its_own(sending)
         # -L sends what the links point at: the inputs travel as files.
         copied = run_here(
             link.rsync_command(f"{staging}/", f":{where}/", "-L"),
-            runner=local_runner, what="sending a study")
+            runner=local_runner, what="sending a study", **link.quiet_here())
         if copied != 0:
             raise StudyError(
                 f"Copying the study to {sending.machine.name} failed "
@@ -480,6 +472,27 @@ def _send_held(sending: Sending, link: Transport, local_runner,
                                 in sending.inputs.files.items()}})
     save_job(job)
     return job
+
+
+def _still_its_own(sending: Sending) -> None:
+    """Refuses what travels if a link in it now leads out of its folder, or
+    a place keys are kept is now in it."""
+    for travelled, source in sending.inputs.files.items():
+        held_to = sending.inputs.held_to.get(travelled, source)
+        leading_out = link_out_of(source, held_to)
+        if leading_out is not None:
+            raise StudyError(
+                f"{leading_out} is a link leading out of {held_to}, so "
+                f"{source} is not sent: what it points at would travel with "
+                "the study. Copy the file in its place.",
+                code="remote.input.outside", given=str(source),
+                where=f"inputs/{travelled}", folder=str(held_to))
+        kept = private_in(source)
+        if kept is not None:
+            raise StudyError(
+                f"{kept} is a place keys and credentials are kept, so {source} "
+                "is not sent.", code="remote.input.outside", given=str(source),
+                where=f"inputs/{travelled}", folder=str(held_to))
 
 
 def _status_script(job: Job) -> str:

@@ -107,7 +107,8 @@ def install(name: str, *, confirm: Callable[[InstallPlan], bool],
                                   runner=local_runner, timeout=STEP_TIMEOUT_S,
                                   env={**quiet.get("env", os.environ),
                                        "RSYNC_RSH": link.rsync_shell()},
-                                  new_session=quiet.get("new_session", False))
+                                  new_session=quiet.get("new_session", False),
+                                  no_input=quiet.get("no_input", False))
         else:
             returncode = link.run(["sh", "-c", step.command],
                                   timeout=STEP_TIMEOUT_S, show=True).returncode

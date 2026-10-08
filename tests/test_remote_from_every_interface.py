@@ -1247,3 +1247,98 @@ class TestSixthReview:
         Transport("box", runner=runner, interactive=False).run(["true"])
         assert seen[0]["start_new_session"] is True
         assert seen[0]["env"]["SSH_ASKPASS_REQUIRE"] == "never"
+
+
+class TestSeventhReview:
+    def test_the_send_s_copy_is_run_where_nobody_can_be_asked(self, machine):
+        import subprocess
+
+        seen: list[dict] = []
+
+        def spied(command, **kwargs):
+            if command[0] == "rsync":
+                seen.append(kwargs)
+            return machine.local(command, **kwargs)
+
+        sending = prepare(machine.study, "box", output=str(machine.back), code=RELEASE,
+                          transport=machine.transport())
+        job = send(sending, transport=machine.transport(), local_runner=spied,
+                   code=RELEASE)
+        travels._until_finished(machine, job.name)
+        assert seen and seen[0]["env"]["SSH_ASKPASS_REQUIRE"] == "never"
+        assert seen[0]["start_new_session"] is True
+        assert seen[0]["stdin"] is subprocess.DEVNULL
+
+    @pytest.mark.parametrize("inside", [".ssh/id_ed25519", ".config/gh/hosts.yml",
+                                        "deeper/.GnuPG/key"])
+    def test_a_folder_holding_keys_does_not_travel(self, tmp_path, inside):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        (study / "data" / inside).parent.mkdir(parents=True)
+        (study / "data" / inside).write_text("secret")
+        for named in ("data", "."):
+            with pytest.raises(ValueError) as caught:
+                gather_inputs({"note": named}, study)
+            assert refusal_of(caught.value).code == "remote.input.outside"
+            assert "credentials" in str(caught.value)
+
+    def test_a_link_to_a_key_kept_in_the_folder_does_not_travel(self, tmp_path):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        (study / ".ssh").mkdir(parents=True)
+        (study / ".ssh" / "id_ed25519").write_text("secret")
+        (study / "data").mkdir()
+        (study / "data" / "k").symlink_to(study / ".ssh" / "id_ed25519")
+        with pytest.raises(ValueError) as caught:
+            gather_inputs({"note": "data"}, study)
+        assert "credentials" in str(caught.value)
+
+    def test_a_config_in_a_settings_folder_sends_none_of_it(self, tmp_path):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        settings = tmp_path / ".config"
+        (settings / "gh").mkdir(parents=True)
+        (settings / "gh" / "hosts.yml").write_text("oauth_token: x")
+        with pytest.raises(ValueError):
+            gather_inputs({"note": "."}, settings)
+
+    def test_fastmdxplora_s_own_settings_do_not_travel(self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        (study / "settings" / "machines").mkdir(parents=True)
+        (study / "settings" / "agent.json").write_text('{"key": "x"}')
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(study / "settings"))
+        with pytest.raises(ValueError) as caught:
+            gather_inputs({"note": "settings"}, study)
+        assert "credentials" in str(caught.value)
+
+    def test_a_prepared_study_whose_manifest_is_the_home_folder_s_is_refused(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        home = tmp_path / "home"
+        (home / "proj").mkdir(parents=True)
+        (home / "setup").mkdir()
+        (home / "manifest.json").write_text('{"phases": []}')
+        monkeypatch.setenv("HOME", str(home))
+        with pytest.raises(ValueError) as caught:
+            gather_inputs({"simulation": {"setup_from": "../setup"}}, home / "proj")
+        assert refusal_of(caught.value).code == "remote.input.outside"
+
+    def test_a_key_put_in_a_folder_after_the_check_is_not_sent(self, machine):
+        (machine.study.parent / "ff").mkdir()
+        (machine.study.parent / "ff" / "a.xml").write_text("<ff/>")
+        machine.study.write_text("systems:\n  - system: top.pdb\n"
+                                 "setup:\n  forcefield_files: [ff]\n")
+        sending = prepare(machine.study, "box", output=str(machine.back), code=RELEASE,
+                          transport=machine.transport())
+        (machine.study.parent / "ff" / ".aws").mkdir()
+        (machine.study.parent / "ff" / ".aws" / "credentials").write_text("secret")
+        with pytest.raises(ValueError) as caught:
+            send(sending, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
+        assert "credentials" in str(caught.value)
+        assert not any("mkdir" in c for c in machine.commands)

@@ -25,6 +25,10 @@ exception: a prepared study named by ``simulation.setup_from`` or
 ``simulation.resume_from`` may sit beside the folder, where a study usually
 does (anywhere in the folder holding the study's folder), when it holds a
 manifest FastMDXplora wrote; links in it are held to that study's folder.
+
+Nothing in a place keys and credentials are kept (``.ssh``, ``.gnupg``,
+``.aws`` and the like, and FastMDXplora's own settings) travels: a folder
+that travels is refused if one is anywhere in it.
 """
 
 from __future__ import annotations
@@ -38,7 +42,8 @@ from typing import Any
 
 from fastmdxplora.refusals import StudyError
 
-__all__ = ["Inputs", "gather_inputs", "link_out_of", "outside_said", "size_of"]
+__all__ = ["Inputs", "gather_inputs", "link_out_of", "outside_said", "private_in",
+           "size_of"]
 
 #: Settings that name where results go rather than something to read.
 _NOT_INPUTS = frozenset({"output"})
@@ -142,13 +147,63 @@ def link_out_of(path: Path, folder: Path) -> Path | None:
 
 #: Where keys and credentials are kept: never sent, whatever folder holds them.
 _PRIVATE_PARTS = frozenset({".ssh", ".gnupg", ".aws", ".netrc", ".kube", ".docker",
-                            ".pgpass", ".git-credentials", ".azure"})
+                            ".pgpass", ".git-credentials", ".azure", ".password-store",
+                            ".vault-token", ".pypirc", ".npmrc"})
+#: The same, as a folder inside another.
+_PRIVATE_PAIRS = frozenset({(".config", "gcloud"), (".config", "gh"),
+                            (".config", "rclone"), ("library", "keychains")})
 
 
 def _private(path: Path) -> bool:
     parts = [part.casefold() for part in path.parts]
-    return bool(_PRIVATE_PARTS & set(parts)) or any(
-        a == ".config" and b in ("gcloud", "gh") for a, b in zip(parts, parts[1:]))
+    if _PRIVATE_PARTS & set(parts) or any(
+            pair in _PRIVATE_PAIRS for pair in zip(parts, parts[1:])):
+        return True
+    # FastMDXplora's own settings: the machines, the AI model's key.
+    from fastmdxplora.user_dir import user_config_dir
+
+    try:
+        return _inside(path, user_config_dir().resolve())
+    except (OSError, RuntimeError):
+        return False
+
+
+def private_in(path: Path) -> Path | None:
+    """The first place in ``path`` keys and credentials are kept, if any:
+    ``path`` itself, or a file or folder a copy that follows links reaches
+    in it, by where it is reached and where it really is."""
+    try:
+        real = path.resolve()
+    except (OSError, RuntimeError):
+        real = path
+    if _private(path) or _private(real):
+        return path
+    if not path.is_dir():
+        return None
+    for entry, real in _walked(path):
+        if _private(entry) or (real is not None and _private(real)):
+            return entry
+    return None
+
+
+def _home_or_above(folder: Path) -> bool:
+    """Whether ``folder`` is the top of the file system, the home folder or
+    a folder holding it, also where the disk ignores the case of letters."""
+    if folder == Path(folder.anchor):
+        return True
+    try:
+        home = Path.home().resolve()
+    except (RuntimeError, OSError):
+        return False
+    for candidate in (home, *home.parents):
+        if folder == candidate:
+            return True
+        try:
+            if os.path.samefile(folder, candidate):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def size_of(path: Path) -> int:
@@ -203,12 +258,7 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
     ``setup_from`` or ``resume_from``, as the module says.
     """
     folder = base.resolve()
-    try:
-        home = Path.home().resolve()
-    except (RuntimeError, OSError):
-        home = None
-    if folder == Path(folder.anchor) or (home is not None and (
-            folder == home or folder in home.parents)):
+    if _home_or_above(folder):
         raise StudyError(
             f"The config is in {folder}, and a study's folder is what travels with "
             "it; that cannot be the top of the file system or your home folder. "
@@ -239,12 +289,17 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
                 and where.endswith(f"simulation.{key}")
                 and folder.parent in path.parents):
             held_to = _study_folder(path)
+            if held_to is not None and _home_or_above(held_to):
+                held_to = None
         link = None if held_to is None else link_out_of(path, held_to)
-        if held_to is not None and link is None and _private(path):
+        kept = None if held_to is None or link is not None else private_in(path)
+        if kept is not None:
             raise StudyError(
-                f"`{where}` names {given}, which is a place keys and credentials are "
-                "kept, so it is not sent.", code="remote.input.outside",
-                given=given, where=where, folder=str(held_to))
+                f"`{where}` names {given}, "
+                + ("which is" if kept == path else f"and {kept} in it is")
+                + " a place keys and credentials are kept, so it is not sent.",
+                code="remote.input.outside", given=given, where=where,
+                folder=str(held_to))
         if held_to is None or link is not None:
             refused_in = held_to or folder
             raise StudyError(

@@ -156,7 +156,7 @@ class Transport:
         import os
 
         return {"env": {**os.environ, "SSH_ASKPASS_REQUIRE": "never"},
-                "new_session": True}
+                "new_session": True, "no_input": True}
 
     def rsync_shell(self) -> str:
         """The ``ssh`` rsync reaches the machine with, as one command line:
@@ -240,17 +240,21 @@ def _decoded(said) -> str:
 
 def run_here(command: Sequence[str], *, runner: Runner | None = None,
              timeout: float = 3600, what: str = "",
-             env: dict[str, str] | None = None, new_session: bool = False) -> int:
+             env: dict[str, str] | None = None, new_session: bool = False,
+             no_input: bool = False) -> int:
     """Run a command on this computer, printing as it goes; its exit code.
 
     For the steps of a plan that happen here -- fetching a release image,
     copying it across -- and for rsync. A missing program is a refusal
-    naming it, not a traceback.
+    naming it, not a traceback. ``no_input`` gives it nothing to read, so
+    nothing it starts can wait on this terminal.
     """
     try:
         more: dict = {"env": env} if env is not None else {}
         if new_session:
             more["start_new_session"] = True
+        if no_input:
+            more["stdin"] = subprocess.DEVNULL
         done = (runner or subprocess.run)(list(command), text=True,
                                           timeout=timeout, check=False, **more)
     except FileNotFoundError as exc:
