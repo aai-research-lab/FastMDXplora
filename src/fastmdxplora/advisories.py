@@ -68,7 +68,7 @@ def advise(structure: dict[str, Any] | None,
                   _a_switch_the_force_field_does_not_want,
                   _a_ligand_with_no_chemistry, _a_density_never_equilibrated,
                   _a_bilayer_near_or_below_its_transition,
-                  _a_bilayer_barely_equilibrated):
+                  _a_bilayer_barely_equilibrated, _a_timestep_too_long):
         said = check(structure, settings)
         if said is not None:
             found.append(said)
@@ -377,3 +377,49 @@ def _a_bilayer_barely_equilibrated(
             "read the area per lipid the membrane analysis reports and "
             "discard the stretch before it levels off."),
     )
+
+
+#: The longest timestep usually stable, by what holds the fastest motions:
+#: nothing (1 fs), bonds to hydrogen constrained (2 fs), and hydrogen mass
+#: repartitioned as well (4 fs).
+STABLE_TIMESTEP_FS = {"none": 1.0, "constrained": 2.0, "repartitioned": 4.0}
+
+
+def _a_timestep_too_long(structure: dict[str, Any],
+                         settings: dict[str, Any]) -> Advisory | None:
+    """A timestep longer than its constraints allow passes every check and
+    blows up in equilibration: 10 fs was run as "Checks pass" and failed in
+    NVT with NaN coordinates."""
+    if str(settings.get("integrator") or "").startswith("variable"):
+        return None   # it chooses its own step
+    try:
+        step = float(settings.get("timestep_fs") or 2.0)
+    except (TypeError, ValueError):
+        return None
+    constraints = str(settings.get("constraints") or "HBonds")
+    try:
+        heavy = float(settings.get("hydrogen_mass_amu") or 0.0) >= 2.5
+    except (TypeError, ValueError):
+        heavy = False
+    if constraints.lower() == "none":
+        held, limit = "nothing constrained", STABLE_TIMESTEP_FS["none"]
+    elif heavy:
+        held, limit = ("bonds to hydrogen constrained and hydrogen mass repartitioned",
+                       STABLE_TIMESTEP_FS["repartitioned"])
+    else:
+        held, limit = (f"bonds constrained (`setup.constraints`: {constraints}) and "
+                       "hydrogens at their own mass", STABLE_TIMESTEP_FS["constrained"])
+    if step <= limit:
+        return None
+    remedy = f"Use {limit:g} fs"
+    if not heavy and constraints.lower() != "none":
+        remedy += (", or repartition hydrogen mass (`setup.hydrogen_mass_amu: 4`) "
+                   "for up to 4 fs")
+    elif constraints.lower() == "none":
+        remedy += ", or constrain bonds to hydrogen (`setup.constraints: HBonds`) for 2 fs"
+    return Advisory(
+        setting="timestep_fs",
+        summary=f"A {step:g} fs timestep is longer than the {limit:g} fs usually stable here.",
+        detail=(f"With {held}, the fastest motions left are resolved in too few "
+                "steps, and such a run usually blows up, often in equilibration."),
+        remedy=remedy + ".")

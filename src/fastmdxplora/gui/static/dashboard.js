@@ -930,8 +930,8 @@
     // failure's message was the headline, and a paragraph with a path in it
     // was set in the card's largest type.
     setText("health-headline", health.headline || health.message || humanise(stateName));
-    setText("health-explanation", health.headline
-      ? [health.message, health.explanation].filter(Boolean).join(" ")
+    setProse("health-explanation", health.headline
+      ? [health.message, health.explanation].filter(Boolean).join("\n\n")
       : (health.explanation || ""));
     setText("health-pill", stateName);
     byId("health-pill")?.setAttribute("data-state", stateName);
@@ -946,6 +946,40 @@
         </li>
       `).join("");
     }
+  }
+
+  /* Text as it was written: its paragraphs as paragraphs and its "  - "
+   * lines as a list. A diagnosis's "What to try" list was set as one
+   * paragraph, its items run together. Built as elements: what a run
+   * recorded is data, never markup. */
+  function setProse(id, text) {
+    const host = byId(id);
+    if (!host) return;
+    const key = String(text || "");
+    if (host.dataset.prose === key) return;
+    host.dataset.prose = key;
+    host.replaceChildren();
+    key.split(/\n\s*\n/).forEach((block) => {
+      const lines = block.split("\n").filter((line) => line.trim());
+      if (!lines.length) return;
+      let para = null;
+      let list = null;
+      lines.forEach((line) => {
+        const item = /^\s*[-*]\s+(.*)$/.exec(line);
+        if (item) {
+          if (!list) { list = document.createElement("ul"); host.appendChild(list); }
+          const li = document.createElement("li");
+          li.textContent = item[1];
+          list.appendChild(li);
+          para = null;
+        } else {
+          list = null;
+          if (!para) { para = document.createElement("p"); host.appendChild(para); }
+          else para.appendChild(document.createTextNode(" "));
+          para.appendChild(document.createTextNode(line.trim()));
+        }
+      });
+    });
   }
 
   function renderStageTimeline(status) {

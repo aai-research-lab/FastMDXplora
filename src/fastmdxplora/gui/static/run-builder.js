@@ -2300,6 +2300,9 @@
     }
 
     const knowing = el("run-worth-knowing");
+    // The estimate, which carries the advice, can arrive after the checks.
+    const status = el("run-status");
+    if (status && status.dataset.state === "ok") setStatus("ok", checksPass());
     if (knowing) {
       knowing.replaceChildren();
       const advice = (state.estimate && state.estimate.ok && state.estimate.advisories) || [];
@@ -2589,6 +2592,16 @@
     schedulePreview();
   }
 
+  /* "Checks pass", and how many things are worth knowing where there are:
+   * a 10 fs timestep read "Checks pass" above the advice that it is too
+   * long for its constraints. */
+  function checksPass() {
+    const advice = (state.estimate && state.estimate.ok && state.estimate.advisories) || [];
+    return advice.length
+      ? `Checks pass; ${advice.length === 1 ? "one thing" : advice.length + " things"} worth knowing`
+      : "Checks pass";
+  }
+
   function setStatus(kind, said) {
     ["run-status", "run-phone-status"].forEach((id) => {
       const target = el(id);
@@ -2694,7 +2707,7 @@
         && !(state.estimate && state.estimate.ok)) redrawAnalyses();
     if (!ready()) return;
     if (built.ok) {
-      setStatus("ok", "Checks pass");
+      setStatus("ok", checksPass());
       const note = el("run-note");
       if (note && note.dataset.ok === "") note.textContent = "";
     } else {
@@ -3449,8 +3462,10 @@
       body: JSON.stringify({ path }),
     });
     const verdict = await response.json();
+    const knowing = (verdict.ok && verdict.worth_knowing) || [];
     text(note, verdict.ok
       ? `Runs. ${verdict.phases.join(" → ")}, ${verdict.systems} system(s), ${verdict.settings_named} setting(s) named.`
+        + (knowing.length ? ` Worth knowing: ${knowing.join(" ")}` : "")
       : verdict.error);
     note.dataset.ok = String(Boolean(verdict.ok));
     state.configVerdict = verdict;

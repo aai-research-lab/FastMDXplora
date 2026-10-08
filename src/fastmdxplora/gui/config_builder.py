@@ -583,9 +583,20 @@ def check_config(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(phases, list) or not phases:
         phases = [name for name in PHASE_SCHEMAS if isinstance(data.get(name), dict)]
     systems = data.get("systems") or []
+    # What the form says under Worth knowing, said for a file too: a 10 fs
+    # timestep checked here as "Runs." and ran, to fail in NVT.
+    from fastmdxplora.advisories import advise
+
+    settings = {**(data.get("setup") if isinstance(data.get("setup"), dict) else {}),
+                **(data.get("simulation") if isinstance(data.get("simulation"), dict) else {})}
+    try:
+        knowing = [a.summary for a in advise({}, settings)]
+    except Exception:  # noqa: BLE001 - advice, never a verdict
+        knowing = []
     return {
         "ok": True,
         "error": None,
+        "worth_knowing": knowing,
         "phases": [str(p) for p in phases],
         "systems": len(systems) if isinstance(systems, list) else 0,
         "settings_named": sum(

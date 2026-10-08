@@ -1227,9 +1227,19 @@ def _value_in_unit(quantity: Any, unit_value: Any) -> Any:
     return quantity
 
 
+def _step_fs(simulation: Any) -> float | None:
+    """The integrator's timestep in fs, where it has a fixed one."""
+    try:
+        from openmm import unit as omm_unit
+
+        return float(simulation.integrator.getStepSize().value_in_unit(omm_unit.femtoseconds))
+    except Exception:  # noqa: BLE001 - a variable or foreign integrator
+        return None
+
+
 def _validation_error(stage: str, detail: str, *, topology: Any = None,
-                      positions: Any = None, platform: str | None = None
-                      ) -> "UnstableRun":
+                      positions: Any = None, platform: str | None = None,
+                      timestep_fs: float | None = None) -> "UnstableRun":
     """Say what failed, reading the state where one is available.
 
     The remedies this used to list -- lower the timestep, lower the
@@ -1247,7 +1257,7 @@ def _validation_error(stage: str, detail: str, *, topology: Any = None,
             # searchable and links to its FAQ; the diagnosis says which atoms
             # it happened to. Neither substitutes for the other.
             return UnstableRun(
-                f"{diagnose_failure(topology, positions, stage=stage, platform=platform).as_text()}"
+                f"{diagnose_failure(topology, positions, stage=stage, platform=platform, timestep_fs=timestep_fs).as_text()}"
                 f"\n\nOpenMM reported: {detail}.",
                 stage=stage, diagnosis=detail)
         except Exception:  # noqa: BLE001 - a diagnosis that fails is not the
@@ -1309,7 +1319,7 @@ def _validate_state_finite(omm: dict, simulation: Any, *, stage: str) -> None:
         raise _validation_error(
             stage, "positions contain NaN or Inf",
             topology=simulation.topology, positions=positions,
-            platform=running_on)
+            platform=running_on, timestep_fs=_step_fs(simulation))
 
     try:
         energy = state.getPotentialEnergy()
@@ -1326,7 +1336,7 @@ def _validate_state_finite(omm: dict, simulation: Any, *, stage: str) -> None:
         raise _validation_error(
             stage, "potential energy is NaN or Inf",
             topology=simulation.topology, positions=positions,
-            platform=running_on)
+            platform=running_on, timestep_fs=_step_fs(simulation))
 
 
 def _warn_density_was_never_equilibrated(
@@ -1471,7 +1481,8 @@ def _run_md_stage(
             failed_topology, failed_positions = _state_for_diagnosis(simulation)
             raise _validation_error(
                 label, f"OpenMM integration failed ({exc})",
-                topology=failed_topology, positions=failed_positions) from exc
+                topology=failed_topology, positions=failed_positions,
+                timestep_fs=_step_fs(simulation)) from exc
         done += this
         if stop is not None and stop.requested:
             done += _step_to_a_frame(simulation, stop, done=done,
@@ -1543,7 +1554,8 @@ def _run_md_stage_with_live_metrics(
             failed_topology, failed_positions = _state_for_diagnosis(simulation)
             raise _validation_error(
                 label, f"OpenMM integration failed ({exc})",
-                topology=failed_topology, positions=failed_positions) from exc
+                topology=failed_topology, positions=failed_positions,
+                timestep_fs=_step_fs(simulation)) from exc
         current_step += chunk
         remaining -= chunk
         if stop is not None and stop.requested:

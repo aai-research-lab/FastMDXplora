@@ -275,6 +275,13 @@ def remedy_for(refusal: Refusal | dict[str, Any] | None, *,
         settings = DECIDED_IN.get(found.code, ())
         fix = ("The software does not know the answer here, so it suggests "
                "nothing; the choice is yours.")
+        if found.code == "simulation.run.unstable":
+            # Said beside the run's own diagnosis, which lists what may
+            # help: "suggests nothing" under "the remedies below" read as
+            # two answers to one question.
+            fix = ("The software cannot tell which cause it was, so it chooses none "
+                   "for you: what the failed state points at, and what may help, is "
+                   "in the run's health below. The choice is yours.")
         if settings:
             fix += f" A choice of this kind is recorded in {_either(settings)}."
     price = _from_the_top(root, spec) if root is not None else None

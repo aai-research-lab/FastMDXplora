@@ -6435,3 +6435,9 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .studies-open-row { display: flex; gap: 8px; align-items: center; }
 .studies-open-row .studies-open-path { flex: 1; min-width: 0; }
 .studies-open-row input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+
+/* A run's health in its own paragraphs, a list where it lists. */
+.health-explanation p { margin: 0 0 8px; }
+.health-explanation p:last-child { margin-bottom: 0; }
+.health-explanation ul { margin: 4px 0 8px; padding-left: 20px; }
+.health-explanation li { margin: 2px 0; }
