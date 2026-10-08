@@ -8,7 +8,8 @@ said, the paper's or this software's; an AMBER force field is not switched
 and a CHARMM one is switched as it is developed; ions are no ligand; a
 membrane is read however it is worded; plain MD stays plain whatever its
 details mention. The file written is the config and nothing more, whatever
-words the paper or an AI app gives its label.
+words the paper or an AI app gives its label. A reading is counted against
+the truth with its wrong values and its extra studies counted.
 """
 
 from __future__ import annotations
@@ -561,3 +562,88 @@ def test_supporting_information_that_failed_to_come_is_fetched_again(tmp_path, m
     labels = [part.text for part in third.parts if part.kind == "si"]
     assert labels[0].startswith("Supporting table 1:") and labels[-1].startswith(
         "Supporting table 11:")
+
+
+# -- counting a reading --------------------------------------------------------
+def _truth():
+    return {"key": "x", "studies": [{"id": "S1/S1", "label": "wild type ubiquitin",
+                                     "contested": [], "claims": [],
+                                     "fields": {"temperature": {"status": "stated", "value": 300},
+                                                "timestep": {"status": "stated", "value": 2},
+                                                "replicas": {"status": "in_si"}}}]}
+
+
+def test_a_reading_with_every_value_wrong_is_counted_wrong():
+    from fastmdxplora.validation.paper_reading import score
+
+    reading = {"studies": [{"id": "S1", "label": "wild type ubiquitin", "claims": [],
+                            "fields": {"temperature": _stated(350), "timestep": _stated(4)}}]}
+    counted = score(_truth(), reading)
+    assert counted["studies_matched"] == 1
+    assert counted["fields"]["wrong"] == 2
+
+
+def test_a_study_the_truth_does_not_have_counts_its_values_as_invented():
+    from fastmdxplora.validation.paper_reading import score
+
+    reading = {"studies": [{"id": "S1", "label": "wild type ubiquitin", "claims": [],
+                            "fields": {"temperature": _stated(300), "timestep": _stated(2)}},
+                           {"id": "S2", "label": "something made up", "claims": [],
+                            "fields": {"temperature": _stated(400), "pressure": _stated(1.0)}}]}
+    counted = score(_truth(), reading)
+    assert counted["fields"]["correct"] == 2
+    assert counted["fields"]["invented"] == 2
+
+
+def test_a_study_one_reader_found_is_neither_counted_right_nor_invented():
+    from fastmdxplora.validation.paper_reading import score
+
+    truth = dict(_truth(), only_b=["the L50A mutant of ubiquitin"])
+    reading = {"studies": [{"id": "S2", "label": "ubiquitin L50A mutant", "claims": [],
+                            "fields": {"temperature": _stated(300)}}]}
+    counted = score(truth, reading)
+    assert counted["studies_one_reader_found"] == 1
+    assert counted["fields"]["invented"] == 0
+
+
+def test_a_value_the_truth_places_in_the_supporting_information_is_not_counted():
+    from fastmdxplora.validation.paper_reading import score
+
+    reading = {"studies": [{"id": "S1", "label": "wild type ubiquitin", "claims": [],
+                            "fields": {"replicas": _stated(3)}}]}
+    counted = score(_truth(), reading)
+    assert counted["fields"]["elsewhere"] == 1 and counted["fields"]["invented"] == 0
+
+
+def test_the_registered_claims_are_said_met_or_not():
+    from fastmdxplora.validation.paper_reading import claims_met
+
+    results = [{"key": "a", "studies_truth": 10, "studies_read": 10, "studies_matched": 9,
+                "fields": {"correct": 90, "wrong": 1, "missed": 20, "invented": 1}},
+               {"key": "buch_2011", "refused_by_doi": "environment.paper.not_open",
+                "studies_truth": 1, "studies_read": 1, "studies_matched": 1,
+                "fields": {"correct": 5, "wrong": 0, "missed": 0, "invented": 0}}]
+    claims = claims_met(results)
+    assert claims["values_used_right"]["met"] is False  # 95/97 is under 0.98
+    assert claims["stated_values_found"]["met"] is True
+    assert claims["studies_found"]["value"] == pytest.approx(10 / 11, abs=1e-4)
+    assert claims["not_open_refused"]["met"] is True
+
+
+def test_a_paper_refused_counts_its_studies_as_not_found():
+    from fastmdxplora.validation.paper_reading import claims_met
+
+    results = [{"key": "a", "studies_truth": 4, "studies_read": 4, "studies_matched": 4,
+                "fields": {"correct": 10}},
+               {"key": "b", "refused": "unreachable", "code": "environment.service.unreachable",
+                "studies_truth": 4}]
+    claims = claims_met(results)
+    assert claims["studies_found"]["value"] == pytest.approx(0.5)
+    assert claims["refused"] == ["b"]
+
+
+def test_a_file_for_a_paper_not_registered_is_refused(capsys):
+    from fastmdxplora.validation.paper_reading import main
+
+    assert main(["--file", "nobody_2020=x.pdf"]) == 2
+    assert "KEY=PATH" in capsys.readouterr().err

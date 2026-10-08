@@ -229,6 +229,26 @@ same quantity, whatever the verdict, and the section says so.
 
 ---
 
+## How well it reads
+
+Twenty papers, chosen to test each part of this (methods in full and with
+gaps, force fields and methods it runs and ones it does not, mutants,
+ligands, membranes, nucleic acids, results with and without errors, and one
+paper not open for programs), were each read by two readers working apart.
+What both state with one value is a truth a reading is counted against,
+field by field: the value used is the truth's, another value, none where the
+truth states one, or one where the paper gives none. What is claimed from
+the counts was fixed in `preregistration/paper-reading.md` before any AI
+model's reading of these papers was seen. To count a reading with the AI
+model you have chosen:
+
+```
+python -m fastmdxplora.validation.paper_reading --out paper_reading.json \
+    --file buch_2011=buch_2011.pdf
+```
+
+---
+
 ## What this does not do
 
 - It reads the text and tables. A value given only in a figure is not read.

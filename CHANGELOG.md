@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### How well a paper is read
+
+**Added:** twenty papers, each read by two readers working apart, whose
+agreed reading is a truth a reading is counted against field by field
+(`python -m fastmdxplora.validation.paper_reading`), with what is claimed
+from the counts registered first in `preregistration/paper-reading.md`.
+
 ### A paper's studies for the Agent and an AI app
 
 **Added:** the Agent's tool `studies_in_paper`, so asking it to reproduce a
