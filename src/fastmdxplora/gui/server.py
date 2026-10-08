@@ -2982,6 +2982,10 @@ def _results_payload(root: Path) -> dict[str, Any]:
         "plots": plots,
         "key_plots": [plot for plot in plots if plot["title"] in KEY_PLOT_TITLES][:6],
         "svg_figure_count": len(_svg_figure_paths(root)),
+        # The zip holds the report's figures too: said, so its count is not
+        # read against the page's count of the analyses' figures.
+        "svg_report_count": sum(1 for path in _svg_figure_paths(root)
+                                if (root / "report") in path.parents),
         "svg_bundle_href": "/analysis-figures-svg.zip",
         "reports": reports,
         "artifacts": artifacts,

@@ -378,3 +378,49 @@ def test_a_run_is_chosen_in_a_browser(tmp_path: Path):
             browser.close()
     finally:
         session.server.shutdown()
+
+
+def test_a_row_without_a_preview_keeps_the_columns(study):
+    """Rows without the preview's eye put their size and date about 30 px
+    to the right of the others'."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with playwright.sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.goto(session.url + "#files", wait_until="domcontentloaded")
+            page.wait_for_selector(".files-toolbar", timeout=30000)
+            edges = page.evaluate("""() => [...document.querySelectorAll('.files-row')]
+              .filter((row) => row.offsetParent !== null && !row.closest('.files-arow'))
+              .map((row) => [!!row.querySelector('[data-preview]'),
+                             Math.round(row.querySelector('.files-size').getBoundingClientRect().right)])""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert {seen for seen, _ in edges} == {True, False}, edges
+    assert len({right for _, right in edges}) == 1, edges
+
+
+def test_the_svg_figures_say_which_are_the_report_s(tmp_path: Path):
+    """"Download all 16 SVG figures" beside "15 figures": the zip packs the
+    report's summary too."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    run = tmp_path / "run"
+    _write(run, "analysis/analysis_manifest.json",
+           json.dumps({"results": {"rg": {"status": "ok", "message": "rg: ok"}}}))
+    _write(run, "analysis/rg/rg.svg", "<svg/>")
+    _write(run, "analysis/rg/rg.dat", "frame,rg_nm\n0,1.0\n")
+    _write(run, "report/analysis_summary.svg", "<svg/>")
+    session = start_dashboard_session(output=str(run), host="127.0.0.1", port=0)
+    try:
+        payload = json.loads(_get(session.url.rstrip("/") + "/api/results")[2])
+    finally:
+        session.server.shutdown()
+    assert payload["svg_figure_count"] == 2 and payload["svg_report_count"] == 1
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "dashboard.js").read_text(encoding="utf-8")
+    assert "of them the report's" in script

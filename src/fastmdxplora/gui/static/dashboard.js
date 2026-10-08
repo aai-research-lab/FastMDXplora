@@ -1609,9 +1609,12 @@
     if (svgBundle) {
       svgBundle.hidden = svgCount < 1;
       svgBundle.href = payload.svg_bundle_href || "/analysis-figures-svg.zip";
-      svgBundle.textContent = svgCount === 1
+      const fromReport = Number(payload.svg_report_count || 0);
+      svgBundle.textContent = (svgCount === 1
         ? "Download SVG figure"
-        : `Download all ${svgCount} SVG figures`;
+        : `Download all ${svgCount} SVG figures`)
+        + (fromReport && fromReport < svgCount
+          ? `, ${fromReport} of them the report's` : fromReport ? ", the report's" : "");
     }
     const count = analyses.length || plots.length;
     setText(

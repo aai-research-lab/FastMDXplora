@@ -1329,7 +1329,10 @@ button {
 .files-path { color: var(--text-muted); font-size: var(--text-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
 .files-size, .files-when { color: var(--text-secondary); font-size: var(--text-2xs); text-align: right; white-space: nowrap; }
 .files-when { color: var(--text-muted); }
-.files-acts { display: flex; gap: 2px; align-items: center; justify-content: flex-end; }
+/* Room for a row's three actions whether or not it has all three, so a
+   file with no preview keeps its size and date under the others' (they
+   sat 30 px to the right). */
+.files-acts { display: flex; gap: 2px; align-items: center; justify-content: flex-end; min-width: 88px; }
 .files-act {
     width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
     border: 1px solid transparent; background: transparent; color: var(--text-muted); cursor: pointer;
