@@ -653,9 +653,13 @@ fastmdx remote forget gpu-box                      # remove the record
 | `--partition NAME`, `--time LIMIT` | no | the cluster's defaults |
 
 `NAME` is an alias from `~/.ssh/config` or `user@host`. Inspection only reads
-the machine; `install` runs nothing without a yes at the terminal. Exits **0**
-when the action is done (a machine inspected, ready or not), and **1** when a
-machine cannot be reached, is not ready for `send`, or a name is not known.
+the machine; `install` runs nothing without a yes at the terminal. `send` takes
+only the files in the Config's own folder (and a prepared study named by
+`setup_from` or `resume_from` beside it), and refuses a second study on a
+workstation while one sent from here runs there. Exits **0** when the action is
+done (a machine inspected, ready or not), and **1** when a machine cannot be
+reached, is not ready or busy for `send`, a file named is outside the study's
+folder, or a name is not known.
 
 ---
 

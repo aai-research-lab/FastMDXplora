@@ -1457,8 +1457,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Check the Config here, copy it and the files it names to the "
             "machine, and start `fastmdx explore` there in the installation "
-            "that holds this computer's code. Refused if the machine is not "
-            "ready. The job runs on without this terminal."),
+            "that holds this computer's code. Only files in the Config's own "
+            "folder travel, and a prepared study named by setup_from or "
+            "resume_from beside it. Refused if the machine is not ready, or "
+            "is a workstation already running a study sent from here. The "
+            "job runs on without this terminal."),
         formatter_class=_PercentSafeHelp,
     )
     send.add_argument("-c", "-config", "--config", dest="config",
