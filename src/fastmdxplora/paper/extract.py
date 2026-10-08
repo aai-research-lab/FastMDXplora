@@ -49,7 +49,7 @@ __all__ = ["read_studies", "check_reading", "PROMPT_VERSION", "BUDGET_CHARS",
            "kept_reading", "cache_root", "STATUSES"]
 
 #: The questions' version: a reading kept from other questions is not reused.
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 
 #: How much of the paper the AI model is shown, in characters: about 50,000
 #: tokens, which holds a paper and its methods supplement.
@@ -158,7 +158,8 @@ The paper:
 {text}"""
 
 
-def _protocol_prompt(text: str, protocol: dict[str, Any], studies: list[str]) -> str:
+def _protocol_prompt(text: str, protocol: dict[str, Any], studies: list[str],
+                     names: tuple[str, ...] = PROTOCOL_FIELDS) -> str:
     return f"""You are reading a scientific paper to find the simulation settings of one of its MD protocols, so that its studies can be reproduced.
 
 The protocol: {protocol.get("id")}, "{protocol.get("label", "")}", used by the studies {", ".join(studies)}.
@@ -167,7 +168,7 @@ The protocol: {protocol.get("id")}, "{protocol.get("label", "")}", used by the s
 
 Give "fields": an object of the settings the paper states for this protocol,
 each {{"value": ..., "unit": "...", "quote": "..."}}, from:
-{_fields_list(PROTOCOL_FIELDS)}
+{_fields_list(names)}
 
 Settings that differ between studies of the protocol are left out here.
 Answer as {{"fields": {{...}}}}.
@@ -207,6 +208,13 @@ The paper:
 # ---------------------------------------------------------------------------
 # Asking
 # ---------------------------------------------------------------------------
+#: What each answer's key holds: an answer whose key holds anything else
+#: ("fields": [] or null) is not the answer asked for.
+#: A list answered as null is an empty list; settings must be an object.
+_SHAPE: dict[str, tuple[type, ...]] = {"fields": (dict,), "studies": (list, type(None)),
+                                       "claims": (list, type(None))}
+
+
 def _json_from(reply: str, wanted: str) -> dict[str, Any]:
     """The object the AI model was asked for: the first in ``reply`` that has
     the key ``wanted``. A reply cut off part way parses, if at all, only as
@@ -220,7 +228,8 @@ def _json_from(reply: str, wanted: str) -> dict[str, Any]:
         except ValueError:
             start = text.find("{", start + 1)
             continue
-        if isinstance(value, dict) and wanted in value:
+        if isinstance(value, dict) and wanted in value \
+                and isinstance(value[wanted], _SHAPE.get(wanted, (object,))):
             return value
         start = text.find("{", start + 1)
     raise PaperRefused(
@@ -230,17 +239,46 @@ def _json_from(reply: str, wanted: str) -> dict[str, Any]:
 
 
 def _ask(complete: Complete, prompt: str, said: Callable[[str], None], what: str,
-         wanted: str) -> dict[str, Any]:
+         wanted: str, *, paged: bool = True) -> dict[str, Any]:
+    """The answer to ``prompt``, asked once more, said plainly, where the
+    reply is not the JSON asked for: a reply cut off or wrapped in prose is
+    common. Only an answer given in pages (``paged``) is told it may give
+    fewer items; one that is not would leave settings out unsaid."""
     said(what)
     reply = complete(prompt)
     try:
         return _json_from(reply, wanted)
     except PaperRefused:
-        # Once more, said plainly: a reply cut off or wrapped in prose is
-        # common, and asking again for less usually answers.
-        reply = complete(prompt + "\n\nAnswer with the JSON object only, whole. "
-                         "If it does not fit, give fewer items and \"more\": true.")
-        return _json_from(reply, wanted)
+        again = "\n\nAnswer with the JSON object only, whole."
+        if paged:
+            again += " If it does not fit, give fewer items and \"more\": true."
+        return _json_from(complete(prompt + again), wanted)
+
+
+def _protocol_settings(complete: Complete, text: str, protocol: dict[str, Any],
+                       users: list[str], said: Callable[[str], None]) -> dict[str, Any]:
+    """A protocol's settings, asked for all at once and, where the reply is
+    not whole (most often cut off at what an AI model may answer at a time),
+    in two halves, each asked whole: an answer told to give fewer would
+    leave settings out, and each left out would read as one the paper does
+    not state."""
+    pid = protocol.get("id")
+    said(f"Asking for the settings of protocol {pid}...")
+    try:
+        answer = _json_from(complete(_protocol_prompt(text, protocol, users)), "fields")
+    except PaperRefused:
+        half = len(PROTOCOL_FIELDS) // 2
+        fields: dict[str, Any] = {}
+        for number, part in enumerate((PROTOCOL_FIELDS[:half], PROTOCOL_FIELDS[half:]), 1):
+            got = _ask(complete, _protocol_prompt(text, protocol, users, part), said,
+                       f"The settings of protocol {pid} did not come whole in one answer: "
+                       f"asking for them in two parts ({number} of 2)...", "fields",
+                       paged=False).get("fields")
+            if isinstance(got, dict):
+                fields.update({name: value for name, value in got.items() if name in part})
+        return fields
+    fields = answer.get("fields")
+    return fields if isinstance(fields, dict) else {}
 
 
 def _claim_key(claim: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -299,10 +337,7 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
         users = [str(s.get("id")) for s in studies if str(s.get("protocol") or "P1") == pid]
         if not users:
             continue
-        answer = _ask(complete, _protocol_prompt(text, protocol, users), tell,
-                      f"Asking for the settings of protocol {pid}...", "fields")
-        fields = answer.get("fields")
-        protocol_fields[pid] = fields if isinstance(fields, dict) else {}
+        protocol_fields[pid] = _protocol_settings(complete, text, protocol, users, tell)
 
     claims: list[dict[str, Any]] = []
     if studies:

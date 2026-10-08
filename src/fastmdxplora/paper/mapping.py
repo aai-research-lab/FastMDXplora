@@ -324,43 +324,214 @@ def _method_of(said: str) -> str:
     return "plain" if re.search(_METHOD_WORDS["plain"], reduced) else "other"
 
 
-#: Words in a method's details that make it a method this does not run,
-#: read in the words as written: the details of plain MD name pressures,
-#: analyses and hardware, so nothing shorter or looser.
+#: Names, in a method's details, of methods this does not run. The details
+#: of plain MD name pressures, analyses and hardware, so nothing shorter or
+#: looser. The AI model's word for the method decides first; these names
+#: are a second look, and a name it misses leaves that word to decide.
 _DETAIL_WORDS = {
-    "replica_exchange": r"bias[-\s]*exchange|replica[-\s]*exchange|\bremd\b"
-                        r"|parallel[-\s]*tempering|solute[-\s]*tempering|\brest2?\b|\bh-?rex\b"
-                        r"|simulated[-\s]*tempering",
-    "free_energy": r"free[-\s]*energy[-\s]*perturbation|\bfep\b|alchemical"
-                   r"|thermodynamic[-\s]*integration|decoupl",
-    "accelerated": r"accelerated[-\s]*(?:md|molecular)|\bgamd\b|(?-i:\baMD\b)",
-    "qm_mm": r"\bqm/?mm\b|quantum[-\s]*mechanic|\bdftb\b",
-    "coarse_grained": r"coarse[-\s]*grain|\bmartini\b",
-    "implicit_solvent": r"implicit[-\s]*solv|generali[sz]ed[-\s]*born|\bgbsa\b|\bgb-?obc|\bgbn2?\b",
-    "milestoning": r"milestoning|\bmmvt\b|\bseekr|weighted[-\s]*ensemble",
+    "replica_exchange": r"bias[-\s]*exchange|replica[-\s]*exchange|\b(?:[thm]|re)?-?remds?\d{0,3}\b"
+                        r"|(?-i:\b(?:T-?)?REX\d{0,3}\b)|\bre-md\b|parallel[-\s]*tempering"
+                        r"|\bpt-?(?:wte|metad)|\bbe-?meta|solute[-\s]*tempering"
+                        r"|(?-i:\bg?REST[23]?\d{0,3}\b)|\bg?rest[23]\d{0,3}\b|\bh-?rex\d{0,3}\b"
+                        r"|\breus\d{0,3}\b|simulated[-\s]*tempering|temperature[-\s]*exchange"
+                        r"|hamiltonian[-\s]*(?:replica[-\s]*)?exchange"
+                        r"|(?-i:\bPT\b)\s+(?:simulations?|md|runs?|with)"
+                        r"|expanded[-\s]*ensemble\s+(?:simulations?|sampling|md|method|runs?)",
+    "free_energy": r"free[-\s]*energy[-\s]*perturbation|\bfeps?\d{0,3}\b|alchemical|annihilat"
+                   r"|thermodynamic[-\s]*integration|(?-i:\bTI\d{0,3}\b)|\b[ar]bfe\b|\bties\b"
+                   r"|(?:lambda|\u03bb)[-\s]*(?:windows?|values?|states?)"
+                   r"|non[-\s]?equilibrium\s+(?:switch\w*|transitions?)|double[-\s]*decoupl"
+                   r"|decoupl\w*\s+(?:of\s+)?(?:the\s+|each\s+)?(?:ligand|solute|inhibitor)"
+                   r"|(?:ligand|solute|electrostatics?|van\s+der\s+waals|lennard[-\s]jones"
+                   r"|interactions?)(?:'s)?\s+(?:\w+\s+)?(?:was\s+|were\s+)?decoupl"
+                   r"|decoupling\s+(?:simulations?|calculations?)",
+    "accelerated": r"(?<!gpu-)(?<!gpu\s)(?<!cuda-)(?<!cuda\s)(?<!hardware-)"
+                   r"accelerated[-\s]*(?:md|molecular)|\b(?:li|pep|lig)?gamds?\d{0,3}\b"
+                   r"|(?-i:\baMD\d{0,3}\b)|dual[-\s]*boost|boost(?:ed|ing)?\s+potential"
+                   r"|\biamd\s*=",
+    "qm_mm": r"\bqm(?: ?[-/:] ?| ?\([^()]{1,30}\) ?/? ?| )?mm\d{0,3}\b|\bqm\s+and\s+mm\b"
+             r"|\bqm[-\s]+(?:region|atoms|subsystem|zone|layer|part)"
+             r"|quantum[-\s]*mechanic(?:s|al)? ?[-/] ?molecular|quantum[-\s]*mechanically"
+             r"|quantum[-\s]*mechanical\s+(?:\(qm\)\s+)?(?:region|treatment|subsystem|atoms|zone)"
+             r"|\boniom\b|\b(?:dft|pm[367]|am1|xtb|gfn\d?-?xtb|nnp|ml|ani(?:-\w+)?|b3lyp) ?/ ?mm\b"
+             r"|\b(?:scc-)?dftb\d?\b|car[-\s]*parrinello|\bcpmd\b|\bbomd\b|\baimd\b"
+             r"|ab[-\s]*initio\s+(?:md|molecular)|born[-\s]*oppenheimer\s+(?:md|molecular)",
+    "coarse_grained": r"\bcg[-\s]?(?:md|simulations?|models?)\b|\bmartini(?:\s*\d+(?:\.\d+)*)?\b"
+                      r"|\bsirah\b|\bg[o\u014d][-\s]+(?:like\s+)?(?:models?|potentials?)\b|\bsmog\d?\b"
+                      r"|\bunres\b|\bawsem\b|\boxdna\b|\boxrna\b|\bcalvados\b|\bhyres\b"
+                      r"|\bdpd\b|dissipative\s+particle",
+    "implicit_solvent": r"implicit[-\s]*(?:solv|water|membrane)|generali[sz]ed[-\s]*born"
+                        r"|(?<!mm/)(?<!mm-)\bgb/?sa\b|\bgb-?obc|\bgbn2?\b|\bgb-?neck|\bobc\d?\b"
+                        r"|\bgbsw\b|\bgbmv\d?\b|\bgb-?hct\b|\bigb\s*=?\s*[1-8]\b"
+                        r"|(?<!\d\s)\bgb\s+(?:model|implicit|solva?t|solvent|md|simulations?)"
+                        r"|onufriev[-\s]*bashford[-\s]*case|\beef1\b|\bimm1\b|\babsinth\b"
+                        r"|solvent\s+was\s+(?:modell?ed|treated)\s+implicitly|pbsa\s+solvent",
+    "milestoning": r"milestoning|\bmmvt\b|\bseekr|weighted[-\s]*ensemble|\bwestpa\d{0,3}\b"
+                   r"|\bwexplore\d{0,3}\b|(?-i:\bWE\b)\s+simulations?|walkers?\s+(?:per|in\s+each)\s+bin",
 }
 
-#: Words just before a method's name that deny it or give it to another
-#: work: "no REMD", "compared with REMD", "from the previous REMD". A
-#: citation after the name ("REST2 (ref 14)") gives it to nobody else.
-_NOT_THIS_STUDY = re.compile(
-    r"(?:\b(?:no|not|without|never|nor|instead\s+of|rather\s+than|compared\s+(?:with|to)"
-    r"|versus|vs\.?|unlike|than)"
-    r"|\b(?:from|of|in|by)\s+(?:our\s+|the\s+|an?\s+|their\s+)?(?:previous|earlier|prior"
-    r"|published|reported))(?:\W+[\w-]+){0,3}?\W*$", re.IGNORECASE)
+#: Words that may name such a method, or may not: "quantum mechanical"
+#: (QM/MM, or a ligand's charges), "coarse-grained" (a model, or an
+#: analysis), "decoupled", "in vacuo", "free energy", "AMD" (accelerated MD,
+#: or the hardware), "accelerated". Each puts the study to the person, with
+#: no exception read from the words around it: none refuses the study, and
+#: none lets it run unread. Runnable methods that need their own settings
+#: (metadynamics, umbrella sampling, steered MD) are put to the person too
+#: where the AI model's word for the method is plain MD. Only "GPU-" or
+#: "CUDA-accelerated" and "AMD GPUs" are not read as such words at all.
+_LOOSE_WORDS = (
+    r"quantum[-\s]*mechanic|coarse[-\s]*grain|decoupl|\bin\s+vacuo\b|\bvacuum\b|gas[-\s]*phase"
+    r"|(?:absolute|relative|binding|hydration|solvation)\s+free[-\s]*energ|\bpmf\b"
+    r"|(?-i:\bAMD\b)(?!\s+(?:gpus?|radeon|instinct|epyc|ryzen|mi\d+|hardware|rocm|hip"
+    r"|processors?|cpus?)\b)|(?<!\d\s)(?<!\d)\bgb\b|dielectric|(?-i:\bM?BAR\b)|lambda[-\s]*dynamics|\bboost"
+    r"|(?-i:\bRest\d?\b)|semi[-\s]*empirical|\bdft\b|metadynamics|\bmetad\b|\bopes\b|umbrella|steered|\bsmd\b"
+    r"|\bplumed\b|collective\s+variable|\bwham\b|\bexchang|\bswap|continuum|without\s+(?:any\s+)?"
+    r"(?:water|solvent)|solvent[-\s]free|soft[-\s]?core|(?:turned|switched)\s+off|\blambda\b|\u03bb"
+    r"|\bwalkers?\b|\belnedyn|\bbeads?\b|\b[\w()+-]+\s*/\s*(?:mm|amber|charmm)\b|\bxtb\b|\bpm[367]\b"
+    r"|\bigamd|(?-i:\bWE\b)|poisson[-\s]*boltzmann|(?<!gpu-)(?<!gpu\s)(?<!cuda-)(?<!cuda\s)"
+    r"(?<!hardware-)\baccelerat|\bg[o\u014d][-\s]+(?:like|model)")
+
+#: Words in a sentence that make a method's name in it something other than
+#: what the study did, or might: a denial, a comparison, another work, a
+#: run it started from, an exception. Where any is in the name's sentence,
+#: the person reads the words and decides; where none is, the study is that
+#: method.
+_QUALIFIED = re.compile(
+    r"\b(?:no|not|non|none|without|never|neither|nor|instead|rather|unlike|compared|comparison"
+    r"|versus|vs|contrast\w*|opposed|controls?|previous\w*|earlier|prior|published|reported"
+    r"|literature|start\w*|taken|seeded|derived|except\w*|apart|but|only|whereas|e\.g"
+    r"|such\s+as|alternative\w*|avoid\w*|cannot|unable|impossible)\b", re.IGNORECASE)
+
+#: MM/GBSA or MM/PBSA: an implicit-solvent or free-energy name in its
+#: sentence may be the rescoring's or the run's, so it is put to the person.
+_RESCORING = re.compile(r"\bmm[-/]?[gp]bsa\b|\bmmpbsa|\bmmgbsa", re.IGNORECASE)
+
+#: What a run of such a method does, named or not.
+_SIGNS = {
+    "replica_exchange": re.compile(
+        r"\breplicas?\b[^.;]{0,80}\b(?:exchang|swap)|\b(?:exchang|swap)\w*\b[^.;]{0,80}"
+        r"\b(?:replicas?|copies|temperatures)\b"
+        r"|\breplicas?\b[^.;]{0,40}\b[2-9]\d\d(?:\.\d+)?(?:\s*K)?\s*(?:-|to|~|\u2192|and)\s*[2-9]\d\d(?:\.\d+)?\s*K\b"
+        r"|\b[2-9]\d\d(?:\.\d+)?(?:\s*K)?\s*(?:-|to|~|\u2192)\s*[2-9]\d\d(?:\.\d+)?\s*K\b[^.;]{0,40}\breplicas?\b"
+        r"|\breplica\s+temperatures\b|\btemperature\s+ladder\b", re.IGNORECASE),
+    "accelerated": re.compile(r"\bboost(?:s|ed|ing)?\b[^.;]{0,40}\b(?:potential|added|applied"
+                              r"|dihedral|kcal)|\bsigma0|\u03c30", re.IGNORECASE),
+}
+
+#: Dashes, slashes and spacing that PDF text gives in place of the plain
+#: ones; soft hyphens are dropped.
+_PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-",
+                             "\u2014": "-", "\u2212": "-", "\u2043": "-", "\u2215": "/",
+                             "\u2044": "/", "\u00ad": None, "\u00a0": " ", "\u2009": " ",
+                             "\u202f": " "})
+
+
+def _plain_text(words: str, join: bool = True) -> str:
+    """The paper's words with PDF typography made plain: trade marks and
+    modifier letters as spaces, superscript citation digits as spaces,
+    ligatures and wide forms (NFKC), accents dropped, dashes and slashes as
+    "-" and "/", soft hyphens and invisible characters dropped, newlines as
+    spaces. With ``join``, a word broken by a hyphen at a line's end ("ex-\n
+    change") is joined; the plan reads the words both ways."""
+    import unicodedata
+
+    words = str(words).replace("\r\n", "\n").replace("\r", "\n")
+    words = re.sub("[\u2122\u00ae\u2120\u00a9\u00aa\u00ba\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+",
+                   " ", words)
+    words = "".join(" " if unicodedata.category(ch) == "Lm" else ch for ch in words)
+    words = unicodedata.normalize("NFKC", words).translate(_PLAIN_TEXT)
+    words = "".join(ch for ch in unicodedata.normalize("NFKD", words)
+                    if not unicodedata.combining(ch) and unicodedata.category(ch) != "Cf")
+    if join:
+        words = re.sub(r"(?<=[A-Za-z])-[ \t]*\n\s*(?=[A-Za-z])", "", words)
+        words = re.sub(r"(?<=[A-Za-z])- (?=[A-Za-z])", "", words)
+    words = re.sub(r"\n\s*", " ", words)
+    return words.replace("_", " ")
+
+
+def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
+    """The method a study's details say it is, where that is one this does
+    not run and its name stands with nothing that qualifies it in its
+    sentence; and each name or word found otherwise, with its sentence:
+    ``"mentioned"`` (a name beside words that may deny it or give it
+    elsewhere) or ``"signs"`` (a word that may mean such a method, or a run
+    of one described without its name). The plan asks the person to
+    confirm both: it does not guess what such words mean. The words are
+    read as written and with line-end hyphens joined, and either reading
+    that names a method makes the study that method."""
+    aside: list[tuple[str, str]] = []
+    for join in (False, True):
+        method, found = _read_details(_plain_text(words, join=join))
+        if method:
+            return method, found
+        aside += [item for item in found if item not in aside]
+    return None, aside
+
+
+def _read_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
+    found = sorted(((match, method) for method, pattern in _DETAIL_WORDS.items()
+                    for match in re.finditer(pattern, words, re.IGNORECASE)),
+                   key=lambda pair: pair[0].start())
+    aside: list[tuple[str, str]] = []
+    for match, method in found:
+        sentence = _sentence_of(words, match)
+        if _QUALIFIED.search(sentence) or (
+                method in ("implicit_solvent", "free_energy") and _RESCORING.search(sentence)):
+            aside.append((_short(sentence.strip(), 160), "mentioned"))
+        else:
+            return method, aside
+    unnamed = list(words)
+    for match, _method in found:  # the names themselves are not signs
+        unnamed[match.start():match.end()] = " " * (match.end() - match.start())
+    unnamed_text = "".join(unnamed)
+    for signs in _SIGNS.values():
+        sign = signs.search(unnamed_text)
+        if sign:
+            aside.append((sign.group(0).strip(), "signs"))
+    for loose in re.finditer(_LOOSE_WORDS, unnamed_text, re.IGNORECASE):
+        aside.append((_short(_sentence_of(unnamed_text, loose).strip(), 160), "signs"))
+    return None, aside
+
+
+def _sentence_of(words: str, match: re.Match[str]) -> str:
+    start = max(0, match.start() - 160)
+    cuts = [cut.end() for cut in re.finditer(r"[.;]\s|:\s", words[start:match.start()])]
+    head = words[start + (cuts[-1] if cuts else 0):match.start()]
+    return head + match.group(0) + re.split(r"[.;]\s", words[match.end():match.end() + 200])[0]
 
 
 def _method_in_details(words: str) -> str | None:
-    """The method a study's details say it is, where that is one this does
-    not run, unless the words just before its name deny it or give it to
-    another work ("compared with REMD", "taken from the previous REMD")."""
-    for method, pattern in _DETAIL_WORDS.items():
-        for match in re.finditer(pattern, words, re.IGNORECASE):
-            before = words[max(0, match.start() - 60):match.start()]
-            before = re.split(r"[.;:]\s", before)[-1]
-            if not _NOT_THIS_STUDY.search(before):
-                return method
-    return None
+    return _methods_in_details(words)[0]
+
+
+#: The kinds of replica exchange, and of methods read as one, named as the
+#: paper names them where it names one kind alone.
+_EXCHANGE_KINDS = (
+    (r"simulated[-\s]*tempering", "simulated tempering"),
+    (r"bias[-\s]*exchange", "bias-exchange metadynamics"),
+    (r"(?:replica[-\s]*exchange\s+(?:with\s+)?)?solute[-\s]*tempering(?:\s+\(?rest2?\)?)?"
+     r"|(?-i:\bg?REST\b)|\bg?rest2\b", "replica exchange with solute tempering"),
+    (r"\bh-?rex\b|\bh-?remd\b|hamiltonian[-\s]*replica[-\s]*exchange",
+     "Hamiltonian replica exchange"),
+)
+_ANY_EXCHANGE = re.compile(r"replica[-\s]*exchange|\b[th]?-?remd\b|parallel[-\s]*tempering"
+                           r"|\bh-?rex\b", re.IGNORECASE)
+
+
+def _cannot(method: str, words: str) -> str:
+    """What the study is, for a method this does not run: the kind of
+    replica exchange the paper names, where it names that kind and no
+    other exchange at all."""
+    if method == "replica_exchange":
+        words = _plain_text(words)
+        kinds = [(pattern, name) for pattern, name in _EXCHANGE_KINDS
+                 if re.search(pattern, words, re.IGNORECASE)]
+        if len(kinds) == 1:
+            rest = re.sub(kinds[0][0], " ", words, flags=re.IGNORECASE)
+            if not _ANY_EXCHANGE.search(rest):
+                return f"{kinds[0][1]}, which this software does not run"
+    return _CANNOT[method]
+
 
 _CANNOT = {
     "replica_exchange": "replica exchange, which this software does not run",
@@ -635,14 +806,21 @@ def _structure(plan: _Plan) -> None:
         allowed = next(f.choices for f in PHASE_SCHEMAS["setup"].fields if f.name == "membrane")
         said = str(membrane.get("value"))
         names = recognized("membrane", said) or set()
+        # Cholesterol, not the choline of a phosphatidylcholine, and not
+        # said to be absent ("cholesterol-free", "without cholesterol").
+        mentions = list(re.finditer(r"chol(?!ine)\w*", said, re.IGNORECASE))
+        if all(_lipid_absent(said, mention) for mention in mentions):
+            names.discard("CHOL")
         lipids = names & set(allowed)
         # Another lipid named in a way the pattern does not read (PIP2,
         # sphingomyelin) makes a mixture as surely as one it does.
-        others = (names - set(allowed)) | (
-            set(re.findall(r"\b[A-Z][A-Z0-9]{1,4}\b", said)) & _OTHER_LIPIDS)
-        if re.search(r"sphingo|gangliosid|cardiolipin|phosphoinositid|\bpip|mixture|mixed"
-                     r"|\d\s*:\s*\d", said, re.IGNORECASE):
-            others.add("mixture")
+        others = (names - set(allowed)) | _other_lipids(said, names)
+        for match in re.finditer(r"sphingo|gangliosid|cardiolipin|phosphoinositid|\bpip"
+                                 r"|mixture|mixed|\d\s*:\s*\d", said, re.IGNORECASE):
+            # A ratio stays a mixture even "per leaflet": "418:22 per leaflet"
+            # gives the composition as surely as "95:5".
+            if not _lipid_absent(said, match):
+                others.add("mixture")
         if not names:
             plan.note("membrane", "needs_you",
                       f"The bilayer is {said}, which names no lipid this can build: set "
@@ -652,6 +830,13 @@ def _structure(plan: _Plan) -> None:
             lipid = lipids.pop()
             plan.set("setup.membrane", lipid, "membrane", "as_stated",
                      f"A bilayer of {lipid}.", membrane)
+            left = _unexplained(said, lipid)
+            if left:
+                plan.note("membrane", "needs_you",
+                          f"The bilayer is \"{_short(said, 160)}\"; this builds {lipid} alone, "
+                          f"and does not read {', '.join(left[:6])}: confirm the bilayer is "
+                          f"{lipid} alone, or set `setup.membrane`.", membrane,
+                          setting="setup.membrane")
         else:
             plan.note("membrane", "not_possible",
                       f"The bilayer is {said}; this software builds a bilayer of one "
@@ -1156,19 +1341,30 @@ def _method(plan: _Plan) -> str:
     record = plan.stated("method")
     method = _method_of(str(record.get("value"))) if record else "plain"
     details = plan.stated("method_details")
+    aside: list[tuple[str, str]] = []
     if details and method not in _CANNOT:
-        # Bias-exchange metadynamics is replica exchange; walkers of one
-        # metadynamics are not. What the details say outranks the word,
-        # where they name an exchange between replicas and do not deny it:
-        # the details of plain MD name analyses, pressures and hardware too.
+        # The details may name a method the AI model's word does not: one
+        # named with nothing that qualifies it makes the study that method;
+        # one named or described otherwise is put to the person.
         words = str(details.get("value")) + ". " + str(details.get("quote") or "")
-        said = _method_in_details(words)
+        said, aside = _methods_in_details(words)
         if said:
             method = said
             record = details
     if method in _CANNOT:
-        plan.note("method", "not_possible", f"The study is {_CANNOT[method]}.", record)
-    elif method in ("umbrella", "metadynamics", "steered"):
+        words = " ".join(str((record or {}).get(key) or "") for key in ("value", "quote"))
+        plan.note("method", "not_possible", f"The study is {_cannot(method, words)}.", record)
+        return method
+    if aside:
+        planned = {"plain": "plain MD", "other": "the method the paper states"}.get(
+            method, method.replace("_", " "))
+        said = [f'"{words}"' for words in dict.fromkeys(name for name, _kind in aside)]
+        plan.note("method_details", "needs_you",
+                  f"Planned as {planned}. Its details say " + "; ".join(said)
+                  + ", which names or describes a method this software does not run, or "
+                  "may: read them, and confirm the study itself is not that method before "
+                  "it runs.", details)
+    if method in ("umbrella", "metadynamics", "steered"):
         block = {"umbrella": "umbrella", "metadynamics": "metadynamics",
                  "steered": "steered"}[method]
         plan.note("method", "needs_you",
@@ -1291,9 +1487,220 @@ _NOT_A_LIGAND = re.compile(
     r"cobalt|nickel|cadmium|lithium|caesium|cesium)\b", re.IGNORECASE)
 
 
+def _lipid_absent(said: str, match: re.Match[str]) -> bool:
+    """Whether the lipid named at ``match`` is said to be absent: "SM-free",
+    "cholesterol-free", "without cholesterol", "no PIP2"."""
+    after = said[match.end():match.end() + 24]
+    before = said[max(0, match.start() - 24):match.start()]
+    rest = after[re.match(r"\w*", after).end():]
+    if re.match(r"-(?:free|depleted|deficient|lacking)\b"
+                r"|\s+(?:were\s+|are\s+|was\s+|is\s+)?(?:absent|excluded|omitted)\b",
+                rest, re.IGNORECASE):
+        return True
+    return bool(re.search(r"\b(?:no|without|free\s+of|devoid\s+of|lacking|absence\s+of)"
+                          r"\s+(?:any\s+)?$", before, re.IGNORECASE))
+
+
+def _chloride(said: str, match: re.Match[str]) -> bool:
+    """Whether "CL" at ``match`` is chloride, not cardiolipin: a charge sign
+    after it, then "ions" or "counterions", words that it neutralises, or
+    beside Na+ or K+ ("Na+/CL-", "(Na+, CL-)"); never with a share of a
+    bilayer before or after it ("20% CL-", "POPC/CL-", "CL- 20%") or called
+    a lipid ("CL- lipids")."""
+    before = said[max(0, match.start() - 24):match.start()]
+    after = said[match.end():match.end() + 30]
+    if re.search(r"(?:%|\bpercent|\bmol)\s*$", before, re.IGNORECASE) \
+            or re.search(r"\b[A-Z]{2,5}\d?\s*[/:]\s*$", before):
+        return False
+    if not re.match(r"\s*[-−⁻]", after):
+        return False
+    rest = re.sub(r"^\s*[-−⁻]+", "", after)
+    if re.match(r"\s*(?:\(?\s*\d|lipids?\b|\(\s*\d)", rest, re.IGNORECASE):
+        return False
+    return bool(re.match(r"\s*(?:counter[-\s]?)?ions?\b|\s*(?:(?:was|were)\s+added\s+)?to\s+neutrali",
+                         rest, re.IGNORECASE)
+                or (re.search(r"\b(?:na|k)\s*[+\u207a]\s*(?:/|,|and)?\s*$", before, re.IGNORECASE)
+                    and re.match(r"\s*(?:\)|$)", rest))
+                or re.search(r"neutrali[sz]ed\s+(?:by|with)\s*$", before, re.IGNORECASE))
+
+
+#: Acyl chains by the letter a lipid's abbreviation gives them.
+_ACYL = {"palmitoyl": "P", "oleoyl": "O", "myristoyl": "M", "lauroyl": "L", "stearoyl": "S",
+         "arachidonoyl": "A", "erucoyl": "E", "palmitoleoyl": "Y", "linoleoyl": "Li",
+         "phytanoyl": "Ph", "docosahexaenoyl": "DH"}
+_ACYL_WORDS = re.compile(r"(di)?(" + "|".join(sorted(_ACYL, key=len, reverse=True)) + r")",
+                         re.IGNORECASE)
+#: Words that may stand between a lipid's abbreviation and its class written
+#: out without naming another lipid.
+_PLAIN_LIPID_WORDS = {"", "a", "an", "the", "sn", "glycero", "lipid", "lipids", "bilayer",
+                      "membrane", "zwitterionic", "l", "d", "1", "2", "3"}
+
+
+def _chains_of(name: str) -> str:
+    """The acyl letters of an abbreviation: "POPC" gives "PO", "DPPC" "PP"."""
+    head = name[:-2]
+    return head[1:] * 2 if head.startswith("D") and len(head) <= 3 else head
+
+
+def _same_lipid(words: str, name: str) -> bool:
+    """Whether ``words`` (between a lipid's abbreviation and its class
+    written out) say nothing beyond the lipid ``name``: no share, no other
+    word, and acyl chains, where given, its own."""
+    chains = ""
+    for acyl in _ACYL_WORDS.finditer(words):
+        letter = _ACYL[acyl.group(2).lower()]
+        chains += letter * (2 if acyl.group(1) else 1)
+    stripped = _ACYL_WORDS.sub(" ", words)
+    tokens = set(re.split(r"[\s,()\-:'′]+", stripped.lower()))
+    if not tokens <= _PLAIN_LIPID_WORDS:
+        return False
+    return not chains or chains.upper() == _chains_of(name).upper()
+
+
+def _names_the_lipid(said: str, match: re.Match[str], names: set[str]) -> bool:
+    """Whether the class written out at ``match`` ("phosphatidylcholine",
+    "glycero-3-phosphocholine") is the lipid read itself, beside its own
+    abbreviation and nothing else: "POPC (phosphatidylcholine)", "POPC
+    (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine)", "phosphatidylcholine
+    (POPC)", "POPC, a zwitterionic phosphatidylcholine", or its headgroups."""
+    word_end = match.end() + re.match(r"\w*", said[match.end():]).end()
+    after = said[word_end:word_end + 30]
+    if re.match(r"[-\s]*head[-\s]*groups?\b", after, re.IGNORECASE):
+        return True
+    prefix = re.search(r"[\w,'′-]*$", said[max(0, match.start() - 80):match.start()]).group(0)
+    for name in names:
+        if re.match(r"\s*\(\s*" + re.escape(name) + r"\s*\)", after) \
+                and _same_lipid(prefix, name):
+            return True
+        before = said[max(0, match.start() - 90):match.start()]
+        found = list(re.finditer(r"\b" + re.escape(name) + r"\b", before))
+        if found and _same_lipid(before[found[-1].end():], name) \
+                and re.match(r"\s*(?:[),.;]|$|\s+(?:bilayer|membrane|lipids?)\b)", after):
+            return True
+    return False
+
+
+#: Words a description of a one-lipid bilayer may hold besides the lipid.
+_PLAIN_BILAYER = set("""
+a an the of with and in on at for by per each x to as from into its
+bilayer bilayers membrane membranes lipid lipids pure single component symmetric symmetrical
+hydrated fully solvated leaflet leaflets both total
+molecules molecule water waters tip3p tip4p tip4p-ew spc spc/e opc ions ion nacl kcl mm m
+mol mmol na k cl chloride sodium potassium counterions counterion counter neutralizing
+neutralising neutralize neutralise neutralized neutralised neutral salt physiological
+concentration built using generated prepared constructed charmm gui charmm-gui builder
+insane packmol area apl nm a2 nm2 patch size square rectangular box dimensions dimension
+containing comprising composed consisting made zwitterionic model slab planar flat
+lamellar liquid disordered phase fluid ld temperature k approximately about around
+protein peptide embedded inserted oriented placed orientation opm ppm centered centred
+sn glycero phospho phosphatidyl lipid21 lipid17 charmm36 slipids amber ew
+headgroup headgroups head group groups were was added add buffer hepes tris mops
+""".split())
+
+#: A class written out, by the headgroup letter of a lipid's abbreviation.
+_CLASS_WORDS = {"C": r"phosphatidyl[-\s]?choline|phospho[-\s]?choline|pc",
+                "E": r"phosphatidyl[-\s]?ethanolamine|phospho[-\s]?ethanolamine|pe",
+                "G": r"phosphatidyl[-\s]?glycerol|phospho[-\s]?glycerol|pg",
+                "S": r"phosphatidyl[-\s]?serine|phospho[-\s]?(?:l-)?serine|ps",
+                "A": r"phosphatidic\s+acid|phosphate|pa"}
+
+
+def _unexplained(said: str, lipid: str) -> list[str]:
+    """The words of a membrane's description that say more than a bilayer
+    of ``lipid``: what is not the lipid, its own name written out, numbers
+    of lipids, ions, water or the box. A share other than 100% is one."""
+    text = _plain_text(said, join=False).lower()
+    chains = "".join(_ACYL[acyl.group(2).lower()] * (2 if acyl.group(1) else 1)
+                     for acyl in _ACYL_WORDS.finditer(text))
+    if chains and chains.upper() != _chains_of(lipid).upper():
+        return [acyl.group(0) for acyl in _ACYL_WORDS.finditer(text)]
+    text = _ACYL_WORDS.sub(" ", text)
+    text = re.sub(r"\b" + re.escape(lipid.lower()) + r"s?\b", " ", text)
+    text = re.sub(r"\b(?:" + _CLASS_WORDS.get(lipid[-1], "(?!)") + r")\b", " ", text)
+    left = []
+    # A share written as a fraction or a ratio ("70/30", "3 to 1", "0.7", "7:3").
+    left += re.findall(r"(?<![\d.])\d+(?:\.\d+)?\s*[/:]\s*\d+|\b\d+\s+to\s+\d+\b|\u2030", text)
+    left += re.findall(r"(?<![\d.])0?\.\d+(?![\d])(?!\s*(?:m|mm|nm|ns|k)\b)", text)
+    left += re.findall(r"(?<![\d.,])\d+,\d+|(?<![\d.])\d+\s*-\s*\d+", text)
+    # Two counts not of a unit ("2 x 64 and 2 x 16", "96 POPC and 32"): more than one lipid.
+    counts = re.findall(r"(?<![\w.-])\d+(?![\w.,%-])(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns|ps|us"
+                        r"|fs|bar|atm|deg|c|per\s+leaflet|in\s+each\s+leaflet)\b)", text)
+    per_leaflet = set(re.findall(r"(?<![\w.-])(\d+)\s*(?:lipids\s+)?(?:per|in\s+each)\s+leaflet",
+                                 text))
+    if len(counts) > 1 or len(per_leaflet) > 1:
+        left += counts + sorted(per_leaflet)
+    for token in re.findall(r"(?<![\d.])\d+(?:\.\d+)?\s*(?:mol\s*|w/w\s*|wt\s*)?%"
+                            r"|[^\W\d_][^\W_]*", text):
+        if token.endswith("%"):
+            if float(re.match(r"[\d.]+", token).group(0)) != 100:
+                left.append(token)
+        elif not token.isascii() or (token not in _PLAIN_BILAYER
+                                     and not re.fullmatch(r"[0-9]+", token)):
+            left.append(token)
+    return left
+
+
+def _other_lipids(said: str, names: set[str]) -> set[str]:
+    """Lipids beside those read by the phospholipid pattern (``names``):
+    named by an abbreviation it does not read, written out, or as a sterol,
+    an extract or a detergent; never one said to be absent, chloride ("CL-
+    ions"), or the lipid read written out beside its abbreviation."""
+    classes = {f"P{name[-1]}" for name in names if re.fullmatch(r"[DP][OPMLSAEY]P[CEGSA]", name)}
+    found = set()
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9]{1,4}\b", said):
+        token = match.group(0)
+        another = (re.fullmatch(r"(?:D|[POMLSAEY])(?:[POMLSAEYD]|Li|Ph|DH|H)P[CEGSAI]", token)
+                   and token not in names and token not in _BUFFERS
+                   and not re.match(r"\s+(?:receptors?|channels?|proteins?|transporters?"
+                                    r"|kinases?|domains?)\b", said[match.end():], re.IGNORECASE))
+        if (token not in _OTHER_LIPIDS and not another) or _lipid_absent(said, match):
+            continue
+        if token == "CL" and _chloride(said, match):
+            continue
+        if token in classes and re.match(r"[-\s]*head[-\s]*groups?\b", said[match.end():],
+                                         re.IGNORECASE):
+            continue
+        found.add(token)
+    heads = {"choline": "PC", "ethanolamine": "PE", "glycerol": "PG", "serine": "PS",
+             "inositol": "PI"}
+    for match in re.finditer(
+            r"phosphatid(?:yl[-\s]?(?P<head>choline|ethanolamine|glycerol|serine|inositol)"
+            r"|(?P<acid>ic\s+acid))"
+            r"|(?:glycero[-\s]?3[-\s]?)?phospho[-\s]?(?:[ld][-\s])?(?P<head2>choline"
+            r"|ethanolamine|glycerol|serine|inositol)\b"
+            r"|\bptdins|ergosterol|lanosterol|desmosterol|ceramide|\blyso|plasmalogen"
+            r"|\b(?:phyto|sito|stigma)?sterols?\b|hopanoid|diacylglycerol|glycolipid"
+            r"|lipopolysaccharide|\blipid\s+a\b|lipid\s+extract|polar\s+lipid|fatty\s+acids?"
+            r"|\b(?:oleic|palmitic|stearic|linoleic|myristic|arachidonic)\s+acid|\bpeg(?:ylated)?\b"
+            r"|triolein|triglyceride|sulfatide|\bgalcer\b|\bbmp\b|bis\(monoacylglycero\)"
+            r"|detergents?\b|micelles?\b|\bddm\b|\bdpc\b|\bdotap\b|\bdotma\b|\bddab\b"
+            r"|asolectin|total\s+lipids?|triton|octyl[-\s]?glucoside|squalene|tocopherol"
+            r"|\blipid\s+(?:ii|iv)\b|\bnta\b|\b(?:binary|ternary|quaternary|two-component"
+            r"|three-component)\b|\bof\s+the\s+lipid\b"
+
+            r"|\b(?:anionic|cationic|charged|saturated|unsaturated|bacterial|pufa|other|acidic"
+            r"|neutral|minor|ethanolamine|serine)\s+"
+            r"(?:phospho)?lipids?\b|\b(?:mostly|mainly|predominantly|primarily|largely)\s+"
+            r"(?:of\s+)?(?:(?-i:[A-Z]{2,5}\d?)\b|lipids?|phospho)|\b(?-i:[A-Z]{2,5}\d?)-rich\b"
+            r"|\brich\s+in\s+(?:(?-i:[A-Z]{2,5})|lipid|chol|sterol)|\b(?:egg|soy|brain|liver|heart)(?:\s*-\s*|\s*)p[cegsi]\b",
+            said, re.IGNORECASE):
+        head = (heads.get((match.group("head") or match.group("head2") or "").lower())
+                or ("PA" if match.group("acid") else match.group(0).upper()))
+        if head in classes and _names_the_lipid(said, match, names):
+            continue
+        if not _lipid_absent(said, match):
+            found.add(head)
+    return found
+
+
+#: Buffers whose names read like a phospholipid's.
+_BUFFERS = {"MOPS", "TAPS", "CAPS", "MOPSO", "TAPSO", "CAPSO"}
+
 #: Lipids named by an abbreviation the phospholipid pattern does not read,
 #: each making a bilayer a mixture.
-_OTHER_LIPIDS = {"PIP", "PIP2", "PIP3", "PI4P", "PI", "SM", "SSM", "PSM", "CHL1", "CL",
+_OTHER_LIPIDS = {"PIP", "PIP2", "PIP3", "PI4P", "PI", "SM", "SSM", "PSM", "CHL1", "CHL", "CL",
+                 "TOCL", "TOCL1", "TOCL2", "TMCL", "TMCL1", "TMCL2", "LPE", "LPG", "BMP",
+                 "CHS", "LPA", "LPI", "Cer", "Gb3", "S1P", "DOGS", "LDAO", "SDS", "DHA", "DOG",
                  "CL1", "CL2", "GM1", "GM3", "LPS", "DAG", "CER", "ERG", "PC", "PE", "PG",
                  "PS", "PA", "LPC"}
 

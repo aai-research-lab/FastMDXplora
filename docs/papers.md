@@ -73,7 +73,9 @@ system is, how it was minimised) is kept as the AI model's and never set as a
 value.
 
 A reply from the AI model cut off part way, or not the JSON asked for, is
-asked for again, and then refused: nothing is read from it.
+asked for again, and then refused: nothing is read from it. A protocol's
+settings that do not come whole in one answer are asked for in two halves,
+each whole, so none is left out and read as not stated.
 
 A reading is kept under the paper's digest and the AI model's name, so asking
 again for other studies of the same paper asks the AI model nothing.
@@ -152,14 +154,39 @@ contain, or by reference to another paper), the study needs you.
   MD need you to write their collective variable from the paper's description.
   Replica exchange (bias exchange included), alchemical free energy,
   accelerated MD, QM/MM, coarse-grained models, implicit solvent,
-  milestoning and weighted ensemble cannot run here. A method's details make
-  a study one of these only where they name it in a clause that neither
-  denies it nor gives it to another work ("compared with REMD from ref. 12"
-  leaves plain MD plain).
+  milestoning and weighted ensemble cannot run here; a kind of replica
+  exchange is named as the paper names it (simulated tempering, solute
+  tempering) where it names one kind alone. The AI model's word for the
+  method decides first. The study's details are then read for these
+  methods' names, as written and with line-end hyphens joined: a name with
+  nothing in its sentence that qualifies it makes the study that method.
+  Everything else such words may mean is put to you, the words shown, and
+  the study runs once you confirm it is not that method: a name beside
+  words that may deny it or give it elsewhere ("no REMD was used",
+  "compared with REMD from ref. 12", "started from the final frame of a
+  500 ns REMD run"); a word that may name such a method or may not
+  ("quantum mechanical", "coarse-grained", "decoupled", "in vacuo",
+  "binding free energy", "AMD", "accelerated", "lambda"), with no
+  exception read from the words around it; a run described without its
+  name ("32 replicas exchanged every 2 ps"); an implicit-solvent or
+  free-energy name in a sentence about MM/GBSA; and metadynamics,
+  umbrella sampling or steered MD named where the method is said to be
+  plain MD. This software does not guess what such words mean. Only
+  "GPU-accelerated", "CUDA-accelerated" and "AMD GPUs" are not read as
+  such words.
 - **A membrane.** A bilayer of one lipid this software builds, however the
   paper words it ("a POPC bilayer of 144 lipids"), in a rectangular box; a
-  mixture cannot run here. Beside an AMBER force field that names no lipid
-  force field, Lipid17 is used, said so.
+  mixture cannot run here where the second lipid is one this software
+  recognises (SOPC, PIP2, phosphatidylserine, ergosterol, DDM). The lipid
+  is built at once only where every other word of the description is the
+  lipid's own name written out ("POPC
+  (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine)"), the bilayer's, its
+  ions', its water's, its box's, or the protein's placed in it. Any other
+  word or share ("SM-free", "80 mol%", "70/30", two counts of lipids, a
+  named leaflet, "brain extract", "AMPA receptor in a POPC bilayer")
+  leaves the lipid set and needs you to confirm the bilayer is that lipid
+  alone. Beside an AMBER force field that
+  names no lipid force field, Lipid17 is used, said so.
 
 The config carries `decisions` (each setting's reason, the paper's words with
 where they are) and `paper` (the paper's DOI and title, which study, the AI
