@@ -5901,6 +5901,15 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     box-shadow: -1px 0 0 var(--border-subtle);
 }
 .studies-table .studies-editing td { position: static; box-shadow: none; }
+/* More columns beneath the pinned one: its edge says so. */
+.studies-table-wrap[data-more="right"] .studies-table td:last-child::before,
+.studies-table-wrap[data-more="right"] .studies-table th:last-child::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: -14px; width: 14px;
+    pointer-events: none;
+    background: linear-gradient(to left, color-mix(in srgb, var(--text-primary) 14%, transparent), transparent);
+}
+.studies-mean-value, .studies-mean-nd { display: block; }
+.studies-mean-nd { font-family: var(--font-stack); font-size: var(--text-2xs); color: var(--text-muted); }
 .studies-editing .study-tag-editor { max-width: 560px; padding: 6px 2px; }
 
 /* The Agent's conversations in the sidebar (chats.js): the open study's

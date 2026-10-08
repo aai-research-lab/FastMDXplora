@@ -579,7 +579,17 @@
                 make("td", "muted", dateSaid(study.when)), active);
       columns.forEach(function (column) {
         var m = meanOf(study, column);
-        tr.appendChild(make("td", "mono studies-mean", m ? meanSaid(m) : ""));
+        var cell = make("td", "mono studies-mean", "");
+        if (m && m.withheld) {
+          // The mean, and under it that it is not determined: on one line
+          // the cell ran under the pinned Open and Tag, its words cut.
+          cell.appendChild(make("span", "studies-mean-value", withError(m.mean, null, m.unit)));
+          cell.appendChild(make("span", "studies-mean-nd", "not determined"));
+          if (typeof m.withheld === "string") cell.title = m.withheld;
+        } else if (m) {
+          cell.textContent = meanSaid(m);
+        }
+        tr.appendChild(cell);
       });
       var tags = make("td", "studies-tags");
       (study.tags || []).forEach(function (t) { tags.appendChild(make("span", "study-tag", t)); });
@@ -605,6 +615,22 @@
     host.replaceChildren(head, body);
   }
 
+  /* Whether the table runs on under its pinned last column, so its edge
+   * can say so: columns scrolled beneath Open and Tag were cut with nothing
+   * to show there was more. */
+  function moreToTheRight(wrap) {
+    if (!wrap) return;
+    var said = function () {
+      wrap.dataset.more = wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 2 ? "right" : "";
+    };
+    if (!wrap.dataset.watched) {
+      wrap.dataset.watched = "1";
+      wrap.addEventListener("scroll", said, { passive: true });
+      window.addEventListener("resize", said);
+    }
+    said();
+  }
+
   function draw() {
     var grid = el("studies-grid");
     var empty = el("studies-empty");
@@ -628,6 +654,7 @@
     if (asTable) {
       grid.replaceChildren();
       table(shown);
+      moreToTheRight(wrap);
     } else {
       grid.replaceChildren.apply(grid, shown.map(card));
     }

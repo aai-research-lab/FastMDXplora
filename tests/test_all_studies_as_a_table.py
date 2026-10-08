@@ -132,3 +132,48 @@ def test_a_row_is_tagged_and_says_when_it_was_last_active(tmp_path) -> None:
     assert by_activity == ["touched", "old"]
     assert said[0] in ("Just now", "1 min ago") and said[1] != said[0]
     assert tags == "wild type" and editing == 0
+
+
+def test_a_mean_not_determined_is_not_cut_under_open_and_tag(tmp_path) -> None:
+    """"0.06237 nm, not determined" on one line ran under the pinned Open
+    and Tag, its words cut, and nothing showed the table went on beneath."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _study(tmp_path / "thin", system="1L2Y", means={"rmsd": (0.06237, None)})
+    record = json.loads((study / "analysis" / "rmsd" / "options.json").read_text())
+    record["findings"]["mean"]["not_a_measurement"] = "Too short against its correlation."
+    (study / "analysis" / "rmsd" / "options.json").write_text(json.dumps(record))
+    for name in ("rg", "sasa", "hbonds", "qvalue"):
+        folder = study / "analysis" / name
+        folder.mkdir(parents=True)
+        (folder / "options.json").write_text(json.dumps({"analysis": name, "findings": {
+            "mean": {"mean": 1.0, "standard_error": 0.01, "unit": "nm",
+                     "effective_samples": 40}}}))
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1100, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.evaluate(f"() => window.FastMDXStudies.load({str(tmp_path)!r})")
+            page.wait_for_selector(".study-card")
+            page.click('[data-studies-view="table"]')
+            page.wait_for_selector("#studies-table tbody tr")
+            cell = page.eval_on_selector(
+                "#studies-table tbody .studies-mean", "(c) => ({value: c.querySelector("
+                "'.studies-mean-value')?.textContent, nd: c.querySelector("
+                "'.studies-mean-nd')?.textContent, fits: c.scrollWidth <= c.clientWidth + 1})")
+            more = page.get_attribute("#studies-table-wrap", "data-more")
+            page.eval_on_selector("#studies-table-wrap",
+                                  "(w) => { w.scrollLeft = w.scrollWidth; "
+                                  "w.dispatchEvent(new Event('scroll')); }")
+            at_the_end = page.get_attribute("#studies-table-wrap", "data-more")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert cell == {"value": "0.06237 nm", "nd": "not determined", "fits": True}
+    assert more == "right" and at_the_end == ""
