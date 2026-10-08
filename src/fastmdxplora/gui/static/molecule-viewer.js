@@ -558,6 +558,15 @@
   /* ------------------------------------------------------------------ */
   /* Live coordinates                                                    */
   /* ------------------------------------------------------------------ */
+  /* The live frame's line on the overlay, unless the canvas plays the
+   * trajectory: then the overlay is the played frame's (`playbackOverlay`),
+   * and the live poll, which goes on for the preview, says nothing there.
+   * It said "production step 55,000" beside Playback's frame 39. */
+  function sayLive(on, overlay) {
+    if (STATE.mode === "playback") return;
+    setOverlay(on, overlay);
+  }
+
   async function pollLiveFrame() {
     const generation = STATE.viewerGeneration;
     if (!STATE.liveUpdates || document.body.classList.contains("state-loading")) return;
@@ -568,11 +577,11 @@
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!index.live_frame_available) {
-        setOverlay(false, {stage: index.simulation_stage || "waiting", age: "\u2014"});
+        sayLive(false, {stage: index.simulation_stage || "waiting", age: "\u2014"});
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
-        setOverlay(true, {
+        sayLive(true, {
           stage: index.simulation_stage || STATE.mode,
           age: liveFrameAge(index),
           step: index.live_frame_index,
@@ -603,7 +612,7 @@
         STATE.liveCoordinates = coordinates;
         STATE.liveFrameIndex = index.live_frame_index;
         if (await moveTheLiveAtoms(coordinates)) {
-          setOverlay(true, overlay);
+          sayLive(true, overlay);
           return;
         }
       }
@@ -630,7 +639,7 @@
       }
       const preview = document.getElementById("mini-preview-canvas");
       if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
-      setOverlay(true, overlay);
+      sayLive(true, overlay);
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
     }
@@ -1876,8 +1885,15 @@
       sayFramesLoaded();
     }
     STATE.superposedUrl = on === "none" ? null : url;
+    // Fitted to the deposited structure, the molecule is where that
+    // structure's coordinates put it, not in the box the camera was on: it
+    // left the view, and the camera aimed at nothing read its matrices as
+    // NaN. The camera follows the molecule there and back.
+    const placeMoved = (on === "none" ? "first" : to) !== (previous === "none" ? "first" : previousTo)
+      && [to, previousTo].includes("deposited");
     STATE.appliedTo = to;
     STATE.appliedSmooth = over;
+    if (placeMoved) STATE.engine.fit();
     const runs = STATE.engine.runsShown().length > 0
       || STATE.engine.runsShown("beside").length > 0;
     if (runs) await STATE.engine.setRunsAside(!runsFitAsPlayed());
@@ -2373,6 +2389,13 @@
     // is the time of, since it starts again from zero with production.
     const inProduction = times && times.production_ns != null && !times.equilibrating;
     const equilibrating = Boolean(times && times.equilibrating && times.equilibration_ns != null);
+    if (STATE.mode === "playback" && STATE.framesRendered) {
+      // The frame played is the overlay's to say (setPlaybackFrame): each
+      // status update wrote the run's stage and its whole production over
+      // it, so the overlay said the run's end beside Playback's frame.
+      setOverlay(running, {});
+      return;
+    }
     setOverlay(running, {
       stage: status?.stage || "\u2014",
       simtime: inProduction ? times.production_ns

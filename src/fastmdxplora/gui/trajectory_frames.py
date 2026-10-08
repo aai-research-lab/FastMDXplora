@@ -532,16 +532,24 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
             said += ", fitted to the first frame"
         if window > 1:
             said += f", smoothed over {window} frames"
-        fresh = target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
+        fresh = (target.is_file() and target.stat().st_mtime_ns >= frames_file.stat().st_mtime_ns
+                 and (frames.unitcell_lengths is None or _has_a_cell(target)))
         if not fresh:
             from fastmdxplora.analysis.base import superposed
 
             # Fitted as the analyses fit, by one function: each frame is
-            # turned as well as moved, so its box is no longer its own, and
-            # none is written.
+            # turned as well as moved, so its box is no longer its own and
+            # the Viewer draws none for them. Its size is kept all the same:
+            # Mol* reads a cell for each frame of a file that had one, and
+            # frames written without one gave its transforms a cell of
+            # nothing, logging "non-invertible matrix" with NaN in it at
+            # every frame played.
             fitted = superposed(frames, atom_indices=atoms, reference=reference,
                                 ref_atom_indices=reference_atoms)
             fitted.xyz = smoothed(fitted.xyz, window)
+            if frames.unitcell_lengths is not None and fitted.unitcell_lengths is None:
+                fitted.unitcell_lengths = frames.unitcell_lengths
+                fitted.unitcell_angles = frames.unitcell_angles
             _write_dcd(fitted, target)
     return {"ok": True, "file": name, "said": said, "atoms": int(len(atoms)), "to": to,
             "smooth": window}
@@ -722,6 +730,19 @@ def _write_text(target: Path, text: str) -> None:
     temporary = _temporary(target)
     temporary.write_text(text, encoding="utf-8")
     temporary.replace(target)
+
+
+def _has_a_cell(path: Path) -> bool:
+    """Whether a DCD records a unit cell (one written before cells were
+    kept for fitted frames does not, and is written again)."""
+    import mdtraj as md
+
+    try:
+        with md.formats.DCDTrajectoryFile(str(path)) as handle:
+            _, lengths, _ = handle.read(1)
+    except Exception:  # noqa: BLE001 - written again
+        return False
+    return lengths is not None
 
 
 def _write_dcd(frames: Any, target: Path) -> None:

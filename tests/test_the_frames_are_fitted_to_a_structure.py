@@ -284,3 +284,121 @@ def test_the_viewer_fits_them_as_chosen(study):
         assert [seen["x"], seen["y"], seen["z"]] == pytest.approx(
             (fitted.xyz[3, ca] * 10).tolist(), abs=1e-2), name
     assert errors == []
+
+
+def test_the_camera_follows_the_frames_to_the_deposited_structure(tmp_path):
+    """Fitted to the deposited structure, the frames are where its
+    coordinates are, far from the box the camera was on: the molecule left
+    the view, and after two frames the page logged 200 "non-invertible
+    matrix" warnings with NaN in them."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = made_study(tmp_path / "study")
+    (study / "setup" / "topology.pdb").write_text(
+        (study / "simulation" / "trajectory_topology.pdb").read_text(encoding="utf-8"),
+        encoding="utf-8")
+    # In a periodic box, as a run's frames are: the frames fitted to a
+    # structure were written without it.
+    production = study / "simulation" / "production.dcd"
+    frames = md.load_dcd(str(production), top=str(study / "simulation" / "trajectory_topology.pdb"))
+    frames.unitcell_lengths = np.full((frames.n_frames, 3), 5.0, dtype=np.float32)
+    frames.unitcell_angles = np.full((frames.n_frames, 3), 90.0, dtype=np.float32)
+    frames.save_dcd(str(production))
+    assert frames_info(study, force=True)["available"]
+    state = "window.FastMDXMoleculeViewer.STATE"
+    aimed = (f"() => {{ const e = {state}.engine; const s = e.structure().boundary.sphere;"
+             " const t = e.plugin.canvas3d.camera.state.target;"
+             " const d = Math.hypot(t[0] - s.center[0], t[1] - s.center[1], t[2] - s.center[2]);"
+             " return {distance: d, radius: s.radius}; }")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    warned: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            page.set_default_timeout(60000)
+            page.on("console", lambda m: warned.append(m.text)
+                    if "non-invertible" in m.text else None)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {state}.model")
+            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                          "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_function(f"() => {state}.model && {state}.model.of === 'frames'")
+            page.select_option("#traj-superpose", "backbone")
+            page.wait_for_function(f"() => {state}.superposedUrl")
+            page.select_option("#traj-superpose-to", "deposited")
+            page.wait_for_function(f"() => /deposited/.test({state}.superposedUrl || '')")
+            for frame in (1, 2):
+                page.evaluate("(f) => window.dispatchEvent(new CustomEvent("
+                              "'dashboard:trajectory-seek', {detail: {frame: f}}))", frame)
+                page.wait_for_function(f"(f) => {state}.engine.frame() === f", arg=frame)
+            page.wait_for_timeout(500)
+            fitted = page.evaluate(aimed)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert fitted["distance"] < fitted["radius"], fitted
+    assert warned == []
+
+
+def test_the_overlay_says_the_frame_played(study):
+    """Each status update wrote the run's stage and its whole production
+    over the overlay, so it said the run's end beside Playback's frame."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    (study / "setup").mkdir(exist_ok=True)
+    (study / "setup" / "topology.pdb").write_text(
+        (study / "simulation" / "trajectory_topology.pdb").read_text(encoding="utf-8"),
+        encoding="utf-8")
+    state = "window.FastMDXMoleculeViewer.STATE"
+    said = ("() => ['overlay-stage', 'overlay-frame', 'overlay-simtime']"
+            ".map((id) => document.getElementById(id).textContent)")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => window.FastMDXMoleculeViewer && {state}.model")
+            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                          "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_function(f"() => {state}.model && {state}.model.of === 'frames'")
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {frame: 2}}))")
+            page.wait_for_function(f"() => {state}.engine.frame() === 2")
+            played = page.evaluate(said)
+            page.evaluate("() => window.dispatchEvent(new CustomEvent('dashboard:status-updated', "
+                          "{detail: {status: {status: 'completed', stage: 'report', "
+                          "simulation_time_completed_ns: 0.11}, health: {}, "
+                          "times: {production_ns: 0.1, equilibrating: false}}}))")
+            page.wait_for_timeout(300)
+            after = page.evaluate(said)
+            # The live poll, which goes on for the preview, said the run's
+            # last live frame over it too when that frame had not changed.
+            page.route("**/api/live-frame-index", lambda route: route.fulfill(
+                status=200, content_type="application/json", body=(
+                    '{"live_frame_available": true, "live_frame_index": 7, '
+                    '"simulation_stage": "production", "simulation_time_ns": 0.11}')))
+            page.evaluate(f"""async () => {{ {state}.liveUpdates = true;
+                {state}.liveFrameIndex = 7;
+                await window.FastMDXMoleculeViewer.pollLiveFrame(); }}""")
+            polled = page.evaluate(said)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert played[1] == "frame 2"
+    assert after == played
+    assert polled == played
