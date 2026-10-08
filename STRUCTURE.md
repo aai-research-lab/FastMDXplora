@@ -210,7 +210,8 @@ FastMDXplora/
 │       │   │                      #   viewer-states.js, viewer-ramachandran.js,
 │       │   │                      #   viewer-contact-map.js, viewer-pocket.js,
 │       │   │                      #   viewer-beside.js, viewer-rail.js (one tool at a time);
-│       │   │                      #   palette.js (go to anything, Cmd+K), run-notice.js
+│       │   │                      #   palette.js (go to anything, Cmd+K), stop-run.js (Stop the
+│       │   │                      #   run, asked first, wherever it is offered), run-notice.js
 │       │   │                      #   (progress in the tab's title, a notice at the end);
 │       │   │                      #   chats.js (the study's conversations and Chats in the sidebar);
 │       │   │                      #   scene-view.js

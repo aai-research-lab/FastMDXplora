@@ -521,6 +521,8 @@ class DashboardRuntime:
     #: said as stopped, not guessed from its return code (a kill by the
     #: system reads the same; on Windows a stop exits with 1).
     stopped_roots: set[Path] = field(default_factory=set)
+    #: Whether the process last run here ended because Stop was pressed.
+    stopped_here: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -689,7 +691,13 @@ class DashboardRuntime:
         self.process_returncode = int(returncode)
         if self.process_finished_at is None:
             self.process_finished_at = _utc_now()
-        if self.process_returncode != 0 and self.completion_error is None:
+        where = self.running_root or self.active_root
+        if (self.process_returncode != 0 and self.completion_error is None
+                and where is not None and Path(where).resolve() in self.stopped_roots):
+            # Stopped here, as asked: not a failure. Its reason was the
+            # log's last line (a citation) with "exit code -15".
+            self.stopped_here = True
+        elif self.process_returncode != 0 and self.completion_error is None:
             self.completion_error = self._process_failure_message()
             self.data_stale = self._telemetry_predates_process()
             if self.data_stale:
@@ -825,6 +833,8 @@ class DashboardRuntime:
                 # A run is going, elsewhere. The viewed study is what it is
                 # on disk; the sidebar says where the live one is.
                 status = "idle"
+            elif self.stopped_here and viewing_running:
+                status = "stopped"
             elif self.completion_error and viewing_running:
                 status = "failed"
             elif self.process is not None and self.process_returncode == 0 and viewing_running:
@@ -961,6 +971,7 @@ class DashboardRuntime:
         self.process_finished_at = None
         self.process_returncode = None
         self.completion_error = None
+        self.stopped_here = False
         self.log_path = log_path
         self.command = command
         return {
@@ -1300,6 +1311,7 @@ class DashboardRuntime:
         self.process_finished_at = None
         self.process_returncode = None
         self.completion_error = None
+        self.stopped_here = False
         self.log_path = Path(root) / "exploration.log"
         self.command = [str(a) for a in (record.get("argv") or [])]
 
@@ -1439,6 +1451,7 @@ class DashboardRuntime:
                 self.process_finished_at = None
                 self.process_returncode = None
                 self.completion_error = None
+                self.stopped_here = False
                 self.log_path = None
                 self.command = []
             return {"ok": True, "active_run": str(path), "state": self.snapshot()}
@@ -1599,6 +1612,8 @@ class DashboardRuntime:
                 # run adopted from an earlier server, whose group is unknown.
                 if isinstance(self.process, subprocess.Popen):
                     _end_what_is_left_of(self.process.pid)
+            if where is not None:
+                _record_the_stop(Path(where))
             self._refresh_process()
             return {
                 "stopped": True,
@@ -1607,6 +1622,38 @@ class DashboardRuntime:
                            "carries it on."),
                 "state": self.snapshot(),
             }
+
+
+def _record_the_stop(root: Path) -> None:
+    """Record a run stopped here as stopped where it did not record it: a
+    run stopped before production ends without a word (minimisation is one
+    call that cannot be interrupted), so its record still said it was
+    running, the open page said "Running" and, read again, "Interrupted:
+    the machine restarted", with a checkpoint that was never written."""
+    from fastmdxplora.gui.telemetry import (
+        _GOING_STATUSES, TelemetryWriter, read_status, read_study_status)
+
+    try:
+        status = read_study_status(root)
+        if str(status.get("status") or "").lower() not in _GOING_STATUSES:
+            return
+        piece = status.get("piece")
+        folder = root / str(piece) if isinstance(piece, str) and piece and \
+            str(read_status(root / str(piece)).get("status") or "").lower() in _GOING_STATUSES \
+            else root
+        stage = str(status.get("stage") or "")
+        said = {"minimization": "minimisation", "nvt": "NVT equilibration",
+                "npt": "NPT equilibration", "production": "production"}.get(stage, stage or "its run")
+        before = stage in {"setup", "minimization", "nvt", "npt"}
+        TelemetryWriter(folder / "simulation").write_status(
+            status="stopped",
+            latest_error=(
+                f"Stopped here in {said}, as asked."
+                + (" It had not reached production, so it wrote no checkpoint to carry on "
+                   "from: carrying it on runs it again from the start."
+                   if before else "")))
+    except Exception:  # noqa: BLE001 - the stop stands whatever is recorded
+        return
 
 
 def _demo_available() -> bool:

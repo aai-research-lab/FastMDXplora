@@ -3464,31 +3464,13 @@
     return verdict;
   }
 
-  async function stopRunning() {
-    const button = el("run-stop");
-    button.disabled = true;
-    text(el("run-note"), "Stopping…");
-    try {
-      const response = await fetch("/api/explore/stop", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
-      });
-      const stopped = await response.json();
-      text(el("run-note"), stopped.ok ? "Stopped." : (stopped.error || "Could not stop."));
-    } catch (error) {
-      text(el("run-note"), "Could not reach the server.");
-    }
-    button.disabled = false;
-  }
-
   /* The Stop button appears only while something is running, and the
    * dashboard is what knows: `process_running`, not `active_run`, which
    * stays true after a run fails. */
   function watchForARun() {
     if (!window.FastMDXDashboard || !window.FastMDXDashboard.on) return;
     window.FastMDXDashboard.on("app-state", (detail) => {
-      const running = Boolean(detail && detail.process_running);
-      const stop = el("run-stop");
-      if (stop) stop.hidden = !running;
+      // Stop the run is stop-run.js's, asked once more before it acts.
       if (detail && detail.status === "failed" && detail.error) {
         const note = el("run-note");
         if (note && note.textContent !== detail.error) {
@@ -3702,7 +3684,6 @@
     wire("run-start-button", start);
     wire("run-phone-start", start);
     wire("run-reset", resetEverything);
-    wire("run-stop", stopRunning);
     wire("run-only-changed", () => {
       state.onlyChanged = !state.onlyChanged;
       const toggle = el("run-only-changed");

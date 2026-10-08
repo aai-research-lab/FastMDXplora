@@ -539,7 +539,8 @@ def test_a_fresh_server_adopts_a_running_study_and_can_stop_it(tmp_path):
         assert rt.process.pid == child.pid
         assert rt.stop()["stopped"] is True
         child.wait(timeout=5)
-        assert rt.snapshot()["status"] in {"failed", "completed"}
+        # Stopped here, as asked: said as stopped, not as failed.
+        assert rt.snapshot()["status"] == "stopped"
     finally:
         if child.poll() is None:
             child.kill()

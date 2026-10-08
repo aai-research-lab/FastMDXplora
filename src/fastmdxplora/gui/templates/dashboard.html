@@ -560,6 +560,9 @@
           <span class="metric-label">Step</span><span class="metric-value mono"><span id="topbar-step">&mdash;</span> / <span id="topbar-total">&mdash;</span></span>
         </div>
         <a href="#overview" class="sidebar-fix" id="sidebar-fix" data-view-link="overview" data-fix-link>What would fix it</a>
+        <!-- Stop the run, asked once more first (stop-run.js). -->
+        <button type="button" class="sidebar-stop" id="sidebar-stop" data-stop-run="sidebar-stop-ask" hidden>Stop the run</button>
+        <div class="stop-run-ask" id="sidebar-stop-ask" data-stop-ask role="status" hidden></div>
         <div class="sidebar-controls">
           <button class="sidebar-tool" type="button" id="pause-toggle" aria-pressed="false" title="Pause the page's updates (the simulation goes on)"><span id="pause-label" class="sr-only">Pause</span><!--icon:pause:sidebar-icon pause-icon--><!--icon:play:sidebar-icon play-icon--></button>
           <button class="sidebar-tool" type="button" id="refresh-now" title="Refresh now" aria-label="Refresh now"><!--icon:refresh:sidebar-icon--></button>
@@ -818,7 +821,8 @@
 
               <div class="builder-actions" id="run-actions-card">
                 <button type="button" class="primary-btn builder-run" id="run-start-button" disabled>Run on this machine</button>
-                <button type="button" class="danger-btn builder-run" id="run-stop" hidden>Stop the run</button>
+                <button type="button" class="danger-btn builder-run" id="run-stop" data-stop-run="run-stop-ask" hidden>Stop the run</button>
+                <div class="stop-run-ask" id="run-stop-ask" data-stop-ask role="status" hidden></div>
                 <div class="builder-actions-row">
                   <button type="button" class="line-btn" id="run-download" disabled aria-label="Download config"
                           title="Download config"><!--icon:download:line-icon--></button>
@@ -936,6 +940,10 @@
                 </div>
                 <p class="muted" id="health-explanation">Live health classification will appear once telemetry has been written.</p>
                 <ul class="health-list" id="health-list" role="list"></ul>
+                <div class="health-stop">
+                  <button type="button" class="danger-btn" id="health-stop" data-stop-run="health-stop-ask" hidden>Stop the run</button>
+                  <div class="stop-run-ask" id="health-stop-ask" data-stop-ask role="status" hidden></div>
+                </div>
               </div>
             </div>
 
@@ -1987,6 +1995,7 @@
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
   <script src="/static/fixes.js"></script>
+  <script src="/static/stop-run.js"></script>
   <script src="/static/studies.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/viewer-rail.js"></script>

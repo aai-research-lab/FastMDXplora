@@ -3781,7 +3781,7 @@ class TestTheOldPagesAreGone:
 
         page = self._page()
         script = (pathlib.Path(server.__file__).parent / "static"
-                  / "run-builder.js").read_text(encoding="utf-8")
+                  / "stop-run.js").read_text(encoding="utf-8")
         assert 'id="run-stop"' in page
         assert "/api/explore/stop" in script
 

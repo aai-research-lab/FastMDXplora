@@ -368,6 +368,8 @@ def _stopped_unrecorded(root: Path) -> list[Remedy]:
 
 #: The refusal said of a run that ended without recording its end.
 INTERRUPTED_CODE = "simulation.run.interrupted"
+#: And of one asked to stop (`simulation.runner.STOPPED_CODE`).
+STOPPED_REFUSAL = "simulation.run.stopped"
 
 
 def _interrupted(root: Path) -> Remedy | None:
@@ -565,6 +567,16 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
                  if code == prefix or code.startswith(prefix + ".")), _RETRY_OTHERWISE)
     carried = len(folders) - unstarted
     family = said[carried > 1] if carried else ""
+    written = any(_checkpoint_written(folder) for folder in folders)
+    if carried and folders and not written and code in (
+            STOPPED_REFUSAL, INTERRUPTED_CODE):
+        # No checkpoint to carry it on from: it stopped before production.
+        # Said of a stop only; what waits on something else (a service that
+        # did not answer) keeps its own words.
+        family = ("Run it again: it stopped before production, so it wrote no "
+                  "checkpoint to carry on from." if carried == 1 else
+                  "Run them again: they stopped before production, so they wrote no "
+                  "checkpoint to carry on from.")
     if unstarted:
         family += (" " if family else "") + (
             "The run that did not start is run." if unstarted == 1
@@ -587,9 +599,17 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
              if folders else None)
     said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
     return Remedy(code=code, where=where, why=why,
-                  fix=f"{family} Production already written is kept, and the "
-                      "analyses run over the whole.",
+                  fix=(f"{family} Production already written is kept, and the "
+                       "analyses run over the whole." if written or not folders
+                       else family),
                   **said, price=price)
+
+
+def _checkpoint_written(folder: Path) -> bool:
+    """Whether a run in ``folder`` wrote a checkpoint to carry on from,
+    there or in a piece carried on since."""
+    return ((folder / "simulation" / "checkpoint.chk").is_file()
+            or any(folder.glob("segment-*/simulation/checkpoint.chk")))
 
 
 def _longer(code: str, why: str, where: str, root: Path) -> Remedy | None:

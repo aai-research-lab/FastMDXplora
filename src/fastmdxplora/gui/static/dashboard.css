@@ -3985,6 +3985,19 @@ html[data-fixes="some"] .sidebar-progress[data-run="stopped"] .sidebar-fix,
 html[data-fixes="some"] .sidebar-progress[data-run="interrupted"] .sidebar-fix,
 html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { display: block; }
 .sidebar-fix:hover { text-decoration: underline; }
+/* Stop the run, beside where the run stands, and its question. */
+.sidebar-stop {
+    align-self: flex-start; padding: 2px 8px; border-radius: 6px; font: inherit;
+    font-size: var(--text-xs); font-weight: 600; cursor: pointer;
+    color: var(--accent-red); background: transparent;
+    border: 1px solid color-mix(in srgb, var(--accent-red) 45%, transparent);
+}
+.sidebar-stop[hidden], .stop-run-ask[hidden] { display: none; }
+.sidebar-stop:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
+.stop-run-ask { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-xs); }
+.stop-run-ask .stop-run-answers { display: flex; flex-wrap: wrap; gap: 6px; }
+.health-stop { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.health-stop:has(> [hidden] + [hidden]) { display: none; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }
 .sidebar-controls .sidebar-tool { width: 26px; height: 26px; }
 .sidebar-tool[hidden] { display: none; }

@@ -73,6 +73,13 @@
         if (window.FastMDXFrame) window.FastMDXFrame.applyTheme(scheme[0], true);
       } });
     });
+    if (window.FastMDXStop && window.FastMDXStop.running()) {
+      // Asked once more, on the Overview beside how the run is going.
+      found.push({ group: "Action", label: "Stop the run", run: function () {
+        if (dashboard()) dashboard().navigate("overview");
+        window.FastMDXStop.ask(el("health-stop-ask"));
+      } });
+    }
     found.push({ group: "Action", label: "Preferences", run: dialog("prefs-dialog") });
     found.push({ group: "Action", label: "Cite FastMDXplora", run: dialog("cite-dialog") });
     found.push({ group: "Action", label: "The Viewer's keys", run: function () {

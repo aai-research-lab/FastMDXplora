@@ -1118,12 +1118,14 @@ class TestAFailedRunSaysWhy(unittest.TestCase):
 
         import fastmdxplora.gui as gui
 
+        # Stop the run is offered by stop-run.js wherever the run is
+        # followed, the New study page among them.
         script = (pathlib.Path(gui.__file__).parent / "static"
-                  / "run-builder.js").read_text(encoding="utf-8")
-        watcher = script[script.index("function watchForARun"):
-                         script.index("async function start()")]
+                  / "stop-run.js").read_text(encoding="utf-8")
+        watcher = script[script.index('board.on("app-state"'):
+                         script.index('board.on("status-updated"')]
         self.assertIn("detail.process_running", watcher)
-        self.assertNotIn("Boolean(detail && detail.active_run)", watcher)
+        self.assertNotIn("active_run", watcher)
 
     def test_the_runtime_reports_both_separately(self):
         # The fix only works because the payload distinguishes them: a
