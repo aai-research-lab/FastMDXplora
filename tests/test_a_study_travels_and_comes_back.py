@@ -92,8 +92,9 @@ class Here:
     def ssh(self, command, input=None, **kwargs):
         remote = command[-1]
         self.commands.append(remote)
-        return subprocess.run(["sh", "-c", remote], input=input, text=True,
-                              encoding=kwargs.get("encoding"), errors=kwargs.get("errors"),
+        # As ssh is run: bytes in and out, decoded by the caller.
+        return subprocess.run(["sh", "-c", remote], input=input,
+                              text=kwargs.get("text", False),
                               capture_output=kwargs.get("capture_output", True),
                               env=self.env, timeout=60, check=False)
 

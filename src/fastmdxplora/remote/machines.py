@@ -93,10 +93,19 @@ def save_machine(machine: Machine) -> Path:
     """Write the record, replacing any earlier one for the same machine."""
     target = _path_for(machine.name)
     target.parent.mkdir(parents=True, exist_ok=True)
-    scratch = target.with_suffix(".json.part")
-    scratch.write_text(json.dumps(machine.as_record(), indent=2) + "\n",
-                       encoding="utf-8")
-    scratch.replace(target)
+    import os
+    import tempfile
+
+    # A scratch file of its own: an AI app's calls are served in threads.
+    handle, scratch = tempfile.mkstemp(dir=target.parent, prefix=f".{machine.name}.",
+                                       suffix=".part")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(json.dumps(machine.as_record(), indent=2) + "\n")
+        os.replace(scratch, target)
+    except BaseException:
+        Path(scratch).unlink(missing_ok=True)
+        raise
     return target
 
 

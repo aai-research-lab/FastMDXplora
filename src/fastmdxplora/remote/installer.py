@@ -102,9 +102,12 @@ def install(name: str, *, confirm: Callable[[InstallPlan], bool],
             # A step here that copies to the machine (rsync) reaches it as
             # every other command does: its kept connection, and no prompt
             # where nobody is there to answer one.
+            quiet = link.quiet_here()
             returncode = run_here(["sh", "-c", step.command],
                                   runner=local_runner, timeout=STEP_TIMEOUT_S,
-                                  env={**os.environ, "RSYNC_RSH": link.rsync_shell()})
+                                  env={**quiet.get("env", os.environ),
+                                       "RSYNC_RSH": link.rsync_shell()},
+                                  new_session=quiet.get("new_session", False))
         else:
             returncode = link.run(["sh", "-c", step.command],
                                   timeout=STEP_TIMEOUT_S, show=True).returncode

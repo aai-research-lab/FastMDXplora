@@ -680,7 +680,7 @@ class TestThirdReview:
         closed = Path(job.run_dir) / "closed"
         closed.mkdir()
         os.mkfifo(closed / "pipe")
-        closed.chmod(0o355)
+        closed.chmod(0o555)  # readable there, as a user's own run is
         _, warnings = fetch(job.name, transport=machine.transport(),
                             local_runner=machine.local, code=RELEASE)
         here = machine.back / "closed"
@@ -1018,3 +1018,232 @@ class TestFifthReview:
         fetch(job.name, transport=machine.transport(), local_runner=machine.local,
               code=RELEASE)
         assert not (machine.back / f".fetching-{job.name}").exists()
+
+
+# ---------------------------------------------------------------------------
+# The sixth review's cases
+# ---------------------------------------------------------------------------
+class TestSixthReview:
+    def _done(self, machine):
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        return job
+
+    def test_a_link_where_the_run_has_a_folder_is_refused_before_anything_moves(
+            self, machine, tmp_path):
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        moved = tmp_path / "moved-analysis"
+        (machine.back / "analysis").rename(moved)
+        (machine.back / "analysis").symlink_to(moved)
+        with pytest.raises(ValueError) as caught:
+            fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+                  code=RELEASE)
+        assert "is a link here" in str(caught.value)
+        assert (machine.back / "analysis").is_symlink()
+
+    def test_a_folder_that_cannot_be_written_is_refused_before_anything_moves(
+            self, machine, monkeypatch):
+        import os
+
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        (machine.back / "simulation").mkdir(parents=True)
+        real = os.access
+        monkeypatch.setattr(os, "access", lambda p, mode: False if str(p).endswith(
+            "simulation") and mode == os.W_OK else real(p, mode))
+        with pytest.raises(ValueError) as caught:
+            fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+                  code=RELEASE)
+        assert "cannot be written to" in str(caught.value)
+        assert not (machine.back / "manifest.json").exists()
+
+    def test_a_copy_kept_from_a_fetch_with_other_options_is_not_used(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        (Path(job.run_dir) / "simulation" / "production.dcd").write_bytes(b"x" * 5000)
+
+        def copies_then_fails(command, **kwargs):
+            machine.local(command, **kwargs)
+            return type("Done", (), {"returncode": 23})()
+
+        with pytest.raises(ValueError):
+            fetch(job.name, with_trajectory=True, transport=machine.transport(),
+                  local_runner=copies_then_fails, code=RELEASE)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not (machine.back / "simulation" / "production.dcd").exists()
+
+    def test_every_trajectory_left_is_counted(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        for i in range(204):
+            (Path(job.run_dir) / f"piece-{i}.xtc").write_bytes(b"x")
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        assert any(w.startswith("205 trajectory") for w in warnings)
+
+    def test_a_job_log_that_is_a_link_is_not_read(self, machine, tmp_path):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        secret = tmp_path / "elsewhere.txt"
+        secret.write_text("theirs")
+        log = Path(job.remote_dir) / "job.log"
+        log.unlink()
+        log.symlink_to(secret)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not (machine.back / "remote_job.log").exists()
+
+    def test_what_comes_back_takes_this_computer_s_mask(self, machine):
+        import stat
+        from pathlib import Path
+
+        import fastmdxplora.remote.send as sending
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        (Path(job.run_dir) / "open.csv").write_text("1")
+        (Path(job.run_dir) / "open.csv").chmod(0o666)
+        # The mask is read once at import: set it as a stricter one would be.
+        old = sending._UMASK
+        sending._UMASK = 0o077
+        try:
+            fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+                  code=RELEASE)
+        finally:
+            sending._UMASK = old
+        assert stat.S_IMODE((machine.back / "open.csv").stat().st_mode) & 0o077 == 0
+
+    def test_a_fetch_folder_of_another_name_does_not_come_back(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = self._done(machine)
+        (Path(job.run_dir) / ".Fetching-other" / "x").mkdir(parents=True)
+        (Path(job.run_dir) / ".FASTMDXPLORA_RUN.json").write_text("{}")
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        names = {p.name for p in machine.back.iterdir()}
+        assert ".Fetching-other" not in names and ".FASTMDXPLORA_RUN.json" not in names
+
+    def test_a_carriage_return_in_the_log_does_not_end_a_job(self, machine):
+        machine.env["FAKE_SLEEP"] = "30"
+        env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
+        travels._tool(env, "printf 'title: x\\rfmdx:exit_code=0\\n'\nsleep 30")
+        job = _send(machine)
+        try:
+            time.sleep(0.5)
+            assert status(job.name, transport=machine.transport()).state == "running"
+        finally:
+            cancel(job.name, transport=machine.transport())
+
+    def test_the_run_there_takes_no_defaults_of_the_machine_s(self, machine):
+        from fastmdxplora.remote.send import job_script
+
+        script = job_script(remote_dir="/s/j", job_name="j",
+                            env=travels.Environment("/e/fastmdx-1.0", "1.0"),
+                            container="", scheduler="process", force=False)
+        assert "--output run --no-defaults" in script
+
+    def test_your_defaults_here_travel_in_the_config(self, machine):
+        (machine.study.parent / "fastmdx-defaults.yml").write_text(
+            "simulation:\n  temperature_K: 310\n")
+        sending = prepare(machine.study, "box", output=str(machine.back), code=RELEASE,
+                          transport=machine.transport())
+        assert "temperature_K: 310" in sending.config_text
+        assert any("fastmdx-defaults.yml" in note for note in sending.notes)
+
+    def test_a_config_in_the_home_folder_sends_nothing(self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        home = tmp_path / "home"
+        (home / ".ssh").mkdir(parents=True)
+        (home / ".ssh" / "id_ed25519").write_text("secret")
+        monkeypatch.setenv("HOME", str(home))
+        for base in (home, tmp_path):
+            with pytest.raises(ValueError) as caught:
+                gather_inputs({"setup": {"ligand": ".ssh/id_ed25519"}}, base)
+            assert refusal_of(caught.value).code == "remote.input.outside"
+
+    def test_a_key_kept_in_the_study_s_folder_is_not_sent(self, tmp_path):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        (study / ".SSH").mkdir(parents=True)
+        (study / ".SSH" / "id").write_text("secret")
+        with pytest.raises(ValueError) as caught:
+            gather_inputs({"setup": {"ligand": ".SSH/id"}}, study)
+        assert "credentials" in str(caught.value)
+
+    def test_records_of_a_machine_written_at_once_are_written_whole(self, machine):
+        import threading
+
+        from fastmdxplora.remote.machines import load_machine, save_machine
+
+        record = load_machine("box")
+        failed: list[BaseException] = []
+
+        def write() -> None:
+            try:
+                for _ in range(30):
+                    save_machine(record)
+            except BaseException as exc:  # noqa: BLE001 - collected for the assert
+                failed.append(exc)
+
+        threads = [threading.Thread(target=write) for _ in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert failed == []
+
+    @pytest.mark.parametrize("given", [{"partition": "gpu\nrm -rf ~"},
+                                       {"time_limit": "1:00\n#x"}])
+    def test_a_partition_or_time_with_a_line_break_is_refused(self, machine, given):
+        with pytest.raises(ValueError):
+            prepare(machine.study, "box", output=str(machine.back), code=RELEASE,
+                    transport=machine.transport(), **given)
+
+    def test_a_job_still_running_is_not_replaced(self, machine):
+        machine.env["FAKE_SLEEP"] = "30"
+        job = _send(machine)
+        try:
+            cancel_free = prepare(machine.study, "box", output=str(machine.back),
+                                  code=RELEASE, transport=machine.transport(), force=True)
+            cancel_free.scheduler = "slurm"  # a cluster: not refused as busy
+            with pytest.raises(ValueError) as caught:
+                send(cancel_free, transport=machine.transport(),
+                     local_runner=machine.local, code=RELEASE)
+            assert "replaces a job once it has ended" in str(caught.value)
+        finally:
+            cancel(job.name, transport=machine.transport())
+
+    def test_no_terminal_means_no_prompt_through_a_jump_host_either(self):
+        import subprocess
+
+        from fastmdxplora.remote.transport import Transport
+
+        seen: list[dict] = []
+
+        def runner(command, **kwargs):
+            seen.append(kwargs)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        Transport("box", runner=runner, interactive=False).run(["true"])
+        assert seen[0]["start_new_session"] is True
+        assert seen[0]["env"]["SSH_ASKPASS_REQUIRE"] == "never"

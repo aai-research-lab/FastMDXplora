@@ -147,6 +147,17 @@ class Transport:
         return ["ssh", *self.ssh_options(sockets), "--", self.name,
                 shlex.join(list(remote))]
 
+    def quiet_here(self) -> dict:
+        """How a command here that reaches the machine (rsync) is run where
+        nobody can answer a prompt: away from this terminal, and with ssh
+        told never to ask, a jump host's ssh included."""
+        if self.interactive:
+            return {}
+        import os
+
+        return {"env": {**os.environ, "SSH_ASKPASS_REQUIRE": "never"},
+                "new_session": True}
+
     def rsync_shell(self) -> str:
         """The ``ssh`` rsync reaches the machine with, as one command line:
         this connection's options, its kept connection included."""
@@ -178,13 +189,19 @@ class Transport:
         # than leaving a person looking at nothing for ten minutes.
         capture = {} if show else {"capture_output": True}
         try:
-            # A machine's answer is read as UTF-8 with anything else replaced:
-            # a log cut inside a character, or written in another encoding,
-            # is still read.
-            # Nothing of this program's own input reaches the machine.
-            given = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
-            done = self._run(command, text=True, timeout=timeout,
-                             check=False, encoding="utf-8", errors="replace",
+            # A machine's answer is read as bytes and decoded here, as UTF-8
+            # with anything else replaced: a log cut inside a character, or
+            # in another encoding, is still read, and a carriage return in
+            # it is not taken for a line's end. Nothing of this program's
+            # own input reaches the machine.
+            given = ({"input": stdin.encode("utf-8")} if stdin is not None
+                     else {"stdin": subprocess.DEVNULL})
+            if not self.interactive:
+                # Where nobody can answer: no terminal for a jump host's ssh
+                # to ask on, and no helper program to ask with.
+                given.update(env={**os.environ, "SSH_ASKPASS_REQUIRE": "never"},
+                             start_new_session=True)
+            done = self._run(command, timeout=timeout, check=False,
                              **given, **capture)
         except FileNotFoundError as exc:
             raise StudyError(
@@ -202,8 +219,9 @@ class Transport:
                 code="environment.service.machine_unreachable",
                 machine=self.name, reason="timed out",
             ) from exc
+        stdout, stderr = _decoded(done.stdout), _decoded(done.stderr)
         if done.returncode == 255:
-            said = (done.stderr or "").strip().splitlines()
+            said = stderr.strip().splitlines()
             reason = said[-1][-300:] if said else "ssh exited without saying why"
             raise StudyError(
                 f"Could not reach {self.name} over ssh: {reason}. Check that "
@@ -211,13 +229,18 @@ class Transport:
                 code="environment.service.machine_unreachable",
                 machine=self.name, reason=reason,
             )
-        return Answer(stdout=done.stdout or "", stderr=done.stderr or "",
-                      returncode=done.returncode)
+        return Answer(stdout=stdout, stderr=stderr, returncode=done.returncode)
+
+
+def _decoded(said) -> str:
+    if isinstance(said, (bytes, bytearray)):
+        return bytes(said).decode("utf-8", "replace")
+    return said or ""
 
 
 def run_here(command: Sequence[str], *, runner: Runner | None = None,
              timeout: float = 3600, what: str = "",
-             env: dict[str, str] | None = None) -> int:
+             env: dict[str, str] | None = None, new_session: bool = False) -> int:
     """Run a command on this computer, printing as it goes; its exit code.
 
     For the steps of a plan that happen here -- fetching a release image,
@@ -225,7 +248,9 @@ def run_here(command: Sequence[str], *, runner: Runner | None = None,
     naming it, not a traceback.
     """
     try:
-        more = {"env": env} if env is not None else {}
+        more: dict = {"env": env} if env is not None else {}
+        if new_session:
+            more["start_new_session"] = True
         done = (runner or subprocess.run)(list(command), text=True,
                                           timeout=timeout, check=False, **more)
     except FileNotFoundError as exc:

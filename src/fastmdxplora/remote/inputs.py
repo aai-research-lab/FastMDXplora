@@ -140,6 +140,17 @@ def link_out_of(path: Path, folder: Path) -> Path | None:
     return None
 
 
+#: Where keys and credentials are kept: never sent, whatever folder holds them.
+_PRIVATE_PARTS = frozenset({".ssh", ".gnupg", ".aws", ".netrc", ".kube", ".docker",
+                            ".pgpass", ".git-credentials", ".azure"})
+
+
+def _private(path: Path) -> bool:
+    parts = [part.casefold() for part in path.parts]
+    return bool(_PRIVATE_PARTS & set(parts)) or any(
+        a == ".config" and b in ("gcloud", "gh") for a, b in zip(parts, parts[1:]))
+
+
 def size_of(path: Path) -> int:
     """Bytes in a file, or in the files a copy that follows links sends of
     a folder."""
@@ -192,6 +203,18 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
     ``setup_from`` or ``resume_from``, as the module says.
     """
     folder = base.resolve()
+    try:
+        home = Path.home().resolve()
+    except (RuntimeError, OSError):
+        home = None
+    if folder == Path(folder.anchor) or (home is not None and (
+            folder == home or folder in home.parents)):
+        raise StudyError(
+            f"The config is in {folder}, and a study's folder is what travels with "
+            "it; that cannot be the top of the file system or your home folder. "
+            "Put the config and its files in a folder of their own.",
+            code="remote.input.outside", given=str(folder), where="",
+            folder=str(folder))
     found = Inputs(config=None)
     by_source: dict[Path, str] = {}
 
@@ -217,6 +240,11 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
                 and folder.parent in path.parents):
             held_to = _study_folder(path)
         link = None if held_to is None else link_out_of(path, held_to)
+        if held_to is not None and link is None and _private(path):
+            raise StudyError(
+                f"`{where}` names {given}, which is a place keys and credentials are "
+                "kept, so it is not sent.", code="remote.input.outside",
+                given=given, where=where, folder=str(held_to))
         if held_to is None or link is not None:
             refused_in = held_to or folder
             raise StudyError(

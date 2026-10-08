@@ -173,6 +173,9 @@ def job_script(*, remote_dir: str, job_name: str, env: Environment,
     command += ["explore", "-c", "study.yml", "--output", "run"]
     if force:
         command.append("--force-overwrite")
+    # What runs there is the config sent, your defaults here already in it:
+    # none found on the machine (another user's, up its folders) is laid over.
+    command.append("--no-defaults")
     lines = ["#!/bin/sh"]
     if scheduler == "slurm":
         lines += [f"#SBATCH --job-name={job_name}",
@@ -205,6 +208,15 @@ def prepare(config_path: str | Path, machine_name: str, *,
     # refused there, after the copy and the wait.
     loaded = load_config_file(str(config_path))
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    for said, value in (("--partition", partition), ("--time", time_limit)):
+        if value and not re.fullmatch(r"[A-Za-z0-9_.,:+-]{1,64}", value):
+            raise StudyError(
+                f"{value!r} cannot be given as {said}: letters, digits and . , : + _ - "
+                "only, as SLURM writes them.", code="config.option.not_permitted",
+                setting=said)
+    defaults_note = ""
+    if isinstance(raw, dict):
+        raw, defaults_note = _with_your_defaults(raw, config_path)
     # Before the machine is reached: a file that may not travel is refused
     # here, having connected to nothing.
     inputs = gather_inputs(raw, config_path.resolve().parent)
@@ -260,6 +272,8 @@ def prepare(config_path: str | Path, machine_name: str, *,
                       remote_dir=remote_dir, local_output=local_output,
                       scheduler=scheduler, config_text=config_text,
                       script=script, inputs=inputs, force=force)
+    if defaults_note:
+        sending.notes.append(defaults_note)
     if busy is not None:
         sending.busy = busy.name
         sending.notes.append(_busy_said(machine_name, busy))
@@ -272,6 +286,24 @@ def prepare(config_path: str | Path, machine_name: str, *,
         sending.notes.append("No --time given, so the partition's default "
                              "limit applies.")
     return sending
+
+
+def _with_your_defaults(raw: dict, config_path: Path) -> tuple[dict, str]:
+    """The config with your defaults here filling what it leaves unset, as
+    `explore -c` would fill it on this computer, and a line saying so."""
+    from fastmdxplora.config.defaults_file import defaults_for, refused_with, with_defaults
+
+    defaults = defaults_for(config_path.resolve().parent)
+    if defaults is None:
+        return raw, ""
+    filled_config, filled = with_defaults(raw, defaults)
+    refusal = refused_with(raw, filled_config, defaults)
+    if refusal is not None:
+        raise type(refusal)(str(refusal), code=refusal.code, **refusal.refusal.details)
+    if not filled:
+        return raw, ""
+    return filled_config, (f"Your defaults ({defaults.path}) fill what the config "
+                           f"leaves unset: {', '.join(filled)}.")
 
 
 def _busy_with(machine_name: str, link: Transport) -> Job | None:
@@ -356,6 +388,14 @@ def send(sending: Sending, *, transport: Transport | None = None,
 def _send_held(sending: Sending, link: Transport, local_runner,
                code: CodeIdentity, job_names) -> Job:
     name, where = sending.job_name, sending.remote_dir
+    if name in job_names() and sending.force:
+        before = status(name, transport=link)
+        if before.state in (READY, RUNNING):
+            raise StudyError(
+                f"{name} is still {before.state} on {before.machine}; "
+                "--force-overwrite replaces a job once it has ended. Cancel it first "
+                f"(`fastmdx remote cancel {name}`).",
+                code="environment.path.exists", path=name)
     if name in job_names() and not sending.force:
         raise StudyError(
             f"A job called {name} was already sent from here. Give another "
@@ -463,7 +503,9 @@ def _read(text: str) -> dict[str, list[str]]:
     """The ``fmdx:`` lines of a machine's answer, bounded: each value at
     most 4 kB, each key at most 50 lines, whatever the machine sends."""
     found: dict[str, list[str]] = {}
-    for line in text.splitlines():
+    # Lines end at a line feed only: a carriage return or another separator
+    # Python counts as one, written into a log, does not start a line.
+    for line in text.split("\n"):
         if line.startswith("fmdx:"):
             key, _, value = line[5:].partition("=")
             values = found.setdefault(key[:40], [])
@@ -629,9 +671,34 @@ def fetch(name: str, *, with_trajectory: bool = False,
     than it holds cannot send more in one file than the whole was said to
     be.
     """
-    with held(name):
+    with held(name), _fetching(name):
         return _fetch(name, with_trajectory, transport, local_runner, code,
                       most_bytes)
+
+
+@contextmanager
+def _fetching(name: str):
+    """One fetch of a job at a time, across processes too: two would share
+    the job's private folder."""
+    from fastmdxplora.remote.jobs import jobs_dir
+
+    folder = jobs_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    with open(folder / f".fetching-{name}.lock", "a+") as held_open:
+        try:
+            fcntl.flock(held_open, fcntl.LOCK_EX)
+        except OSError:
+            yield
+            return
+        try:
+            yield
+        finally:
+            fcntl.flock(held_open, fcntl.LOCK_UN)
 
 
 def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
@@ -657,14 +724,15 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
     if most_bytes is not None:
         excludes.append(f"--max-size={max(int(most_bytes), 1)}")
     left: list[str] = []
+    every_left: list[str] = []
     if not with_trajectory:
         for pattern in TRAJECTORY_PATTERNS:
             excludes += ["--exclude", pattern]
         found = link.run(["find", job.run_dir, "-type", "f", "(",
                           *" -o ".join(f"-name {p}" for p in TRAJECTORY_PATTERNS
                                        ).split(), ")"])
-        left = [line[:_SAID_CHARS] for line in found.stdout.splitlines()
-                if line.strip()][:200]
+        every_left = [line for line in found.stdout.split("\n") if line.strip()]
+        left = [line[:_SAID_CHARS] for line in every_left[:200]]
     over: list[str] = []
     if most_bytes is not None:
         # What the cap leaves behind is said, never left out unsaid;
@@ -680,13 +748,26 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
     # it has been. Only what differs from the results folder is copied
     # (--compare-dest), and the folder is kept when a copy fails, so a fetch
     # again goes on from what came.
-    staging = _private_folder(target / f".fetching-{job.name}")
-    arrived = staging / "run"
-    arrived.mkdir(exist_ok=True)
+    try:
+        staging = _private_folder(target / f".fetching-{job.name}")
+        # A copy kept from a fetch with other options is not this one's.
+        options = json.dumps({"excludes": excludes})
+        kept = staging / ".options"
+        if kept.is_file() and not kept.is_symlink() and kept.read_text() != options:
+            _removed(staging)
+            staging = _private_folder(target / f".fetching-{job.name}")
+        _written_into(staging, ".options", options)
+        arrived = staging / "run"
+        arrived.mkdir(exist_ok=True)
+    except OSError as exc:
+        raise StudyError(
+            f"{target} cannot be fetched into ({exc.strerror or exc}).",
+            code="environment.path.exists", path=str(target)) from exc
     copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{arrived}/",
                                          f"--compare-dest={target.resolve()}/",
                                          *excludes),
-                      runner=local_runner, what="fetching a study")
+                      runner=local_runner, what="fetching a study",
+                      **link.quiet_here())
     # 24 is rsync's "some source files vanished": a file removed between
     # listing and copying. Not a failed copy of what is there.
     if copied not in (0, 24):
@@ -716,8 +797,9 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
             + (" and more" if len(over) > 5 else "") + ".")
     if left:
         job.extra["left_on_machine"] = left
+        job.extra["left_on_machine_count"] = len(every_left)
         warnings.append(
-            f"{len(left)} trajectory and checkpoint file(s) stayed on "
+            f"{len(every_left)} trajectory and checkpoint file(s) stayed on "
             f"{job.machine} in {job.run_dir}; fetch again with "
             "--with-trajectory to bring them.")
     manifest = target / "manifest.json"
@@ -818,7 +900,7 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
 
     # A run's own records of where it runs are the machine's: here they
     # would name a process on this computer by the machine's number.
-    theirs = {RUN_PROCESS_FILE, RUNS_FILE, STARTING_FILE}
+    theirs = {n.casefold() for n in (RUN_PROCESS_FILE, RUNS_FILE, STARTING_FILE)}
     loose = (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
              | (_UMASK & 0o077))
     removed: list[str] = []
@@ -833,10 +915,10 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
                     mode = entry.lstat().st_mode
                 except OSError:
                     continue
-                if stat.S_ISREG(mode) and name in theirs:
+                if stat.S_ISREG(mode) and name.casefold() in theirs:
                     entry.unlink(missing_ok=True)
                     continue
-                if Path(top) == arrived and name.startswith(".fetching-"):
+                if Path(top) == arrived and name.casefold().startswith(".fetching-"):
                     # The name a fetch here keeps its own copy under.
                     if stat.S_ISDIR(mode):
                         _removed(entry)
@@ -891,10 +973,18 @@ def _private_folder(folder: Path) -> Path:
 
 
 def _clashes_refused(arrived: Path, target: Path) -> None:
-    """Refuse before anything moves where the fetch brings a file and the
-    results folder has a folder of that name."""
-    for top, _, files in os.walk(arrived, followlinks=False):
+    """Refuse before anything moves where what the fetch brings cannot be put
+    in the results folder whole: a file where a folder is, a folder where a
+    link or a file is (the copy compared against what the link leads to, so
+    the folder would come back part filled), or a folder of yours that
+    cannot be written to."""
+    for top, dirs, files in os.walk(arrived, followlinks=False):
         here = target / Path(top).relative_to(arrived)
+        if here.is_dir() and not here.is_symlink() and not os.access(here, os.W_OK):
+            raise StudyError(
+                f"{here} cannot be written to, so the results cannot be put in it; "
+                "nothing was put in place.", code="environment.path.exists",
+                path=str(here))
         for name in files:
             place = here / name
             if place.is_dir() and not place.is_symlink():
@@ -902,6 +992,14 @@ def _clashes_refused(arrived: Path, target: Path) -> None:
                     f"{place} is a folder here, and the fetch brings a file of that "
                     "name; nothing was put in place. Move the folder aside and fetch "
                     "again.", code="environment.path.exists", path=str(place))
+        for name in dirs:
+            place = here / name
+            if place.is_symlink() or (place.exists() and not place.is_dir()):
+                raise StudyError(
+                    f"{place} is a {'link' if place.is_symlink() else 'file'} here, and "
+                    "the fetch brings a folder of that name; nothing was put in place. "
+                    "Move it aside and fetch again.", code="environment.path.exists",
+                    path=str(place))
 
 
 def _moved_into(arrived: Path, target: Path) -> None:
@@ -916,7 +1014,9 @@ def _moved_into(arrived: Path, target: Path) -> None:
                 place.unlink()
             place.mkdir(exist_ok=True)
         for name in files:
-            os.replace(Path(top) / name, here / name)
+            source = Path(top) / name
+            if stat.S_ISREG(source.lstat().st_mode):  # nothing else after the sweep
+                os.replace(source, here / name)
 
 
 def _removed(folder: Path) -> None:

@@ -215,7 +215,16 @@ is sent, whoever wrote the Config: one written by an AI model naming
 resolved first, so a link in the folder leading out of it is outside too, and a
 folder that travels is refused if a link in it, or in a folder one of its links
 leads to, leads out of it or back into itself, since the copy follows links.
-Copy the file into the study's folder and name it there.
+Copy the file into the study's folder and name it there. A Config in your home
+folder, or at the top of the file system, is refused, since its folder is what
+travels; and a file under a place keys and credentials are kept (`.ssh`,
+`.gnupg`, `.aws`, `.kube` and the like) is never sent.
+
+**Your defaults travel in the Config.** A `fastmdx-defaults.yml` beside the
+Config or above it fills what the Config leaves unset here, as `explore -c`
+would on this computer, and the plan says which settings it filled; the run
+there is started with `--no-defaults`, so no defaults file on the machine (one
+another user could have left up its folders) is laid over it.
 
 The one exception is a prepared study named by `simulation.setup_from` or
 `simulation.resume_from`, which usually sits beside the study's folder: it
@@ -256,8 +265,8 @@ way the job writes its exit code beside itself when it ends, so a finished run
 and a killed one are told apart.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
-once it has ended; on a workstation one still running there is refused, so
-cancel it first.
+once it has ended; one still waiting or running there is refused, on a
+cluster too, so cancel it first.
 
 **One study at a time on a workstation.** A second send to a workstation
 while a job sent from here is waiting or running there is refused
