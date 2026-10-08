@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -180,7 +181,7 @@ def test_a_conda_that_is_there_is_used():
     assert [s.where for s in plan.steps] == ["host"]
     assert plan.steps[0].command == (
         '/opt/mf/bin/mamba create -y -n fastmdx-2.5.6 -c conda-forge '
-        '"fastmdxplora=2.5.6" "cuda-version=12.6"')
+        'fastmdxplora=2.5.6 cuda-version=12.6')
     assert plan.check.command.endswith("fastmdx info --json")
 
 
@@ -198,7 +199,8 @@ def test_without_conda_micromamba_is_placed_in_the_users_space():
     assert plan.route == "micromamba"
     commands = "\n".join(s.command for s in plan.steps)
     assert "linux-64" in commands
-    assert "$HOME/.fastmdxplora" in commands
+    # Quoted, and left for the machine's shell to expand.
+    assert '"$HOME"/.fastmdxplora' in commands
     assert "shell init" not in commands and "sudo" not in commands
 
 
@@ -211,6 +213,30 @@ def test_offline_with_apptainer_the_release_image_is_carried_over():
     assert "lab-hpc:/scratch/me/fastmdxplora/" in plan.steps[2].command
     assert plan.steps[-1].command == (
         "apptainer test /scratch/me/fastmdxplora/fastmdx-2.5.6.sif")
+
+
+def test_a_path_from_the_machine_is_one_word_on_either_side():
+    # The inspection's paths are the machine's to choose, and an image's copy
+    # runs on this computer: each is quoted as one word for the shell.
+    odd = "/scratch/me; touch pwned"
+    plan = install_plan(_machine(internet="no", container="/usr/bin/apptainer",
+                                 scratch=odd), RELEASE, "lab-hpc")
+    copy = next(s.command for s in plan.steps if s.command.startswith("rsync"))
+    assert shlex.split(copy) == ["rsync", "-P", "fastmdx-2.5.6.sif",
+                                 f"lab-hpc:{odd}/fastmdxplora/"]
+    assert shlex.split(plan.steps[1].command) == ["mkdir", "-p",
+                                                  f"{odd}/fastmdxplora"]
+    there = Environment("/e/x y;id", "2.5.7.dev105", "13aa8d71c0de", "no",
+                        "/home/me/Fast MDX$(id)")
+    plan = install_plan(_machine(environments=[there]), CHECKOUT, "aailab01")
+    assert [shlex.split(s.command) for s in plan.steps] == [
+        ["git", "-C", "/home/me/Fast MDX$(id)", "fetch", "origin"],
+        ["git", "-C", "/home/me/Fast MDX$(id)", "merge", "--ff-only",
+         "eae609edbbf9"]]
+    assert shlex.split(plan.check.command)[0] == "/e/x y;id/bin/fastmdx"
+    plan = install_plan(_machine(conda={"mamba": "/opt/m m/bin/mamba"}),
+                        RELEASE, "box")
+    assert shlex.split(plan.steps[0].command)[0] == "/opt/m m/bin/mamba"
 
 
 def test_offline_without_apptainer_there_is_no_route():

@@ -298,7 +298,7 @@ def test_missing_backends_are_added_to_the_environment_that_needs_them():
     assert plan.route == "backends"
     assert plan.steps[0].command == (
         '/m/bin/mamba install -y -p /e/fastmdx-gpu -c conda-forge '
-        '"openmm" "openff-toolkit" "cuda-version=12.6"')
+        'openmm openff-toolkit cuda-version=12.6')
 
 
 def test_nothing_is_installed_without_a_yes(machine, tmp_path):

@@ -31,10 +31,16 @@ rather than improvising one.
 Nothing is installed outside the user's own space: no ``sudo``, no shell
 startup files (micromamba is never ``shell init``-ed), no shared
 environments, no module files.
+
+**Every word in a command is quoted for the shell that runs it.** Paths
+come from the machine's own answer to the inspection, and a step marked
+``here`` runs on this computer: a folder there named ``x; rm -rf ~`` is a
+folder name, not a second command, on either side.
 """
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass, field
 
 from fastmdxplora.remote.identity import CodeIdentity
@@ -109,6 +115,20 @@ class InstallPlan:
         return bool(self.steps) and not self.blocked
 
 
+def _word(value: str) -> str:
+    """``value`` as one word for the shell, a leading ``$HOME`` left for it
+    to expand: the machine's home is known there, not here."""
+    if value == "$HOME" or value.startswith("$HOME/"):
+        rest = value[len("$HOME"):]
+        return '"$HOME"' + (shlex.quote(rest) if rest else "")
+    return shlex.quote(value)
+
+
+def _command(*words: str) -> str:
+    """A command line, each of ``words`` quoted as one word."""
+    return " ".join(_word(w) for w in words)
+
+
 def is_release(version: str) -> bool:
     """Whether conda-forge can have this version: a tag, not a dev build."""
     return bool(version) and "dev" not in version and "+" not in version
@@ -161,6 +181,14 @@ def _space_note(free_kb: int | None, needed_gb: int, where: str) -> str:
             f"needs about {needed_gb} GB.")
 
 
+def _own_root(conda: str) -> tuple[str, ...]:
+    """``-r`` and the root, for the micromamba this places: it keeps its
+    environments in its own root, which is where the inspection looks."""
+    if conda.endswith(f"{_OWN_HOME}/bin/micromamba"):
+        return ("-r", f"{conda[:-len('/bin/micromamba')]}/mamba")
+    return ()
+
+
 def _conda_executable(inspection: Inspection) -> str:
     """The conda-like command to create environments with, best first."""
     for tool in ("mamba", "micromamba", "conda"):
@@ -204,13 +232,11 @@ def backends_plan(inspection: Inspection, env_path: str,
         return plan
     pin, why = cuda_pin(inspection)
     plan.route = "backends"
-    root = (f" -r {conda[:-len('/bin/micromamba')]}/mamba"
-            if conda.endswith(f"{_OWN_HOME}/bin/micromamba") else "")
-    quoted = " ".join(f'"{p}"' for p in packages)
-    plan.steps.append(Step(
-        "host", f'{conda} install -y{root} -p {env_path} -c conda-forge '
-                f'{quoted} "cuda-version={pin}"'))
-    plan.check = Step("host", f"{env_path}/bin/fastmdx info --json")
+    plan.steps.append(Step("host", _command(
+        conda, "install", "-y", *_own_root(conda), "-p", env_path,
+        "-c", "conda-forge", *packages, f"cuda-version={pin}")))
+    plan.check = Step("host", _command(f"{env_path}/bin/fastmdx", "info",
+                                       "--json"))
     plan.notes.append(f"cuda-version {pin}, because {why}.")
     return plan
 
@@ -238,10 +264,12 @@ def _checkout_plan(inspection: Inspection, code: CodeIdentity,
     env = checkouts[0]
     plan.route = "checkout"
     plan.steps += [
-        Step("host", f"git -C {env.checkout} fetch origin"),
-        Step("host", f"git -C {env.checkout} merge --ff-only {code.commit}"),
+        Step("host", _command("git", "-C", env.checkout, "fetch", "origin")),
+        Step("host", _command("git", "-C", env.checkout, "merge",
+                              "--ff-only", code.commit)),
     ]
-    plan.check = Step("host", f"{env.path}/bin/fastmdx info --json")
+    plan.check = Step("host", _command(f"{env.path}/bin/fastmdx", "info",
+                                       "--json"))
     plan.notes.append(
         f"{env.path} is installed from the checkout at {env.checkout}, "
         f"now at {env.commit}. If {code.commit} is not on origin yet, push "
@@ -273,21 +301,19 @@ def install_plan(inspection: Inspection, code: CodeIdentity,
         return plan
 
     pin, why = cuda_pin(inspection)
-    spec = f'"fastmdxplora={version}" "cuda-version={pin}"'
+    spec = (f"fastmdxplora={version}", f"cuda-version={pin}")
     plan.notes.append(f"cuda-version {pin}, because {why}.")
     online = inspection.internet == "yes"
 
     conda = _conda_executable(inspection)
     if conda and online:
         plan.route = "conda"
-        # The micromamba this places keeps its environments in its own root,
-        # which is where the inspection looks for them.
-        root = (f" -r {conda[:-len('/bin/micromamba')]}/mamba"
-                if conda.endswith(f"{_OWN_HOME}/bin/micromamba") else "")
-        plan.steps.append(Step(
-            "host", f"{conda} create -y{root} -n {name} -c conda-forge {spec}"))
-        plan.check = Step("host", f"{conda} run{root} -n {name} "
-                                  "fastmdx info --json")
+        root = _own_root(conda)
+        plan.steps.append(Step("host", _command(
+            conda, "create", "-y", *root, "-n", name, "-c", "conda-forge",
+            *spec)))
+        plan.check = Step("host", _command(conda, "run", *root, "-n", name,
+                                           "fastmdx", "info", "--json"))
         note = _space_note(inspection.home_free_kb, ENVIRONMENT_GB,
                            "The home directory")
         if note:
@@ -309,13 +335,14 @@ def install_plan(inspection: Inspection, code: CodeIdentity,
         root = f"{HOST_HOME}/mamba"
         url = MICROMAMBA_URL.format(platform=platform)
         plan.steps += [
-            Step("host", f"mkdir -p {HOST_HOME}"),
-            Step("host", f'curl -Ls {url} | tar -xj -C {HOST_HOME} bin/micromamba'),
-            Step("host", f"{binary} create -y -r {root} -n {name} "
-                         f"-c conda-forge {spec}"),
+            Step("host", _command("mkdir", "-p", HOST_HOME)),
+            Step("host", _command("curl", "-Ls", url) + " | "
+                 + _command("tar", "-xj", "-C", HOST_HOME, "bin/micromamba")),
+            Step("host", _command(binary, "create", "-y", "-r", root, "-n",
+                                  name, "-c", "conda-forge", *spec)),
         ]
-        plan.check = Step("host", f"{binary} run -r {root} -n {name} "
-                                  "fastmdx info --json")
+        plan.check = Step("host", _command(binary, "run", "-r", root, "-n",
+                                           name, "fastmdx", "info", "--json"))
         plan.notes.append("micromamba is placed under ~/.fastmdxplora and "
                           "not added to your shell's startup files.")
         note = _space_note(inspection.home_free_kb, ENVIRONMENT_GB,
@@ -341,13 +368,13 @@ def install_plan(inspection: Inspection, code: CodeIdentity,
         tool = inspection.container.rsplit("/", 1)[-1]
         url = RELEASE_IMAGE_URL.format(version=version)
         plan.steps += [
-            Step("here", f"curl -fL -o {image} {url}"),
-            Step("host", f"mkdir -p {folder}"),
-            Step("here", f"rsync -P {image} {machine}:{folder}/"),
-            Step("host", f"{tool} test {folder}/{image}"),
+            Step("here", _command("curl", "-fL", "-o", image, url)),
+            Step("host", _command("mkdir", "-p", folder)),
+            Step("here", _command("rsync", "-P", image, f"{machine}:{folder}/")),
+            Step("host", _command(tool, "test", f"{folder}/{image}")),
         ]
-        plan.check = Step("host", f"{tool} exec {folder}/{image} "
-                                  "fastmdx info --json")
+        plan.check = Step("host", _command(tool, "exec", f"{folder}/{image}",
+                                           "fastmdx", "info", "--json"))
         free = (inspection.scratch_free_kb if inspection.scratch
                 else inspection.home_free_kb)
         note = _space_note(free, IMAGE_GB, "The destination")
