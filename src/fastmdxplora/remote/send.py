@@ -657,9 +657,27 @@ def _sizes_script(job: Job) -> str:
             f"echo \"fmdx:files=$(find . -type f \\( {names} \\) | wc -l | tr -d ' ')\"\n")
 
 
-def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
+#: A job (its name, when and where it was sent) -> when its sizes were
+#: asked, and them, for callers that ask again soon.
+_SIZES_KEPT: dict[tuple[str, str, str], tuple[float, FetchSizes]] = {}
+
+
+def fetch_sizes(name: str, *, transport: Transport | None = None,
+                max_age_s: float = 0) -> FetchSizes:
     """How much a fetch of ``name`` would bring, asked of the machine, so a
-    caller can say each size before anything moves."""
+    caller can say each size before anything moves. With ``max_age_s``,
+    sizes asked less than that long ago are given again."""
+    job = load_job(name)
+    which = (job.name, job.submitted_at, job.remote_dir)
+    kept = _SIZES_KEPT.get(which)
+    if max_age_s > 0 and kept is not None and 0 <= time.time() - kept[0] < max_age_s:
+        return kept[1]
+    sizes = _fetch_sizes(name, transport)
+    _SIZES_KEPT[which] = (time.time(), sizes)
+    return sizes
+
+
+def _fetch_sizes(name: str, transport: Transport | None) -> FetchSizes:
     job = load_job(name)
     link = transport or Transport(job.machine)
     found = _read(link.run(["sh", "-s"], stdin=_sizes_script(job)).stdout)
@@ -692,7 +710,9 @@ def fetch(name: str, *, with_trajectory: bool = False,
     than it holds cannot send more in one file than the whole was said to
     be.
     """
-    load_job(name)  # a name never sent is refused before anything is made for it
+    sent = load_job(name)  # a name never sent is refused before anything is made
+    # What it said is no longer what is there once fetched.
+    _SIZES_KEPT.pop((sent.name, sent.submitted_at, sent.remote_dir), None)
     with held(name), _fetching(name):
         return _fetch(name, with_trajectory, transport, local_runner, code,
                       most_bytes)

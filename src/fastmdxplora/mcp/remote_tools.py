@@ -161,6 +161,10 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     if where is None:
         raise ToolError(f"The results folder {requested} is outside the workspace.")
     _unused(ctx, where)
+    if _nobody_to_ask(ctx):
+        # Refused before the machine is asked anything: a call that cannot
+        # end in a send does not reach it.
+        _send_unconfirmed(ctx, file, machine, where)
     try:
         sending = api.plan_send(file, machine, output=where)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
@@ -203,11 +207,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     agreed = _went_ahead(ctx, "send", message,
                          f"start_study:{file}:{plan_id}:{machine}:{where}:{sent}")
     if agreed is None:
-        raise ToolError(
-            "This AI app cannot ask the person, and a study is sent to another machine "
-            "only once they agree to it here. They can send it from a terminal: "
-            f"`fastmdx remote send -c {ctx.workspace.shown(file)} --machine {machine} "
-            f"--output {shown}`.", code="remote.send.unconfirmed")
+        _send_unconfirmed(ctx, file, machine, where)
     if agreed is False:
         return "Not sent: the person did not go ahead."
     if ctx.call is not None and ctx.call.cancelled:
@@ -228,6 +228,25 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
             "on its own, whether or not this AI app stays open. remote_status says how "
             f"it is doing; fetch_study brings its results to {shown} once it has "
             f"finished; cancel_study stops it. Its folder there: {job.remote_dir}.")
+
+
+def _nobody_to_ask(ctx: Context) -> bool:
+    """Whether this call can neither ask the person nor carries their answer."""
+    call = ctx.call
+    if call is None:
+        return True
+    params = getattr(call, "params", None) or {}
+    answering = getattr(call, "era", "") == "modern" and (
+        params.get("inputResponses") is not None or params.get("requestState") is not None)
+    return not answering and not call.can_ask()
+
+
+def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> NoReturn:
+    raise ToolError(
+        "This AI app cannot ask the person, and a study is sent to another machine "
+        "only once they agree to it here. They can send it from a terminal: "
+        f"`fastmdx remote send -c {ctx.workspace.shown(file)} --machine {machine} "
+        f"--output {ctx.workspace.shown(where)}`.", code="remote.send.unconfirmed")
 
 
 def _busy(ctx: Context, machine: str, running: str) -> NoReturn:
@@ -308,13 +327,13 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.remote import api
-    from fastmdxplora.remote.jobs import FINISHED
+    from fastmdxplora.remote.jobs import ABANDONED, FINISHED
 
     job = _job_here(ctx, args["job"])
     try:
-        # Asked now: a record that still says running may be an hour old,
-        # and an ended job's process number may be another's by now.
-        job = api.status(job.name, max_age_s=0)
+        # An answer under 30 s old says whether it may still be going; the
+        # cancel itself asks the machine again before it stops anything.
+        job = api.status(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
     if job.state in FINISHED:
@@ -330,6 +349,8 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
         job = api.cancel(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
+    if job.state != ABANDONED:
+        return f"{job.name} had ended already ({job.state}); nothing was stopped."
     return (f"Stopped {job.name} on {job.machine}. Its folder there stays at "
             f"{job.remote_dir}.")
 

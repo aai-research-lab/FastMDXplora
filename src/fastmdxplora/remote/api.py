@@ -184,9 +184,12 @@ def status(job: str, *, max_age_s: float = STATUS_KEPT_S,
                    max_age_s=max_age_s)
 
 
-def fetch_sizes(job: str, *, transport: Transport | None = None) -> FetchSizes:
-    """How much :func:`fetch` would bring, with and without trajectories."""
-    return _fetch_sizes(job, transport=_link(load_job(job).machine, transport))
+def fetch_sizes(job: str, *, max_age_s: float = STATUS_KEPT_S,
+                transport: Transport | None = None) -> FetchSizes:
+    """How much :func:`fetch` would bring, with and without trajectories:
+    asked of its machine, unless asked less than ``max_age_s`` ago."""
+    return _fetch_sizes(job, transport=_link(load_job(job).machine, transport),
+                        max_age_s=max_age_s)
 
 
 def fetch(job: str, *, with_trajectory: bool = False,

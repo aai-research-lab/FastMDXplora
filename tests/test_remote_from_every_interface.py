@@ -1425,3 +1425,48 @@ class TestSeventhReviewRecords:
                                 ("remote_status", {"job": "ghg_run"})):
             result = _call(app, tool, **arguments)
             assert not result.get("isError"), _text(result)
+
+
+class TestSeventhReviewAskedLess:
+    def test_a_send_nobody_can_confirm_asks_the_machine_nothing(self, app):
+        for _ in range(5):
+            first, _ = _start(app, capabilities=None)
+            assert first["isError"] and "cannot ask the person" in _text(first)
+        assert app.machine.commands == []
+
+    def test_a_cancel_left_unanswered_asks_the_machine_once(self, app):
+        app.machine.env["FAKE_SLEEP"] = "30"
+        _start(app, answer=YES)
+        try:
+            before = len(app.machine.commands)
+            for _ in range(5):
+                first = _call(app, "cancel_study", capabilities=ELICIT, job="ghg_run")
+                assert first.get("resultType") == "input_required"
+            assert len(app.machine.commands) - before <= 1
+        finally:
+            _call(app, "cancel_study", job="ghg_run")
+
+    def test_a_fetch_left_unanswered_asks_the_machine_for_sizes_once(self, app):
+        _start(app, answer=YES)
+        _finished(app)
+        before = len(app.machine.commands)
+        for _ in range(5):
+            first = _call(app, "fetch_study", capabilities=ELICIT, job="ghg_run")
+            assert first.get("resultType") == "input_required"
+        assert len(app.machine.commands) - before <= 1
+
+    def test_a_job_that_ended_since_it_was_asked_about_is_said_as_ended(self, app):
+        import json
+        import time
+
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        _start(app, answer=YES)
+        _finished(app)
+        path = jobs_dir() / "ghg_run.json"
+        record = json.loads(path.read_text())
+        record["state"] = "running"
+        record["extra"]["asked_at"] = time.time()
+        path.write_text(json.dumps(record))
+        said = _text(_call(app, "cancel_study", job="ghg_run"))
+        assert said.startswith("ghg_run had ended already (done)")
