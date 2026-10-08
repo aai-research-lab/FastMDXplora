@@ -1042,7 +1042,12 @@
        * answer said as stopped, as pressing Stop says it (nineteenth
        * review, 10-08: the question was saved only with its answer, and a
        * reload lost it). */
-      if (writing && answering && transcript.indexOf(answering) >= 0) {
+      /* Or whose request failed before the page heard it was going (CI
+       * run #704 on 10-08: the reload cut the reply off first, and the
+       * question was kept with nothing after it), while nothing has been
+       * said after it. */
+      if (answering && transcript.indexOf(answering) >= 0 &&
+          (writing || transcript[transcript.length - 1] === answering)) {
         history.push({ role: "agent", text: "(stopped before answering)" });
         transcript.push({ role: "agent", kind: "answer", text: "Stopped before it finished." });
         answering = null;
@@ -1510,6 +1515,9 @@
         persist();
         return;
       }
+      /* Still waiting for its answer: if this failed because the page is
+       * going, the page says so as it goes (above). */
+      answering = said;
       note(box, "The Agent did not answer. Check Settings, then try again.");
     });
   }

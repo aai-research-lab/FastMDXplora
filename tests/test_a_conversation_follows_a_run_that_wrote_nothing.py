@@ -343,12 +343,41 @@ def test_a_folder_the_gui_cannot_load_opens_without_switching(tmp_path) -> None:
     assert opened["ok"] and not opened["loaded_study"] and switched == []
 
 
+#: Each browser a test opened and has not closed: closed as the test ends,
+#: passed or not. One left running (a test timed out before its close) made
+#: every later Playwright and asyncio.run() in the run fail (CI run #704).
+_OPEN_BROWSERS: list = []
+
+
+@pytest.fixture(autouse=True)
+def _browsers_closed():
+    yield
+    while _OPEN_BROWSERS:
+        _OPEN_BROWSERS.pop()()
+
+
 def _page_on(session, replies):
     import json
 
     from playwright.sync_api import sync_playwright
 
     pw = sync_playwright().start()
+    browser = None
+    closed = []
+
+    def close():
+        if closed:
+            return
+        closed.append(True)
+        try:
+            if browser is not None:
+                browser.close()
+        finally:
+            pw.stop()
+            if close in _OPEN_BROWSERS:
+                _OPEN_BROWSERS.remove(close)
+
+    _OPEN_BROWSERS.append(close)
     browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
     page = browser.new_page(viewport={"width": 1400, "height": 900})
     page.set_default_timeout(30000)
@@ -358,11 +387,6 @@ def _page_on(session, replies):
         status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
     page.goto(session.url + "#agent", wait_until="domcontentloaded")
     page.wait_for_selector("#agent-request", state="visible")
-
-    def close():
-        browser.close()
-        pw.stop()
-
     return page, errors, close
 
 
@@ -1476,28 +1500,144 @@ def _model_page(session):
     return page, errors, close
 
 
-def test_a_question_being_answered_is_kept_through_a_reload(tmp_path, monkeypatch):
-    """Found by the nineteenth review (10-08): a question was saved only
-    with its answer, and a reload while the answer was written lost it."""
+def _counting_saves(page):
+    """From now on, the page counts the saves the server confirmed."""
+    page.evaluate("""() => { window.__fmxSaved = 0;
+        window.addEventListener('fmx:conversation-saved', () => { window.__fmxSaved += 1; }); }""")
+
+
+def _saves_reach(page, count):
+    page.wait_for_function("(n) => window.__fmxSaved >= n", arg=count)
+
+
+def _answered_on_the_server(monkeypatch):
+    """An event set once the AI model has answered, whether or not a page
+    was there to hear it."""
+    import threading
+
+    from fastmdxplora.gui import agent_panel
+
+    answered = threading.Event()
+    model = agent_panel.propose_endpoint
+
+    def told(*args, **kwargs):
+        try:
+            return model(*args, **kwargs)
+        finally:
+            answered.set()
+
+    monkeypatch.setattr(agent_panel, "propose_endpoint", told)
+    return answered
+
+
+def _a_reload_while_answered(tmp_path, monkeypatch, hold=0.0, cut_first=False):
+    """"first" answered and saved; "second" asked, its answer held until
+    the reloaded page has shown it stopped; the page reloaded while it is
+    written. ``hold``: each save saying it stopped (the closing page's and
+    its copy's) reaches the server that much later. ``cut_first``: the
+    answer's request fails before the page hears it is going. What is kept
+    once every such save has been merged, and what the reloaded page shows."""
+    import threading
+    import time
+
+    from fastmdxplora.gui import agent_panel
+
+    merge = agent_panel.merge_conversation
+    merges = {"in": 0, "out": 0}
+    counting = threading.Lock()
+
+    def late(runtime, entries, *args, **kwargs):
+        stopping = any("Stopped before" in str(e.get("text", "")) for e in entries or []
+                       if isinstance(e, dict))
+        if stopping:
+            with counting:
+                merges["in"] += 1
+        try:
+            if hold and stopping:
+                time.sleep(hold)
+            return merge(runtime, entries, *args, **kwargs)
+        finally:
+            if stopping:
+                with counting:
+                    merges["out"] += 1
+
+    # The closing page's save and its copy; with a route set, Playwright
+    # drops the request a page sends as it goes, and only the copy comes.
+    saying_stopped = 1 if cut_first else 2
+
+    def merged_all():
+        with counting:
+            return merges["in"] >= saying_stopped and merges["in"] == merges["out"]
+
+    monkeypatch.setattr(agent_panel, "merge_conversation", late)
     workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
-    _model(monkeypatch, slow=("second",), seconds=4.0)
+    release = threading.Event()
+
+    def model(payload, *args, **kwargs):
+        asked = str(payload.get("request") or "")
+        if "second" in asked:
+            release.wait(30)
+        return _answer("ans:" + asked)
+
+    monkeypatch.setattr(agent_panel, "propose_endpoint", model)
+    answered = _answered_on_the_server(monkeypatch)
     try:
         page, errors, close = _model_page(session)
+        _counting_saves(page)
         _say(page, "first")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
-        page.wait_for_timeout(800)
+        _saves_reach(page, 1)
+        answered.clear()
+        if cut_first:
+            page.route("**/api/agent/propose-stream", lambda route: route.abort())
         _say(page, "second")
-        page.wait_for_timeout(800)
+        if cut_first:
+            page.wait_for_selector("#agent-thread :text('The Agent did not answer')")
+        else:
+            page.wait_for_selector("#agent-propose.is-writing")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Stopped before')")
-        page.wait_for_timeout(4500)
+        release.set()
+        if not cut_first:
+            assert answered.wait(15)
+        end = time.monotonic() + 20
+        while not merged_all() and time.monotonic() < end:
+            time.sleep(0.05)
+        assert merged_all(), merges
+        texts = _texts(workspace)[1]
         shown = page.text_content("#agent-thread")
         close()
     finally:
+        release.set()
         session.server.shutdown()
-    threads, texts = _texts(workspace)
+    return texts, shown
+
+
+def test_a_question_being_answered_is_kept_through_a_reload(tmp_path, monkeypatch):
+    """Found by the nineteenth review (10-08): a question was saved only
+    with its answer, and a reload while the answer was written lost it."""
+    texts, shown = _a_reload_while_answered(tmp_path, monkeypatch)
     assert texts == [["first", "ans:first", "second", "Stopped before it finished."]], texts
     assert "second" in shown and "ans:second" not in shown
+
+
+def test_a_closing_save_heard_late_is_kept_and_shown(tmp_path, monkeypatch):
+    """CI run #704 (10-08): the closing page's save saying the answer
+    stopped reached the server after the reloaded page had read the thread.
+    Held 2 s here, it is still kept, and the reloaded page shows it (the
+    copy it sends before reading carries the same)."""
+    texts, shown = _a_reload_while_answered(tmp_path, monkeypatch, hold=2.0)
+    assert texts == [["first", "ans:first", "second", "Stopped before it finished."]], texts
+    assert "Stopped before it finished." in shown
+
+
+def test_a_reply_cut_off_before_the_page_went_keeps_its_question_stopped(tmp_path, monkeypatch):
+    """CI run #704 (10-08): the reload cut the answer's request off before
+    the page heard it was going; the question was kept with nothing after
+    it, and the reloaded page never said it stopped."""
+    texts, shown = _a_reload_while_answered(tmp_path, monkeypatch, cut_first=True)
+    assert texts == [["first", "ans:first", "second", "Stopped before it finished."]], texts
+    assert "Stopped before it finished." in shown
 
 
 def test_what_is_said_after_a_delete_elsewhere_is_kept_as_new(tmp_path, monkeypatch):
