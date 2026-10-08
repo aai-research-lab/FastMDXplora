@@ -5492,23 +5492,11 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
    ended well opens on what its analyses determined, then the run in one
    card, then its thermodynamics two a row on the production's clock; a
    study running, or one that stopped short, keeps its health and charts
-   first. The order is the body's, by where the run stands.
+   first.
    =========================================================================== */
 .overview-body { display: flex; flex-direction: column; gap: 16px; }
-.overview-body > #overview-verdict { order: 0; }
-.overview-body > #live-absent { order: 1; }
-.overview-body > #stopping-card { order: 2; }
-.overview-body > #fixes-card { order: 3; }
-.overview-body > #overview-results { order: 4; }
-.overview-body > #live-panels { order: 5; }
-.overview-body > #overview-methods-card { order: 6; }
-.overview-body[data-lead="health"] > #live-panels { order: 4; }
-.overview-body[data-lead="health"] > #overview-results { order: 5; }
-#live-panels > #overview-health-card { order: 0; }
-#live-panels > #overview-run { order: 1; }
-#live-panels > #overview-charts { order: 2; }
-.overview-body[data-lead="health"] #live-panels > #overview-charts { order: 1; }
-.overview-body[data-lead="health"] #live-panels > #overview-run { order: 2; }
+/* The order itself is the page's (dashboard.js `leadWith`), so the
+   keyboard reads it as the eye does. */
 /* A run that ended well says so in its line above; the health card is for
    one going on, or one that did not end well. */
 .overview-body[data-lead="results"]:is([data-health="ok"], [data-health="completed"]) #overview-health-card { display: none; }
@@ -6487,3 +6475,16 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .health-explanation p:last-child { margin-bottom: 0; }
 .health-explanation ul { margin: 4px 0 8px; padding-left: 20px; }
 .health-explanation li { margin: 2px 0; }
+
+/* The skip link: off the page until it has the keyboard's focus, then at
+   the window's top left over everything. */
+.skip-link {
+    position: fixed; top: 8px; left: 8px; z-index: 1000;
+    padding: 8px 12px; border-radius: var(--radius-control, 8px);
+    background: var(--background-elevated); color: var(--text-primary);
+    border: 1px solid var(--border-strong); box-shadow: var(--shadow-modal);
+    font-size: var(--text-sm); font-weight: 600; text-decoration: none;
+    transform: translateY(calc(-100% - 16px));
+}
+.skip-link:focus, .skip-link:focus-visible { transform: none; outline: 2px solid var(--accent-text); }
+#page-shell:focus { outline: none; }

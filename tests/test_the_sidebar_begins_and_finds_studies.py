@@ -213,10 +213,12 @@ def test_the_mark_pointed_at_and_clicked_where_it_is_keeps_the_sidebar(browser, 
     tab.mouse.move(720, 450)
     tab.wait_for_timeout(400)
     kept = tab.evaluate("() => !document.body.classList.contains('sidebar-collapsed')")
-    first = tab.evaluate("() => document.querySelector('.app-shell').firstElementChild.id")
+    # The strip's first stop for the keyboard, after the skip link to the page.
+    first = tab.evaluate("() => [...document.querySelector('.app-shell').children]"
+                         ".slice(0, 2).map((e) => e.id || e.className)")
     tab.context.close()
     assert under and kept
-    assert first == "sidebar-expand"
+    assert first == ["skip-link", "sidebar-expand"]
 
 
 def test_shown_over_the_page_it_has_one_button_and_a_click_keeps_it(browser, session) -> None:

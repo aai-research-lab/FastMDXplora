@@ -4572,18 +4572,19 @@ class TestOnePageForOneRun:
 
         # A running study shows its health, the run and its charts first;
         # what the analyses determined leads once it has ended. Which comes
-        # first is the stylesheet's, by the run's state; in the markup the
-        # run's card holds the molecule and comes before the charts.
+        # first is put in the page by the run's state (dashboard.js
+        # `leadWith`, so Tab follows it); in the markup the run's card holds
+        # the molecule and comes before the charts.
         assert page.index('id="overview-run"') < page.index('id="overview-charts"')
         assert page.index('id="hero-health"') < page.index('id="overview-run"')
         import pathlib
 
         from fastmdxplora.gui import server
 
-        css = (pathlib.Path(server.__file__).parent / "static" / "dashboard.css").read_text(
+        script = (pathlib.Path(server.__file__).parent / "static" / "dashboard.js").read_text(
             encoding="utf-8")
-        assert '.overview-body[data-lead="health"] > #live-panels' in css
-        assert '.overview-body[data-lead="results"]' in css
+        assert "function leadWith(body, lead)" in script
+        assert "leadWith(body, body.dataset.lead);" in script
 
     def test_the_two_progress_cards_say_which_is_which(self) -> None:
         """One is a bar for the running stage, the other a table of phases.

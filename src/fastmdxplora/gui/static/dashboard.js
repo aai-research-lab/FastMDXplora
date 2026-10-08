@@ -736,6 +736,25 @@
     emit("status-updated", {status, health, times: state.times});
   }
 
+  /* The Overview's blocks in the order they are read, in the page itself,
+   * so Tab goes as the eye does (a CSS order left the keyboard on the old
+   * one). The results and the charts move; the run's card, which holds the
+   * molecule's canvas, stays where it is. */
+  function leadWith(body, lead) {
+    const results = byId("overview-results"), panels = byId("live-panels");
+    const run = byId("overview-run"), charts = byId("overview-charts");
+    if (results && panels && results.parentElement === body && panels.parentElement === body) {
+      const resultsFirst = !!(results.compareDocumentPosition(panels) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (lead === "health" && resultsFirst) body.insertBefore(results, panels.nextSibling);
+      if (lead !== "health" && !resultsFirst) body.insertBefore(results, panels);
+    }
+    if (run && charts && run.parentElement === charts.parentElement) {
+      const chartsFirst = !!(charts.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (lead === "health" && !chartsFirst) run.parentElement.insertBefore(charts, run);
+      if (lead !== "health" && chartsFirst) run.parentElement.insertBefore(charts, run.nextSibling);
+    }
+  }
+
   function renderTopBar(status, health) {
     if (!state.appState?.active_run) {
       setClassName("topbar-status-dot", "status-dot status-dot-waiting");
@@ -801,6 +820,7 @@
       body.dataset.health = statusName;
       body.dataset.lead = run === "running" || run === "failed" || run === "stopped"
         || run === "interrupted" ? "health" : "results";
+      leadWith(body, body.dataset.lead);
     }
     // A run that has not reported a stage has not reached one; it is
     // starting. It is not a run whose stage cannot be determined.

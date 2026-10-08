@@ -1028,6 +1028,24 @@
         if (item) setStudyMenu(false);
         e.stopPropagation();
       });
+      // A menu's keys: the arrows move between its items, round from the
+      // last to the first, Home and End to either end, Tab leaves it.
+      studyMenu.addEventListener("keydown", function (e) {
+        var items = Array.prototype.filter.call(
+          studyMenu.querySelectorAll(".study-menu-item"),
+          function (item) { return !item.hidden && item.offsetParent !== null; });
+        if (!items.length) return;
+        var at = items.indexOf(document.activeElement);
+        var to = null;
+        if (e.key === "ArrowDown") to = (at + 1) % items.length;
+        else if (e.key === "ArrowUp") to = at < 0 ? items.length - 1 : (at - 1 + items.length) % items.length;
+        else if (e.key === "Home") to = 0;
+        else if (e.key === "End") to = items.length - 1;
+        else if (e.key === "Tab") { setStudyMenu(false); return; }
+        if (to == null) return;
+        e.preventDefault();
+        items[to].focus();
+      });
       document.addEventListener("click", function () {
         if (!studyMenu.hidden) setStudyMenu(false);
       });
@@ -1038,6 +1056,17 @@
         }
       });
     }
+
+    /* The skip link moves the keyboard into the page without touching the
+     * address, which names the page. */
+    $$("[data-skip-to]").forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var to = el(a.getAttribute("data-skip-to"));
+        if (!to) return;
+        e.preventDefault();
+        to.focus();
+      });
+    });
 
     /* "What would fix it" in the progress card: the Overview, at its card. */
     $$("[data-fix-link]").forEach(function (a) {

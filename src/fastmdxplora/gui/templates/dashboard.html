@@ -367,9 +367,12 @@
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
   </div>
   <div class="app-shell">
+    <!-- The keyboard's way past the sidebar: shown when it has focus. -->
+    <a class="skip-link" href="#page-shell" data-skip-to="page-shell">Skip to the page</a>
     <!-- Over the folded sidebar's strip, its mark: pointed at, the sidebar
-         shows over the page; clicked, it stays. First, so it is the strip's
-         first stop for the keyboard as it is for the eye. -->
+         shows over the page; clicked, it stays. First after the skip link,
+         so it is the strip's first stop for the keyboard as it is for the
+         eye. -->
     <button type="button" class="sidebar-expand" id="sidebar-expand" hidden title="Show sidebar" aria-label="Show sidebar"><!--__FASTMDX_STRIP_MARK__--><span class="sidebar-expand-chevron" aria-hidden="true"><!--icon:sidebar:fold-icon--></span></button>
     <!-- Sidebar -->
     <aside class="sidebar" aria-label="Dashboard navigation">
@@ -586,7 +589,7 @@
     <div class="main">
 
       <!-- Page views -->
-      <main class="page-shell" role="main">
+      <main class="page-shell" id="page-shell" role="main" tabindex="-1">
         <!-- Dashboard-first simulation builder -->
         <!-- Shown until the router knows better: with nothing running, the
              thing to do is start something. -->
