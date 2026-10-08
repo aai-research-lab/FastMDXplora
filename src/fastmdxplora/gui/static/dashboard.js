@@ -218,6 +218,14 @@
     if (window.ResizeObserver && byId("study-folder")) {
       new ResizeObserver(() => fitTheFolderName()).observe(byId("study-folder"));
     }
+    // The run's card is pinned just above the foot, so the foot's height
+    // is where it stops.
+    const foot = document.querySelector(".sidebar-foot");
+    if (window.ResizeObserver && foot) {
+      new ResizeObserver(() => {
+        foot.parentElement.style.setProperty("--sidebar-foot-height", `${foot.offsetHeight}px`);
+      }).observe(foot, {box: "border-box"});
+    }
     byId("open-output")?.addEventListener("click", async () => {
       try {
         const payload = await fetchJSON("/api/open-output");

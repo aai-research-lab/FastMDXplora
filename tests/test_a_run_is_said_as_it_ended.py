@@ -103,3 +103,24 @@ def test_a_stopped_or_failed_study_s_fix_link_leads_to_its_fix(browser, tmp_path
                               ".getBoundingClientRect(); return r.top < innerHeight && "
                               "r.bottom > 0; }")
     assert shown
+
+
+def test_the_fix_link_is_above_the_foot_however_the_sidebar_scrolls(browser, tmp_path):  # noqa: F811
+    """In a window short enough for the sidebar to scroll, the card was in
+    flow and the pinned foot covered its link: a click there opened the
+    settings."""
+    study = _study(tmp_path / "study", failed="simulation.unstable")
+    _live(study, status="failed", stage="production", current_step=100,
+          total_planned_steps=1000, latest_error="It blew up.")
+    with _sidebar_of(browser, study, height=560) as (facts, page):
+        assert facts["fix"], facts
+        hits = page.evaluate("""() => {
+          const side = document.querySelector('.sidebar'), hits = [];
+          for (const top of [0, side.scrollHeight]) {
+            side.scrollTop = top;
+            const r = document.getElementById('sidebar-fix').getBoundingClientRect();
+            const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            hits.push(at && at.id);
+          }
+          return [side.scrollHeight > side.clientHeight, ...hits]; }""")
+    assert hits == [True, "sidebar-fix", "sidebar-fix"]

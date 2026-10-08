@@ -3426,7 +3426,12 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 }
 .agent-start-title { margin: 0; font-size: var(--text-2xl); font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
 .agent-start-note, .agent-start-engine { margin: -8px 0 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
-.agent-start-engine { display: flex; align-items: center; gap: 10px; color: var(--accent-orange); }
+.agent-start-engine { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--accent-orange); }
+/* Set me up keeps its words on one line; the sentence after it takes a
+   line of its own where the row is too narrow, as in the drawer (the
+   button was squeezed to 61 px over three lines there). */
+.agent-start-engine .ghost-btn { flex: none; white-space: nowrap; }
+.agent-start-engine .agent-start-records { flex: 1 1 16em; min-width: 0; }
 .agent-start-engine[hidden] { display: none; }
 .agent-start-records { color: var(--text-secondary); }
 .agent-start-label {
@@ -4035,6 +4040,17 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 /* With no card, the foot keeps to the bottom by itself. */
 .sidebar-foot { margin-top: auto; padding: 0 0 8px; }
 .sidebar .sidebar-progress:not([data-run=""]) + .sidebar-foot { margin-top: 0; }
+/* The run's card is pinned above the foot, as the foot is to the bottom.
+   In flow, a list long enough to scroll put it under the foot, and its
+   link to what would fix the run was the foot's to click. The gap below
+   it is the foot's, so nothing scrolls through between them. */
+@media (min-width: 801px) {
+    .sidebar .sidebar-progress:not([data-run=""]) {
+        position: sticky; bottom: var(--sidebar-foot-height, 58px); z-index: 4;
+        margin-bottom: 0; background: var(--background-secondary);
+    }
+    .sidebar .sidebar-progress:not([data-run=""]) + .sidebar-foot { padding-top: 10px; }
+}
 .sidebar-foot .sidebar-account {
     padding: 10px 6px; border-top: 1px solid var(--border-subtle); border-radius: 0;
 }
