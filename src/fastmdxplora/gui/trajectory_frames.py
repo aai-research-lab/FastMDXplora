@@ -82,16 +82,21 @@ def frames_info(output_dir: str | Path, *, most_frames: int = MOST_FRAMES,
 def _source(out: Path) -> dict[str, Any] | None:
     """Where the frames come from: the joined trajectory, then production,
     then the snapshots a run still going has written. A study that saved a
-    subset of its atoms is read with the topology of what was saved."""
+    subset of its atoms is read with the topology of what was saved.
+
+    The snapshots stand in for the trajectory only while the simulation
+    goes on. They begin at minimisation and run through equilibration, so
+    a run that ended in any way (finished, stopped, failed, or ended
+    without saying so) is played from its production trajectory where it
+    wrote one: a finished run whose record still said "running" was played
+    as its 190 snapshots of every stage."""
     from fastmdxplora.gui.live_frames import read_live_frame_history
 
     simulation = out / "simulation"
     saved = simulation / "trajectory_topology.pdb"
     topology = saved if saved.is_file() else simulation / "topology.pdb"
     trajectory = simulation / "production.dcd"
-    status = _load_json(simulation / "live_status.json")
-    finished = str(status.get("status") or "").lower() in {
-        "completed", "complete", "ok", "success", "succeeded"}
+    finished = not _simulation_going(out)
     joined = _load_json(out / "joined" / "joined.json")
     joined_dcd = out / "joined" / "production.dcd"
     if joined and joined_dcd.is_file() and joined_dcd.stat().st_size > 0:
@@ -116,6 +121,22 @@ def _source(out: Path) -> dict[str, Any] | None:
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
                              f"{history[-1].get('mtime_ns')}"}
     return None
+
+
+def _simulation_going(out: Path) -> bool:
+    """Whether the study's simulation is still being run, by its record as
+    the GUI reads it (`telemetry.status_as_it_stands`: a record left saying
+    "running" by a run that ended without saying so is not believed)."""
+    from fastmdxplora.gui.telemetry import _GOING_STATUSES, status_as_it_stands
+
+    try:
+        status = status_as_it_stands(out)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        status = _load_json(out / "simulation" / "live_status.json")
+    if str(status.get("status") or "").lower() not in _GOING_STATUSES:
+        return False
+    # Analysis and report come after the simulation: its frames are written.
+    return str(status.get("stage") or "").lower() not in {"analysis", "report"}
 
 
 def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float | None,
