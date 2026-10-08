@@ -298,12 +298,18 @@ given; fetch says how many it left and where. It also reads the run's manifest
 and says so if the code that ran is not the code that sent it. A link left in
 the run on the machine is not copied, and anything else neither a file nor a
 folder is taken out (said), each folder that came back is given its owner's
-read, write and search, and set-id bits are cleared; what was in the folder
-before the fetch is left as it was. The copy goes into a folder of its own
-inside the results folder, which only you can enter, and is moved into place
-only once all of it has been looked over, so a fetch that fails leaves nothing
-behind. So nothing fetch writes or reads here afterwards leads out of the job's
-folder. An AI app's fetch is said in bytes first, and a
+read, write and search, set-id bits are cleared and your file-creation mask
+applied, and the run's own records of the process it ran as are left out (here
+they would name a process on this computer). What was in the folder before the
+fetch is left as it was, apart from entries of the same name as the run's. The
+copy goes into a folder of its own inside the results folder
+(`.fetching-<job>`, which only you can enter), and is moved into place only
+once all of it has been looked over; only what differs from what is already
+there is copied, and a copy that fails is kept there, so fetching again goes on
+from it. So nothing fetch writes or reads here afterwards leads out of the
+job's folder. Fetching from a machine you do not fully trust wants rsync 3.4.0
+or later here, which closes the ways a hostile rsync at the other end could
+read or write past the folder (CVE-2024-12084 to 12088). An AI app's fetch is said in bytes first, and a
 file larger than the whole it said stays on the machine, named.
 
 A study sent with a prepared system (`simulation.setup_from`) names it there as

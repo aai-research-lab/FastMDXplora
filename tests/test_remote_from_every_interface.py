@@ -713,9 +713,12 @@ class TestThirdReview:
     def test_a_job_cancelled_and_still_stopping_keeps_the_machine_busy(
             self, machine, tmp_path):
         env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
-        travels._tool(env, "trap '' TERM\nsleep 6")
+        travels._tool(env, "trap '' TERM\n: > \"$HOME/trapped\"\nsleep 6")
         first = _send(machine)
-        time.sleep(0.3)
+        deadline = time.monotonic() + 30
+        while not (machine.home / "trapped").exists():
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
         cancel(first.name, transport=machine.transport())
         second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
                          code=RELEASE, transport=machine.transport())
@@ -799,7 +802,15 @@ class TestFourthReview:
         with pytest.raises(ValueError):
             fetch(job.name, transport=machine.transport(),
                   local_runner=copies_then_fails, code=RELEASE)
-        assert list(machine.back.iterdir()) == []
+        # Only the fetch's own folder, which only this user can enter, kept
+        # for the fetch again to go on from.
+        kept = machine.back / f".fetching-{job.name}"
+        assert list(machine.back.iterdir()) == [kept]
+        assert kept.stat().st_mode & 0o077 == 0
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not kept.exists() and not (machine.back / "pipe").exists()
+        assert (machine.back / "manifest.json").is_file()
 
     def test_a_log_cut_inside_a_character_is_still_read(self, machine):
         from pathlib import Path
@@ -881,3 +892,129 @@ class TestFourthReview:
         finally:
             for job in sent:
                 cancel(job.name, transport=machine.transport())
+
+
+# ---------------------------------------------------------------------------
+# The fifth review's cases
+# ---------------------------------------------------------------------------
+class TestFifthReview:
+    def test_a_run_record_from_the_machine_is_not_kept_here(self, machine):
+        import json
+        from pathlib import Path
+
+        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / RUN_PROCESS_FILE).write_text(json.dumps({"pid": 1}))
+        (Path(job.run_dir) / "runs" / "a").mkdir(parents=True)
+        (Path(job.run_dir) / "runs" / "a" / RUN_PROCESS_FILE).write_text("{}")
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not list(machine.back.rglob(RUN_PROCESS_FILE))
+
+    def test_nothing_of_this_program_s_input_reaches_the_machine(self):
+        import subprocess
+
+        from fastmdxplora.remote.transport import Transport
+
+        seen: list[dict] = []
+
+        def runner(command, **kwargs):
+            seen.append(kwargs)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        Transport("box", runner=runner, interactive=False).run(["true"])
+        assert seen[0].get("stdin") is subprocess.DEVNULL and "input" not in seen[0]
+
+    @pytest.mark.parametrize("live", ["[1, 2]", "null", '"text"'])
+    def test_a_live_record_that_is_not_one_is_read_as_nothing(self, live):
+        from fastmdxplora.remote.send import _progress
+
+        assert _progress(live) == ""
+
+    def test_a_manifest_that_says_odd_things_does_not_stop_the_fetch(self, machine):
+        import json
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "manifest.json").write_text(json.dumps({"source": "x"}))
+        job, _ = fetch(job.name, transport=machine.transport(),
+                       local_runner=machine.local, code=RELEASE)
+        assert job.fetched_at
+
+    def test_a_size_that_is_not_a_number_reads_as_none(self, machine, monkeypatch):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote import send as sending
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        monkeypatch.setattr(sending, "_sizes_script", lambda job: (
+            "echo fmdx:total=" + "9" * 400 + "\necho fmdx:trajectory=\u0663\n"
+            "echo fmdx:files=1\n"))
+        sizes = api.fetch_sizes(job.name, transport=machine.transport())
+        assert sizes.results == 0 and sizes.trajectory == 0
+
+    def test_a_fetch_again_copies_only_what_changed(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        commands: list[list[str]] = []
+
+        def runner(command, **kwargs):
+            commands.append(list(command))
+            return machine.local(command, **kwargs)
+
+        fetch(job.name, transport=machine.transport(), local_runner=runner,
+              code=RELEASE)
+        first = (machine.back / "manifest.json").stat().st_ino
+        (Path(job.run_dir) / "analysis" / "new.csv").write_text("1\n")
+        fetch(job.name, transport=machine.transport(), local_runner=runner,
+              code=RELEASE)
+        assert any(a.startswith("--compare-dest=") for a in commands[-1])
+        assert (machine.back / "manifest.json").stat().st_ino == first
+        assert (machine.back / "analysis" / "new.csv").is_file()
+
+    def test_a_clash_is_refused_before_anything_moves(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "zz.txt").write_text("z")
+        (machine.back / "manifest.json").mkdir(parents=True)
+        with pytest.raises(ValueError) as caught:
+            fetch(job.name, transport=machine.transport(),
+                  local_runner=machine.local, code=RELEASE)
+        assert "nothing was put in place" in str(caught.value)
+        assert sorted(p.name for p in machine.back.iterdir()) == ["manifest.json"]
+
+    def test_a_record_that_is_not_an_object_is_skipped(self, machine, tmp_path):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        jobs_dir().mkdir(parents=True, exist_ok=True)
+        (jobs_dir() / "listy.json").write_text("[]")
+        assert api.jobs() == []
+        assert prepare(machine.study, "box", output=str(tmp_path / "x"), code=RELEASE,
+                       transport=machine.transport()).busy == ""
+
+    def test_a_planted_fetch_folder_does_not_come_back(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / f".fetching-{job.name}" / "run").mkdir(parents=True)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not (machine.back / f".fetching-{job.name}").exists()

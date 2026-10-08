@@ -48,6 +48,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -281,7 +282,7 @@ def _busy_with(machine_name: str, link: Transport) -> Job | None:
     for name in job_names():
         try:
             job = load_job(name)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             continue  # a record that cannot be read names no machine
         if job.machine != machine_name:
             continue
@@ -482,6 +483,8 @@ def _progress(live: str) -> str:
         record = json.loads(live)
     except ValueError:
         return ""
+    if not isinstance(record, dict):
+        return ""
     stage = str(record.get("stage") or "")
     step, total = record.get("current_step"), record.get("total_planned_steps")
     if isinstance(step, (int, float)) and isinstance(total, (int, float)) and total > 0:
@@ -608,7 +611,7 @@ def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
 
     def number(key: str) -> int:
         text = (found.get(key) or ["0"])[0].strip()
-        return int(text) if text.isdigit() else 0
+        return int(text) if re.fullmatch(r"[0-9]{1,18}", text) else 0
 
     trajectory = number("trajectory")
     return FetchSizes(results=max(number("total") - trajectory, 0),
@@ -668,32 +671,42 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
         # trajectories left behind are said as such, not as over the cap.
         found_over = link.run(["find", job.run_dir, "-type", "f", "-size",
                                f"+{max(int(most_bytes), 1)}c"])
-        over = [line[:_SAID_CHARS] for line in found_over.stdout.splitlines()
+        over = [_shown(line) for line in found_over.stdout.splitlines()
                 if line.strip() and line[:_SAID_CHARS] not in set(left)]
 
     warnings: list[str] = []
     # Copied into a folder of its own first, which only this user can enter,
     # and looked over there: nothing reaches the results folder until all of
-    # it has been, and a copy that fails leaves nothing behind.
-    staging = Path(tempfile.mkdtemp(prefix=".fetching-", dir=target))
+    # it has been. Only what differs from the results folder is copied
+    # (--compare-dest), and the folder is kept when a copy fails, so a fetch
+    # again goes on from what came.
+    staging = _private_folder(target / f".fetching-{job.name}")
+    arrived = staging / "run"
+    arrived.mkdir(exist_ok=True)
+    copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{arrived}/",
+                                         f"--compare-dest={target.resolve()}/",
+                                         *excludes),
+                      runner=local_runner, what="fetching a study")
+    # 24 is rsync's "some source files vanished": a file removed between
+    # listing and copying. Not a failed copy of what is there.
+    if copied not in (0, 24):
+        raise StudyError(
+            f"Fetching {name} from {job.machine} failed (rsync exit {copied}); "
+            "what came is kept aside, and a fetch again goes on from it.",
+            code="environment.service.machine_unreachable",
+            machine=job.machine, reason=f"rsync exit {copied}")
     try:
-        arrived = staging / "run"
-        copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{arrived}/",
-                                             *excludes),
-                          runner=local_runner, what="fetching a study")
-        # 24 is rsync's "some source files vanished": a file removed between
-        # listing and copying. Not a failed copy of what is there.
-        if copied not in (0, 24):
-            raise StudyError(
-                f"Fetching {name} from {job.machine} failed (rsync exit {copied}).",
-                code="environment.service.machine_unreachable",
-                machine=job.machine, reason=f"rsync exit {copied}")
-        arrived.mkdir(exist_ok=True)
+        arrived.chmod(stat.S_IRWXU)
         warnings += _only_files_and_folders(arrived)
         log_said = _job_log(job, link)
         if log_said is not None:
             _written_into(arrived, "remote_job.log", log_said)
+        _clashes_refused(arrived, target)
         _moved_into(arrived, target)
+    except OSError as exc:
+        raise StudyError(
+            f"What was fetched could not be put in {target} ({exc.strerror or exc}).",
+            code="environment.path.exists", path=str(target)) from exc
     finally:
         _removed(staging)
     if over:
@@ -716,6 +729,8 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
         if not isinstance(record, dict):
             record = {}
         source = record.get("source") or {}
+        if not isinstance(source, dict):
+            source = {}
         ran = CodeIdentity(version=str(record.get("version", "")),
                            commit=str(source.get("commit") or ""),
                            dirty=source.get("dirty", False))
@@ -798,9 +813,14 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
     Fails closed: a folder that still cannot be read is a refusal, since
     what is in it could not be looked at.
     """
-    import stat
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.runs_here import RUNS_FILE, STARTING_FILE
 
-    loose = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
+    # A run's own records of where it runs are the machine's: here they
+    # would name a process on this computer by the machine's number.
+    theirs = {RUN_PROCESS_FILE, RUNS_FILE, STARTING_FILE}
+    loose = (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
+             | (_UMASK & 0o077))
     removed: list[str] = []
     for _ in range(64):
         unread: list[str] = []
@@ -813,18 +833,32 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
                     mode = entry.lstat().st_mode
                 except OSError:
                     continue
+                if stat.S_ISREG(mode) and name in theirs:
+                    entry.unlink(missing_ok=True)
+                    continue
+                if Path(top) == arrived and name.startswith(".fetching-"):
+                    # The name a fetch here keeps its own copy under.
+                    if stat.S_ISDIR(mode):
+                        _removed(entry)
+                        dirs.remove(name)
+                    else:
+                        entry.unlink(missing_ok=True)
+                    continue
                 if stat.S_ISDIR(mode):
                     wanted = (stat.S_IMODE(mode) | stat.S_IRWXU) & ~loose
                 elif stat.S_ISREG(mode):
                     wanted = (stat.S_IMODE(mode) | stat.S_IRUSR | stat.S_IWUSR) & ~loose
                 else:
                     entry.unlink(missing_ok=True)
-                    removed.append(str(entry.relative_to(arrived))[:_SAID_CHARS])
+                    removed.append(_shown(str(entry.relative_to(arrived))))
                     continue
                 if wanted != stat.S_IMODE(mode):
                     try:
                         entry.chmod(wanted)
-                        opened = opened or stat.S_ISDIR(mode)
+                        # Opened only where the mode did change: a file
+                        # system that keeps its own modes is walked once.
+                        if stat.S_ISDIR(mode) and stat.S_IMODE(entry.lstat().st_mode) == wanted:
+                            opened = True
                     except OSError:
                         pass
         if not unread and not opened:
@@ -841,6 +875,35 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
             f"came back and were removed: {', '.join(removed[:5])}."]
 
 
+def _shown(text: str) -> str:
+    """A name from the machine as it can be said: bounded, and with any
+    byte that is not UTF-8 replaced."""
+    return text[:_SAID_CHARS].encode("utf-8", "replace").decode("utf-8")
+
+
+def _private_folder(folder: Path) -> Path:
+    """``folder``, made or kept as a folder only this user can enter."""
+    if folder.is_symlink() or (folder.exists() and not folder.is_dir()):
+        folder.unlink()
+    folder.mkdir(mode=0o700, exist_ok=True)
+    folder.chmod(stat.S_IRWXU)
+    return folder
+
+
+def _clashes_refused(arrived: Path, target: Path) -> None:
+    """Refuse before anything moves where the fetch brings a file and the
+    results folder has a folder of that name."""
+    for top, _, files in os.walk(arrived, followlinks=False):
+        here = target / Path(top).relative_to(arrived)
+        for name in files:
+            place = here / name
+            if place.is_dir() and not place.is_symlink():
+                raise StudyError(
+                    f"{place} is a folder here, and the fetch brings a file of that "
+                    "name; nothing was put in place. Move the folder aside and fetch "
+                    "again.", code="environment.path.exists", path=str(place))
+
+
 def _moved_into(arrived: Path, target: Path) -> None:
     """Everything under ``arrived`` moved into the same place under
     ``target``: a file replaces what is there (a link of that name is
@@ -853,20 +916,12 @@ def _moved_into(arrived: Path, target: Path) -> None:
                 place.unlink()
             place.mkdir(exist_ok=True)
         for name in files:
-            place = here / name
-            if place.is_dir() and not place.is_symlink():
-                raise StudyError(
-                    f"{place} is a folder here, and the fetch brings a file of that "
-                    "name; nothing of it was put in place. Move the folder aside "
-                    "and fetch again.", code="environment.path.exists",
-                    path=str(place))
-            os.replace(Path(top) / name, place)
+            os.replace(Path(top) / name, here / name)
 
 
 def _removed(folder: Path) -> None:
     """A fetch's own folder removed, whatever modes came back in it."""
     import shutil
-    import stat
 
     def opened(function, path, _info) -> None:
         try:

@@ -158,7 +158,7 @@ def jobs(*, under: str | Path | None = None) -> list[Job]:
     for name in job_names():
         try:
             found.append(load_job(name))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             continue  # a record that cannot be read is not a job to offer
     if under is None:
         return found

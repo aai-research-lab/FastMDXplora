@@ -140,5 +140,8 @@ def load_job(name: str) -> Job:
             f"{', '.join(known) or 'none yet'}).",
             given=name, permitted=known,
         ) from None
+    if not isinstance(record, dict):
+        raise UnknownJob(f"The record of {name!r} is not a job's record.",
+                         given=name, permitted=job_names())
     fields = Job.__dataclass_fields__
     return Job(**{k: v for k, v in record.items() if k in fields})

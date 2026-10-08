@@ -181,9 +181,11 @@ class Transport:
             # A machine's answer is read as UTF-8 with anything else replaced:
             # a log cut inside a character, or written in another encoding,
             # is still read.
-            done = self._run(command, input=stdin, text=True, timeout=timeout,
+            # Nothing of this program's own input reaches the machine.
+            given = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+            done = self._run(command, text=True, timeout=timeout,
                              check=False, encoding="utf-8", errors="replace",
-                             **capture)
+                             **given, **capture)
         except FileNotFoundError as exc:
             raise StudyError(
                 "There is no ssh command on this computer, and FastMDXplora "
