@@ -389,6 +389,51 @@ same as for a run started from the command line.
 
 ---
 
+## Running on another machine
+
+`fastmdxplora.remote.api` does what [`fastmdx remote`](remote.md) does at a
+terminal, for a program. It reaches only machines inspected at a terminal
+first (`fastmdx remote --machine gpu-box`), never prompts (a machine whose
+`ssh` asks for a password fails at once; a key, an agent or a sign-in kept
+open from a terminal works), and moves nothing it has not said first:
+
+```python
+from fastmdxplora.remote import api
+from fastmdxplora.remote.send import describe_sending
+
+api.machines()                     # the records, as last inspected; asks nothing
+sending = api.plan_send("study.yml", "gpu-box", output="runs/lysozyme")
+print("\n".join(describe_sending(sending)))   # what travels, sizes, job.sh
+job = api.send_planned(sending)
+
+api.status(job.name)               # asked of the machine at most every 30 s
+sizes = api.fetch_sizes(job.name)  # bytes, with and without trajectories
+job, warnings = api.fetch(job.name, with_trajectory=False)
+api.cancel(job.name)
+api.jobs(under="runs")             # the jobs whose results come back under runs/
+```
+
+`api.send(config, machine, output=)` plans and sends in one call. As with
+`remote send`, only the files in the folder holding the Config travel
+(`remote.input.outside`), and a workstation runs one study sent from here at a
+time (`remote.machine.busy`).
+
+An install runs only with a yes to the exact plan shown:
+
+```python
+planned = api.install_plan("gpu-box")      # inspects again
+if not planned.ready and planned.yes:
+    show(planned.plan)                     # every command, and where it runs
+    if the_person_says_yes():
+        api.install("gpu-box", planned.yes)
+```
+
+The yes is for that machine and that plan, works once, and lapses after ten
+minutes; the machine is inspected again before anything runs, and a plan that
+changed in between is refused (`remote.install.unconfirmed`).
+
+---
+
 ## Logging
 
 Importing FastMDXplora does not take over your logging. The package attaches a
@@ -415,6 +460,7 @@ the terminal and ends when the run does. The CLI calls it; nothing else should.
 | `fastmdxplora.refusals`, `.statistics`, `.cost`, `.provenance`, `.explain`, `.advisories` | Public |
 | `fastmdxplora.validation` | Measurements of the software's own behaviour — see [How FastMDXplora is validated](validation.md) |
 | `fastmdxplora.agent` | [The Agent](agent.md), plus campaign machinery |
+| `fastmdxplora.remote.api` | [Running on another machine](#running-on-another-machine); the rest of `fastmdxplora.remote` is what it is built from |
 | `fastmdxplora.batch` | The execution layer underneath `FastMDXplora`. Usable, but `FastMDXplora(config=…)` is the supported path |
 | `fastmdxplora.utils` | Internal |
 
@@ -536,6 +582,13 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.batch.aggregate
+   :members:
+```
+
+### Other machines
+
+```{eval-rst}
+.. automodule:: fastmdxplora.remote.api
    :members:
 ```
 

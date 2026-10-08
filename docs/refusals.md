@@ -325,6 +325,7 @@ A few you are likely to meet, and what each means.
 | `remote.machine.not_ready` | Nothing on the machine holds this computer's code with its backends loading. `fastmdx remote --machine <name>` says why |
 | `remote.machine.busy` | A workstation is running a study sent from this computer, and one runs there at a time. The job is named; `fastmdx remote status` says when it ends, `fastmdx remote cancel` stops it. A cluster's scheduler queues instead |
 | `remote.input.outside` | A study sent to another machine names a file outside the folder holding its config, or a folder with a link leading out of it; nothing is sent. Copy the file into the study's folder. A prepared study named by `setup_from` or `resume_from` may sit beside it. See [Remote machines](remote.md#what-travels) |
+| `remote.job.gone` | A job's folder is no longer on its machine (removed there, or the scratch was cleared), so there is nothing to fetch |
 | `environment.calibration.absent` | This machine has not been measured — see [Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card) |
 | `environment.budget.exhausted` | An [Agent](agent.md) study was priced above its `--budget-hours` |
 | `analysis.unknown` | An analysis name that does not exist. The message names the nearest match and the full list |

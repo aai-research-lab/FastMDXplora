@@ -74,9 +74,9 @@ from fastmdxplora.remote.machines import (
 from fastmdxplora.remote.probe import PROBE_SCRIPT, Environment, parse_inspection
 from fastmdxplora.remote.transport import Transport, run_here
 
-__all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "Sending", "cancel",
-           "describe_sending", "fetch", "job_line", "job_script", "prepare",
-           "send", "status"]
+__all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "FetchSizes", "Sending",
+           "cancel", "describe_sending", "fetch", "fetch_sizes", "job_line",
+           "job_script", "prepare", "send", "status"]
 
 #: How long an answer about a job is kept for a caller that asks for it.
 STATUS_KEPT_S = 30.0
@@ -452,6 +452,48 @@ def status(name: str, *, transport: Transport | None = None,
     job.extra["log_tail"] = _telling(found.get("log", []))
     save_job(job)
     return job
+
+
+@dataclass(frozen=True)
+class FetchSizes:
+    """What a fetch would bring, in bytes, as the machine's ``du`` counts."""
+
+    results: int
+    trajectory: int
+    trajectory_files: int
+
+    def bringing(self, with_trajectory: bool) -> int:
+        return self.results + (self.trajectory if with_trajectory else 0)
+
+
+def _sizes_script(job: Job) -> str:
+    names = " -o ".join(f"-name '{p}'" for p in TRAJECTORY_PATTERNS)
+    return (f"cd {shlex.quote(job.run_dir)} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
+            "echo \"fmdx:total=$(du -sk . | cut -f1)\"\n"
+            f"echo \"fmdx:trajectory=$(find . -type f \\( {names} \\) -exec du -k {{}} + "
+            "2>/dev/null | awk '{s+=$1} END {print s+0}')\"\n"
+            f"echo \"fmdx:files=$(find . -type f \\( {names} \\) | wc -l | tr -d ' ')\"\n")
+
+
+def fetch_sizes(name: str, *, transport: Transport | None = None) -> FetchSizes:
+    """How much a fetch of ``name`` would bring, asked of the machine, so a
+    caller can say each size before anything moves."""
+    job = load_job(name)
+    link = transport or Transport(job.machine)
+    found = _read(link.run(["sh", "-s"], stdin=_sizes_script(job)).stdout)
+    if "gone" in found:
+        raise StudyError(
+            f"{job.run_dir} is not on {job.machine} any more, so {name} has "
+            "nothing to fetch.",
+            code="remote.job.gone", given=name, machine=job.machine)
+
+    def kb(key: str) -> int:
+        text = (found.get(key) or ["0"])[0].strip()
+        return int(text) if text.isdigit() else 0
+
+    trajectory = kb("trajectory") * 1024
+    return FetchSizes(results=max(kb("total") * 1024 - trajectory, 0),
+                      trajectory=trajectory, trajectory_files=kb("files"))
 
 
 def fetch(name: str, *, with_trajectory: bool = False,
