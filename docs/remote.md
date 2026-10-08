@@ -168,6 +168,13 @@ printed as it runs; the first that fails stops the install and is named, and
 what the steps before it did is left in place. At the end the machine is
 inspected again and said to be ready or not.
 
+Where there is no terminal, a program that shows the plan in a window of its
+own (the Python API's `install_plan` and `install`) takes the person's yes to
+that plan: bound to the machine and to every command in it, used once, and
+gone after ten minutes. The machine is inspected again before anything runs,
+and if the plan it gives is not the plan shown, nothing runs. An AI app and the
+Agent are never offered an install; they name this command instead.
+
 Where an installation already holds this computer's code and cannot load
 something, the plan adds just that to the same environment:
 
