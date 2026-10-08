@@ -96,12 +96,56 @@ def test_one_conversation_on_the_page_and_beside_it(browser, session, no_model) 
         document.querySelector('.page[data-page="agent"]').contains(document.getElementById('agent-thread')),
         document.querySelectorAll('#agent-thread .agent-msg-user').length,
         document.getElementById('agent-drawer').hidden]""")
-    # From the Agent page, the keys go back to the page before it, beside.
+    # From the Agent page, the keys go back to the page before it, beside:
+    # waited for, not slept on. (CI run #705 found it closed: the Agent
+    # page's late word closing the drawer, which the next test holds to.)
     tab.keyboard.press("Control+j")
-    tab.wait_for_timeout(200)
+    tab.wait_for_function("""() => document.documentElement.dataset.page === 'report'
+        && !document.getElementById('agent-drawer').hidden""")
     back = _where(tab)
     tab.context.close()
     assert on_the_page == [True, 1, True]
+    assert back["page"] == "report" and back["beside"] and back["thread"]
+
+
+def test_the_keys_pressed_as_the_agent_page_opens_go_back_beside(browser, session) -> None:
+    """The page tells its scripts it changed page a frame later. Ctrl+J
+    pressed in that frame went back to the page before, beside, and then
+    the late word that the Agent page had opened closed the drawer again:
+    the page before, with no Agent beside it (CI run #705)."""
+    tab = _open(browser, session, "#report")
+    tab.click("#agent-beside-open")
+    tab.wait_for_selector("#agent-drawer:not([hidden])")
+    # Pressed in the same task as the page changed; three frames later the
+    # page's word that the Agent page opened has been sent and heard.
+    tab.evaluate("""() => new Promise((done) => {
+        document.getElementById('agent-drawer-page').click();
+        document.dispatchEvent(new KeyboardEvent('keydown',
+            {key: 'j', ctrlKey: true, bubbles: true}));
+        const frame = (then) => requestAnimationFrame(then);
+        frame(() => frame(() => frame(() => done(null))));
+    })""")
+    back = _where(tab)
+    tab.context.close()
+    assert back["page"] == "report" and back["beside"] and back["thread"]
+
+
+def test_a_page_left_in_the_frame_it_opened_is_the_one_gone_back_to(browser, session) -> None:
+    """The Report page opened and the Agent page straight after, in one
+    frame: the Report page's word comes late, after the Agent page is
+    shown, and is still the last page before the Agent's. Ctrl+J from the
+    Agent page goes back beside the Report page, not the Overview."""
+    tab = _open(browser, session, "#overview")
+    tab.evaluate("""() => new Promise((done) => {
+        window.FastMDXDashboard.navigate('report');
+        window.FastMDXDashboard.navigate('agent');
+        const frame = (then) => requestAnimationFrame(then);
+        frame(() => frame(() => frame(() => done(null))));
+    })""")
+    tab.keyboard.press("Control+j")
+    tab.wait_for_function("() => !document.getElementById('agent-drawer').hidden")
+    back = _where(tab)
+    tab.context.close()
     assert back["page"] == "report" and back["beside"] and back["thread"]
 
 

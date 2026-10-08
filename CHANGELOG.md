@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent beside the page, and a run's notice, as the page changes
+
+**Fixed:** Ctrl+J (⌘J) pressed just as the Agent page opened went back
+beside the page before, and the drawer closed again a moment later, leaving
+that page with no Agent beside it. The drawer now closes only while the
+Agent page is still the one shown.
+
+**Fixed:** with **Notify when a run ends** ticked, a run that ended at the
+page's next look after it opened gave no notice: the run was known by the
+name shown, which is the dashboard's own until the study's records arrive.
+A run is now known by when its live record says it started. The tab's title
+names the study as soon as its records arrive, where it read "FastMDXplora
+Live" until the next look.
+
 ### Other machines from Python and from an AI app
 
 **Added:** `fastmdxplora.remote.api`, what `fastmdx remote` does at a

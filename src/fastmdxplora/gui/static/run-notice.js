@@ -100,14 +100,29 @@
     if (box) box.addEventListener("change", function (event) {
       if (event.isTrusted) askedFor();
     });
-    window.addEventListener("dashboard:status-updated", function () {
+    // A run is known by when its live record says it started, which the
+    // folder's record keeps until a rerun clears it, and by the study open,
+    // which says when it changes (run-changed); not by the name shown. A
+    // poll's status comes before the study's records, so a run was named by
+    // the dashboard and then by the study, and a run that ended at the next
+    // status was taken for another. A status of another record, or of none,
+    // after one seen running (another study opened elsewhere as a poll was
+    // answered) is not this run ending. A run seen running with no record of
+    // when it started (its record not written yet, a study of several runs,
+    // an older record) is taken to be the run that ends.
+    window.addEventListener("dashboard:status-updated", function (event) {
       var state = now();
+      var status = (event.detail && event.detail.status) || {};
+      state.started = status.run_started_at ? String(status.run_started_at) : "";
       title(state);
-      if (last && last.run === "running" && state.run !== "running" && last.name === state.name) {
+      if (last && last.run === "running" && state.run !== "running"
+          && (!last.started || last.started === state.started)) {
         notify(state);
       }
       last = state;
     });
+    // The records named it: the title says the study's name at once.
+    window.addEventListener("dashboard:results-updated", function () { title(now()); });
     window.addEventListener("dashboard:run-changed", function () { last = null; });
   });
 

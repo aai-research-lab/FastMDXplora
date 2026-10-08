@@ -125,6 +125,43 @@ def test_a_figure_without_its_numbers_keeps_its_picture(tmp_path) -> None:
     assert not got["ok"] and got["reason"] == "the analysis wrote no numbers for it"
 
 
+def _tip_over(page, analysis, across, up, down=None):
+    """The tip of an analysis's figure with the pointer at a share of its
+    width (`across`) and of its height (`up`), or `down` pixels from its
+    top. A figure plotted again takes its tip with it, so the pointer is
+    moved over the figure as it is now until its tip says something, for
+    20 s in all; then what was last in the way is said."""
+    import time
+
+    from playwright.sync_api import Error
+
+    card = f'.analysis-card[data-analysis="{analysis}"]'
+    until = time.monotonic() + 20
+
+    def left():
+        return max(1, int((until - time.monotonic()) * 1000))
+
+    last = "no tip shown"
+    while time.monotonic() < until:
+        try:
+            # Plotted again while it is looked at, the figure whose box was
+            # read is gone: looked at again.
+            chart = page.locator(f"{card} .figure-chart svg")
+            chart.scroll_into_view_if_needed(timeout=left())
+            box = chart.bounding_box(timeout=left())
+            if box:
+                y = box["y"] + (down if down is not None else box["height"] * up)
+                page.mouse.move(box["x"] + box["width"] * across + 1, y)
+                page.mouse.move(box["x"] + box["width"] * across, y)
+                tip = page.text_content(f"{card} .series-tip", timeout=left()) or ""
+                if tip:
+                    return tip
+        except Error as error:
+            last = str(error).splitlines()[0]
+        page.wait_for_timeout(min(250, left()))
+    raise AssertionError(f"{analysis}: {last}")
+
+
 def test_each_is_plotted_on_the_analysis_page(tmp_path) -> None:
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
@@ -157,17 +194,17 @@ def test_each_is_plotted_on_the_analysis_page(tmp_path) -> None:
             names_shown = page.eval_on_selector_all(
                 '.analysis-card[data-analysis="pl_contacts"] .figure-chart svg > text',
                 "(all) => all.map((t) => t.textContent)")
-            chart = page.locator('.analysis-card[data-analysis="moments_of_inertia"] .figure-chart svg')
-            chart.scroll_into_view_if_needed()
-            box = chart.bounding_box()
-            page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
-            tip = page.text_content(
-                '.analysis-card[data-analysis="moments_of_inertia"] .series-tip')
-            bars = page.locator('.analysis-card[data-analysis="pl_interactions"] .figure-chart svg')
-            bars.scroll_into_view_if_needed()
-            box = bars.bounding_box()
-            page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + 20)
-            said = page.text_content('.analysis-card[data-analysis="pl_interactions"] .series-tip')
+            # A figure is plotted again when its width changes (a scroll bar
+            # coming, the window), and its tip goes with the old plot: CI run
+            # #705 read it empty, the figure plotted again under the pointer.
+            # The window is narrowed by more than the 4 px a figure is
+            # plotted again for, so each figure is plotted again, perhaps as
+            # it is first hovered; so can it be later (a scroll bar, its card
+            # made again as results come). The tip is read from the figure as
+            # it is, the pointer moved over it again until it shows.
+            page.set_viewport_size({"width": 1400, "height": 900})
+            tip = _tip_over(page, "moments_of_inertia", 0.5, 0.5)
+            said = _tip_over(page, "pl_interactions", 0.5, None, down=20)
             note = page.text_content('.analysis-card[data-analysis="pl_interactions"] .figure-note')
             browser.close()
     finally:

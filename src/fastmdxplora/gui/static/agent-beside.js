@@ -120,11 +120,16 @@
       toggle();
     });
 
-    // The Agent page opened: the conversation goes home to it.
+    // The Agent page opened: the conversation goes home to it. The page
+    // says so a frame after it changed, so it goes home only while that
+    // page is still the one shown: Ctrl+J pressed in that frame had already
+    // gone back beside the page before, and the late word closed it. Any
+    // other page said, late or not, was the last page before the Agent's.
     window.addEventListener("dashboard:navigate", function (event) {
       var page = event.detail && event.detail.page;
-      if (page === "agent") close();
-      else if (page) lastPage = page;
+      if (!page) return;
+      if (page !== "agent") lastPage = page;
+      else if (page === document.documentElement.getAttribute("data-page")) close();
     });
   });
 
