@@ -105,7 +105,7 @@
       '<div class="analysis-index-head">' +
         '<label class="analysis-filter-label" for="analysis-filter">Find an analysis</label>' +
         '<input type="search" id="analysis-filter" class="analysis-filter" autocomplete="off" ' +
-          'placeholder="RMSD, hydrogen bonds, residue 189…" value="' + escapeHTML(previous) + '">' +
+          'placeholder="RMSD, hydrogen bonds, the ligand…" value="' + escapeHTML(previous) + '">' +
         '<span class="analysis-index-count muted small" id="analysis-index-count">' +
           sectionsShown.length + " analys" + (sectionsShown.length === 1 ? "is" : "es") + ", " +
           figures + " figure" + (figures === 1 ? "" : "s") + "</span>" +
@@ -252,6 +252,7 @@
   function renderOverview(data) {
     var host = byId("analysis-results");
     var table = byId("analysis-results-table");
+    decorateCards(document.querySelector('.page[data-page="analysis"]'));
     if (!host || !table) return;
     var rows = data && data.ok && Array.isArray(data.rows) ? data.rows : [];
     if (!rows.length) { host.hidden = true; return; }
@@ -372,11 +373,29 @@
   /* Convergence                                                         */
   /* ------------------------------------------------------------------ */
 
+  /* Whether an analysis recorded a mean over its frames, so that it has a
+   * convergence to show: RMSF's series is one value a residue, and its
+   * Convergence said only that it had none. Unknown until the overview is
+   * read, and offered meanwhile. */
+  function hasAMean(name) {
+    var rows = (overview && overview.rows) || [];
+    var row = rows.filter(function (r) { return r.analysis === name; })[0];
+    return !row || row.kind === "mean";
+  }
+
   function decorateCards(host) {
+    // Withdrawn where the overview, read since, says there is no mean.
+    (host || document).querySelectorAll(".analysis-card [data-convergence]").forEach(function (button) {
+      if (hasAMean(button.getAttribute("data-convergence"))) return;
+      var panel = button.closest(".ac-footer") && button.closest(".ac-footer").nextSibling;
+      if (panel && panel.classList && panel.classList.contains("convergence-panel")) panel.remove();
+      button.remove();
+    });
     (host || document).querySelectorAll(".analysis-card [data-series]").forEach(function (frame) {
       var card = frame.closest(".analysis-card");
       var footer = card && card.querySelector(".ac-footer");
       if (!footer || footer.querySelector("[data-convergence]")) return;
+      if (!hasAMean(frame.getAttribute("data-series"))) return;
       var button = document.createElement("button");
       button.type = "button";
       button.className = "file-action";

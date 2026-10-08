@@ -151,7 +151,10 @@ def _tiles(root: Path) -> dict[str, Any]:
                 "series": series,
             })
     shown = tiles[:MOST_TILES]
-    return {"tiles": shown, "more": len(tiles) - len(shown), "means": means,
+    # The means not shown, as the heading counts means: the RMSF tile is
+    # not one, and "11 more not shown" was said of ten.
+    more = sum(1 for tile in tiles[MOST_TILES:] if tile.get("kind") == "mean")
+    return {"tiles": shown, "more": more, "means": means,
             "determined": determined, "analyses": len(rows),
             "biased": bool(overview.get("biased"))}
 

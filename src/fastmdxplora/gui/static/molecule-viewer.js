@@ -228,6 +228,7 @@
     document.querySelectorAll(".chip-toggle input[data-vis]").forEach((checkbox) => {
       checkbox.checked = !!STATE.visibility[checkbox.getAttribute("data-vis")];
     });
+    STATE.contactsShown = false;
     [STATE.engine, STATE.miniEngine].forEach((engine) => {
       if (engine) void engine.clear().catch((error) => console.debug(error));
     });
@@ -782,11 +783,15 @@
       });
     document.querySelectorAll('[data-vis="ligand"], [data-vis="pocket"]').forEach((box) => {
       box.disabled = none;
+      // Not ticked where there is nothing to show: ticked and greyed, they
+      // read as shown.
+      box.checked = !none && !!STATE.visibility[box.getAttribute("data-vis")];
       const label = box.closest("label");
       if (!label) return;
       label.classList.toggle("is-unavailable", none);
       if (none) label.title = why; else label.removeAttribute("title");
     });
+    sayLigandShown();
   }
 
   function ligandResnames() {
@@ -1080,6 +1085,7 @@
       checkbox.addEventListener("change", () => {
         const which = checkbox.getAttribute("data-vis");
         STATE.visibility[which] = checkbox.checked;
+        if (which === "pocket") sayLigandShown();
         if (which === "water" || which === "ions") {
           if (STATE.mode === "playback") {
             // The frames stay; the solvated system is rendered beside them.
@@ -1425,31 +1431,62 @@
     if (action === "isolate") {
       STATE.isolateLigand = !STATE.isolateLigand;
       STATE.pocketOnly = false;
+      sayLigandShown();
       await restyleViewers();
       engine.focusPart("ligand");
     }
     if (action === "show-pocket") {
-      STATE.visibility.pocket = true;
+      // A switch, as Display's Binding pocket is, and kept with it.
+      STATE.visibility.pocket = !STATE.visibility.pocket;
+      const box = document.querySelector('.chip-toggle input[data-vis="pocket"]');
+      if (box) box.checked = STATE.visibility.pocket;
       STATE.isolateLigand = false;
+      sayLigandShown();
       await restyleViewers();
-      engine.focusPart("pocket");
+      if (STATE.visibility.pocket) engine.focusPart("pocket");
     }
     if (action === "show-pocket-surface") {
       STATE.pocketSurface = !STATE.pocketSurface;
+      sayLigandShown();
       await restyleViewers();
     }
     if (action === "hide-distant") {
       STATE.pocketOnly = !STATE.pocketOnly;
       STATE.isolateLigand = false;
+      sayLigandShown();
       await restyleViewers();
       engine.focusPart(STATE.pocketOnly ? "pocket" : "polymer");
     }
     if (action === "show-labels") {
       STATE.labels = !STATE.labels;
+      sayLigandShown();
       await restyleViewers();
     }
-    if (action === "show-contacts") await showGeometricContacts();
-    if (action === "show-hbonds") announce("Hydrogen-bond overlays appear only when a dedicated interaction analysis provides them.");
+    if (action === "show-contacts") {
+      if (STATE.contactsShown) {
+        await engine.showContacts([]);
+        STATE.contactsShown = false;
+        announce("The geometric contacts are hidden.");
+      } else {
+        STATE.contactsShown = await showGeometricContacts();
+      }
+    }
+    sayLigandShown();
+  }
+
+  /* Each of the ligand's switches says whether it is on, as a pressed
+   * button does: they changed the molecule and said nothing of themselves,
+   * so whether a click had turned one on or off was a guess. */
+  function sayLigandShown() {
+    const on = {
+      "isolate": STATE.isolateLigand, "show-pocket": STATE.visibility.pocket,
+      "show-pocket-surface": STATE.pocketSurface, "hide-distant": STATE.pocketOnly,
+      "show-labels": STATE.labels, "show-contacts": STATE.contactsShown,
+    };
+    document.querySelectorAll("[data-ligand]").forEach((button) => {
+      const action = button.getAttribute("data-ligand");
+      if (action in on) button.setAttribute("aria-pressed", on[action] ? "true" : "false");
+    });
   }
 
   /* The ligand's closest contacts: for each ligand atom, the nearest atom
@@ -1485,9 +1522,11 @@
       STATE.picks = [];
       sayMeasurement();
       announce(`Displayed ${shown.length} geometric contacts within ${STATE.pocketCutoff} Å.`);
+      return shown.length > 0;
     } catch (error) {
       console.warn("geometric contact rendering failed", error);
       announce("Geometric contacts could not be calculated for this structure.");
+      return false;
     }
   }
 

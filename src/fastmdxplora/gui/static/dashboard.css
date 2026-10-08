@@ -1059,6 +1059,7 @@ button {
     color: var(--accent-white);
     border-color: color-mix(in srgb, var(--accent-cyan) 45%, transparent);
 }
+.chip-btn[aria-pressed="true"],
 .chip-btn.active {
     background: color-mix(in srgb, var(--accent-cyan) 10%, transparent);
     color: var(--accent-text);

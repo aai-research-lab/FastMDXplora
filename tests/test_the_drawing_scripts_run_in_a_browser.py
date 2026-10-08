@@ -217,6 +217,44 @@ def test_every_style_and_ligand_control_runs(page) -> None:
     assert page.errors == []
 
 
+def test_each_ligand_switch_says_whether_it_is_on(page) -> None:
+    """Show pocket surface, Show atom labels, Isolate and Geometric contacts
+    changed the molecule and nothing of themselves; H-bonds only did nothing
+    at all but say so to a screen reader."""
+    hooks.tool(page, "side-ligand")
+    assert page.query_selector('[data-ligand="show-hbonds"]') is None
+    said = {}
+    for action in ("isolate", "show-pocket-surface", "hide-distant", "show-labels",
+                   "show-pocket"):
+        button = page.locator(f'[data-ligand="{action}"]')
+        before = button.get_attribute("aria-pressed")
+        button.click()
+        page.wait_for_function(
+            "([a, b]) => document.querySelector(`[data-ligand=\"${a}\"]`)"
+            ".getAttribute('aria-pressed') !== b", arg=[action, before])
+        after = button.get_attribute("aria-pressed")
+        button.click()
+        page.wait_for_function(
+            "([a, b]) => document.querySelector(`[data-ligand=\"${a}\"]`)"
+            ".getAttribute('aria-pressed') === b", arg=[action, before])
+        said[action] = (before, after)
+    assert all(pair in (("false", "true"), ("true", "false")) for pair in said.values()), said
+    # Geometric contacts is pressed while contacts are drawn, and only then.
+    page.click('[data-ligand="show-contacts"]')
+    page.wait_for_timeout(500)
+    drawn = page.evaluate(f"() => !!{VIEWER}.contactsShown")
+    assert page.get_attribute('[data-ligand="show-contacts"]', "aria-pressed") == (
+        "true" if drawn else "false")
+    # Show pocket residues and Display's Binding pocket are one switch.
+    hooks.tool(page, "side-ligand")
+    page.click('[data-ligand="show-pocket"]')
+    pressed = page.get_attribute('[data-ligand="show-pocket"]', "aria-pressed")
+    ticked = page.evaluate("() => document.querySelector('input[data-vis=\"pocket\"]').checked")
+    assert (pressed == "true") == ticked
+    page.click('[data-ligand="show-pocket"]')
+    assert page.errors == []
+
+
 def test_a_structure_asked_for_twice_while_it_loads_is_loaded_once(page) -> None:
     """The structure's state comes twice as the page opens, and both asked
     for the structure while the first load had not yet set the model: it

@@ -218,9 +218,19 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
                    f"{RESOLVED_SAMPLES:g} an error bar needs.")
         else:
             why = "No error bar was recorded."
+    constant = (value is not None and _finite(found.get("standard_deviation")) == 0.0
+                and error in (None, 0.0) and not biased)
+    if constant:
+        # The same in every frame (no strand formed): said as that, not as
+        # "1 independent sample" of a mean not determined.
+        why = ("The same in every frame analysed: there is no spread to estimate an "
+               "error from, and a longer run may still change it.")
+        samples = None
     determined = why is None and value is not None and error is not None
     suffix = f" {unit}" if unit else ""
-    if value is None:
+    if constant:
+        said = f"{four_figures(value)}{suffix} in every frame"
+    elif value is None:
         said = "not determined"
     elif determined:
         said = with_its_error(value, error) + suffix
@@ -285,8 +295,10 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
     root = Path(root)
     folder = root / "analysis" / analysis
     data = folder / f"{analysis}.dat"
+    # Said by the name the page gives it, not its folder's.
+    named = ANALYSIS_SECTION_BY_FOLDER.get(analysis, analysis)
     if not data.is_file():
-        return {"ok": False, "reason": f"{analysis} wrote no data file"}
+        return {"ok": False, "reason": f"{named} wrote no data file"}
     record = _json(folder / "options.json")
     findings = record.get("findings") if isinstance(record.get("findings"), dict) else {}
     found = findings.get("mean") if isinstance(findings.get("mean"), dict) else None
@@ -294,14 +306,14 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
         # A record holding only a reason (the moments of a molecule broken
         # across the box) has no series of its own: the last column of its
         # file was I3, which nothing recorded a mean of.
-        return {"ok": False, "reason": f"{analysis} recorded no mean over its frames, "
+        return {"ok": False, "reason": f"{named} recorded no mean over its frames, "
                                        "so it has no series to converge"}
     if _columns(data) > 2:
-        return {"ok": False, "reason": f"{analysis}'s data file holds several quantities "
+        return {"ok": False, "reason": f"{named}'s data file holds several quantities "
                                        "a frame, and its mean is of none of them alone"}
     values = series_column(data)
     if not values:
-        return {"ok": False, "reason": f"{analysis}'s data file holds no numbers"}
+        return {"ok": False, "reason": f"{named}'s data file holds no numbers"}
     frames, x, x_label = analysed_axis(root, len(values))
     timed = x_label == "Time (ns)"
     result = convergence_of(values, x if timed else None)
