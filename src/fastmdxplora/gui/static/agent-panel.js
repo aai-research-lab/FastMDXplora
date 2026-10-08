@@ -899,7 +899,15 @@
           window.dispatchEvent(new CustomEvent("fmx:conversation-saved"));
         } else if (d && d.gone) {
           /* Deleted elsewhere: not written again, unless the person has
-           * said something since. */
+           * said something since. What the deleted conversation held went
+           * with it, so it is not taken for that (twenty-fourth review,
+           * 10-08: a conversation kept anew, then deleted on purpose, came
+           * back). */
+          (d.held || []).forEach(function (eid) {
+            entries.forEach(function (e) {
+              if (e.eid === eid) c.confirmed[eid] = JSON.stringify(e);
+            });
+          });
           c.gone = true;
           keptAsNew(c, entries);
         }
@@ -918,12 +926,20 @@
    * conversation, where it was, and the thread says so (nineteenth review,
    * 10-08: everything typed after the delete was lost without a word). A
    * thread nobody spoke in since (a run's summary, a mark) stays deleted. */
+  /* The server's words for the same (`KEPT_AFTER_DELETE`): true whether
+   * the thread is kept whole, or, from a page closing first, only what was
+   * said after (twenty-second review, 10-08). */
   var DELETED_ELSEWHERE = "This conversation was deleted in another window. " +
-    "What is here is kept as a new conversation.";
+    "What was said after is kept here, as a new conversation.";
   /* Conversations this page deleted: nothing of theirs is kept as new
    * (twentieth review, 10-08: one deleted here while its answer was
    * written came back, said to be deleted "in another window"). */
   var deletedHere = {};
+  /* Those whose delete was answered, and the keys of threads deleted
+   * before their first save named them. */
+  var deletedDone = {};
+  var deletedKeys = {};
+  var deletesWaiting = {};
   /* The person's own word this page holds and no save has confirmed: a
    * message, or a run they started. Another tab's entries are confirmed
    * as they are taken in, so they are not this person's word here. */
@@ -934,16 +950,22 @@
     });
   }
   function keptAsNew(c, entries) {
-    if (deletedHere[c.id] || !spokeSince(c, entries)) return null;
+    if (deletedHere[c.id] || deletedKeys[c.key] || !spokeSince(c, entries)) return null;
     /* What was confirmed stays so: a page closing before the new one is
      * saved sends only what is new, not the whole thread (twenty-first
      * review, 10-08). */
     c.id = null;
-    c.key = newEid();
+    /* The key its closing copy asked to keep it by, if a page restored
+     * from the cache had one: a later load may have used that copy, and
+     * the thread is then kept once, there (twenty-third review, 10-08). */
+    c.key = c.keepKey || newEid();
+    c.keepKey = null;
     c.placed = true;
     c.known = {};
     c.gone = false;
-    entries.push({ role: "agent", kind: "note", text: DELETED_ELSEWHERE });
+    /* The note the server writes when it keeps a closing page's words,
+     * with the same eid, so one thread holds one. */
+    entries.push({ eid: "kept-" + c.key, role: "agent", kind: "note", text: DELETED_ELSEWHERE });
     if (c === conv && entries === transcript) {
       var r = reply();
       whoIs(r, "done");
@@ -1063,7 +1085,7 @@
     if (threads.indexOf(conv) < 0) threads.push(conv);
     var unsent = [];
     threads.forEach(function (c) {
-      if (!c.entries || deletedHere[c.id]) return;
+      if (!c.entries || deletedHere[c.id] || deletedKeys[c.key]) return;
       var spoke = spokeSince(c, c.entries);
       /* Deleted elsewhere, and nothing said since: stays deleted. Said
        * since: sent as below, with its old id and a key to keep it by;
@@ -1080,13 +1102,23 @@
        * another). */
       body.current = !c.id;
       /* Deleted elsewhere before this was heard: what the person said
-       * here is kept as a new conversation all the same. */
-      /* Not for a page kept to come back to: it keeps its thread, and
-       * says it again as it goes on (twenty-first review, 10-08). */
-      if (c.id && spoke && !event.persisted) {
-        body.keep = newEid();
-        body.keep_current = c === conv;
-      }
+       * here is kept as a new conversation all the same. A page kept to
+       * come back to does not ask it as it goes (it keeps its thread, and
+       * says it again as it goes on; twenty-first review, 10-08), but its
+       * copy for the next load does: dropped from the cache, the page
+       * comes back as a fresh load that sends it, and a page restored
+       * forgets the copy (twenty-second review, 10-08). */
+      /* One key for the thread until it is kept by it: a copy sent by an
+       * earlier load made its conversation by that key, and a page restored
+       * and closed again, or cached again, keeps its words there, not twice
+       * (twenty-fourth review, 10-08). */
+      /* A thread named only by its key is kept the same way (twenty-fourth
+       * review: one whose /new was answered gone closed with nothing to
+       * keep it by). */
+      var keep = (c.id || c.gone) && spoke ?
+        { keep: c.keepKey || newEid(), keep_current: c === conv } : null;
+      if (keep) c.keepKey = keep.keep;
+      if (keep && !event.persisted) Object.assign(body, keep);
       /* What this page cut and the server may not know yet (a retry with
        * its save still waiting; eighteenth review, 10-08). */
       var held = {};
@@ -1094,7 +1126,7 @@
       body.cut = Object.keys(c.known).filter(function (eid) { return !held[eid]; });
       if (!body.entries.length && !body.cut.length) return;
       body.append = true;
-      unsent.push(body);
+      unsent.push(keep ? Object.assign({}, body, keep) : body);
       try {
         fetch("/api/agent/conversation", {
           method: "POST", keepalive: true,
@@ -2545,7 +2577,8 @@
       persistOf(c, sent).then(function () {
         /* After the saves queued behind it: a thread deleted elsewhere is
          * kept anew by one, and the run takes that one with it
-         * (twenty-first review, 10-08). */
+         * (twenty-first review, 10-08). One of them may open another
+         * study: its reload waits for the run (`reloadOnceLaunched`). */
         return saving;
       }).then(function () {
         return post("/api/agent/run", {
@@ -2861,6 +2894,17 @@
         if (d && d.ok && !c.id) {
           c.id = d.id || null;
           if (d.study !== undefined) c.study = d.study;
+        } else if (d && d.gone && !c.id) {
+          /* Its key's conversation was deleted: so is this thread, kept
+           * anew once the person says something in it; what the deleted
+           * one held went with it. */
+          var held = c === conv ? transcript : (c.entries || []);
+          (d.held || []).forEach(function (eid) {
+            held.forEach(function (e) {
+              if (e.eid === eid) c.confirmed[eid] = JSON.stringify(e);
+            });
+          });
+          c.gone = true;
         }
         told();
         return d;
@@ -2877,6 +2921,19 @@
     /* One conversation opened, from the list or the sidebar. Another
      * study's loads that study: the page reloads so every panel reads it,
      * and the conversation is current there on return. */
+    /* A reload waits for a run being started: it would stop the page
+     * before the run was asked for, or before its answer was heard
+     * (twenty-second review, 10-08). */
+    function reloadOnceLaunched(waited) {
+      waited = waited || 0;
+      /* A run with no answer in a minute does not hold the page. */
+      if (launching && waited < 60000) {
+        setTimeout(function () { reloadOnceLaunched(waited + 100); }, 100);
+        return;
+      }
+      location.reload();
+    }
+
     function openConversation(id, study, loaded) {
       /* After the saves still waiting, so a reload keeps them and the
        * thread opened says all they said (thirteenth and fourteenth
@@ -2888,7 +2945,7 @@
         /* Loaded elsewhere than the list said (a run took it with it):
          * the page reads that study too. */
         if (o.loaded_study && (!loaded || (o.study || null) !== (study || null))) {
-          location.reload();
+          reloadOnceLaunched();
           return o;
         }
         resetThread();
@@ -2956,16 +3013,29 @@
         /* Deleted by the person here: a save of it still on its way is
          * not taken for words said after a delete elsewhere. */
         deletedHere[c.id] = true;
-        post("/api/agent/conversation/delete", { id: c.id, study: g.study }).then(function (d) {
+        deletesWaiting[c.id] = (deletesWaiting[c.id] || 0) + 1;
+        var shown = conv;
+        post("/api/agent/conversation/delete",
+             { id: c.id, study: g.study, key: shown.key }).then(function (d) {
+          deletesWaiting[c.id] -= 1;
           if (!d || !d.ok) {
+            /* Not deleted, unless this page deleted it already, or may yet:
+             * a second press on a row not yet drawn again, whose answer can
+             * come first (twenty-third and twenty-fourth reviews). */
+            if (deletedDone[c.id] || deletesWaiting[c.id]) return;
             delete deletedHere[c.id];
             window.alert((d && d.error) || "Could not delete it.");
             return;
           }
-          /* The thread on screen, by its id now: the row may have been
-           * drawn before its first save named it (twenty-first review,
-           * 10-08: left on screen, what was typed next was dropped). */
-          if (c.id === conv.id) resetThread();
+          deletedDone[c.id] = true;
+          /* The thread on screen, by its id, or, before its first save
+           * has named it, by its key, which the server knows: decided at
+           * once (twenty-first to twenty-third reviews, 10-08: left on
+           * screen, or reset late, what was typed next was dropped). */
+          if (d.on_screen) deletedKeys[shown.key] = true;
+          /* Or opened again while the delete was on its way (twenty-fourth
+           * review, 10-08: left on screen, what was typed next was lost). */
+          if (c.id === conv.id || (conv === shown && d.on_screen)) resetThread();
           told();
           showList();
         });

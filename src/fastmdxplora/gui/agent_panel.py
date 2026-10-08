@@ -1603,7 +1603,7 @@ MADE_FOR_FILE = "made_for.json"
 #: Said in a conversation kept after it was deleted elsewhere, from what a
 #: closing page sent (twentieth review, 10-08).
 KEPT_AFTER_DELETE = ("This conversation was deleted in another window. "
-                     "What was said after is kept here.")
+                     "What was said after is kept here, as a new conversation.")
 
 
 #: Kept in the workspace's own store: each conversation deleted, with the
@@ -1665,6 +1665,15 @@ def _made_for(runtime: Any, key: Any) -> str | None:
         return None
     _MADE_FOR[str(key)] = cid
     return cid
+
+
+def _gone(workspace: Any, cid: Any) -> dict[str, Any]:
+    """A save's or a /new's answer for a deleted conversation, with the
+    eids it held: they went with it, and a page does not take them for what
+    the person said after (twenty-fourth review, 10-08)."""
+    held = _index(workspace, DELETED_FILE).get(str(cid)) or []
+    return {"ok": False, "error": "No such conversation.", "gone": True,
+            "held": [str(e) for e in held] if isinstance(held, list) else []}
 
 
 def merge_conversation(runtime: Any, entries: Any, seen: Any, cid: Any = None,
@@ -1733,14 +1742,14 @@ def merge_conversation(runtime: Any, entries: Any, seen: Any, cid: Any = None,
                     and e.get("eid") not in set(map(str, dropped or ()))
                     and str(e.get("eid")) not in held]
             if not any(e.get("role") == "user" or e.get("action") == "run" for e in said):
-                return {"ok": False, "error": "No such conversation.", "gone": True}
+                return _gone(workspace, cid)
             if not any(e.get("text") == KEPT_AFTER_DELETE for e in said):
                 said.append({"eid": f"kept-{keep}", "role": "agent", "kind": "note",
                              "text": KEPT_AFTER_DELETE})
             return merge_conversation(runtime, said, [], None, study, key=keep,
                                       current=keep_current, append=True)
         if place is None:
-            return {"ok": False, "error": "No such conversation.", "gone": True}
+            return _gone(workspace, cid)
         named, store = place
         record = _read_record(store, str(cid))
         kept = _with_eids(str(cid), _read_one(store, str(cid)))
@@ -1885,6 +1894,10 @@ def new_conversation(runtime: Any, study: Any = _HERE, *, key: Any = None) -> di
         if place is not None:
             return {"ok": True, "id": made, "entries": _with_eids(made, _read_one(place[1], made)),
                     "study": str(place[0]) if place[0] else None}
+        # The key's conversation was deleted: so is this thread. A new one
+        # made for the key would take a closing page's save sent again
+        # (twenty-second review, 10-08).
+        return _gone(workspace, made)
     workspace, study_open = _scope(runtime)
     if study is _HERE:
         study, store = study_open, _store_for(workspace, study_open)
@@ -2077,9 +2090,13 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
 
 
 @_one_writer
-def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, Any]:
+def delete_conversation(runtime: Any, cid: Any, study: Any = None, *,
+                        key: Any = None) -> dict[str, Any]:
     """Delete one conversation, wherever it is. Asked for, per
-    conversation, never a side effect of anything else."""
+    conversation, never a side effect of anything else. ``key``, the
+    page's for the thread it has on screen: the answer says whether that
+    thread is this conversation (``on_screen``), though the page has not
+    yet heard its name (twenty-third review, 10-08)."""
     if not _valid_id(cid):
         return {"ok": False, "error": "No such conversation."}
     workspace, _ = _scope(runtime)
@@ -2103,7 +2120,9 @@ def delete_conversation(runtime: Any, cid: Any, study: Any = None) -> dict[str, 
             (store / "current").unlink(missing_ok=True)
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
-    return {"ok": True}
+    made = (_MADE_FOR.get(str(key)) or _index(workspace, MADE_FOR_FILE).get(str(key))) \
+        if key else None
+    return {"ok": True, "on_screen": made == str(cid)}
 
 
 def clear_conversation(runtime: Any) -> dict[str, Any]:

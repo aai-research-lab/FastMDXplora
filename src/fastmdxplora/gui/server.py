@@ -1722,7 +1722,7 @@ def make_handler(
                     return
                 self._send_json(delete_conversation(app_runtime,
                                                     (payload or {}).get("id"),
-                                                    study))
+                                                    study, key=(payload or {}).get("key")))
                 return
             if path == "/api/demo":
                 # The demo study, copied into the workspace and opened

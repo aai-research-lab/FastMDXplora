@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from fastmdxplora.gui.agent_panel import (
+    KEPT_AFTER_DELETE,
     attach_conversation,
     list_conversations,
     open_conversation,
@@ -1669,8 +1670,7 @@ def test_what_is_said_after_a_delete_elsewhere_is_kept_as_new(tmp_path, monkeypa
     threads, texts = _texts(workspace)
     assert len(texts) == 1, texts
     assert texts[0][-5:] == ["after the delete", "ans:after the delete",
-                             "This conversation was deleted in another window. What is here "
-                             "is kept as a new conversation.", "and more", "ans:and more"]
+                             KEPT_AFTER_DELETE, "and more", "ans:and more"]
     assert errors == []
 
 
@@ -2039,8 +2039,7 @@ def test_words_after_a_mark_met_a_delete_are_kept(tmp_path, monkeypatch):
     texts = _texts(workspace)[1]
     assert len(texts) == 1 and texts[0][-3:] == [
         "after the mark", "ans:after the mark",
-        "This conversation was deleted in another window. What is here "
-        "is kept as a new conversation."], texts
+        KEPT_AFTER_DELETE], texts
 
 
 def test_a_question_asked_after_a_delete_elsewhere_survives_a_reload(tmp_path, monkeypatch):
@@ -2286,10 +2285,11 @@ def test_a_long_thread_deleted_elsewhere_sends_only_what_is_new_as_it_closes(
         page, errors, close = _model_page(session)
         page.wait_for_selector("#agent-thread .agent-msg-user")
         _delete_elsewhere(page)
-        page.locator("#agent-thread [data-feedback=useful]").first.click()
-        page.wait_for_timeout(800)
+        with page.expect_response(lambda r: r.url.endswith("/api/agent/conversation")
+                                  and r.request.method == "POST"):
+            page.locator("#agent-thread [data-feedback=useful]").first.click()
         _say(page, "a slow question")
-        page.wait_for_timeout(500)
+        page.wait_for_selector("#agent-propose.is-writing")
         page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
         kept = page.evaluate("() => sessionStorage.getItem('fmx-agent-unsent')")
         close()
@@ -2297,16 +2297,18 @@ def test_a_long_thread_deleted_elsewhere_sends_only_what_is_new_as_it_closes(
         session.server.shutdown()
     bodies = json.loads(kept or "[]")
     assert len(bodies) == 1 and bodies[0]["id"] and bodies[0]["keep"]
-    # What is new: the question, its stop, and the answer marked (which
-    # the server leaves deleted, with the rest of what it held).
+    # What is new: the question and its stop. The answer marked went with
+    # the deleted conversation, which the mark's save was told (`held`).
     sent = [e["text"].split(" x")[0] for e in bodies[0]["entries"]]
-    assert sent == ["old 1", "a slow question", "Stopped before it finished."], sent
+    assert sent == ["a slow question", "Stopped before it finished."], sent
     assert len(json.dumps(bodies)) < 64 * 1024
 
 
 def test_a_page_kept_to_come_back_to_keeps_nothing_as_new(tmp_path, monkeypatch):
     """A page put in the back-forward cache keeps its thread: its closing
-    save asks nothing to be kept anew (twenty-first review, 10-08)."""
+    save asks nothing to be kept anew (twenty-first review, 10-08). Its copy
+    for the next load does: dropped from the cache, the page comes back as
+    a fresh load, which sends it (twenty-second review, 10-08)."""
     import json
 
     workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
@@ -2316,16 +2318,22 @@ def test_a_page_kept_to_come_back_to_keeps_nothing_as_new(tmp_path, monkeypatch)
         _say(page, "before")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:before')")
         page.wait_for_timeout(800)
+        sent = []
+        page.on("request", lambda r: sent.append(r.post_data or "")
+                if r.url.endswith("/api/agent/conversation") and r.method == "POST" else None)
         _say(page, "a slow question")
         page.wait_for_timeout(500)
         page.evaluate("() => window.dispatchEvent("
                       "new PageTransitionEvent('pagehide', {persisted: true}))")
         kept = page.evaluate("() => sessionStorage.getItem('fmx-agent-unsent')")
+        page.wait_for_timeout(300)
         close()
     finally:
         session.server.shutdown()
+    went = [json.loads(b) for b in sent if b]
+    assert went and all("keep" not in b for b in went), went
     bodies = json.loads(kept or "[]")
-    assert bodies and all("keep" not in b for b in bodies)
+    assert bodies and all(b.get("keep") for b in bodies), bodies
     assert [e["text"] for e in bodies[0]["entries"]] == ["a slow question"]
 
 
@@ -2414,3 +2422,474 @@ def test_a_thread_in_a_run_outside_the_workspace_is_found_later(tmp_path) -> Non
     assert later["ok"] and later["study"] == str(outside)
     runtime.switch_to = lambda folder: {"ok": True}
     assert open_conversation(runtime, cid, None)["ok"]
+
+
+def test_a_delete_answered_before_the_thread_was_named_leaves_it(tmp_path, monkeypatch):
+    """Found by the twenty-second review (10-08): the delete answered
+    before the thread's first save was; the thread stayed on screen, took
+    the deleted id, and what was typed next was dropped."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    first = {"held": True}
+
+    def late(route):
+        if not first["held"] or route.request.method != "POST":
+            route.continue_()
+            return
+        first["held"] = False
+        answered = route.fetch()  # the server makes the conversation
+        page.click("#agent-conversations")
+        page.wait_for_selector("#agent-conv-list .agent-conv-row")
+        page.hover("#agent-conv-list .agent-conv-row")
+        page.click("#agent-conv-list .agent-conv-row .conv-delete")
+        page.wait_for_timeout(1500)  # the delete answered first
+        route.fulfill(response=answered)
+
+    try:
+        page, errors, close = _model_page(session)
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.route("**/api/agent/conversation", late)
+        _say(page, "q")
+        page.wait_for_function(
+            "() => !document.querySelector('#agent-thread .agent-msg-user')")
+        _say(page, "after")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after')")
+        page.wait_for_timeout(1500)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == [["after", "ans:after"]]
+
+
+def test_new_for_a_deleted_key_stays_deleted(tmp_path) -> None:
+    """Found by the twenty-second review (10-08): /new with a key whose
+    conversation was deleted made a new one and pointed the key at it, and
+    a closing page's save sent again landed there."""
+    from fastmdxplora.gui import agent_panel
+    from fastmdxplora.gui.agent_panel import (
+        delete_conversation,
+        merge_conversation,
+        new_conversation,
+    )
+
+    runtime = SimpleNamespace(exploration_root=tmp_path, active_root=None)
+    said = [{"eid": "q", "role": "user", "text": "q"}]
+    made = merge_conversation(runtime, said, [], None, key="k", append=True)["id"]
+    assert delete_conversation(runtime, made, None)["ok"]
+    agent_panel._MADE_FOR.clear()
+    assert new_conversation(runtime, key="k").get("gone")
+    assert merge_conversation(runtime, said, [], None, key="k", append=True).get("gone")
+    assert _texts(tmp_path)[1] == []
+
+
+def test_a_run_then_another_study_opened_still_runs(tmp_path, monkeypatch):
+    """Found by the twenty-second review (10-08): Run, then another study's
+    conversation opened as the run's save was answered: the open reloaded
+    the page while the run was asked for, and its answer went unheard. The
+    page now reloads once the run has answered."""
+    import json
+
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=1.5)
+    other = workspace / "other"
+    store = other / "agent" / "conversations"
+    store.mkdir(parents=True)
+    (other / "exploration.yml").write_text("systems: []\n", encoding="utf-8")
+    (store / "conv-20261008-000000-000000.json").write_text(json.dumps(
+        {"version": 3, "id": "conv-20261008-000000-000000",
+         "entries": [{"eid": "o", "role": "user", "text": "about other"}]}), encoding="utf-8")
+    events = []
+    try:
+        page, errors, close = _page_on(session, [dict(_CONFIG)])
+        _say(page, "chignolin")
+        page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+        page.wait_for_timeout(800)
+        page.on("requestfinished", lambda r: events.append("run answered")
+                if r.url.endswith("/api/agent/run") else None)
+        page.on("requestfailed", lambda r: events.append("run cut off")
+                if r.url.endswith("/api/agent/run") else None)
+        page.on("framenavigated", lambda f: events.append("reload")
+                if f == page.main_frame else None)
+        _slow_disk(monkeypatch, 1.0)
+        page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+        page.evaluate("(where) => window.FastMDXAgentPanel.open("
+                      "'conv-20261008-000000-000000', where, false)", str(other))
+        page.wait_for_timeout(7000)
+        close()
+    finally:
+        session.server.shutdown()
+    assert made and events[:2] == ["run answered", "reload"], events
+    said = [x for entries in _entries_everywhere(workspace).values() for x in entries]
+    assert [r.get("output") for r in _runs_in(said)] == made
+
+
+def test_a_second_press_on_a_deleted_row_keeps_it_deleted(tmp_path, monkeypatch):
+    """Found by the twenty-third review (10-08): the bin pressed twice, the
+    second delete failed and cleared the page's mark, and a save on its way
+    brought the deleted conversation back as a new one."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    once = []
+
+    def held(route):
+        if once or route.request.method != "POST" or \
+                "second" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        once.append(True)
+        page.click("#agent-conversations")
+        page.wait_for_selector("#agent-conv-list .agent-conv-row.current")
+        page.hover("#agent-conv-list .agent-conv-row.current")
+        page.evaluate("""() => {
+            const bin = document.querySelector('#agent-conv-list .agent-conv-row.current .conv-delete');
+            bin.click(); bin.click();
+        }""")
+        page.wait_for_timeout(1500)
+        route.continue_()
+
+    # A conversation from an earlier visit: no key of this page names it.
+    _older(workspace, [{"eid": "u", "role": "user", "text": "first"},
+                       {"eid": "a", "role": "agent", "kind": "answer", "text": "ans:first"}])
+    try:
+        page, errors, close = _model_page(session)
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
+        page.route("**/api/agent/conversation", held)
+        _say(page, "second")
+        page.wait_for_timeout(4000)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == []
+
+
+def test_words_typed_once_a_delete_is_answered_are_kept(tmp_path, monkeypatch):
+    """Found by the twenty-third review (10-08): the thread on screen was
+    reset only once the saves queued were answered, and what was typed
+    meanwhile went to the deleted conversation and was dropped."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+
+    def held(route):
+        if route.request.method != "POST" or "second" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        answered = route.fetch()
+        page.click("#agent-conversations")
+        page.wait_for_selector("#agent-conv-list .agent-conv-row.current")
+        page.hover("#agent-conv-list .agent-conv-row.current")
+        page.click("#agent-conv-list .agent-conv-row.current .conv-delete")
+        page.wait_for_function(
+            "() => !document.querySelector('#agent-thread .agent-msg-user')")
+        _say(page, "after the delete")
+        page.wait_for_timeout(800)
+        route.fulfill(response=answered)
+
+    try:
+        page, errors, close = _model_page(session)
+        page.on("dialog", lambda dialog: dialog.accept())
+        _say(page, "first")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
+        page.wait_for_timeout(800)
+        page.route("**/api/agent/conversation", held)
+        _say(page, "second")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after the delete')")
+        page.wait_for_timeout(1500)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == [["after the delete", "ans:after the delete"]]
+
+
+def test_a_cached_page_s_copy_used_elsewhere_keeps_the_words_once(tmp_path, monkeypatch):
+    """Found by the twenty-third review (10-08): a cached page's copy, sent
+    by another load in the same tab, kept the words; the page, restored,
+    kept them again in a second conversation."""
+    import json
+
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    once = []
+
+    def held(route):
+        if once or route.request.method != "POST" or \
+                "after delete" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        once.append(True)
+        page.evaluate("() => window.dispatchEvent("
+                      "new PageTransitionEvent('pagehide', {persisted: true}))")
+        copy = json.loads(page.evaluate("() => sessionStorage.getItem('fmx-agent-unsent')"))
+        for body in copy:  # another load in this tab sends it
+            page.evaluate("""(body) => fetch('/api/agent/conversation', {method: 'POST',
+                headers: {'content-type': 'application/json'}, body: JSON.stringify(body)})
+                .then((r) => r.json())""", body)
+        page.evaluate("() => { sessionStorage.removeItem('fmx-agent-unsent');"
+                      " window.dispatchEvent(new PageTransitionEvent('pageshow',"
+                      " {persisted: true})); }")
+        route.continue_()
+
+    try:
+        page, errors, close = _model_page(session)
+        _say(page, "before")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:before')")
+        page.wait_for_timeout(800)
+        _delete_elsewhere(page)
+        page.route("**/api/agent/conversation", held)
+        _say(page, "after delete")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after delete')")
+        page.wait_for_timeout(1000)
+        _say(page, "later")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:later')")
+        page.wait_for_timeout(1500)
+        close()
+    finally:
+        session.server.shutdown()
+    texts = _texts(workspace)[1]
+    assert sum("after delete" in t for t in texts) == 1, texts
+    assert len(texts) == 1 and texts[0].count(KEPT_AFTER_DELETE) == 1, texts
+
+
+def _hidden_and_shown(page, used=True, persisted=True):
+    """The page put in the back-forward cache (or closed, not ``persisted``);
+    its copy for the next load sent, as another load in the tab sends it,
+    if ``used``; then the page restored."""
+    import json
+
+    page.evaluate("(p) => window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: p}))",
+                  persisted)
+    copy = json.loads(page.evaluate("() => sessionStorage.getItem('fmx-agent-unsent')") or "[]")
+    for body in copy if used else ():
+        page.evaluate("""(body) => fetch('/api/agent/conversation', {method: 'POST',
+            headers: {'content-type': 'application/json'}, body: JSON.stringify(body)})
+            .then((r) => r.json())""", body)
+    if persisted:
+        page.evaluate("() => { sessionStorage.removeItem('fmx-agent-unsent');"
+                      " window.dispatchEvent(new PageTransitionEvent('pageshow',"
+                      " {persisted: true})); }")
+    return copy
+
+
+def _a_cached_trip(tmp_path, monkeypatch, then):
+    """Deleted elsewhere, then "after delete" said, and its save cut off as
+    the page went into the cache; the copy used by another load; the page
+    restored; then ``then(page)``. What is kept."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    once = []
+
+    def held(route):
+        if once or route.request.method != "POST" or \
+                "after delete" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        once.append(True)
+        _hidden_and_shown(page)
+        route.abort()  # the save on its way, cut off by the cache
+
+    try:
+        page, errors, close = _model_page(session)
+        _say(page, "before")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:before')")
+        page.wait_for_timeout(800)
+        _delete_elsewhere(page)
+        page.route("**/api/agent/conversation", held)
+        _say(page, "after delete")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after delete')")
+        page.wait_for_timeout(1500)
+        then(page)
+        page.wait_for_timeout(2500)
+        close()
+    finally:
+        session.server.shutdown()
+    return _texts(workspace)[1]
+
+
+@pytest.mark.parametrize("then", ["cached again, copy used", "cached again", "closed",
+                                  "reloaded"])
+def test_a_restored_page_keeps_the_words_once_however_it_goes_on(tmp_path, monkeypatch, then):
+    """Found by the twenty-fourth review (10-08): each time the page went,
+    its words were kept under a new key, so a page restored, then cached
+    again, closed or reloaded, kept them a second time."""
+    def going_on(page):
+        if then == "reloaded":
+            page.reload(wait_until="domcontentloaded")
+        elif then == "closed":
+            _hidden_and_shown(page, persisted=False)
+        else:
+            _hidden_and_shown(page, used=then.endswith("used"))
+
+    texts = _a_cached_trip(tmp_path, monkeypatch, going_on)
+    assert sum(t.count("after delete") for t in texts) == 1, texts
+    assert sum(t.count(KEPT_AFTER_DELETE) for t in texts) == 1, texts
+
+
+def test_a_kept_conversation_deleted_on_purpose_stays_deleted(tmp_path, monkeypatch):
+    """Found by the twenty-fourth review (10-08): the words a cached page's
+    copy kept as new were deleted by the person; the page, restored, kept
+    them again, twice."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    once = []
+
+    def held(route):
+        if once or route.request.method != "POST" or \
+                "after delete" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        once.append(True)
+        page.evaluate("() => window.dispatchEvent("
+                      "new PageTransitionEvent('pagehide', {persisted: true}))")
+        copy = page.evaluate("() => JSON.parse(sessionStorage.getItem('fmx-agent-unsent'))")
+        for body in copy:  # the next load keeps the words, and they are deleted there
+            page.evaluate("""(body) => fetch('/api/agent/conversation', {method: 'POST',
+                headers: {'content-type': 'application/json'}, body: JSON.stringify(body)})
+                .then((r) => r.json()).then((d) => fetch('/api/agent/conversation/delete',
+                {method: 'POST', headers: {'content-type': 'application/json'},
+                 body: JSON.stringify({id: d.id})}))""", body)
+        page.evaluate("() => { sessionStorage.removeItem('fmx-agent-unsent');"
+                      " window.dispatchEvent(new PageTransitionEvent('pageshow',"
+                      " {persisted: true})); }")
+        route.continue_()  # back on the page: its save answered
+
+    try:
+        page, errors, close = _model_page(session)
+        _say(page, "before")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:before')")
+        page.wait_for_timeout(800)
+        _delete_elsewhere(page)
+        page.route("**/api/agent/conversation", held)
+        _say(page, "after delete")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after delete')")
+        page.wait_for_timeout(2500)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == []
+
+
+def test_a_row_opened_while_its_delete_waits_leaves_it(tmp_path, monkeypatch):
+    """Found by the twenty-fourth review (10-08): a conversation opened again
+    while its delete was on its way stayed on screen, deleted, and what was
+    typed next was lost."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    waiting = []
+    _older(workspace, [{"eid": "u", "role": "user", "text": "first"},
+                       {"eid": "a", "role": "agent", "kind": "answer", "text": "ans:first"}])
+    try:
+        page, errors, close = _model_page(session)
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
+        page.click("#agent-new")
+        page.wait_for_timeout(800)
+        page.route("**/api/agent/conversation/delete", lambda route: waiting.append(route))
+        page.click("#agent-conversations")
+        row = page.locator("#agent-conv-list .agent-conv-row", has_text="first").first
+        row.hover()
+        row.locator(".conv-delete").click()
+        page.wait_for_timeout(300)
+        row.locator(".title").click()
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
+        page.wait_for_timeout(500)
+        waiting[0].continue_()
+        page.wait_for_function(
+            "() => !document.querySelector('#agent-thread .agent-answer')")
+        _say(page, "after")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:after')")
+        page.wait_for_timeout(1500)
+        close()
+    finally:
+        session.server.shutdown()
+    assert [t for t in _texts(workspace)[1] if t] == [["after", "ans:after"]]
+
+
+def test_a_second_press_whose_failure_is_heard_first_keeps_it_deleted(tmp_path, monkeypatch):
+    """Found by the twenty-fourth review (10-08): the bin pressed twice, and
+    the second delete's failure heard before the first's answer cleared the
+    page's mark; a save on its way brought the conversation back."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch)
+    dialogs, first, once = [], {}, []
+
+    def on_dialog(dialog):
+        dialogs.append(dialog.message)
+        dialog.accept()
+
+    def deletes(route):
+        if first:
+            route.continue_()  # the second press: fails, heard first
+            return
+        first["answer"] = route.fetch()  # deleted on the server, answer held
+        first["route"] = route
+
+    def held(route):
+        if once or route.request.method != "POST" or \
+                "second" not in (route.request.post_data or ""):
+            route.continue_()
+            return
+        once.append(True)
+        page.click("#agent-conversations")
+        page.wait_for_selector("#agent-conv-list .agent-conv-row.current")
+        page.hover("#agent-conv-list .agent-conv-row.current")
+        page.evaluate("""() => {
+            const bin = document.querySelector('#agent-conv-list .agent-conv-row.current .conv-delete');
+            bin.click(); bin.click();
+        }""")
+        page.wait_for_timeout(1500)
+        first["route"].fulfill(response=first["answer"])
+        page.wait_for_timeout(1000)
+        route.continue_()
+
+    _older(workspace, [{"eid": "u", "role": "user", "text": "first"},
+                       {"eid": "a", "role": "agent", "kind": "answer", "text": "ans:first"}])
+    try:
+        page, errors, close = _model_page(session)
+        page.on("dialog", on_dialog)
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:first')")
+        page.route("**/api/agent/conversation/delete", deletes)
+        page.route("**/api/agent/conversation", held)
+        _say(page, "second")
+        page.wait_for_timeout(4000)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == []
+    assert not [m for m in dialogs if "No such" in m], dialogs
+
+
+def test_a_thread_whose_new_was_answered_gone_keeps_a_question_as_it_closes(
+        tmp_path, monkeypatch):
+    """Found by the twenty-fourth review (10-08): /new answered gone (its
+    key's conversation made by a closing copy and deleted), and a question
+    asked there was lost as the page closed while it was answered."""
+    import json
+
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    _model(monkeypatch, slow=("slow",), seconds=4.0)
+
+    def made_and_deleted(route):
+        key = json.loads(route.request.post_data or "{}").get("key")
+        page.evaluate("""(key) => fetch('/api/agent/conversation', {method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({entries: [{eid: 'copy', role: 'user', text: 'kept by a copy'}],
+                                  seen: [], key: key, append: true})})
+            .then((r) => r.json()).then((d) => fetch('/api/agent/conversation/delete',
+            {method: 'POST', headers: {'content-type': 'application/json'},
+             body: JSON.stringify({id: d.id})}))""", key)
+        route.continue_()
+
+    try:
+        page, errors, close = _model_page(session)
+        page.wait_for_timeout(800)
+        page.route("**/api/agent/conversation/new", made_and_deleted)
+        page.click("#agent-new")
+        page.wait_for_timeout(1000)
+        _say(page, "a slow question")
+        page.wait_for_timeout(800)
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_timeout(4500)
+        close()
+    finally:
+        session.server.shutdown()
+    assert _texts(workspace)[1] == [["a slow question", "Stopped before it finished.",
+                                     KEPT_AFTER_DELETE]]
