@@ -61,13 +61,70 @@ def atoms_selected(pdb: bytes | None, expression: Any, *, key: tuple[str, int, i
         topology = _topology(pdb, key)
     except Exception as exc:  # noqa: BLE001 - said, not raised
         return {"ok": False, "reason": f"MDTraj could not read the structure: {exc}"}
+    unfinished = _unfinished(expression)
+    if unfinished:
+        return {"ok": False, "reason": unfinished}
     try:
         atoms = topology.select(expression)
     except Exception as exc:  # noqa: BLE001 - the person's words, answered
-        return {"ok": False, "reason": f"MDTraj could not read that selection: {exc}"}
+        return {"ok": False, "reason": _not_read(expression, exc)}
     residues = len({topology.atom(int(i)).residue.index for i in atoms})
     return {"ok": True, "expression": expression, "atoms": [int(i) for i in atoms],
             "residues": residues, "n_atoms": int(topology.n_atoms)}
+
+
+#: What waits for something after it in an MDTraj selection: an operator,
+#: "to" in a range, and a property named with no value.
+_WAITING = {"and", "or", "not", "!", "&&", "||", "to", "==", "!=", "<", "<=", ">", ">=",
+            "eq", "ne", "lt", "le", "gt", "ge", "=~"}
+_NEEDS_A_VALUE = {"chainid", "code", "element", "index", "mass", "n_bonds", "name",
+                  "resSeq", "resc", "rescode", "resi", "resid", "residue", "resn",
+                  "resname", "segment_id", "segname", "symbol", "type"}
+
+EXAMPLE = "resSeq 10 to 25 and name CA"
+
+
+def _unfinished(expression: str) -> str | None:
+    """Why a selection is not finished, or None. MDTraj reads what it can
+    and drops the rest: "resSeq 10 to" selected residue 10, and "resname"
+    alone every atom, as if they had been asked for."""
+    words = expression.replace("(", " ( ").replace(")", " ) ").split()
+    if not words:
+        return None
+    last = words[-1]
+    if last in _WAITING or last in _NEEDS_A_VALUE:
+        return (f"The selection ends at '{last}', which waits for what follows it. "
+                f"Finish it, as in: {EXAMPLE}.")
+    # Nor inside it: "resSeq 10 to and name CA" selected residue 10's CA.
+    joins = _WAITING - {"not", "!"}
+    for word, after in zip(words, words[1:]):
+        if word in _WAITING and word not in ("not", "!") and (after in joins or after == ")"):
+            return (f"'{word}' is followed by '{after}', not by what it waits for. "
+                    f"Finish it, as in: {EXAMPLE}.")
+    if expression.count("(") != expression.count(")"):
+        return f"Its brackets do not close. Finish it, as in: ({EXAMPLE})."
+    return None
+
+
+def _not_read(expression: str, exc: Exception) -> str:
+    """What MDTraj could not read, at the place it stopped, in a sentence:
+    its parser's own message listed every word it knows, over 2,000
+    characters of it."""
+    import re
+
+    found = re.search(r"\(at char (\d+)\)", str(exc))
+    if found:
+        at = int(found.group(1))
+        near = expression[at:at + 24].strip() or "its end"
+        return (f"MDTraj could not read that selection from '{near}' (character "
+                f"{at + 1}). Write it as MDTraj does, as in: {EXAMPLE}.")
+    if "literals as truth" in str(exc):
+        # A word that is no keyword ("nam" for "name") is read as a value,
+        # and MDTraj says only "Cannot use literals as truth".
+        return ("MDTraj could not read that selection: one of its words is not a "
+                f"keyword it knows. Check the spelling of each, as in: {EXAMPLE}.")
+    said = str(exc).splitlines()[0][:160] if str(exc) else type(exc).__name__
+    return f"MDTraj could not read that selection: {said}"
 
 
 def _topology(pdb: bytes, key: tuple[str, int, int]) -> Any:

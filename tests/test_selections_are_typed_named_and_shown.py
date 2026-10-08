@@ -80,12 +80,25 @@ def test_a_typed_selection_names_the_atoms_by_their_place(study):
 @pytest.mark.parametrize("expression, reason", [
     ("", "Type a selection"),
     ("x" * 501, "at most 500 characters"),
-    ("resSeq and and", "MDTraj could not read that selection"),
+    ("and name CA", "MDTraj could not read that selection"),
+    # Read as far as MDTraj could and the rest dropped: residue 10 alone,
+    # and every atom, were selected as if asked for.
+    ("resSeq 10 to", "ends at 'to'"),
+    ("protein and", "ends at 'and'"),
+    ("resname", "ends at 'resname'"),
+    ("(resid 3 to 5", "brackets do not close"),
+    # A misspelt keyword: MDTraj says only "Cannot use literals as truth".
+    ("resSeq 3 and nam CA", "is not a keyword it knows"),
+    # An unfinished range inside it, not only at its end.
+    ("resSeq 10 to and name CA", "'to' is followed by 'and'"),
+    ("(resSeq 10 to) and name CA", "'to' is followed by ')'"),
 ])
 def test_what_cannot_be_read_is_said(study, expression, reason):
     pdb, key = _pdb(study / "setup" / "topology.pdb")
     said = atoms_selected(pdb, expression, key=key)
     assert not said["ok"] and reason in said["reason"]
+    # In a sentence: the parser's own message listed every word it knows.
+    assert len(said["reason"]) < 300
     assert "no structure" in atoms_selected(None, "protein", key=key)["reason"]
     assert "could not read the structure" in atoms_selected(
         b"not a structure", "protein", key=("other", 0, 0))["reason"]
@@ -287,9 +300,12 @@ def test_a_typed_selection_selects_the_atoms_shown(page, study):
     _type(page, "resname XYZ")
     page.wait_for_function("() => document.getElementById('sel-said').textContent"
                            ".startsWith('No atom')")
-    _type(page, "resSeq and and")
+    _type(page, "and name CA")
     page.wait_for_function("() => document.getElementById('sel-said').textContent"
                            ".startsWith('MDTraj could not read that selection')")
+    _type(page, "resSeq 189 to")
+    page.wait_for_function("() => document.getElementById('sel-said').textContent"
+                           ".startsWith('The selection ends at')")
 
 
 def test_a_selection_named_is_listed_kept_and_rendered(page, study):
