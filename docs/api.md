@@ -408,7 +408,7 @@ print("\n".join(describe_sending(sending)))   # what travels, sizes, job.sh
 job = api.send_planned(sending)
 
 api.status(job.name)               # asked of the machine at most every 30 s
-sizes = api.fetch_sizes(job.name)  # bytes, with and without; also kept 30 s
+sizes = api.fetch_sizes(job.name)  # bytes, with and without trajectories
 job, warnings = api.fetch(job.name, with_trajectory=False,
                           most_bytes=sizes.bringing(False))  # caps any one file
 api.cancel(job.name)

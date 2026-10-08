@@ -169,6 +169,11 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
         sending = api.plan_send(file, machine, output=where)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, machine)
+    if plan_id_of(file) != plan_id:
+        # Read again for the plan: the file the person is asked about is
+        # the one that was checked.
+        raise ToolError(f"{ctx.workspace.shown(file)} changed after it was checked. "
+                        "check_study it again and use that plan_id.")
     outside = [source for source in sending.inputs.files.values()
                if ctx.workspace.inside(source) is None]
     if outside:
@@ -235,10 +240,9 @@ def _nobody_to_ask(ctx: Context) -> bool:
     call = ctx.call
     if call is None:
         return True
-    params = getattr(call, "params", None) or {}
-    answering = getattr(call, "era", "") == "modern" and (
-        params.get("inputResponses") is not None or params.get("requestState") is not None)
-    return not answering and not call.can_ask()
+    # An answer counts only where it comes back on a state this server gave
+    # out: a made-up one would have the machine asked on every call.
+    return not call.answers_a_question() and not call.can_ask()
 
 
 def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> NoReturn:
@@ -283,7 +287,8 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
             return (f"{job.name} is still {job.state}"
                     + (f" ({job.detail})" if job.detail else "")
                     + ". It can be fetched once remote_status says done or failed.")
-        sizes = api.fetch_sizes(job.name)
+        # Asked once the job has ended, so kept sizes are of what it left.
+        sizes = api.fetch_sizes(job.name, max_age_s=api.STATUS_KEPT_S)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
     if not sizes.run_written:
@@ -327,7 +332,7 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.remote import api
-    from fastmdxplora.remote.jobs import ABANDONED, FINISHED
+    from fastmdxplora.remote.jobs import ABANDONED, FAILED, FINISHED
 
     job = _job_here(ctx, args["job"])
     try:
@@ -336,7 +341,7 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
         job = api.status(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
-    if job.state in FINISHED:
+    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED):
         return f"{job.name} has ended already ({job.state})."
     agreed = _went_ahead(ctx, "cancel", (
         f"Stop {job.name} on {job.machine}? It stops where it is; its folder there "

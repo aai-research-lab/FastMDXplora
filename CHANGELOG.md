@@ -31,30 +31,33 @@ another machine, from the command line too (`remote.input.outside`). Links
 are followed as the copy follows them, and a folder with a link leading out
 is refused. A prepared study named by `simulation.setup_from` or
 `simulation.resume_from` may sit beside the folder when its manifest is one
-FastMDXplora wrote. A Config in your home folder is refused, and nothing
-in `.ssh` or another place keys and credentials are kept (FastMDXplora's own
-settings too) is sent, named or inside a folder that travels; both checks
-are made again as the copy starts. Your
-defaults here travel in the Config, and the run there takes none of the
-machine's (`--no-defaults`). Before, any file the Config named anywhere on
-the computer was sent.
+FastMDXplora wrote. A Config in your home folder is refused. Nothing in
+`.ssh` or another place keys and credentials are kept (FastMDXplora's own
+settings too) is sent, named or inside a folder that travels; the link and
+key checks are made again as the copy starts. Your defaults here travel in
+the Config, and the run there takes none of the machine's (`--no-defaults`).
+Before, any file the Config named anywhere on the computer was sent.
 
 **Changed:** a workstation runs one study sent from here at a time
 (`remote.machine.busy`; `--dry-run` says so and still shows the plan); a
 cluster's scheduler queues. A cancelled job counts until its processes have
 stopped. `--force-overwrite` no longer replaces a job still waiting or
 running (`environment.path.exists`); cancel it first. `--partition` and
-`--time` take letters, digits and `_ . , : + -` only, at most 64.
+`--time` take letters, digits and `_ . , : + -` only, at most 64. A
+cluster's job whose queue does not answer keeps its state, where it was read
+as failed.
 
 **Changed:** a fetch copies into a folder of its own inside the results
 folder, takes out links, named pipes and set-id bits, and moves the results
 into place once all of it has been looked over; a fetch again copies only
 what changed, and goes on after one that failed. The job's log comes back as
 its last MiB, and the run's own process records and any
-`fastmdx-defaults.yml` stay on the machine. A job's record names its
-results folder as an absolute path. `cancel` asks the machine first, so a
-job that ended is not signalled. The install plan's commands are quoted word by word for the shell
-that runs them, and an image is copied into the machine's own home.
+`fastmdx-defaults.yml` stay on the machine. A job's record names its results
+folder as an absolute path, and a record that is not one FastMDXplora wrote
+is refused (`remote.job.unknown`). `cancel` asks the machine first, so a job
+that ended is not signalled. The install plan's commands are quoted word by
+word for the shell that runs them, and an image is copied into the machine's
+own home.
 
 ### The Agent page, as the Agent
 

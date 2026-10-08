@@ -195,6 +195,17 @@ class Call:
         # An empty object is form mode, for clients written before modes.
         return not asked or isinstance(asked.get("form"), dict)
 
+    def answers_a_question(self) -> bool:
+        """Whether this call carries an answer to a question this server put
+        for this method: a state it signed, unexpired and not yet used. Read
+        without using the state up, and whatever its question was about."""
+        if self.era != "modern":
+            return False
+        state = self.params.get("requestState")
+        answers = self.params.get("inputResponses")
+        return (isinstance(state, str) and isinstance(answers, dict)
+                and self._server.gave_out(state, self.method))
+
     def can_sample(self) -> bool:
         """Whether the AI app lends its own AI model (sampling)."""
         return isinstance(self.capabilities.get("sampling"), dict)
@@ -627,6 +638,33 @@ class Server:
         otherwise. Used once only."""
         said = self._opened(state, method, bound_to)
         return None if said is None else said.get("c")
+
+    def gave_out(self, state: str, method: str) -> bool:
+        """Whether a state is one this server gave out for ``method``,
+        unaltered, unexpired and not used yet; it is not used up here."""
+        said = self._read_state(state)
+        if said is None or said.get("m") != method:
+            return False
+        with self._state_lock:
+            return str(said.get("n")) not in self._redeemed
+
+    def _read_state(self, state: str) -> dict[str, Any] | None:
+        """A state's contents where its signature holds and it has not
+        expired; None otherwise."""
+        try:
+            body_text, mac_text = state.split(".", 1)
+            body = base64.b64decode(body_text.encode(), altchars=b"-_", validate=True)
+            mac = base64.b64decode(mac_text.encode(), altchars=b"-_", validate=True)
+            if not hmac.compare_digest(mac, hmac.new(self._secret, body, hashlib.sha256).digest()):
+                return None
+            said = json.loads(body)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(said, dict):
+            return None
+        if not isinstance(said.get("e"), (int, float)) or said["e"] < time.time():
+            return None
+        return said
 
     def _opened(self, state: str, method: str, bound_to: str) -> dict[str, Any] | None:
         try:

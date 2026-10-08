@@ -220,7 +220,8 @@ folder, or at the top of the file system, is refused, since its folder is what
 travels; and nothing in a place keys and credentials are kept (`.ssh`,
 `.gnupg`, `.aws`, `.kube` and the like, and FastMDXplora's own settings) is
 ever sent: a folder that travels is refused if one is anywhere in it, reached
-directly or through a link. Both checks are made again as the copy starts.
+directly or through a link. The link and key checks are made again as the copy
+starts.
 
 **Your defaults travel in the Config.** A `fastmdx-defaults.yml` beside the
 Config or above it fills what the Config leaves unset here, as `explore -c`

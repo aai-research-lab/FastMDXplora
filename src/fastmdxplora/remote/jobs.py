@@ -27,7 +27,7 @@ from typing import Any
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.user_dir import user_config_dir
 
-__all__ = ["Job", "UnknownJob", "check_job_name", "held", "job_names",
+__all__ = ["Job", "UnknownJob", "check_job_name", "held", "job_names", "usable_handle",
            "jobs_dir", "load_job", "save_job"]
 
 READY = "ready"
@@ -140,7 +140,7 @@ def load_job(name: str) -> Job:
             f"{', '.join(known) or 'none yet'}).",
             given=name, permitted=known,
         ) from None
-    wrong = _wrong_in(record)
+    wrong = _wrong_in(record, name)
     if wrong:
         raise UnknownJob(
             f"The record of {name!r} at {_path_for(name)} is not a job's record "
@@ -157,8 +157,16 @@ _REQUIRED = ("name", "machine", "remote_dir", "scheduler", "handle", "submitted_
              "code", "local_output")
 
 
-def _wrong_in(record: Any) -> str:
-    """What makes ``record`` no job's record, or nothing."""
+def usable_handle(handle: str) -> bool:
+    """Whether ``handle`` can be a job's process or SLURM number: digits
+    only, no leading zero, more than 1 (a signal to -1 reaches every
+    process the account may signal)."""
+    return (handle.isascii() and handle.isdigit() and not handle.startswith("0")
+            and int(handle) > 1)
+
+
+def _wrong_in(record: Any, name: str) -> str:
+    """What makes ``record`` no record of the job ``name``, or nothing."""
     if not isinstance(record, dict):
         return "not a mapping"
     missing = [key for key in _REQUIRED if key not in record]
@@ -170,7 +178,21 @@ def _wrong_in(record: Any) -> str:
     for key in ("code", "extra"):
         if key in record and not isinstance(record[key], dict):
             return f"{key} is not a mapping"
-    # Put into commands run on the machine: a number, or this is no job record.
-    if not (record["handle"].isascii() and record["handle"].isdigit()):
-        return "handle is not a number"
+    if record["name"] != name:
+        return f"it names the job {record['name'][:60]!r}"
+    # Put into commands run on the machine: a number, or the record is not
+    # one FastMDXplora wrote.
+    if not usable_handle(record["handle"]):
+        return "handle is not a process or job number"
+    extra = record.get("extra") or {}
+    tail = extra.get("log_tail", [])
+    if not (isinstance(tail, list) and all(isinstance(line, str) for line in tail)):
+        return "extra.log_tail is not a list of lines"
+    inputs = extra.get("inputs", {})
+    if not (isinstance(inputs, dict) and all(
+            isinstance(k, str) and isinstance(v, str) for k, v in inputs.items())):
+        return "extra.inputs is not a mapping of names to paths"
+    left = extra.get("left_on_machine", [])
+    if not (isinstance(left, list) and all(isinstance(item, str) for item in left)):
+        return "extra.left_on_machine is not a list of names"
     return ""

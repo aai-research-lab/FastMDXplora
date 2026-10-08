@@ -76,7 +76,9 @@ class RunTarget:
 
 
 def _link(name: str, transport: Transport | None) -> Transport:
-    """The connection to ``name``, never waiting on a prompt."""
+    """The connection to ``name``, a machine with a record here, never
+    waiting on a prompt."""
+    load_machine(name)  # only a machine inspected at a terminal is reached
     return transport or Transport(name, interactive=False)
 
 
@@ -184,10 +186,11 @@ def status(job: str, *, max_age_s: float = STATUS_KEPT_S,
                    max_age_s=max_age_s)
 
 
-def fetch_sizes(job: str, *, max_age_s: float = STATUS_KEPT_S,
+def fetch_sizes(job: str, *, max_age_s: float = 0,
                 transport: Transport | None = None) -> FetchSizes:
     """How much :func:`fetch` would bring, with and without trajectories:
-    asked of its machine, unless asked less than ``max_age_s`` ago."""
+    asked of its machine, or with ``max_age_s`` the sizes asked less than
+    that long ago, once the job had ended."""
     return _fetch_sizes(job, transport=_link(load_job(job).machine, transport),
                         max_age_s=max_age_s)
 

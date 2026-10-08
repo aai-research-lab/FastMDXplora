@@ -71,7 +71,12 @@ class Inputs:
 def _existing(value: str, base: Path) -> Path | None:
     if not value or "\n" in value or len(value) > 4096:
         return None
-    path = Path(value).expanduser()
+    try:
+        # "~100 ns" is words, not a home folder: a home that cannot be found
+        # makes it no path.
+        path = Path(value).expanduser()
+    except RuntimeError:
+        return None
     if not path.is_absolute():
         path = base / path
     try:
@@ -154,34 +159,47 @@ _PRIVATE_PAIRS = frozenset({(".config", "gcloud"), (".config", "gh"),
                             (".config", "rclone"), ("library", "keychains")})
 
 
-def _private(path: Path) -> bool:
+#: FastMDXplora's own settings: the AI model's key, the machines, the jobs.
+_SETTINGS_KEPT = ("model.json", "calibration.json", "machines", "jobs", "sockets")
+
+
+def _settings_kept() -> tuple[str, ...]:
+    """Where FastMDXplora keeps this person's settings, each resolved: never
+    sent. The settings folder itself may hold a study; only these may not."""
+    from fastmdxplora.user_dir import user_config_dir
+
+    try:
+        settings = user_config_dir().resolve()
+    except (OSError, RuntimeError):
+        return ()
+    return tuple(str(settings / name) for name in _SETTINGS_KEPT)
+
+
+def _private(path: Path, kept: tuple[str, ...] = ()) -> bool:
     parts = [part.casefold() for part in path.parts]
     if _PRIVATE_PARTS & set(parts) or any(
             pair in _PRIVATE_PAIRS for pair in zip(parts, parts[1:])):
         return True
-    # FastMDXplora's own settings: the machines, the AI model's key.
-    from fastmdxplora.user_dir import user_config_dir
-
-    try:
-        return _inside(path, user_config_dir().resolve())
-    except (OSError, RuntimeError):
-        return False
+    # By the path's text: a folder's parents are slow to walk 20,000 times.
+    text = str(path)
+    return any(text == place or text.startswith(place + os.sep) for place in kept)
 
 
 def private_in(path: Path) -> Path | None:
     """The first place in ``path`` keys and credentials are kept, if any:
     ``path`` itself, or a file or folder a copy that follows links reaches
     in it, by where it is reached and where it really is."""
+    kept = _settings_kept()
     try:
         real = path.resolve()
     except (OSError, RuntimeError):
         real = path
-    if _private(path) or _private(real):
+    if _private(path, kept) or _private(real, kept):
         return path
     if not path.is_dir():
         return None
     for entry, real in _walked(path):
-        if _private(entry) or (real is not None and _private(real)):
+        if _private(entry, kept) or (real is not None and _private(real, kept)):
             return entry
     return None
 

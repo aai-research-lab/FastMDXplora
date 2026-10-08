@@ -73,6 +73,7 @@ from fastmdxplora.remote.jobs import (
     held,
     load_job,
     save_job,
+    usable_handle,
 )
 from fastmdxplora.remote.machines import (
     Machine,
@@ -458,7 +459,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
             "setsid nohup sh job.sh > job.log 2>&1 < /dev/null & "
             "else nohup sh job.sh > job.log 2>&1 < /dev/null & fi; echo $!")])
         handle = started.stdout.strip().splitlines()[-1] if started.stdout.strip() else ""
-    if started.returncode != 0 or not (handle.isascii() and handle.isdigit()):
+    if started.returncode != 0 or not usable_handle(handle):
         raise StudyError(
             f"{sending.machine.name} did not start the job: "
             f"{(started.stderr or started.stdout).strip()[-_SAID_CHARS:] or 'no answer'}",
@@ -617,6 +618,10 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
         job.detail = slurm.lower()
     elif job.scheduler == "process" and "alive" in found:
         job.state, job.detail = RUNNING, ""
+    elif job.scheduler == "slurm":
+        # Neither the queue nor its accounting answered (a busy controller
+        # times out): that says nothing of the job, so its state stays.
+        job.detail = "the cluster's queue did not answer; asked again next time"
     else:
         job.state = FAILED
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
@@ -657,9 +662,10 @@ def _sizes_script(job: Job) -> str:
             f"echo \"fmdx:files=$(find . -type f \\( {names} \\) | wc -l | tr -d ' ')\"\n")
 
 
-#: A job (its name, when and where it was sent) -> when its sizes were
-#: asked, and them, for callers that ask again soon.
-_SIZES_KEPT: dict[tuple[str, str, str], tuple[float, FetchSizes]] = {}
+#: A job (its name, when, where and as what it was sent) -> when its sizes
+#: were asked, and them, for callers that ask again soon. Kept only for a
+#: job that had ended: a running one's sizes still grow.
+_SIZES_KEPT: dict[tuple[str, str, str, str], tuple[float, FetchSizes]] = {}
 
 
 def fetch_sizes(name: str, *, transport: Transport | None = None,
@@ -668,12 +674,15 @@ def fetch_sizes(name: str, *, transport: Transport | None = None,
     caller can say each size before anything moves. With ``max_age_s``,
     sizes asked less than that long ago are given again."""
     job = load_job(name)
-    which = (job.name, job.submitted_at, job.remote_dir)
+    which = (job.name, job.submitted_at, job.remote_dir, job.handle)
     kept = _SIZES_KEPT.get(which)
     if max_age_s > 0 and kept is not None and 0 <= time.time() - kept[0] < max_age_s:
         return kept[1]
     sizes = _fetch_sizes(name, transport)
-    _SIZES_KEPT[which] = (time.time(), sizes)
+    if job.state in FINISHED:
+        _SIZES_KEPT[which] = (time.time(), sizes)
+    else:
+        _SIZES_KEPT.pop(which, None)
     return sizes
 
 
@@ -712,7 +721,7 @@ def fetch(name: str, *, with_trajectory: bool = False,
     """
     sent = load_job(name)  # a name never sent is refused before anything is made
     # What it said is no longer what is there once fetched.
-    _SIZES_KEPT.pop((sent.name, sent.submitted_at, sent.remote_dir), None)
+    _SIZES_KEPT.pop((sent.name, sent.submitted_at, sent.remote_dir, sent.handle), None)
     with held(name), _fetching(name):
         return _fetch(name, with_trajectory, transport, local_runner, code,
                       most_bytes)
@@ -1125,7 +1134,9 @@ def cancel(name: str, *, transport: Transport | None = None) -> Job:
 
 def _cancel(name: str, transport: Transport | None) -> Job:
     job = load_job(name)
-    if job.state in FINISHED:
+    # A cluster's job read as failed may only have gone unanswered: asked
+    # again below, as one still going is.
+    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED):
         return job
     link = transport or Transport(job.machine)
     job = _status(name, link, 0)

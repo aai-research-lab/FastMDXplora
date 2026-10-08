@@ -440,7 +440,7 @@ class TestWhatComesBack:
         # A record from before, relative, is not taken for any folder's.
         from fastmdxplora.remote.jobs import Job, save_job
 
-        save_job(Job("old", "box", "/x", "process", "1", "t", {}, "relative/old",
+        save_job(Job("old", "box", "/x", "process", "4242", "t", {}, "relative/old",
                      state="running"))
         assert [j.name for j in api.jobs(under=tmp_path)] == []
 
@@ -449,7 +449,7 @@ class TestWhatComesBack:
 
         from fastmdxplora.remote.jobs import Job, load_job, save_job
 
-        job = Job("many", "box", "/x", "process", "1", "t", {}, "/tmp/many")
+        job = Job("many", "box", "/x", "process", "4242", "t", {}, "/tmp/many")
         failed: list[BaseException] = []
 
         def write(n: int) -> None:
@@ -760,7 +760,7 @@ class TestThirdReview:
     def test_an_ai_app_is_told_of_a_name_used_before_it_asks(self, app):
         from fastmdxplora.remote.jobs import Job, save_job
 
-        save_job(Job("ghg_run", "box", "/x", "process", "1", "t", {}, "/elsewhere/ghg_run",
+        save_job(Job("ghg_run", "box", "/x", "process", "4242", "t", {}, "/elsewhere/ghg_run",
                      state="done"))
         first, _ = _start(app, answer=YES)
         assert first["isError"]
@@ -1507,3 +1507,158 @@ class TestSeventhReviewWhatComesBack:
         with pytest.raises(ValueError) as caught:
             api.cancel(job.name, transport=machine.transport())
         assert refusal_of(caught.value).code == "remote.job.unknown"
+
+
+class TestEighthReview:
+    @staticmethod
+    def _slurm_job(state: str):
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        job = Job(name="queued", machine="box", remote_dir="/scratch/queued",
+                  scheduler="slurm", handle="4242", submitted_at="2026-10-08T00:00:00Z",
+                  code={}, local_output="/tmp/queued", state=state)
+        save_job(job)
+        return job
+
+    @staticmethod
+    def _cluster(answers: list[bytes]):
+        import subprocess
+
+        from fastmdxplora.remote.transport import Transport
+
+        asked: list[str] = []
+
+        def runner(command, input=None, **kwargs):
+            asked.append(command[-1] if input is None else input.decode())
+            said = answers.pop(0) if answers else b""
+            return subprocess.CompletedProcess(command, 0, said, b"")
+
+        return Transport("box", runner=runner, interactive=False), asked
+
+    def test_a_queue_that_does_not_answer_leaves_the_job_as_it_was(self, machine):
+        self._slurm_job("running")
+        link, _ = self._cluster([b""])
+        job = status("queued", transport=link)
+        assert job.state == "running" and "did not answer" in job.detail
+
+    def test_a_cluster_job_read_as_failed_is_still_cancelled(self, machine):
+        self._slurm_job("failed")
+        link, asked = self._cluster([b"fmdx:slurm=RUNNING\n"])
+        job = cancel("queued", transport=link)
+        assert any("scancel" in line for line in asked)
+        assert job.state == "abandoned"
+
+    def test_a_settings_folder_above_the_study_does_not_refuse_it(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        work = tmp_path / "work"
+        study = work / "studies" / "lyso"
+        study.mkdir(parents=True)
+        (study / "top.pdb").write_text("ATOM\n")
+        (work / "machines").mkdir()
+        (work / "model.json").write_text('{"api_key": "x"}')
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(work))
+        assert "top.pdb" in gather_inputs({"system": "top.pdb"}, study).files
+        with pytest.raises(ValueError):
+            gather_inputs({"note": "../../model.json"}, study)
+
+    def test_words_that_start_with_a_tilde_are_not_a_path(self, tmp_path, monkeypatch):
+        from pathlib import Path
+
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        study.mkdir()
+
+        def no_home(self):
+            raise RuntimeError("Could not determine home directory.")
+
+        monkeypatch.setattr(Path, "expanduser", no_home)
+        found = gather_inputs({"report": {"title": "~100 ns of ubiquitin"}}, study)
+        assert found.files == {}
+
+    def test_sizes_taken_while_a_job_ran_are_asked_again_once_it_ended(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        machine.env["FAKE_SLEEP"] = "1"
+        job = _send(machine)
+        early = api.fetch_sizes(job.name, max_age_s=STATUS_KEPT_S,
+                                transport=machine.transport())
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "analysis" / "results.npz").write_bytes(b"x" * 3000)
+        later = api.fetch_sizes(job.name, max_age_s=STATUS_KEPT_S,
+                                transport=machine.transport())
+        assert later.results >= early.results + 3000
+
+    def test_the_api_asks_for_sizes_afresh_by_default(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        first = api.fetch_sizes(job.name, transport=machine.transport())
+        (Path(job.run_dir) / "analysis" / "more.npz").write_bytes(b"x" * 5000)
+        assert api.fetch_sizes(job.name, transport=machine.transport()).results == (
+            first.results + 5000)
+
+    def test_a_made_up_answer_does_not_reach_the_machine(self, app):
+        from fastmdxplora.mcp.tools import plan_id_of
+
+        arguments = {"config": "ghg.yml", "plan_id": plan_id_of(app.root / "ghg.yml"),
+                     "machine": "box"}
+        for state in ("x", "a.b"):
+            result = app.request("tools/call", {
+                "name": "start_study", "arguments": arguments,
+                "inputResponses": {"send": YES}, "requestState": state},
+                capabilities={})["result"]
+            assert result["isError"] and "cannot ask the person" in _text(result)
+        assert app.machine.commands == []
+
+    def test_a_config_changed_after_its_check_is_not_offered(self, app, monkeypatch):
+        from fastmdxplora.remote import api
+
+        real = api.plan_send
+
+        def changed_meanwhile(file, *args, **kwargs):
+            planned = real(file, *args, **kwargs)
+            (app.root / "ghg.yml").write_text(STUDY.replace("5", "6"))
+            return planned
+
+        monkeypatch.setattr(api, "plan_send", changed_meanwhile)
+        first, _ = _start(app)
+        assert first["isError"] and "changed after it was checked" in _text(first)
+
+    @pytest.mark.parametrize("changed", [{"name": "other-job"}, {"handle": "1"},
+                                         {"handle": "0123"},
+                                         {"extra": {"log_tail": 5}},
+                                         {"extra": {"inputs": ["a"]}}])
+    def test_a_record_that_is_not_the_job_s_is_refused(self, machine, changed):
+        import json
+
+        from fastmdxplora.remote.jobs import jobs_dir, load_job
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        path = jobs_dir() / f"{job.name}.json"
+        record = json.loads(path.read_text())
+        record.update(changed)
+        path.write_text(json.dumps(record))
+        with pytest.raises(ValueError) as caught:
+            load_job(job.name)
+        assert refusal_of(caught.value).code == "remote.job.unknown"
+
+    def test_a_machine_record_naming_another_machine_is_refused(self, machine):
+        import json
+
+        from fastmdxplora.remote.machines import load_machine, machines_dir
+
+        path = machines_dir() / "box.json"
+        record = json.loads(path.read_text())
+        record["name"] = "other-host"
+        path.write_text(json.dumps(record))
+        with pytest.raises(ValueError):
+            load_machine("box")
