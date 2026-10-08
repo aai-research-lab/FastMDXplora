@@ -85,7 +85,12 @@ def _walked(path: Path):
     where a link leads nowhere, or back into a folder it is inside, which
     the copy would follow without end)."""
     within: dict[Path, tuple[Path, ...]] = {}
-    for top, dirs, files in os.walk(path, followlinks=True):
+    unread: list[str] = []
+    # A folder that cannot be listed cannot be checked: said as unresolved.
+    for top, dirs, files in os.walk(path, followlinks=True,
+                                    onerror=lambda e: unread.append(e.filename)):
+        while unread:
+            yield Path(unread.pop()), None
         here = Path(top)
         real = here.resolve()
         above = within.get(here.parent, ()) if here != path else ()
@@ -106,6 +111,8 @@ def _walked(path: Path):
             if entry.is_symlink() and not entry.exists():
                 dirs.remove(name)
                 yield entry, None
+    while unread:
+        yield Path(unread.pop()), None
 
 
 def link_out_of(path: Path, folder: Path) -> Path | None:

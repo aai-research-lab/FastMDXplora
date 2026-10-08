@@ -174,6 +174,13 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
                         code="remote.input.outside")
     if sending.busy:
         _busy(ctx, machine, sending.busy)
+    from fastmdxplora.remote.jobs import job_names
+
+    if sending.job_name in job_names():
+        raise ToolError(f"A job called {sending.job_name} was sent from this computer "
+                        "before, and a job's name is its results folder's. Set `output` "
+                        "in the config to a new folder name, save it and check it again.",
+                        code="environment.path.exists")
 
     shown = ctx.workspace.shown(where)
     travels = [f"  {ctx.workspace.shown(source)} ({_size(_bytes(source))})"

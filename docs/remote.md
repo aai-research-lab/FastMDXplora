@@ -262,7 +262,9 @@ cancel it first.
 **One study at a time on a workstation.** A second send to a workstation
 while a job sent from here is waiting or running there is refused
 (`remote.machine.busy`), after asking the machine about that job there and
-then. `--dry-run` still shows the plan, with a line saying so. A cluster's
+then; a job cancelled from here counts until its processes have stopped (a run
+in production stops at its next frame). `--dry-run` still shows the plan, with
+a line saying so. A cluster's
 scheduler queues, so any number may be sent to a cluster.
 
 ---
@@ -286,14 +288,17 @@ fastmdx remote fetch lysozyme
 ```
 
 copies a finished job's run folder back to the job's output folder here (a job
-still waiting or running is refused, since it is still writing), with the machine's
-job log as `remote_job.log`, ready to open with `fastmdx gui --output`.
+still waiting or running is refused, since it is still writing), with the last
+MiB of the machine's job log as `remote_job.log`, ready to open with `fastmdx gui
+--output`.
 Trajectories and checkpoints stay on the machine unless `--with-trajectory` is
 given; fetch says how many it left and where. It also reads the run's manifest
 and says so if the code that ran is not the code that sent it. A link left in
 the run on the machine is not copied, and anything else neither a file nor a
-folder is taken out (said), so nothing fetch writes or reads here afterwards
-leads out of the job's folder. An AI app's fetch is said in bytes first, and a
+folder is taken out (said), each folder that came back is given its owner's
+read, write and search, and set-id bits are cleared; what was in the folder
+before the fetch is left as it was. So nothing fetch writes or reads here
+afterwards leads out of the job's folder. An AI app's fetch is said in bytes first, and a
 file larger than the whole it said stays on the machine, named.
 
 A study sent with a prepared system (`simulation.setup_from`) names it there as

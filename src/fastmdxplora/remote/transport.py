@@ -54,7 +54,7 @@ _SOCKET_PATH_LIMIT = 90
 
 def check_machine_name(name: str) -> str:
     """The name, if it can be passed to ``ssh`` as a destination safely."""
-    if not _NAME.match(name or ""):
+    if not _NAME.fullmatch(name or ""):
         raise StudyError(
             f"{name!r} is not a machine name FastMDXplora will pass to ssh. "
             "Use the alias from your ~/.ssh/config, or user@host: letters, "

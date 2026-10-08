@@ -81,7 +81,7 @@ _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 
 def check_job_name(name: str) -> str:
     """The name, if it can be a folder name on both computers and in a shell."""
-    if not _NAME.match(name or ""):
+    if not _NAME.fullmatch(name or ""):
         raise StudyError(
             f"{name!r} cannot name a job: it becomes a folder on both "
             "computers, so letters, digits and . _ - only, not starting "

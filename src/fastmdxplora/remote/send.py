@@ -89,6 +89,17 @@ __all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "FetchSizes", "Sending",
 #: How long an answer about a job is kept for a caller that asks for it.
 STATUS_KEPT_S = 30.0
 
+#: How much of a job's own log a fetch brings, from its end.
+JOB_LOG_KEPT = 1 << 20
+
+#: Whether anything of a process group still runs: a member that has ended
+#: and not been reaped yet (a zombie) does not count. Linux's and BSD's `ps`.
+_STILL_GOING = ("ps -A -o pgid= -o stat= 2>/dev/null | "
+                "awk '$1 == {group} && $2 !~ /^Z/ {{found = 1}} END {{exit !found}}'")
+
+#: What of a machine's answer is kept: so many lines, each so long.
+_SAID_LINES, _SAID_CHARS = 12, 300
+
 #: What ``fetch`` leaves on the machine unless asked: trajectories and
 #: checkpoints, which are most of a run's size and are not needed to read
 #: its results. Their paths on the machine are recorded.
@@ -265,7 +276,18 @@ def _busy_with(machine_name: str, link: Transport) -> Job | None:
 
     for name in job_names():
         job = load_job(name)
-        if job.machine != machine_name or job.state not in (READY, RUNNING):
+        if job.machine != machine_name:
+            continue
+        if job.state == ABANDONED and job.scheduler == "process":
+            # Cancelled, and given time to stop at a frame: busy while any of
+            # its process group is still there.
+            cancelled = job.extra.get("cancelled_at")
+            if (isinstance(cancelled, (int, float)) and time.time() - cancelled < 3600
+                    and link.run(["sh", "-c", _STILL_GOING.format(group=job.handle)]
+                                 ).returncode == 0):
+                return job
+            continue
+        if job.state not in (READY, RUNNING):
             continue
         job = status(name, transport=link)
         if job.state in (READY, RUNNING):
@@ -274,6 +296,10 @@ def _busy_with(machine_name: str, link: Transport) -> Job | None:
 
 
 def _busy_said(machine_name: str, job: Job) -> str:
+    if job.state == ABANDONED:
+        return (f"{machine_name} is still stopping {job.name}, cancelled from here. "
+                "One study runs on a workstation at a time: send again once it has "
+                "stopped, in a minute or so.")
     return (f"{machine_name} is running {job.name}, sent from here"
             + (f" ({job.detail})" if job.detail else "")
             + ". One study runs on a workstation at a time: wait for it "
@@ -515,8 +541,9 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
     live = (found.get("live") or [""])[0]
     if job.state in (RUNNING, READY) and live:
-        job.detail = _progress(live) or job.detail
-    job.extra["log_tail"] = _telling(found.get("log", []))
+        job.detail = (_progress(live) or job.detail)[:_SAID_CHARS]
+    job.extra["log_tail"] = [line[:_SAID_CHARS] for line in
+                             _telling(found.get("log", []))[-_SAID_LINES:]]
     save_job(job)
     return job
 
@@ -543,9 +570,9 @@ def _sizes_script(job: Job) -> str:
             # Bytes, from each file's own size: `du` counts the blocks it
             # takes, less than its size on a compressed or sparse file.
             "echo \"fmdx:total=$(find . -type f -exec ls -ln {} + 2>/dev/null "
-            "| awk '{s+=$5} END {print s+0}')\"\n"
+            "| awk '{s+=$5} END {printf \"%.0f\\n\", s}')\"\n"
             f"echo \"fmdx:trajectory=$(find . -type f \\( {names} \\) -exec ls -ln {{}} + "
-            "2>/dev/null | awk '{s+=$5} END {print s+0}')\"\n"
+            "2>/dev/null | awk '{s+=$5} END {printf \"%.0f\\n\", s}')\"\n"
             f"echo \"fmdx:files=$(find . -type f \\( {names} \\) | wc -l | tr -d ' ')\"\n")
 
 
@@ -606,6 +633,7 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
             code="remote.job.unfinished", given=name, state=job.state)
     target = Path(job.local_output)
     target.mkdir(parents=True, exist_ok=True)
+    before = _entries_in(target)
     # A link the machine left is not copied: written through or read here,
     # it would lead out of the job's folder.
     excludes: list[str] = ["--no-links"]
@@ -624,7 +652,9 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
         # What the cap leaves behind is said, never left out unsaid.
         found_over = link.run(["find", job.run_dir, "-type", "f", "-size",
                                f"+{max(int(most_bytes), 1)}c"])
-        over = [line for line in found_over.stdout.splitlines() if line.strip()]
+        # Trajectories left behind are said as such, not as over the cap.
+        over = [line for line in found_over.stdout.splitlines()
+                if line.strip() and line not in set(left)]
     copied = run_here(link.rsync_command(f":{job.run_dir}/", f"{target}/", *excludes),
                       runner=local_runner, what="fetching a study")
     # 24 is rsync's "some source files vanished": a file removed between
@@ -634,19 +664,23 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
             f"Fetching {name} from {job.machine} failed (rsync exit {copied}).",
             code="environment.service.machine_unreachable",
             machine=job.machine, reason=f"rsync exit {copied}")
-    run_here(link.rsync_command(f":{job.remote_dir}/job.log",
-                                f"{target}/remote_job.log", "--no-links"),
-             runner=local_runner, what="fetching a study")
+    # The job's own log, its last MiB, read as text: a file of the machine's
+    # choosing in that place could be anything, a folder or a gigabyte.
+    log = shlex.quote(f"{job.remote_dir}/job.log")
+    said = link.run(["sh", "-c", f"[ -f {log} ] && [ ! -L {log} ] && "
+                                 f"tail -c {JOB_LOG_KEPT} {log}"])
+    if said.returncode == 0:
+        _written_into(target, "remote_job.log", said.stdout)
 
     warnings: list[str] = []
-    warnings += _only_files_and_folders(target)
+    warnings += _only_files_and_folders(target, before)
     if over:
         warnings.append(
             f"{len(over)} file(s) larger than the whole fetch was said to be stayed "
             f"on {job.machine}: {', '.join(over[:5])}"
             + (" and more" if len(over) > 5 else "") + ".")
     if left:
-        job.extra["left_on_machine"] = left
+        job.extra["left_on_machine"] = [p[:_SAID_CHARS] for p in left[:200]]
         warnings.append(
             f"{len(left)} trajectory and checkpoint file(s) stayed on "
             f"{job.machine} in {job.run_dir}; fetch again with "
@@ -656,6 +690,8 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
         try:
             record = json.loads(manifest.read_text(encoding="utf-8"))
         except ValueError:
+            record = {}
+        if not isinstance(record, dict):
             record = {}
         source = record.get("source") or {}
         ran = CodeIdentity(version=str(record.get("version", "")),
@@ -717,27 +753,73 @@ def _tie_back_to_its_inputs(job: Job, target: Path) -> list[str]:
     return warnings
 
 
-def _only_files_and_folders(target: Path) -> list[str]:
-    """Take out of what was fetched anything but files and folders (a named
-    pipe left there would stop whatever reads it), and the set-id and
-    others-may-write bits; say what was taken out."""
-    import stat
-
-    removed: list[str] = []
-    for top, dirs, files in os.walk(target, followlinks=False):
+def _entries_in(folder: Path) -> dict[str, tuple[int, int]]:
+    """What is in ``folder`` now, each entry by its inode and change time,
+    so what a fetch wrote can be told from what was there."""
+    found: dict[str, tuple[int, int]] = {}
+    for top, dirs, files in os.walk(folder, followlinks=False):
         for name in dirs + files:
             entry = Path(top) / name
             try:
-                mode = entry.lstat().st_mode
+                info = entry.lstat()
             except OSError:
                 continue
-            if stat.S_ISREG(mode) or (stat.S_ISDIR(mode) and not entry.is_symlink()):
-                loose = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
-                if mode & loose:
-                    entry.chmod(stat.S_IMODE(mode) & ~loose)
-                continue
-            entry.unlink(missing_ok=True)
-            removed.append(str(entry.relative_to(target)))
+            found[str(entry.relative_to(folder))] = (info.st_ino, info.st_ctime_ns)
+    return found
+
+
+def _only_files_and_folders(target: Path,
+                            before: dict[str, tuple[int, int]] | None = None) -> list[str]:
+    """Of what a fetch wrote into ``target`` (what is new since ``before``),
+    take out anything but files and folders (a named pipe would stop what
+    reads it), clear set-id, sticky and others-may-write bits, and give
+    every folder its owner's read, write and search, so nothing written is
+    left unseen; say what was taken out.
+
+    Fails closed: a folder that still cannot be read is a refusal, since
+    what is in it could not be looked at.
+    """
+    import stat
+
+    before = before or {}
+    loose = stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
+    removed: list[str] = []
+    for _ in range(64):
+        unread: list[str] = []
+        opened = False
+        for top, dirs, files in os.walk(target, followlinks=False,
+                                        onerror=lambda e, into=unread: into.append(e.filename)):
+            for name in dirs + files:
+                entry = Path(top) / name
+                rel = str(entry.relative_to(target))
+                try:
+                    info = entry.lstat()
+                except OSError:
+                    continue
+                if before.get(rel) == (info.st_ino, info.st_ctime_ns):
+                    continue  # there before the fetch: not ours to change
+                mode = info.st_mode
+                if stat.S_ISDIR(mode):
+                    wanted = (stat.S_IMODE(mode) | stat.S_IRWXU) & ~loose
+                elif stat.S_ISREG(mode):
+                    wanted = (stat.S_IMODE(mode) | stat.S_IRUSR | stat.S_IWUSR) & ~loose
+                else:
+                    entry.unlink(missing_ok=True)
+                    removed.append(rel)
+                    continue
+                if wanted != stat.S_IMODE(mode):
+                    try:
+                        entry.chmod(wanted)
+                        opened = opened or stat.S_ISDIR(mode)
+                    except OSError:
+                        pass
+        if not unread and not opened:
+            break
+        if unread and not opened:
+            raise StudyError(
+                f"{unread[0]} came back from the fetch and cannot be read here, so "
+                "what is in it could not be checked. Look at it before using the "
+                "results.", code="environment.path.exists", path=str(unread[0]))
     if not removed:
         return []
     return [f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} that "
@@ -790,6 +872,7 @@ def _cancel(name: str, transport: Transport | None) -> Job:
         link.run(["sh", "-c", f"kill -TERM -{job.handle} 2>/dev/null || "
                               f"kill -TERM {job.handle} 2>/dev/null; true"])
     job.state, job.detail = ABANDONED, f"cancelled {now_utc()}"
+    job.extra["cancelled_at"] = time.time()
     save_job(job)
     return job
 

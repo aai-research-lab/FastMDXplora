@@ -22,6 +22,13 @@ machine = travels.machine
 machine_path = travels.machine_path
 
 
+def _stopped(job) -> None:
+    deadline = time.monotonic() + 30
+    while travels._alive(job.handle):
+        assert time.monotonic() < deadline, "the job never stopped"
+        time.sleep(0.05)
+
+
 def _ended_there(job) -> None:
     """Wait for the job to write its exit code on the machine, its record
     left as it was."""
@@ -56,6 +63,8 @@ class TestOneAtATime:
             assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
         finally:
             cancel(first.name, transport=machine.transport())
+        # Busy while the cancelled job is still stopping, then free.
+        _stopped(first)
         again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
                         code=RELEASE, transport=machine.transport())
         assert again.busy == ""
@@ -611,4 +620,146 @@ class TestSecondReview:
             f"  setup_from: {reference}\noutput: beside_run\n")
         _, done = _start(app, config="beside.yml", answer=YES)
         assert done["isError"] and "outside the workspace" in _text(done)
+        assert not _sent(app)
+
+
+# ---------------------------------------------------------------------------
+# The third review's cases
+# ---------------------------------------------------------------------------
+class TestThirdReview:
+    def test_a_size_past_two_gigabytes_is_read_as_a_number(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        with open(Path(job.run_dir) / "big.csv", "wb") as out:
+            out.truncate(3_000_000_000)     # an awk that prints 3e+09 read 0
+        assert api.fetch_sizes(job.name, transport=machine.transport()).results \
+            >= 3_000_000_000
+
+    def test_trajectories_left_behind_are_not_said_to_be_over_the_cap(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "simulation" / "production.dcd").write_bytes(b"x" * 300_000)
+        sizes = api.fetch_sizes(job.name, transport=machine.transport())
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE,
+                            most_bytes=sizes.bringing(False))
+        assert not any("larger than the whole fetch" in w for w in warnings)
+        assert any("1 trajectory" in w for w in warnings)
+
+    def test_what_was_in_the_results_folder_before_is_left_alone(self, machine, tmp_path):
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        machine.back.mkdir(parents=True)
+        mine = tmp_path / "notes.txt"
+        mine.write_text("mine")
+        (machine.back / "my-notes").symlink_to(mine)
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        assert (machine.back / "my-notes").is_symlink()
+        assert not any("neither a file nor a folder" in w for w in warnings)
+
+    def test_a_folder_that_comes_back_closed_is_opened_and_looked_in(self, machine):
+        import os
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        closed = Path(job.run_dir) / "closed"
+        closed.mkdir()
+        os.mkfifo(closed / "pipe")
+        closed.chmod(0o355)
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        here = machine.back / "closed"
+        assert here.stat().st_mode & 0o700 == 0o700
+        assert not (here / "pipe").exists()
+        assert any("closed/pipe" in w for w in warnings)
+
+    def test_the_job_s_log_comes_back_bounded_and_only_as_a_file(self, machine):
+        import shutil
+        from pathlib import Path
+
+        from fastmdxplora.remote.send import JOB_LOG_KEPT, fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        log = Path(job.remote_dir) / "job.log"
+        log.write_text("x" * (2 * JOB_LOG_KEPT) + "\nthe end\n")
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        kept = (machine.back / "remote_job.log").read_text()
+        assert len(kept) <= JOB_LOG_KEPT and kept.endswith("the end\n")
+        shutil.rmtree(machine.back)
+        log.unlink()
+        (log / "deep").mkdir(parents=True)
+        (log / "deep" / "big.dcd").write_bytes(b"x" * 1000)
+        fetch(job.name, transport=machine.transport(), local_runner=machine.local,
+              code=RELEASE)
+        assert not (machine.back / "remote_job.log").exists()
+
+    def test_a_job_cancelled_and_still_stopping_keeps_the_machine_busy(
+            self, machine, tmp_path):
+        env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
+        travels._tool(env, "trap '' TERM\nsleep 3")
+        first = _send(machine)
+        time.sleep(0.3)
+        cancel(first.name, transport=machine.transport())
+        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
+                         code=RELEASE, transport=machine.transport())
+        assert second.busy == first.name
+        assert any("still stopping" in note for note in second.notes)
+        _stopped(first)
+        again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
+                        code=RELEASE, transport=machine.transport())
+        assert again.busy == ""
+
+    @pytest.mark.parametrize("name", ["trial\n", "box\n"])
+    def test_a_name_ending_in_a_line_break_is_refused(self, name):
+        from fastmdxplora.remote.jobs import check_job_name
+        from fastmdxplora.remote.transport import check_machine_name
+
+        for check in (check_job_name, check_machine_name):
+            with pytest.raises(ValueError):
+                check(name)
+
+    def test_a_folder_that_cannot_be_listed_is_not_sent(self, tmp_path, monkeypatch):
+        import os
+
+        from fastmdxplora.remote.inputs import gather_inputs
+
+        study = tmp_path / "study"
+        (study / "ff" / "shut").mkdir(parents=True)
+        real = os.scandir
+
+        def scandir(path="."):
+            if str(path).endswith("shut"):
+                raise PermissionError(13, "Permission denied", str(path))
+            return real(path)
+
+        monkeypatch.setattr(os, "scandir", scandir)
+        with pytest.raises(ValueError) as caught:
+            gather_inputs({"setup": {"forcefield_files": ["ff"]}}, study)
+        assert refusal_of(caught.value).code == "remote.input.outside"
+
+    def test_an_ai_app_is_told_of_a_name_used_before_it_asks(self, app):
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        save_job(Job("ghg_run", "box", "/x", "process", "1", "t", {}, "/elsewhere/ghg_run",
+                     state="done"))
+        first, _ = _start(app, answer=YES)
+        assert first["isError"]
+        assert "Set `output` in the config to a new folder name" in _text(first)
         assert not _sent(app)
