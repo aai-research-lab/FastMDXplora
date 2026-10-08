@@ -188,6 +188,7 @@ FastMDXplora/
 │       │   ├── again_view.py      # What the GUI offers to run again on the study on screen
 │       │   ├── directory_inspect.py  # What is in a folder, and what can be done with it
 │       │   ├── config_builder.py  # What the page holds as a config file, checked
+│       │   ├── paper_view.py      # The builder's From a paper: a paper's studies read, configs given
 │       │   ├── run_from_config.py # Run what the page describes, from the file it would give
 │       │   ├── schema_payload.py  # The settings, described for the browser to lay out
 │       │   ├── starters.py        # Studies to start from, in the builder
@@ -205,7 +206,8 @@ FastMDXplora/
 │       │   │                      #   (the scheme before the first paint), fonts/ (Inter and
 │       │   │                      #   JetBrains Mono, SIL OFL 1.1), studies.js,
 │       │   │                      #   preferences.js (the dialogs, preferences kept),
-│       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
+│       │   │                      #   run-builder.js, paper-studies.js (the builder's From a paper),
+│       │   │                      #   file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, files-page.js, files-actions.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
 │       │   │                      #   beside any page), icons.js (the line icons for the

@@ -197,6 +197,14 @@ Choosing a trajectory greys out setup and simulation, because there is nothing
 to prepare or run. Every path field has a **Browse** button, so there is no
 typing a path and finding out later that it was wrong.
 
+**A paper's MD studies** are another start: **Or reproduce a paper's MD
+studies**, on the first step, takes a paper's PDF or an open-access paper's
+DOI and its supporting information, and your AI model reads its MD studies.
+Each is listed with its state and how each setting came from the paper's own
+words; **Open in the builder** (its icon) opens one, and **Download the
+chosen configs** gives several. See [Reproducing a paper's MD
+studies](papers.md).
+
 **What should happen?** Which phases, and which analyses. The analyses are
 grouped — shape and size, flexibility, conformations, folding, the ligand,
 protein and ligand together — and each explains what it computes, taken from
@@ -640,6 +648,8 @@ a movie's frames at 64 MB.
 | `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each quantity's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
 | `GET /artifacts/<path>` | Any file under the run root, `?download=1` to attach |
 | `POST /api/open-shared` | A shared study, `{"source": DOI, Zenodo address or zip path}`, checked file by file and opened; refused on a hosted GUI |
+| `POST /api/paper/read` | A paper's MD studies, `{"source", "si", "until_determined"}`, read by your AI model and checked against the paper's words, each as a plan with its config; refused on a hosted GUI |
+| `POST /api/paper/download` | The configs chosen from a paper, `{"configs": [...]}`, as one Config file or a zip |
 | `GET /structure/topology.pdb`, `/structure/live-frame.pdb` | Structures for the viewer |
 | `GET /structure/live-frame.dcd` | The live frame's coordinates alone, as a one-frame DCD, with its atom count (`X-FastMDX-Atoms`) and the fingerprint its DSSP is matched by (`X-FastMDX-Fingerprint`): the viewer moves the atoms it shows rather than loading each frame as a new structure |
 | `GET /analysis-figures-svg.zip` | Every analysis figure, zipped |

@@ -19,6 +19,11 @@ it is). The third fetches an open-access paper by its DOI. The fourth reads
 the supporting information too, where a paper's methods often are. Each file
 then runs as any config does, with `fastmdx explore --config`.
 
+In the GUI it is **Or reproduce a paper's MD studies** on the Config Builder's
+first step: the paper, its supporting information, **Read the paper**, then
+each study with how each of its settings came from the paper, **Open in the
+builder** for one, and **Download the chosen configs** for several.
+
 ---
 
 ## How a paper is read
@@ -159,7 +164,10 @@ where they are) and `paper` (the paper's DOI and title, which study, the AI
 model that read it, each setting's word, and the results the paper reports for
 the study). A study that needs you lists what in `paper.needs`, and the
 validator refuses it while anything is listed: supply each, then delete
-`paper.needs`.
+`paper.needs`. In the Config Builder, **I have supplied what it needs** does
+the same; where a setting it needed is still as the study was opened (the
+production, the structure), it names it first, and clears the list only when
+pressed again.
 
 `--paper-until-determined` runs each study until the results the paper reports
 with an error are determined here to that error (`simulation.stop_when`, each

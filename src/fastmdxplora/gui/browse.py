@@ -41,6 +41,8 @@ KINDS: dict[str, tuple[str, ...]] = {
     "plumed": (".dat", ".plumed"),
     # A shared study's archive (fastmdxplora.sharing).
     "shared": (".zip",),
+    # A paper, or its supporting information (fastmdxplora.paper).
+    "paper": (".pdf", ".xml", ".nxml", ".docx", ".txt", ".md"),
 }
 
 #: Enough to scan by eye. A folder with more subdirectories than this is

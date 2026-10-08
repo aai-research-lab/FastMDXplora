@@ -1709,6 +1709,38 @@ def make_handler(
                 # (fastmdxplora.demo); loopback only, as switching is.
                 self._send_json(app_runtime.open_the_demo())
                 return
+            if path == "/api/paper/read":
+                # A paper's MD studies, read by the person's AI model and
+                # checked against its words (fastmdxplora.paper); loopback
+                # only, and never for a hosted GUI's visitor.
+                from fastmdxplora.gui.paper_view import read_paper_studies
+
+                self._send_json(read_paper_studies(payload or {}, hosted=hosting is not None))
+                return
+            if path == "/api/paper/download":
+                # The configs chosen from a paper, as one file or a zip.
+                from fastmdxplora.gui.paper_view import configs_download
+
+                from fastmdxplora.paper import PaperRefused
+
+                try:
+                    made = configs_download(payload or {})
+                except PaperRefused as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                if made is None:
+                    self._send_json({"ok": False, "error": "No config was given."}, status=400)
+                    return
+                body, name, media = made
+                self.send_response(200)
+                self.send_header("Content-Type", media)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if path == "/api/open-shared":
                 # A shared study, from its DOI, its Zenodo address or a zip
                 # on this computer, checked and opened (fastmdxplora.sharing);

@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A paper's studies in the Config Builder
+
+**Added:** **Or reproduce a paper's MD studies** on the Config Builder's first
+step: a paper and its supporting information, **Read the paper**, then each
+study with its state and how each setting came from the paper. **Open in the
+builder** opens one; one that needs something given says so and will not
+run until you say it is supplied. **Download the chosen configs**
+gives one as a file and several as a zip. Read on your own computer only.
+
 ### A paper's MD studies, as configs
 
 **Added:** `fastmdx config --paper` reads a paper (a PDF, a JATS XML, a Word

@@ -6050,6 +6050,13 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .page[data-page="run"] .builder-agent-link { color: var(--accent-text); text-decoration: none; font-weight: 550; }
 .page[data-page="run"] .builder-agent-link:hover { text-decoration: underline; }
 .page[data-page="run"] .builder-start-alt-said { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.page[data-page="run"] .builder-paper-toggle {
+    padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit;
+    font-weight: 550; cursor: pointer;
+}
+.page[data-page="run"] .builder-paper-toggle:hover { text-decoration: underline; }
+.page[data-page="run"] .builder-paper-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
 .page[data-page="run"] .builder-start-alt-said[hidden] { display: none; }
 .page[data-page="run"] .starters { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .page[data-page="run"] .starter.builder-chip {
@@ -6420,3 +6427,53 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .studies-open-row { display: flex; gap: 8px; align-items: center; }
 .studies-open-row .studies-open-path { flex: 1; min-width: 0; }
 .studies-open-row input { flex: 1; min-width: 0; font-family: var(--font-mono); }
+
+/* From a paper (paper-studies.js): the paper's MD studies, each with its
+   state, what came from the paper's words and what still needs you. */
+.page[data-page="run"] .paper-card { margin-top: 14px; }
+.page[data-page="run"] .paper-card .paper-path input { flex: 1; min-width: 0; }
+.page[data-page="run"] .builder-field.paper-until {
+    flex-direction: row; align-items: center; gap: 8px; font-size: var(--text-sm); cursor: pointer;
+}
+.page[data-page="run"] .builder-field.paper-until input { margin: 0; flex: none; }
+.page[data-page="run"] .paper-card > .builder-actions-row { margin-top: 14px; align-items: center; gap: 10px; }
+.page[data-page="run"] .paper-card .paper-studies .builder-actions-row > .ghost-btn { flex: 0 1 auto; }
+.page[data-page="run"] .paper-studies { margin-top: 14px; display: grid; gap: 10px; }
+.page[data-page="run"] .paper-studies[hidden] { display: none; }
+.page[data-page="run"] .paper-title { margin: 0; color: var(--text-primary); font-size: var(--text-sm); }
+.page[data-page="run"] .paper-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.page[data-page="run"] .paper-study {
+    padding: 10px 12px; border: 1px solid var(--border-primary); border-radius: 10px;
+    background: var(--panel-glass);
+}
+.page[data-page="run"] .paper-study-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.page[data-page="run"] .paper-study-id { color: var(--text-muted); font-size: var(--text-xs); }
+.page[data-page="run"] .paper-study-label { color: var(--text-primary); font-weight: 550; flex: 1 1 220px; min-width: 0; }
+.page[data-page="run"] .paper-state {
+    padding: 2px 8px; border-radius: 999px; font-size: var(--text-xs); white-space: nowrap;
+    border: 1px solid var(--border-primary); color: var(--text-secondary);
+}
+.page[data-page="run"] .paper-state.is-ready { border-color: var(--status-completed); color: var(--text-primary); }
+.page[data-page="run"] .paper-state.is-with_differences { border-color: var(--accent-cyan); color: var(--text-primary); }
+.page[data-page="run"] .paper-state.is-needs_you { border-color: var(--status-waiting); color: var(--text-primary); }
+.page[data-page="run"] .paper-state.is-cannot_run { border-color: var(--status-error); color: var(--text-primary); }
+.page[data-page="run"] .paper-study-facts { margin: 6px 0 0; }
+.page[data-page="run"] .paper-needs { margin: 6px 0 0; padding-left: 18px; font-size: var(--text-sm); color: var(--text-secondary); }
+.page[data-page="run"] .paper-needs li.is-not_possible { color: var(--text-primary); }
+.page[data-page="run"] .paper-choices { margin-top: 6px; font-size: var(--text-sm); }
+.page[data-page="run"] .paper-choices summary { cursor: pointer; color: var(--accent-text); }
+.page[data-page="run"] .paper-choices-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: var(--text-xs); }
+.page[data-page="run"] .paper-choices-table th,
+.page[data-page="run"] .paper-choices-table td { text-align: left; vertical-align: top; padding: 4px 6px; border-top: 1px solid var(--border-primary); }
+.page[data-page="run"] .paper-choices-table th { color: var(--text-muted); font-weight: 550; }
+.page[data-page="run"] .paper-label { white-space: nowrap; color: var(--text-secondary); }
+.page[data-page="run"] .paper-label.is-differs { color: var(--accent-text); }
+.page[data-page="run"] .paper-label.is-needs_you,
+.page[data-page="run"] .paper-label.is-not_possible { color: var(--text-primary); font-weight: 600; }
+.page[data-page="run"] .paper-quote q { color: var(--text-secondary); }
+.page[data-page="run"] .paper-open { margin-top: 8px; }
+@media (max-width: 600px) {
+    .page[data-page="run"] .paper-choices-table thead { display: none; }
+    .page[data-page="run"] .paper-choices-table tr { display: grid; padding: 4px 0; border-top: 1px solid var(--border-primary); }
+    .page[data-page="run"] .paper-choices-table td { border-top: 0; padding: 2px 0; }
+}

@@ -685,12 +685,55 @@
                 <div class="builder-start" id="run-start" role="radiogroup" aria-label="Starting from"></div>
                 <div class="builder-start-alt">
                   <a href="#agent" class="builder-agent-link">Or describe the study to the Agent</a>
+                  <button type="button" class="builder-paper-toggle" id="run-paper-toggle"
+                          aria-expanded="false" aria-controls="run-paper-card">Or reproduce a paper's MD studies</button>
                   <span class="builder-start-alt-said" id="run-starters-card" hidden>
                     <span class="muted">Start from an example</span>
                     <span class="starters" id="run-starters" role="list"></span>
                   </span>
                 </div>
                 <p class="builder-card-note starters-note" id="run-starters-note" role="status"></p>
+
+                <!-- From a paper (paper-studies.js): its MD studies read by
+                     the AI model, each value checked against the paper's
+                     own words, one chosen to open here or several to
+                     download. -->
+                <form class="builder-group paper-card" id="run-paper-card" hidden>
+                  <div class="builder-group-head"><h3>From a paper</h3>
+                    <p>Your AI model lists its MD studies; every value it reads is kept only where the paper's own words say it.</p></div>
+                  <div class="builder-grid">
+                    <div class="builder-field builder-field-wide">
+                      <div class="builder-head"><label class="builder-label" for="run-paper-source">The paper</label></div>
+                      <div class="analyse-path-row paper-path">
+                        <input type="text" id="run-paper-source" autocomplete="off" data-picks="paper" class="mono"
+                               placeholder="A PDF, or the DOI of an open-access paper (10.1371/journal.pone.0247841)">
+                      </div>
+                    </div>
+                    <div class="builder-field builder-field-wide">
+                      <div class="builder-head"><label class="builder-label" for="run-paper-si">Supporting information</label><span class="builder-unit">optional</span></div>
+                      <div class="analyse-path-row paper-path">
+                        <input type="text" id="run-paper-si" autocomplete="off" data-picks="paper" class="mono"
+                               placeholder="Where the methods are, if not in the paper">
+                      </div>
+                    </div>
+                    <label class="builder-field builder-field-wide paper-until">
+                      <input type="checkbox" id="run-paper-until">
+                      <span>Run until the paper's results are determined to its own error, at most its length</span>
+                    </label>
+                  </div>
+                  <div class="builder-actions-row">
+                    <button type="submit" class="primary-btn" id="run-paper-read">Read the paper</button>
+                    <span class="muted small" id="run-paper-said" role="status" aria-live="polite"></span>
+                  </div>
+                  <div class="paper-studies" id="run-paper-studies" hidden>
+                    <p class="paper-title" id="run-paper-title"></p>
+                    <ul class="paper-list" id="run-paper-list" aria-label="The paper's MD studies"></ul>
+                    <div class="builder-actions-row">
+                      <button type="button" class="ghost-btn" id="run-paper-all">Choose all that can run</button>
+                      <button type="button" class="ghost-btn" id="run-paper-download" disabled>Download the chosen configs</button>
+                    </div>
+                  </div>
+                </form>
 
                 <div class="builder-group" id="run-input-card" hidden>
                   <!-- A structure: the systems the study runs, each with its
@@ -1979,6 +2022,7 @@
     <script src="/static/files-actions.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
+    <script src="/static/paper-studies.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/overview.js"></script>
   <script src="/static/series-chart.js"></script>

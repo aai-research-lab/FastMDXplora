@@ -3763,6 +3763,10 @@
 
   window.FastMDXRun = {
     state, currentState, PHASES, STARTING_POINTS, applyLoadedState, setStart,
+    /* For a study opened from a paper (paper-studies.js): its record is
+     * kept with the study's own settings, and the form drawn again once
+     * what it still needed is said to be supplied. */
+    RUN_OPTIONS_KEY, renderAll, saveDraft,
     /* The four actions the Agent panel offers on a config it just wrote.
      * They read the builder's state, which the panel loads silently first,
      * so the file, the command and the script are the same ones the builder

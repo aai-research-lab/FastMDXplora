@@ -427,6 +427,42 @@ def test_words_in_a_label_cannot_add_settings_to_the_file():
     assert "sweep" not in yaml.safe_load(text)
 
 
+def test_two_studies_of_one_id_are_two_files():
+    from fastmdxplora.gui.paper_view import configs_download
+
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0)})
+    body, _name, _media = configs_download({"configs": [
+        {"id": "S1", "config": plan["config"]}, {"id": "S1", "config": plan["config"]}]})
+    assert sorted(zipfile.ZipFile(io.BytesIO(body)).namelist()) == ["paper-s1-2.yml",
+                                                                    "paper-s1.yml"]
+
+
+def test_a_config_that_cannot_be_written_is_refused_in_words(tmp_path, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.paper import studies
+
+    def refuse(_plan):
+        raise PaperRefused("did not read back", code="environment.paper.unreadable")
+
+    monkeypatch.setattr(studies, "config_text", refuse)
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0)})
+    session = start_dashboard_session(output=str(tmp_path), host="127.0.0.1", port=0)
+    try:
+        request = urllib.request.Request(
+            session.url + "/api/paper/download", method="POST",
+            data=json.dumps({"configs": [{"id": "S1", "config": plan["config"]}]}).encode(),
+            headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as answered:
+            urllib.request.urlopen(request, timeout=60)
+        said = json.loads(answered.value.read())
+    finally:
+        session.server.shutdown()
+    assert said == {"ok": False, "error": "did not read back"}
+
+
 # -- the paper's file --------------------------------------------------------
 _ENTITY = ('<!DOCTYPE article [<!ENTITY t "injected 350 K">]>'
            "<article><body><sec><title>Methods</title><p>&t;</p></sec></body></article>")
