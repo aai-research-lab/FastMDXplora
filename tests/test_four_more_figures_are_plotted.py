@@ -80,7 +80,7 @@ def test_thermodynamics_is_how_tightly_each_is_known(study) -> None:
     bars = {b["label"]: b for b in got["bars"]}
     assert set(bars) == {"Potential energy", "Temperature"}
     assert bars["Temperature"]["value"] == pytest.approx(0.6 / 300.1 * 100)
-    assert bars["Potential energy"]["said"][1] == "-506500 ± 25 kJ/mol"
+    assert bars["Potential energy"]["said"][1] == "-506,500 ± 25 kJ/mol"
     assert "30 independent samples" in bars["Potential energy"]["said"]
     # What was not measured is said, and why.
     assert got["note"] == ("Density: held constant by the run, not sampled; "
@@ -216,3 +216,41 @@ def test_each_is_plotted_on_the_analysis_page(tmp_path) -> None:
     assert "I₁" in tip and "I₃ 300.0 amu nm²" in tip and "ns" in tip
     assert said.startswith("hydrogen_bond  ASP189 OD1–N1") and "95% of frames" in said
     assert note == "1 hollow: fewer than five separate observations."
+
+
+def test_a_mean_not_determined_has_no_error_bar(tmp_path) -> None:
+    """The card plotted an error for every mean in the analysis's table,
+    beside a note and a table calling four of them not determined."""
+    root = _write(tmp_path / "study")
+    folder = root / "analysis" / "thermodynamics"
+    (folder / "thermodynamics.dat").write_text(
+        "observable,mean,standard_error,effective_samples,standard_deviation\n"
+        "potential_energy,-506500.0,25.3,30.0,140.0\n"
+        "temperature,300.1,0.6,6.5,3.8\n", encoding="utf-8")
+    found = json.loads((folder / "options.json").read_text())
+    found["findings"]["thermodynamics"]["temperature"]["not_a_measurement"] = (
+        "6.5 independent samples in 9 frames.")
+    (folder / "options.json").write_text(json.dumps(found), encoding="utf-8")
+    got = _get(root, "thermodynamics")
+    assert [b["label"] for b in got["bars"]] == ["Potential energy"]
+    assert "Temperature: not determined" in got["note"]
+
+
+def test_the_analysis_s_own_figure_plots_only_what_it_determined() -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from fastmdxplora.analysis.thermodynamics import Thermodynamics
+
+    analysis = object.__new__(Thermodynamics)
+    analysis.findings = {"thermodynamics": {
+        "potential_energy": {"mean": -5e5},
+        "temperature": {"mean": 300.1, "not_a_measurement": "Too few."}}}
+    analysis._labels = ["potential_energy", "temperature"]
+    figure, ax = plt.subplots()
+    analysis.plot(np.array([[-5e5, 25.0, 30.0, 140.0], [300.1, 0.6, 6.5, 3.8]]), ax)
+    shown = [tick.get_text() for tick in ax.get_yticklabels()]
+    plt.close(figure)
+    assert shown == ["potential_energy"]

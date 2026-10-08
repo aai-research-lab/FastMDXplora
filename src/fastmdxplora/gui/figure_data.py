@@ -576,16 +576,21 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
             continue
         samples = _number(row.get("effective_samples"))
         entry = record.get(key) if isinstance(record.get(key), dict) else {}
+        if entry.get("not_a_measurement") or not math.isfinite(error):
+            # Not determined, as the table above it says: no error to plot.
+            # The card plotted one for every mean the table called not
+            # determined, its note saying otherwise.
+            continue
         unit = str(entry.get("units") or "")
         share = error / abs(mean) * 100.0 if mean else 0.0
         name = _OBSERVABLES.get(key, key.replace("_", " ").capitalize())
-        said = [name, f"{mean:.6g} \u00b1 {error:.2g} {unit}".rstrip(),
+        from fastmdxplora.statistics import with_its_error
+
+        said = [name, f"{with_its_error(mean, error)} {unit}".rstrip(),
                 f"standard error {share:.2g}% of the mean"]
         if samples is not None:
             said.append(f"{samples:.0f} independent samples")
         bars.append({"label": name, "value": share, "said": said})
-    if not bars:
-        return None
     # What was not measured, and why, under the bars.
     # A constant volume's density and volume are recorded as the value the
     # setup fixed, not as a mean.
@@ -594,6 +599,8 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
              for k, v in record.items()
              if isinstance(v, dict) and v.get("not_a_measurement")
              and _OBSERVABLES.get(k, k) not in [b["label"] for b in bars]]
+    if not bars and not apart:
+        return None
     return {"kind": "hbars", "title": "Thermodynamic observables",
             "x_label": "Standard error, per cent of the mean", "x_low": 0.0,
             "bars": bars, "note": "; ".join(apart)}

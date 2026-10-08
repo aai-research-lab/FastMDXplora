@@ -12,6 +12,68 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 **Changed:** the README's License section names FastMDXplora's own licence
 only.
 
+### The GUI as a run ends, stops, is carried on and is read
+
+**Fixed:** a mean was called Determined on the Overview and the Analysis
+page while the report's convergence failed it, and the report table and the
+Agent gave errors for means the Analysis page withheld. Every page, the
+report and the Agent now read one verdict, the analysis's own record, and a
+mean whose averaged frames still move one way is withheld
+(`analysis.sampling.still_drifting`). The report's summary counts its own
+table; the Agent names analyses as the pages do and gives the thermodynamic
+means. The Overview's thermodynamic means come from `energy.csv`, as the
+report's do.
+
+**Fixed:** the Viewer played the run's live snapshots in place of
+`production.dcd` whenever the record did not say "completed"; the Contact
+map, Backbone angles, the movie and States followed it. The production
+frames play once the simulation is no longer going.
+
+**Fixed:** a study carried on with **What would fix it**, **Run it** read
+Stopped while it ran and Failed after, its frames stuck at the first
+piece's. It is now read as one run across its pieces (`segment-001/`, ...),
+as Running while a piece runs, and as the study's own while its joined
+trajectory is analysed and reported. A study stopped again while carried on
+is said to the checkpoint it wrote, in production's own steps and time.
+
+**Fixed:** a completed study was told to resume, and a failed one was
+listed Completed in All studies and Recent. A run stopped here reads as
+stopped, with what the stop leaves (a stop before production leaves no
+checkpoint, and none is offered); the reason is said in words, not the
+log's last line and an exit code. A study stopped in its analysis or report
+and then analysed or written again reads as it ends.
+
+**Added:** Stop the run on the Overview, the sidebar's card and Cmd+K, as
+on New study; each asks first, with Not now holding the keyboard.
+
+**Fixed:** a run stopped in production gave a length short of what it
+wrote, "Simulation failed" beside "Stopped", and a stop before production
+"0 ps production after 10 ps of equilibration". Time left is read from the
+run's own recent speed and is not shown once a run has ended.
+
+**Fixed:** Write it again and Analyze again rewrote the simulation's record
+(earlier stages "skipped", the run's time and date). They now write only
+the analysis and report and say what they are doing.
+
+**Fixed:** a timestep longer than its constraints allow (10 fs) passed every
+check and failed in NVT; it is now said before the run, and the diagnosis
+gives the timestep to try from the run's own.
+
+**Fixed:** Compare study paired unrelated proteins; Compare two studies
+listed values that were not differences and raw names. The Thermodynamics
+card plotted error bars for means not determined. The Viewer's overlay
+followed the live poll, not the frame played, and a fit to the deposited
+structure sent the molecule out of view.
+
+**Fixed:** the folded strip's links had no names; the Analysis and Report
+pages ran sideways on a phone; All studies' pinned column covered the
+numbers; the sidebar's run card ran under its foot; the study menu took no
+arrow keys, the page had no skip link and the Overview's Tab order jumped;
+the NVT/NPT line on the charts was late; Recent and Cmd+K gave IDs that
+could not be told apart; the Files page's columns shifted; units read
+`nm^3` and `e+04`; a trajectory analysed opened an empty narration panel.
+Selections half written are said in a sentence, never applied in part.
+
 ### The Agent beside the page, and a run's notice, as the page changes
 
 **Fixed:** Ctrl+J (⌘J) pressed just as the Agent page opened went back

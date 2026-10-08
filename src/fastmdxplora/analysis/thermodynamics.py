@@ -245,19 +245,25 @@ class Thermodynamics(Analysis):
 
     def plot(self, result: np.ndarray, ax: plt.Axes) -> None:
         labels = getattr(self, "_labels", [])
-        if not labels:
-            ax.text(0.5, 0.5, "no equilibrated observables",
+        record = self.findings.get("thermodynamics") or {}
+        # Only the means determined: a withheld mean has no error to plot,
+        # and its bar said one beside a table saying "not determined".
+        kept = [i for i, label in enumerate(labels)
+                if not (record.get(label) or {}).get("not_a_measurement")
+                and np.isfinite(result[i][1])]
+        if not kept:
+            ax.text(0.5, 0.5, "no mean determined" if labels else "no equilibrated observables",
                     ha="center", va="center", transform=ax.transAxes)
             return
-        position = np.arange(len(labels))
+        position = np.arange(len(kept))
         # Each observable on its own scale: an energy and a density share
         # no axis, so the bars show how tight each mean is rather than how
         # large it is.
         relative = np.array([
-            (row[1] / abs(row[0]) if row[0] else 0.0) for row in result])
+            (result[i][1] / abs(result[i][0]) if result[i][0] else 0.0) for i in kept])
         ax.barh(position, relative * 100.0)
         ax.set_yticks(position)
-        ax.set_yticklabels(labels)
+        ax.set_yticklabels([labels[i] for i in kept])
 
     def default_xlabel(self) -> str | None:
         return "Standard error, per cent of the mean"
