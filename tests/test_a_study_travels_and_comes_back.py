@@ -222,6 +222,8 @@ def _alive(pid: str) -> bool:
 
 def test_a_second_send_of_the_same_name_is_refused(machine):
     _send(machine)
+    # Finished first: one still running is refused as the machine's one study.
+    _until_finished(machine, "trial")
     with pytest.raises(ValueError) as caught:
         _send(machine)
     assert refusal_of(caught.value).code == "environment.path.exists"

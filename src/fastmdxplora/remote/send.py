@@ -18,6 +18,17 @@ queue wait.
 and the links in a folder that travels are looked at again just before the
 copy, which follows them.
 
+**One study at a time on a workstation.** A job sent there holds its GPU,
+not this computer's, so this computer's own one-at-a-time rule does not
+cover it; a second send while one sent from here is waiting or running is
+refused, the first asked about again before it is. A cluster's scheduler
+queues, so there any number may be sent.
+
+**A machine is asked about a job at most every 30 s** where the caller says
+so (every interface but the command line, where a person typed the
+question): a page that refreshes, or an AI app asking in a loop, reads the
+answer kept from the last time.
+
 A job on a workstation runs as a detached process in its own process group,
 so it outlives the connection and can be stopped whole. On a cluster it is
 an ``sbatch`` job asking for one GPU. Either way it writes its exit code
@@ -32,6 +43,7 @@ import os
 import re
 import shlex
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -62,8 +74,12 @@ from fastmdxplora.remote.machines import (
 from fastmdxplora.remote.probe import PROBE_SCRIPT, Environment, parse_inspection
 from fastmdxplora.remote.transport import Transport, run_here
 
-__all__ = ["TRAJECTORY_PATTERNS", "Sending", "cancel", "describe_sending",
-           "fetch", "job_line", "job_script", "prepare", "send", "status"]
+__all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "Sending", "cancel",
+           "describe_sending", "fetch", "job_line", "job_script", "prepare",
+           "send", "status"]
+
+#: How long an answer about a job is kept for a caller that asks for it.
+STATUS_KEPT_S = 30.0
 
 #: What ``fetch`` leaves on the machine unless asked: trajectories and
 #: checkpoints, which are most of a run's size and are not needed to read
@@ -179,6 +195,8 @@ def prepare(config_path: str | Path, machine_name: str, *,
             code="remote.machine.not_ready",
             machine=machine_name, reason=verdict.summary,
         )
+    if machine.inspection.kind != "slurm":
+        _not_busy(machine_name, link)
     candidates = (machine.inspection.holding(code)
                   or machine.inspection.installations())
     env = verdict.installation or (candidates[0] if candidates else None)
@@ -225,6 +243,26 @@ def prepare(config_path: str | Path, machine_name: str, *,
     return sending
 
 
+def _not_busy(machine_name: str, link: Transport) -> None:
+    """Refuse a second study on a workstation while one sent from here is
+    waiting or running there, asking about each first."""
+    from fastmdxplora.remote.jobs import job_names
+
+    for name in job_names():
+        job = load_job(name)
+        if job.machine != machine_name or job.state not in (READY, RUNNING):
+            continue
+        job = status(name, transport=link, max_age_s=STATUS_KEPT_S)
+        if job.state in (READY, RUNNING):
+            raise StudyError(
+                f"{machine_name} is running {job.name}, sent from here"
+                + (f" ({job.detail})" if job.detail else "")
+                + ". One study runs on a workstation at a time: wait for it "
+                f"(`fastmdx remote status {job.name}`), or stop it "
+                f"(`fastmdx remote cancel {job.name}`).",
+                code="remote.machine.busy", machine=machine_name, job=job.name)
+
+
 def send(sending: Sending, *, transport: Transport | None = None,
          local_runner=None, code: CodeIdentity | None = None) -> Job:
     """Copy the study across and start it. Returns the job's record."""
@@ -238,6 +276,8 @@ def send(sending: Sending, *, transport: Transport | None = None,
             f"A job called {name} was already sent from here. Give another "
             "--output, or --force-overwrite to replace it.",
             code="environment.path.exists", path=name)
+    if sending.scheduler != "slurm":
+        _not_busy(sending.machine.name, link)
     exists = link.run(["test", "-e", f"{where}/run"]).returncode == 0
     if exists and not sending.force:
         raise StudyError(
@@ -372,13 +412,23 @@ def _telling(lines: list[str]) -> list[str]:
             and " ".join(line.split()) != tagline]
 
 
-def status(name: str, *, transport: Transport | None = None) -> Job:
-    """Ask the machine how a job is doing, and record the answer."""
+def status(name: str, *, transport: Transport | None = None,
+           max_age_s: float = 0) -> Job:
+    """Ask the machine how a job is doing, and record the answer.
+
+    With ``max_age_s``, an answer recorded less than that long ago is
+    returned as it is, and the machine is not asked.
+    """
     job = load_job(name)
     if job.state == ABANDONED:
         return job
+    asked_at = job.extra.get("asked_at")
+    if (max_age_s > 0 and isinstance(asked_at, (int, float))
+            and 0 <= time.time() - asked_at < max_age_s):
+        return job
     link = transport or Transport(job.machine)
     found = _read(link.run(["sh", "-s"], stdin=_status_script(job)).stdout)
+    job.extra["asked_at"] = time.time()
     if "gone" in found:
         job.state, job.detail = FAILED, f"{job.remote_dir} is no longer there"
         save_job(job)

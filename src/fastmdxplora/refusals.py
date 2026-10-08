@@ -827,6 +827,11 @@ CODES: tuple[Code, ...] = (
          "loads what a study needs.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("machine", "reason")),
+    Code("remote.machine.busy",
+         "A study was sent to a workstation already running one sent from "
+         "this computer.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("machine", "job")),
     Code("remote.machine.unusable_name",
          "A machine name that cannot be passed to ssh as a destination "
          "safely.",

@@ -246,6 +246,11 @@ and a killed one are told apart.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine.
 
+**One study at a time on a workstation.** A second send to a workstation
+while a job sent from here is waiting or running there is refused
+(`remote.machine.busy`), after asking the machine about that job. A cluster's
+scheduler queues, so any number may be sent to a cluster.
+
 ---
 
 ## Watching, fetching and stopping
@@ -255,10 +260,12 @@ fastmdx remote status            # every job not yet finished
 fastmdx remote status lysozyme   # one job
 ```
 
-asks the machine and prints the state, with progress from the run's own live
+asks the machine there and then and prints the state, with progress from the run's own live
 status while it runs, and the last lines of its log. The states are the
 queue's: `ready` (waiting for a GPU), `running`, `done`, `failed` with the exit
-code or the reason, and `abandoned`.
+code or the reason, and `abandoned`. An AI app and the Python API are
+answered from the last answer while it is under 30 s old, so asking in a loop
+does not reach the machine each time.
 
 ```bash
 fastmdx remote fetch lysozyme
