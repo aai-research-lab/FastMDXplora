@@ -7,6 +7,49 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Other machines from Python and from an AI app
+
+**Added:** `fastmdxplora.remote.api`, what `fastmdx remote` does at a
+terminal for a program: the machines as recorded, a send planned and then
+made, a job's status, the sizes a fetch would bring, the fetch, a cancel,
+and an install run only with a yes to the exact plan shown (used once, gone
+after ten minutes). It reaches only machines inspected at a terminal and
+never prompts: a machine whose `ssh` asks for a password is reached only
+while `fastmdx remote` keeps a sign-in open.
+
+**Added:** an AI app (`fastmdx mcp`) reaches your machines too:
+`list_machines`, `start_study` with `machine`, `remote_status`,
+`fetch_study` and `cancel_study`. A study is sent only once you agree when
+asked, with every file it sends and its size; where the AI app cannot ask
+you, nothing is sent (`remote.send.unconfirmed`). A fetch says each size
+first, and one of 100 MB or more is not made unasked
+(`remote.fetch.unconfirmed`). An AI app reaches only jobs whose results come
+back into its workspace, and never installs anything.
+
+**Changed:** only the files in the folder holding a Config travel with it to
+another machine, from the command line too (`remote.input.outside`). Links
+are followed as the copy follows them, and a folder with a link leading out
+is refused. A prepared study named by `simulation.setup_from` or
+`simulation.resume_from` may sit beside the folder when its manifest is one
+FastMDXplora wrote. A Config in your home folder is refused, and nothing
+under `.ssh` or another place keys and credentials are kept is sent. Your
+defaults here travel in the Config, and the run there takes none of the
+machine's (`--no-defaults`). Before, any file the Config named anywhere on
+the computer was sent.
+
+**Changed:** a workstation runs one study sent from here at a time
+(`remote.machine.busy`; `--dry-run` says so and still shows the plan); a
+cluster's scheduler queues. A cancelled job counts until its processes have
+stopped.
+
+**Changed:** a fetch copies into a folder of its own inside the results
+folder, takes out links, named pipes and set-id bits, and moves the results
+into place once all of it has been looked over; a fetch again copies only
+what changed, and goes on after one that failed. The job's log comes back as
+its last MiB. `cancel` asks the machine first, so a job that ended is not
+signalled. The install plan's commands are quoted word by word for the shell
+that runs them, and an image is copied into the machine's own home.
+
 ### The Agent page, as the Agent
 
 **Changed:** the Agent page and `fastmdx agent` speak as the Agent: its AI

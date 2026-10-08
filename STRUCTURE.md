@@ -52,6 +52,7 @@ FastMDXplora/
 │       │   ├── app.py             # What `fastmdx mcp` offers an AI app
 │       │   ├── content.py         # Its guides, study records and prompts
 │       │   ├── tools.py           # Its tools: look, check, save, run, read; the Agent
+│       │   ├── remote_tools.py    # Its tools for the person's other machines: send, watch, fetch, stop
 │       │   └── workspace.py       # The one folder the tools may use
 │       ├── agent/                 # The Agent: an AI model writing and answering about studies
 │       │   ├── propose.py         # Propose a study, have it refused, repair it, try again
@@ -225,6 +226,7 @@ FastMDXplora/
 │       │   ├── installer.py       # Running a plan, once a person has said yes
 │       │   ├── inputs.py          # The files a Config names, gathered to travel with it
 │       │   ├── send.py            # Send, status, fetch and cancel
+│       │   ├── api.py             # The same from a program or an AI app: records only, no prompts
 │       │   ├── jobs.py            # Per-user records of the studies sent
 │       │   └── describe.py        # What `fastmdx remote` prints
 │       ├── batch/
