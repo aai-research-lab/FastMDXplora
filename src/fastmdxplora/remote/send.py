@@ -458,7 +458,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
             "setsid nohup sh job.sh > job.log 2>&1 < /dev/null & "
             "else nohup sh job.sh > job.log 2>&1 < /dev/null & fi; echo $!")])
         handle = started.stdout.strip().splitlines()[-1] if started.stdout.strip() else ""
-    if started.returncode != 0 or not handle.isdigit():
+    if started.returncode != 0 or not (handle.isascii() and handle.isdigit()):
         raise StudyError(
             f"{sending.machine.name} did not start the job: "
             f"{(started.stderr or started.stdout).strip()[-_SAID_CHARS:] or 'no answer'}",
@@ -937,12 +937,17 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
     Fails closed: a folder that still cannot be read is a refusal, since
     what is in it could not be looked at.
     """
+    from fastmdxplora.config.defaults_file import DEFAULTS_FILE
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
     from fastmdxplora.runs_here import RUNS_FILE, STARTING_FILE
 
     # A run's own records of where it runs are the machine's: here they
     # would name a process on this computer by the machine's number.
     theirs = {n.casefold() for n in (RUN_PROCESS_FILE, RUNS_FILE, STARTING_FILE)}
+    # A defaults file would fill the settings of any study made in or below
+    # the results folder here: not the machine's to set.
+    defaults = DEFAULTS_FILE.casefold()
+    dropped: list[str] = []
     loose = (stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWOTH
              | (_UMASK & 0o077))
     removed: list[str] = []
@@ -959,6 +964,10 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
                     continue
                 if stat.S_ISREG(mode) and name.casefold() in theirs:
                     entry.unlink(missing_ok=True)
+                    continue
+                if name.casefold() == defaults and not stat.S_ISDIR(mode):
+                    entry.unlink(missing_ok=True)
+                    dropped.append(_shown(str(entry.relative_to(arrived))))
                     continue
                 if Path(top) == arrived and name.casefold().startswith(".fetching-"):
                     # The name a fetch here keeps its own copy under.
@@ -992,11 +1001,16 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
                 f"{unread[0]} came back from the fetch and cannot be read here, so "
                 "what is in it could not be checked; nothing was fetched.",
                 code="environment.path.exists", path=str(unread[0]))
-    if not removed:
-        return []
-    return [f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} that "
-            f"{'is' if len(removed) == 1 else 'are'} neither a file nor a folder "
-            f"came back and were removed: {', '.join(removed[:5])}."]
+    said = []
+    if removed:
+        said.append(f"{len(removed)} entr{'y' if len(removed) == 1 else 'ies'} that "
+                    f"{'is' if len(removed) == 1 else 'are'} neither a file nor a "
+                    f"folder came back and were removed: {', '.join(removed[:5])}.")
+    if dropped:
+        said.append(f"{', '.join(dropped[:5])} came back and was left out: a "
+                    f"{DEFAULTS_FILE} there would fill the settings of studies made "
+                    "below it here.")
+    return said
 
 
 def _shown(text: str) -> str:

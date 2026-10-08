@@ -1470,3 +1470,40 @@ class TestSeventhReviewAskedLess:
         path.write_text(json.dumps(record))
         said = _text(_call(app, "cancel_study", job="ghg_run"))
         assert said.startswith("ghg_run had ended already (done)")
+
+
+class TestSeventhReviewWhatComesBack:
+    def test_a_defaults_file_from_the_machine_is_left_out(self, machine):
+        from pathlib import Path
+
+        from fastmdxplora.config.defaults_file import find_defaults
+        from fastmdxplora.remote.send import fetch
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        (Path(job.run_dir) / "Fastmdx-Defaults.yml").write_text(
+            "simulation:\n  temperature_K: 450\n")
+        (Path(job.run_dir) / "trial").mkdir()
+        (Path(job.run_dir) / "trial" / "fastmdx-defaults.yml").write_text("x: 1\n")
+        _, warnings = fetch(job.name, transport=machine.transport(),
+                            local_runner=machine.local, code=RELEASE)
+        assert find_defaults(machine.back / "trial" / "again",
+                             home=machine.back.parent) is None
+        assert any("fastmdx-defaults.yml" in w for w in warnings)
+
+    @pytest.mark.parametrize("handle", ["١٢", "12; rm -rf ~", "-1"])
+    def test_a_record_whose_process_is_no_number_is_refused(self, machine, handle):
+        import json
+
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        job = _send(machine)
+        travels._until_finished(machine, job.name)
+        path = jobs_dir() / f"{job.name}.json"
+        record = json.loads(path.read_text())
+        record.update(handle=handle, state="running")
+        path.write_text(json.dumps(record))
+        with pytest.raises(ValueError) as caught:
+            api.cancel(job.name, transport=machine.transport())
+        assert refusal_of(caught.value).code == "remote.job.unknown"

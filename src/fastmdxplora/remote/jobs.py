@@ -170,4 +170,7 @@ def _wrong_in(record: Any) -> str:
     for key in ("code", "extra"):
         if key in record and not isinstance(record[key], dict):
             return f"{key} is not a mapping"
+    # Put into commands run on the machine: a number, or this is no job record.
+    if not (record["handle"].isascii() and record["handle"].isdigit()):
+        return "handle is not a number"
     return ""
