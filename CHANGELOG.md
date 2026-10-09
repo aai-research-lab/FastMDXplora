@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent reads the software's docs
+
+**Added:** the Agent answers a question about FastMDXplora itself (a page, a
+button, a command, a setting, a refusal) from the software's own docs and
+names the page, through a new look, `read_docs`: the passages that answer a
+question, a page's sections, or one section whole. Where the docs do not
+say, it says so rather than guess. Asked what **Useful** and **Wrong** under
+its replies do, it could not say before.
+
+**Added:** the docs ship inside the package (`fastmdxplora/_docs`, copied
+from `docs/` when the package is built), so an installed copy reads the docs
+of its own version, offline.
+
+**Changed:** **Useful** and **Wrong** under each of the Agent's replies are
+line icons, a thumb up and a thumb down, named on hover and to a screen
+reader and filled while pressed.
+
 ### The README's licence
 
 **Changed:** the README's License section names FastMDXplora's own licence
