@@ -1636,3 +1636,274 @@ def test_one_lipid_written_out_beside_its_abbreviation_is_one_lipid(membrane):
                   "membrane": _stated(membrane)})
     assert plan["state"] in ("ready", "needs_you")
     assert plan["config"]["setup"]["membrane"]
+
+
+# -- what the review of 1604 found missed or asked without need -------------
+def _method_said(details):
+    """The method planned, or "confirm" for plain MD that waits for the
+    person to confirm the details' words."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "method": _stated("plain"), "method_details": _stated(details, details)})
+    confirm = [c for c in _choices(plan, "method_details") if c["label"] == "needs_you"]
+    return plan["method"] if plan["method"] != "plain" else ("confirm" if confirm else "plain")
+
+
+@pytest.mark.parametrize("details, method", [
+    ("Free energies were estimated with the Bennett acceptance ratio.", "confirm"),
+    ("Analysed with pymbar.", "confirm"),
+    ("alchemlyb was used for the analysis.", "confirm"),
+    ("Simulations were set up with OpenFE.", "confirm"),
+    ("perses was used to set up the transformations.", "confirm"),
+    ("QM\\MM simulations of the active site", "qm_mm"),
+    ("QM|MM simulations", "qm_mm"),
+    ("Replica \u0435xchange MD", "replica_exchange"),
+    ("R\u0415MD simulations", "replica_exchange"),
+    ("The string method with swarms of trajectories was used.", "confirm"),
+    ("Constant pH MD at pH 7.", "confirm"),
+    ("constant-pH simulations were run.", "confirm"),
+    ("Brownian dynamics simulations of association.", "confirm"),
+    ("ABF along the distance.", "confirm"),
+    ("adaptive biasing force along the distance", "confirm"),
+    ("TAMD with a fictitious temperature of 3000 K", "confirm"),
+    ("Hyperdynamics with a bias potential", "confirm"),
+    ("Enhanced sampling with 32 replicas.", "confirm"),
+    ("Metropolis acceptance between neighbouring temperatures.", "confirm"),
+    ("the rest simulations used 16 replicas", "confirm"),
+    ("Free energies came from a thermodynamic cycle.", "confirm"),
+    # A soft hyphen after a whole name is read apart as well as joined.
+    ("Simulations used REMD\u00ad\nsimulations with 24 replicas", "replica_exchange"),
+    ("T-REMD\u00ad\nsimulations were run.", "replica_exchange"),
+    ("aMD\u00ad\nsimulations were run", "accelerated"),
+    ("QM/MM\u00ad\nMD", "qm_mm"),
+    ("FEP\u00ad\nlike", "free_energy"),
+    ("Martini\u00ad\nmodel", "coarse_grained"),
+    ("GBSA\u00ad\nmodel", "implicit_solvent"),
+    # A force field after a QM method is the MM half of a QM/MM label.
+    ("B3LYP/GAFF2/AMBER", "confirm"),
+    ("HF/GAFF/AMBER", "confirm"),
+    ("M06-2X/TIP3P/CHARMM", "confirm"),
+    ("QM(B3LYP)/GAFF2/AMBER", "confirm"),
+    ("B3LYP/6-31G*:ff14SB/AMBER", "confirm"),
+    ("B3LYP / TIP3P / CHARMM", "confirm"),
+    ("B3LYP-GAFF2/AMBER", "confirm"),
+    # Weighted ensemble's capitals before a verb, and exchange moves.
+    ("WE used 100 iterations with 4 trajectories per bin.", "confirm"),
+    ("WE ran 500 iterations of 100 ps each.", "confirm"),
+    ("The WE used 200 iterations", "confirm"),
+    ("WE thank the reviewers.", "confirm"),
+    ("Proton exchange attempts were made every 500 steps.", "confirm"),
+    ("Solvent exchange between neighbouring windows every 2 ps.", "confirm"),
+    ("ion exchange moves between the reservoir and the box", "confirm"),
+    ("lipid exchange moves between leaflets", "confirm"),
+    ("Water exchange moves were attempted every 1000 steps.", "confirm"),
+    ("21 lambda = 0.05 nm spacing", "confirm"),
+    # Other wordings of the methods newly read.
+    ("CpHMD at pH 7", "confirm"),
+    ("Brownian-dynamics simulations", "confirm"),
+    ("BD simulations of association", "confirm"),
+    ("Association rates from Browndye", "confirm"),
+    ("The string-method was used.", "confirm"),
+    ("A finite temperature string was optimised.", "confirm"),
+    ("eABF along the distance", "confirm"),
+    ("meta-eABF along two distances", "confirm"),
+    ("adaptive-biasing force", "confirm"),
+    ("hyper-dynamics", "confirm"),
+    ("parallel replica dynamics", "confirm"),
+    ("d-AFED in the torsions", "confirm"),
+    ("mbar analysis of the windows", "confirm"),
+    ("Set up with BioSimSpace", "confirm"),
+    ("Crooks fluctuation theorem", "confirm"),
+    ("Jarzynski equality", "confirm"),
+    ("Zwanzig equation", "confirm"),
+    ("free energy calculations were run", "confirm"),
+    ("Open-FE was used", "confirm"),
+    ("pmx was used to build hybrid topologies", "confirm"),
+    ("YANK", "confirm"),
+    ("SOMD", "confirm"),
+    ("temperature-accelerated MD", "accelerated"),
+    # The second review's.
+    ("Bennett\u2019s acceptance ratio", "confirm"),
+    ("bennett-acceptance ratio", "confirm"),
+    ("QligFEP", "confirm"),
+    ("QM\u2216MM simulations", "qm_mm"),
+    ("QM\u2223MM simulations", "qm_mm"),
+    ("QM\u29f8MM simulations", "qm_mm"),
+    ("\u0280\u1d07\u1d0d\u1d05 simulations", "replica_exchange"),
+    ("R\u1d07MD simulations", "replica_exchange"),
+    ("The reactive center was treated with B3LYP/6-31G* and the rest of the enzyme with "
+     "ff14SB/AMBER, coupled through electrostatic embedding.", "confirm"),
+    ("The enzyme active site was described at the B3LYP-D3/def2-SVP level and the "
+     "environment with ff14SB/AMBER using electrostatic embedding in ChemShell.", "confirm"),
+    ("B3LYP/ \nGAFF2/AMBER level", "confirm"),
+    ("B3LYP/  GAFF2/AMBER", "confirm"),
+    ("B3LYP and GAFF2/AMBER", "confirm"),
+    ("GAFF2/AMBER/MM", "confirm"),
+    ("TIP3P/CHARMM/MM", "confirm"),
+    ("a" * 41 + "/MM", "confirm"),
+    ("Water exchanges were attempted every 1000 steps by GCMC.", "confirm"),
+    ("Water exchange with a bulk reservoir was performed every 1 ps using grand canonical "
+     "Monte Carlo.", "confirm"),
+    ("water exchange between adjacent windows", "confirm"),
+    ("Water exchange was attempted every 1000 steps.", "confirm"),
+    ("Gas-phase minimization and 100 ns MD were performed for the peptide ion.", "confirm"),
+    ("The protein ion was optimised in the gas phase and then simulated for 1 \u03bcs.", "confirm"),
+    ("Gaussian-accelerated using GPUs", "confirm"),
+    ("The GB data were compared with explicit-solvent runs.", "confirm"),
+    ("adaptive bias force", "confirm"),
+    ("Brownian-dynamic simulations", "confirm"),
+    ("driven adiabatic free energy dynamics", "confirm"),
+    ("ParRep", "confirm"),
+    ("thermodynamic-cycle", "confirm"),
+    ("free energy estimation", "confirm"),
+    ("SOMD2", "confirm"),
+    ("Open Free Energy toolkit", "confirm"),
+    ("AWH was used along the distance CV", "confirm"),
+    ("Targeted MD (TMD)", "confirm"),
+    ("Supervised MD (SuMD)", "confirm"),
+    ("Grand canonical Monte Carlo/MD (GCMC/MD)", "confirm"),
+    ("adaptive sampling seeded from MSM states", "confirm"),
+    ("The heme has an open Fe coordination site.", "plain"),
+])
+def test_another_method_the_review_found_missed_is_never_plain_md_that_runs(details, method):
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("details", [
+    "Runs on AMD MI250X GPUs",
+    "AMD MI250X",
+    "\u03bb = 488 nm",
+    "WE THANK THE REVIEWERS.",
+    "Pressure was 1013 mbar.",
+    "Several GB of storage were used.",
+    "Monte Carlo barostat with Metropolis acceptance at 1 bar",
+    "The Tabf domain was simulated.",
+])
+def test_plain_wordings_the_review_found_asked_without_need_ask_nothing(details):
+    assert _method_said(details) == "plain"
+
+
+@pytest.mark.parametrize("details", [
+    "TIP3P/CHARMM water",
+    "GAFF2/AMBER for the ligand",
+    "CGenFF/CHARMM parameters",
+    "Simulations were accelerated using GPUs.",
+    "Simulations were accelerated by HMR.",
+    "Water exchange between the pocket and bulk was analysed.",
+    "Ligand gas-phase optimisation at HF/6-31G*.",
+])
+def test_plain_wordings_that_may_stand_in_another_method_s_description_still_ask(details):
+    """Each could be part of a description of a method this does not run (the
+    MM half of a QM/MM label, a grand canonical move, a gas-phase system), so
+    no exception is made for it: the person confirms."""
+    assert _method_said(details) == "confirm"
+
+
+@pytest.mark.parametrize("method, details", [
+    ("umbrella sampling", "Along the distance with 30 windows of 10 ns; the PMF was obtained with "
+                          "MBAR using pymbar [40], convergence checked with pymbar timeseries."),
+    ("metadynamics", "Convergence was checked with pymbar timeseries."),
+    ("umbrella sampling", "The PMF was computed from the umbrella windows using the Bennett "
+                          "acceptance ratio (BAR) as implemented in GROMACS gmx bar."),
+    ("umbrella sampling", "alchemlyb was used to analyse umbrella windows"),
+    ("steered MD", "Forward and reverse pulling work distributions were combined with the "
+                   "Bennett acceptance ratio to give the PMF."),
+    ("metadynamics", "Well-tempered metadynamics; YANK utilities were used for analysis."),
+])
+def test_a_general_tool_named_beside_a_runnable_method_leaves_that_method(method, details):
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "method": _stated(method), "method_details": _stated(details, details)})
+    assert plan["method"] == method.split()[0] and plan["state"] == "needs_you"
+
+
+@pytest.mark.parametrize("details, method", [
+    ("Veloci\u00adties were assigned at 300 K.", "plain"),
+    ("The structural proper\u00adties were analysed.", "plain"),
+    ("unres\u00adtrained MD of the protein", "plain"),
+    ("GPU-\u00adaccelerated MD", "plain"),
+    ("Results were com\u00adpared with REMD data.", "confirm"),
+    ("We used the Mar\u00adtini\u00ad\nforce field", "coarse_grained"),
+    ("T-RE\u00adMD\u00ad\nsimulations", "replica_exchange"),
+    ("a\u00adMD\u00ad\nsimulations", "accelerated"),
+    ("REMD\u00ad\nsimulations with 24 replicas", "replica_exchange"),
+])
+def test_a_soft_hyphen_is_read_as_before(details, method):
+    """A soft hyphen is dropped, as it was: a word it breaks is read whole and
+    one beside a line's end keeps its space."""
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("details, method", [
+    ("Simulations were accelerated using GPUs and a boost potential.", "accelerated"),
+    ("Simulations were accelerated using GPUs; boosts were tested.", "confirm"),
+    ("GAFF2/AMBER for the ligand and DFT/AMBER for the cofactor", "confirm"),
+    ("GAFF2/AMBER for the ligand; DFTB/MM for the active site.", "qm_mm"),
+    ("Water exchange between replicas was attempted every 2 ps.", "confirm"),
+    ("\u03bb = 488 nm; 21 \u03bb windows were used", "free_energy"),
+    ("WE THANK THE REVIEWERS; WE simulations used 4 walkers per bin.", "milestoning"),
+    ("Several GB of storage were used for the umbrella windows.", "confirm"),
+])
+def test_a_plain_phrase_hides_only_its_own_word(details, method):
+    """The fixed plain phrases set aside only the word inside them: another
+    name or loose word in the same details is read as it would be alone."""
+    assert _method_said(details) == method
+
+
+def test_a_long_run_of_letters_and_brackets_is_read_at_once():
+    import time
+
+    for details in ("(a" * 15000, "water exchange " * 6000, "ion exchange " * 6000,
+                    "\u03bb" + " " * 30000 + "x", "lambda" + " " * 30000 + "x",
+                    "bennett" + " " * 30000 + "x", "a" + " " * 30000 + "/MM"):
+        start = time.monotonic()
+        _method_said(details)
+        assert time.monotonic() - start < 10
+
+
+@pytest.mark.parametrize("membrane, state", [
+    ("POPC (96, 32)", "needs_you"),
+    ("POPC bilayer of 96, 32 lipids", "needs_you"),
+    ("POPC 2 x 64 and 2 x 16 lipids", "needs_you"),
+    ("POPC bilayer, 0,15 M NaCl", "ready"),
+    ("POPC bilayer, 1-1.5 nm of water", "ready"),
+    ("POPC bilayer, 70-30", "needs_you"),
+    ("POPC bilayer, 96,32", "needs_you"),
+    ("POPC 70,30 a", "needs_you"),
+    ("POPC, 96-32 a", "needs_you"),
+    ("POPC 70,30 mol", "needs_you"),
+    ("POPC 75-25 mol", "needs_you"),
+    ("POPC 80-20 m", "needs_you"),
+    ("POPC 96-32 k", "needs_you"),
+    ("POPC 96\u00ad\n32 lipids", "needs_you"),
+    ("POPC 70\u00ad\n30", "needs_you"),
+    ("POPC 10 x 10 %", "needs_you"),
+    ("POPC 50 x 2 %", "needs_you"),
+    ("POPC 10 x 10 mol%", "needs_you"),
+    ("POPC " + "9" * 5000 + " x 2 lipids", "needs_you"),
+    ("POPC " + "9" * 3000 + " x " + "9" * 3000, "needs_you"),
+    ("POPC bilayer 70-30.", "needs_you"),
+    ("POPC bilayer, 75-25.", "needs_you"),
+    ("POPC 96,32.", "needs_you"),
+    ("POPC bilayer with 70,30.", "needs_you"),
+    ("POPC bilayer of 96-32. TIP3P water", "needs_you"),
+    ("POPC bilayer 70-30.\nwater", "needs_you"),
+    ("POPC bilayer, 1-1.5.", "needs_you"),
+    ("POPC bilayer 0,15.", "needs_you"),
+    ("POPC bilayer, 96 and 32.", "needs_you"),
+    ("POPC bilayer, 96, 32.", "needs_you"),
+    ("POPC bilayer of 128 lipids.", "ready"),
+    ("POPC bilayer of 128 lipids, 150 mM NaCl, 1-1.5 nm of water.", "ready"),
+    ("POPC bilayer 70 x 30", "needs_you"),
+    ("POPC bilayer (70 x 30)", "needs_you"),
+    ("POPE/\u0421L bilayer", "needs_you"),
+    ("POPE bilayer with \u0421\u029f", "needs_you"),
+    ("POPC bilayer with lipid \u0391", "needs_you"),
+])
+def test_counts_of_lipids_are_read_as_counts(membrane, state):
+    """Two counts of lipids however written ("(96, 32)" or "70 x 30") need
+    the person; a decimal comma or a range with its unit does not. A word in
+    letters that only look Latin needs the person too."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
+                  "membrane": _stated(membrane)})
+    assert plan["state"] == state
+    assert plan["config"]["setup"]["membrane"] == membrane[:4]

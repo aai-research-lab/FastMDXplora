@@ -25,6 +25,7 @@ is not there, or its method's block is empty.
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -349,7 +350,7 @@ _DETAIL_WORDS = {
                    r"accelerated[-\s]*(?:md|molecular)|\b(?:li|pep|lig)?gamds?\d{0,3}\b"
                    r"|(?-i:\baMD\d{0,3}\b)|dual[-\s]*boost|boost(?:ed|ing)?\s+potential"
                    r"|\biamd\s*=",
-    "qm_mm": r"\bqm(?: ?[-/:] ?| ?\([^()]{1,30}\) ?/? ?| )?mm\d{0,3}\b|\bqm\s+and\s+mm\b"
+    "qm_mm": r"\bqm(?: ?[-/:\\|] ?| ?\([^()]{1,30}\) ?/? ?| )?mm\d{0,3}\b|\bqm\s+and\s+mm\b"
              r"|\bqm[-\s]+(?:region|atoms|subsystem|zone|layer|part)"
              r"|quantum[-\s]*mechanic(?:s|al)? ?[-/] ?molecular|quantum[-\s]*mechanically"
              r"|quantum[-\s]*mechanical\s+(?:\(qm\)\s+)?(?:region|treatment|subsystem|atoms|zone)"
@@ -378,18 +379,45 @@ _DETAIL_WORDS = {
 #: none lets it run unread. Runnable methods that need their own settings
 #: (metadynamics, umbrella sampling, steered MD) are put to the person too
 #: where the AI model's word for the method is plain MD. Only "GPU-" or
-#: "CUDA-accelerated" and "AMD GPUs" are not read as such words at all.
+#: "CUDA-accelerated", "AMD" before a GPU or processor's name, and the
+#: phrases of ``_PLAIN_PHRASES`` are not read as such words.
 _LOOSE_WORDS = (
     r"quantum[-\s]*mechanic|coarse[-\s]*grain|decoupl|\bin\s+vacuo\b|\bvacuum\b|gas[-\s]*phase"
     r"|(?:absolute|relative|binding|hydration|solvation)\s+free[-\s]*energ|\bpmf\b"
-    r"|(?-i:\bAMD\b)(?!\s+(?:gpus?|radeon|instinct|epyc|ryzen|mi\d+|hardware|rocm|hip"
-    r"|processors?|cpus?)\b)|(?<!\d\s)(?<!\d)\bgb\b|dielectric|(?-i:\bM?BAR\b)|lambda[-\s]*dynamics|\bboost"
+    r"|(?-i:\bAMD\b)(?!\s+(?:gpus?|radeon|instinct|epyc|ryzen|threadripper|opteron|mi\d+\w*"
+    r"|hardware|rocm|hip|processors?|cpus?)\b)|(?<!\d\s)(?<!\d)\bgb\b|dielectric|(?-i:\bM?BAR\b)"
+    r"|lambda[-\s]*dynamics|\bboost"
     r"|(?-i:\bRest\d?\b)|semi[-\s]*empirical|\bdft\b|metadynamics|\bmetad\b|\bopes\b|umbrella|steered|\bsmd\b"
     r"|\bplumed\b|collective\s+variable|\bwham\b|\bexchang|\bswap|continuum|without\s+(?:any\s+)?"
     r"(?:water|solvent)|solvent[-\s]free|soft[-\s]?core|(?:turned|switched)\s+off|\blambda\b|\u03bb"
-    r"|\bwalkers?\b|\belnedyn|\bbeads?\b|\b[\w()+-]+\s*/\s*(?:mm|amber|charmm)\b|\bxtb\b|\bpm[367]\b"
-    r"|\bigamd|(?-i:\bWE\b)|poisson[-\s]*boltzmann|(?<!gpu-)(?<!gpu\s)(?<!cuda-)(?<!cuda\s)"
-    r"(?<!hardware-)\baccelerat|\bg[o\u014d][-\s]+(?:like|model)")
+    r"|\bwalkers?\b|\belnedyn|\bbeads?\b|[\w()+-]{1,40}\s*[/\\|]\s*(?:mm|amber|charmm)\b|\bxtb\b"
+    r"|\bpm[367]\b|\bigamd|(?-i:\bWE\b)|poisson[-\s]*boltzmann|(?<!gpu-)(?<!gpu\s)(?<!cuda-)(?<!cuda\s)"
+    r"(?<!hardware-)\baccelerat|\bg[o\u014d][-\s]+(?:like|model)"
+    r"|thermodynamic[-\s]+cycle|string[-\s]+method|temperature\s+string|constant[-\s]*ph\b"
+    r"|\bc?phmd\b|brownian[-\s]+dynamic|\bbd\s+(?:simulations?|runs?|trajector)|\bbrowndye|\be?abf\b"
+    r"|adaptive[-\s]+bias|\btamd\b|hyper[-\s]*dynamics|parallel[-\s]+replica\s+dynamics|\bparrep\b"
+    r"|\bd-?afed\b|adiabatic\s+free[-\s]*energy|enhanced[-\s]*sampling|(?<!\d\s)(?<!\d)\bmbar\b"
+    r"|\bbiosimspace\b|\bcrooks|jarzynski|zwanzig"
+    r"|free[-\s]*energ\w*\s+(?:calculations?|computations?|estimat\w*)"
+    r"|\bpymbar|\bpmx\b|\bopen-?fe\b|open\s+free\s+energy|\bsomd\d?\b|\bawh\b|targeted\s+(?:md|molecular)"
+    r"|bennett(?:['\u2019]s)?[-\s]+acceptance|\balchemlyb\b|\bperses\b|(?-i:\bYANK\b)|\bq-?ligfep\b"
+    r"|\bsumd\b|\bgcmc\b|grand[-\s]+canonical|adaptive\s+sampling"
+    r"|\brest\s+(?:simulations?|md|runs?|replicas?|protocol|scheme)\b")
+
+#: Plain phrases holding one of those words, named one by one (a fixed list,
+#: no word read around them), each of which can name nothing else: a
+#: wavelength of visible or ultraviolet light, weighted ensemble's capital
+#: letters before an acknowledgement in capitals, gigabytes of storage or
+#: memory. A loose word inside one of these is no sign; another loose word
+#: in the same sentence still is. Phrases that could stand beside or inside
+#: another method's description (a force field before "/AMBER", which may be
+#: a QM/MM label's MM half; an exchange of water, which may be a grand
+#: canonical move; a gas-phase optimisation, which may be of the whole
+#: system; a run accelerated on GPUs) are not on it, and ask.
+_PLAIN_PHRASES = re.compile(
+    r"(?:\blambda|\u03bb)\s*(?:(?:=|of|:)\s*)?[1-9]\d\d(?:\.\d+)?\s*nm\b"
+    r"|(?-i:\bWE\s+(?:THANK|THANKS|ACKNOWLEDGE|GRATEFULLY|ARE\s+GRATEFUL)\b)"
+    r"|(?<![\d.])\bgb\s+(?:of\s+)?(?:storage|memory|ram|vram|disk)\b", re.IGNORECASE)
 
 #: Words in a sentence that make a method's name in it something other than
 #: what the study did, or might: a denial, a comparison, another work, a
@@ -413,7 +441,9 @@ _SIGNS = {
         r"\b(?:replicas?|copies|temperatures)\b"
         r"|\breplicas?\b[^.;]{0,40}\b[2-9]\d\d(?:\.\d+)?(?:\s*K)?\s*(?:-|to|~|\u2192|and)\s*[2-9]\d\d(?:\.\d+)?\s*K\b"
         r"|\b[2-9]\d\d(?:\.\d+)?(?:\s*K)?\s*(?:-|to|~|\u2192)\s*[2-9]\d\d(?:\.\d+)?\s*K\b[^.;]{0,40}\breplicas?\b"
-        r"|\breplica\s+temperatures\b|\btemperature\s+ladder\b", re.IGNORECASE),
+        r"|\breplica\s+temperatures\b|\btemperature\s+ladder\b"
+        r"|\bmetropolis\b[^.;]{0,80}\b(?:temperatures|replicas?|exchang|swap|neighbou?ring|adjacent)"
+        r"|\b(?:temperatures|replicas?|exchang\w*|swaps?)\b[^.;]{0,80}\bmetropolis\b", re.IGNORECASE),
     "accelerated": re.compile(r"\bboost(?:s|ed|ing)?\b[^.;]{0,40}\b(?:potential|added|applied"
                               r"|dihedral|kcal)|\bsigma0|\u03c30", re.IGNORECASE),
 }
@@ -424,18 +454,36 @@ _PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u201
                              "\u2014": "-", "\u2212": "-", "\u2043": "-", "\u2215": "/",
                              "\u2044": "/", "\u00ad": None, "\u00a0": " ", "\u2009": " ",
                              "\u202f": " "})
+#: Cyrillic, Greek and small-capital letters drawn as Latin ones ("Replica
+#: \u0435xchange" with a Cyrillic e), read as the Latin letter they look like,
+#: and slashes and bars drawn as other symbols as "\\", "|" and "/". Greek
+#: letters with a meaning of their own here (lambda, sigma, mu, nu) are left
+#: as they are.
+_LOOK_ALIKES = str.maketrans(
+    "\u0410\u0412\u0421\u0415\u041d\u0406\u0408\u041a\u041c\u041e\u0420\u0405\u0422\u0425\u0423"
+    "\u0430\u0441\u0435\u0456\u0458\u043e\u0440\u0455\u0445\u0443\u0501\u051b\u051d\u04bb\u04cf"
+    "\u0391\u0392\u0395\u0396\u0397\u0399\u039a\u039c\u039d\u039f\u03a1\u03a4\u03a5\u03a7\u03bf"
+    "\u1d00\u0299\u1d04\u1d05\u1d07\u0262\u029c\u026a\u1d0a\u1d0b\u029f\u1d0d\u0274\u1d0f\u1d18\u0280"
+    "\u1d1b\u1d1c\u1d20\u1d21\u028f\u1d22"
+    "\u2216\u29f5\u2223\u29f8\u2571",
+    "ABCEHIJKMOPSTXY" "aceijopsxydqwhl" "ABEZHIKMNOPTYXo" "ABCDEGHIJKLMNOPRTUVWYZ" "\\\\|//")
 
 
-def _plain_text(words: str, join: bool = True) -> str:
+def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str:
     """The paper's words with PDF typography made plain: trade marks and
     modifier letters as spaces, superscript citation digits as spaces,
     ligatures and wide forms (NFKC), accents dropped, dashes and slashes as
     "-" and "/", soft hyphens and invisible characters dropped, newlines as
-    spaces. With ``join``, a word broken by a hyphen at a line's end ("ex-\n
-    change") is joined; the plan reads the words both ways."""
+    spaces. With ``look_alikes``, letters and slashes that only look Latin
+    are read as the Latin ones (method names; a membrane's words keep them,
+    so a word in another script still needs the person). With ``join``, a
+    word broken by a hyphen at a line's end ("ex-\n change") is joined; the
+    plan reads the words both ways."""
     import unicodedata
 
     words = str(words).replace("\r\n", "\n").replace("\r", "\n")
+    if look_alikes:
+        words = words.translate(_LOOK_ALIKES)
     words = re.sub("[\u2122\u00ae\u2120\u00a9\u00aa\u00ba\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+",
                    " ", words)
     words = "".join(" " if unicodedata.category(ch) == "Lm" else ch for ch in words)
@@ -461,7 +509,7 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     that names a method makes the study that method."""
     aside: list[tuple[str, str]] = []
     for join in (False, True):
-        method, found = _read_details(_plain_text(words, join=join))
+        method, found = _read_details(_plain_text(words, join=join, look_alikes=True))
         if method:
             return method, found
         aside += [item for item in found if item not in aside]
@@ -488,7 +536,12 @@ def _read_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
         sign = signs.search(unnamed_text)
         if sign:
             aside.append((sign.group(0).strip(), "signs"))
+    plain = [(phrase.start(), phrase.end()) for phrase in _PLAIN_PHRASES.finditer(unnamed_text)]
+    starts = [start for start, _end in plain]
     for loose in re.finditer(_LOOSE_WORDS, unnamed_text, re.IGNORECASE):
+        inside = bisect.bisect_right(starts, loose.start()) - 1
+        if inside >= 0 and loose.end() <= plain[inside][1]:
+            continue
         aside.append((_short(_sentence_of(unnamed_text, loose).strip(), 160), "signs"))
     return None, aside
 
@@ -523,7 +576,7 @@ def _cannot(method: str, words: str) -> str:
     replica exchange the paper names, where it names that kind and no
     other exchange at all."""
     if method == "replica_exchange":
-        words = _plain_text(words)
+        words = _plain_text(words, look_alikes=True)
         kinds = [(pattern, name) for pattern, name in _EXCHANGE_KINDS
                  if re.search(pattern, words, re.IGNORECASE)]
         if len(kinds) == 1:
@@ -1617,13 +1670,17 @@ def _unexplained(said: str, lipid: str) -> list[str]:
     text = _ACYL_WORDS.sub(" ", text)
     text = re.sub(r"\b" + re.escape(lipid.lower()) + r"s?\b", " ", text)
     text = re.sub(r"\b(?:" + _CLASS_WORDS.get(lipid[-1], "(?!)") + r")\b", " ", text)
+    unit = r"(?! ?(?:mm|um|nm|ns|ps|bar|atm|m(?= (?:nacl|kcl|salt)\b))\b)"
     left = []
     # A share written as a fraction or a ratio ("70/30", "3 to 1", "0.7", "7:3").
     left += re.findall(r"(?<![\d.])\d+(?:\.\d+)?\s*[/:]\s*\d+|\b\d+\s+to\s+\d+\b|\u2030", text)
     left += re.findall(r"(?<![\d.])0?\.\d+(?![\d])(?!\s*(?:m|mm|nm|ns|k)\b)", text)
-    left += re.findall(r"(?<![\d.,])\d+,\d+|(?<![\d.])\d+\s*-\s*\d+", text)
-    # Two counts not of a unit ("2 x 64 and 2 x 16", "96 POPC and 32"): more than one lipid.
-    counts = re.findall(r"(?<![\w.-])\d+(?![\w.,%-])(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns|ps|us"
+    # "96,32" or "70-30", but not a decimal comma or a range with its unit ("0,15 M", "1-1.5 nm").
+    left += re.findall(r"(?<![\d.,])\d+,\d+(?!\.?\d)" + unit
+                       + r"|(?<![\d.])\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?(?!\.?\d)" + unit, text)
+    # Two counts not of a unit ("2 x 64 and 2 x 16", "96 POPC and 32", "(96, 32)"): more
+    # than one lipid.
+    counts = re.findall(r"(?<![\w.-])\d+(?![\w%-])(?![.,]\d)(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns|ps|us"
                         r"|fs|bar|atm|deg|c|per\s+leaflet|in\s+each\s+leaflet)\b)", text)
     per_leaflet = set(re.findall(r"(?<![\w.-])(\d+)\s*(?:lipids\s+)?(?:per|in\s+each)\s+leaflet",
                                  text))
