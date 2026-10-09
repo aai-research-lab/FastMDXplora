@@ -41,6 +41,18 @@ of its own version, offline.
 line icons, a thumb up and a thumb down, named on hover and to a screen
 reader and filled while pressed.
 
+**Changed:** the docs look finds more of what a question asks: a word in any
+of its forms ("rotation" and "rotate", "applies" and "applied", "used" and
+"use", "GPUs"), two words asked as one or one as two ("time step" and
+`timestep_fs`, "box shape" and `box_shape`, "set up" and "setup", "fastmdx
+simulate"), a name glued at a capital (`AmberTools`, `StudyFailed`) found by
+its two words at less weight than the two written apart; the rows of one
+table or the items of one list give way to another passage that answers
+nearly as well. An answer closes any block of code it leaves open, a heading
+with nothing under it says so, and a look the software refuses is shown as
+refused. The Agent's page of the docs lists the look and says what
+**Useful** and **Wrong** keep.
+
 ### The README's licence
 
 **Changed:** the README's License section names FastMDXplora's own licence

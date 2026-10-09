@@ -796,6 +796,15 @@ def test_a_question_is_read_to_its_first_300_characters() -> None:
     assert cut.ok and cut.said.startswith("Nothing in the docs")
 
 
+def test_the_agent_page_s_docs_list_the_look_and_the_marks() -> None:
+    agent = (Path(__file__).resolve().parents[1] / "docs" / "agent.md").read_text()
+    looks = agent.split("### Looking before it answers", 1)[1].split("\n\n", 3)[2]
+    for name in Toolbox().names:
+        assert f"| `{name}` |" in looks, name
+    assert "a thumb up and a thumb down" in agent
+    assert "it is sent nowhere" in agent
+
+
 def test_the_agent_looks_in_the_docs_and_answers_from_them() -> None:
     from fastmdxplora.agent.conversation import propose_with_tools
     from fastmdxplora.agent.turns import ToolCall, Turn, Usage

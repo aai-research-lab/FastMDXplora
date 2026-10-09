@@ -504,9 +504,14 @@ it" after a Config, "Pick one above, or type your answer" after candidates,
 going, or tell me to stop it" while a study runs, "Ask why it stopped, or what
 would fix it" for one that stopped.
 
-**Useful or Wrong** under each reply marks it, kept with the conversation for
-the Agent's evaluation (a second press takes it back), beside what the reply
-took in tokens ("17,899 tokens in (17,806 from the cache) · 498 out").
+**Useful or Wrong** under each reply marks it: a thumb up and a thumb down,
+each named on hover and to a screen reader, filled while pressed (a second
+press takes it back). The mark is kept with the conversation (in the study's
+`agent/conversations/`, or the workspace's
+`.fastmdxplora_agent_conversations/` for a chat of no study) for evaluating
+the Agent; it is sent nowhere, and nothing reads the marks yet. Beside them,
+what the reply took in tokens ("17,899 tokens in (17,806 from the cache) ·
+498 out").
 
 **On a phone** the bar across the top carries FastMDXplora's mark, the study
 and the pages; the conversations are behind its chat icon.
@@ -673,13 +678,16 @@ four times per reply:
 | `methods_of_study` | A study's methods paragraphs as its report gives them, written from what it recorded, to quote when asked how it was set up, simulated or analysed, or for a methods section |
 | `list_studies` | The studies in the workspace, newest first, each with its system, state, length, force field, tags, your note and the means it recorded; optionally only those with a tag |
 | `compare_studies` | How two studies differ: each setting one asks for and the other does not, and their means side by side, a difference called resolved only where it is more than the stated multiple of its combined standard error |
+| `read_docs` | What these docs say, from the copy installed with the software (nothing is fetched): the passages that answer a question, each with its page and section; a page's sections and its opening; or one section whole, a long one in parts. With nothing asked, the pages |
 | `current_view` | In the GUI, what the page shows (the study, the frame, the view and the residues chosen) as where to look, then the facts from that study's record or structure, read by `read_study`, `inspect_structure` or `check_selection`. It reads the page's own view, never one the AI model writes |
 
 It is told to look rather than guess: to find a structure named in words
 before writing its PDB identifier, to preview before stating a size or a
 time, to inspect a structure before choosing its chains, ligand or a residue's
-state, to check a selection before writing one into a Config, and to quote
-what the software said rather than a number of its own. The tools only look:
+state, to check a selection before writing one into a Config, to answer a
+question about the software itself (a button, a page, a setting, a command)
+from its docs, naming the page, and saying so where they do not say, and to
+quote what the software said rather than a number of its own. The tools only look:
 nothing is run, written or started by one, and a look is not one of the
 attempts a Config is allowed. Hosted, a tool reads inside the workspace only,
 as the builder does.
