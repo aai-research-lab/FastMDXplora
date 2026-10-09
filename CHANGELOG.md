@@ -18,6 +18,12 @@ its top, is said as its process ends, and a process that failed or was
 stopped before writing any record is said as failed or stopped, not
 completed.
 
+**Fixed:** a reload as a run started from the Agent page could leave "I could
+not read the software's answer to starting the run" in the conversation
+beside the run that started: the launch's request, cut off by the reload,
+failed just before the page went. A launch failure while the page is going
+says nothing; one where the page stays is said a moment later.
+
 ### The Agent reads the software's docs
 
 **Added:** the Agent answers a question about FastMDXplora itself (a page, a

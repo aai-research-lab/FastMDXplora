@@ -1922,6 +1922,72 @@ def test_a_launch_cut_off_by_the_page_going_says_nothing(tmp_path, monkeypatch):
     assert "could not read" not in shown
 
 
+def _launch_cut_off_as_asked_to_go(tmp_path, monkeypatch, goes):
+    """The launch's request fails after the page was asked to go
+    (`beforeunload`) and before it went (`pagehide`), the order Chromium
+    gave CI on `cd2818a9`; the page then goes, a moment after the failure,
+    or stays. Gives what was saved and what the thread shows."""
+    workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
+    failed = []
+
+    def asked_to_go(route):
+        route.fetch()  # the server starts the run
+        page.evaluate("() => window.dispatchEvent(new Event('beforeunload'))")
+        route.abort()
+        failed.append(True)
+
+    try:
+        page, errors, close = _page_on(session, [dict(_CONFIG)])
+        page.route("**/api/agent/run", asked_to_go)
+        _say(page, "chignolin")
+        page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+        page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+        for _ in range(1500):
+            if failed:
+                break
+            page.wait_for_timeout(20)
+        assert failed, "the launch was never asked for"
+        if goes:
+            page.wait_for_timeout(300)
+            page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+            page.wait_for_timeout(4000)
+        else:
+            page.wait_for_function(
+                "() => document.getElementById('agent-thread').textContent"
+                ".includes('could not read')")
+        shown = page.text_content("#agent-thread")
+        said = []
+        for _ in range(100):
+            said = [x for entries in _entries_everywhere(workspace).values() for x in entries]
+            if goes or any("could not read" in str(x.get("text")) for x in said):
+                break
+            page.wait_for_timeout(100)
+        close()
+    finally:
+        session.server.shutdown()
+    assert [r.get("output") for r in _runs_in(said)] == made
+    return said, shown
+
+
+def test_a_launch_cut_off_as_the_page_is_asked_to_go_says_nothing(tmp_path, monkeypatch):
+    """The request a reload cuts off can fail just before `pagehide` (CI
+    on `cd2818a9`, 5 times in 6 here): the old page saved that it could not
+    read the software's answer, beside the run that started. A failure
+    after the page was asked to go waits, and the page going says
+    nothing."""
+    said, shown = _launch_cut_off_as_asked_to_go(tmp_path, monkeypatch, goes=True)
+    assert not any("could not read" in str(x.get("text")) for x in said), said
+    assert "could not read" not in shown
+
+
+def test_a_launch_failed_as_a_leave_was_called_off_is_still_said(tmp_path, monkeypatch):
+    """Asked to go and then staying (a leave called off, a download): the
+    failure is said a moment later, as any failure is."""
+    said, shown = _launch_cut_off_as_asked_to_go(tmp_path, monkeypatch, goes=False)
+    assert any("could not read" in str(x.get("text")) for x in said), said
+    assert "could not read" in shown
+
+
 def test_a_long_thread_is_not_drawn_again_by_each_save(tmp_path, monkeypatch):
     """Found by the nineteenth review (10-08): past the length kept, the
     oldest entries the server let go read as cut, and every save drew the

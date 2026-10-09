@@ -1059,9 +1059,17 @@
    * is not said, nor saved, by it (nineteenth review, 10-08: a reload
    * during a launch saved "I could not read the software's answer"). */
   var leaving = false;
+  /* Asked to go (a reload, a link followed, the tab closed): a request the
+   * going cuts off fails as the page is put away, in the same turn as
+   * pagehide and in Chromium sometimes just before it (CI on cd2818a9: a
+   * reload as a run started saved "I could not read the software's
+   * answer"). */
+  var askedToGo = false;
+  window.addEventListener("beforeunload", function () { askedToGo = true; });
   window.addEventListener("pageshow", function (event) {
     if (!event.persisted) return;
     leaving = false;
+    askedToGo = false;
     try { sessionStorage.removeItem(UNSENT); } catch (e) { /* none */ }
   });
   window.addEventListener("pagehide", function (event) {
@@ -2641,15 +2649,25 @@
          * (thirteenth and fourteenth reviews, 10-08). A page going as it
          * started (a reload) has nothing to say: the next one reads where
          * the run went (nineteenth review, 10-08). */
-        if (leaving) { launching -= 1; return; }
-        answered();
-        runBtn.disabled = false;
-        var why = "I could not read the software's answer to starting the run. " +
-                  "If it started, the Overview shows it running.";
-        note(here, why);
-        sent.push({ role: "agent", kind: "answer", text: why });
-        persistOf(c, sent);
-        redrawIfWanted();
+        function cannotRead() {
+          if (leaving) { launching -= 1; return; }
+          answered();
+          runBtn.disabled = false;
+          var why = "I could not read the software's answer to starting the run. " +
+                    "If it started, the Overview shows it running.";
+          note(here, why);
+          sent.push({ role: "agent", kind: "answer", text: why });
+          persistOf(c, sent);
+          redrawIfWanted();
+        }
+        /* Failed as the page was asked to go: said only if the page is
+         * still here a moment later (a leave cancelled, a download), never
+         * once it has gone. */
+        if (askedToGo && !leaving) {
+          setTimeout(function () { askedToGo = false; cannotRead(); }, 3000);
+          return;
+        }
+        cannotRead();
       });
     };
     runBtn.onclick = function () {
