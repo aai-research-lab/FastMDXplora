@@ -329,9 +329,10 @@ def need_for(machine: str, particles: int | None, *, precision: str = "mixed",
     runs = [run for run in measured(machine)
             if run.get("precision", "mixed") == precision]
     if not runs:
-        return Need(None, f"not known yet: no run in {precision} precision sent from here "
-                          f"has finished on {machine} with its GPU memory measured"
-                          + this_one)
+        ran = (f"has finished on {machine}" if machine == HERE else
+               f"sent from here has finished on {machine}")
+        return Need(None, f"not known yet: no run in {precision} precision {ran} with its "
+                          "GPU memory measured" + this_one)
     counted = (f"{len(runs)} run{'s' if len(runs) != 1 else ''} in {precision} precision "
                f"measured on {machine}")
     if particles is None:

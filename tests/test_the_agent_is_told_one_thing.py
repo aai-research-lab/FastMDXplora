@@ -102,7 +102,7 @@ class TestContinuingAStudy:
                                    exploration_root=tmp_path / "runs")
         spawned: list[tuple[list[str], Path]] = []
 
-        def spawn(self, command, output_dir, dashboard_url):
+        def spawn(self, command, output_dir, dashboard_url, **given):
             spawned.append((command, output_dir))
             self.active_root = output_dir
             return {"launched": True, "output": str(output_dir)}

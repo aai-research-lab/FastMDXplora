@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from fastmdxplora.batch.explorer import ALREADY_HOLD_RESULTS
 from fastmdxplora.dependencies import dependency_error_message, missing_dependencies
@@ -497,17 +497,37 @@ def _is_nonempty_file(path: Path) -> bool:
         return False
 
 
-def _taken_back(config_path: Path, folder: Path, existed: bool) -> None:
-    """What a launch refused as it started wrote, taken back: its config,
-    and the folder it made for it where that holds nothing else, so the
-    same folder can be given again once there is room."""
+def _made_by(folder: Path) -> Path | None:
+    """The outermost of ``folder`` and the folders above it that are not
+    there yet, which a launch into it makes; None where it is there."""
+    made = None
+    for each in (Path(folder), *Path(folder).parents):
+        if each.exists():
+            break
+        made = each
+    return made
+
+
+def _taken_back(config_path: Path | None, folder: Path, made: Path | None) -> None:
+    """What a launch refused as it started wrote, taken back: its config
+    (where it wrote one into ``folder``), and the folders it made, up to
+    ``made`` (:func:`_made_by`), where they hold nothing else, so the same
+    folder can be given again once there is room."""
+    folder = Path(folder)
     try:
-        if config_path.parent == Path(folder):
-            config_path.unlink(missing_ok=True)
-        if not existed:
-            Path(folder).rmdir()
+        if config_path is not None and Path(config_path).parent == folder:
+            Path(config_path).unlink(missing_ok=True)
     except OSError:
         pass
+    if made is None:
+        return
+    for each in (folder, *folder.parents):
+        try:
+            each.rmdir()
+        except OSError:
+            return
+        if each == made:
+            return
 
 
 @dataclass
@@ -934,7 +954,8 @@ class DashboardRuntime:
             config = dict(read) if isinstance(read, Mapping) else None
         try:
             with starting_in(*folders):
-                start = may_start(folders, config, self.exploration_root, walk=False)
+                start = may_start(folders, config, self.exploration_root, walk=False,
+                                  target=output_dir)
                 if start.refused is not None:
                     return start.refused
                 since = time.time()
@@ -943,11 +964,24 @@ class DashboardRuntime:
                 for folder in folders:
                     record_start(folder, output_dir, started["pid"], command,
                                  by=self.started_by, gpu=start.gpu)
-                if start.choice is not None:
+                if start.choice is not None and start.choice.learn:
                     start_sampler(int(started["pid"]), Path(output_dir), start.choice, since)
                 if start.notes:
                     started["shared"] = list(start.notes)
                 return started
+        except StartRefused as exc:
+            found = refusal_of(exc)
+            return {"ok": False, "error": found.message, "code": found.code}
+
+    def _while_starting(self, launch: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        """``launch`` with the workspace's starting lock held, as an AI app
+        holds it: refused where another process is starting a study."""
+        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.runs_here import StartRefused, starting_in
+
+        try:
+            with starting_in(*self._rule_folders()):
+                return launch()
         except StartRefused as exc:
             found = refusal_of(exc)
             return {"ok": False, "error": found.message, "code": found.code}
@@ -967,16 +1001,15 @@ class DashboardRuntime:
         (another window, an AI app) in this window's folders, or None.
         Asked before anything is written for a run, where it is certain: for
         work on the CPU (``on_cpu``), and for any study on a computer whose
-        GPUs nvidia-smi does not read. A study that may go on a GPU is
-        decided as it starts, from its config (:meth:`_spawn`)."""
+        GPUs nvidia-smi does not read (or that has none installed). A study
+        that may go on a GPU is decided as it starts, from its config
+        (:meth:`_spawn`)."""
+        from fastmdxplora.gpu_here import nvidia_smi_here
         from fastmdxplora.runs_here import may_start
 
-        if not on_cpu:
-            from fastmdxplora.gpu_here import room_here
-
-            room = room_here()
-            if room is not None and room.gpus:
-                return None
+        if not on_cpu and nvidia_smi_here():
+            # Its GPUs are read once, as it starts.
+            return None
         return may_start(self._rule_folders(), None, walk=False).refused
 
     def _spawn_now(self, command: list[str], output_dir: Path,
@@ -1065,8 +1098,6 @@ class DashboardRuntime:
         existed was not among them. This one writes the config and runs it, so
         anything a config can say, the GUI can start.
         """
-        from fastmdxplora.gui.run_from_config import prepare_run
-
         with self.lock:
             self._refresh_process()
             if self.process is not None and self.process.poll() is None:
@@ -1078,94 +1109,106 @@ class DashboardRuntime:
             if refused is not None:
                 return refused
 
-            # A results folder may be a name or a path. Browsing to one puts
-            # an absolute path in the box, and running that through the slug
-            # turned /Users/someone/work into a folder called
-            # Users_someone_work sitting inside the launch directory -- which
-            # is neither where they pointed nor anywhere they would look.
-            source: Mapping[str, Any] = config if config is not None else (state or {})
-            continued = self._study_being_continued(source)
-            if continued is not None:
-                return self._continue_in_place(continued, state, config, dashboard_url)
-            requested = str(dict(source).get("output") or "").strip()
-            if not requested:
-                # Timestamped, as the CLI's and the builder's defaults are.
-                # A fixed name meant the second study the Agent wrote
-                # collided with the first: "Output folder already exists
-                # and is not empty". The refusal is right; the default
-                # should not make it fire.
-                from fastmdxplora.naming import default_output_name, system_of
+            # Held from the check that the folder is free to the start, so no
+            # two starters (another window, an AI app) both find it free.
+            return self._while_starting(
+                lambda: self._launch_config_now(state, config, dashboard_url))
 
-                requested = default_output_name(system_of(dict(source)))
-            # A bare name is a folder beside the others this GUI made.
-            output_dir = self._output_folder(requested)
-            if output_dir is None:
-                return {"ok": False,
-                        "error": "The output folder must be inside your workspace."}
+    def _launch_config_now(self, state: Mapping[str, Any] | None,
+                           config: Mapping[str, Any] | None,
+                           dashboard_url: str | None) -> dict[str, Any]:
+        """:meth:`launch_from_config` past its first checks, with the
+        workspace's starting lock held."""
+        from fastmdxplora.gui.run_from_config import prepare_run
 
-            # An output directory must be empty or absent, as `launch` and
-            # `launch_existing_config` both already require. Two reasons, and
-            # only the first was written down:
-            #
-            #   - it must not clobber a previous run; and
-            #   - `_spawn` makes this directory `active_root`, which is the
-            #     root `/artifacts/<path>` serves files from. An absolute
-            #     path is accepted here on purpose -- browsing to a folder
-            #     puts one in the box -- so without this check any directory
-            #     nameable in an unauthenticated POST became readable over
-            #     HTTP. A directory holding an SSH key is not empty; a
-            #     directory a run can be written into is.
-            #
-            # The traversal guard in `_send_artifact` is correct and was
-            # never the issue: it confines paths *within* the root, and the
-            # root itself was the thing being chosen.
-            if output_dir.exists() and any(output_dir.iterdir()):
-                detail = (
-                    f"Output folder already exists and is not empty: "
-                    f"{output_dir}. Choose a new output folder to start a "
-                    f"new simulation."
-                )
-                self.data_stale = True
-                self.completion_error = detail
-                return {
-                    "ok": False,
-                    "error": detail,
-                    "next_action": (
-                        "Choose a new output folder; anything already there "
-                        "was left untouched."
-                    ),
-                }
+        # A results folder may be a name or a path. Browsing to one puts
+        # an absolute path in the box, and running that through the slug
+        # turned /Users/someone/work into a folder called
+        # Users_someone_work sitting inside the launch directory -- which
+        # is neither where they pointed nor anywhere they would look.
+        source: Mapping[str, Any] = config if config is not None else (state or {})
+        continued = self._study_being_continued(source)
+        if continued is not None:
+            return self._continue_in_place(continued, state, config, dashboard_url)
+        requested = str(dict(source).get("output") or "").strip()
+        if not requested:
+            # Timestamped, as the CLI's and the builder's defaults are.
+            # A fixed name meant the second study the Agent wrote
+            # collided with the first: "Output folder already exists
+            # and is not empty". The refusal is right; the default
+            # should not make it fire.
+            from fastmdxplora.naming import default_output_name, system_of
 
-            existed = output_dir.exists()
-            prepared = prepare_run(dict(state) if state else None, output_dir,
-                                   config=dict(config) if config is not None else None)
-            if not prepared["ok"]:
-                return prepared
-            # Refused here, before a process is spawned, when the chemistry
-            # stack it needs is not installed: the phase would fail inside
-            # the run with the same message, minutes later and off screen.
-            written = _json_mapping_or_yaml(Path(prepared["config_path"]))
-            environment_error = exploration_environment_error(written)
-            if environment_error:
-                return {"ok": False, "error": environment_error,
-                        "config_path": prepared["config_path"], "command": None,
-                        **_backend_refusal(written)}
+            requested = default_output_name(system_of(dict(source)))
+        # A bare name is a folder beside the others this GUI made.
+        output_dir = self._output_folder(requested)
+        if output_dir is None:
+            return {"ok": False,
+                    "error": "The output folder must be inside your workspace."}
 
-            # A previous rejected launch may have hidden its old telemetry.
-            # This is a new process and must become the current run even when
-            # it is launched from the config-based Run page.
-            self.data_stale = False
-            started = self._spawn(prepared["command"], output_dir, dashboard_url,
-                                  config_path=prepared["config_path"])
-            if started.get("ok") is False:
-                _taken_back(Path(prepared["config_path"]), output_dir, existed)
-                return started
+        # An output directory must be empty or absent, as `launch` and
+        # `launch_existing_config` both already require. Two reasons, and
+        # only the first was written down:
+        #
+        #   - it must not clobber a previous run; and
+        #   - `_spawn` makes this directory `active_root`, which is the
+        #     root `/artifacts/<path>` serves files from. An absolute
+        #     path is accepted here on purpose -- browsing to a folder
+        #     puts one in the box -- so without this check any directory
+        #     nameable in an unauthenticated POST became readable over
+        #     HTTP. A directory holding an SSH key is not empty; a
+        #     directory a run can be written into is.
+        #
+        # The traversal guard in `_send_artifact` is correct and was
+        # never the issue: it confines paths *within* the root, and the
+        # root itself was the thing being chosen.
+        if output_dir.exists() and any(output_dir.iterdir()):
+            detail = (
+                f"Output folder already exists and is not empty: "
+                f"{output_dir}. Choose a new output folder to start a "
+                f"new simulation."
+            )
+            self.data_stale = True
+            self.completion_error = detail
             return {
-                "ok": True,
-                "error": None,
-                "config_path": prepared["config_path"],
-                **started,
+                "ok": False,
+                "error": detail,
+                "next_action": (
+                    "Choose a new output folder; anything already there "
+                    "was left untouched."
+                ),
             }
+
+        made = _made_by(output_dir)
+        prepared = prepare_run(dict(state) if state else None, output_dir,
+                               config=dict(config) if config is not None else None)
+        if not prepared["ok"]:
+            return prepared
+        # Refused here, before a process is spawned, when the chemistry
+        # stack it needs is not installed: the phase would fail inside
+        # the run with the same message, minutes later and off screen.
+        written = _json_mapping_or_yaml(Path(prepared["config_path"]))
+        environment_error = exploration_environment_error(written)
+        if environment_error:
+            return {"ok": False, "error": environment_error,
+                    "config_path": prepared["config_path"], "command": None,
+                    **_backend_refusal(written)}
+
+        # A previous rejected launch may have hidden its old telemetry.
+        # This is a new process and must become the current run even when
+        # it is launched from the config-based Run page.
+        self.data_stale = False
+        started = self._spawn(prepared["command"], output_dir, dashboard_url,
+                              config_path=prepared["config_path"])
+        if started.get("ok") is False:
+            _taken_back(Path(prepared["config_path"]), output_dir, made)
+            return started
+        return {
+            "ok": True,
+            "error": None,
+            "config_path": prepared["config_path"],
+            **started,
+        }
 
     def _study_being_continued(self, source: Mapping[str, Any]) -> Path | None:
         """The study a config extends in place, where it does.
@@ -1203,6 +1246,7 @@ class DashboardRuntime:
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
+        made = _made_by(kept)
         prepared = prepare_run(dict(state) if state else None, kept,
                                config=dict(config) if config is not None else None)
         if not prepared["ok"]:
@@ -1211,6 +1255,7 @@ class DashboardRuntime:
         started = self._spawn(prepared["command"], study, dashboard_url,
                               config_path=prepared["config_path"])
         if started.get("ok") is False:
+            _taken_back(Path(prepared["config_path"]), kept, made)
             return started
         return {"ok": True, "error": None, "config_path": prepared["config_path"],
                 "continues": str(study), **started}
@@ -1274,8 +1319,6 @@ class DashboardRuntime:
         and must not quietly rewrite it into this software's own house style
         either -- what ran should be what the person has.
         """
-        from fastmdxplora.gui.config_builder import check_config_file
-
         with self.lock:
             self._refresh_process()
             if self.process is not None and self.process.poll() is None:
@@ -1287,50 +1330,58 @@ class DashboardRuntime:
             if refused is not None:
                 return refused
 
-            checked = check_config_file(config_path)
-            if not checked["ok"]:
-                return checked
+            return self._while_starting(
+                lambda: self._launch_existing_now(config_path, output, dashboard_url))
 
-            source = Path(checked["path"])
-            requested = (output or "").strip()
-            if requested:
-                output_dir = self._output_folder(requested)
-                if output_dir is None:
-                    return {"ok": False,
-                            "error": "The output folder must be inside your workspace."}
-            else:
-                # Beside the config, under a name taken from it, so a config
-                # kept with its data leaves its results there too.
-                output_dir = (source.parent / f"{source.stem}_output").resolve()
-            if output_dir.exists() and any(output_dir.iterdir()):
-                detail = f"Output folder already exists and is not empty: {output_dir}. Choose a new output folder to start a new simulation."
-                self.data_stale = True
-                self.completion_error = detail
-                return {
-                    "ok": False,
-                    "error": detail,
-                    "next_action": "Choose a new output folder; the previous run was preserved.",
-                }
-            existed = output_dir.exists()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            self.data_stale = False
+    def _launch_existing_now(self, config_path: str, output: str | None,
+                             dashboard_url: str | None) -> dict[str, Any]:
+        """:meth:`launch_existing_config` past its first checks, with the
+        workspace's starting lock held."""
+        from fastmdxplora.gui.config_builder import check_config_file
 
-            command = [
-                sys.executable, "-m", "fastmdxplora", "explore",
-                "--config", str(source), "--output", str(output_dir),
-            ]
-            started = self._spawn(command, output_dir, dashboard_url, config_path=source)
-            if started.get("ok") is False:
-                if not existed:
-                    _taken_back(Path(source), output_dir, existed)
-                return started
+        checked = check_config_file(config_path)
+        if not checked["ok"]:
+            return checked
+
+        source = Path(checked["path"])
+        requested = (output or "").strip()
+        if requested:
+            output_dir = self._output_folder(requested)
+            if output_dir is None:
+                return {"ok": False,
+                        "error": "The output folder must be inside your workspace."}
+        else:
+            # Beside the config, under a name taken from it, so a config
+            # kept with its data leaves its results there too.
+            output_dir = (source.parent / f"{source.stem}_output").resolve()
+        if output_dir.exists() and any(output_dir.iterdir()):
+            detail = f"Output folder already exists and is not empty: {output_dir}. Choose a new output folder to start a new simulation."
+            self.data_stale = True
+            self.completion_error = detail
             return {
-                "ok": True,
-                "error": None,
-                "config_path": str(source),
-                "modified": False,
-                **started,
+                "ok": False,
+                "error": detail,
+                "next_action": "Choose a new output folder; the previous run was preserved.",
             }
+        made = _made_by(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        self.data_stale = False
+
+        command = [
+            sys.executable, "-m", "fastmdxplora", "explore",
+            "--config", str(source), "--output", str(output_dir),
+        ]
+        started = self._spawn(command, output_dir, dashboard_url, config_path=source)
+        if started.get("ok") is False:
+            _taken_back(None, output_dir, made)
+            return started
+        return {
+            "ok": True,
+            "error": None,
+            "config_path": str(source),
+            "modified": False,
+            **started,
+        }
 
     def _adopt_if_running(self, root: Path | None) -> bool:
         """If the study at root has a live run this server did not start,

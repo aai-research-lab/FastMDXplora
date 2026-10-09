@@ -5,10 +5,11 @@ rule (`fastmdxplora.runs_here.may_start`): a study that simulates on a GPU
 of this computer starts beside the others where it fits, on the GPU with
 the fewest studies from here and then the most free memory, and is given
 that GPU; one that does not fit is refused with the numbers. Work on the
-CPU, and every study on a computer whose GPUs nvidia-smi does not read,
-keeps to one at a time. What a run holds is learned from runs here that
-ran alone on their GPU to the end. ``nvidia-smi`` is a stand-in reading
-files; processes are sleepers; nothing is simulated.
+CPU, a study whose GPU is not chosen here, and every study on a computer
+whose GPUs nvidia-smi does not read, waits for the other such work, and no
+two runs write one folder. What a run holds is learned from studies here
+that completed with their runs one at a time on their GPU. ``nvidia-smi``
+is a stand-in reading files; processes are sleepers; nothing is simulated.
 """
 
 from __future__ import annotations
@@ -22,10 +23,14 @@ from pathlib import Path
 
 import pytest
 
+from fastmdxplora import gpu_here
 from fastmdxplora.gui.exploration import DashboardRuntime
 from fastmdxplora.remote.gpu_room import HERE, learn, measured
 from fastmdxplora.runs_here import RUNS_FILE, going_in
 from tests.test_remote_from_every_interface import UUID_0, UUID_1, _peptide
+
+#: Whether nvidia-smi is installed, as read before the suite says it is not.
+NVIDIA_SMI_HERE = gpu_here.nvidia_smi_here
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="the stand-in nvidia-smi is sh")
 
@@ -57,6 +62,8 @@ def gpus(tmp_path, monkeypatch):
     tool.write_text(STAND_IN)
     tool.chmod(0o755)
     monkeypatch.setenv("PATH", f"{tools}{os.pathsep}{os.environ['PATH']}")
+    # The suite's computer reads no GPU (conftest); this one reads these.
+    monkeypatch.setattr(gpu_here, "nvidia_smi_here", NVIDIA_SMI_HERE)
     monkeypatch.setenv("FMDX_TEST_GPUS", str(tmp_path / "gpus.csv"))
     monkeypatch.setenv("FMDX_TEST_APPS", str(tmp_path / "apps.csv"))
 
@@ -310,3 +317,121 @@ def test_the_record_of_this_computer_never_travels(workspace):
 
     assert any(kept.endswith("gpu_memory_here.json") for kept in _settings_kept())
     assert RUNS_FILE == ".fastmdxplora-runs.json"
+
+
+class TestNoTwoRunsWriteOneFolder:
+    """Second review: with GPUs to share, a study was admitted into a
+    folder a run was writing, and one whose GPU was not chosen here
+    started beside work on the CPU."""
+
+    def test_the_same_folder_is_refused_with_room_on_the_gpus(
+            self, workspace, gpus, started):
+        held, _ = started
+        gpus((0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+        again = _start(workspace, "first")
+        assert again["ok"] is False and again["code"] == "environment.workspace.run_going"
+        assert again["error"].startswith(
+            "first (started from the GUI) is running where this study would write")
+        assert len(held) == 1
+
+    def test_a_folder_inside_or_around_one_written_is_refused(self, workspace, gpus, started):
+        from fastmdxplora.runs_here import may_start
+
+        gpus((0, UUID_0, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+        config = {"systems": [{"system": str(workspace / "top.pdb")}],
+                  "simulation": {"duration_ns": 1}}
+        for target in (workspace / "first" / "inner", workspace):
+            start = may_start([workspace], config, workspace, target=target)
+            assert start.refused and start.refused["code"] == "environment.workspace.run_going"
+        assert may_start([workspace], config, workspace,
+                         target=workspace / "firsts").refused is None
+
+    def test_a_study_whose_gpu_is_not_chosen_waits_for_work_on_the_cpu(
+            self, workspace, gpus, started):
+        from fastmdxplora.runs_here import may_start
+
+        gpus((0, UUID_0, 24000, 23000))
+        continuing = {"systems": [{"system": str(workspace / "top.pdb")}],
+                      "simulation": {"resume_from": str(workspace / "done")}}
+        alone = may_start([workspace], continuing, workspace, target=workspace / "done")
+        assert alone.refused is None and alone.choice is None and alone.env == {}
+        assert any("continuation" in line for line in alone.notes)
+        assert _start(workspace, "cpu_one", cpu=True)["launched"]
+        refused = may_start([workspace], continuing, workspace, target=workspace / "done")
+        assert refused.refused and refused.refused["code"] == "environment.workspace.run_going"
+        assert refused.refused["error"].startswith("cpu_one (started from the GUI)")
+
+    def test_a_continuation_of_a_study_running_is_refused_and_leaves_nothing(
+            self, workspace, gpus, started, monkeypatch):
+        held, _ = started
+        gpus((0, UUID_0, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+        window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
+        monkeypatch.setattr(DashboardRuntime, "_study_being_continued",
+                            lambda self, source: workspace / "first")
+        config = {"systems": [{"system": str(workspace / "top.pdb")}],
+                  "simulation": {"resume_from": str(workspace / "first")}}
+        refused = window.launch_from_config(None, config=config)
+        assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
+        assert len(held) == 1
+        assert not (workspace / "continuations").exists()
+
+    def test_a_refused_launch_takes_back_the_folders_it_made(self, workspace, gpus, started):
+        gpus((0, UUID_0, 24000, 1000))
+        _needs(2000)
+        window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
+        config = {"systems": [{"system": str(workspace / "top.pdb")}],
+                  "simulation": {"duration_ns": 1},
+                  "output": str(workspace / "new" / "deeper" / "later")}
+        refused = window.launch_from_config(None, config=config)
+        assert refused["code"] == "environment.workspace.no_room"
+        assert not (workspace / "new").exists()
+
+    def test_an_ai_app_running_phases_again_on_a_study_running_is_refused(
+            self, workspace, gpus, started):
+        from fastmdxplora.mcp.tools import ToolError, _may_start
+
+        gpus((0, UUID_0, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+
+        class Ctx:
+            class workspace:  # noqa: N801 - as the tool's context has it
+                root = workspace
+
+        with pytest.raises(ToolError) as refused:
+            _may_start(Ctx, None, workspace / "first")
+        assert refused.value.code == "environment.workspace.run_going"
+
+
+class TestWhatIsStartedBeside:
+    def test_no_reader_where_nothing_is_learned(self, workspace, gpus, started):
+        """Runs side by side are not learned from, so nothing reads what
+        they hold; the study still goes on the GPU chosen."""
+        held, samplers = started
+        gpus((0, UUID_0, 24000, 23000))
+        path = workspace / "pair.yml"
+        path.write_text(f"systems:\n  - system: {workspace / 'top.pdb'}\n"
+                        f"  - system: {workspace / 'top.pdb'}\n    name: b\n"
+                        "simulation:\n  duration_ns: 1\n"
+                        "execution:\n  mode: parallel\n  workers: 2\noutput: pair\n")
+        window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
+        assert window._spawn(_command(workspace / "pair"), workspace / "pair", None,
+                             config_path=path)["launched"]
+        assert held[0][1] == {"CUDA_VISIBLE_DEVICES": UUID_0}
+        assert samplers == []
+
+    def test_a_start_record_with_its_gpus_garbled_is_read_as_none(self):
+        assert gpu_here.held_from([{"pid": 5, "gpu": {"uuids": 5}}]) == []
+
+    def test_an_nvidia_smi_that_hangs_is_stopped(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(gpu_here, "ASKED_FOR_S", 1)
+        marker = tmp_path / "left"
+        began = time.monotonic()
+        said = gpu_here._answer(f"sh -c 'sleep 30; touch {marker}' &\nwait\n")
+        assert said == "" and time.monotonic() - began < 10
+        time.sleep(0.5)
+        found = subprocess.run(["pgrep", "-f", f"touch {marker}"], capture_output=True,
+                               text=True).stdout.split()
+        assert found == []

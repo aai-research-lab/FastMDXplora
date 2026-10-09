@@ -5,14 +5,17 @@ runs on a GPU of this computer where it fits beside those already going, as a
 study sent to a workstation does (:mod:`fastmdxplora.remote.gpu_room`): each
 GPU's room read with ``nvidia-smi``, the GPU with the fewest studies from here
 and then the most free memory chosen and pinned by its UUID, and the memory
-one run needs learned from the runs here that ran alone on their GPU to the
-end (kept in the settings as ``gpu_memory_here.json``, apart from the
-machines'). A study on the CPU, and every study on a computer whose GPUs
-``nvidia-smi`` does not read, keeps to one at a time (:mod:`fastmdxplora.runs_here`).
+one run needs learned from the studies here that completed with their runs
+one at a time on the GPU chosen (kept in the settings as
+``gpu_memory_here.json``, apart from the machines'). A study on the CPU, one
+whose GPU is not chosen here, and every study on a computer whose GPUs
+``nvidia-smi`` does not read, waits for the other such work
+(:mod:`fastmdxplora.runs_here`).
 
-What a run holds is read while it runs by a small process of its own
-(:func:`sample`, started with the run and outliving whatever started it),
-which learns from it once the run has completed.
+What a study's processes hold is read while it runs by a small process of
+its own (:func:`sample`, started with the run where something is to be
+learned, and outliving whatever started it); other studies sharing the GPU
+are not counted, since only the study's own processes are read.
 """
 
 from __future__ import annotations
@@ -42,13 +45,35 @@ ASKED_FOR_S = 20
 
 def _answer(script: str) -> str:
     """What this computer's ``sh`` prints for ``script``; "" where it
-    cannot be asked."""
+    cannot be asked or does not answer within :data:`ASKED_FOR_S`, and then
+    what it started (an ``nvidia-smi`` that hangs) is stopped with it."""
     try:
-        done = subprocess.run(["sh", "-s"], input=script, capture_output=True, text=True,
-                              timeout=ASKED_FOR_S, check=False)
-    except (OSError, subprocess.SubprocessError):
+        shell = subprocess.Popen(["sh", "-s"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True,
+                                 start_new_session=os.name != "nt")
+    except OSError:
         return ""
-    return done.stdout
+    try:
+        said, _ = shell.communicate(script, timeout=ASKED_FOR_S)
+    except (OSError, subprocess.SubprocessError):
+        try:
+            if os.name != "nt":
+                os.killpg(shell.pid, 9)
+            else:  # pragma: no cover - nvidia-smi is read with sh
+                shell.kill()
+        except OSError:
+            pass
+        try:
+            shell.communicate(timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return ""
+    return said or ""
+
+
+def nvidia_smi_here() -> bool:
+    """Whether ``nvidia-smi`` is installed here, so the GPUs may be read."""
+    return shutil.which("nvidia-smi") is not None
 
 
 def room_here() -> Room | None:
@@ -56,20 +81,22 @@ def room_here() -> Room | None:
     ``nvidia-smi`` reads none (or is not installed, so nothing is asked)."""
     from fastmdxplora.remote.send import _read
 
-    if shutil.which("nvidia-smi") is None:
+    if not nvidia_smi_here():
         return None
     return gpu_room.room_from(_read(_answer(gpu_room.GPU_SCRIPT)))
 
 
-def choice_here(config: dict[str, Any], folder: Path,
-                held: list[Held]) -> tuple[Choice | None, list[str]]:
+def choice_here(config: dict[str, Any], folder: Path, held: list[Held], *,
+                room: Room | None = None) -> tuple[Choice | None, list[str]]:
     """Where a study runs on this computer's GPUs beside the studies
     ``held`` on them, and what is said where they are not checked; ``None``
     where it runs on no GPU chosen here (the CPU, no simulation, GPUs not
-    read). Paths in the config are read from ``folder``."""
+    read). Paths in the config are read from ``folder``. ``room`` is the
+    GPUs as read already, so they are not asked twice."""
     from fastmdxplora.remote.send import gpu_choice
 
-    return gpu_choice(HERE, room_here, config, folder, held, cpus=os.cpu_count())
+    read = room_here if room is None else (lambda: room)
+    return gpu_choice(HERE, read, config, folder, held, cpus=os.cpu_count())
 
 
 def env_for(choice: Choice | None) -> dict[str, str]:
@@ -100,7 +127,8 @@ def held_from(records: list[dict[str, Any]]) -> list[Held]:
         if not isinstance(gpu, dict) or not isinstance(pid, int) or isinstance(pid, bool):
             continue
         wanted = gpu.get("wanted") if isinstance(gpu.get("wanted"), dict) else {}
-        for uuid in gpu.get("uuids") or []:
+        uuids = gpu.get("uuids")
+        for uuid in uuids if isinstance(uuids, list) else []:
             if not isinstance(uuid, str):
                 continue
             mb = wanted.get(uuid, gpu.get("need_mb"))

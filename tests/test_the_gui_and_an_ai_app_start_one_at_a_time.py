@@ -102,8 +102,8 @@ def test_the_gui_does_not_start_while_an_ai_app_s_study_runs(workspace, spawns):
     refused = _gui(workspace)._spawn(_command(workspace / "mine"), workspace / "mine", None)
     assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
     assert refused["error"].startswith(
-        "ghg_run (started by an AI app) is running in this workspace. A study on the "
-        "CPU, or on GPUs nvidia-smi does not read here, runs one at a time")
+        "ghg_run (started by an AI app) is running in this workspace. Work on the "
+        "CPU, and a study whose GPU is not chosen here")
 
 
 def test_an_ai_app_does_not_start_while_the_gui_s_study_runs(workspace, spawns):

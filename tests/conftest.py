@@ -149,3 +149,16 @@ def _a_test_has_settings_of_its_own(monkeypatch, tmp_path_factory):
     test records is not there for the next, which found "measured on
     another platform" where it was testing a machine never measured."""
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path_factory.mktemp("settings")))
+
+
+@pytest.fixture(autouse=True)
+def _this_computer_reads_no_gpu(monkeypatch):
+    """The suite's computer is one whose GPUs ``nvidia-smi`` does not read,
+    wherever it runs. On a computer with NVIDIA GPUs the tests of who
+    starts beside whom would read its real GPUs, find room, and start side
+    by side studies they expect to wait, each given a GPU and a reader of
+    what it holds. Tests of the GPUs here stand in for ``nvidia-smi`` and
+    ask for it (`test_studies_here_share_the_gpus`)."""
+    from fastmdxplora import gpu_here
+
+    monkeypatch.setattr(gpu_here, "nvidia_smi_here", lambda: False)

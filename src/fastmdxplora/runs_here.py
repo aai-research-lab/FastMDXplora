@@ -236,9 +236,18 @@ def said_going(roots: Path | list[Path], going: list[tuple[Path, str]], *,
     it, each from the first of ``roots`` it is inside."""
     roots = [Path(r).resolve() for r in (roots if isinstance(roots, list) else [roots])]
     return (f"{_named(roots, going)} {'is' if len(going) == 1 else 'are'} running in this "
-            "workspace. A study on the CPU, or on GPUs nvidia-smi does not read here, runs "
-            "one at a time, so each has the processors to itself and its timings mean what "
-            f"they say; {then}")
+            "workspace. Work on the CPU, and a study whose GPU is not chosen here (where "
+            "nvidia-smi reads no GPU, or where the study's GPUs are not checked), waits for "
+            "the other such work, so each has the processors to itself and its timings mean "
+            f"what they say; {then}")
+
+
+def said_same(roots: list[Path], going: list[tuple[Path, str]], *,
+              then: str = "stop it, or wait for it to finish.") -> str:
+    """The refusal for a study started in, inside or around a folder a
+    run is writing."""
+    return (f"{_named(roots, going)} {'is' if len(going) == 1 else 'are'} running where "
+            "this study would write, and two runs never write one folder; " + then)
 
 
 def _named(roots: list[Path], going: list[tuple[Path, str]]) -> str:
@@ -277,13 +286,17 @@ class Start:
 
 def may_start(folders: list[Path], config: dict[str, Any] | None,
               config_folder: Path | None = None, *, walk: bool = False,
+              target: Path | None = None,
               then: str = "stop it, or wait for it to finish.") -> Start:
-    """Whether a study may start beside those going in ``folders``. With
-    ``config`` (the study's, paths read from ``config_folder``), a study
-    that simulates on a GPU of this computer goes where it fits, refused
-    where it does not; without one, or one on the CPU, or on a computer
-    whose GPUs ``nvidia-smi`` does not read, it waits for the other work on
-    the CPU (a run whose start record gives no GPU counts as such)."""
+    """Whether a study may start beside those going in ``folders``. Never
+    where a run going writes: in ``target`` (the folder it would write),
+    inside it or around it. With ``config`` (the study's, paths read from
+    ``config_folder``), a study that simulates on a GPU of this computer
+    chosen here goes where it fits, refused where it does not; without one,
+    or one on the CPU, or one whose GPU is not chosen here (``nvidia-smi``
+    reads none, or the study's GPUs are not checked), it waits for the
+    other work on the CPU (a run whose start record gives no GPU counts as
+    such)."""
     from fastmdxplora.gpu_here import choice_here, env_for, held_from, room_here
     from fastmdxplora.remote.send import simulates_on_gpu
 
@@ -293,26 +306,35 @@ def may_start(folders: list[Path], config: dict[str, Any] | None,
         for run in going_in(root, walk=walk):
             going.setdefault(run["folder"], run)
     runs = list(going.values())
+    if target is not None:
+        here = Path(target).resolve()
+        same = [(Path(r["folder"]), r["by"]) for r in runs
+                if here == Path(r["folder"]) or here.is_relative_to(Path(r["folder"]))
+                or Path(r["folder"]).is_relative_to(here)]
+        if same:
+            return Start(refused={"ok": False, "error": said_same(roots, same, then=then),
+                                  "code": "environment.workspace.run_going"})
     on_gpu = config is not None and simulates_on_gpu(config, os.cpu_count())
     room = room_here() if on_gpu else None
-    if room is None or not room.gpus:
+    choice, notes = None, []
+    if room is not None and room.gpus:
+        choice, notes = choice_here(config, Path(config_folder or roots[0]), held_from(runs),
+                                    room=room)
+    if choice is None:
         on_cpu = [(Path(r["folder"]), r["by"]) for r in runs if not isinstance(r.get("gpu"), dict)]
         if on_cpu:
             return Start(refused={"ok": False, "error": said_going(roots, on_cpu, then=then),
                                   "code": "environment.workspace.run_going"})
-        return Start(notes=_shared(roots, runs))
-    choice, notes = choice_here(config, Path(config_folder or roots[0]), held_from(runs))
-    if choice is not None and choice.refused:
+        return Start(notes=[*notes, *_shared(roots, runs)])
+    if choice.refused:
         return Start(refused={"ok": False, "error": choice.refused,
                               "code": "environment.workspace.no_room"})
-    lines = []
-    if choice is not None:
-        where = (f"Runs on GPU {choice.gpu.index}" if choice.gpu is not None
-                 else "Runs on the GPUs the config names")
-        need = (f"one run needs about {choice.need.mb:,} MB ({choice.need.how})"
-                if choice.need.mb is not None else
-                f"the memory one run needs is {choice.need.how}")
-        lines = [*choice.lines, f"{where}; {need}."]
+    where = (f"Runs on GPU {choice.gpu.index}" if choice.gpu is not None
+             else "Runs on the GPUs the config names")
+    need = (f"one run needs about {choice.need.mb:,} MB ({choice.need.how})"
+            if choice.need.mb is not None else
+            f"the memory one run needs is {choice.need.how}")
+    lines = [*choice.lines, f"{where}; {need}."]
     return Start(choice=choice, env=env_for(choice), notes=[*lines, *notes,
                                                           *_shared(roots, runs)])
 

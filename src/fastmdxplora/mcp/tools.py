@@ -984,16 +984,18 @@ def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
                 None)
 
 
-def _may_start(ctx: Context, config: dict[str, Any] | None) -> list[str]:
+def _may_start(ctx: Context, config: dict[str, Any] | None,
+               target: Path | None = None) -> list[str]:
     """Refuses a start that must wait for the studies running in the
-    workspace (`fastmdxplora.runs_here.may_start`): work on the CPU waits
+    workspace (`fastmdxplora.runs_here.may_start`): never where a run going
+    writes (``target``, the folder it would write); work on the CPU waits
     for the other such work; a study on a GPU of this computer goes where it
     fits. Returns what the person is told of the GPUs and of the computer
     being shared."""
     from fastmdxplora.runs_here import may_start
 
     start = may_start([ctx.workspace.root], config, ctx.workspace.root, walk=True,
-                      then="stop_study stops it, once the person agrees.")
+                      target=target, then="stop_study stops it, once the person agrees.")
     if start.refused is not None:
         raise ToolError(str(start.refused["error"]), code=str(start.refused["code"]))
     return list(start.notes)
@@ -1039,7 +1041,6 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     lacking = _cannot_run_here(config)
     if lacking:
         raise ToolError(f"This machine cannot run it yet: {lacking}")
-    sharing = _may_start(ctx, config)
     if continuing is not None:
         where = continuing
     else:
@@ -1052,6 +1053,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
         _unused(ctx, found)
         config = {**config, "output": str(found)}
         where = found
+    sharing = _may_start(ctx, config, where)
 
     shown = ctx.workspace.shown(where)
     message = "\n".join([
@@ -1074,7 +1076,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             # Asked again now: the person may have taken minutes to answer.
             if ctx.call is not None and ctx.call.cancelled:
                 return "Not started: the call was cancelled."
-            _may_start(ctx, config)
+            _may_start(ctx, config, where)
             if continuing is None:
                 _unused(ctx, where)
             runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
@@ -1089,10 +1091,14 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
                         code=str(started.get("code") or ToolError.default_code))
     folder, pid = Path(started["output"]).resolve(), int(started["pid"])
     _recorded(ctx, folder, pid)
+    # As it started: the GPU is chosen again then, and may not be the one
+    # the person was told of.
+    shared = [str(line) for line in started.get("shared") or []]
     return (f"Started {shown} (process {pid}). It runs on its own: closing "
             "the AI app does not stop it. read_study says how far it has got; "
             "stop_study stops it. Its log is "
-            f"{ctx.workspace.shown(folder / 'exploration.log')}.")
+            f"{ctx.workspace.shown(folder / 'exploration.log')}."
+            + ("\nAs it started: " + " ".join(shared) if shared else ""))
 
 
 def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
@@ -1111,7 +1117,7 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
         found = refusal_of(exc)
         raise ToolError(found.message.replace(str(folder), ctx.workspace.shown(folder)),
                         code=found.code) from None
-    _may_start(ctx, None)
+    _may_start(ctx, None, folder)
     shown = ctx.workspace.shown(folder)
     message = f"Run {' and '.join(planned.phases)} again on {shown}? " + planned.said()
     bound = f"run_phases_again:{folder}:{','.join(planned.phases)}:" + ",".join(
@@ -1123,7 +1129,7 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
         with starting_in(ctx.workspace.root):
             if ctx.call is not None and ctx.call.cancelled:
                 return "Not run: the call was cancelled."
-            _may_start(ctx, None)
+            _may_start(ctx, None, folder)
             runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
                                        exploration_root=ctx.workspace.root,
                                        hosting=_Inside(ctx.workspace),
