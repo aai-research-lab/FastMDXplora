@@ -43,16 +43,18 @@ def _write_status(runtime, run_started_at):
 
 
 class TestANaiveTimestampDoesNotRaise:
-    @pytest.mark.parametrize("recorded, expected", [
+    # The times are taken as the test runs, not as the suite is collected:
+    # a suite of over an hour made "an hour later" the past by its turn.
+    @pytest.mark.parametrize("hours, expected", [
         # Naive, an hour earlier: telemetry is from the previous run.
-        ((datetime.now(timezone.utc) - timedelta(hours=1))
-         .replace(tzinfo=None).isoformat(), True),
+        (-1, True),
         # Naive, an hour later: it belongs to this one.
-        ((datetime.now(timezone.utc) + timedelta(hours=1))
-         .replace(tzinfo=None).isoformat(), False),
+        (1, False),
     ])
-    def test_naive_values_are_compared_as_utc(self, tmp_path, recorded, expected):
-        runtime = _runtime(tmp_path, datetime.now(timezone.utc).isoformat())
+    def test_naive_values_are_compared_as_utc(self, tmp_path, hours, expected):
+        now = datetime.now(timezone.utc)
+        recorded = (now + timedelta(hours=hours)).replace(tzinfo=None).isoformat()
+        runtime = _runtime(tmp_path, now.isoformat())
         _write_status(runtime, recorded)
 
         assert runtime._telemetry_predates_process() is expected
