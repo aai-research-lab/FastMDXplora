@@ -280,24 +280,32 @@ apart; a job sent again keeps the last one's until the cluster takes the new
 one.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
-once it has ended; one still waiting or running there is refused, on a
-cluster too, so cancel it first. A workstation job cancelled from here stops
-at its run's next frame, and is replaced once it has stopped.
+once it has ended; one still waiting or running there is refused, on a cluster
+too, so cancel it first. A workstation job cancelled from here stops at its
+run's next frame, and is replaced once no process of it works in its folder
+(where the machine has no `/proc` to say, once its process group has gone, or
+an hour after the cancel; a machine without `setsid` gives a job no process
+group of its own, so there it is not found).
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
-workstation's GPUs (`nvidia-smi`) how much memory each has free, and the
-study goes to one it fits on: the one with the fewest studies from here,
-then the most free memory. It is pinned there by the GPU's UUID
-(`CUDA_VISIBLE_DEVICES`). The plan says each GPU's free memory and how busy
-it is, and the jobs sent from here running there: a study sharing a GPU runs
-slower than alone. A study that needs more memory than the GPU has free is
-refused, with the numbers (`remote.machine.no_room`); `--dry-run` still
-shows the plan, with a line saying so. The send asks again just before the
-copy, holding a lock for the machine until the job is recorded, so two sends
-at once do not both take the room for one; a GPU that no longer has room, or
-GPUs that do not answer, refuse the send, naming another GPU with room where
-the plan chose the GPU and there is one. The job script asks once more as the run starts, ending with
-exit code 75 and a line saying why where the room has gone.
+workstation's GPUs (`nvidia-smi`) how much memory each has free, and the study
+goes to one it fits on: the one with the fewest studies from here, then the
+most free memory (GPUs within 256 MB of the most free count as alike, the
+lowest numbered taken, so the GPU a person agreed to does not move on a few
+MB). It is pinned there by the GPU's UUID (`CUDA_VISIBLE_DEVICES`). The plan
+says each GPU's free memory and how busy it is, and the jobs sent from here
+running there: a study sharing a GPU runs slower than alone. A study that
+needs more memory than the GPU has free is refused, with the numbers
+(`remote.machine.no_room`); `--dry-run` still shows the plan, with a line
+saying so. The send asks again just before the copy, holding a lock for the
+machine until the job is recorded, so two sends at once do not both take the
+room for one (across programs on macOS and Linux, within one program on
+Windows; a machine recorded under two names is two machines to the lock and to
+the room kept back, so send to it under one); a GPU that no longer has room,
+or GPUs that do not answer, refuse the send, naming another GPU with room
+where the plan chose the GPU and there is one. The job script asks once more
+as the run starts, ending with exit code 75 and a line saying why where the
+room has gone.
 
 What a run needs is learned from the runs on that machine. Each job's script
 reads its processes' GPU memory every 15 s, and once a job that ran one run at
@@ -323,7 +331,9 @@ line's reach), or where its size cannot be worked out here (a PDB identifier,
 a file other than PDB, a membrane, more than 20 kinds of run): the plan says
 which, a GPU is chosen as above, and nothing is refused. A study sent from
 here that does not yet hold what it was expected to need (setup takes minutes)
-has the difference kept back for it, on each GPU its share.
+has the difference kept back for it, on each GPU its share; one whose
+processes' memory the machine does not give (`[N/A]`, as in a container or
+WSL) is taken as holding it.
 
 Runs side by side count: a study run in parallel needs room for as many runs
 at once as the explorer starts (its `workers`, else one per device listed,
@@ -347,9 +357,12 @@ not checked, since CUDA numbers them in that order, and a value not read as
 GPUs (`-1`, a MIG device) leaves the GPUs unchecked, and the plan says so. A
 continuation (`simulation.resume_from`) runs on the GPU its study's record
 names, so none is chosen or checked. A study that runs no simulation (setup
-and analysis take no GPU), or runs it on the `CPU` or `HIP` platform, is not
-checked, nor is a machine without `nvidia-smi`, which the plan says. A
-cluster's scheduler gives each job its GPU, so nothing is asked there.
+holds a GPU briefly at most), or runs it on the `CPU` or `HIP` platform, is
+not checked, nor is a machine without `nvidia-smi`, and the plan says why. An
+umbrella study asked for its setup with other phases but not its simulation
+still runs the steered pull that seeds its windows, and that one run is
+checked. A cluster's scheduler gives each job its GPU, so nothing is asked
+there.
 
 ---
 

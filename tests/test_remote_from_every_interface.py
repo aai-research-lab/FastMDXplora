@@ -133,7 +133,7 @@ class TestGpusShared:
         _holding(machine, 1500)
         sending = _second(machine, tmp_path)
         assert f"export CUDA_VISIBLE_DEVICES={UUID_1}" in sending.script
-        assert "Runs on GPU 1, where it fits with the fewest studies" in "\n".join(
+        assert "Runs on GPU 1, with the fewest studies" in "\n".join(
             describe_sending(sending))
         job = send(sending, transport=machine.transport(), local_runner=machine.local,
                    code=RELEASE)
@@ -3651,3 +3651,140 @@ class TestTwelfthReviewSentAgain:
             assert (machine.home / "started").read_text().count("x") == 1
         finally:
             _stopped(first)
+
+
+# ---------------------------------------------------------------------------
+# The thirteenth review's cases, of the GPUs
+# ---------------------------------------------------------------------------
+class TestThirteenthReviewGpusWhereRunsGo:
+    def test_a_cpu_run_naming_no_gpu_is_not_counted_on_gpu_0(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 100), (1, UUID_1, 24000, 20000))
+        _measured(machine, 6000)
+        _peptide(machine.study.parent / "b.pdb")
+        machine.study.write_text(
+            "systems:\n"
+            "  - system: top.pdb\n    simulation:\n      device_index: '1'\n"
+            "  - system: b.pdb\n    simulation:\n      platform: CPU\n"
+            "analysis:\n  topology: top.pdb\n")
+        sending = _plan(machine, tmp_path)
+        assert sending.no_room == "" and sending.gpu.uuids == (UUID_1,)
+
+    def test_the_pull_of_an_umbrella_study_with_no_simulation_phase_is_checked(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        study = yaml.safe_load(UMBRELLA.replace("execution:\n  workers: 2\n  devices: [1]\n",
+                                                "include_phase: [setup, analysis]\n"))
+        runs = _runs_of(study, 8)
+        # The pull, one run, on the GPU chosen for it.
+        assert runs.simulates and len(runs.each) == 1 and runs.named is None
+        study["simulation"]["device_index"] = "1"
+        assert _runs_of(study, 8).named == {1: 1}
+        study["include_phase"] = ["setup"]          # prepared only: no pull
+        assert not _runs_of(study, 8).simulates
+
+    def test_a_yes_is_not_thrown_away_for_a_few_megabytes(self, app):
+        from fastmdxplora.mcp.tools import plan_id_of
+
+        _gpus(app.machine, (0, UUID_0, 24000, 20000), (1, UUID_1, 24000, 19990))
+        arguments = {"config": "ghg.yml", "plan_id": plan_id_of(app.root / "ghg.yml"),
+                     "machine": "box"}
+        first = app.request("tools/call", {"name": "start_study", "arguments": arguments},
+                            capabilities=ELICIT)["result"]
+        assert "Runs on GPU 0" in first["inputRequests"]["send"]["params"]["message"]
+        # Someone else's process takes 20 MB on GPU 0 while the person reads.
+        _gpus(app.machine, (0, UUID_0, 24000, 19980), (1, UUID_1, 24000, 19990))
+        done = app.request("tools/call", {
+            "name": "start_study", "arguments": arguments, "inputResponses": {"send": YES},
+            "requestState": first["requestState"]}, capabilities=ELICIT)["result"]
+        assert _text(done).startswith("Sent to box")
+
+
+class TestThirteenthReviewGpusWhatIsHeld:
+    def test_every_gpu_process_the_machine_lists_is_read(self):
+        from fastmdxplora.remote.gpu_room import Held, _kept_back, room_from
+        from fastmdxplora.remote.send import _read
+
+        lines = [f"fmdx:gpu=0, {UUID_0}, Stand-in GPU, 24000, 20000, 4000, 60"]
+        lines += [f"fmdx:app={UUID_0} {2000 + i} 200 {2000 + i}" for i in range(60)]
+        lines.append(f"fmdx:app={UUID_0} 4242 6000 4242")    # the 61st, from here
+        room = room_from(_read("\n".join(lines)))
+        held = Held(job="first", uuid=UUID_0, need_mb=6900, group="4242")
+        assert _kept_back(room, room.gpus[0], [held]) == (0, 0)
+
+    def test_a_study_whose_memory_the_machine_cannot_split_is_not_kept_back_again(
+            self, machine, tmp_path):
+        machine.env["FAKE_SLEEP"] = "30"
+        _gpus(machine, (0, UUID_0, 24000, 12000))
+        _measured(machine, 6000)
+        _holding(machine, "[N/A]")                  # a container, or WSL
+        first = _send(machine)
+        try:
+            deadline = time.monotonic() + 15
+            while not (machine.home / "apps.csv").exists():
+                assert time.monotonic() < deadline
+                time.sleep(0.05)
+            second = _second(machine, tmp_path)
+            assert second.no_room == "" and "kept back" not in "\n".join(second.gpu.lines)
+        finally:
+            cancel(first.name, transport=machine.transport())
+
+    def test_a_cancelled_run_still_in_its_folder_after_an_hour_is_not_replaced(
+            self, machine, tmp_path):
+        from fastmdxplora.remote.jobs import load_job, save_job
+
+        env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
+        travels._tool(env, 'trap \'\' TERM\n: > "$HOME/trapped"\nsleep 6')
+        first = _send(machine)
+        deadline = time.monotonic() + 30
+        while not (machine.home / "trapped").exists():
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        cancel(first.name, transport=machine.transport())
+        try:
+            job = load_job(first.name)
+            job.extra["cancelled_at"] = time.time() - 2 * 3600
+            save_job(job)
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert "still stopping" in str(caught.value)
+        finally:
+            _stopped(first)
+
+
+class TestThirteenthReviewGpusWhatIsSaid:
+    def test_a_gpu_is_not_said_to_fit_when_the_need_is_not_known(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 2000), (1, UUID_1, 24000, 3000))
+        said = "\n".join(describe_sending(_plan(machine, tmp_path)))
+        assert "Runs on GPU 1, with the fewest studies" in said and "fits" not in said
+
+    def test_the_refusal_s_need_is_the_memory_that_did_not_fit(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 20000))
+        _systems(machine, "top.pdb", "b.pdb", more="execution:\n  workers: 2\n")
+        _measured(machine, 6000)
+        sending = _plan(machine, tmp_path)
+        _gpus(machine, (0, UUID_0, 24000, 10000))
+        with pytest.raises(ValueError) as caught:
+            _go(machine, sending)
+        assert "needs about 13,800 MB" in str(caught.value)
+        assert refusal_of(caught.value).details["need_mb"] == 13800
+
+    def test_a_gpu_s_name_is_said_without_control_characters(self):
+        from fastmdxplora.remote.gpu_room import room_from
+        from fastmdxplora.remote.send import _read
+
+        room = room_from(_read(f"fmdx:gpu=0, {UUID_0}, RTX\x1b[8m\r, 24000, 0, 24000, 0\n"))
+        # Conceal mode would hide all printed after it, job.sh included.
+        assert room.gpus[0].name == "RTX?[8m"
+
+    def test_the_question_says_why_the_gpus_are_not_checked_for_a_cpu_study(self, app):
+        _gpus(app.machine, (0, UUID_0, 24000, 100))
+        (app.root / "ghg.yml").write_text(STUDY.replace(
+            "  duration_ns: 5\n", "  duration_ns: 5\n  platform: CPU\n"))
+        first, _ = _start(app)
+        asked = first["inputRequests"]["send"]["params"]["message"]
+        assert "The study runs on the CPU, so no GPU memory is checked." in asked

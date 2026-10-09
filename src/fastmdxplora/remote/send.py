@@ -54,6 +54,7 @@ import re
 import shlex
 import stat
 import tempfile
+import threading
 import time
 from collections import Counter
 from contextlib import contextmanager
@@ -119,10 +120,21 @@ JOB_LOG_KEPT = 1 << 20
 #: What of a machine's answer is kept: so many lines, each so long.
 _SAID_LINES, _SAID_CHARS = 12, 300
 
-#: A workstation job's process group still there (a cancelled run stops at
-#: its next frame, which can take minutes).
-_STILL_GOING = ("ps -A -o pgid= -o stat= 2>/dev/null | "
-                "awk '$1 == {group} && $2 !~ /^Z/ {{found = 1}} END {{exit !found}}'")
+#: Whether a workstation job's process group is still there (a cancelled
+#: run stops at its next frame, which can take minutes): ``in_folder`` where a
+#: process of it works in the job's folder, ``alive`` where it is there and
+#: the machine has no ``/proc`` to say where its processes work.
+_STILL_GOING = (
+    "here=$(cd {where} 2>/dev/null && pwd -P)\n"
+    "ps -A -o pid= -o pgid= -o stat= 2>/dev/null "
+    "| awk '$2 == {group} && $3 !~ /^Z/ {{print $1}}' | {{\n"
+    "  found=\n"
+    "  while read -r p; do found=1\n"
+    "    [ -n \"$here\" ] && [ \"$(readlink \"/proc/$p/cwd\" 2>/dev/null)\" = \"$here\" ] "
+    "&& {{ echo in_folder; exit 0; }}\n"
+    "  done\n"
+    "  [ -n \"$found\" ] && [ ! -d /proc/self ] && echo alive\n"
+    "}}\n")
 
 #: What ``fetch`` leaves on the machine unless asked: trajectories and
 #: checkpoints, which are most of a run's size and are not needed to read
@@ -483,7 +495,7 @@ class _Runs:
     named: Counter | None = None
     #: Why where it runs on the GPUs cannot be worked out here, or "".
     unread: str = ""
-    #: Whether a simulation runs at all (setup and analysis take no GPU).
+    #: Whether a simulation runs at all (setup holds a GPU briefly at most).
     simulates: bool = True
 
 
@@ -514,6 +526,19 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
     include, exclude = data.get("include_phase"), data.get("exclude_phase")
     runs.simulates = (("simulation" in include) if isinstance(include, list) and include
                       else not (isinstance(exclude, list) and "simulation" in exclude))
+    phases = ((set(include) if isinstance(include, list) and include
+               else {"setup", "simulation", "analysis", "report"})
+              - set(exclude if isinstance(exclude, list) else []))
+    if (not runs.simulates and isinstance(simulation, dict) and simulation.get("steered")
+            and simulation.get("umbrella") and phases != {"setup"}):
+        # The windows do not run, and the steered pull that seeds them does,
+        # as the windows are prepared: one run, on the devices the study's
+        # own simulation block names, else on the GPU chosen.
+        runs.simulates, runs.each = True, runs.each[:1]
+        if simulation.get("device_index") in (None, ""):
+            return runs
+        runs.named = Counter()
+        return _with_the_pull(runs, simulation)
     count = len(runs.each)
     execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
     workers, devices = execution.get("workers"), execution.get("devices")
@@ -562,6 +587,8 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
     named: Counter = Counter()
     unnamed = 0
     for _, _, each in runs.each:
+        if str(each.get("platform") or "auto").upper() in ("CPU", "HIP"):
+            continue            # no GPU memory, wherever it is numbered
         given = each.get("device_index")
         if given in (None, ""):
             unnamed += 1
@@ -608,8 +635,11 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
     runs = _runs_of(config, machine.inspection.cpus)
     on_gpu = [each for each in runs.each
               if str(each[2].get("platform") or "auto").upper() not in ("CPU", "HIP")]
-    if (runs.each and not on_gpu) or not runs.simulates:
-        return None, []
+    if not runs.simulates:
+        return None, ["The study runs no simulation, so no GPU memory is checked "
+                      "(setup holds a GPU briefly at most, placing hydrogens)."]
+    if runs.each and not on_gpu:
+        return None, ["The study runs on the CPU, so no GPU memory is checked."]
     if on_gpu:
         # A run on the CPU takes a slot, and no GPU memory.
         runs.at_once = min(runs.at_once, len(on_gpu))
@@ -710,7 +740,22 @@ def _atoms_prepared(named: Path) -> int | None:
 @contextmanager
 def _sending_to(machine_name: str):
     """Held from the check that a workstation's GPU has room until the job
-    is recorded, so two sends at once do not both take the room for one."""
+    is recorded, so two sends at once do not both take the room for one:
+    in this program always, and across programs where the file system
+    keeps locks (not on Windows)."""
+    with _SENDERS_LOCK:
+        here = _SENDERS.setdefault(machine_name, threading.Lock())
+    with here, _sending_to_from_any_program(machine_name):
+        yield
+
+
+#: One send to a machine at a time in this program, by machine.
+_SENDERS: dict[str, threading.Lock] = {}
+_SENDERS_LOCK = threading.Lock()
+
+
+@contextmanager
+def _sending_to_from_any_program(machine_name: str):
     from fastmdxplora.remote.jobs import jobs_dir
 
     folder = jobs_dir()
@@ -756,12 +801,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
                 "--force-overwrite replaces a job once it has ended. Cancel it first "
                 f"(`fastmdx remote cancel {name}`).",
                 code="environment.path.exists", path=name)
-        cancelled = before.extra.get("cancelled_at")
-        if (before.state == ABANDONED and before.scheduler == "process"
-                and isinstance(cancelled, (int, float)) and time.time() - cancelled < 3600
-                and usable_handle(before.handle)
-                and link.run(["sh", "-c", _STILL_GOING.format(group=before.handle)]
-                             ).returncode == 0):
+        if _still_stopping(before, sending.machine.name, link):
             # Its run would still be writing where the new one starts.
             raise StudyError(
                 f"{name} is still stopping on {before.machine} since it was cancelled; "
@@ -860,6 +900,21 @@ def _send_held(sending: Sending, link: Transport, local_runner,
     return job
 
 
+def _still_stopping(job: Job, machine: str, link: Transport) -> bool:
+    """Whether a workstation job cancelled from here still runs in its
+    folder on ``machine``. Its process group's number is taken as its own
+    where a process of it works in the job's folder; where the machine
+    cannot say, for an hour after the cancel."""
+    if (job.state != ABANDONED or job.scheduler != "process" or job.machine != machine
+            or not usable_handle(job.handle)):
+        return False
+    said = link.run(["sh", "-s"], stdin=_STILL_GOING.format(
+        group=job.handle, where=shlex.quote(job.remote_dir))).stdout.split()
+    cancelled = job.extra.get("cancelled_at")
+    return "in_folder" in said or ("alive" in said and isinstance(cancelled, (int, float))
+                              and time.time() - cancelled < 3600)
+
+
 def _room_now(sending: Sending, link: Transport) -> None:
     """Refuses a study whose GPUs do not have room for it now, asked again:
     a study sent since the plan may have taken it. The GPUs are the plan's,
@@ -868,23 +923,26 @@ def _room_now(sending: Sending, link: Transport) -> None:
     name = sending.machine.name
     if gpu is None:
         return
+    # What did not fit, as the refusal says it: one run's need times the
+    # runs on a GPU at once.
+    wanted = max(gpu.wanted.values(), default=gpu.need.mb)
     if not gpu.uuids:
         # The plan's own refusal (a GPU the config names is not there).
         raise StudyError(gpu.refused or f"No GPU of {name} was chosen for this study.",
-                         code="remote.machine.no_room", machine=name, need_mb=gpu.need.mb)
+                         code="remote.machine.no_room", machine=name, need_mb=wanted)
     room = room_from(_read(link.run(["sh", "-s"], stdin=GPU_SCRIPT).stdout))
     if room is None:
         raise StudyError(
             f"The GPUs of {name} did not answer as the copy was to start, so the room "
             "planned for this study could not be asked again. Send it again.",
-            code="remote.machine.no_room", machine=name, need_mb=gpu.need.mb)
+            code="remote.machine.no_room", machine=name, need_mb=wanted)
     # A kept answer serves: a job read as running only keeps its room.
     refused = still_fits(name, room, gpu,
                          _held(_running_from_here(name, link, max_age_s=STATUS_KEPT_S)),
                          again=True)
     if refused:
         raise StudyError(refused, code="remote.machine.no_room", machine=name,
-                         need_mb=gpu.need.mb)
+                         need_mb=wanted)
 
 
 def _still_its_own(sending: Sending) -> None:
@@ -953,9 +1011,14 @@ def _status_script(job: Job) -> str:
             "[ -f job.log ] && tail -n 12 job.log | sed 's/^/fmdx:log=/'\n")
 
 
-def _read(text: str) -> dict[str, list[str]]:
+#: Keys a machine's answer may give more lines of: the processes on its
+#: GPUs, as many as ``GPU_SCRIPT`` asks for.
+_MOST_LINES = {"app": 200}
+
+
+def _read(text: str, *, lines: int = 50) -> dict[str, list[str]]:
     """The ``fmdx:`` lines of a machine's answer, bounded: each value at
-    most 4 kB, each key at most 50 lines, whatever the machine sends."""
+    most 4 kB, each key at most ``lines`` lines, whatever the machine sends."""
     found: dict[str, list[str]] = {}
     # Lines end at a line feed only: a carriage return or another separator
     # Python counts as one, written into a log, does not start a line.
@@ -963,7 +1026,7 @@ def _read(text: str) -> dict[str, list[str]]:
         if line.startswith("fmdx:"):
             key, _, value = line[5:].partition("=")
             values = found.setdefault(key[:40], [])
-            if len(values) < 50:
+            if len(values) < (_MOST_LINES.get(key[:40], lines)):
                 values.append(value[:4096])
     return found
 
@@ -1743,8 +1806,10 @@ def room_said(sending: Sending, *, running: str = "") -> list[str]:
         where = f"Fits on no GPU now; GPU {gpu.gpu.index} has the most room"
     elif gpu.gpu is not None:
         where = f"Runs on GPU {gpu.gpu.index}" + (
+            "" if len(gpu.lines) < 2 else
             ", where it fits with the fewest studies from here, then the most free "
-            "memory" if len(gpu.lines) > 1 else "")
+            "memory" if gpu.need.mb is not None else
+            ", with the fewest studies from here, then the most free memory")
     elif gpu.refused:
         where = "The GPUs the config names cannot take it now"
     else:

@@ -47,6 +47,10 @@ SAMPLE_EVERY_S = 15
 #: Kept above what the runs measured on that machine say a study needs.
 MARGIN = 1.15
 
+#: Free memory within this of the most a GPU has free counts as alike, so
+#: the GPU chosen does not move on noise.
+_ALIKE_MB = 256
+
 #: The runs kept for each machine, the latest.
 _KEPT = 20
 
@@ -91,7 +95,9 @@ class App:
     """A process using a GPU."""
 
     uuid: str
-    used_mb: int
+    #: ``None`` where the machine does not split its memory by process
+    #: (``[N/A]``, as in a container or WSL).
+    used_mb: int | None
     #: Its process group, or "" where the machine did not say.
     group: str
 
@@ -111,7 +117,13 @@ class Room:
     numbered_alike: bool = True
 
     def used_by(self, group: str, uuid: str) -> int:
-        return sum(app.used_mb for app in self.apps
+        return sum(app.used_mb or 0 for app in self.apps
+                   if group and app.group == group and app.uuid == uuid)
+
+    def unsplit(self, group: str, uuid: str) -> bool:
+        """Whether ``group`` has a process on ``uuid`` whose memory the
+        machine does not give: it holds memory, counted only as used."""
+        return any(app.used_mb is None for app in self.apps
                    if group and app.group == group and app.uuid == uuid)
 
 
@@ -137,15 +149,16 @@ def room_from(found: dict[str, list[str]]) -> Room | None:
         if (index is None or total is None or used is None or free is None
                 or not _UUID.fullmatch(parts[1])):
             continue
-        gpus.append(Gpu(index=index, uuid=parts[1],
-                        name=", ".join(parts[2:-4])[:80] or "GPU",
+        name = "".join(c if c.isprintable() else "?" for c in ", ".join(parts[2:-4]))
+        gpus.append(Gpu(index=index, uuid=parts[1], name=name[:80] or "GPU",
                         total_mb=total, used_mb=used, free_mb=free,
                         busy_pct=_number(parts[-1])))
     apps = []
     for line in found.get("app", []):
         parts = line.split(" ")
         used = _number(parts[2]) if len(parts) > 2 else None
-        if used is None or not _UUID.fullmatch(parts[0]):
+        if (used is None and not (len(parts) > 2 and parts[2] in ("[N/A]", "N/A"))
+                or not _UUID.fullmatch(parts[0])):
             continue
         group = parts[3] if len(parts) > 3 and _number(parts[3]) is not None else ""
         apps.append(App(uuid=parts[0], used_mb=used, group=group))
@@ -385,7 +398,7 @@ def _kept_back(room: Room, gpu: Gpu, held: list[Held]) -> tuple[int, int]:
     they were expected to yet, and how many there are."""
     kept = count = 0
     for each in held:
-        if each.uuid != gpu.uuid or not each.need_mb:
+        if each.uuid != gpu.uuid or not each.need_mb or room.unsplit(each.group, gpu.uuid):
             continue
         holds = room.used_by(each.group, gpu.uuid)
         # Expected, without the margin kept above it: a run holding that has
@@ -441,11 +454,20 @@ def choose(machine: str, room: Room, need: Need, held: list[Held], *,
         from_here = Counter(each.uuid for each in held)
         wanted = need.mb * at_once if need.mb is not None else 0
 
-        def order(g: Gpu) -> tuple:
+        def tier(g: Gpu) -> tuple:
             fits = free[g.uuid] >= wanted
-            return (fits, -from_here[g.uuid] if fits else 0, free[g.uuid], -g.index)
+            return (fits, -from_here[g.uuid] if fits else 0)
 
-        best = max(room.gpus, key=order)
+        top = max(tier(g) for g in room.gpus)
+        level = [g for g in room.gpus if tier(g) == top]
+        most = max(free[g.uuid] for g in level)
+        # Among GPUs it fits on, those within a little of the most free are
+        # alike: a few MB taken by someone else's process while a person
+        # reads the plan does not move the study to another GPU, and ask
+        # them again. Where it fits on none, the one with the most room.
+        close = _ALIKE_MB if top[0] else 0
+        best = min((g for g in level if free[g.uuid] >= most - close),
+                   key=lambda g: g.index)
         choice = Choice(gpu=best, uuids=(best.uuid,), need=need, lines=lines,
                         at_once={best.uuid: at_once})
     if need.mb is not None:
