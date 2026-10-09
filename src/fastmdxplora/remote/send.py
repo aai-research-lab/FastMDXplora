@@ -119,6 +119,11 @@ JOB_LOG_KEPT = 1 << 20
 #: What of a machine's answer is kept: so many lines, each so long.
 _SAID_LINES, _SAID_CHARS = 12, 300
 
+#: A workstation job's process group still there (a cancelled run stops at
+#: its next frame, which can take minutes).
+_STILL_GOING = ("ps -A -o pgid= -o stat= 2>/dev/null | "
+                "awk '$1 == {group} && $2 !~ /^Z/ {{found = 1}} END {{exit !found}}'")
+
 #: What ``fetch`` leaves on the machine unless asked: trajectories and
 #: checkpoints, which are most of a run's size and are not needed to read
 #: its results. Their paths on the machine are recorded.
@@ -532,10 +537,6 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if not listed or not all(index.fullmatch(d) for d in listed):
             runs.unread = "the config's `execution.devices` is not read here"
             return runs
-        pull = _pull_device(simulation)
-        if pull is None:
-            runs.unread = "the config's `device_index` is not read here"
-            return runs
         if not parallel:
             # One at a time, each on the first device listed.
             runs.named = Counter({int(listed[0]): 1})
@@ -557,18 +558,11 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
                 for device, there in by_place.items():
                     placed[device] = max(placed[device], min(runs.at_once, there))
             runs.named = placed
-        if (isinstance(simulation, dict) and simulation.get("steered")
-                and simulation.get("umbrella") and not runs.named[pull]):
-            # The pull that seeds an umbrella's windows runs in the
-            # explorer, before them, on the device the study's own
-            # simulation block names (CUDA's first where none), never on
-            # one listed.
-            runs.named[pull] = 1
-        return runs
+        return _with_the_pull(runs, simulation)
     named: Counter = Counter()
     unnamed = 0
-    for _, _, simulation in runs.each:
-        given = simulation.get("device_index")
+    for _, _, each in runs.each:
+        given = each.get("device_index")
         if given in (None, ""):
             unnamed += 1
             continue
@@ -582,18 +576,27 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if unnamed:
             named[0] += unnamed     # CUDA's first device, where none is named
         runs.named = Counter({i: min(n, runs.at_once) for i, n in named.items()})
+        return _with_the_pull(runs, simulation)
     return runs
 
 
-def _pull_device(simulation: object) -> int | None:
-    """The device a steered pull run by the explorer itself uses: the first
-    the study's simulation block names, else 0; ``None`` where that is not
-    read here."""
-    given = simulation.get("device_index") if isinstance(simulation, dict) else None
-    if given in (None, ""):
-        return 0
-    first = str(given).split(",")[0].strip()
-    return int(first) if re.fullmatch(r"[0-9]{1,3}", first) else None
+def _with_the_pull(runs: _Runs, simulation: object) -> _Runs:
+    """``runs`` with the steered pull that seeds an umbrella's windows
+    counted where it runs: in the explorer, before the windows, on the
+    devices the study's own simulation block names (CUDA's first where
+    none), whatever a system or ``execution.devices`` gives the windows."""
+    if not (isinstance(simulation, dict) and simulation.get("steered")
+            and simulation.get("umbrella")) or runs.named is None:
+        return runs
+    given = simulation.get("device_index")
+    parts = ["0"] if given in (None, "") else [p.strip() for p in str(given).split(",")]
+    if not all(re.fullmatch(r"[0-9]{1,3}", part) for part in parts):
+        runs.unread = "the config's `device_index` is not read here"
+        runs.named = None
+        return runs
+    for part in dict.fromkeys(parts):
+        runs.named[int(part)] = max(runs.named[int(part)], 1)
+    return runs
 
 
 def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
@@ -607,14 +610,21 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
               if str(each[2].get("platform") or "auto").upper() not in ("CPU", "HIP")]
     if (runs.each and not on_gpu) or not runs.simulates:
         return None, []
+    if on_gpu:
+        # A run on the CPU takes a slot, and no GPU memory.
+        runs.at_once = min(runs.at_once, len(on_gpu))
+        if runs.named is not None:
+            runs.named = Counter({i: min(n, len(on_gpu)) for i, n in runs.named.items()})
     room = room_from(_read(link.run(["sh", "-s"], stdin=GPU_SCRIPT).stdout))
     if room is None:
         return None, [f"{name} has no GPU that nvidia-smi reads, so no GPU memory is "
                       "checked."]
     if not room.gpus:
+        how = ("" if room.numbered_alike else
+               " (where the GPUs differ, CUDA numbers them fastest first)")
         return None, [f"The account's CUDA_VISIBLE_DEVICES on {name} is {room.visible}, "
-                      "which is not read here as GPUs nvidia-smi lists, so no GPU is "
-                      "chosen and no GPU memory is checked."]
+                      f"which is not read here as GPUs nvidia-smi lists{how}, so no GPU "
+                      "is chosen and no GPU memory is checked."]
     held = _held(running)
     if runs.unread:
         free_lines = choose(name, room, Need(None, ""), held).lines
@@ -622,8 +632,11 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
                       "GPU is chosen and its memory is not checked."]
     precisions = sorted({str(each[2].get("precision") or "mixed") for each in on_gpu})
     particles = _particles(on_gpu, folder)
-    learn = runs.named is None and runs.at_once == 1 and len(precisions) == 1
-    needs = [need_for(name, particles, precision=p, learned_here=learn)
+    not_learned = ("on GPUs the config names" if runs.named is not None else
+                   "with runs side by side" if runs.at_once > 1 else
+                   "in more than one precision" if len(precisions) > 1 else "")
+    learn = not not_learned
+    needs = [need_for(name, particles, precision=p, not_learned=not_learned)
              for p in precisions]
     unknown = [n for n in needs if n.mb is None]
     need = unknown[0] if unknown else max(needs, key=lambda n: n.mb)
@@ -633,7 +646,7 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
             return None, [*free_lines, "The config names its GPUs by number, and the "
                           f"account's CUDA_VISIBLE_DEVICES on {name} ({room.visible}) "
                           "numbers them its own way, so their memory is not checked."]
-        if len({gpu.name for gpu in room.gpus}) > 1:
+        if not room.numbered_alike:
             free_lines = choose(name, room, Need(None, ""), held).lines
             return None, [*free_lines, "The config names its GPUs by number, and the GPUs "
                           f"of {name} differ, so which card each number means is CUDA's "
@@ -742,6 +755,17 @@ def _send_held(sending: Sending, link: Transport, local_runner,
                 f"{name} is still {before.state} on {before.machine}; "
                 "--force-overwrite replaces a job once it has ended. Cancel it first "
                 f"(`fastmdx remote cancel {name}`).",
+                code="environment.path.exists", path=name)
+        cancelled = before.extra.get("cancelled_at")
+        if (before.state == ABANDONED and before.scheduler == "process"
+                and isinstance(cancelled, (int, float)) and time.time() - cancelled < 3600
+                and usable_handle(before.handle)
+                and link.run(["sh", "-c", _STILL_GOING.format(group=before.handle)]
+                             ).returncode == 0):
+            # Its run would still be writing where the new one starts.
+            raise StudyError(
+                f"{name} is still stopping on {before.machine} since it was cancelled; "
+                "--force-overwrite replaces it once it has stopped, in a minute or so.",
                 code="environment.path.exists", path=name)
     if name in job_names() and not sending.force:
         raise StudyError(
@@ -1085,6 +1109,8 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
     """What the machine said of the job's GPU: why it did not start, the
     most memory it held, and, once it has run alone on its GPU to the end,
     that memory against its particles, learned from."""
+    from fastmdxplora.remote import gpu_room
+
     gpu = job.extra["gpu"]
     no_room = (found.get("no_room") or [""])[0].split()
     if (ended_with == "75" and len(no_room) == 3
@@ -1104,9 +1130,13 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
             continue
         # A run on the CPU holds no GPU memory: its particles say nothing
         # of what the GPU held.
+        # A run shorter than a few readings may have been read only while
+        # its context was being made, before it held its memory.
         if (isinstance(record, dict) and isinstance(record.get("particles"), int)
                 and 0 < record["particles"] < 100_000_000
-                and record.get("platform") in ("CUDA", "OpenCL")):
+                and record.get("platform") in ("CUDA", "OpenCL")
+                and isinstance(record.get("seconds"), (int, float))
+                and record["seconds"] >= 3 * gpu_room.SAMPLE_EVERY_S):
             particles.append(record["particles"])
             precisions.add(str(record.get("precision") or gpu.get("precision") or "mixed"))
     held_mb = job.extra.get("gpu_peak_mb")

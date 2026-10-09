@@ -281,7 +281,8 @@ one.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
 once it has ended; one still waiting or running there is refused, on a
-cluster too, so cancel it first.
+cluster too, so cancel it first. A workstation job cancelled from here stops
+at its run's next frame, and is replaced once it has stopped.
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
 workstation's GPUs (`nvidia-smi`) how much memory each has free, and the
@@ -301,7 +302,8 @@ exit code 75 and a line saying why where the room has gone.
 What a run needs is learned from the runs on that machine. Each job's script
 reads its processes' GPU memory every 15 s, and once a job that ran one run at
 a time on the GPU chosen for it has ended done, the most it held is kept with
-the particles its runs on the GPU (CUDA or OpenCL) had and their precision
+the particles its runs on the GPU (CUDA or OpenCL, each at least three
+readings long, so read once it held its memory) had and their precision
 (`gpu_memory/<machine>.json` in the settings folder; only the runs of that
 send, newer by the machine's own clock than the send, never one an earlier
 send of the same name left). A study refused as needing more than a GPU has at
@@ -310,34 +312,37 @@ taken out. Much of a small run's memory is CUDA's own and the same at any
 size, so a size is never scaled from another by particles alone. For a new
 study, from runs in its precision: no less than a run of its size or smaller
 held, and no more than one of its size or larger held; from two sizes or more
-whose memory grows with size, a straight line through them, followed past the
-largest size by as far again as the sizes measured span; then 15% more. The
-particles are those of the prepared system a run starts from (`setup_from`),
-else estimated from each run's structure file and setup, as the builder's
-preview estimates them, sweeps included. The need is not known where no run in
-that precision has finished there, where the study is larger than the runs
-measured can say (past the one size measured, or past the line's reach), or
-where its size cannot be worked out here (a PDB identifier, a file other than
-PDB, a membrane, more than 20 kinds of run): the plan says which, a GPU is
-chosen as above, and nothing is refused. A study sent from here that does not
-yet hold what it was expected to need (setup takes minutes) has the difference
-kept back for it, on each GPU its share.
+whose memory grows with size, a straight line through the most each size held,
+followed past the largest size by as far again as the sizes measured span;
+then 15% more. The particles are those of the prepared system a run starts
+from (`setup_from`), else estimated from each run's structure file and setup,
+as the builder's preview estimates them, sweeps included. The need is not
+known where no run in that precision has finished there, where the study is
+larger than the runs measured can say (past the one size measured, or past the
+line's reach), or where its size cannot be worked out here (a PDB identifier,
+a file other than PDB, a membrane, more than 20 kinds of run): the plan says
+which, a GPU is chosen as above, and nothing is refused. A study sent from
+here that does not yet hold what it was expected to need (setup takes minutes)
+has the difference kept back for it, on each GPU its share.
 
 Runs side by side count: a study run in parallel needs room for as many runs
 at once as the explorer starts (its `workers`, else one per device listed,
 else the machine's cores, up to the number of runs), and is not learned from;
-the runs on each GPU are counted as the explorer places them, and for a study
-run until it is determined (`simulation.stop_when`), as each later round
-places them too. A steered pull that seeds an umbrella's windows runs before
-them on the device the study's `simulation.device_index` names (CUDA's first
-where none), whatever `execution.devices` lists, and is counted there. A
-config that names its own GPUs (`simulation.device_index` in the study, a
-system or a sweep, or `execution.devices`) keeps them, nothing pinned, and
-each is checked for room for the runs on it, by its number as `nvidia-smi`
-gives it; where the machine's GPUs are not all alike, CUDA may number them
-otherwise, so their memory is not checked and the plan says so. Where the
-account's own `CUDA_VISIBLE_DEVICES` is set there, a GPU is chosen only among
-those it gives (by number or UUID); a config that names GPUs by number is then
+a run on the CPU takes no GPU memory and is not counted, and the runs on each
+GPU are counted as the explorer places them, and for a study run until it is
+determined (`simulation.stop_when`), as each later round places them too. A
+steered pull that seeds an umbrella's windows runs before them on the devices
+the study's own `simulation.device_index` names (CUDA's first where none),
+whatever a system or `execution.devices` gives the windows, and is counted on
+each. A config that names its own GPUs (`simulation.device_index` in the
+study, a system or a sweep, or `execution.devices`) keeps them, nothing
+pinned, and each is checked for room for the runs on it, by its number as
+`nvidia-smi` gives it; where the machine's GPUs are not all alike, CUDA
+numbers them fastest first unless the account sets
+`CUDA_DEVICE_ORDER=PCI_BUS_ID`, so without it their memory is not checked and
+the plan says so. Where the account's own `CUDA_VISIBLE_DEVICES` is set there,
+a GPU is chosen only among those it gives (by UUID, or by number where CUDA
+numbers them as `nvidia-smi` does); a config that names GPUs by number is then
 not checked, since CUDA numbers them in that order, and a value not read as
 GPUs (`-1`, a MIG device) leaves the GPUs unchecked, and the plan says so. A
 continuation (`simulation.resume_from`) runs on the GPU its study's record

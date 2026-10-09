@@ -53,12 +53,14 @@ _KEPT = 20
 #: A GPU's UUID as ``nvidia-smi`` gives it, the only form put in a job script.
 _UUID = re.compile(r"GPU-[0-9A-Fa-f-]{8,64}")
 
-#: Each GPU, each process using one with the process group it is in, and
-#: the GPUs the account's own environment gives it, where it names them.
+#: Each GPU, each process using one with the process group it is in, the
+#: GPUs the account's own environment gives it, where it names them, and the
+#: order CUDA numbers them in there.
 GPU_SCRIPT = (
     "command -v nvidia-smi >/dev/null 2>&1 || { echo fmdx:gpus=none; exit 0; }\n"
     "[ -n \"${CUDA_VISIBLE_DEVICES+x}\" ] "
     "&& printf 'fmdx:visible=%s\\n' \"$CUDA_VISIBLE_DEVICES\"\n"
+    "printf 'fmdx:order=%s\\n' \"${CUDA_DEVICE_ORDER:-}\"\n"
     "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,"
     "utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -n 50 "
     "| sed 's/^/fmdx:gpu=/'\n"
@@ -103,6 +105,10 @@ class Room:
     #: The account's own ``CUDA_VISIBLE_DEVICES`` there, as shown, where it
     #: is set; ``gpus`` are then only those it gives.
     visible: str | None = None
+    #: Whether CUDA numbers the GPUs as ``nvidia-smi`` does: all alike, or
+    #: ``CUDA_DEVICE_ORDER=PCI_BUS_ID`` there (CUDA puts the fastest first
+    #: otherwise).
+    numbered_alike: bool = True
 
     def used_by(self, group: str, uuid: str) -> int:
         return sum(app.used_mb for app in self.apps
@@ -145,20 +151,25 @@ def room_from(found: dict[str, list[str]]) -> Room | None:
         apps.append(App(uuid=parts[0], used_mb=used, group=group))
     if not gpus:
         return None
+    alike = (len({gpu.name for gpu in gpus}) == 1
+             or (found.get("order") or [""])[0].strip() == "PCI_BUS_ID")
     if "visible" not in found:
-        return Room(gpus=tuple(gpus), apps=tuple(apps))
+        return Room(gpus=tuple(gpus), apps=tuple(apps), numbered_alike=alike)
     given = found["visible"][0]
     shown = re.sub(r"[^A-Za-z0-9,._-]", "?", given)[:120]
-    return Room(gpus=_visible(gpus, given), apps=tuple(apps), visible=shown or '""')
+    return Room(gpus=_visible(gpus, given, by_number=alike), apps=tuple(apps),
+                visible=shown or '""', numbered_alike=alike)
 
 
-def _visible(gpus: list[Gpu], given: str) -> tuple[Gpu, ...]:
+def _visible(gpus: list[Gpu], given: str, *, by_number: bool) -> tuple[Gpu, ...]:
     """The GPUs ``CUDA_VISIBLE_DEVICES`` gives, each by its number or its
     UUID (or the start of one), in its order; none where any of it is not
-    one of those (CUDA takes none past an entry it cannot read)."""
+    one of those (CUDA takes none past an entry it cannot read), or is a
+    number where CUDA does not number the GPUs as ``nvidia-smi`` does
+    (``by_number`` false)."""
     kept: list[Gpu] = []
     for entry in (part.strip() for part in given.split(",")):
-        if re.fullmatch(r"[0-9]{1,3}", entry):
+        if re.fullmatch(r"[0-9]{1,3}", entry) and by_number:
             found = [gpu for gpu in gpus if gpu.index == int(entry)]
         elif re.fullmatch(r"GPU-[0-9A-Fa-f-]{1,64}", entry):
             found = [gpu for gpu in gpus if gpu.uuid.lower().startswith(entry.lower())]
@@ -262,14 +273,13 @@ class Need:
 
 
 def need_for(machine: str, particles: int | None, *, precision: str = "mixed",
-             learned_here: bool = True) -> Need:
+             not_learned: str = "") -> Need:
     """What one run of ``particles`` (``None`` where they could not be
     worked out here) in ``precision`` is expected to hold on a GPU of
     ``machine``, from the runs measured there in that precision; not known
-    where they do not reach it. ``learned_here``: whether this study's run
-    is learned from."""
-    this_one = ("; this one is" if learned_here else
-                ", and this one, not alone on one GPU, is not")
+    where they do not reach it. ``not_learned``: why this study's run is
+    not learned from, or "" where it is."""
+    this_one = f", and this one, {not_learned}, is not" if not_learned else "; this one is"
     runs = [run for run in measured(machine)
             if run.get("precision", "mixed") == precision]
     if not runs:
@@ -315,10 +325,13 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
         return floor          # a smaller system holds no more than the smallest did
     line = None
     if len(sizes) >= 2:
-        mean_n = sum(n for n, _ in peaks) / len(peaks)
-        mean_p = sum(p for _, p in peaks) / len(peaks)
-        spread = sum((n - mean_n) ** 2 for n, _ in peaks)
-        slope = sum((n - mean_n) * (p - mean_p) for n, p in peaks) / spread
+        # Through the most each size held: runs of one size that held less
+        # (another method, another card) do not pull the line down.
+        most = [(n, max(p for m, p in peaks if m == n)) for n in sizes]
+        mean_n = sum(n for n, _ in most) / len(most)
+        mean_p = sum(p for _, p in most) / len(most)
+        spread = sum((n - mean_n) ** 2 for n, _ in most)
+        slope = sum((n - mean_n) * (p - mean_p) for n, p in most) / spread
         if slope > 0:
             line = mean_p + slope * (particles - mean_n)
     if particles <= largest:

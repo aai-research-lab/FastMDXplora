@@ -3162,7 +3162,7 @@ class TestTenthReviewWhatIsSized:
         _gpus(machine, (0, UUID_0, 24000, 23000))
         _systems(machine, "top.pdb", "b.pdb", more="execution:\n  workers: 2\n")
         need = _plan(machine, tmp_path).gpu.need
-        assert need.how.endswith("and this one, not alone on one GPU, is not")
+        assert need.how.endswith("and this one, with runs side by side, is not")
 
 
 class TestTenthReviewWhereRunsGo:
@@ -3478,7 +3478,7 @@ class TestEleventhReviewWhatIsLearned:
         job = self._job()
         _gpu_said(job, {"cost": [
             '{"particles": 90000, "platform": "CPU", "precision": "double"}',
-            '{"particles": 2000, "platform": "CUDA", "precision": "mixed"}']}, "0")
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed", "seconds": 60}']}, "0")
         assert [(r["particles"], r["peak_mb"]) for r in measured("box")] == [(2000, 1500)]
 
     def test_a_record_of_gpu_memory_that_cannot_be_written_does_not_stop_status(
@@ -3491,7 +3491,7 @@ class TestEleventhReviewWhatIsLearned:
         monkeypatch.setattr(sending_module, "learn", refused)
         job = self._job()
         sending_module._gpu_said(job, {"cost": [
-            '{"particles": 2000, "platform": "CUDA", "precision": "mixed"}']}, "0")
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed", "seconds": 60}']}, "0")
         assert "learned" not in job.extra["gpu"]
 
     def test_a_run_is_learned_from_whatever_this_computer_s_clock_says(
@@ -3513,3 +3513,141 @@ class TestEleventhReviewWhatIsLearned:
         travels._until_finished(machine, job.name)
         assert [(r["particles"], r["peak_mb"]) for r in gpu_room.measured("box")] == [
             (2000, 1500)]
+
+
+# ---------------------------------------------------------------------------
+# The twelfth review's cases
+# ---------------------------------------------------------------------------
+def _unlike(machine) -> None:
+    """GPU 0 a small card, GPU 1 a large one."""
+    _gpus(machine, (0, UUID_0, 8000, 7000), (1, UUID_1, 24000, 23000))
+    text = (machine.home / "gpus.csv").read_text().replace(
+        f"0, {UUID_0}, Stand-in GPU", f"0, {UUID_0}, Small GPU")
+    (machine.home / "gpus.csv").write_text(text)
+
+
+class TestTwelfthReviewTheAccountsGpus:
+    def test_its_numbers_on_unlike_gpus_are_not_read_as_nvidia_smi_s(
+            self, machine, tmp_path):
+        _unlike(machine)
+        _measured(machine, 1000)
+        machine.env["CUDA_VISIBLE_DEVICES"] = "0"   # CUDA's fastest, GPU 1 here
+        sending = _plan(machine, tmp_path)
+        assert sending.gpu is None and "CUDA_VISIBLE_DEVICES=" not in sending.script
+        assert any("CUDA numbers them fastest first" in n for n in sending.room_notes)
+
+    def test_its_numbers_are_read_where_cuda_numbers_by_bus(self, machine, tmp_path):
+        _unlike(machine)
+        _measured(machine, 1000)
+        machine.env["CUDA_VISIBLE_DEVICES"] = "0"
+        machine.env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        assert f"export CUDA_VISIBLE_DEVICES={UUID_0}" in _plan(machine, tmp_path).script
+
+    def test_a_config_s_numbers_are_checked_where_cuda_numbers_by_bus(
+            self, machine, tmp_path):
+        _unlike(machine)
+        _measured(machine, 1000)
+        machine.env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        machine.study.write_text(machine.study.read_text()
+                                 + "simulation:\n  device_index: '1'\n")
+        sending = _plan(machine, tmp_path)
+        assert sending.gpu is not None and sending.gpu.uuids == (UUID_1,)
+
+
+class TestTwelfthReviewWhereRunsGo:
+    def test_the_pull_is_counted_where_it_runs_when_a_system_names_the_device(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        config = yaml.safe_load(UMBRELLA.replace(
+            "    system: ./3PTB.pdb\n",
+            "    system: ./3PTB.pdb\n    simulation:\n      device_index: '1'\n",
+        ).replace("execution:\n  workers: 2\n  devices: [1]\n", ""))
+        # The windows on GPU 1, one at a time; the pull, from the study's
+        # own block, on CUDA's first.
+        assert _runs_of(config, 8).named == {1: 1, 0: 1}
+
+    def test_a_pull_over_two_gpus_is_counted_on_both(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        config = yaml.safe_load(UMBRELLA.replace("devices: [1]", "devices: [2]"))
+        config["simulation"]["device_index"] = "0,1"
+        assert _runs_of(config, 8).named == {2: 2, 0: 1, 1: 1}
+
+    def test_runs_on_the_cpu_are_not_counted_side_by_side_on_the_gpu(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 10000))
+        _measured(machine, 6000)
+        _systems(machine, "top.pdb", more="sweep:\n  simulation.platform: [CPU, CUDA]\n"
+                                          "execution:\n  workers: 2\n")
+        sending = _plan(machine, tmp_path)
+        assert sending.gpu.at_once == {UUID_0: 1} and sending.no_room == ""
+        assert sending.gpu.learn is True
+
+
+class TestTwelfthReviewWhatIsLearned:
+    def test_a_line_goes_through_the_most_each_size_held(self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        for job, (particles, mb) in enumerate(((10_000, 500), (100_000, 1000),
+                                               (100_000, 2000))):
+            learn("box", job=str(job), particles=particles, peak_mb=mb, gpu="g")
+        # Through 500 and 2,000 MB: 3,500 MB at 190,000, and 15% more.
+        assert need_for("box", 190_000).mb == 4025
+
+    def test_a_run_shorter_than_a_few_readings_is_not_learned_from(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import measured
+        from fastmdxplora.remote.send import _gpu_said
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        job = TestEleventhReviewWhatIsLearned()._job()
+        _gpu_said(job, {"cost": [
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed", '
+            '"seconds": 20}']}, "0")
+        assert measured("box") == []
+
+
+class TestTwelfthReviewWhatIsSaid:
+    @pytest.mark.parametrize("study, why", [
+        ("precision sweep", "in more than one precision"),
+        ("own gpu", "on GPUs the config names")])
+    def test_a_study_not_learned_from_is_said_why(self, machine, tmp_path, study, why):
+        _gpus(machine, (0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 23000))
+        if study == "precision sweep":
+            _systems(machine, "top.pdb",
+                     more="sweep:\n  simulation.precision: [mixed, double]\n")
+        else:
+            machine.study.write_text(machine.study.read_text()
+                                     + "simulation:\n  device_index: '1'\n")
+        how = _plan(machine, tmp_path).gpu.need.how
+        assert how.endswith(f"and this one, {why}, is not")
+
+
+class TestTwelfthReviewSentAgain:
+    def test_a_job_sent_again_while_its_cancelled_run_still_stops_is_refused(
+            self, machine, tmp_path):
+        env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
+        travels._tool(env, 'trap \'\' TERM\necho x >> "$HOME/started"\n'
+                           ': > "$HOME/trapped"\nsleep 6')
+        first = _send(machine)
+        deadline = time.monotonic() + 30
+        while not (machine.home / "trapped").exists():
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        cancel(first.name, transport=machine.transport())
+        try:
+            assert travels._alive(first.handle)      # stops at its next frame
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert "still stopping" in str(caught.value)
+            assert (machine.home / "started").read_text().count("x") == 1
+        finally:
+            _stopped(first)
