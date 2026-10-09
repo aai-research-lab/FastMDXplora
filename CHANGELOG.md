@@ -72,8 +72,12 @@ counted where the explorer puts them, each round of a study run until it is
 determined and the pull that seeds an umbrella's windows included, and only
 among the GPUs the account's own `CUDA_VISIBLE_DEVICES` gives.
 `--force-overwrite` no longer replaces a job still waiting or running
-(`environment.path.exists`); cancel it first, and on a workstation it waits
-for the cancelled run to stop. `--partition` and `--time`
+(`environment.path.exists`); cancel it first. No send is made, forced or
+not, while a job of that name works in its folder on the machine (on a
+workstation read from `/proc`, where it has one; on a cluster from the
+account's queue), or while one of that name was last read waiting or running
+on another machine. A job whose script was killed while its run goes on
+reads as running, and `cancel` stops its run. `--partition` and `--time`
 take letters, digits and `_ . , : + -` only, at most 64. A cluster's job
 whose queue does not answer keeps its state, where it was read as failed;
 one the queue no longer knows, with no accounting to say how it ended, reads
