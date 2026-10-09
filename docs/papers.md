@@ -165,17 +165,23 @@ contain, or by reference to another paper), the study needs you.
   like, type, style, and, or, driven, guided, biased, derived, enhanced,
   generated, sampling, simulation or simulations, run or runs, MD or MDs,
   trajectory or trajectories, model or models, protocol or protocols,
-  method or methods, scheme or schemes, calculation or calculations:
-  "QM/MM-based"
-  broken at its hyphen, "REMD- and MD-based"). Any other name found only
-  as the words are written ("proper-" at a line's end before "ties" reads
-  TIES) is put to you, as is a name read only where a soft hyphen at a
-  line's end is joined, and a name in capitals glued to a word or a
-  number ("REMDsimulations", "32REMD"). A line's end inside a name ("G-"
-  before "REST") reads it whole. Words that qualify a name are read with
-  a line's end inside them joined too ("with-" before "out"); where one is
-  read only across a soft hyphen at a line's end, no name decides the
-  method, and each is put to you.
+  method or methods, scheme or schemes, calculation or calculations,
+  force: "QM/MM-based" broken at its hyphen, "REMD- and MD-based"), and
+  an exchange name after a hyphen at a line's end and one of a fixed list
+  of words (Hamiltonian, temperature, solute, replica, reservoir, pH, H,
+  T: "Hamiltonian-" before "REMD"). Any other name found only as the words
+  are written ("proper-" at a line's end before "ties" reads TIES) is put
+  to you, as is a name read only where a soft hyphen at a line's end is
+  joined, a name just after such a soft hyphen ("proper" and a soft
+  hyphen before "ties"), a name just before one unless a word of the
+  fixed list follows, and a name glued to a word or a number
+  ("REMDsimulations", "32REMD", "remdsimulations", "aMDsimulations"). A
+  soft hyphen is one or more, with any invisible characters beside them,
+  and the marks printed for one ("‧", "᠆"). A line's end inside a name
+  ("G-" before "REST") reads it whole. Words that qualify a name are read
+  with a line's end inside them joined too ("with-" before "out"); where
+  one is read only across a soft hyphen at a line's end, no name decides
+  the method, and each is put to you.
   Everything else such words may mean is put to you, the words shown, and
   the study runs once you confirm it is not that method: a name beside
   words that may deny it or give it elsewhere ("no REMD was used",
@@ -201,7 +207,8 @@ contain, or by reference to another paper), the study needs you.
   "rest simulations", and Metropolis acceptance between temperatures or
   replicas. In a method's details, letters and slashes that only look Latin
   (Cyrillic "е" and "ё", Greek "ο", "ι", "κ" and "χ", accented or not,
-  Lisu capitals such as "ꓣ" and "ꓰ", small capitals such as "ᴇ" and "ꜱ",
+  Cyrillic "Һ", "Ӏ" and "Ԝ", Lisu capitals such as "ꓣ" and "ꓰ", Cherokee
+  capitals such as "Ꭱ" and "Ꭼ", small capitals such as "ᴇ" and "ꜱ",
   "∖", the vertical bars "│", "┃" and "ǀ") are read as the ones they look
   like. A fixed list of plain phrases is not read
   as such words (no words around them are read to decide this):
@@ -212,9 +219,9 @@ contain, or by reference to another paper), the study needs you.
   "λex", "λexc", "λabs" ("lambda max", "lambda_max" too), before a
   wavelength from 100 to 999 nm ("λ = 488 nm", "λmax = 280 nm"), a drug
   "targeted" at MDM2 or MDMX, an acknowledgement in capitals ("WE THANK",
-  "WE ACKNOWLEDGE"), and gigabytes of storage or memory ("16 GB of
+  "WE ACKNOWLEDGE"), gigabytes of storage or memory ("16 GB of
   memory"; any other "GB" after a number asks, and "MDM2 GB model" is read
-  as GB). Any other such word
+  as GB), and a speed in GB/s after a number. Any other such word
   in the same details is still read. Phrases that could be part of another
   method's description still ask: a force field before "/AMBER" (the MM half
   of a QM/MM label), an exchange of water (a grand canonical move), a
@@ -236,14 +243,22 @@ contain, or by reference to another paper), the study needs you.
   "2 x 64" is 64 lipids in each leaflet; a count beside a per-leaflet count
   must be it, or twice it as the lipids' total ("128 lipids, 64 per
   leaflet", "a total of 128"), and a "2 x" count must be it; a count of
-  waters or ions said as a whole phrase ("6000 waters,", "20 Na+ ions and")
-  is no count of lipids, but one before other words ("32 Na+ lipids", "60
-  ions per leaflet") is; a water model's name ("SPC", "OPC") is water only
-  before "water" or "waters"; a share written with decimals ("70.5 and 29.5"),
-  "2 x 0", and a count beside "bilayers" or "membranes" need you; "at" or
-  "pressure of" before 1 bar or 1 atm (1 written "1.0" or "1.00" too, and
-  "1.01325 bar"), with "pressure" after it or not, are plain words, as this
-  software keeps 1 bar; any other pressure needs you.
+  lipids per leaflet is the count per leaflet ("64 lipids per leaflet (128
+  lipids)"), unless it ends a list ("64 and 64 lipids per leaflet"); a count
+  after a word's dash or before the lipid's is read ("64 per leaflet-60
+  POPC", "64-POPC and 60", "POPC-60", "60-lipid"), and so is one after a
+  dash standing alone or doubled ("-60", "--60"), but not a fixed version of
+  a force field, water model or tool ("CHARMM-36", "Lipid-21", "TIP4P-2005")
+  nor a place in a lipid's chemical name ("sn-glycero-3"); "64/leaflet" is
+  64 per leaflet; a count of waters or ions said as a whole phrase ("6000
+  waters,", "20 Na+ ions and") is no count of lipids, but one before other
+  words ("32 Na+ lipids", "60 ions per leaflet") is; a water model's name
+  ("SPC", "OPC") is water only before "water" or "waters"; a share written
+  with decimals ("70.5 and 29.5"), "2 x 0", and a count beside "bilayers" or
+  "membranes" need you; "at" or "pressure of" before 1 bar or 1 atm
+  (1 written "1.0" or "1.00" too, and "1.01325 bar"), with "pressure" after
+  it or not, are plain words, as this software keeps 1 bar; any other
+  pressure needs you.
   Beside an AMBER force field that names no lipid force field, Lipid17 is
   used, said so.
 

@@ -426,7 +426,7 @@ _PLAIN_PHRASES = re.compile(
     r"(?:\blambda|(?<!\w)\u03bb)(?:[\s_]?(?:max|em|ex|exc|abs))?\s*(?:(?:=|of|:)\s*)?"
     r"[1-9]\d\d(?:\.\d+)?\s*nm\b"
     r"|(?-i:\bWE\s+(?:THANK|THANKS|ACKNOWLEDGE|GRATEFULLY|ARE\s+GRATEFUL)\b)"
-    r"|(?<![\d.])\bgb\s+(?:of\s+)?(?:storage|memory|ram|vram|disk)\b"
+    r"|(?<![\d.])\bgb\s+(?:of\s+)?(?:storage|memory|ram|vram|disk)\b|(?<=\d)\s?(?-i:GB/s)\b"
     r"|\btargeted\s+mdm[2x]\b", re.IGNORECASE)
 
 #: Words in a sentence that make a method's name in it something other than
@@ -461,15 +461,24 @@ _SIGNS = {
 #: Dashes, slashes and spacing that PDF text gives in place of the plain
 #: ones; soft hyphens are dropped.
 _PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-",
+                             "\u2027": "-", "\u1806": "-",
                              "\u2014": "-", "\u2212": "-", "\u2043": "-", "\u2215": "/",
-                             "\u2044": "/", "\u00ad": None, "\u00a0": " ", "\u2009": " ",
-                             "\u202f": " "})
+                             "\u2044": "/", "\u00ad": None,
+                             "\u00a0": " ", "\u2009": " ", "\u202f": " "})
+#: Soft hyphens, or marks printed for one, with any invisible characters
+#: beside them, between a letter and a line's end or a space before a letter.
+_INVISIBLE = ("\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
+              "\ufff9-\ufffb\U000e0001\U000e0020-\U000e007f")
+_SOFT_BREAK = re.compile(r"(?:(?<=[^\W\d_])|(?<=[^\W\d_][\u0300-\u036f]))"
+                         r"[" + _INVISIBLE + r"\u00ad\u2027\u1806]*"
+                         r"[\u00ad\u2027\u1806][" + _INVISIBLE + r"]*(?=\s+[" + _INVISIBLE
+                         + r"]*[^\W\d_])")
 #: Cyrillic, Greek and small-capital letters drawn as Latin ones ("Replica
 #: \u0435xchange" with a Cyrillic e), read as the Latin letter they look like,
 #: and slashes and bars drawn as other symbols as "\\", "|" and "/". Greek
 #: letters with a meaning of their own here (lambda, sigma, mu, nu) are left
-#: as they are; iota, kappa and chi are read as i, k and x, and Lisu
-#: capitals as the Latin capitals they look like.
+#: as they are; iota, kappa and chi are read as i, k and x, and Lisu and
+#: Cherokee capitals as the Latin capitals they look like.
 _LOOK_ALIKES = str.maketrans(
     "\u0410\u0412\u0421\u0415\u041d\u0406\u0408\u041a\u041c\u041e\u0420\u0405\u0422\u0425\u0423"
     "\u0430\u0441\u0435\u0456\u0458\u043e\u0440\u0455\u0445\u0443\u0501\u051b\u051d\u04bb\u04cf"
@@ -479,13 +488,17 @@ _LOOK_ALIKES = str.maketrans(
     "\u0451\u0401\u03b9\u03ba\u03c7"
     "\ua4d0\ua4d1\ua4d2\ua4d3\ua4d4\ua4d6\ua4d7\ua4d9\ua4da\ua4dc\ua4dd\ua4df\ua4e0"
     "\ua4e1\ua4e2\ua4e3\ua4e6\ua4e7\ua4ea\ua4eb\ua4ec\ua4ee\ua4f0\ua4f2\ua4f3\ua4f4"
+    "\u13aa\u13f4\u13df\u13a0\u13ac\u13c0\u13bb\u13ab\u13e6\u13de\u13b7\u13e2\u13a1\u13da"
+    "\u13d4\u13d9\u13b3\u13c3\u13a2\u13d2\u13d5\u13f3\u13a9\u13bd\u051c\u04c0\u04ba"
     "\u2216\u29f5\u2223\u29f8\u2571\u2502\u2503\u01c0",
     "ABCEHIJKMOPSTXY" "aceijopsxydqwhl" "ABEZHIKMNOPTYXo" "ABCDEGHIJKLMNOPRTUVWYZFS" "eEikx"
     "BPdDTGKJCZFMN" "LSRVHWXYAEIOU"
+    "ABCDEGHJKLMPRS" "WVWZTRSGYYWIH"
     "\\\\|//|||")
 
 
-def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str:
+def _plain_text(words: str, join: bool = True, look_alikes: bool = False,
+                breaks: list[int] | None = None) -> str:
     """The paper's words with PDF typography made plain: trade marks and
     modifier letters as spaces, superscript citation digits as spaces,
     ligatures and wide forms (NFKC), accents dropped, dashes and slashes as
@@ -494,10 +507,13 @@ def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str
     are read as the Latin ones (method names; a membrane's words keep them,
     so a word in another script still needs the person). With ``join``, a
     word broken by a hyphen at a line's end ("ex-\n change") is joined; the
-    plan reads the words both ways."""
+    plan reads the words both ways. ``breaks``, where given, gets where
+    each soft hyphen before a line's end or a space was."""
     import unicodedata
 
     words = str(words).replace("\r\n", "\n").replace("\r", "\n")
+    if breaks is not None:
+        words = _SOFT_BREAK.sub("\ue000", words)
     if look_alikes:
         words = words.translate(_LOOK_ALIKES)
     words = re.sub("[\u2122\u00ae\u2120\u00a9\u00aa\u00ba\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+",
@@ -512,6 +528,9 @@ def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str
         words = re.sub(r"(?<=[A-Za-z])-[ \t]*\n\s*(?=[A-Za-z])", "", words)
         words = re.sub(r"(?<=[A-Za-z])- (?=[A-Za-z])", "", words)
     words = re.sub(r"\n\s*", " ", words)
+    if breaks is not None:
+        breaks += [mark.start() - n for n, mark in enumerate(re.finditer("\ue000", words))]
+        words = words.replace("\ue000", "")
     return words.replace("_", " ")
 
 
@@ -531,9 +550,11 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     piece of a broken word, so it puts the study to the person, as does a
     name read only where a soft hyphen at a line's end is joined, or a name
     of capitals glued to a word ("REMDsimulations")."""
-    joined = _plain_text(words, join=True, look_alikes=True)
-    text = _plain_text(words, join=False, look_alikes=True)
-    softly = re.sub(r"(?<=[^\W\d_])\u00ad\s+(?=[^\W\d_])", "", str(words))
+    breaks: list[int] = []
+    joined = _plain_text(words, join=True, look_alikes=True, breaks=breaks)
+    text_breaks: list[int] = []
+    text = _plain_text(words, join=False, look_alikes=True, breaks=text_breaks)
+    softly = re.sub(_SOFT_BREAK.pattern + r"\s+[" + _INVISIBLE + "]*", "", str(words))
     soft = _plain_text(softly, join=True, look_alikes=True)
     if softly != str(words) and _qualifiers(soft) - _qualifiers(joined):
         # A word that qualifies a name, read only with a soft hyphen at a
@@ -543,11 +564,13 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
             aside += [item for item in _read_details(reading, lambda name: False)[1]
                       if item not in aside]
         return None, aside + [item for item in _glued(joined) if item not in aside]
-    method, aside = _read_details(joined)
+    method, aside = _read_details(joined, lambda name: _whole_by(joined, name, breaks))
     if method:
         return method, aside
-    method, found = _read_details(text, lambda name: bool(
-        _WHOLE_BEFORE.match(text, name.end()) or re.search(r"-\s", name.group(0))))
+    method, found = _read_details(text, lambda name: _whole_by(text, name, text_breaks) and bool(
+        _WHOLE_BEFORE.match(text, name.end()) or re.search(r"-\s", name.group(0))
+        or (_PREFIXED.search(text, 0, name.start())
+            and re.search(r"remd|rex|exchange", name.group(0), re.IGNORECASE))))
     if not method and softly != str(words):
         found += _read_details(soft, lambda name: False)[1]
     if not method:
@@ -558,6 +581,20 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
             seen.add(item)
             aside.append(item)
     return method, aside
+
+
+def _whole_by(words: str, name: re.Match[str], breaks: list[int]) -> bool:
+    """Whether ``name`` is whole beside the soft hyphens at ``breaks``: one
+    just after it may break a longer word ("REMD\u00ad\nsettings"), unless a word
+    of a fixed list follows ("REMD\u00ad\nsimulations"); one just before it
+    always may ("proper\u00ad\nties")."""
+    for at in breaks:
+        if at < name.start() and not words[at:name.start()].strip():
+            return False
+        if at >= name.end() and not words[name.end():at].strip() and not _FOLLOWED.match(
+                words, at):
+            return False
+    return True
 
 
 def _qualifiers(words: str) -> Counter[str]:
@@ -574,19 +611,27 @@ def _glued(words: str) -> list[tuple[str, str]]:
 #: Names of capitals glued to a word or a number, before or after
 #: ("REMDsimulations", "processorsREMD", "32REMD", "REMDSimulations"),
 #: which no word boundary finds.
-_GLUED_NAMES = (r"(?:REMD|REST2?|HREX|GaMD|FEP|TIES|QM/MM|QMMM|ONIOM|CPMD|DFTB|MARTINI|SIRAH"
-                r"|UNRES|GBSA|MMVT|WESTPA)")
+_GLUED_NAMES = (r"(?:REMD|REST2?|HREX|REX|GaMD|aMD|FEP|TIES|QM/MM|QMMM|ONIOM|CPMD|DFTB|MARTINI"
+                r"|SIRAH|UNRES|GBSA|MMVT|WESTPA)")
+#: Names glued to a word in any case ("remdsimulations", "qm/mmregion").
+_GLUED_ANY_CASE = r"(?i:remd|gamd|qm/?mm|westpa|mmvt|martini|oniom|hrex|obc2|gbn2)"
 _GLUED = re.compile(r"(?<=[a-z0-9])" + _GLUED_NAMES
-                    + "|" + _GLUED_NAMES + r"(?=[a-z0-9]|[A-Z][a-z])")
+                    + "|" + _GLUED_NAMES + r"(?=[a-z0-9]|[A-Z][a-z])"
+                    + r"|(?<=[^\W_])" + _GLUED_ANY_CASE + "|" + _GLUED_ANY_CASE + r"(?=[^\W_])")
 
 
 #: Words after a hyphen that show the name before it was whole ("QM/MM-
 #: based", "REMD- and MD-based"), not a piece of a word broken there
 #: ("reus-\nable", "unres-\ntrained").
-_WHOLE_BEFORE = re.compile(
-    r"-\s+(?:based|like|type|style|and|or|driven|guided|biased|derived|enhanced|generated"
-    r"|sampling|simulations?|runs?|mds?|trajector(?:y|ies)|models?|protocols?|methods?"
-    r"|schemes?|calculations?)\b", re.IGNORECASE)
+_FOLLOWERS = (r"(?:based|like|type|style|and|or|driven|guided|biased|derived|enhanced|generated"
+              r"|sampling|simulations?|runs?|mds?|trajector(?:y|ies)|models?|protocols?"
+              r"|methods?|schemes?|calculations?|force)\b")
+_WHOLE_BEFORE = re.compile(r"-\s+" + _FOLLOWERS, re.IGNORECASE)
+_FOLLOWED = re.compile(r"\s+" + _FOLLOWERS, re.IGNORECASE)
+#: Words before a hyphen at a line's end that make a whole name of the one
+#: after it ("Hamiltonian-\nREMD", "pH-\nREMD").
+_PREFIXED = re.compile(r"\b(?:hamiltonian|temperature|solute|replica|reservoir|ph|h|t)-\s+\Z",
+                       re.IGNORECASE)
 
 
 def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = None
@@ -1750,16 +1795,31 @@ _SALT_WORDS = (r"(?:waters?|(?:tip3p|tip4p|spc|opc)\s+waters?|ions?|counterions?
                r"(?:\s+(?:ions?|molecules|per\s+lipid))?")
 
 
+#: A word's dash before a number ("leaflet-60"), but not one of the fixed
+#: versions of a
+#: force field, water model, tool or a lipid's chemical name ("CHARMM-36",
+#: "TIP-3P", "glycero-3").
+_WORD_DASH = re.compile(
+    r"\b(?!(?:charmm-(?:19|22|27|36)|lipid-(?:11|14|17|21)|amber-(?:9[4-9]|0\d|1\d|2\d)"
+    r"|tip-[345]p?|tip[345]p-(?:2005|2018)|gaff-[12]|slipids-20[0-2]\d|opls-20[0-2]\d|opc-3"
+    r"|martini-[23]|ff-(?:9\d|0\d|1\d)|gromos-(?:43|45|53|54)|sn-[123]|glycero-3"
+    r"|(?:gui|packmol|insane|opm|ppm)-[1-3])(?!\d))([^\W\d_][^\W_]*)-(?=\d)")
+
+
 def _unexplained(said: str, lipid: str) -> list[str]:
     """The words of a membrane's description that say more than a bilayer
     of ``lipid``: what is not the lipid, its own name written out, numbers
     of lipids, ions, water or the box. A share other than 100% is one."""
-    text = _plain_text(said, join=False).lower()
+    text = re.sub(r"-{2,}", "-", _plain_text(said, join=False).lower())
     chains = "".join(_ACYL[acyl.group(2).lower()] * (2 if acyl.group(1) else 1)
                      for acyl in _ACYL_WORDS.finditer(text))
     if chains and chains.upper() != _chains_of(lipid).upper():
         return [acyl.group(0) for acyl in _ACYL_WORDS.finditer(text)]
-    text = _ACYL_WORDS.sub(" ", text)
+    # A chain's place goes with it ("1-palmitoyl").
+    text = re.sub(r"(?:\b[123]-)?(?:" + _ACYL_WORDS.pattern + ")", " ", text)
+    # A count after a word's dash is a count ("per leaflet-60", "POPC-60"), and
+    # so is one before "-lipid" ("128-lipid").
+    text = re.sub(r"\b(\d+)-(?=lipids?\b)", r"\1 ", _WORD_DASH.sub(r"\1 ", text))
     name = r"\b" + re.escape(lipid.lower()) + r"s?\b"
     named = re.sub(name, " lipids ", text)
     text = re.sub(name, " ", text)
@@ -1789,20 +1849,27 @@ def _unexplained(said: str, lipid: str) -> list[str]:
                        r"|bar|atm|deg|c|g|mg|ml|l|waters?|ions?)\b))", text)
     # Counts of water and ions are not of lipids, said as a whole phrase
     # ("6000 waters,", "20 Na+ ions and"); a water model's name is a lipid's
-    # too ("SPC"), so only before "water" is it water.
-    counts = re.findall(r"(?<![\w.-])\d+(?![\w%-])(?![.,]\d)"
-                        r"(?!\s*(?:mm|m|k|nm|nm2|a2|a|ns|ps|us|fs|bar|atm|deg|c|per\s+leaflet"
-                        r"|in\s+each\s+leaflet)(?![\w-])"
-                        r"|\s*" + _SALT_WORDS + r"\s*(?=[,.;:)]|and\b|$))", text)
+    # too ("SPC"), so only before "water" is it water. A count of lipids per
+    # leaflet is the per-leaflet count, unless it ends a list ("64 and 64
+    # lipids per leaflet"). A dash before a count not glued to a word is no
+    # range ("64 per leaflet -60").
+    counts = [count.group(0) for count in re.finditer(
+        r"(?<![\w.])(?<![\w.]-)\d+(?![\w%])(?!-\w)(?![.,]\d)"
+        r"(?!-?\s*(?:mm|m|k|nm|nm2|a2|a|ns|ps|us|fs|bar|atm|deg|c|per\s+leaflet"
+        r"|in\s+each\s+leaflet|/\s*leaflet)(?![\w-])"
+        r"|\s*" + _SALT_WORDS + r"\s*(?=[,.;:)]|and\b|$))", text)
+        if not re.match(r"-?\s*lipids(?:\s+(?:per|in\s+each)\s+|\s*/\s*)leaflet",
+                         text[count.end():])
+        or re.search(r"\d(?:,|\s*\b(?:and|or))?\s*$", text[:count.start()])]
     # The same word before anything else ("32 Na+ lipids", "32 sodium POPC") is
     # no such phrase.
     counts += [salt.group(1) for salt in re.finditer(r"(?<![\w.-])(\d+)\s*" + _SALT_WORDS, named)
                if not re.match(r"\s*(?:[,.;:)]|and\b|$)", named[salt.end():])]
-    per_leaflet = set(re.findall(r"(?<![\w.-])(\d+)\s*(?:lipids\s+)?(?:per|in\s+each)\s+leaflet",
-                                 text))
+    per_leaflet = set(re.findall(r"(?<![\w.])(?<![\w.]-)(\d+)\s*-?\s*(?:lipids\s*)?"
+                                 r"(?:(?:per|in\s+each)\s+|/\s*)leaflet", text))
     # Twice the per-leaflet count only where it is said to be the total.
-    totals = set(re.findall(r"(?<![\w.-])(\d+)\s+(?:lipids?|(?:lipid\s+)?molecules|in\s+total"
-                            r"|total)\b|\btotal(?:\s+of|:)?\s+(\d+)\b", named))
+    totals = set(re.findall(r"(?<![\w.-])(\d+)-?\s+(?:lipids?|(?:lipid\s+)?molecules|in\s+total"
+                            r"|total)\b|\b(?:total(?:\s+of|:)?|lipids)\s+(\d+)\b", named))
     totals = {count for pair in totals for count in pair if count}
     leaf = min(per_leaflet, default="")
     twice = str(2 * int(leaf)) if 0 < len(leaf) < 7 else ""

@@ -1933,7 +1933,7 @@ def test_counts_of_lipids_are_read_as_counts(membrane, state):
     ("We used the Mar-\ntini\u00ad\nforce field.", "coarse_grained"),
     ("T-RE-\nMD\u00ad\nsimulations were run.", "replica_exchange"),
     ("We ran Ga-\nMD\u00ad\nsimulations of the receptor.", "accelerated"),
-    ("with\u00ad\nRE-\nMD runs", "replica_exchange"),
+    ("with\u00ad\nRE-\nMD runs", "confirm"),
     ("\u03b1MD simulations of the helix", "plain"),
 ])
 def test_a_name_found_only_across_a_line_s_end_asks(details, method):
@@ -2182,3 +2182,90 @@ def test_counts_of_waters_and_ions_are_not_lipids(membrane, state):
                   "membrane": _stated(membrane)})
     assert plan["state"] == state
     assert plan["config"]["setup"]["membrane"] == membrane[:4]
+
+
+# -- 1608: names beside a soft hyphen, other spellings, counts after a dash --
+@pytest.mark.parametrize("details, method", [
+    ("These proper­\nties of the loop", "confirm"),
+    ("We ran RE­­\nMD of the peptide", "confirm"),
+    ("We ran RE­​\nMD of the peptide", "confirm"),
+    ("We ran RE‧\nMD of the peptide", "confirm"),
+    ("We ran RE᠆\nMD of the peptide", "confirm"),
+    ("We ran RE﻿­ \nMD of the peptide", "confirm"),
+    ("REMD­\nsettings of the loop", "confirm"),
+    ("REMD­\nsimulations with 24 replicas", "replica_exchange"),
+    ("REMD-\nforce field runs", "replica_exchange"),
+    ("We ran remdsimulations", "confirm"),
+    ("Runs of gamdsimulations of the receptor", "confirm"),
+    ("The qm/mmregion held the cofactor.", "confirm"),
+    ("REXsimulations of the site", "confirm"),
+    ("aMDsimulations of the site", "confirm"),
+    ("An OBC2model of the solvent", "confirm"),
+    ("ᎡᎬᎷᎠ of the peptide", "replica_exchange"),
+    ("ҺREX of the peptide", "replica_exchange"),
+    ("ԜESTPA runs of the loop", "milestoning"),
+    ("TӀES of the ligand", "free_energy"),
+    ("Hamiltonian-\nREMD of the peptide", "replica_exchange"),
+    ("pH-\nREMD of the peptide", "replica_exchange"),
+    ("Data moved at 10 GB/s.", "plain"),
+    ("MD with GB/S", "confirm"),
+    ("We ran replica ex-­\nchange MD with 32 replicas.", "replica_exchange"),
+    ("We ran Ga-​­\nMD.", "accelerated"),
+    ("We used fep‧calculations", "free_energy"),
+    ("We ran REMD­\n(8 replicas)", "replica_exchange"),
+    ("We ran ­\nREMD with 8 replicas", "replica_exchange"),
+    ("proper­⁣\nties were computed", "confirm"),
+    ("We ran ᏒEMD", "replica_exchange"),
+    ("We ran ᏔESTPA simulations", "milestoning"),
+    ("H-\nTIES", "confirm"),
+    ("proper\u00ad\n\u200bties were computed", "confirm"),
+    ("prope\u0301r\u00ad\nties were computed", "confirm"),
+    ("proper\u00ad\ufff9\nties were computed", "confirm"),
+    ("We ran \u0301\u00ad\nREMD with 8 replicas", "replica_exchange"),
+])
+def test_a_name_beside_a_soft_hyphen_or_written_another_way(details, method):
+    """A name just after a soft hyphen at a line's end may be the end of a
+    word ("proper­\nties"), and one just before it the start of one,
+    unless a word of the fixed list follows; however many soft hyphens or
+    invisible characters stand there. A name glued to a word in any case
+    asks; Cherokee and more Cyrillic capitals read as the Latin ones; a
+    fixed word before a line's end hyphen ("Hamiltonian-") makes a whole
+    exchange name of the one after it; "GB/s" after a number is a speed."""
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("membrane, state", [
+    ("POPC bilayer, 64 per leaflet-60 POPC", "needs_you"),
+    ("POPC bilayer, 64-POPC per leaflet and 60", "needs_you"),
+    ("POPC bilayer, 64-POPC and 60", "needs_you"),
+    ("POPC bilayer, 64 and 64 lipids per leaflet", "needs_you"),
+    ("POPC bilayer of 64 lipids per leaflet (128 lipids)", "ready"),
+    ("POPC bilayer, CHARMM-36 lipids, 64 per leaflet", "ready"),
+    ("POPC-120 bilayer, 64 per leaflet", "needs_you"),
+    ("POPC bilayer, 128-lipid patch, 60 per leaflet", "needs_you"),
+    ("POPC bilayer, 64 per leaflet--60 POPC", "needs_you"),
+    ("POPC bilayer, 64 per leaflet -60 POPC", "needs_you"),
+    ("POPC bilayer, POPC-64 and -60 per leaflet", "needs_you"),
+    ("POPC bilayer, with 64 64 lipids per leaflet", "needs_you"),
+    ("a 128-POPC bilayer, 64 per leaflet", "ready"),
+    ("POPC-128 bilayer, 64 per leaflet", "ready"),
+    ("a bilayer of 128 1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine (POPC) lipids", "ready"),
+    ("POPC bilayer of 128 lipids, 64 lipids per leaflet", "ready"),
+    ("POPC bilayer, 64 per leaflet, Lipid-60 POPC", "needs_you"),
+    ("POPC bilayer, 64 per leaflet, CHARMM-60 POPC", "needs_you"),
+    ("POPC bilayer, 64 per leaflet, 60-palmitoyl-oleoyl lipids", "needs_you"),
+    ("POPC bilayer containing 128 lipids (64/leaflet, 60/leaflet)", "needs_you"),
+    ("POPC bilayer containing 128 lipids (64/leaflet)", "ready"),
+    ("POPC bilayer, TIP4P-2005 water, 64 per leaflet", "ready"),
+    ("POPC bilayer, 64 lipids/leaflet (128 total)", "ready"),
+    ("POPC bilayer, 64 lipids/leaflet (120 total)", "needs_you"),
+])
+def test_a_count_after_a_dash_is_a_count(membrane, state):
+    """A count after a word's dash or before the lipid's dash is read, and
+    one after a dash standing alone or doubled, but not one of a force
+    field's fixed versions nor a place in a lipid's chemical name; a count of lipids per
+    leaflet is the count per leaflet, unless it ends a list."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
+                  "membrane": _stated(membrane)})
+    assert plan["state"] == state
