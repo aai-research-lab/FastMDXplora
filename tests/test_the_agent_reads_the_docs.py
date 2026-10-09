@@ -6,7 +6,9 @@ had none to read, since the package did not ship them (user, 10-09: "why the
 agent doesn't have access to the software docs?"; "if that is the
 professinal practice implement it!!"). Now `setup.py` copies `docs/*.md`
 into the wheel as `fastmdxplora/_docs`, a source checkout reads `docs/`, and
-`fastmdxplora.software_docs` finds the passages that answer a question.
+`fastmdxplora.software_docs` finds the passages that answer a question; the
+look `read_docs` gives them to the AI model, which is told to answer a
+question about the software from them and name the page.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from fastmdxplora import software_docs
-from fastmdxplora.agent.tools import MOST_SAID
+from fastmdxplora.agent.tools import LOOK_WORDS, MOST_SAID, Toolbox, look_said
 from fastmdxplora.software_docs import DocsNotFound, read_docs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +50,14 @@ def test_the_docs_inside_the_package_come_first(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(software_docs, "_PACKAGED", str(packaged))
     assert software_docs.docs_folder() == packaged
     assert "A packaged passage." in read_docs("packaged passage")
+
+
+def test_with_no_docs_the_look_says_so_and_guesses_nothing(monkeypatch) -> None:
+    monkeypatch.setattr(software_docs, "docs_folder", lambda: None)
+    with pytest.raises(DocsNotFound, match="not installed"):
+        read_docs("anything")
+    look = Toolbox().use("read_docs", {"query": "what does Useful do"})
+    assert not look.ok and "not installed" in look.said
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +441,115 @@ def test_a_long_table_is_found_by_its_row() -> None:
     row = next(block for block in said.split("\n\n")[1:] if "methods_of_study" in block)
     # The row comes under its table's head, not the whole table.
     assert row.count("\n|") <= 3
+
+
+# ---------------------------------------------------------------------------
+# The look
+# ---------------------------------------------------------------------------
+def test_the_look_is_offered_described_and_declared() -> None:
+    box = Toolbox()
+    assert "read_docs" in box.names
+    assert "`read_docs`: The software tells you" not in box.describe()
+    assert "- `read_docs`: what the docs of this installed version" in box.describe()
+    spec = next(s for s in box.specs() if s.name == "read_docs")
+    assert set(spec.parameters["properties"]) == {"query", "page", "section", "part"}
+    assert spec.parameters["additionalProperties"] is False
+
+
+def test_the_agent_is_told_to_answer_about_the_software_from_its_docs() -> None:
+    from fastmdxplora.agent.conversation import system_prompt
+
+    rule = "is answered from its docs: read_docs first"
+    assert rule in Toolbox().describe() and rule in Toolbox().guidance()
+    assert rule in system_prompt(phases=None, verbose=False, tools=Toolbox())
+
+
+def test_the_look_reads_what_it_is_asked_and_refuses_what_is_not_words() -> None:
+    box = Toolbox()
+    found = box.use("read_docs", {"query": "Useful and Wrong under each reply"})
+    assert found.ok and "**Useful or Wrong**" in found.said
+    whole = box.use("read_docs", {"page": "agent", "section": "Connecting an AI model"})
+    assert whole.ok and "fastmdx agent model" in whole.said
+    assert not box.use("read_docs", {"page": "nowhere"}).ok
+    assert not box.use("read_docs", {"query": ["a", "list"]}).ok
+    assert not box.use("read_docs", {"query": "x", "part": 0}).ok
+    assert not box.use("read_docs", {"page": "agent", "part": "two"}).ok
+    assert box.use("read_docs", {}).said.startswith(f"The docs of {software_docs._version()}")
+
+
+@pytest.mark.parametrize("part", [True, 2.7, float("inf"), float("nan"), -1, 0, "2"])
+def test_a_part_is_a_whole_number(part) -> None:
+    look = Toolbox().use("read_docs", {"page": "gui", "section": "The pages", "part": part})
+    assert not look.ok and look.said.endswith("`part` is a whole number, 1 or more.")
+
+
+def test_a_part_given_as_a_whole_float_is_read() -> None:
+    look = Toolbox().use("read_docs", {"page": "gui", "section": "The pages", "part": 2.0})
+    assert look.ok and "(Part 2 of " in look.said
+
+
+def test_what_the_look_does_not_take_is_refused_and_a_bare_question_is_a_query() -> None:
+    box = Toolbox()
+    look = box.use("read_docs", {"question": "how do I resume", "page": "cli"})
+    assert not look.ok and "`question`" in look.said
+    # A bare question YAML read as a mapping, or as a list, is the question.
+    for asked in ({"what does resume": "true do"}, {"value": ["what is a sweep"]}):
+        look = box.use("read_docs", asked)
+        assert look.ok and look.said.startswith("From the docs"), asked
+    asked = box.use("read_docs", {"value": "Useful and Wrong under each reply"})
+    assert asked.ok and "**Useful or Wrong**" in asked.said
+    huge = box.use("read_docs", {"query": 10 ** 5000})
+    assert not huge.ok and "is words, not a number of" in huge.said
+    assert look_said("read_docs", {"query": 10 ** 5000}) == "Read the docs"
+
+
+def test_the_look_is_said_as_the_person_reads_it() -> None:
+    assert "read_docs" in LOOK_WORDS
+    assert look_said("read_docs", {"query": "Useful buttons"}) == \
+        "Read the docs on “Useful buttons”"
+    assert look_said("read_docs", {"query": "x"}, doing=True) == "Reading the docs on “x”"
+    assert look_said("read_docs", {"page": "agent", "section": "From the GUI"}) == \
+        "Read the docs on “From the GUI”"
+    assert look_said("read_docs", {"page": "gui"}) == "Read the docs on “gui”"
+    assert look_said("read_docs", {}) == "Listed the docs' pages"
+    assert look_said("read_docs", {}, doing=True) == "Listing the docs' pages"
+    assert look_said("read_docs", {"page": 0}) == "Read the docs on “0”"
+    assert look_said("read_docs", {"query": True, "page": "gui"}) == "Read the docs on “gui”"
+    assert look_said("read_docs", {"value": "resume"}) == "Read the docs on “resume”"
+    # Something it cannot read is refused, not a list of the pages.
+    assert look_said("read_docs", {"query": ["x"]}) == "Read the docs"
+
+
+def test_the_agent_looks_in_the_docs_and_answers_from_them() -> None:
+    from fastmdxplora.agent.conversation import propose_with_tools
+    from fastmdxplora.agent.turns import ToolCall, Turn, Usage
+
+    replies = [
+        Turn("", (ToolCall("call_1", "read_docs",
+                           {"query": "what do Useful and Wrong under a reply do"}),),
+             Usage(calls=1, input_tokens=100, output_tokens=10)),
+        Turn("SAY: Useful or Wrong marks a reply, kept with the conversation "
+             "(the agent page, From the GUI).", (), Usage(calls=1, input_tokens=100,
+                                                         output_tokens=10)),
+    ]
+    asked: list[dict] = []
+
+    def turn(system, messages, tools):
+        asked.append({"system": system, "messages": [dict(m) for m in messages],
+                      "tools": [t.name for t in tools]})
+        return replies.pop(0)
+
+    proposal = propose_with_tools(
+        "what do the useful and wrong buttons under your responses do?", turn,
+        phases=["setup", "simulation"], max_cycles=3, verbose_schema=False, history=None,
+        current_config=None, run_status=None, attachments=None, tools=Toolbox())
+    assert "read_docs" in asked[0]["tools"]
+    assert "read_docs first" in asked[0]["system"]
+    result = asked[1]["messages"][-1]["results"][0]
+    assert result["name"] == "read_docs" and not result["is_error"]
+    assert "**Useful or Wrong** under each reply marks it" in result["content"]
+    assert [look.tool for look in proposal.looks] == ["read_docs"]
+    assert proposal.answer.startswith("Useful or Wrong marks a reply")
 
 
 # ---------------------------------------------------------------------------

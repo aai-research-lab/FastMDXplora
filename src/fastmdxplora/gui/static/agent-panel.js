@@ -262,7 +262,8 @@
     list_studies: "Listed the studies here",
     compare_studies: "Compared two studies",
     methods_of_study: "Read a study's methods",
-    current_view: "Checked what the page shows"
+    current_view: "Checked what the page shows",
+    read_docs: "Read the docs"
   };
 
   function lookLabel(l) {

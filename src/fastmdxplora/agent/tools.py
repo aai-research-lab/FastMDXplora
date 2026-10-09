@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -109,6 +110,7 @@ class Look:
 #: The page showed the tool's own name for any look not listed here
 #: (`find_structure`, `list_studies`, ...), which reads as code.
 LOOK_WORDS: dict[str, tuple[str, str, str]] = {
+    "read_docs": ("Read the docs on {}", "Reading the docs on {}", "query"),
     "find_structure": ("Looked up {} in the PDB", "Looking up {} in the PDB", "query"),
     "inspect_structure": ("Inspected {}", "Inspecting {}", "system"),
     "preview_setup": ("Previewed what setup builds", "Previewing what setup builds", ""),
@@ -132,7 +134,24 @@ def look_said(tool: str, asked: dict[str, Any] | None, *, doing: bool = False) -
     text = going if doing else done
     if "{}" not in text:
         return text
-    value = " ".join(str((asked or {}).get(named) or "").split())
+    if tool == "read_docs":
+        # A question, else a section or a page read whole; nothing asked, the
+        # pages. Only words are said: anything else is refused by the look.
+        value = ""
+        for key in ("query", "value", "section", "page"):
+            given = (asked or {}).get(key)
+            if (isinstance(given, (str, int, float)) and not isinstance(given, bool)
+                    and not (isinstance(given, int) and given.bit_length() > 1000)):
+                value = " ".join(str(given).split())
+                if value:
+                    break
+        if not value and asked:
+            # Asked something the look cannot read: it is refused, not a list.
+            return "Reading the docs" if doing else "Read the docs"
+        if not value:
+            return "Listing the docs' pages" if doing else "Listed the docs' pages"
+    else:
+        value = " ".join(str((asked or {}).get(named) or "").split())
     if tool == "inspect_structure":
         value = Path(value).name if value else "the structure"
     else:
@@ -276,7 +295,12 @@ _LOOK_RATHER_THAN_GUESS = (
     "or a residue's state; check a selection before you write one into a "
     "config. What a tool says is the software's own finding: quote it as "
     "it is, and never contradict it with a number of your own. A tool that "
-    "refused says why; do not look again with the same arguments.")
+    "refused says why; do not look again with the same arguments. A question "
+    "about this software itself (a page, a button or what a mark on it does, "
+    "a command or flag, what a setting or a refusal means, what it can and "
+    "cannot do) is answered from its docs: read_docs first, answer as they "
+    "say, and name the page; where they do not say, say that rather than "
+    "guess.")
 
 
 class _Refused(CodedError, Exception):
@@ -782,6 +806,55 @@ def _methods_of_study(box: Toolbox, asked: dict[str, Any]) -> str:
             f"(a gap they name was not recorded):\n\n{prose}")
 
 
+def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
+    """What the docs of this installed version say (:mod:`fastmdxplora.software_docs`)."""
+    from fastmdxplora.software_docs import DocsNotFound, read_docs
+
+    asked = dict(asked)
+    if "value" in asked and "query" not in asked:
+        # The text protocol's ``USE: read_docs how do I resume``, which YAML
+        # may also read as a list ("- what is a sweep").
+        value = asked.pop("value")
+        if isinstance(value, list) and all(isinstance(v, str) for v in value):
+            value = " ".join(value)
+        asked["query"] = value
+    taken = {"query", "page", "section", "part"}
+    stray = [key for key in asked if key not in taken]
+    if (len(stray) == 1 and not taken & set(asked) and isinstance(stray[0], str)
+            and isinstance(asked[stray[0]], (str, type(None)))):
+        # A bare question with a colon in it ("what does resume: true do"),
+        # which YAML reads as a mapping: the question, put back together.
+        key = stray[0]
+        asked = {"query": f"{key}: {asked[key] or ''}".strip()}
+    unknown = sorted(str(key) for key in asked if key not in taken)
+    if unknown:
+        raise _Refused("read_docs takes `query`, or `page` with `section` and `part`; not "
+                       + ", ".join(f"`{k}`" for k in unknown) + ".")
+
+    def text(key: str) -> str | None:
+        value = asked.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+            raise _Refused(f"`{key}` is words, not {type(value).__name__}.")
+        if isinstance(value, int) and value.bit_length() > 1000:
+            raise _Refused(f"`{key}` is words, not a number of {value.bit_length()} bits.")
+        return " ".join(str(value).split())[:300] or None
+
+    part = asked.get("part")
+    if part is not None:
+        whole = isinstance(part, int) and not isinstance(part, bool)
+        if isinstance(part, float) and math.isfinite(part) and part.is_integer():
+            part, whole = int(part), True
+        if not whole or part < 1:
+            raise _Refused("`part` is a whole number, 1 or more.")
+    try:
+        return read_docs(query=text("query"), page=text("page"), section=text("section"),
+                         part=part)
+    except DocsNotFound as exc:
+        raise _Refused(str(exc)) from None
+
+
 def _find_structure(box: Toolbox, asked: dict[str, Any]) -> str:
     """The PDB entries a name answers to, by protein, and AlphaFold DB's
     models where the PDB holds none or where asked."""
@@ -879,6 +952,15 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "how many atoms and which residues the selection matches in that "
         "structure.",
         _check_selection),
+    "read_docs": (
+        "`query` (a question in words), with `page` to ask one page only; or "
+        "`page` (a page's name, as listed) and optionally `section` (a heading on "
+        "it) and `part`; nothing, for the list of pages.",
+        "what the docs of this installed version of FastMDXplora say: the "
+        "passages that answer a question, each with its page and section, or a "
+        "page's sections, or one section whole. Look here before you answer how "
+        "the software, its pages, its buttons or its commands work.",
+        _read_docs),
 }
 
 
@@ -920,6 +1002,21 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         "system": _A_STRUCTURE,
         "expression": {"type": "string", "description": "An MDTraj selection."}},
         "required": ["system", "expression"]},
+    "read_docs": {"type": "object", "properties": {
+        "query": {"type": "string",
+                  "description": "What to find in the docs, in words, such as what the "
+                                 "Useful and Wrong buttons do."},
+        "page": {"type": "string",
+                 "description": "A page's name as the list of pages gives it, such as "
+                                "agent or gui: with `query`, the passages from that page "
+                                "alone; without, its sections."},
+        "section": {"type": "string",
+                    "description": "A heading on that page, to read that section whole; "
+                                   "where a heading is on the page twice, the headings "
+                                   "above it too, as `A > B`."},
+        "part": {"type": "integer", "minimum": 1,
+                 "description": "Which part of a long section; 1 if not given."}},
+        "additionalProperties": False},
 }
 
 
