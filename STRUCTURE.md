@@ -21,6 +21,7 @@ FastMDXplora/
 │       ├── study_tags.py          # Tags and a note a person gives a study, kept in its folder
 │       ├── structure_search.py    # A structure found by its name: the PDB's entries by protein, AlphaFold DB's models
 │       ├── workspace_studies.py   # The studies in a workspace listed and compared, for the Agent and an AI app
+│       ├── software_docs.py       # The software's own docs, packaged as `_docs/`: their pages, sections and a search
 │       ├── system_id.py           # A study's system as four capitals: its PDB ID, or its file's first four
 │       ├── replaced.py            # What a phase run again replaces, and what it leaves stale
 │       ├── study_files.py         # What each file of a study is: its phase, run, kind and name
@@ -287,6 +288,7 @@ FastMDXplora/
 ├── fastmdx                        # Launcher for an uninstalled checkout
 ├── environment.yml                # conda environment for the full install
 ├── pyproject.toml                 # Primary package config
+├── setup.py                       # The build step that copies docs/*.md into the package
 ├── pytest.ini
 ├── requirements.txt
 ├── README.md

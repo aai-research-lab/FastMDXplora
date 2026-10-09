@@ -43,6 +43,15 @@ about what it displaced; every `pytest` afterwards imports from
 `site-packages`. `tests/test_the_tests_run_against_this_checkout.py` fails first
 and says so.
 
+**The docs ship inside the package.** The Agent answers questions about the
+software from these pages (its look `read_docs`), so a wheel carries them:
+`setup.py`'s build step copies `docs/*.md` into the built package as
+`fastmdxplora/_docs`, and an installed copy reads the docs of its own version,
+offline. A checkout, editable or not, reads `docs/` where it is. The sdist
+carries `docs/` because setuptools_scm lists the files git tracks, so build
+with `python -m build` (an isolated build has setuptools_scm); a page added
+here reaches the Agent with no other change.
+
 ---
 
 ## The architecture, in one idea
