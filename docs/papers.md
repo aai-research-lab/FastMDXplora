@@ -170,18 +170,21 @@ contain, or by reference to another paper), the study needs you.
   an exchange name after a hyphen at a line's end and one of a fixed list
   of words (Hamiltonian, temperature, solute, replica, reservoir, pH, H,
   T: "Hamiltonian-" before "REMD"). Any other name found only as the words
-  are written ("proper-" at a line's end before "ties" reads TIES) is put
-  to you, as is a name read only where a soft hyphen at a line's end is
-  joined, a name just after such a soft hyphen ("proper" and a soft
-  hyphen before "ties"), a name just before one unless a word of the
-  fixed list follows, and a name glued to a word or a number
-  ("REMDsimulations", "32REMD", "remdsimulations", "aMDsimulations"). A
-  soft hyphen is one or more, with any invisible characters beside them,
-  and the marks printed for one ("‧", "᠆"). A line's end inside a name
-  ("G-" before "REST") reads it whole. Words that qualify a name are read
-  with a line's end inside them joined too ("with-" before "out"); where
-  one is read only across a soft hyphen at a line's end, no name decides
-  the method, and each is put to you.
+  are written ("PROPER-" at a line's end before "TIES" reads TIES) is put to
+  you, as is a name read only where a soft hyphen at a line's end is joined,
+  a name just after such a soft hyphen ("PROPER" and a soft hyphen before
+  "TIES"), a name just before one unless a word of the fixed list follows,
+  and a name glued to a word or a number ("REMDsimulations", "32REMD",
+  "remdsimulations", "aMDsimulations"). A soft hyphen is one or more, with
+  any invisible characters beside them, and the marks printed for one ("‧",
+  "᠆"). A line's end inside a name ("G-" before "REST") reads it whole. TIES
+  decides only in capitals in a sentence not all in capitals, or as a tool's
+  name ("ties_md", "TIES20"); "ties" in other letters asks, as it may be a
+  word. A letter in a circle or a square beside a soft hyphen is a letter.
+  Words that qualify a name are read with a hyphen inside them joined too,
+  two letters on each side ("with-out", "with-" before "out"); where one is
+  read only across a soft hyphen at a line's end, no name decides the
+  method, and each is put to you.
   Everything else such words may mean is put to you, the words shown, and
   the study runs once you confirm it is not that method: a name beside
   words that may deny it or give it elsewhere ("no REMD was used",
@@ -229,14 +232,17 @@ contain, or by reference to another paper), the study needs you.
 - **A membrane.** A bilayer of one lipid this software builds, however the
   paper words it ("a POPC bilayer of 144 lipids"), in a rectangular box; a
   mixture cannot run here where the second lipid is one this software
-  recognises (SOPC, PIP2, phosphatidylserine, ergosterol, DDM). The lipid
-  is built at once only where every other word of the description is the
+  recognises (SOPC, PIP2, phosphatidylserine, ergosterol, DDM). The lipid is
+  built at once only where every other word of the description is the
   lipid's own name written out ("POPC
-  (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine)"), the bilayer's, its
-  ions', its water's, its box's, or the protein's placed in it. Any other
-  word or share ("SM-free", "80 mol%", "70/30", "96,32.5", two counts of
-  lipids however written, "(96, 32)" included, a named leaflet, "brain
-  extract", "AMPA receptor in a POPC bilayer")
+  (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine)", "DOPC bilayer of 128
+  lipids (1,2-dioleoyl-sn-glycero-3-phosphocholine)"; after a count it names
+  the lipid's chains or stands apart, so "with 20 phosphatidylcholine" is a
+  second lipid), the bilayer's, its ions', its water's, its box's, or the
+  protein's placed in it. Any other word or share ("SM-free", "80 mol%",
+  "70/30", "96,32.5", two counts of lipids however written, "(96, 32)"
+  included, a named leaflet, "brain extract", "AMPA receptor in a POPC
+  bilayer")
   leaves the lipid set and needs you to confirm the bilayer is that lipid
   alone; a word in letters that only look Latin needs you too. A decimal
   comma or a range with its unit ("0,15 M NaCl", "1-1.5 nm") is no share;

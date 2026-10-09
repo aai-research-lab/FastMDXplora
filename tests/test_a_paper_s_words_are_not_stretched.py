@@ -1921,6 +1921,7 @@ def test_counts_of_lipids_are_read_as_counts(membrane, state):
     ("tar-\ngeted MD- and US-based runs", "confirm"),
     ("Material proper-\nties were computed.", "confirm"),
     ("The structural proper-\nties were analysed.", "confirm"),
+    ("MATERIAL PROPER-\nTIES WERE COMPUTED.", "confirm"),
     ("TI-\nTRATION CURVES WERE FITTED.", "confirm"),
     ("We used QM/MM-\nbased dynamics.", "qm_mm"),
     ("REMD-\nbased sampling with 24 replicas.", "replica_exchange"),
@@ -2186,14 +2187,15 @@ def test_counts_of_waters_and_ions_are_not_lipids(membrane, state):
 
 # -- 1608: names beside a soft hyphen, other spellings, counts after a dash --
 @pytest.mark.parametrize("details, method", [
-    ("These proper­\nties of the loop", "confirm"),
-    ("We ran RE­­\nMD of the peptide", "confirm"),
-    ("We ran RE­​\nMD of the peptide", "confirm"),
-    ("We ran RE‧\nMD of the peptide", "confirm"),
-    ("We ran RE᠆\nMD of the peptide", "confirm"),
-    ("We ran RE﻿­ \nMD of the peptide", "confirm"),
-    ("REMD­\nsettings of the loop", "confirm"),
-    ("REMD­\nsimulations with 24 replicas", "replica_exchange"),
+    ("These proper\u00ad\nties of the loop", "confirm"),
+    ("THESE PROPER\u00ad\nTIES OF THE LOOP", "confirm"),
+    ("We ran RE\u00ad\u00ad\nMD of the peptide", "confirm"),
+    ("We ran RE\u00ad\u200b\nMD of the peptide", "confirm"),
+    ("We ran RE\u2027\nMD of the peptide", "confirm"),
+    ("We ran RE\u1806\nMD of the peptide", "confirm"),
+    ("We ran RE\ufeff\u00ad \nMD of the peptide", "confirm"),
+    ("REMD\u00ad\nsettings of the loop", "confirm"),
+    ("REMD\u00ad\nsimulations with 24 replicas", "replica_exchange"),
     ("REMD-\nforce field runs", "replica_exchange"),
     ("We ran remdsimulations", "confirm"),
     ("Runs of gamdsimulations of the receptor", "confirm"),
@@ -2201,31 +2203,31 @@ def test_counts_of_waters_and_ions_are_not_lipids(membrane, state):
     ("REXsimulations of the site", "confirm"),
     ("aMDsimulations of the site", "confirm"),
     ("An OBC2model of the solvent", "confirm"),
-    ("ᎡᎬᎷᎠ of the peptide", "replica_exchange"),
-    ("ҺREX of the peptide", "replica_exchange"),
-    ("ԜESTPA runs of the loop", "milestoning"),
-    ("TӀES of the ligand", "free_energy"),
+    ("\u13a1\u13ac\u13b7\u13a0 of the peptide", "replica_exchange"),
+    ("\u04baREX of the peptide", "replica_exchange"),
+    ("\u051cESTPA runs of the loop", "milestoning"),
+    ("T\u04c0ES of the ligand", "free_energy"),
     ("Hamiltonian-\nREMD of the peptide", "replica_exchange"),
     ("pH-\nREMD of the peptide", "replica_exchange"),
     ("Data moved at 10 GB/s.", "plain"),
     ("MD with GB/S", "confirm"),
-    ("We ran replica ex-­\nchange MD with 32 replicas.", "replica_exchange"),
-    ("We ran Ga-​­\nMD.", "accelerated"),
-    ("We used fep‧calculations", "free_energy"),
-    ("We ran REMD­\n(8 replicas)", "replica_exchange"),
-    ("We ran ­\nREMD with 8 replicas", "replica_exchange"),
-    ("proper­⁣\nties were computed", "confirm"),
-    ("We ran ᏒEMD", "replica_exchange"),
-    ("We ran ᏔESTPA simulations", "milestoning"),
+    ("We ran replica ex-\u00ad\nchange MD with 32 replicas.", "replica_exchange"),
+    ("We ran Ga-\u200b\u00ad\nMD.", "accelerated"),
+    ("We used fep\u2027calculations", "free_energy"),
+    ("We ran REMD\u00ad\n(8 replicas)", "replica_exchange"),
+    ("We ran \u00ad\nREMD with 8 replicas", "replica_exchange"),
+    ("PROPER\u00ad\u2063\nTIES were computed", "confirm"),
+    ("We ran \u13d2EMD", "replica_exchange"),
+    ("We ran \u13d4ESTPA simulations", "milestoning"),
     ("H-\nTIES", "confirm"),
-    ("proper\u00ad\n\u200bties were computed", "confirm"),
-    ("prope\u0301r\u00ad\nties were computed", "confirm"),
-    ("proper\u00ad\ufff9\nties were computed", "confirm"),
+    ("PROPER\u00ad\n\u200bTIES were computed", "confirm"),
+    ("PROPE\u0301R\u00ad\nTIES were computed", "confirm"),
+    ("PROPER\u00ad\ufff9\nTIES were computed", "confirm"),
     ("We ran \u0301\u00ad\nREMD with 8 replicas", "replica_exchange"),
 ])
 def test_a_name_beside_a_soft_hyphen_or_written_another_way(details, method):
     """A name just after a soft hyphen at a line's end may be the end of a
-    word ("proper­\nties"), and one just before it the start of one,
+    word ("proper\u00ad\nties"), and one just before it the start of one,
     unless a word of the fixed list follows; however many soft hyphens or
     invisible characters stand there. A name glued to a word in any case
     asks; Cherokee and more Cyrillic capitals read as the Latin ones; a
@@ -2265,6 +2267,68 @@ def test_a_count_after_a_dash_is_a_count(membrane, state):
     one after a dash standing alone or doubled, but not one of a force
     field's fixed versions nor a place in a lipid's chemical name; a count of lipids per
     leaflet is the count per leaflet, unless it ends a list."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
+                  "membrane": _stated(membrane)})
+    assert plan["state"] == state
+
+
+# -- 1609: TIES in capitals, a hyphen inside a qualifier, a lipid's name written out --
+@pytest.mark.parametrize("details, method", [
+    ("The ties between the loops held.", "confirm"),
+    ("Ties between the loops held.", "confirm"),
+    ("We used TIES for the ligands.", "free_energy"),
+    ("Plain MD with-out REMD.", "confirm"),
+    ("Plain MD with\u2027out REMD.", "confirm"),
+    ("\u24c5\u24c7\u24c4\u24c5\u24ba\u24c7\u00ad\nTIES were computed", "confirm"),
+    ("PROPER\u00ad\n\U0001f143\U0001f138\U0001f134\U0001f142 were computed", "confirm"),
+    ("We ran \U0001f141\U0001f134\u00ad\nMD of the peptide", "confirm"),
+    ("We used Ties for the ligands.", "confirm"),
+    ("We used \u1d1b\u026a\u1d07s for the ligands.", "confirm"),
+    ("Relative binding was computed with ties_md.", "free_energy"),
+    ("Relative binding was computed with TIESMD.", "free_energy"),
+    ("THE TIES BETWEEN THE LOOPS HELD.", "confirm"),
+    ("THE TIES BETWEEN DOMAINS AT pH 7 WERE ANALYSED.", "confirm"),
+    ("Method: TIES", "free_energy"),
+    ("TIES; 5 replicas per window", "free_energy"),
+    ("TIES MD", "free_energy"),
+    ("TIES in NAMD", "free_energy"),
+    ("HYDROGEN-BOND TIES WERE ANALYSED.", "confirm"),
+    ("We ran QM/MM MD of the N-O bond cleavage.", "qm_mm"),
+    ("We ran REMD of the V-S bond.", "replica_exchange"),
+])
+def test_ties_is_a_name_only_in_capitals(details, method):
+    """TIES decides the method only in capitals, in a sentence not all in
+    capitals, or as a tool's name ("ties_md"); "ties" otherwise asks, as it
+    may be a word; a qualifier with a hyphen inside it ("with-out") is read
+    joined too, two letters on each side; a letter in a circle or a square
+    before a soft hyphen is a letter."""
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("membrane, state", [
+    ("DOPC bilayer of 128 lipids (1,2-dioleoyl-sn-glycero-3-phosphocholine)", "ready"),
+    ("POPC bilayer, 128 lipids, 1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine", "ready"),
+    ("DOPC bilayer of 128 lipids, 64 per leaflet (1,2-dioleoyl-sn-glycero-3-phosphocholine)",
+     "ready"),
+    ("DOPC bilayer of 108 lipids and 20 phosphatidylcholine", "cannot_run"),
+    ("DOPC bilayer of 128 lipids (1,2-dipalmitoyl-sn-glycero-3-phosphocholine)", "cannot_run"),
+    ("DOPC bilayer of 128 lipids (20% phosphatidylcholine)", "cannot_run"),
+    ("DOPC with 20 phosphatidylcholine", "cannot_run"),
+    ("DOPC with 20 per leaflet phosphatidylcholine", "cannot_run"),
+    ("POPC, 30 total phosphatidylcholine", "cannot_run"),
+    ("DOPC with \u0663 phosphatidylcholine", "cannot_run"),
+    ("POPC (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphatidylcholine) bilayer", "ready"),
+    ("DOPC (1,2-dioleoyl-3-sn-phosphatidylcholine)", "ready"),
+    ("1-palmitoyl-2-oleoyl-3-sn-phosphatidylcholine (POPC)", "ready"),
+    ("DOPC (1,2-dioleoyl-sn-3-phosphocholine)", "ready"),
+    ("DOPC 3 phosphocholine", "cannot_run"),
+])
+def test_a_lipid_s_name_written_out_after_its_count_is_the_lipid(membrane, state):
+    """The lipid's chemical name after a count of it, or after the words of a
+    leaflet, is the lipid itself where it names the lipid's chains or stands
+    apart ("(", ","); with other chains, a share, a count of it or another
+    count beside it, it is another."""
     plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
                   "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
                   "membrane": _stated(membrane)})

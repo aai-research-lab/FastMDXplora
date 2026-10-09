@@ -341,7 +341,7 @@ _DETAIL_WORDS = {
                         r"|(?-i:\bPT\b)\s+(?:simulations?|md|runs?|with)"
                         r"|expanded[-\s]*ensemble\s+(?:simulations?|sampling|md|method|runs?)",
     "free_energy": r"free[-\s]*energy[-\s]*perturbation|\bfeps?\d{0,3}\b|alchemical|annihilat"
-                   r"|thermodynamic[-\s]*integration|(?-i:\bTI\d{0,3}\b)|\b[ar]bfe\b|\bties\b"
+                   r"|thermodynamic[-\s]*integration|(?-i:\bTI\d{0,3}\b)|\b[ar]bfe\b|(?-i:\bTIES\b)|\bties(?:[-_\s]?(?:md|openmm)|[-_]?(?:pm|20))\b"
                    r"|(?:lambda|\u03bb)[-\s]*(?:windows?|values?|states?)"
                    r"|non[-\s]?equilibrium\s+(?:switch\w*|transitions?)|double[-\s]*decoupl"
                    r"|decoupl\w*\s+(?:of\s+)?(?:the\s+|each\s+)?(?:ligand|solute|inhibitor)"
@@ -385,7 +385,7 @@ _DETAIL_WORDS = {
 #: "CUDA-accelerated", "AMD" before a GPU or processor's name, and the
 #: phrases of ``_PLAIN_PHRASES`` are not read as such words.
 _LOOSE_WORDS = (
-    r"quantum[-\s]*mechanic|coarse[-\s]*grain|decoupl|\bin\s+vacuo\b|\bvacuum\b|gas[-\s]*phase"
+    r"\bties\b|quantum[-\s]*mechanic|coarse[-\s]*grain|decoupl|\bin\s+vacuo\b|\bvacuum\b|gas[-\s]*phase"
     r"|(?:absolute|relative|binding|hydration|solvation)\s+free[-\s]*energ|\bpmf\b"
     r"|(?-i:\bAMD\b)(?![-\s]+(?:gpus?|radeon|instinct|epyc|ryzen|threadripper|opteron"
     r"|mi\d{2,4}[ax]?|hardware|rocm|hip|processors?|cpus?)\b)"
@@ -469,10 +469,12 @@ _PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u201
 #: beside them, between a letter and a line's end or a space before a letter.
 _INVISIBLE = ("\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
               "\ufff9-\ufffb\U000e0001\U000e0020-\U000e007f")
-_SOFT_BREAK = re.compile(r"(?:(?<=[^\W\d_])|(?<=[^\W\d_][\u0300-\u036f]))"
+#: Letters in a circle or a square, which NFKC reads as Latin ones.
+_FRAMED = "\u24b6-\u24e9\U0001f130-\U0001f149"
+_SOFT_BREAK = re.compile(r"(?:(?<=[^\W\d_])|(?<=[" + _FRAMED + r"])|(?<=[^\W\d_][\u0300-\u036f]))"
                          r"[" + _INVISIBLE + r"\u00ad\u2027\u1806]*"
                          r"[\u00ad\u2027\u1806][" + _INVISIBLE + r"]*(?=\s+[" + _INVISIBLE
-                         + r"]*[^\W\d_])")
+                         + r"]*(?:[^\W\d_]|[" + _FRAMED + "]))")
 #: Cyrillic, Greek and small-capital letters drawn as Latin ones ("Replica
 #: \u0435xchange" with a Cyrillic e), read as the Latin letter they look like,
 #: and slashes and bars drawn as other symbols as "\\", "|" and "/". Greek
@@ -546,7 +548,7 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     read as written before a
     hyphen and one of a fixed list of words (``_WHOLE_BEFORE``: "QM/MM-\n
     based", "REMD- and MD-based"), where joining breaks a whole name. Any
-    other name read only as written ("proper-\nties" reads TIES) may be a
+    other name read only as written ("PROPER-\nTIES" reads TIES) may be a
     piece of a broken word, so it puts the study to the person, as does a
     name read only where a soft hyphen at a line's end is joined, or a name
     of capitals glued to a word ("REMDsimulations")."""
@@ -587,7 +589,7 @@ def _whole_by(words: str, name: re.Match[str], breaks: list[int]) -> bool:
     """Whether ``name`` is whole beside the soft hyphens at ``breaks``: one
     just after it may break a longer word ("REMD\u00ad\nsettings"), unless a word
     of a fixed list follows ("REMD\u00ad\nsimulations"); one just before it
-    always may ("proper\u00ad\nties")."""
+    always may ("PROPER\u00ad\nTIES")."""
     for at in breaks:
         if at < name.start() and not words[at:name.start()].strip():
             return False
@@ -644,9 +646,12 @@ def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = No
     aside: list[tuple[str, str]] = []
     for match, method in found:
         sentence = _sentence_of(words, match)
-        # Read with any break in it joined too: "with- out", "MM/ GBSA".
-        sentence += " " + re.sub(r"(?<=[A-Za-z])\s*-\s+(?=[A-Za-z])|(?<=/)\s+", "", sentence)
+        # Read with any break in it joined too: "with- out", "MM/ GBSA", and a
+        # hyphen inside a word, two letters on each side ("with-out", not "N-O").
+        sentence += " " + re.sub(r"(?<=[A-Za-z])\s*-\s+(?=[A-Za-z])|(?<=/)\s+"
+                                 r"|(?<=[A-Za-z]{2})-(?=[A-Za-z]{2})", "", sentence)
         if _QUALIFIED.search(sentence) or (
+                match.group(0) == "TIES" and _in_capitals(_sentence_of(words, match))) or (
                 method in ("implicit_solvent", "free_energy") and _RESCORING.search(sentence)) or (
                 whole is not None and not whole(match)):
             aside.append((_short(_sentence_of(words, match).strip(), 160), "mentioned"))
@@ -668,6 +673,16 @@ def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = No
             continue
         aside.append((_short(_sentence_of(unnamed_text, loose).strip(), 160), "signs"))
     return None, aside
+
+
+def _in_capitals(sentence: str) -> bool:
+    """Whether ``sentence`` is written in capitals, so a word in it ("THE
+    TIES BETWEEN") cannot be told from a name: no word of three small
+    letters, and two words in capitals beside the name and a tool's words
+    ("TIES MD", "TIES in NAMD")."""
+    others = re.findall(r"\b[A-Z]{2,}\b", sentence.replace("TIES", " "))
+    return not re.search(r"\b[a-z]{3,}\b", sentence) and len(
+        [word for word in others if word not in ("MD", "PM", "OPENMM")]) > 1
 
 
 def _sentence_of(words: str, match: re.Match[str]) -> str:
@@ -1715,8 +1730,9 @@ _ACYL_WORDS = re.compile(r"(di)?(" + "|".join(sorted(_ACYL, key=len, reverse=Tru
                          re.IGNORECASE)
 #: Words that may stand between a lipid's abbreviation and its class written
 #: out without naming another lipid.
-_PLAIN_LIPID_WORDS = {"", "a", "an", "the", "sn", "glycero", "lipid", "lipids", "bilayer",
-                      "membrane", "zwitterionic", "l", "d", "1", "2", "3"}
+_PLAIN_LIPID_WORDS = {"", "a", "an", "the", "of", "with", "in", "per", "each", "leaflet",
+                      "leaflets", "total", "sn", "glycero", "lipid", "lipids", "bilayer",
+                      "membrane", "zwitterionic", "l", "d"}
 
 
 def _chains_of(name: str) -> str:
@@ -1733,7 +1749,18 @@ def _same_lipid(words: str, name: str) -> bool:
     for acyl in _ACYL_WORDS.finditer(words):
         letter = _ACYL[acyl.group(2).lower()]
         chains += letter * (2 if acyl.group(1) else 1)
-    stripped = _ACYL_WORDS.sub(" ", words)
+    stripped = re.sub(r"(?:\b[123](?:,[123])?[-\s])?(?:" + _ACYL_WORDS.pattern + ")", " ", words,
+                      flags=re.IGNORECASE)
+    # The glycerol's positions ("sn-glycero-3", "3-sn", "sn-3").
+    stripped = re.sub(r"\b(?:glycero[-\s]*3|3[-\s]*sn|sn[-\s]*3)\b", " ", stripped,
+                      flags=re.IGNORECASE)
+    # A count of the lipid ("128 lipids", "64 per leaflet"), not one of the
+    # class written out after it ("with 20 phosphatidylcholine"): with a
+    # count before it, the class names its chains or stands apart ("(", ",").
+    if re.search(r"\b[0-9]", stripped) and not chains and not re.search(r"[(,:;]\s*$", words):
+        return False
+    stripped = re.sub(r"\b[0-9]+(?=\s*(?:lipids?\b|per\s+leaflet\b|in\s+each\s+leaflet\b"
+                      r"|(?:in\s+)?total\b))", " ", stripped, flags=re.IGNORECASE)
     tokens = set(re.split(r"[\s,()\-:'′]+", stripped.lower()))
     if not tokens <= _PLAIN_LIPID_WORDS:
         return False
@@ -1815,8 +1842,8 @@ def _unexplained(said: str, lipid: str) -> list[str]:
                      for acyl in _ACYL_WORDS.finditer(text))
     if chains and chains.upper() != _chains_of(lipid).upper():
         return [acyl.group(0) for acyl in _ACYL_WORDS.finditer(text)]
-    # A chain's place goes with it ("1-palmitoyl").
-    text = re.sub(r"(?:\b[123]-)?(?:" + _ACYL_WORDS.pattern + ")", " ", text)
+    # A chain's place goes with it ("1-palmitoyl", "1,2-dioleoyl").
+    text = re.sub(r"(?:\b[123](?:,[123])?-)?(?:" + _ACYL_WORDS.pattern + ")", " ", text)
     # A count after a word's dash is a count ("per leaflet-60", "POPC-60"), and
     # so is one before "-lipid" ("128-lipid").
     text = re.sub(r"\b(\d+)-(?=lipids?\b)", r"\1 ", _WORD_DASH.sub(r"\1 ", text))
