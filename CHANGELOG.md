@@ -7,6 +7,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The README's licence
+
+**Changed:** the README's License section names FastMDXplora's own licence
+only.
+
 ### The Agent beside the page, and a run's notice, as the page changes
 
 **Fixed:** Ctrl+J (⌘J) pressed just as the Agent page opened went back
