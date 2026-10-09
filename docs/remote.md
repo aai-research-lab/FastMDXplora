@@ -259,7 +259,7 @@ job.sh:
   ... (refused with exit 75 and a no_room file where less than 1,840 MB is free)
   fmdx_peak() { ... }      (reads the job's GPU memory every 15 s into gpu_peak)
   fmdx_peak $$ &
-  FMDX_JOB_DIR="$(pwd -P)" /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run --no-defaults
+  FMDX_JOB_DIR="$(pwd -P)" FMDX_SEND_ID="${1:-}" /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run --no-defaults
   rc=$?; cd / && echo "$rc" > /home/me/fastmdxplora-jobs/lysozyme/exit_code
 ```
 
@@ -284,19 +284,34 @@ once it has ended; one still waiting or running there is refused, on a cluster
 too, so cancel it first; one of that name last read waiting or running on
 another machine, or cancelled there within the hour, is refused too. On a
 cluster no send is made, forced or not, while the account's queue holds a job
-of that name waiting or running in the job's folder (one of that name working
-elsewhere is not counted). On a workstation no send is made, forced or not,
-whatever the record here says or with no record here at all, while a process
-of a job works for the job's folder: one carrying the folder as
-`FMDX_JOB_DIR`, which a job's run and every process it starts carry, or a
-job's script or run working in it (a shell or a reader left there is not
-counted). A run cancelled from here stops at its next frame; a job whose
-script was killed while its run goes on reads as running, and `cancel` stops
-its run. This is read from the machine's `/proc`, and a send whose check is
-not answered to the end is refused; where the machine has no `/proc`, a forced
-send after a cancel from here is refused while the job's process group is
-there, up to an hour after the cancel, and a machine without `setsid` gives a
-job no process group of its own, so there it is not found.
+of that name waiting or running in the job's folder, each folder compared as
+the machine resolves it (a folder reached through a link is the one the queue
+names); one of that name working elsewhere is not counted. On a workstation no
+send is made, forced or not, whatever the record here says or with no record
+here at all, while a process of a job works for the job's folder: one carrying
+the folder as `FMDX_JOB_DIR`, which a job's run and every process it starts
+carry, or a job's script, its run or a worker of it working in it (a shell, an
+editor or a reader left there, or a command that only names the script, is not
+counted). A run cancelled from here stops at its next frame; a job whose script
+was killed while its run goes on reads as running, and `cancel` stops its run.
+A job's run on a workstation also carries its send's own id (`FMDX_SEND_ID`,
+given to `job.sh` as it starts): a job reads as running only while its script
+(`sh job.sh <id>`) or a process of its run in its group is there, not another
+process given its number after a restart; a job that has ended while processes
+its run started still work (an explorer that died with its runs going) says how
+many, and `cancel` asks them to stop by that id, so nothing of another send of
+the same name is stopped. Each process is asked once: a run told to stop a
+second time, more than 2 s after the first, stops at once without its
+checkpoint, so for about 10 minutes after a stop asked from here, another
+`cancel` sends nothing, and one after that stops them at once and says so, a
+cancelled job's run that still works included. The machine keeps each stop
+asked, as `.fmdx-stop-<id>-<n>` in the job's folder, made before its TERM: a
+cancel whose answer was lost is not sent again, and one that never reached the
+machine is sent as the first. This is read from the machine's `/proc`, and a
+send whose check is not answered to the end is refused; where the machine has
+no `/proc`, a forced send after a cancel from here is refused while the job's
+process group is there, up to an hour after the cancel, and a machine without
+`setsid` gives a job no process group of its own, so there it is not found.
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
 workstation's GPUs (`nvidia-smi`) how much memory each has free, and the study
@@ -321,32 +336,38 @@ room has gone.
 What a run needs is learned from the runs on that machine. Each job's script
 reads its processes' GPU memory every 15 s, and once a job that ran one run at
 a time on the GPU chosen for it has ended done, the most it held is kept with
-the particles its runs on the GPU (CUDA or OpenCL; nothing is learned where
-one was shorter than three readings, read perhaps before it held its memory)
-had and their precision (`gpu_memory/<machine>.json` in the settings folder;
-only the runs of that send, newer by the machine's own clock than the send,
-never one an earlier send of the same name left). A study refused as needing
-more than a GPU has at all names that file: a run in it that does not stand
-for the study can be taken out. Much of a small run's memory is CUDA's own and
-the same at any size, so a size is never scaled from another by particles
-alone. For a new study, from runs in its precision: up to the largest size
-measured, what the next size measured at or above it held at most (where the
-sizes above hold more as they grow; else the most any of them held), and never
-less than a run of its size or smaller held; past the largest, from two sizes
-or more whose memory grows with size, the larger of a straight line through
-the most each size held and the slope between the two largest sizes, followed
-by as far again as the sizes measured span; then 15% more. The particles are
-those of the prepared system a run starts from (`setup_from`), else estimated
-from each run's structure file and setup, as the builder's preview estimates
-them, sweeps included. The need is not known where no run in that precision
-has finished there, where the study is larger than the runs measured can say
-(past the one size measured, or past the line's reach), or where its size
-cannot be worked out here (a PDB identifier, a file other than PDB, a
-membrane, more than 20 kinds of run): the plan says which, a GPU is chosen as
-above, and nothing is refused. A study sent from here that does not yet hold
-what it was expected to need (setup takes minutes) has the difference kept
-back for it, on each GPU its share; one whose processes' memory the machine
-does not give (`[N/A]`, as in a container or WSL) is taken as holding it.
+the particles its runs on the GPU (CUDA or OpenCL; nothing is learned where one
+was shorter than three readings, read perhaps before it held its memory) had
+and their precision (`gpu_memory/<machine>.json` in the settings folder; only
+the runs of that send, newer by the machine's own clock than the send, never
+one an earlier send of the same name left). A study refused as needing more
+than a GPU has at all names that file: a run in it that does not stand for the
+study can be taken out. Much of a small run's memory is CUDA's own and the same
+at any size, so a size is never scaled from another by particles alone. For a
+new study, from runs in its precision: up to the largest size measured, what
+the next size measured at or above it held at most, and never less than the
+most a run of its size or smaller held, carried on as steeply as that rose from
+a size a tenth of the span measured smaller or more up to the most a run of its
+size or larger held; past the largest, from two sizes or more whose memory
+grows with size, the largest of a straight line through the most each size
+held, and the most any size held and the most the largest size held, each
+carried on from the largest size as steeply as it rose to it from a size a
+tenth of the span measured smaller or more, followed by as far again as the
+sizes measured span; then 15% more. Runs of one size differing in method or
+card are not told apart, so the next size's most can be a run that held less
+than its neighbours: send a study unlike those measured with its GPU memory in
+mind. The particles are those of the prepared system a run starts from
+(`setup_from`), else estimated from each run's structure file and setup, as the
+builder's preview estimates them, sweeps included. The need is not known where
+no run in that precision has finished there, where the study is larger than the
+runs measured can say (past the one size measured, or past the line's reach),
+or where its size cannot be worked out here (a PDB identifier, a file other
+than PDB, a membrane, more than 20 kinds of run): the plan says which, a GPU is
+chosen as above, and nothing is refused. A study sent from here that does not
+yet hold what it was expected to need (setup takes minutes) has the difference
+kept back for it, on each GPU its share; one whose processes' memory the
+machine does not give (`[N/A]`, as in a container or WSL) is taken as holding
+it.
 
 Runs side by side count: a study run in parallel needs room for as many runs
 at once as the explorer starts (its `workers`, else one per device listed,
@@ -440,8 +461,10 @@ fastmdx remote cancel lysozyme
 ```
 
 stops the job, `scancel` on a cluster or the whole process group on a
-workstation. Its folder on the machine is left as it is. A job the machine says
-has ended is not signalled and keeps how it ended; a cancel the cluster does not
+workstation, with every process its run started. Its folder on the machine is
+left as it is. A job the machine says has ended is not signalled and keeps how
+it ended, and what its run left going on a workstation is stopped by its send's
+id; a cancel the cluster does not
 take is refused, and the job is asked about as before. A cluster's job last
 read as failed whose queue does not answer now is neither signalled nor fetched
 (`remote.job.cancel_not_taken`, `remote.job.unfinished`): nothing says whether

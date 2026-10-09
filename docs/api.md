@@ -415,7 +415,10 @@ job = api.cancel(job.name)         # "abandoned" once stopped; an ended job as i
 api.jobs(under="runs")             # the jobs whose results come back under runs/
 ```
 
-`api.cancel` returns a job that had ended as it ended, and refuses a cancel
+`api.cancel` returns a job that had ended as it ended (on a workstation, where
+its record says its run left processes going, `extra["left_going"]`, having
+asked them to stop, `extra["left_stopped_at"]`; nothing more is sent for 10
+minutes, and after that they are stopped at once), and refuses a cancel
 the cluster does not take, or one asked while the cluster's queue does not
 answer about a job last read as failed (`remote.job.cancel_not_taken`).
 

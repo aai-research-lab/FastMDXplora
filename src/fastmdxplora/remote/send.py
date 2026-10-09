@@ -51,6 +51,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shlex
 import stat
 import tempfile
@@ -123,11 +124,12 @@ _SAID_LINES, _SAID_CHARS = 12, 300
 #: Whether a job's process still works for a workstation job's folder (a
 #: run cancelled stops at its next frame, which can take minutes; one whose
 #: script was killed goes on): one carrying the folder as ``FMDX_JOB_DIR``,
-#: or the job's script or run working in it (a job sent before the marker).
-#: A shell or a reader left there is not the job's. Says ``in_folder`` where
-#: one is, read from ``/proc``; ``no_proc`` where the machine has none to
-#: say; ``scanned`` or ``no_folder`` where none is. Any other answer was cut
-#: short.
+#: or the job's script, its run or a worker the run started working in it
+#: (a job sent before the marker). A shell, an editor or a reader left
+#: there, or a command that only names the script, is not the job's. Says
+#: ``in_folder`` where one is, read from ``/proc``; ``no_proc`` where the
+#: machine has none to say; ``scanned`` or ``no_folder`` where none is. Any
+#: other answer was cut short.
 _STILL_WORKING = (
     "here=$(cd {where} 2>/dev/null && pwd -P) || {{ echo no_folder; exit 0; }}\n"
     "[ -d /proc/self ] && command -v readlink >/dev/null 2>&1 "
@@ -139,11 +141,105 @@ _STILL_WORKING = (
     "  case \"$(readlink \"$d/cwd\" 2>/dev/null)\" in\n"
     "    \"$here\"|\"$here\"/*)\n"
     "      case \"$(tr '\\000' ' ' < \"$d/cmdline\" 2>/dev/null)\" in\n"
-    "        *job.sh*|*fastmdx*) echo in_folder; exit 0 ;;\n"
+    "        *'sh job.sh '*|*'fastmdx explore '*|*--multiprocessing-fork*)\n"
+    "          echo in_folder; exit 0 ;;\n"
     "      esac ;;\n"
     "  esac\n"
     "done\n"
     "echo scanned\n")
+
+#: How long a stop asked of what a job's run started is let run before
+#: another is sent: a second TERM more than 2 s after the first stops a run
+#: at once, without its checkpoint, not at its next frame.
+LEFT_STOPPING_S = 600
+
+
+def _by_send(send_id: str, handle: str = "") -> str:
+    """Shell that finds the processes a workstation job's run started, by
+    the id its send gave the run (``FMDX_SEND_ID``, which the job's script
+    and its GPU reader do not carry): only this send's (a later send of the
+    same name has another), and only the account's own, by the real user
+    in ``status`` (a process of another user's naming the id is not, even
+    to root). Sets ``proc`` (1 where ``/proc`` says), ``n`` (how many),
+    ``pids`` (all) and ``outside`` (those not in the group ``handle``, read
+    from ``/proc``'s stat, not ``ps``), and ``ingroup`` (1 where one is in
+    it). Both are checked values: 16 hexadecimal digits, a number."""
+    assert _SEND_ID.fullmatch(send_id) and (not handle or handle.isdigit())
+    return (
+        "proc=0; n=0; pids=''; outside=''; ingroup=0\n"
+        "if [ -d /proc/self ]; then proc=1; me=$(id -u)\n"
+        "for d in /proc/[0-9]*; do\n"
+        "  [ -r \"$d/environ\" ] || continue\n"
+        "  grep -q \"^Uid:[[:space:]]*$me[[:space:]]\" \"$d/status\" 2>/dev/null || continue\n"
+        "  tr '\\000' '\\n' 2>/dev/null < \"$d/environ\" "
+        f"| grep -qxF 'FMDX_SEND_ID={send_id}' || continue\n"
+        "  p=${d#/proc/}; s=$(cat \"$d/stat\" 2>/dev/null); s=${s##*') '}\n"
+        "  [ -n \"$s\" ] || continue; set -- $s\n"
+        "  n=$((n + 1)); pids=\"$pids $p\"\n"
+        f"  if [ -n '{handle}' ] && [ \"${{3:-}}\" = '{handle}' ]; then ingroup=1; "
+        "else outside=\"$outside $p\"; fi\n"
+        "done\n"
+        "fi\n")
+
+
+def _stop_by_send(send_id: str, where: str, kill: str) -> str:
+    """Shell that asks to stop what carries ``send_id``, keeping the
+    ledger of stops on the machine, in the job's folder: each stop is a
+    directory ``.fmdx-stop-<id>-<k>``, made (atomically) before its TERM
+    with hangups ignored, so a stop whose answer was lost is never sent
+    again, and one that never ran is sent as the first. Within
+    :data:`LEFT_STOPPING_S` of the last, by the machine's clock, nothing is
+    sent (a second TERM stops a run at once, without its checkpoint).
+    Expects ``n`` (what carries the id) set; ``kill`` is what sends the
+    TERM. Says ``fmdx:stop=`` ``sent`` (with ``fmdx:stop_k``), ``stopping``,
+    ``none`` (nothing carries the id) or ``nofolder``."""
+    minutes = max(LEFT_STOPPING_S // 60, 1)
+    mark = f".fmdx-stop-{send_id}"
+    return (
+        "trap '' HUP\n"
+        f"if ! cd {shlex.quote(where)} 2>/dev/null; then echo fmdx:stop=nofolder\n"
+        'elif [ "$n" = 0 ] && [ "${went:-0}" = 0 ]; then echo fmdx:stop=none\n'
+        f"elif [ -n \"$(find . -maxdepth 1 -name '{mark}-*' -mmin -{minutes} "
+        "2>/dev/null | head -n 1)\" ]; then echo fmdx:stop=stopping\n"
+        "else\n"
+        f"  k=1; while [ -e {mark}-$k ]; do k=$((k + 1)); done\n"
+        f"  if ! mkdir {mark}-$k 2>/dev/null; then echo fmdx:stop=stopping\n"
+        # Another cancel's stop made since this one looked: it is that one.
+        f"  elif [ \"$k\" -gt 1 ] && [ -n \"$(find . -maxdepth 1 -name {mark}-$((k - 1)) "
+        f"-mmin -{minutes} 2>/dev/null)\" ]; then echo fmdx:stop=stopping\n"
+        f"  else {kill}\n"
+        '    echo fmdx:stop=sent; echo "fmdx:stop_k=$k"\n'
+        "  fi\n"
+        "fi\n")
+
+
+def _the_job_going(send_id: str, handle: str) -> str:
+    """Shell that sets ``went`` to 1 where the job is still going: its
+    script (``sh job.sh <id>``, not another process given its number after
+    a restart) or a process of its run in its group. Where the machine has
+    no ``/proc``, its script's number or group, as before ids."""
+    return (_by_send(send_id, handle)
+            + "went=0\n"
+            "if [ \"$proc\" = 1 ]; then\n"
+            f"  grep -q \"^Uid:[[:space:]]*$me[[:space:]]\" /proc/{handle}/status 2>/dev/null "
+            f"&& case \"$(tr '\\000' ' ' 2>/dev/null < /proc/{handle}/cmdline)\" in\n"
+            f"    *'job.sh {send_id} '*) went=1 ;;\n"
+            "  esac\n"
+            "  [ \"$ingroup\" = 1 ] && went=1\n"
+            f"elif {{ kill -0 {handle} || kill -0 -{handle}; }} 2>/dev/null; then went=1\n"
+            "fi\n")
+
+
+#: A send's id: so many hexadecimal digits.
+_SEND_ID = re.compile(r"[0-9a-f]{16}")
+
+
+def _send_id(job: Job) -> str:
+    """The id a workstation job's send gave its processes, or "" (a job
+    sent before there were ids, or a record that says something else)."""
+    given = job.extra.get("send_id")
+    return given if isinstance(given, str) and _SEND_ID.fullmatch(given) else ""
+
 
 #: Whether a job's process group is still there, for a machine with no
 #: ``/proc``: ``alive`` where it is.
@@ -278,7 +374,9 @@ def job_script(*, remote_dir: str, job_name: str, env: Environment,
     # The run and every process it starts carry the job's folder in their
     # environment: what works there is known as the job's, wherever it
     # works from.
-    lines += ['FMDX_JOB_DIR="$(pwd -P)" ' + shlex.join(command),
+    # The send's id, given as the script's argument: only the run carries it.
+    send_id = 'FMDX_SEND_ID="${1:-}" ' if scheduler != "slurm" else ""
+    lines += ['FMDX_JOB_DIR="$(pwd -P)" ' + send_id + shlex.join(command),
               f'rc=$?; cd / && echo "$rc" > {shlex.quote(remote_dir + "/exit_code")}', ""]
     return "\n".join(lines)
 
@@ -890,10 +988,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
         # of that name sent from another computer, still starting).
         raise StudyError(
             f"A process still works in {where} on {sending.machine.name}, or that "
-            "could not be asked to the end"
-            + (f" ({name}, cancelled from here, stops at its run's next frame)"
-               if before is not None and before.state == ABANDONED else
-               " (a run there, or a shell left in that folder)")
+            "could not be asked to the end" + _working_said(name, before)
             + ". Send it again once nothing works there, or give another --output.",
             code="environment.path.exists", path=name)
     if sending.scheduler == "slurm":
@@ -943,14 +1038,17 @@ def _send_held(sending: Sending, link: Transport, local_runner,
                             "exit \"$said\"; fi"])
         handle = started.stdout.strip().split(";")[0]
     else:
+        send_id = secrets.token_hex(8)
         started = link.run(["sh", "-c", (
             f"cd {shlex.quote(where)} || exit 1; "
             # The machine's own time it was sent, which only this send's
             # runs are newer than, whatever this computer's clock says.
             "rm -f exit_code no_room gpu_peak gpu_peak.part; touch .fmdx-sent; "
+            # The run and every process it starts carry this send's id: what
+            # it leaves going is found by it, and nothing of another send.
             "if command -v setsid >/dev/null 2>&1; then "
-            "setsid nohup sh job.sh > job.log 2>&1 < /dev/null & "
-            "else nohup sh job.sh > job.log 2>&1 < /dev/null & fi; echo $!")])
+            f"setsid nohup sh job.sh {send_id} > job.log 2>&1 < /dev/null & "
+            f"else nohup sh job.sh {send_id} > job.log 2>&1 < /dev/null & fi; echo $!")])
         handle = started.stdout.strip().splitlines()[-1] if started.stdout.strip() else ""
     if started.returncode != 0 or not usable_handle(handle):
         raise StudyError(
@@ -972,6 +1070,8 @@ def _send_held(sending: Sending, link: Transport, local_runner,
                      # `inputs/<name>` is recorded under that name there.
                      "inputs": {travelled: str(source) for travelled, source
                                 in sending.inputs.files.items()}})
+    if sending.scheduler != "slurm":
+        job.extra["send_id"] = send_id
     if sending.gpu is not None and sending.scheduler != "slurm":
         # What it was expected to need on each GPU, kept back for it while it
         # starts; and whether what it holds says what one study needs.
@@ -986,16 +1086,76 @@ def _send_held(sending: Sending, link: Transport, local_runner,
     return job
 
 
+def left_stop_said(job: Job) -> str:
+    """Where a stop of what an ended job's run left going stands: ``""``
+    where none was asked from here; ``stopping`` within
+    :data:`LEFT_STOPPING_S` of the last asked (another TERM now would stop
+    the run at once, without its checkpoint, so none is sent); ``overdue``
+    after (one sent now stops it at once, and is said so)."""
+    stopped = job.extra.get("left_stopped_at")
+    if not isinstance(stopped, (int, float)):
+        return ""
+    return "stopping" if 0 <= time.time() - stopped < LEFT_STOPPING_S else "overdue"
+
+
+def left_stop_done(job: Job, asked_at: float) -> str:
+    """What a stop by a job's send id asked at ``asked_at`` did, as the
+    machine said: ``sent`` (asked to stop at the next frame), ``now`` (a
+    later stop: at once, without a checkpoint), ``stopping`` (one was asked
+    within :data:`LEFT_STOPPING_S`: nothing sent), ``none`` (nothing
+    carried its id), or ``""`` (no such stop was asked)."""
+    last = job.extra.get("last_stop")
+    if (isinstance(last, dict) and isinstance(last.get("at"), (int, float))
+            and last["at"] >= asked_at and last.get("outcome") in (
+                "sent", "now", "stopping", "none")):
+        return last["outcome"]
+    return ""
+
+
+def _working_said(name: str, before: Job | None) -> str:
+    """Why a process may still work in a job's folder, as far as the
+    record of the job sent from here says."""
+    if before is None:
+        return " (a run of a job sent there, from here or elsewhere)"
+    if before.state == ABANDONED:
+        return f" ({name}, cancelled from here, stops at its run's next frame)"
+    if left_stop_said(before) == "stopping":
+        return (f" (what {name} left going was asked to stop from here, and stops at "
+                "its run's next frame)")
+    if left_stop_said(before) == "overdue" and before.extra.get("left_going"):
+        return (f" (what {name} left going was asked to stop from here more than "
+                f"{LEFT_STOPPING_S // 60} minutes ago and still works: `fastmdx remote "
+                f"cancel {name}` stops it now, without a checkpoint)")
+    if before.extra.get("left_going"):
+        return (f" ({name} has ended, and processes it started still work there: "
+                f"`fastmdx remote cancel {name}` stops them)")
+    return " (a run of a job sent there, from here or elsewhere)"
+
+
 def _queue_free_of(sending: Sending, link: Transport) -> None:
     """Refuses a send to a cluster while its queue holds a job of this
     account's waiting or running in the job's folder (sent from another
     computer, or one this computer's record has lost): both would run
     there."""
     name = sending.job_name
-    asked = link.run(["sh", "-c", f"squeue -h -u \"$(id -un)\" -n {shlex.quote(name)} "
-                                  "-o '%i %T %Z' 2>/dev/null; echo fmdx-rc=$?"]).stdout
+    # A folder reached through a link (a scratch or home folder on another
+    # file system) is the queue's as sbatch resolved it: each folder is
+    # compared as the machine resolves it now.
+    asked = link.run(["sh", "-c", (
+        f"here=$(cd {shlex.quote(sending.remote_dir)} 2>/dev/null && pwd -P); "
+        f"echo \"fmdx-here=$here\"; "
+        f"out=$(squeue -h -u \"$(id -un)\" -n {shlex.quote(name)} -o '%i %T %Z' "
+        "2>/dev/null); rc=$?; "
+        "printf '%s\\n' \"$out\" | while read -r id state dir; do "
+        "[ -n \"$id\" ] || continue; "
+        "real=$(cd \"$dir\" 2>/dev/null && pwd -P); "
+        "printf '%s %s %s\\n' \"$id\" \"$state\" \"${real:-$dir}\"; done; "
+        "echo fmdx-rc=$rc")]).stdout
     lines = [line.split(None, 2) for line in asked.splitlines()]
     answered = [line for line in lines if line and line[0].startswith("fmdx-rc=")]
+    here = next((line[len("fmdx-here="):] for line in asked.splitlines()
+                 if line.startswith("fmdx-here=")), "")
+    folders = {sending.remote_dir.rstrip("/")} | ({here.rstrip("/")} if here else set())
     if not answered or answered[-1][0] != "fmdx-rc=0":
         raise StudyError(
             f"The queue of {sending.machine.name} did not answer, so whether a job "
@@ -1006,13 +1166,15 @@ def _queue_free_of(sending: Sending, link: Transport) -> None:
     # is another's business.
     going = [line for line in lines if len(line) == 3 and line[1] in _SLURM_WORDS
              and _SLURM_STATES.get(line[1], RUNNING) in (READY, RUNNING)
-             and line[2].rstrip("/") == sending.remote_dir.rstrip("/")]
+             and line[2].rstrip("/") in folders]
     if going:
+        number = going[0][0]
         raise StudyError(
             f"The queue of {sending.machine.name} holds a job called {name} "
             f"({going[0][1].lower()}) in its folder there, {sending.remote_dir}; a "
-            "job is sent there again once that one has ended. Cancel it there "
-            "(`scancel` with its number), or give another --output.",
+            "job is sent there again once that one has ended. Cancel it there ("
+            + (f"`scancel {number}`" if usable_handle(number) else "`scancel` with its number")
+            + "), or give another --output.",
             code="environment.path.exists", path=name)
 
 
@@ -1115,21 +1277,39 @@ def _status_script(job: Job) -> str:
     else:
         # The job's script, or its process group: an explorer whose script
         # was killed works on, and is the job still.
-        alive = (f"{{ kill -0 {job.handle} || kill -0 -{job.handle}; }} 2>/dev/null "
-                 "&& echo fmdx:alive=1\n")
+        if _send_id(job):
+            # Its script by its id, or its run in its group; and once it has
+            # ended, whatever its run started that works on (an explorer
+            # that died leaves its runs going, in its group or out of it).
+            alive = (_the_job_going(_send_id(job), job.handle)
+                     + '[ "$went" = 1 ] && echo fmdx:alive=1\n'
+                     'if [ "$proc" = 1 ] && { [ "$went" = 0 ] || [ -f exit_code ]; }; '
+                     'then echo "fmdx:left=$n"; fi\n')
+        else:
+            alive = (f"{{ kill -0 {job.handle} || kill -0 -{job.handle}; }} 2>/dev/null "
+                     "&& echo fmdx:alive=1\n")
+    after = ""
     if _gpu_of(job):
         # Why it did not start, and the most GPU memory it held; once it has
-        # ended, the particles each of its systems had.
-        alive += ("[ -f no_room ] && echo \"fmdx:no_room=$(head -c 200 no_room)\"\n"
-                  "[ -f gpu_peak ] && echo \"fmdx:gpu_peak=$(head -c 20 gpu_peak)\"\n"
+        # ended, the particles each of its systems had. Read after the exit
+        # code: the GPU reader's last reading is in by then.
+        after = ("[ -f no_room ] && echo \"fmdx:no_room=$(head -c 200 no_room "
+                  "| tr -d '\\n')\"\n"
+                  "[ -f gpu_peak ] && echo \"fmdx:gpu_peak=$(head -c 20 gpu_peak "
+                  "| tr -d '\\n')\"\n"
                   # Only this send's runs: a folder sent to again keeps others.
                   "[ -f exit_code ] && [ -d run ] && [ -f .fmdx-sent ] && "
                   "find run -name cost.json -type f -newer .fmdx-sent 2>/dev/null | head -n 50 | while IFS= read -r f; do "
                   "printf 'fmdx:cost=%s\\n' \"$(head -c 2000 \"$f\" | tr -d '\\n')\"; "
                   "done\n")
+    # Whether it is going is asked before its exit code is read: a job that
+    # ends between the two is then read ended with its code, never as gone
+    # without one.
     return (f"cd {where} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
-            "[ -f exit_code ] && echo \"fmdx:exit_code=$(cat exit_code)\"\n"
             + alive +
+            "[ -f exit_code ] && echo \"fmdx:exit_code=$(head -c 20 exit_code "
+            "| tr -d '\\n')\"\n"
+            + after +
             "[ -f run/simulation/live_status.json ] && printf 'fmdx:live=%s\\n' "
             "\"$(tr -d '\\n' < run/simulation/live_status.json)\"\n"
             "[ -f job.log ] && tail -n 12 job.log | sed 's/^/fmdx:log=/'\n")
@@ -1227,6 +1407,7 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     job.extra["asked_at"] = time.time()
     job.extra.pop("queue_silent", None)
     if "gone" in found:
+        job.extra.pop("left_going", None)
         job.state, job.detail = FAILED, f"{job.remote_dir} is no longer there"
         save_job(job)
         return job
@@ -1278,6 +1459,22 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     else:
         job.state = FAILED
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
+    left = (found.get("left") or [""])[0].strip() if _send_id(job) else ""
+    job.extra.pop("left_going", None)
+    if job.scheduler == "process" and job.state in FINISHED and re.fullmatch(
+            r"[1-9][0-9]{0,5}", left):
+        job.extra["left_going"] = int(left)
+        many = left != "1"
+        said = (f"{left} process{'es' if many else ''} it started still "
+                f"work{'' if many else 's'} there")
+        them = "them" if many else "it"
+        job.detail = ((job.detail + "; ") if job.detail else "") + {
+            "stopping": f"{said}, asked to stop from here at its run's next frame",
+            "overdue": (f"{said}, asked to stop from here more than "
+                        f"{LEFT_STOPPING_S // 60} minutes ago (`fastmdx remote cancel "
+                        f"{job.name}` stops {them} now, without a checkpoint)"),
+        }.get(left_stop_said(job),
+              f"{said} (`fastmdx remote cancel {job.name}` stops {them})")
     live = (found.get("live") or [""])[0]
     # Progress only of a run going: one waiting, or suspended, has a live
     # record only from an earlier run.
@@ -1855,6 +2052,14 @@ def _cancel(name: str, transport: Transport | None) -> Job:
     # A cluster's job read as failed may have been misread (a queue that
     # did not answer read as an end, before that was told apart): asked
     # again below, at most every 30 s, as one still going is.
+    if job.state in FINISHED and job.scheduler == "process":
+        # What a workstation's ended job left going is stopped by its send's
+        # id alone: its process number, and its group's, may be another's.
+        # A cancelled job's run that still works is too, once the first
+        # stop has had its time (the machine keeps when that was).
+        if _send_id(job) and (job.extra.get("left_going") or job.state == ABANDONED):
+            return _stop_left(job, transport or Transport(job.machine))
+        return job
     if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED):
         return job
     link = transport or Transport(job.machine)
@@ -1871,8 +2076,11 @@ def _cancel(name: str, transport: Transport | None) -> Job:
             f"`scancel {job.handle}` there.",
             code="remote.job.cancel_not_taken", job=job.name, machine=job.machine)
     # A job the machine says has ended is let be: a process's number may be
-    # another's by now, and an ended job's record keeps how it ended.
+    # another's by now, and an ended job's record keeps how it ended. What it
+    # left going is stopped by its send's id, which no other send carries.
     if job.state in FINISHED:
+        if job.scheduler == "process" and job.extra.get("left_going") and _send_id(job):
+            return _stop_left(job, link)
         return job
     if job.scheduler == "slurm":
         stopped = link.run(["scancel", job.handle])
@@ -1885,11 +2093,89 @@ def _cancel(name: str, transport: Transport | None) -> Job:
                 + (f": {said}" if said else "") + f". It may still be {job.state}; "
                 f"cancel it again, or with `scancel {job.handle}` there.",
                 code="remote.job.cancel_not_taken", job=job.name, machine=job.machine)
+    elif _send_id(job):
+        # Its group, where it is still the job's (its script by its id, or
+        # its run in it), and whatever its run started outside it: all at
+        # once, each once, the stop kept on the machine.
+        said = _read(link.run(["sh", "-s"], stdin=(
+            _the_job_going(_send_id(job), job.handle)
+            + _stop_by_send(_send_id(job), job.remote_dir, (
+                f'if [ "$went" = 1 ]; then kill -TERM -{job.handle} 2>/dev/null '
+                f"|| kill -TERM {job.handle} 2>/dev/null; fi; "
+                '[ -n "$outside" ] && kill -TERM $outside 2>/dev/null;')))).stdout)
+        job = _stop_said(job, said)
+        if job.state not in FINISHED:
+            # Nothing of it was going by then: it ended since it was asked.
+            return _status(job.name, link, 0)
     else:
         link.run(["sh", "-c", f"kill -TERM -{job.handle} 2>/dev/null || "
                               f"kill -TERM {job.handle} 2>/dev/null; true"])
+    if job.state == ABANDONED:
+        return job
     job.state, job.detail = ABANDONED, f"cancelled {now_utc()}"
     job.extra["cancelled_at"] = time.time()
+    save_job(job)
+    return job
+
+
+def _stop_left(job: Job, link: Transport) -> Job:
+    """Asks every process carrying a job's send id to stop, all at once,
+    the stop kept on the machine (:func:`_stop_by_send`): within
+    :data:`LEFT_STOPPING_S` of a stop asked before, nothing is sent; after
+    it, one is, and stops them at once. How the job ended is kept."""
+    said = _read(link.run(["sh", "-s"], stdin=(
+        _by_send(_send_id(job))
+        + '[ "$proc" = 1 ] || { echo fmdx:stop=unknown; exit 0; }\n'
+        + _stop_by_send(_send_id(job), job.remote_dir,
+                        '[ -n "$pids" ] && kill -TERM $pids 2>/dev/null;'))).stdout)
+    return _stop_said(job, said)
+
+
+def _stop_said(job: Job, said: dict[str, list[str]]) -> Job:
+    """The record of a stop as the machine said it went: ``last_stop``
+    (when here, and what: ``sent``, ``now`` for a second or later one,
+    which stops a run at once, ``stopping`` or ``none``). An answer that
+    does not say is refused, the record left as it was."""
+    stop = (said.get("stop") or [""])[0].strip()
+    k = (said.get("stop_k") or [""])[0].strip()
+    if job.state == ABANDONED and stop in ("unknown", "nofolder"):
+        # Asked again where nothing can be found (no /proc, its folder
+        # gone): nothing was sent, and it stays as cancelled.
+        return job
+    if stop not in ("sent", "stopping", "none") or (
+            stop == "sent" and not re.fullmatch(r"[1-9][0-9]{0,3}", k)):
+        raise StudyError(
+            f"{job.machine} did not say whether the stop of {job.name} was sent"
+            + (" (its folder there is gone)" if stop == "nofolder" else
+               " (it has no /proc to find the run's processes by)" if stop == "unknown"
+               else "")
+            + f". Ask `fastmdx remote status {job.name}`, and cancel it again.",
+            code="remote.job.cancel_not_taken", job=job.name, machine=job.machine)
+    outcome = "now" if stop == "sent" and int(k) > 1 else stop
+    job.extra["last_stop"] = {"at": time.time(), "outcome": outcome}
+    clause = next((part for part in job.detail.split("; ")
+                   if "it started still work" in part), "")
+    base = "; ".join(part for part in job.detail.split("; ") if part and part != clause)
+    if job.state in (DONE, FAILED):
+        # Ended: how it ended is kept, and what its run left is said.
+        job.extra.pop("left_going", None)
+        if outcome in ("sent", "now"):
+            job.extra["left_stopped_at"] = time.time()
+        elif outcome == "stopping":
+            job.extra.setdefault("left_stopped_at", time.time())
+        job.detail = base if outcome == "none" else (((base + "; ") if base else "") + (
+            f"what it left going was asked to stop within the last "
+            f"{LEFT_STOPPING_S // 60} minutes" if outcome == "stopping" else
+            f"what it left going was stopped at once {now_utc()}" if outcome == "now" else
+            f"what it left going was asked to stop {now_utc()}"))[:_SAID_CHARS]
+    elif job.state == ABANDONED:
+        if outcome == "now":
+            job.detail = f"stopped at once {now_utc()}"
+    elif outcome != "none":
+        job.state = ABANDONED
+        job.detail = (f"stopped at once {now_utc()}" if outcome == "now"
+                      else f"cancelled {now_utc()}")
+        job.extra["cancelled_at"] = time.time()
     save_job(job)
     return job
 

@@ -2826,7 +2826,14 @@ def _remote_send(args: argparse.Namespace, name: str) -> int:
 
 def _remote_job(args: argparse.Namespace) -> int:
     from fastmdxplora.remote.jobs import FINISHED, job_names, load_job
-    from fastmdxplora.remote.send import cancel, fetch, job_line, status
+    from fastmdxplora.remote.send import (
+        LEFT_STOPPING_S,
+        cancel,
+        fetch,
+        job_line,
+        left_stop_done,
+        status,
+    )
 
     action = args.remote_action
     if action == "status":
@@ -2852,7 +2859,28 @@ def _remote_job(args: argparse.Namespace) -> int:
                 print(f"      {line}")
         return 0
     if action == "cancel":
+        import time
+
+        asked_at = time.time()
         job = cancel(args.job)
+        done = left_stop_done(job, asked_at)
+        what = ("what its run left going" if job.state != "abandoned"
+                else "what its run still had going")
+        said = {
+            "none": f"  {job.name} had ended ({job.state}); nothing of its run still works "
+                    f"on {job.machine}, so nothing was stopped.",
+            "stopping": f"  {job.name}: {what} on {job.machine} was asked to stop within "
+                        f"the last {LEFT_STOPPING_S // 60} minutes, and stops at its next "
+                        "frame; nothing more was sent.",
+            "now": f"  \u2713 {job.name}: {what} on {job.machine} was stopped at once, "
+                   "without a checkpoint.",
+            "sent": f"  \u2713 {job.name} had ended ({job.state}); {what} on {job.machine} "
+                    "was asked to stop, and stops at its next frame."
+            if job.state != "abandoned" else "",
+        }.get(done, "")
+        if said:
+            print(said + f" Its folder there is left at {job.remote_dir}.")
+            return 0
         if job.state != "abandoned":
             print(f"  {job.name} had ended already ({job.state}"
                   + (f", {job.detail}" if job.detail else "")

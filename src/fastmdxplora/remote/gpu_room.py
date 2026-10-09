@@ -323,14 +323,17 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
     FFT plans) and a part per particle, so a size is never scaled from
     another by particles alone, and memory grows with size.
 
-    Up to the largest size measured: what the next size measured at or
-    above it held at most, where the sizes above hold more as they grow
-    (else the most any of them held), and no less than a run of its size or
-    smaller held. Past the largest, from runs of two sizes or more whose
-    memory grows with size: the larger of a straight line through the most
-    each size held and the slope between the two largest, trusted by as far
-    again as the sizes measured span, and not past that. From one size
-    alone, nothing past it.
+    Up to the largest size measured: what the next size measured at or above
+    it held at most, and no less than the most a run of its size or smaller
+    held, carried on as steeply as that rose from a size a tenth of the span
+    measured smaller or more up to the most a run of its size or larger held
+    (a next size that held less, another method or card, does not lower it). Past the largest, from runs of two sizes or
+    more whose memory grows with size: the largest of a straight line
+    through the most each size held, and the most any size held and the
+    most the largest size held, each carried on from the largest size at
+    the steepest slope up to it from a size a tenth of the span smaller or
+    more; trusted by as far again as the sizes measured span, and not past
+    that. From one size alone, nothing past it.
     """
     sizes = sorted({n for n, _ in peaks})
     highs = {n: max(p for m, p in peaks if m == n) for n in sizes}
@@ -339,11 +342,27 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
     floor = max(at_or_below) if at_or_below else highs[smallest]
     if particles < smallest:
         return floor          # a smaller system holds no more than the smallest did
+    tenth = (largest - smallest) / 10
+
+    def carried(top: int, start: int) -> float:
+        """The most ``top`` held, carried on from ``start`` to ``particles``
+        as steeply as it rose to it from a size a tenth of the span smaller
+        or more; 0 where it did not rise."""
+        rises = [(highs[top] - highs[n]) / (top - n) for n in sizes
+                 if n < top and n <= top - tenth]
+        steepest = max(rises, default=0.0)
+        return highs[top] + steepest * (particles - start) if steepest > 0 else 0.0
+
     if particles <= largest:
         # A line between sizes can fall below what the next size held: a
         # system a little smaller than a run measured is given that run's.
-        above = [highs[n] for n in sizes if n >= particles]
-        return max(above[0] if above == sorted(above) else max(above), floor)
+        # And a next size that held less (another method, another card) does
+        # not bring it below the most held at or below it, carried on.
+        # Never above the most a run of its size or larger held, though.
+        below = max(n for n in sizes if n <= particles and highs[n] == floor)
+        above = max(highs[n] for n in sizes if n >= particles)
+        return max(highs[min(n for n in sizes if n >= particles)], floor,
+                   min(carried(below, below), above))
     if len(sizes) < 2 or particles > largest + (largest - smallest):
         return None
     # Through the most each size held: runs of one size that held less
@@ -355,9 +374,14 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
     if slope <= 0:
         return None
     line = mean_p + slope * (particles - mean_n)
-    before = sizes[-2]
-    last = (highs[largest] - highs[before]) / (largest - before)
-    latest = highs[largest] + last * (particles - largest) if last > 0 else line
+    # The most any size held, and the most the largest held, each carried
+    # on from the largest size as steeply as it rose to it from a size a
+    # tenth of the span measured smaller or more: a size that held less than
+    # one smaller (another method, another card) flattens neither, and two
+    # sizes close together, read with ordinary noise, give no slope.
+    most = max(highs.values())
+    latest = max(carried(top, largest)
+                 for top in {max(n for n in sizes if highs[n] == most), largest})
     return max(line, latest, floor)
 
 

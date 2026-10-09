@@ -20,6 +20,7 @@ given one folder never reads or stops a job sent for another.
 from __future__ import annotations
 
 import hashlib
+import time
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -74,12 +75,19 @@ def _refuse_taken_folder(exc: BaseException, machine: str) -> NoReturn:
     said, code = _said_there(exc, machine)
     if code == "environment.path.exists":
         sentences = said.rstrip().split(". ")
+        dropped = ""
         if "--output" in sentences[-1] or "--force-overwrite" in sentences[-1]:
-            sentences = sentences[:-1]
-        said = (". ".join(sentences).rstrip(".") + ". Set `output` in the config to a new "
-                "folder name, save it and check it again"
-                + (", or start it again once nothing works there" if "works" in said
-                   else "") + ".")
+            dropped, sentences = sentences[-1], sentences[:-1]
+        # What waiting would settle is kept: a queue that did not answer
+        # may in a minute, and a process working there ends. So is how the
+        # job holding the folder there is cancelled.
+        again = (", or start it again in a minute" if "in a minute" in dropped
+                 else ", or start it again once nothing works there" if "works" in said
+                 else "")
+        cancel_there = dropped.split(", or give another --output")[0].strip()
+        kept = [cancel_there] if "`scancel" in cancel_there else []
+        said = (". ".join(sentences + kept).rstrip(".") + ". Set `output` in the config to "
+                "a new folder name, save it and check it again" + again + ".")
     raise ToolError(said, code=code) from None
 
 
@@ -348,7 +356,13 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.remote import api
-    from fastmdxplora.remote.jobs import ABANDONED, FINISHED
+    from fastmdxplora.remote.jobs import ABANDONED, FINISHED, load_job
+    from fastmdxplora.remote.send import (
+        LEFT_STOPPING_S,
+        _send_id,
+        left_stop_done,
+        left_stop_said,
+    )
 
     job = _job_here(ctx, args["job"])
     try:
@@ -361,19 +375,61 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
         return (f"The cluster's queue did not answer, so whether {job.name} is still "
                 f"going is not known (last read {job.state}). Nothing was stopped; ask "
                 "again in a minute.")
-    if job.state in FINISHED:
+    left = job.state in FINISHED and bool(job.extra.get("left_going"))
+    if job.state in FINISHED and not left:
         return f"{job.name} has ended already ({job.state})."
-    agreed = _went_ahead(ctx, "cancel", (
+    standing = left_stop_said(job) if left else ""
+    if standing == "stopping":
+        return (f"{job.name} has ended ({job.state}); what its run left going on "
+                f"{job.machine} was asked to stop from here within the last "
+                f"{LEFT_STOPPING_S // 60} minutes, and stops at its next frame. Nothing "
+                "more was sent.")
+    question = (
+        f"Stop what {job.name} left going on {job.machine} now? It ended ({job.state}); "
+        "processes its run started were asked to stop from here more than "
+        f"{LEFT_STOPPING_S // 60} minutes ago and still work there. Stopped now, they "
+        "end at once, without a checkpoint; its folder stays."
+        if standing == "overdue" else
+        f"Stop what {job.name} left going on {job.machine}? It ended ({job.state}), and "
+        "processes its run started still work in its folder there; its folder stays."
+        if left else
         f"Stop {job.name} on {job.machine}? It stops where it is; its folder there "
-        "stays."), f"cancel_study:{job.name}:{job.handle}")
+        "stays.")
+    asked_of = (job.handle, _send_id(job), left, job.extra.get("left_stopped_at"))
+    agreed = _went_ahead(ctx, "cancel", question,
+                         f"cancel_study:{job.name}:{job.handle}:{_send_id(job)}"
+                         + (f":left:{job.extra.get('left_stopped_at') or 0}" if left else ""))
     if agreed is False:
         return "Not stopped: the person did not go ahead."
     if ctx.call is not None and ctx.call.cancelled:
         return "Not stopped: the call was cancelled."
+    # What is stopped is what the person was asked about: a job sent again,
+    # or a stop asked elsewhere, while they were asked, is asked about anew.
+    now = load_job(job.name)
+    if (now.handle, _send_id(now), now.state in FINISHED and bool(
+            now.extra.get("left_going")), now.extra.get("left_stopped_at")) != asked_of:
+        return (f"{job.name} changed while the person was asked (sent again, ended, or "
+                "stopped from elsewhere); nothing was stopped. Ask again.")
+    asked_at = time.time()
     try:
         job = api.cancel(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
+    done = left_stop_done(job, asked_at)
+    what = (f"what {job.name} left going" if job.state != ABANDONED
+            else f"what {job.name}'s run still had going")
+    said = {
+        "none": f"{job.name} had ended ({job.state}); nothing of its run still works on "
+                f"{job.machine}, so nothing was stopped.",
+        "stopping": f"{what[0].upper()}{what[1:]} on {job.machine} was asked to stop within "
+                    f"the last {LEFT_STOPPING_S // 60} minutes, and stops at its next "
+                    "frame; nothing more was sent.",
+        "now": f"Stopped {what} on {job.machine} at once, without a checkpoint.",
+        "sent": f"Asked {what} on {job.machine} to stop; it stops at its run's next "
+                "frame." if job.state != ABANDONED else "",
+    }.get(done, "")
+    if said:
+        return said + f" Its folder there stays at {job.remote_dir}."
     if job.state != ABANDONED:
         return f"{job.name} had ended already ({job.state}); nothing was stopped."
     return (f"Stopped {job.name} on {job.machine}. Its folder there stays at "
