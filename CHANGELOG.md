@@ -104,6 +104,14 @@ speed production ran at, as the fix is priced; a lone sample is plotted
 where it was taken, the NVT/NPT line only where a run reached NPT, and a
 speed of 0 is not plotted.
 
+**Fixed:** a study carried on in pieces had its energy, temperature and
+density read from its first piece alone: on the Overview, in the
+thermodynamics analysis, in the report's convergence and on the dashboard.
+Each piece's `energy.csv` is now read as the joined trajectory holds it,
+each piece's clock carried on, and a piece without its record is said, not
+passed over. The Convergence panel's time is given in picoseconds under a
+nanosecond.
+
 ### The Agent beside the page, and a run's notice, as the page changes
 
 **Fixed:** Ctrl+J (⌘J) pressed just as the Agent page opened went back

@@ -392,6 +392,53 @@ class TestThePage:
         said = panel.locator(".convergence-said").text_content()
         assert "so about 1 independent sample." in said, said
 
+    def test_a_series_under_a_nanosecond_is_plotted_in_picoseconds(self, page) -> None:
+        """The panel's time axes read "Time (ns)" with ticks of 0.0004 for a
+        run of 1.2 ps, where every other page says ps under a nanosecond."""
+        import json
+
+        def short(route):
+            answer = route.fetch()
+            body = answer.json()
+            body["time_unit"] = "ns"
+            running = body.setdefault("running_mean", {})
+            frames = len(running.get("mean") or []) or 3
+            running["time"] = [0.0012 * (k + 1) / frames for k in range(frames)]
+            running.setdefault("mean", [0.1] * frames)
+            auto = body.setdefault("autocorrelation", {})
+            auto["lag_time"] = [0.0001 * k for k in range(5)]
+            auto["correlation"] = [1.0, 0.6, 0.3, 0.1, 0.0]
+            auto["tau_int_time"] = 0.0002
+            route.fulfill(response=answer, body=json.dumps(body))
+
+        page.route("**/api/convergence?analysis=rmsd*", short)
+        page.locator('#analysis-sections [data-convergence="rmsd"]').click()
+        page.wait_for_function(
+            "() => document.querySelectorAll('.convergence-panel[data-analysis=\"rmsd\"] svg').length === 4",
+            timeout=20000)
+        labels = page.evaluate(
+            """() => ['running', 'correlation'].map((plot) => Array.from(document.querySelectorAll(
+                 `.convergence-panel[data-analysis="rmsd"] [data-plot="${plot}"] svg text`))
+                 .map((t) => t.textContent))""")
+        assert "Time (ps)" in labels[0] and "Time (ns)" not in labels[0], labels[0]
+        assert "Lag (ps)" in labels[1] and "Lag (ns)" not in labels[1], labels[1]
+        # The τ mark sits on the picosecond axis, at 0.2 ps of lags from 0
+        # to 0.4 ps: half way, not at 0.0002 beside the axis's start.
+        assert "τ 0.2 ps" in labels[1], labels[1]
+        where = page.evaluate(
+            """() => {
+                 const texts = Array.from(document.querySelectorAll(
+                   '.convergence-panel[data-analysis="rmsd"] [data-plot="correlation"] svg text'));
+                 const ticks = texts.filter((t) => t.getAttribute('text-anchor') === 'middle'
+                   && /^[0-9.]+$/.test(t.textContent)).map((t) => Number(t.getAttribute('x')));
+                 const mark = texts.find((t) => t.textContent.startsWith('τ'));
+                 return {first: Math.min(...ticks), last: Math.max(...ticks),
+                         mark: Number(mark.getAttribute('x')) - 4};
+               }""")
+        share = (where["mark"] - where["first"]) / (where["last"] - where["first"])
+        assert 0.3 < share < 0.7, where
+        assert page.errors == []
+
     def test_a_card_links_its_data(self, page) -> None:
         link = page.locator('#analysis-sections .analysis-card[data-analysis="rmsd"] [data-data-file]')
         assert link.get_attribute("href") == "/artifacts/analysis/rmsd/rmsd.dat"

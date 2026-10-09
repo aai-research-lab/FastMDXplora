@@ -520,6 +520,19 @@
     return parts.join(" ");
   }
 
+  /* A time axis as every page says a time: in picoseconds while all of it
+   * is under a nanosecond (`sayLength`), the Overview's charts' way. */
+  function timeAxis(values, word) {
+    var most = 0;
+    (values || []).forEach(function (v) { if (v != null && Math.abs(v) > most) most = Math.abs(v); });
+    var scale = most < 1 ? 1000 : 1;
+    return {
+      x: (values || []).map(function (v) { return v == null ? v : v * scale; }),
+      label: word + (scale === 1000 ? " (ps)" : " (ns)"),
+      scale: scale,
+    };
+  }
+
   function drawConvergence(panel, data) {
     panel.innerHTML =
       '<p class="convergence-said">' + escapeHTML(said(data)) + "</p>" +
@@ -533,11 +546,12 @@
     var unit = data.unit ? " (" + data.unit + ")" : "";
     var timed = data.time_unit === "ns";
     var running = data.running_mean || {};
-    var rx = timed && running.time && running.time.every(function (v) { return v != null; })
-      ? running.time : running.frames;
+    var runningTime = timed && running.time && running.time.every(function (v) { return v != null; })
+      ? timeAxis(running.time, "Time") : null;
+    var rx = runningTime ? runningTime.x : running.frames;
     var recorded = data.recorded || {};
     chart(panel.querySelector('[data-plot="running"] .convergence-canvas'), {
-      x: rx || [], xLabel: timed ? "Time (ns)" : "Frames after equilibration",
+      x: rx || [], xLabel: runningTime ? runningTime.label : "Frames after equilibration",
       yLabel: (data.label || "") + unit,
       // No band where the record gives no error: the view does not give
       // one the record withholds.
@@ -557,13 +571,14 @@
       describe: "Standard error of the mean by block length",
     });
     var auto = data.autocorrelation || {};
-    var ax = timed && auto.lag_time ? auto.lag_time : auto.lag_frames;
+    var lagTime = timed && auto.lag_time ? timeAxis(auto.lag_time, "Lag") : null;
+    var ax = lagTime ? lagTime.x : auto.lag_frames;
     chart(panel.querySelector('[data-plot="correlation"] .convergence-canvas'), {
-      x: ax || [], xLabel: timed ? "Lag (ns)" : "Lag (frames)", yLabel: "Correlation",
+      x: ax || [], xLabel: lagTime ? lagTime.label : "Lag (frames)", yLabel: "Correlation",
       lines: [{ y: auto.correlation || [], colour: c.line }],
       level: { y: 0, colour: c.axis },
-      mark: auto.tau_int_time != null && timed
-        ? { x: auto.tau_int_time, label: "τ " + sayLength(auto.tau_int_time), colour: c.mean }
+      mark: auto.tau_int_time != null && lagTime
+        ? { x: auto.tau_int_time * lagTime.scale, label: "τ " + sayLength(auto.tau_int_time), colour: c.mean }
         : (auto.tau_int_frames != null ? { x: auto.tau_int_frames, label: "τ " + format(auto.tau_int_frames), colour: c.mean } : null),
       describe: "Normalised autocorrelation of the equilibrated frames",
     });
