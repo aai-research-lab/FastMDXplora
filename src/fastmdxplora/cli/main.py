@@ -2745,15 +2745,28 @@ def _cmd_remote(args: argparse.Namespace) -> int:
     from fastmdxplora.remote.jobs import job_names, load_job
     from fastmdxplora.remote.send import job_line
 
-    machines = [load_machine(name) for name in machine_names()]
+    # A record that cannot be read is said, and the others are still listed.
+    machines, unread = [], []
+    for name in machine_names():
+        try:
+            machines.append(load_machine(name))
+        except ValueError as exc:
+            unread.append(str(exc))
     for line in overview(machines, this_code()):
         print(line)
-    jobs = [load_job(name) for name in job_names()]
+    jobs = []
+    for name in job_names():
+        try:
+            jobs.append(load_job(name))
+        except ValueError as exc:
+            unread.append(str(exc))
     if jobs:
         print()
         print("Jobs (as last checked; `fastmdx remote status` asks again)")
         for job in jobs:
             print(job_line(job))
+    for said in unread:
+        print(f"  ! {said}")
     return 0
 
 
@@ -2812,8 +2825,18 @@ def _remote_job(args: argparse.Namespace) -> int:
 
     action = args.remote_action
     if action == "status":
-        names = [args.job] if args.job else [
-            n for n in job_names() if load_job(n).state not in FINISHED]
+        unread = []
+
+        def going(name: str) -> bool:
+            try:
+                return load_job(name).state not in FINISHED
+            except ValueError as exc:
+                unread.append(str(exc))
+                return False
+
+        names = [args.job] if args.job else [n for n in job_names() if going(n)]
+        for said in unread:
+            print(f"  ! {said}")
         if not names:
             print("No jobs still running. `fastmdx remote` lists them all.")
             return 0

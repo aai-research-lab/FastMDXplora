@@ -242,7 +242,7 @@ def _nobody_to_ask(ctx: Context) -> bool:
         return True
     # An answer counts only where it comes back on a state this server gave
     # out: a made-up one would have the machine asked on every call.
-    return not call.answers_a_question() and not call.can_ask()
+    return not call.answers_a_question("start_study:") and not call.can_ask()
 
 
 def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> NoReturn:
@@ -341,7 +341,8 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
         job = api.status(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
-    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED):
+    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED
+                                      and job.extra.get("queue_silent")):
         return f"{job.name} has ended already ({job.state})."
     agreed = _went_ahead(ctx, "cancel", (
         f"Stop {job.name} on {job.machine}? It stops where it is; its folder there "

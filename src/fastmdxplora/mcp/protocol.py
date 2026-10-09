@@ -195,16 +195,17 @@ class Call:
         # An empty object is form mode, for clients written before modes.
         return not asked or isinstance(asked.get("form"), dict)
 
-    def answers_a_question(self) -> bool:
+    def answers_a_question(self, about: str = "") -> bool:
         """Whether this call carries an answer to a question this server put
-        for this method: a state it signed, unexpired and not yet used. Read
-        without using the state up, and whatever its question was about."""
+        for this method, about what starts with ``about`` (a tool's own
+        questions): a state it signed, unexpired and not yet used. Read
+        without using the state up."""
         if self.era != "modern":
             return False
         state = self.params.get("requestState")
         answers = self.params.get("inputResponses")
         return (isinstance(state, str) and isinstance(answers, dict)
-                and self._server.gave_out(state, self.method))
+                and self._server.gave_out(state, self.method, about))
 
     def can_sample(self) -> bool:
         """Whether the AI app lends its own AI model (sampling)."""
@@ -639,11 +640,13 @@ class Server:
         said = self._opened(state, method, bound_to)
         return None if said is None else said.get("c")
 
-    def gave_out(self, state: str, method: str) -> bool:
-        """Whether a state is one this server gave out for ``method``,
-        unaltered, unexpired and not used yet; it is not used up here."""
+    def gave_out(self, state: str, method: str, about: str = "") -> bool:
+        """Whether a state is one this server gave out for ``method``, about
+        what starts with ``about``, unaltered, unexpired and not used yet;
+        it is not used up here."""
         said = self._read_state(state)
-        if said is None or said.get("m") != method:
+        if (said is None or said.get("m") != method
+                or not str(said.get("b") or "").startswith(about)):
             return False
         with self._state_lock:
             return str(said.get("n")) not in self._redeemed

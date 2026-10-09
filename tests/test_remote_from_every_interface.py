@@ -222,8 +222,9 @@ def app(machine, monkeypatch):
     real = sending.run_here
     monkeypatch.setattr(sending, "run_here", lambda command, runner=None, **more:
                         real(command, runner=machine.local, **more))
-    wire = Wire(App(Workspace.at(root)).server())
-    wire.root, wire.machine = root, machine
+    server = App(Workspace.at(root)).server()
+    wire = Wire(server)
+    wire.root, wire.machine, wire.server = root, machine, server
     yield wire
     wire.close()
 
@@ -558,7 +559,6 @@ class TestSecondReview:
 
     def test_a_home_that_keeps_no_locks_still_sends(self, machine, monkeypatch):
         import errno
-
         import fcntl
 
         def no_locks(handle, how):
@@ -1725,3 +1725,186 @@ class TestEleventhReview:
         assert not inputs._private(tmp_path / "settings" / "study.yml", kept)
         monkeypatch.setattr(inputs.sys, "platform", "linux")
         assert not inputs._private(tmp_path / "settings" / "Model.json", kept)
+
+
+# ---------------------------------------------------------------------------
+# The twelfth review's cases (the queue, a cancel, a cluster job sent again)
+# ---------------------------------------------------------------------------
+NO_ACCOUNTING_H = 'echo "sacct: error: accounting storage is disabled" >&2; exit 1'
+QUEUE_WARNING = 'echo "squeue: error: _parse_next_key: Parsing error at unrecognized key: X" >&2'
+
+
+def _queued_h(machine, squeue: str, sacct: str, state: str = "running",
+            exit_code: str | None = None, scancel: str = "exit 0",
+            local_output: str | None = None):
+    from fastmdxplora.remote.jobs import Job, save_job
+
+    tools = machine.home / "slurm-bin"
+    travels._tool(tools / "squeue", squeue)
+    travels._tool(tools / "sacct", sacct)
+    travels._tool(tools / "scancel", scancel)
+    machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+    where = machine.home / "fastmdxplora-jobs" / "queued"
+    (where / "run").mkdir(parents=True)
+    (where / "job.log").write_text(
+        "slurmstepd: error: *** JOB 4242 CANCELLED DUE TO TIME LIMIT ***\n")
+    if exit_code is not None:
+        (where / "exit_code").write_text(exit_code + "\n")
+    save_job(Job(name="queued", machine="box", remote_dir=str(where),
+                 scheduler="slurm", handle="4242",
+                 submitted_at="2026-10-08T00:00:00Z", code={},
+                 local_output=local_output or str(machine.back), state=state))
+
+
+# ---------------------------------------------------------------------------
+# H1: squeue's stderr is read as the job's state (2>&1 in _status_script)
+# ---------------------------------------------------------------------------
+class TestTwelfthReviewSqueueWarnings:
+    def test_a_job_gone_from_a_queue_that_warns_is_not_left_running(self, machine):
+        # squeue answers (exit 0) with no job, after a warning on stderr.
+        _queued_h(machine, f"{QUEUE_WARNING}; exit 0", NO_ACCOUNTING_H)
+        job = status("queued", transport=machine.transport())
+        assert job.state == "failed", (job.state, job.detail)
+
+    def test_accounting_is_still_asked_when_the_queue_warns(self, machine):
+        _queued_h(machine, f"{QUEUE_WARNING}; exit 0", 'echo "TIMEOUT"')
+        job = status("queued", transport=machine.transport())
+        assert (job.state, job.detail) == ("failed", "timeout"), (job.state, job.detail)
+
+    def test_a_job_that_started_is_read_as_running_when_the_queue_warns(self, machine):
+        _queued_h(machine, f'{QUEUE_WARNING}; echo RUNNING; exit 0', NO_ACCOUNTING_H,
+                state="ready")
+        job = status("queued", transport=machine.transport())
+        assert job.state == "running", (job.state, job.detail)
+        assert "did not answer" not in job.detail
+
+
+# ---------------------------------------------------------------------------
+# H2: cancelling a cluster job that failed rewrites its failure as "abandoned"
+# ---------------------------------------------------------------------------
+class TestTwelfthReviewCancelOfAFailedClusterJob:
+    def test_a_failed_cluster_job_keeps_its_exit_code(self, machine):
+        _queued_h(machine,
+                'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                NO_ACCOUNTING_H, state="failed", exit_code="3")
+        assert status("queued", transport=machine.transport()).detail == "exit code 3"
+        job = cancel("queued", transport=machine.transport())
+        assert (job.state, job.detail) == ("failed", "exit code 3"), (job.state, job.detail)
+        assert not any("scancel" in c for c in machine.commands)
+
+    def test_a_cluster_job_killed_by_its_time_limit_keeps_saying_so(self, machine):
+        _queued_h(machine,
+                'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                'echo "TIMEOUT"', state="running")
+        assert status("queued", transport=machine.transport()).detail == "timeout"
+        job = cancel("queued", transport=machine.transport())
+        assert job.state == "failed", (job.state, job.detail)
+
+    def test_an_ai_app_does_not_offer_to_stop_a_cluster_job_that_failed(self, app):
+        _queued_h(app.machine,
+                'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                NO_ACCOUNTING_H, state="failed", exit_code="3",
+                local_output=str(app.root / "queued"))
+        assert status("queued", transport=app.machine.transport()).detail == "exit code 3"
+        first = _call(app, "cancel_study", capabilities=ELICIT, job="queued")
+        if first.get("resultType") == "input_required":
+            asked = first["inputRequests"]["cancel"]["params"]["message"]
+            done = app.request("tools/call", {
+                "name": "cancel_study", "arguments": {"job": "queued"},
+                "inputResponses": {"cancel": YES},
+                "requestState": first["requestState"]},
+                capabilities=ELICIT)["result"]
+            pytest.fail(f"asked {asked!r}; then said {_text(done)!r}")
+        assert "ended already (failed)" in _text(first)
+
+
+# ---------------------------------------------------------------------------
+# H3: a cluster job sent again with --force-overwrite reads the last run's
+# exit code while it waits in the queue
+# ---------------------------------------------------------------------------
+class TestTwelfthReviewResentClusterJob:
+    def test_a_queued_job_sent_again_is_not_read_from_the_last_run(self, machine):
+        from fastmdxplora.remote.send import job_script
+
+        tools = machine.home / "slurm-bin"
+        machine.env["FAKE_EXIT"] = "1"
+        # The first run: sbatch runs it there and then.
+        travels._tool(tools / "sbatch", "sh job.sh > job.log 2>&1; echo 4242")
+        travels._tool(tools / "squeue",
+                      'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
+        travels._tool(tools / "sacct", NO_ACCOUNTING_H)
+
+        def slurm_sending():
+            sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+                              code=RELEASE, transport=machine.transport())
+            sending.scheduler = "slurm"
+            sending.script = job_script(remote_dir=sending.remote_dir,
+                                        job_name=sending.job_name,
+                                        env=sending.installation, container="",
+                                        scheduler="slurm", force=True)
+            return sending
+
+        first = slurm_sending()
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        job = send(first, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        assert status(job.name, transport=machine.transport()).state == "failed"
+
+        # Sent again: this time it waits in the queue.
+        travels._tool(tools / "sbatch", "echo 4243")
+        travels._tool(tools / "squeue", "echo PENDING")
+        machine.env["PATH"] = machine.env["PATH"].split(":", 1)[1]
+        again = slurm_sending()
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        job = send(again, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        assert job.handle == "4243"
+        job = status(job.name, transport=machine.transport())
+        assert job.state == "ready", (job.state, job.detail)
+
+
+# ---------------------------------------------------------------------------
+# H4: one damaged job record stops `fastmdx remote status` and `fastmdx remote`
+# ---------------------------------------------------------------------------
+class TestTwelfthReviewCliWithADamagedRecord:
+    @pytest.mark.parametrize("argv", [["remote", "status"], ["remote"]])
+    def test_other_jobs_are_still_listed(self, machine, argv, capsys):
+        import json
+
+        from fastmdxplora.cli.main import main
+        from fastmdxplora.remote.jobs import jobs_dir
+
+        job = travels._send(machine)
+        travels._until_finished(machine, job.name)
+        record = json.loads((jobs_dir() / f"{job.name}.json").read_text())
+        record.update(name="other", handle="0123")
+        (jobs_dir() / "other.json").write_text(json.dumps(record))
+        try:
+            code = main(argv)
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"{argv} raised {type(exc).__name__}: {exc}")
+        assert code == 0, capsys.readouterr()
+
+
+class TestTwelfthReviewWhatTheMachineSays:
+    def test_a_handle_of_thousands_of_digits_is_unusable_not_an_error(self):
+        from fastmdxplora.remote.jobs import usable_handle
+
+        assert usable_handle("1" * 5000) is False
+
+    def test_a_state_given_out_for_another_tool_does_not_reach_the_machine(self, app):
+        from fastmdxplora.mcp.tools import plan_id_of
+
+        state = app.server.state_for(
+            "tools/call", "ask_agent:0123", {"replies": [], "asked": "x",
+                                             "key": "fastmdx-sample-0", "kept": {}})
+        arguments = {"config": "ghg.yml", "plan_id": plan_id_of(app.root / "ghg.yml"),
+                     "machine": "box"}
+        for _ in range(3):
+            result = app.request("tools/call", {
+                "name": "start_study", "arguments": arguments,
+                "inputResponses": {"fastmdx-sample-0": {"content": {
+                    "type": "text", "text": "hi"}}},
+                "requestState": state}, capabilities={"sampling": {}})["result"]
+            assert "Sent to" not in _text(result)
+        assert app.machine.commands == []

@@ -188,6 +188,9 @@ def job_script(*, remote_dir: str, job_name: str, env: Environment,
         if time_limit:
             lines.append(f"#SBATCH --time={time_limit}")
     lines.append(f"cd {shlex.quote(remote_dir)} || exit 1")
+    if scheduler == "slurm":
+        # A job the cluster runs again (requeued) starts with no exit code.
+        lines.append("rm -f exit_code")
     if path_line:
         lines.append(path_line)
     lines += [shlex.join(command), "echo $? > exit_code", ""]
@@ -450,7 +453,8 @@ def _send_held(sending: Sending, link: Transport, local_runner,
 
     if sending.scheduler == "slurm":
         started = link.run(["sh", "-c",
-                            f"cd {shlex.quote(where)} && sbatch --parsable job.sh"])
+                            f"cd {shlex.quote(where)} && rm -f exit_code && "
+                            "sbatch --parsable job.sh"])
         handle = started.stdout.strip().split(";")[0]
     else:
         started = link.run(["sh", "-c", (
@@ -510,14 +514,18 @@ def _status_script(job: Job) -> str:
         # A queue that answers without the job, or says it knows no such
         # job, has let it go; one that does not answer (a busy controller
         # times out) says nothing of it.
-        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>&1); answered=$?\n'
-                 'state=""\n'
-                 '[ "$answered" -eq 0 ] && state=$(printf \'%s\\n\' "$asked" | head -n 1)\n'
-                 'case "$asked" in *"Invalid job id"*) echo fmdx:slurm_gone=1 ;; '
-                 '*) [ "$answered" -eq 0 ] && [ -z "$state" ] && echo fmdx:slurm_gone=1 ;; '
-                 'esac\n'
+        # Its state is a word in capitals on its own line: a warning the
+        # queue prints (a version mismatch, a setting it does not know) is
+        # not one, and is read apart.
+        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>.fmdx-queue); answered=$?\n'
+                 'state=$(printf \'%s\\n\' "$asked" | grep -E \'^[A-Z_]+$\' | head -n 1)\n'
+                 'if grep -q "Invalid job id" .fmdx-queue 2>/dev/null; then '
+                 'echo fmdx:slurm_gone=1; '
+                 'elif [ "$answered" -eq 0 ] && [ -z "$state" ]; then echo fmdx:slurm_gone=1; fi\n'
+                 'rm -f .fmdx-queue\n'
                  f'[ -z "$state" ] && state=$(sacct -n -X -j {job.handle} '
-                 f'-o State%30 2>/dev/null | head -n 1 | awk \'{{print $1}}\')\n'
+                 f'-o State%30 2>/dev/null | grep -E \'^ *[A-Z_]+\' | head -n 1 '
+                 '| awk \'{print $1}\')\n'
                  'echo "fmdx:slurm=$state"\n')
     else:
         alive = f"kill -0 {job.handle} 2>/dev/null && echo fmdx:alive=1\n"
@@ -608,6 +616,7 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     link = transport or Transport(job.machine)
     found = _read(link.run(["sh", "-s"], stdin=_status_script(job)).stdout)
     job.extra["asked_at"] = time.time()
+    job.extra.pop("queue_silent", None)
     if "gone" in found:
         job.state, job.detail = FAILED, f"{job.remote_dir} is no longer there"
         save_job(job)
@@ -634,6 +643,7 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     elif job.scheduler == "slurm":
         # Neither the queue nor its accounting answered (a busy controller
         # times out): that says nothing of the job, so its state stays.
+        job.extra["queue_silent"] = True
         job.detail = "the cluster's queue did not answer; asked again next time"
     else:
         job.state = FAILED
@@ -1153,10 +1163,12 @@ def _cancel(name: str, transport: Transport | None) -> Job:
         return job
     link = transport or Transport(job.machine)
     job = _status(name, link, 0)
-    # A process's number may be another's once it has ended; a SLURM job's
-    # is not reused, and a queue that did not answer reads as ended, so
-    # there only a job seen done is let be.
-    if job.state in FINISHED and (job.scheduler != "slurm" or job.state == DONE):
+    # A job the machine says has ended is let be: a process's number may be
+    # another's by now, and an ended job's record keeps how it ended. Only a
+    # cluster's job read as failed whose queue did not answer now is
+    # stopped all the same, as it may still be going.
+    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED
+                                      and job.extra.get("queue_silent")):
         return job
     if job.scheduler == "slurm":
         link.run(["scancel", job.handle])

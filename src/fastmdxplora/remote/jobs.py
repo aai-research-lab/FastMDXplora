@@ -161,8 +161,8 @@ def usable_handle(handle: str) -> bool:
     """Whether ``handle`` can be a job's process or SLURM number: digits
     only, no leading zero, more than 1 (a signal to -1 reaches every
     process the account may signal)."""
-    return (handle.isascii() and handle.isdigit() and not handle.startswith("0")
-            and int(handle) > 1)
+    return (0 < len(handle) <= 20 and handle.isascii() and handle.isdigit()
+            and not handle.startswith("0") and int(handle) > 1)
 
 
 def _wrong_in(record: Any, name: str) -> str:
