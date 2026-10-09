@@ -446,9 +446,16 @@ def _gpu_of(job: Job) -> dict:
 def _held(running: list[Job]) -> list[Held]:
     """Each GPU a running job from here is on, with what it was expected to
     need there (0 where that was not known)."""
-    return [Held(job=job.name, uuid=uuid, need_mb=_gpu_of(job).get("need_mb") or 0,
-                 group=job.handle)
-            for job in running for uuid in _gpu_of(job).get("uuids", [])]
+    held = []
+    for job in running:
+        gpu = _gpu_of(job)
+        wanted = gpu.get("wanted")
+        for uuid in gpu.get("uuids", []):
+            mb = wanted.get(uuid) if isinstance(wanted, dict) else gpu.get("need_mb")
+            if not (isinstance(mb, int) and not isinstance(mb, bool) and 0 < mb < 10 ** 9):
+                mb = 0
+            held.append(Held(job=job.name, uuid=uuid, need_mb=mb, group=job.handle))
+    return held
 
 
 @dataclass
@@ -465,6 +472,8 @@ class _Runs:
     named: Counter | None = None
     #: Why where it runs on the GPUs cannot be worked out here, or "".
     unread: str = ""
+    #: Whether a simulation runs at all (setup and analysis take no GPU).
+    simulates: bool = True
 
 
 def _runs_of(config: dict, cpus: int | None) -> _Runs:
@@ -491,6 +500,9 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         return _Runs(unread="its runs could not be worked out here")
     runs = _Runs(each=[(str(spec.system), dict(spec.options.get("setup") or {}),
                         dict(spec.options.get("simulation") or {})) for spec in specs])
+    include, exclude = data.get("include_phase"), data.get("exclude_phase")
+    runs.simulates = (("simulation" in include) if isinstance(include, list) and include
+                      else not (isinstance(exclude, list) and "simulation" in exclude))
     count = len(runs.each)
     execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
     workers, devices = execution.get("workers"), execution.get("devices")
@@ -517,12 +529,16 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if not parallel:
             # One at a time, each on the first device listed.
             runs.named = Counter({int(listed[0]): 1})
-        else:
-            # Round-robin over the list, a device listed twice taking two.
-            per_slot = -(-runs.at_once // len(listed))
-            runs.named = Counter()
-            for device in listed:
-                runs.named[int(device)] += per_slot
+            return runs
+        # As the explorer places them: each run on the listed device least
+        # used for its slots (a device listed twice has two), the first
+        # listed on a tie; the first runs at once are the most any holds.
+        slots = Counter(int(d) for d in listed)
+        placed: Counter = Counter()
+        for _ in range(runs.at_once):
+            device = min(slots, key=lambda d: placed[d] / slots[d])
+            placed[device] += 1
+        runs.named = placed
         return runs
     named: Counter = Counter()
     unnamed = 0
@@ -553,7 +569,7 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
     runs = _runs_of(config, machine.inspection.cpus)
     on_gpu = [each for each in runs.each
               if str(each[2].get("platform") or "auto").upper() not in ("CPU", "HIP")]
-    if runs.each and not on_gpu:
+    if (runs.each and not on_gpu) or not runs.simulates:
         return None, []
     room = room_from(_read(link.run(["sh", "-s"], stdin=GPU_SCRIPT).stdout))
     if room is None:
@@ -566,9 +582,11 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
                       "GPU is chosen and its memory is not checked."]
     precisions = sorted({str(each[2].get("precision") or "mixed") for each in on_gpu})
     particles = _particles(on_gpu, folder)
-    needs = [need_for(name, particles, precision=p) for p in precisions]
-    need = (Need(None, needs[0].how) if any(n.mb is None for n in needs)
-            else max(needs, key=lambda n: n.mb))
+    learn = runs.named is None and runs.at_once == 1 and len(precisions) == 1
+    needs = [need_for(name, particles, precision=p, learned_here=learn)
+             for p in precisions]
+    unknown = [n for n in needs if n.mb is None]
+    need = unknown[0] if unknown else max(needs, key=lambda n: n.mb)
     if runs.named is not None:
         if len({gpu.name for gpu in room.gpus}) > 1:
             free_lines = choose(name, room, Need(None, ""), held).lines
@@ -578,27 +596,36 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
         gpu = choose(name, room, need, held, named=runs.named)
     else:
         gpu = choose(name, room, need, held, at_once=runs.at_once)
-        gpu.learn = runs.at_once == 1 and len(precisions) == 1
+        gpu.learn = learn
     gpu.precision = precisions[0]
     return gpu, []
 
 
 def _particles(each: list[tuple[str, dict, dict]], folder: Path) -> int | None:
-    """The most particles setup is expected to build for any of the runs,
-    where each is a structure file here; ``None`` otherwise."""
+    """The most particles any of the runs is expected to simulate: those of
+    the prepared system a run starts from (``setup_from``), else what setup
+    is expected to build from its structure file here; ``None`` where
+    either cannot be read here."""
     from fastmdxplora.setup.estimate import estimate_system
 
-    kinds = {(system, json.dumps(setup, sort_keys=True, default=str))
-             for system, setup, _ in each}
+    kinds = {(system, json.dumps(setup, sort_keys=True, default=str),
+              str(simulation.get("setup_from") or simulation.get("prepared_from") or ""))
+             for system, setup, simulation in each}
     if not kinds or len(kinds) > 20:
         return None
     counts = []
-    for system, setup in kinds:
+    for system, setup, prepared in kinds:
         try:
-            path = Path(system).expanduser()
+            path = Path(prepared or system).expanduser()
         except RuntimeError:
             return None
         path = path if path.is_absolute() else folder / path
+        if prepared:
+            counted = _atoms_prepared(path)
+            if counted is None:
+                return None
+            counts.append(counted)
+            continue
         if not path.is_file() or path.suffix.lower() not in (".pdb", ".ent"):
             return None
         try:
@@ -606,6 +633,20 @@ def _particles(each: list[tuple[str, dict, dict]], folder: Path) -> int | None:
         except (OSError, ValueError, RuntimeError, TypeError, KeyError):
             return None
     return max(counts)
+
+
+def _atoms_prepared(named: Path) -> int | None:
+    """The atoms in the prepared system a study names, found where the
+    simulation phase finds it; ``None`` where there is none to read."""
+    from fastmdxplora.simulation.pipeline import where_a_prepared_system_sits
+
+    try:
+        topology = where_a_prepared_system_sits(named) / "topology.pdb"
+        with topology.open(encoding="utf-8", errors="replace") as lines:
+            atoms = sum(1 for line in lines if line.startswith(("ATOM", "HETATM")))
+    except (OSError, ValueError, RuntimeError):
+        return None
+    return atoms or None
 
 
 @contextmanager
@@ -740,6 +781,7 @@ def _send_held(sending: Sending, link: Transport, local_runner,
         job.extra["gpu"] = {
             "uuids": list(sending.gpu.uuids),
             "need_mb": max(sending.gpu.wanted.values(), default=None),
+            "wanted": dict(sending.gpu.wanted),
             "name": sending.gpu.gpu.name if sending.gpu.gpu is not None else "",
             "precision": sending.gpu.precision,
             "learn": sending.gpu.learn}
@@ -765,7 +807,9 @@ def _room_now(sending: Sending, link: Transport) -> None:
             f"The GPUs of {name} did not answer as the copy was to start, so the room "
             "planned for this study could not be asked again. Send it again.",
             code="remote.machine.no_room", machine=name, need_mb=gpu.need.mb)
-    refused = still_fits(name, room, gpu, _held(_running_from_here(name, link)),
+    # A kept answer serves: a job read as running only keeps its room.
+    refused = still_fits(name, room, gpu,
+                         _held(_running_from_here(name, link, max_age_s=STATUS_KEPT_S)),
                          again=True)
     if refused:
         raise StudyError(refused, code="remote.machine.no_room", machine=name,
@@ -825,8 +869,9 @@ def _status_script(job: Job) -> str:
         # ended, the particles each of its systems had.
         alive += ("[ -f no_room ] && echo \"fmdx:no_room=$(head -c 200 no_room)\"\n"
                   "[ -f gpu_peak ] && echo \"fmdx:gpu_peak=$(head -c 20 gpu_peak)\"\n"
+                  # Only this send's runs: a folder sent to again keeps others.
                   "[ -f exit_code ] && [ -d run ] && find run -name cost.json -type f "
-                  "2>/dev/null | head -n 50 | while IFS= read -r f; do "
+                  "-newer job.sh 2>/dev/null | head -n 50 | while IFS= read -r f; do "
                   "printf 'fmdx:cost=%s\\n' \"$(head -c 2000 \"$f\" | tr -d '\\n')\"; "
                   "done\n")
     return (f"cd {where} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
@@ -1609,7 +1654,9 @@ def room_said(sending: Sending, *, running: str = "") -> list[str]:
     if gpu is None:
         return lines
     lines += gpu.lines
-    if gpu.gpu is not None:
+    if gpu.gpu is not None and gpu.refused:
+        where = f"Fits on no GPU now; GPU {gpu.gpu.index} has the most room"
+    elif gpu.gpu is not None:
         where = f"Runs on GPU {gpu.gpu.index}" + (
             ", where it fits with the fewest studies from here, then the most free "
             "memory" if len(gpu.lines) > 1 else "")

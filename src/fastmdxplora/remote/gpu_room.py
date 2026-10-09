@@ -229,16 +229,19 @@ class Need:
     how: str
 
 
-def need_for(machine: str, particles: int | None, *, precision: str = "mixed") -> Need:
+def need_for(machine: str, particles: int | None, *, precision: str = "mixed",
+             learned_here: bool = True) -> Need:
     """What one run of ``particles`` (``None`` where they could not be
     worked out here) in ``precision`` is expected to hold on a GPU of
-    ``machine``, from the runs measured there in that precision."""
+    ``machine``, from the runs measured there in that precision.
+    ``learned_here``: whether this study's run is learned from."""
     runs = [run for run in measured(machine)
             if run.get("precision", "mixed") == precision]
     if not runs:
         return Need(None, f"not known yet: no run in {precision} precision sent from here "
-                          f"has finished on {machine} with its GPU memory measured; this "
-                          "one is")
+                          f"has finished on {machine} with its GPU memory measured"
+                          + ("; this one is" if learned_here else
+                             ", and this one, not alone on one GPU, is not"))
     counted = (f"{len(runs)} run{'s' if len(runs) != 1 else ''} in {precision} precision "
                f"measured on {machine}")
     peaks = [(run["particles"], run["peak_mb"]) for run in runs]
@@ -335,7 +338,7 @@ def _said(gpu: Gpu, kept: int, count: int) -> str:
     if gpu.busy_pct is not None:
         line += f", {gpu.busy_pct}% busy"
     if kept:
-        line += (f", {kept:,} MB of it kept for {count} run{'s' if count != 1 else ''} "
+        line += (f"; {kept:,} MB kept back for {count} run{'s' if count != 1 else ''} "
                  "from here not yet holding what it needs")
     return line
 
@@ -404,7 +407,7 @@ def still_fits(machine: str, room: Room, choice: Choice, held: list[Held], *,
             continue
         said = _no_room(machine, gpu, wanted, free[uuid], choice.need,
                         choice.at_once.get(uuid, 1), chosen=again)
-        if again:
+        if again and choice.gpu is not None:
             others = [g for g in room.gpus if g.uuid != uuid and free[g.uuid] >= wanted]
             if others:
                 said += (f" GPU {others[0].index} has {free[others[0].uuid]:,} MB free: "
