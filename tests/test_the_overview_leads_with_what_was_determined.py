@@ -477,6 +477,10 @@ class TestTheEquilibrationOnTheClock:
         assert drawn["maxX"] > drawn["minX"]
         places = sorted(tick["x"] for tick in drawn["ticks"])
         assert len(places) >= 2 and min(b - a for a, b in zip(places, places[1:])) > 15
+        # Its one sample where it was taken, at the axis's start, not mid-way;
+        # and no NVT/NPT line in a run that failed in NVT.
+        assert drawn["placed"] == [pytest.approx(0.0, abs=0.01)]
+        assert drawn["npt"] is None
 
 
 def test_a_mean_is_whole_on_a_card_narrowed_by_the_agent(tmp_path) -> None:

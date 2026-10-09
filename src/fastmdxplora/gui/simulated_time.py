@@ -104,6 +104,19 @@ def simulated_times(root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
     # and saying "0 ps production after 10 ps of equilibration" said it was.
     ended_in = (stage if not running and stage in EQUILIBRATING + ("setup",)
                 and not production_ns and pieces == 1 else None)
+    if not running and ended_in is None and not production_ns and pieces == 1:
+        # A failure in NVT was recorded at the stage "production", every
+        # stage after it marked failed too: the first stage that did not
+        # complete is where it ended, and "after 4 ps of equilibration (2 ps
+        # NVT, 2 ps NPT)" said it had all run.
+        states = status.get("stage_states") if isinstance(status.get("stage_states"), dict) else {}
+        for name in ("minimization", "nvt", "npt"):
+            state = str(states.get(name) or "").lower()
+            if state in ("failed", "stopped", "interrupted"):
+                ended_in = name
+                break
+            if state not in ("completed", "skipped"):
+                break
     return {
         "ended_in": ended_in,
         "production_ns": production_ns,

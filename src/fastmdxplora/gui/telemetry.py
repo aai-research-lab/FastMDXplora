@@ -612,7 +612,31 @@ def read_study_status(project_root: str | Path) -> dict[str, Any]:
     elif (str(whole.get("status") or "").lower() == "stopped"
           and str(whole.get("stage") or "").lower() == "production"):
         whole["latest_error"] = _stopped_as_one_run(root, whole)
-    return whole
+    return _the_stage_it_ended_in(whole)
+
+
+#: The simulation's stages in the order a run takes them.
+_RUN_STAGES = ("minimization", "nvt", "npt", "production")
+
+
+def _the_stage_it_ended_in(status: dict[str, Any]) -> dict[str, Any]:
+    """A run that failed in NVT is recorded at the stage "production", every
+    stage after NVT marked failed with it: the sidebar said "Production
+    failed" beside "unstable during NVT". The stage is the first that did
+    not complete."""
+    if str(status.get("status") or "").lower() not in ("failed", "stopped", "interrupted"):
+        return status
+    stage = str(status.get("stage") or "").lower()
+    states = status.get("stage_states")
+    if stage not in _RUN_STAGES or not isinstance(states, dict):
+        return status
+    for name in _RUN_STAGES[:_RUN_STAGES.index(stage)]:
+        state = str(states.get(name) or "").lower()
+        if state in ("failed", "stopped", "interrupted"):
+            return {**status, "stage": name}
+        if state not in ("completed", "skipped"):
+            break
+    return status
 
 
 def _stopped_as_one_run(root: Path, whole: dict[str, Any]) -> str | None:

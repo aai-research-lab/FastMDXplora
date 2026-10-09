@@ -71,7 +71,7 @@
       // a metric the run has not sampled would have read 0.0000.
       const cell = latest ? latest[config.key] : null;
       let raw = cell === "" || cell == null ? NaN : Number(cell);
-      // A speed of 0 is none measured (a run that failed before it took a
+      // A speed of 0 is none recorded (a run that failed before it took a
       // step): "0.0000" beside "no speed has been measured here".
       if (config.key === "speed" && raw === 0) raw = NaN;
       // No unit here -- the title beside it already carries one, and the row
@@ -191,7 +191,10 @@
       if (!entry) return;
       entry.points = lastMetrics
         .map((row, index) => {
-          const value = numberOrNaN(row[config.key]);
+          let value = numberOrNaN(row[config.key]);
+          // A speed of 0 is none recorded, as its empty cell says: not a
+          // point at 0 on an axis of 1.00e-6.
+          if (config.key === "speed" && value === 0) value = NaN;
           const step = Number(row.step);
           return {
             x: clock.timed ? times[index] - clock.startNs : (Number.isFinite(step) ? step : index),
@@ -338,7 +341,9 @@
       if (points[i].x < 0 && was.startsWith("nvt") && now.startsWith("npt")) change = points[i].x;
     }
     bounds.npt = null;
-    if (change != null && change > bounds.minX && change < Math.min(0, bounds.maxX)) {
+    // Only where the run got there: one that failed in NVT never changed.
+    const reached = change != null && points.some((point) => point.x >= change);
+    if (reached && change > bounds.minX && change < Math.min(0, bounds.maxX)) {
       bounds.npt = change;
       ctx.strokeStyle = color("grid");
       ctx.setLineDash([3, 3]);
@@ -434,14 +439,16 @@
     const coords = points.map((point, index) => {
       const y = area.bottom - area.height * ((point.y - bounds.minY) / spanY);
       return {
-        x: area.left + area.width * (
-          points.length === 1 ? 0.5 : (point.x - bounds.minX) / spanX
-        ),
+        // Where it was sampled, one sample too: the axis is widened around
+        // it, and it sat mid-axis at a moment it was not taken.
+        x: area.left + area.width * ((point.x - bounds.minX) / spanX),
         y: Math.max(area.top, Math.min(area.bottom, y)),
         beyond: y > area.bottom ? 1 : y < area.top ? -1 : 0,
         index,
       };
     });
+    // Where each sample was placed across the axis, 0 to 1, for `drawn`.
+    bounds.placed = coords.map((point) => (point.x - area.left) / (area.width || 1));
     // Each stretch beyond the axis, marked once where it begins.
     ctx.fillStyle = color;
     coords.forEach((point, index) => {

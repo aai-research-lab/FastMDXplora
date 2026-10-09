@@ -82,6 +82,27 @@ def test_a_run_that_ended_before_production_says_so(tmp_path):
         "ended in NVT equilibration, 2 ps of the 10 ps of equilibration planned")
     running = simulated_times(tmp_path, {**status, "status": "running"})
     assert running["ended_in"] is None
+    # A failure in NVT recorded at the stage "production", the stages after
+    # it failed with it, was said "after 10 ps of equilibration (5 ps NVT,
+    # 5 ps NPT)".
+    later = {**status, "stage": "production", "stage_states": {
+        "setup": "completed", "minimization": "completed", "nvt": "failed",
+        "npt": "failed", "production": "failed"}}
+    assert simulated_times(tmp_path, later)["ended_in"] == "nvt"
+    assert equilibration_said(simulated_times(tmp_path, later)).startswith(
+        "ended in NVT equilibration")
+    done = {**later, "current_step": 15000, "stage_states": {
+        "minimization": "completed", "nvt": "completed", "npt": "completed",
+        "production": "failed"}}
+    assert simulated_times(tmp_path, done)["ended_in"] is None
+    # And the sidebar, which said "Production failed" beside it.
+    from fastmdxplora.gui.telemetry import read_study_status
+
+    (tmp_path / "simulation").mkdir(exist_ok=True)
+    (tmp_path / "simulation" / "live_status.json").write_text(json.dumps(later))
+    assert read_study_status(tmp_path)["stage"] == "nvt"
+    (tmp_path / "simulation" / "live_status.json").write_text(json.dumps(done))
+    assert read_study_status(tmp_path)["stage"] == "production"
 
 
 def test_analysing_again_leaves_the_simulation_s_record(tmp_path, monkeypatch):
