@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -247,16 +248,27 @@ def size_of(path: Path) -> int:
         return 0
 
 
-#: Files up to this size are read whole for a send's fingerprint; a larger
-#: one is known by its size and the time it was last written.
+#: Files up to this size are read whole for a send's fingerprint, until
+#: :data:`READ_IN_ALL_BYTES` have been read for one send; past either, a
+#: file is known by its size, the file it is (device and inode) and when it
+#: was last written and changed (``ctime``, which a copy that keeps times
+#: does not put back).
 READ_WHOLE_BYTES = 256 * 1024 * 1024
+READ_IN_ALL_BYTES = 2 * 1024 * 1024 * 1024
 
 
-def _file_print(real: Path) -> tuple[int, str]:
-    """A file's size, and what tells it from the same file changed."""
+def _file_print(real: Path, left: list[int]) -> tuple[int, str]:
+    """A file's size, and what tells it from the same file changed;
+    ``left`` is what may still be read for this send, and is spent."""
     found = real.stat()
-    if found.st_size > READ_WHOLE_BYTES:
-        return found.st_size, f"{found.st_size}:{found.st_mtime_ns}"
+    if not stat.S_ISREG(found.st_mode):
+        # A pipe or a device is never opened: it could wait forever, and a
+        # copy does not send one.
+        return 0, f"special:{stat.S_IFMT(found.st_mode)}"
+    if found.st_size > READ_WHOLE_BYTES or found.st_size > left[0]:
+        return found.st_size, (f"{found.st_size}:{found.st_dev}:{found.st_ino}:"
+                               f"{found.st_mtime_ns}:{found.st_ctime_ns}")
+    left[0] -= found.st_size
     digest = hashlib.sha256()
     with real.open("rb") as handle:
         while chunk := handle.read(1 << 20):
@@ -264,32 +276,42 @@ def _file_print(real: Path) -> tuple[int, str]:
     return found.st_size, f"{found.st_size}:{digest.hexdigest()}"
 
 
-def fingerprint_of(path: Path) -> tuple[int, str]:
+def fingerprint_of(path: Path, left: list[int] | None = None) -> tuple[int, str]:
     """The bytes a copy that follows links sends of ``path`` (as
     :func:`size_of`), and a digest that changes when anything it sends
-    does: a file's contents (or, past :data:`READ_WHOLE_BYTES`, its size and
-    the time it was written), and in a folder each file's place in it."""
+    does: a file's contents (or, past what is read whole, the file it is and
+    when it was written and changed), and in a folder each file's place in
+    it. ``left`` is what may still be read for one send, shared by its
+    inputs (:data:`READ_IN_ALL_BYTES` where not given)."""
+    left = [READ_IN_ALL_BYTES] if left is None else left
     digest = hashlib.sha256()
     total = 0
+    if not path.is_dir():
+        try:
+            total, said = _file_print(path.resolve(strict=True), left)
+        except (OSError, RuntimeError, ValueError):
+            total, said = 0, "unread"
+        digest.update(said.encode())
+        return total, digest.hexdigest()
+    lines = []
     try:
-        if not path.is_dir():
-            total, said = _file_print(path.resolve(strict=True))
-            digest.update(said.encode())
-            return total, digest.hexdigest()
-        lines = []
-        for here, real in _walked(path):
-            place = here.relative_to(path).as_posix()
-            if real is None:
-                said = "unread"
-            elif real.is_file():
-                size, said = _file_print(real)
-                total += size
-            else:
-                said = "folder"
-            lines.append(f"{place}\0{said}\n")
-        digest.update("".join(sorted(lines)).encode())
+        walked = list(_walked(path))
     except (OSError, RuntimeError, ValueError):
-        digest.update(b"unread")
+        walked = [(path, None)]
+    for here, real in walked:
+        place = here.relative_to(path).as_posix() if here.is_relative_to(path) else str(here)
+        said = "unread"
+        if real is not None:
+            try:
+                if real.is_dir():
+                    said = "folder"
+                else:
+                    size, said = _file_print(real, left)
+                    total += size
+            except (OSError, RuntimeError, ValueError):
+                said = "unread"
+        lines.append(f"{place}\0{said}\n")
+    digest.update("".join(sorted(lines)).encode())
     return total, digest.hexdigest()
 
 

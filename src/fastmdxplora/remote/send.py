@@ -2229,7 +2229,11 @@ def travelling(sending: Sending) -> dict[str, tuple[int, str]]:
     """Each input that travels, by its name there: the bytes it sends and
     its fingerprint (:func:`~fastmdxplora.remote.inputs.fingerprint_of`),
     read once so the sizes shown are those the send is bound to."""
-    return {name: fingerprint_of(source) for name, source in sending.inputs.files.items()}
+    from fastmdxplora.remote.inputs import READ_IN_ALL_BYTES
+
+    left = [READ_IN_ALL_BYTES]
+    return {name: fingerprint_of(source, left)
+            for name, source in sending.inputs.files.items()}
 
 
 def sent_digest(sending: Sending, prints: dict[str, tuple[int, str]] | None = None) -> str:

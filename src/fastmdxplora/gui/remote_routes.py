@@ -240,7 +240,7 @@ class RemoteDesk:
             while len(self._plans) >= _MOST_PLANS:
                 self._plans.pop(min(self._plans, key=lambda t: self._plans[t].made_at))
             self._plans[token] = _Plan(file, name, output, sent_digest(sending, prints),
-                                        time.time())
+                                        time.monotonic())
         return {
             "ok": True, "plan": token, "kept_s": PLAN_KEPT_S,
             "config": self.shown(file), "machine": name, "job": sending.job_name,
@@ -256,7 +256,7 @@ class RemoteDesk:
         }
 
     def _forget_old(self) -> None:
-        now = time.time()
+        now = time.monotonic()
         for token in [t for t, p in self._plans.items() if now - p.made_at > PLAN_KEPT_S]:
             self._plans.pop(token, None)
 

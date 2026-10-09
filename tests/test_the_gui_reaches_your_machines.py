@@ -131,8 +131,8 @@ class TestMachinesAndPlans:
 
         address, machine = served
         plan = _planned(address)
-        later = time.time() + remote_routes.PLAN_KEPT_S + 1
-        monkeypatch.setattr(remote_routes.time, "time", lambda: later)
+        later = time.monotonic() + remote_routes.PLAN_KEPT_S + 1
+        monkeypatch.setattr(remote_routes.time, "monotonic", lambda: later)
         status, said = _ask(address, "/api/remote/send", {"plan": plan["plan"]})
         assert said["ok"] is False and said["code"] == "remote.send.unconfirmed"
         assert not _sent(machine)

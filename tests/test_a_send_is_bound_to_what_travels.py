@@ -58,6 +58,67 @@ class TestAFingerprint:
     def test_what_cannot_be_read_gives_no_size(self, tmp_path):
         assert fingerprint_of(tmp_path / "missing.pdb")[0] == 0
 
+    def test_a_pipe_is_never_opened(self, tmp_path):
+        """Second review: a pipe named as an input was opened to be read,
+        which waits for a writer that never comes, and the plan with it."""
+        import os
+        import threading
+
+        pipe = tmp_path / "pipe.pdb"
+        os.mkfifo(pipe)
+        said = []
+        reader = threading.Thread(target=lambda: said.append(fingerprint_of(pipe)),
+                                  daemon=True)
+        reader.start()
+        reader.join(5)
+        if not said:
+            with open(pipe, "wb"):
+                pass
+            reader.join(5)
+            pytest.fail("the pipe was opened")
+        assert said[0][0] == 0
+
+    def test_one_entry_unread_leaves_the_rest_of_a_folder_told_apart(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote import inputs
+
+        folder = tmp_path / "prepared"
+        folder.mkdir()
+        (folder / "state.xml").write_text("<State/>\n")
+        (folder / "locked.xml").write_text("x")
+        real = inputs._file_print
+
+        def refused(path, left):
+            if path.name == "locked.xml":
+                raise PermissionError(path)
+            return real(path, left)
+
+        monkeypatch.setattr(inputs, "_file_print", refused)
+        before = fingerprint_of(folder)
+        (folder / "state.xml").write_text("<Other/>\n")
+        assert fingerprint_of(folder)[1] != before[1]
+
+    def test_past_what_is_read_a_file_is_known_by_what_it_is(self, tmp_path, monkeypatch):
+        """Past the bytes read for one send, a file is not read, and a copy
+        that kept its times is still told apart (its ctime is new)."""
+        import os
+        import shutil
+        import time
+
+        from fastmdxplora.remote import inputs
+
+        monkeypatch.setattr(inputs, "READ_IN_ALL_BYTES", 4)
+        file = tmp_path / "big.dcd"
+        file.write_bytes(b"0123456789")
+        before = fingerprint_of(file)
+        time.sleep(0.01)
+        twin = tmp_path / "twin.dcd"
+        twin.write_bytes(b"9876543210")
+        shutil.copystat(file, twin)
+        os.replace(twin, file)
+        after = fingerprint_of(file)
+        assert before[0] == after[0] == 10 and before[1] != after[1]
+
 
 class TestTheGui:
     def test_a_file_rewritten_at_the_same_size_is_not_sent(self, served):
