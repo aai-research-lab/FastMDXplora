@@ -421,8 +421,10 @@ answer about a job last read as failed (`remote.job.cancel_not_taken`).
 
 `api.send(config, machine, output=)` plans and sends in one call. As with
 `remote send`, only the files in the folder holding the Config travel
-(`remote.input.outside`), and a workstation runs one study sent from here at a
-time (`remote.machine.busy`).
+(`remote.input.outside`), and a study goes to a workstation only where its
+GPUs have room for it (`remote.machine.no_room`). `plan.running` names the jobs
+from here it would share the machine with, `plan.gpu` says each GPU's room
+and the one chosen, and `plan.no_room` says why it would not fit.
 
 An install runs only with a yes to the exact plan shown:
 

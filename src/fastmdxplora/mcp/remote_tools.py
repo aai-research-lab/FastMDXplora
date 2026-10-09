@@ -2,8 +2,8 @@
 
 Over :mod:`fastmdxplora.remote.api`, so under the rules every interface
 keeps: machines only from records made at a terminal, never a prompt, only
-the files in a study's own folder sent, one study at a time on a
-workstation, a job asked about at most every 30 s. And two of this server's
+the files in a study's own folder sent, a study sent to a workstation only
+where its GPUs have room for it, a job asked about at most every 30 s. And two of this server's
 own, since what is sent leaves this computer and what comes back can be
 large:
 
@@ -181,8 +181,10 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
                         f"workspace ({ctx.workspace.root}); nothing outside it is sent from "
                         "here. Copy it into the config's folder and name it there.",
                         code="remote.input.outside")
-    if sending.busy:
-        _busy(ctx, machine, sending.busy)
+    from fastmdxplora.remote.send import room_said
+
+    if sending.no_room:
+        raise ToolError(sending.no_room, code="remote.machine.no_room")
     from fastmdxplora.remote.jobs import job_names
 
     if sending.job_name in job_names():
@@ -202,11 +204,13 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
         *(["Sent with it:", *travels] if travels else []),
         *([f"Fetched there from RCSB: {', '.join(sending.inputs.fetched)}"]
           if sending.inputs.fetched else []),
+        *room_said(sending, running=_running_said(ctx, sending.running)),
         f"Results come back to {shown} when fetched.",
     ])
     # The answer is to this send: what travels, each size, where it runs.
     sent = hashlib.sha256("\n".join([
         sending.installation.path, sending.remote_dir, sending.config_text,
+        sending.script,
         *(f"{name}={source}={_bytes(source)}"
           for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
     agreed = _went_ahead(ctx, "send", message,
@@ -224,9 +228,6 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     try:
         job = api.send_planned(sending)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
-        found = refusal_of(exc)
-        if found.code == "remote.machine.busy":
-            _busy(ctx, machine, str(found.details.get("job") or ""))
         _refuse_there(exc, machine)
     how = "SLURM job" if job.scheduler == "slurm" else "process"
     return (f"Sent to {machine} as job {job.name} ({how} {job.handle}); it runs there "
@@ -254,19 +255,18 @@ def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> No
         f"--output {ctx.workspace.shown(where)}`.", code="remote.send.unconfirmed")
 
 
-def _busy(ctx: Context, machine: str, running: str) -> NoReturn:
-    """A workstation is running a study: named only where its results come
-    back here, since a job sent for another folder is not this AI app's to
-    know of."""
+def _running_said(ctx: Context, running: list[str]) -> str:
+    """The studies from here a workstation is running, each named only
+    where its results come back here: a job sent for another folder is not
+    this AI app's to know of."""
     from fastmdxplora.remote import api
 
-    ours = any(job.name == running for job in api.jobs(under=ctx.workspace.root))
-    raise ToolError(
-        (f"{machine} is running {running}, sent from here; remote_status says when "
-         "it ends, and cancel_study stops it." if ours else
-         f"{machine} is running a study sent from this computer.")
-        + " One study runs on a workstation at a time.",
-        code="remote.machine.busy")
+    here = {job.name for job in api.jobs(under=ctx.workspace.root)}
+    named = [name for name in running if name in here]
+    others = len(running) - len(named)
+    if others:
+        named.append(f"{others} other stud{'y' if others == 1 else 'ies'}")
+    return ", ".join(named)
 
 
 def _bytes(path: Path) -> int:

@@ -52,20 +52,23 @@ key checks are made again as the copy starts. Your defaults here travel in
 the Config, and the run there takes none of the machine's (`--no-defaults`).
 Before, any file the Config named anywhere on the computer was sent.
 
-**Changed:** a workstation runs one study sent from here at a time
-(`remote.machine.busy`; `--dry-run` says so and still shows the plan); a
-cluster's scheduler queues. A cancelled job counts until its processes have
-stopped. `--force-overwrite` no longer replaces a job still waiting or
-running (`environment.path.exists`); cancel it first. `--partition` and
-`--time` take letters, digits and `_ . , : + -` only, at most 64. A
-cluster's job whose queue does not answer keeps its state, where it was read
-as failed; one the queue no longer knows, with no accounting to say how it
-ended, reads as failed; the queue's warnings are not read as a state, and a
-job waiting again in the queue is read as waiting. A cluster job asks not to
-be requeued, and keeps the last run's exit code until the cluster takes a
-job sent again. The queue's word and its accounting's are read apart:
-accounting that says a job the queue no longer knows is waiting or running
-is not believed. A cancel the cluster does not take is refused
+**Changed:** studies sent to a workstation share its GPUs where they fit.
+The plan says each GPU's room and the jobs from here running there. A study
+that needs more than is free is refused (`remote.machine.no_room`;
+`--dry-run` says so and still shows the plan), asked again under a lock at
+the send and once more as the run starts. The need is learned from the runs
+measured on that machine, and is not guessed before the first.
+`--force-overwrite` no longer replaces a job still waiting or running
+(`environment.path.exists`); cancel it first. `--partition` and `--time`
+take letters, digits and `_ . , : + -` only, at most 64. A cluster's job
+whose queue does not answer keeps its state, where it was read as failed;
+one the queue no longer knows, with no accounting to say how it ended, reads
+as failed; the queue's warnings are not read as a state, and a job waiting
+again in the queue is read as waiting. A cluster job asks not to be
+requeued, and keeps the last run's exit code until the cluster takes a job
+sent again. The queue's word and its accounting's are read apart: accounting
+that says a job the queue no longer knows is waiting or running is not
+believed. A cancel the cluster does not take is refused
 (`remote.job.cancel_not_taken`), and a job that has ended keeps how it
 ended; one last read as failed whose queue does not answer is neither
 signalled nor fetched. A job waiting in the queue says why, a hold above

@@ -15,9 +15,9 @@ What ``fastmdx remote`` does at a terminal, for a program and for an AI app
   say what a send or a fetch would do and move, so the caller can ask before
   calling :func:`send_planned` or :func:`fetch`. An install runs only with a
   yes to the exact plan :func:`install_plan` showed.
-- **Only the study's own files travel**, one study runs at a time on a
-  workstation, and a job is asked about at most every 30 s
-  (:mod:`fastmdxplora.remote.send`).
+- **Only the study's own files travel**, a study goes to a workstation only
+  where its GPUs have room for it, and a job is asked about at most every
+  30 s (:mod:`fastmdxplora.remote.send`).
 
 Every function takes the job or machine by name and returns the records
 :mod:`fastmdxplora.remote.jobs` keeps.

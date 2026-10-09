@@ -1460,8 +1460,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "that holds this computer's code. Only files in the Config's own "
             "folder travel, and a prepared study named by setup_from or "
             "resume_from beside it. Refused if the machine is not ready, or "
-            "is a workstation already running a study sent from here. The "
-            "job runs on without this terminal."),
+            "if no GPU of a workstation has the memory the study needs free. "
+            "The job runs on without this terminal."),
         formatter_class=_PercentSafeHelp,
     )
     send.add_argument("-c", "-config", "--config", dest="config",

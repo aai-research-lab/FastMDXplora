@@ -1,10 +1,10 @@
 """Remote machines reached from every interface, under one set of rules.
 
 The rules the command line kept by having a person at a terminal hold in
-the engine, for the Python API and an AI app alike: one study at a time on
-a workstation, a machine asked about a job at most every 30 s by a caller
-that loops, machines only from records made at a terminal, and no prompt
-nobody can answer.
+the engine, for the Python API and an AI app alike: a study sent to a
+workstation only where its GPUs have room for it, a machine asked about a
+job at most every 30 s by a caller that loops, machines only from records
+made at a terminal, and no prompt nobody can answer.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import time
 import pytest
 
 from fastmdxplora.refusals import refusal_of
-from fastmdxplora.remote.send import STATUS_KEPT_S, cancel, prepare, send, status
+from fastmdxplora.remote.send import STATUS_KEPT_S, cancel, describe_sending, prepare, send, status
 from tests import test_a_study_travels_and_comes_back as travels
 from tests.test_a_study_travels_and_comes_back import RELEASE, _send
 
@@ -42,58 +42,294 @@ def _ended_there(job) -> None:
 
 
 # ---------------------------------------------------------------------------
-# One study at a time on a workstation
+# Studies share a workstation's GPUs, where they fit
 # ---------------------------------------------------------------------------
-class TestOneAtATime:
-    def test_a_second_study_is_refused_while_the_first_runs(self, machine, tmp_path):
-        machine.env["FAKE_SLEEP"] = "30"
-        first = _send(machine)
-        try:
-            # Planned, so a dry run still shows what it would do, and said.
-            second = prepare(machine.study, "box",
-                             output=str(tmp_path / "back" / "second"),
-                             code=RELEASE, transport=machine.transport())
-            assert second.busy == first.name
-            assert any("fastmdx remote cancel trial" in note for note in second.notes)
-            with pytest.raises(ValueError) as caught:
-                send(second, transport=machine.transport(), local_runner=machine.local,
-                     code=RELEASE)
-            found = refusal_of(caught.value)
-            assert found.code == "remote.machine.busy"
-            assert found.details["job"] == first.name
-            assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
-        finally:
-            cancel(first.name, transport=machine.transport())
-        # Busy while the cancelled job is still stopping, then free.
-        _stopped(first)
-        again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                        code=RELEASE, transport=machine.transport())
-        assert again.busy == ""
+UUID_0 = "GPU-00000000-1111-2222-3333-444444444444"
+UUID_1 = "GPU-11111111-1111-2222-3333-444444444444"
 
-    def test_one_prepared_before_the_first_was_sent_is_refused_at_the_send(
+
+def _gpus(machine, *rows: tuple[int, str, int, int]) -> None:
+    """GPUs on the stand-in machine, each (index, uuid, total, free) in MB,
+    read by a stand-in ``nvidia-smi``; the processes using them are the
+    lines of ``$HOME/apps.csv``."""
+    lines = [f"{index}, {uuid}, Stand-in GPU, {total}, {total - free}, {free}, 7"
+             for index, uuid, total, free in rows]
+    (machine.home / "gpus.csv").write_text("\n".join(lines) + "\n")
+    tool = machine.home / "gpu-bin" / "nvidia-smi"
+    if not tool.exists():
+        travels._tool(tool, '''
+uuid=""; prev=""
+for arg in "$@"; do [ "$prev" = -i ] && uuid=$arg; prev=$arg; done
+echo "$*" >> "$HOME/nvidia-smi.calls"
+case "$*" in
+  *--query-gpu=memory.free*) awk -F', ' -v u="$uuid" '$2 == u {print $6}' "$HOME/gpus.csv" ;;
+  *--query-gpu=*) cat "$HOME/gpus.csv" ;;
+  *--query-compute-apps=*) cat "$HOME/apps.csv" 2>/dev/null ;;
+esac''')
+        machine.env["PATH"] = f"{tool.parent}:{machine.env['PATH']}"
+
+
+def _holding(machine, megabytes: int, particles: int = 2000) -> None:
+    """The stand-in run takes ``megabytes`` on the GPU it was given, as a
+    process of its own group, and says its particles as a run does."""
+    env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
+    travels._tool(env, f'''
+out=run; while [ $# -gt 0 ]; do [ "$1" = --output ] && out=$2; shift; done
+mkdir -p "$out/simulation"
+echo '{{"version": "1.0"}}' > "$out/manifest.json"
+echo "$CUDA_VISIBLE_DEVICES" > "$HOME/given_gpu"
+echo "$CUDA_VISIBLE_DEVICES, $$, {megabytes}" >> "$HOME/apps.csv"
+echo '{{"particles": {particles}, "steps": 10, "seconds": 1}}' > "$out/simulation/cost.json"
+sleep "$FAKE_SLEEP"
+exit "$FAKE_EXIT"''')
+
+
+def _second(machine, tmp_path, name="second"):
+    return prepare(machine.study, "box", output=str(tmp_path / "back" / name),
+                   code=RELEASE, transport=machine.transport())
+
+
+class TestGpusShared:
+    def test_a_second_study_shares_the_machine_and_the_plan_says_so(
             self, machine, tmp_path):
         machine.env["FAKE_SLEEP"] = "30"
-        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                         code=RELEASE, transport=machine.transport())
+        _gpus(machine, (0, UUID_0, 24000, 23000))
         first = _send(machine)
         try:
-            with pytest.raises(ValueError) as caught:
-                send(second, transport=machine.transport(), local_runner=machine.local,
-                     code=RELEASE)
-            assert refusal_of(caught.value).code == "remote.machine.busy"
+            second = _second(machine, tmp_path)
+            assert second.running == [first.name] and second.no_room == ""
+            said = "\n".join(describe_sending(second))
+            assert "box is busy: trial sent from here is running there" in said
+            assert "GPU 0 (Stand-in GPU): 23,000 MB free of 24,000 MB, 7% busy" in said
+            job = send(second, transport=machine.transport(), local_runner=machine.local,
+                       code=RELEASE)
+            assert status(job.name, transport=machine.transport()).state == "running"
+        finally:
+            for name in ("trial", "second"):
+                cancel(name, transport=machine.transport())
+
+    def test_the_gpu_with_the_most_free_memory_is_the_one_used(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 2000), (1, UUID_1, 24000, 20000))
+        _holding(machine, 1500)
+        sending = _second(machine, tmp_path)
+        assert f"export CUDA_VISIBLE_DEVICES={UUID_1}" in sending.script
+        assert "Runs on GPU 1, the one with the most free memory" in "\n".join(
+            describe_sending(sending))
+        job = send(sending, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        travels._until_finished(machine, job.name)
+        assert (machine.home / "given_gpu").read_text().strip() == UUID_1
+
+    def test_what_a_study_needs_is_learned_from_a_run_measured_there(
+            self, machine, tmp_path, monkeypatch):
+        from fastmdxplora.remote import gpu_room
+
+        monkeypatch.setattr(gpu_room, "SAMPLE_EVERY_S", 0.2)
+        machine.env["FAKE_SLEEP"] = "2"
+        _gpus(machine, (0, UUID_0, 24000, 23000))
+        _holding(machine, 1500, particles=2000)
+        before = _second(machine, tmp_path, "trial")
+        assert before.gpu.need.mb is None
+        assert "the memory it needs is not known yet" in "\n".join(describe_sending(before))
+        job = send(before, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        job = travels._until_finished(machine, job.name)
+        assert job.state == "done" and job.extra["gpu_peak_mb"] == 1500
+        status(job.name, transport=machine.transport())  # learned once, not twice
+        assert [(r["particles"], r["peak_mb"]) for r in gpu_room.measured("box")] == [
+            (2000, 1500)]
+        after = _second(machine, tmp_path)
+        assert after.gpu.need.mb == 1725    # 1500 MB and 15% more
+        assert "the most any of 1 run measured on box held" in after.gpu.need.how
+
+    def test_a_study_that_does_not_fit_is_refused_with_the_numbers(self, machine, tmp_path):
+        from fastmdxplora.remote.gpu_room import learn
+
+        _gpus(machine, (0, UUID_0, 24000, 8000))
+        learn("box", job="before", particles=2000, peak_mb=20000, gpu="Stand-in GPU")
+        sending = _second(machine, tmp_path)
+        assert "needs about 23,000 MB of GPU memory" in sending.no_room
+        assert "GPU 0 on box is 8,000 MB" in sending.no_room
+        assert sending.no_room in sending.notes      # a dry run still shows its plan
+        with pytest.raises(ValueError) as caught:
+            send(sending, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
+        assert refusal_of(caught.value).code == "remote.machine.no_room"
+        assert not (machine.home / "fastmdxplora-jobs" / "second").exists()
+
+    def test_more_than_any_gpu_holds_is_said_so(self, machine, tmp_path):
+        from fastmdxplora.remote.gpu_room import learn
+
+        _gpus(machine, (0, UUID_0, 16000, 16000))
+        learn("box", job="before", particles=2000, peak_mb=20000, gpu="Stand-in GPU")
+        assert "more than GPU 0 on box (Stand-in GPU) has at all (16,000 MB)" in _second(
+            machine, tmp_path).no_room
+
+    def test_a_study_from_here_still_starting_keeps_its_room(self, machine, tmp_path):
+        from fastmdxplora.remote.gpu_room import learn
+
+        machine.env["FAKE_SLEEP"] = "30"
+        _gpus(machine, (0, UUID_0, 24000, 10000))
+        learn("box", job="before", particles=2000, peak_mb=6000, gpu="Stand-in GPU")
+        first = _send(machine)                      # holds nothing on the GPU yet
+        try:
+            second = _second(machine, tmp_path)
+            assert "6,900 MB of it kept for trial, still starting" in "\n".join(
+                second.gpu.lines)
+            assert "box is 3,100 MB" in second.no_room
         finally:
             cancel(first.name, transport=machine.transport())
 
-    def test_a_job_that_ended_is_asked_about_and_frees_the_machine(self, machine, tmp_path):
-        machine.env["FAKE_SLEEP"] = "5"
+    def test_two_sends_at_once_do_not_both_take_the_room_for_one(self, machine, tmp_path):
+        import threading
+
+        from fastmdxplora.remote.gpu_room import learn
+
+        machine.env["FAKE_SLEEP"] = "30"
+        _gpus(machine, (0, UUID_0, 24000, 10000))
+        learn("box", job="before", particles=2000, peak_mb=6000, gpu="Stand-in GPU")
+        planned = [_second(machine, tmp_path, f"s{i}") for i in range(2)]
+        outcomes: list[object] = []
+
+        def go(sending) -> None:
+            try:
+                outcomes.append(send(sending, transport=machine.transport(),
+                                     local_runner=machine.local, code=RELEASE))
+            except ValueError as exc:
+                outcomes.append(refusal_of(exc).code)
+
+        threads = [threading.Thread(target=go, args=(p,)) for p in planned]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        sent = [o for o in outcomes if not isinstance(o, str)]
+        try:
+            assert len(sent) == 1
+            assert outcomes.count("remote.machine.no_room") == 1
+        finally:
+            for job in sent:
+                cancel(job.name, transport=machine.transport())
+
+    def test_the_room_is_asked_again_as_the_run_starts(self, machine, tmp_path, monkeypatch):
+        from fastmdxplora.remote import send as sending_module
+        from fastmdxplora.remote.gpu_room import learn
+
+        _gpus(machine, (0, UUID_0, 24000, 10000))
+        learn("box", job="before", particles=2000, peak_mb=6000, gpu="Stand-in GPU")
+        sending = _second(machine, tmp_path)
+        assert sending.no_room == ""
+        # Taken from elsewhere between the send's own check and the start.
+        monkeypatch.setattr(sending_module, "_room_now", lambda *args: None)
+        _gpus(machine, (0, UUID_0, 24000, 1000))
+        job = send(sending, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        job = travels._until_finished(machine, job.name)
+        assert job.state == "failed"
+        assert job.detail == ("not started: its GPU had 1,000 MB free as it started, "
+                              "and it needs about 6,900 MB")
+        assert not (machine.home / "fastmdxplora-jobs" / "second" / "run").exists()
+
+    def test_a_study_on_the_cpu_does_not_ask_the_gpus(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 10))
+        machine.study.write_text(machine.study.read_text()
+                                 + "simulation:\n  platform: CPU\n")
+        sending = _second(machine, tmp_path)
+        assert sending.gpu is None and "CUDA_VISIBLE_DEVICES" not in sending.script
+        calls = machine.home / "nvidia-smi.calls"   # the inspection's own is not this
+        assert "utilization.gpu" not in (calls.read_text() if calls.exists() else "")
+
+    def test_gpus_the_config_names_are_the_ones_checked(self, machine, tmp_path):
+        from fastmdxplora.remote.gpu_room import learn
+
+        _gpus(machine, (0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 3000))
+        learn("box", job="before", particles=2000, peak_mb=6000, gpu="Stand-in GPU")
+        text = machine.study.read_text()
+        machine.study.write_text(text + "simulation:\n  device_index: '1'\n")
+        sending = _second(machine, tmp_path)
+        assert "export CUDA_DEVICE_ORDER=PCI_BUS_ID" in sending.script
+        assert "CUDA_VISIBLE_DEVICES" not in sending.script
+        assert "GPU 1 on box is 3,000 MB" in sending.no_room
+        machine.study.write_text(text + "simulation:\n  device_index: '3'\n")
+        assert "The config names GPU 3, and box has GPU 0, 1." == _second(
+            machine, tmp_path).no_room
+
+    def test_runs_side_by_side_are_not_learned_from(self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 23000))
+        machine.study.write_text(machine.study.read_text()
+                                 + "execution:\n  workers: 2\n")
+        assert _second(machine, tmp_path).gpu.learn is False
+
+    def test_a_machine_without_nvidia_smi_is_sent_to_and_said(self, machine, tmp_path):
+        sending = _second(machine, tmp_path)
+        assert sending.gpu is None and sending.no_room == ""
+        assert any("no GPU that nvidia-smi reads" in note for note in sending.notes)
+
+    def test_a_damaged_gpu_record_is_read_as_none(self, machine, tmp_path):
+        from fastmdxplora.remote.jobs import load_job, save_job
+
+        machine.env["FAKE_SLEEP"] = "30"
+        _gpus(machine, (0, UUID_0, 24000, 23000))
         first = _send(machine)
-        # An answer kept from while it ran, under 30 s old, is not the answer.
-        assert status(first.name, transport=machine.transport(),
-                      max_age_s=STATUS_KEPT_S).state == "running"
-        _ended_there(first)
-        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                         code=RELEASE, transport=machine.transport())
-        assert second.busy == ""
+        try:
+            job = load_job(first.name)
+            job.extra["gpu"] = {"uuids": [UUID_0], "need_mb": "lots"}
+            save_job(job)
+            assert status(first.name, transport=machine.transport()).state == "running"
+            assert _second(machine, tmp_path).no_room == ""
+        finally:
+            cancel(first.name, transport=machine.transport())
+
+
+class TestWhatAStudyNeeds:
+    @pytest.fixture(autouse=True)
+    def settings(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+
+    def test_one_run_is_scaled_up_by_particles_and_never_down(self):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        learn("box", job="a", particles=10_000, peak_mb=1000, gpu="g")
+        assert need_for("box", 20_000).mb == 2300
+        assert need_for("box", 5_000).mb == 1150
+        assert need_for("box", 20_000, at_once=2).mb == 4600
+
+    def test_runs_of_different_sizes_give_a_line(self):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        learn("box", job="a", particles=10_000, peak_mb=600, gpu="g")
+        learn("box", job="b", particles=110_000, peak_mb=1600, gpu="g")
+        # 500 MB, and 10 MB per 1,000 particles: 1,100 MB, and 15% more.
+        assert need_for("box", 60_000).mb == 1265
+        assert need_for("box", 0).mb == 690          # never below the least measured
+
+    def test_another_machine_has_its_own_runs(self):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        learn("box", job="a", particles=10_000, peak_mb=1000, gpu="g")
+        assert need_for("other", 10_000).mb is None
+
+    def test_a_machine_s_answer_is_read_only_where_plain(self):
+        from fastmdxplora.remote.gpu_room import room_from
+
+        room = room_from({
+            "gpu": [f"0, {UUID_0}, A, B, 24000, 1000, 23000, [N/A]",
+                    "1, GPU-x; rm -rf ~, Bad, 24000, 0, 24000, 0",
+                    f"2, {UUID_1}, C, 24000, x, 23000, 0"],
+            "app": [f"{UUID_0} 77 500 77", f"{UUID_0} 78 lots 78", "GPU-$(id) 1 1 1"]})
+        assert [(g.index, g.name, g.busy_pct) for g in room.gpus] == [(0, "A, B", None)]
+        assert room.used_by("77", UUID_0) == 500 and len(room.apps) == 1
+        assert room_from({"gpus": ["none"]}) is None and room_from({}) is None
+
+    def test_a_record_of_runs_that_cannot_be_read_gives_none(self, tmp_path):
+        from fastmdxplora.remote.gpu_room import measured, need_for
+
+        folder = tmp_path / "settings" / "gpu_memory"
+        folder.mkdir(parents=True)
+        (folder / "box.json").write_text('{"runs": [{"particles": "x", "peak_mb": 1}, 3]}')
+        assert measured("box") == [] and need_for("box", 10).mb is None
+        (folder / "box.json").write_text("not json")
+        assert measured("box") == []
 
 
 # ---------------------------------------------------------------------------
@@ -475,13 +711,23 @@ class TestAnAIAppAndOtherFolders:
         app.machine.env["FAKE_SLEEP"] = "30"
         other = _send(app.machine)          # results go outside the workspace
         try:
-            _, done = _start(app, answer=YES)
-            assert done["isError"]
-            said = _text(done)
-            assert said.startswith("box is running a study sent from this computer.")
-            assert other.name not in said
+            first, done = _start(app, answer=YES)
+            asked = first["inputRequests"]["send"]["params"]["message"]
+            assert "box is busy: 1 other study sent from here is running there." in asked
+            assert other.name not in asked
+            assert _text(done).startswith("Sent to box as job ghg_run")
         finally:
-            cancel(other.name, transport=app.machine.transport())
+            for name in (other.name, "ghg_run"):
+                cancel(name, transport=app.machine.transport())
+
+    def test_a_study_that_does_not_fit_is_refused_before_the_person_is_asked(self, app):
+        from fastmdxplora.remote.gpu_room import learn
+
+        _gpus(app.machine, (0, UUID_0, 24000, 1000))
+        learn("box", job="before", particles=2000, peak_mb=6000, gpu="Stand-in GPU")
+        first, _ = _start(app, answer=YES)
+        assert first["isError"] and "needs about 6,900 MB" in _text(first)
+        assert not _sent(app)
 
     def test_a_job_that_wrote_nothing_says_why_from_its_log(self, app):
         import shutil
@@ -711,24 +957,11 @@ class TestThirdReview:
               code=RELEASE)
         assert not (machine.back / "remote_job.log").exists()
 
-    def test_a_job_cancelled_and_still_stopping_keeps_the_machine_busy(
-            self, machine, tmp_path):
-        env = machine.home / ".conda" / "envs" / "fastmdx-1.0" / "bin" / "fastmdx"
-        travels._tool(env, "trap '' TERM\n: > \"$HOME/trapped\"\nsleep 6")
+    def test_a_job_cancelled_is_not_said_to_be_running(self, machine, tmp_path):
+        machine.env["FAKE_SLEEP"] = "30"
         first = _send(machine)
-        deadline = time.monotonic() + 30
-        while not (machine.home / "trapped").exists():
-            assert time.monotonic() < deadline
-            time.sleep(0.05)
         cancel(first.name, transport=machine.transport())
-        second = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                         code=RELEASE, transport=machine.transport())
-        assert second.busy == first.name
-        assert any("still stopping" in note for note in second.notes)
-        _stopped(first)
-        again = prepare(machine.study, "box", output=str(tmp_path / "back" / "second"),
-                        code=RELEASE, transport=machine.transport())
-        assert again.busy == ""
+        assert _second(machine, tmp_path).running == []
 
     @pytest.mark.parametrize("name", ["trial\n", "box\n"])
     def test_a_name_ending_in_a_line_break_is_refused(self, name):
@@ -846,7 +1079,7 @@ class TestFourthReview:
         (jobs_dir() / "partial.json").write_text('{"name": "partial"}')
         sending = prepare(machine.study, "box", output=str(tmp_path / "back" / "x"),
                           code=RELEASE, transport=machine.transport())
-        assert sending.busy == ""
+        assert sending.running == []
         assert api.jobs(under=tmp_path) == []
 
     def test_what_a_fetch_writes_is_readable_as_any_file_here(self, machine):
@@ -865,34 +1098,6 @@ class TestFourthReview:
             os.umask(mask)
         for name in ("fetched.json", "remote_job.log"):
             assert stat.S_IMODE((machine.back / name).stat().st_mode) & 0o044 == 0o044
-
-    def test_two_sends_at_once_put_one_study_on_a_workstation(self, machine, tmp_path):
-        import threading
-
-        machine.env["FAKE_SLEEP"] = "30"
-        planned = [prepare(machine.study, "box", output=str(tmp_path / "back" / f"s{i}"),
-                           code=RELEASE, transport=machine.transport()) for i in range(2)]
-        outcomes: list[object] = []
-
-        def go(sending) -> None:
-            try:
-                outcomes.append(send(sending, transport=machine.transport(),
-                                     local_runner=machine.local, code=RELEASE))
-            except ValueError as exc:
-                outcomes.append(refusal_of(exc).code)
-
-        threads = [threading.Thread(target=go, args=(p,)) for p in planned]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        sent = [o for o in outcomes if not isinstance(o, str)]
-        try:
-            assert len(sent) == 1
-            assert outcomes.count("remote.machine.busy") == 1
-        finally:
-            for job in sent:
-                cancel(job.name, transport=machine.transport())
 
 
 # ---------------------------------------------------------------------------
@@ -1006,7 +1211,7 @@ class TestFifthReview:
         (jobs_dir() / "listy.json").write_text("[]")
         assert api.jobs() == []
         assert prepare(machine.study, "box", output=str(tmp_path / "x"), code=RELEASE,
-                       transport=machine.transport()).busy == ""
+                       transport=machine.transport()).running == []
 
     def test_a_planted_fetch_folder_does_not_come_back(self, machine):
         from pathlib import Path
@@ -1226,7 +1431,7 @@ class TestSixthReview:
         try:
             cancel_free = prepare(machine.study, "box", output=str(machine.back),
                                   code=RELEASE, transport=machine.transport(), force=True)
-            cancel_free.scheduler = "slurm"  # a cluster: not refused as busy
+            cancel_free.scheduler = "slurm"  # on a cluster too
             with pytest.raises(ValueError) as caught:
                 send(cancel_free, transport=machine.transport(),
                      local_runner=machine.local, code=RELEASE)

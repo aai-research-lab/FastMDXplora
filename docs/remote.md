@@ -275,15 +275,39 @@ one.
 once it has ended; one still waiting or running there is refused, on a
 cluster too, so cancel it first.
 
-**One study at a time on a workstation.** A second send to a workstation
-while a job sent from here is waiting or running there is refused
-(`remote.machine.busy`), after asking the machine about that job there and
-then; a job cancelled from here counts until its processes have stopped (a run
-in production stops at its next frame), for up to an hour, where the machine
-has `setsid` to start a job in a process group of its own (a Linux machine
-does; without it, a cancelled job counts as stopped at once). `--dry-run` still shows the plan, with
-a line saying so. A cluster's
-scheduler queues, so any number may be sent to a cluster.
+**Studies share a workstation's GPUs, where they fit.** A send asks the
+workstation's GPUs (`nvidia-smi`) how much memory each has free, and the
+study goes to the one with the most, pinned there by its UUID
+(`CUDA_VISIBLE_DEVICES`). The plan says each GPU's free memory and how busy
+it is, and the jobs sent from here running there: a study sharing a GPU runs
+slower than alone. A study that needs more memory than the GPU has free is
+refused, with the numbers (`remote.machine.no_room`); `--dry-run` still
+shows the plan, with a line saying so. The send asks again just before the
+copy, holding a lock for the machine until the job is recorded, so two sends
+at once do not both take the room for one, and the job script asks once more
+as the run starts, ending with exit code 75 and a line saying why where the
+room has gone.
+
+What a study needs is learned from the runs on that machine. Each job's
+script reads its processes' GPU memory every 15 s, and once a run has ended
+the most it held is kept with its particles (`gpu_memory/<machine>.json` in
+the settings folder). From one run, the need is its memory scaled up by
+particles (never down); from runs of two sizes or more, a straight line
+through them; then 15% more. The particles are estimated from the structure
+file, as the builder's preview estimates them; where they cannot be (a PDB
+identifier, a prepared study), the most any run there held is used. Until a
+run on that machine has finished, the need is not known: the plan says so,
+the GPU with the most free memory is chosen, and nothing is refused. A study
+sent from here and still starting holds little yet (setup takes minutes), so
+what it is expected to need, less what it holds, is kept back for it.
+
+A config that names its GPUs (`simulation.device_index`, or
+`execution.devices` for runs side by side) keeps them, numbered as
+`nvidia-smi` numbers them (`CUDA_DEVICE_ORDER=PCI_BUS_ID`), and each is
+checked for room for the runs on it; only a run alone on its GPU is learned
+from. A study on the `CPU` or `HIP` platform is not checked, nor is a
+machine without `nvidia-smi`, which the plan says. A cluster's scheduler
+gives each job its GPU, so nothing is asked there.
 
 ---
 
@@ -381,4 +405,6 @@ would stop being something that runs anywhere.
 
 The records are kept with your other settings, one file per machine:
 `~/.config/fastmdxplora/machines/<name>.json` (`%APPDATA%\fastmdxplora` on
-Windows), or under `FASTMDXPLORA_CONFIG_DIR` where that is set.
+Windows), or under `FASTMDXPLORA_CONFIG_DIR` where that is set. Beside them,
+`gpu_memory/<name>.json` keeps the GPU memory the last 20 runs there held,
+with their particles, which a study's need is worked out from.

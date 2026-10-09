@@ -200,8 +200,11 @@ does:
 - **Only the files in the config's own folder travel**, never one elsewhere in
   the workspace or outside it (`remote.input.outside`). A prepared study named
   by `setup_from` or `resume_from` may sit beside it.
-- **One study at a time on a workstation** (`remote.machine.busy`); a cluster
-  queues.
+- **Only where its GPUs have room.** A workstation's GPUs are shared; the
+  question says what else sent from this computer is running there, each GPU's
+  free memory, and the one the study goes to. A study that needs more than any
+  has free is refused before you are asked (`remote.machine.no_room`). A
+  cluster's scheduler gives each job its GPU.
 
 The results come back to the config's `output`, or a folder named after the
 file, inside the workspace and not already used. `remote_status` says how the

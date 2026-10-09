@@ -226,6 +226,7 @@ FastMDXplora/
 │       │   ├── installer.py       # Running a plan, once a person has said yes
 │       │   ├── inputs.py          # The files a Config names, gathered to travel with it
 │       │   ├── send.py            # Send, status, fetch and cancel
+│       │   ├── gpu_room.py        # A workstation's GPU memory free, and what a study needs, learned from runs there
 │       │   ├── api.py             # The same from a program or an AI app: records only, no prompts
 │       │   ├── jobs.py            # Per-user records of the studies sent
 │       │   └── describe.py        # What `fastmdx remote` prints

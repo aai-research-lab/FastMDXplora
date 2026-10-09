@@ -1313,9 +1313,10 @@ TOOLS: tuple[Tool, ...] = (
          "now. Where the AI app can ask, the person is asked here too. Results go to the "
          "config's `output`, or a folder named after the file beside it, never one in "
          "use. The run goes on after the AI app closes; one study runs at a time. With "
-         "`machine`, it is sent to run on that machine instead, only once the person "
-         "agrees here (where they cannot be asked, nothing is sent), with only the "
-         "files in the config's folder; fetch_study brings the results back.",
+         "`machine`, it is sent to run on that machine instead, where its GPUs have "
+         "room for it, only once the person agrees here (where they cannot be asked, "
+         "nothing is sent), with only the files in the config's folder; fetch_study "
+         "brings the results back.",
          {"config": {"type": "string", "description": "A config file in the workspace."},
           "plan_id": {"type": "string", "description": "From check_study, for this file."},
           "machine": {"type": "string", "description": (
