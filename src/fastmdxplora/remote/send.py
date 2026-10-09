@@ -117,6 +117,15 @@ TRAJECTORY_PATTERNS = ("*.dcd", "*.xtc", "*.trr", "*.nc", "*.chk")
 _SLURM_WAITING = frozenset({"PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD",
                             "REQUEUE_FED", "RESV_DEL_HOLD", "SPECIAL_EXIT"})
 
+#: Every state SLURM gives a job, as squeue and sacct write them.
+_SLURM_WORDS = frozenset({
+    "PENDING", "RUNNING", "SUSPENDED", "COMPLETED", "COMPLETING", "CANCELLED",
+    "FAILED", "TIMEOUT", "NODE_FAIL", "PREEMPTED", "BOOT_FAIL", "DEADLINE",
+    "OUT_OF_MEMORY", "CONFIGURING", "RESIZING", "REQUEUED", "REQUEUE_FED",
+    "REQUEUE_HOLD", "RESV_DEL_HOLD", "REVOKED", "SIGNALING", "SPECIAL_EXIT",
+    "STAGE_OUT", "STOPPED", "LAUNCH_FAILED", "POWER_UP_NODE", "UPDATE_DB",
+    "RECONFIG_FAIL"})
+
 _SLURM_STATES = {
     **{state: READY for state in _SLURM_WAITING},
     "RUNNING": RUNNING, "COMPLETING": RUNNING, "SUSPENDED": RUNNING,
@@ -525,22 +534,25 @@ def _still_its_own(sending: Sending) -> None:
 def _status_script(job: Job) -> str:
     where = shlex.quote(job.remote_dir)
     if job.scheduler == "slurm":
-        # A queue that answers without the job, or says it knows no such
-        # job, has let it go; one that does not answer (a busy controller
-        # times out) says nothing of it.
-        # Its state is a word in capitals on its own line: a warning the
-        # queue prints (a version mismatch, a setting it does not know) is
-        # not one, and is read apart.
-        # The queue's word and its accounting's are said apart: the queue
-        # says what the job is now, accounting only how it was last seen.
-        # The queue is asked a second time, for its complaint alone, only
-        # where it did not answer.
-        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>/dev/null); answered=$?\n'
-                 'state=$(printf \'%s\\n\' "$asked" | grep -E \'^[A-Z_]+$\' | head -n 1)\n'
-                 'if [ "$answered" -eq 0 ]; then [ -z "$state" ] && echo fmdx:slurm_gone=1; '
-                 f'elif squeue -h -j {job.handle} -o %T 2>&1 >/dev/null '
-                 '| grep -q "Invalid job id"; then echo fmdx:slurm_gone=1; fi\n'
+        # Asked once, its output and complaints together: a state is one of
+        # SLURM's words at the start of a line (a warning the queue prints is
+        # not one), with the reason it gives. A queue that answers without
+        # the job, or says it knows no such job, has let it go; one that
+        # does not answer (a busy controller times out) says nothing of it.
+        # Accounting is asked only where the queue gave no state, and its
+        # word is said apart: it says only how the job was last seen.
+        words = "|".join(sorted(_SLURM_WORDS))
+        alive = (f'asked=$(squeue -h -j {job.handle} -o "%T %r" 2>&1; echo "fmdx-rc=$?")\n'
+                 'answered=$(printf \'%s\\n\' "$asked" | sed -n \'s/^fmdx-rc=//p\' '
+                 '| tail -n 1)\n'
+                 f'line=$(printf \'%s\\n\' "$asked" | grep -E \'^({words})( |$)\' '
+                 '| head -n 1)\n'
+                 'state=$(printf \'%s\' "$line" | awk \'{print $1}\')\n'
+                 'if [ "$answered" = 0 ]; then [ -z "$state" ] && echo fmdx:slurm_gone=1; '
+                 'elif printf \'%s\\n\' "$asked" | grep -q "Invalid job id"; then '
+                 'echo fmdx:slurm_gone=1; fi\n'
                  'echo "fmdx:slurm=$state"\n'
+                 'echo "fmdx:slurm_reason=$(printf \'%s\' "$line" | awk \'{print $2}\')"\n'
                  f'[ -z "$state" ] && echo "fmdx:account=$(sacct -n -X -j {job.handle} '
                  f'-o State%30 2>/dev/null | grep -E \'^ *[A-Z_]+\' | head -n 1 '
                  '| awk \'{print $1}\')"\n')
@@ -652,7 +664,14 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     gone = "slurm_gone" in found
     if job.scheduler == "slurm" and slurm in _SLURM_WAITING:
         # Waiting again (requeued): an exit code there is the last run's.
-        job.state, job.detail = READY, slurm.lower()
+        # Why it waits is said, a hold above all, which ends only by hand.
+        reason = (found.get("slurm_reason") or [""])[0].strip()
+        held = reason.startswith("JobHeld")
+        job.state = READY
+        job.detail = slurm.lower() + (
+            f", held ({reason}): it starts only once released"
+            if held else f" ({reason})" if re.fullmatch(r"[A-Za-z_]{1,40}", reason)
+            and reason != "None" else "")
     elif ended_with:
         job.state = DONE if ended_with == "0" else FAILED
         job.detail = "" if ended_with == "0" else f"exit code {ended_with}"
@@ -829,6 +848,14 @@ def _fetch(name: str, with_trajectory: bool, transport: Transport | None,
             + (f" ({job.detail})" if job.detail else "")
             + ". Fetch it once `fastmdx remote status` says done or failed; "
             "to watch it live, tunnel to the GUI there instead.",
+            code="remote.job.unfinished", given=name, state=job.state)
+    if job.extra.get("queue_silent"):
+        # Read as ended before, and the queue does not answer now: it may
+        # still be writing what would be copied.
+        raise StudyError(
+            f"The cluster's queue did not answer, so whether {name} is still going is "
+            f"not known (last read {job.state}). Fetch it once `fastmdx remote status "
+            f"{name}` says it has ended.",
             code="remote.job.unfinished", given=name, state=job.state)
     target = Path(job.local_output)
     target.mkdir(parents=True, exist_ok=True)
@@ -1197,29 +1224,30 @@ def cancel(name: str, *, transport: Transport | None = None) -> Job:
 
 def _cancel(name: str, transport: Transport | None) -> Job:
     job = load_job(name)
-    # A cluster's job read as failed may only have gone unanswered: asked
-    # again below, as one still going is.
+    # A cluster's job read as failed may have been misread (a queue that
+    # did not answer read as an end, before that was told apart): asked
+    # again below, at most every 30 s, as one still going is.
     if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED):
         return job
     link = transport or Transport(job.machine)
-    job = _status(name, link, 0)
+    job = _status(name, link, STATUS_KEPT_S if job.state == FAILED else 0)
+    if job.state in FINISHED and job.scheduler == "slurm" and job.extra.get("queue_silent"):
+        # Read as failed, and the queue does not answer now: nothing says
+        # whether it is still going, so nothing is signalled.
+        raise StudyError(
+            f"The cluster's queue did not answer, so whether {job.name} is still going "
+            f"is not known (last read {job.state}"
+            + (f", {job.detail}" if job.detail and "did not answer" not in job.detail
+               else "")
+            + "). Nothing was stopped: cancel it again in a minute, or with "
+            f"`scancel {job.handle}` there.",
+            code="remote.job.cancel_not_taken", job=job.name, machine=job.machine)
     # A job the machine says has ended is let be: a process's number may be
-    # another's by now, and an ended job's record keeps how it ended. Only a
-    # cluster's job read as failed whose queue did not answer now is
-    # stopped all the same, as it may still be going.
-    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED
-                                      and job.extra.get("queue_silent")):
+    # another's by now, and an ended job's record keeps how it ended.
+    if job.state in FINISHED:
         return job
     if job.scheduler == "slurm":
         stopped = link.run(["scancel", job.handle])
-        if stopped.returncode == 0 and job.state == FAILED:
-            # Read as failed and asked while the queue was silent: stopped
-            # all the same, in case, and how it was last read is kept.
-            job.detail = (f"{job.detail}; cancelled {now_utc()} while the queue did "
-                          "not answer")[:_SAID_CHARS]
-            job.extra["cancelled_at"] = time.time()
-            save_job(job)
-            return job
         if stopped.returncode != 0:
             # Not stopped as far as anyone knows: its record keeps saying
             # what was last known, and it is asked about again.

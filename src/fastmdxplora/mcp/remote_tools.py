@@ -161,7 +161,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     if where is None:
         raise ToolError(f"The results folder {requested} is outside the workspace.")
     _unused(ctx, where)
-    if _nobody_to_ask(ctx):
+    if _nobody_to_ask(ctx, f"start_study:{file}:{plan_id}:{machine}:"):
         # Refused before the machine is asked anything: a call that cannot
         # end in a send does not reach it.
         _send_unconfirmed(ctx, file, machine, where)
@@ -235,14 +235,15 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
             f"finished; cancel_study stops it. Its folder there: {job.remote_dir}.")
 
 
-def _nobody_to_ask(ctx: Context) -> bool:
-    """Whether this call can neither ask the person nor carries their answer."""
+def _nobody_to_ask(ctx: Context, about: str) -> bool:
+    """Whether this call can neither ask the person nor carries their answer
+    to a question about ``about`` (this send of this file to this machine)."""
     call = ctx.call
     if call is None:
         return True
     # An answer counts only where it comes back on a state this server gave
-    # out: a made-up one would have the machine asked on every call.
-    return not call.answers_a_question("start_study:", "send") and not call.can_ask()
+    # out for such a send: another would have the machine asked every call.
+    return not call.answers_a_question(about, "send") and not call.can_ask()
 
 
 def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> NoReturn:
@@ -332,7 +333,7 @@ def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:
 
 def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
     from fastmdxplora.remote import api
-    from fastmdxplora.remote.jobs import ABANDONED, FAILED, FINISHED
+    from fastmdxplora.remote.jobs import ABANDONED, FINISHED
 
     job = _job_here(ctx, args["job"])
     try:
@@ -341,8 +342,11 @@ def _cancel_study(ctx: Context, args: dict[str, Any]) -> str:
         job = api.status(job.name)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
         _refuse_there(exc, job.machine)
-    if job.state in FINISHED and not (job.scheduler == "slurm" and job.state == FAILED
-                                      and job.extra.get("queue_silent")):
+    if job.state in FINISHED and job.extra.get("queue_silent"):
+        return (f"The cluster's queue did not answer, so whether {job.name} is still "
+                f"going is not known (last read {job.state}). Nothing was stopped; ask "
+                "again in a minute.")
+    if job.state in FINISHED:
         return f"{job.name} has ended already ({job.state})."
     agreed = _went_ahead(ctx, "cancel", (
         f"Stop {job.name} on {job.machine}? It stops where it is; its folder there "

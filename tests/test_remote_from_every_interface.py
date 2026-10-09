@@ -2129,11 +2129,8 @@ class TestFourteenthReviewKRunawayPendingAccounting:
 
 
 class TestFourteenthReviewKTheQueueReadThroughAFileInTheJobFolder:
-    """The status script keeps squeue's stderr in .fmdx-queue in the job's
-    folder: where that file cannot be made (inode quota spent, as a job that
-    ran out of it leaves things; here a folder of that name stands in), the
-    queue is never asked, and a job the queue no longer knows reads as
-    still running, so it can be neither fetched nor cancelled."""
+    """The queue's complaints are read with its answer, through no file in
+    the job's folder: a folder of that name there changes nothing."""
 
     def test_a_job_gone_from_the_queue_is_not_left_running(self, machine):
         _queued_h(machine, GONE_K, NO_ACCOUNTING_H, state="running")
@@ -2244,12 +2241,9 @@ class TestFourteenthReviewLDamagedMachineRecordHoldingThisCode:
         from fastmdxplora.remote.machines import load_machine, readiness
 
         self._damaged(machine)
-        try:
+        with pytest.raises(ValueError) as caught:
             readiness(load_machine("box"), RELEASE)
-        except ValueError:
-            return  # refused by name: what the branch says it does
-        except Exception as exc:  # noqa: BLE001
-            pytest.fail(f"{type(exc).__name__} escaped: {exc}")
+        assert "The record for 'box'" in str(caught.value)
 
 
 # ---------------------------------------------------------------------------
@@ -2285,7 +2279,7 @@ class TestFourteenthReviewLCancelOfAnEndedJobWhileTheQueueIsSilent:
         travels._tool(machine.home / "slurm-bin" / "squeue", QUEUE_TIMES_OUT_L)
         travels._tool(machine.home / "slurm-bin" / "sacct", NO_ACCOUNTING_L)
         job = cancel("queued", transport=machine.transport())
-        assert job.state == "failed" and job.detail.startswith("timeout; cancelled ")
+        assert (job.state, job.detail) == ("failed", "timeout")
         assert load_job("queued").state == "failed"
 
 
@@ -2395,3 +2389,104 @@ class TestFourteenthReviewSilenceIsForgotten:
         assert main(["remote", "cancel", "queued"]) == 0
         assert "had ended already (failed, timeout); nothing was stopped" in (
             capsys.readouterr().out)
+
+
+# ---------------------------------------------------------------------------
+# The fifteenth review's cases (a cancel or fetch while the queue is silent)
+# ---------------------------------------------------------------------------
+QUEUE_SILENT = 'echo "slurm_load_jobs error: Socket timed out on send/recv" >&2; exit 1'
+
+
+def _scancel_sent(machine) -> bool:
+    return any(c.startswith("scancel") for c in machine.commands)
+
+
+class TestFifteenthReviewWhileTheQueueIsSilent:
+    def test_the_command_line_stops_nothing_and_says_why(self, machine, capsys,
+                                                        monkeypatch):
+        from fastmdxplora.cli.main import main
+        from fastmdxplora.remote import send as sending
+
+        monkeypatch.setattr(sending, "Transport", lambda *a, **k: machine.transport())
+        # A record read as failed (as v2.5.8 read a silent queue), the job
+        # possibly still going, the queue silent still.
+        _queued_h(machine, QUEUE_SILENT, NO_ACCOUNTING_H, state="failed")
+        assert main(["remote", "cancel", "queued"]) == 1
+        said = capsys.readouterr()
+        assert not _scancel_sent(machine)
+        assert "whether queued is still going is not known" in said.out + said.err
+        assert "Nothing was stopped" in said.out + said.err
+
+    def test_an_ai_app_is_told_so_without_asking_the_person(self, app):
+        _queued_h(app.machine, QUEUE_SILENT, NO_ACCOUNTING_H, state="failed",
+                  local_output=str(app.root / "queued"))
+        first = _call(app, "cancel_study", capabilities=ELICIT, job="queued")
+        assert first.get("resultType") != "input_required"
+        assert "Nothing was stopped" in _text(first) and not _scancel_sent(app.machine)
+
+    def test_an_ai_app_cancelling_in_a_loop_sends_nothing(self, app):
+        _queued_h(app.machine, QUEUE_SILENT, NO_ACCOUNTING_H, state="failed",
+                  local_output=str(app.root / "queued"))
+        for _ in range(4):
+            _call(app, "cancel_study", job="queued")
+        assert not _scancel_sent(app.machine)
+
+    def test_the_api_cancelling_an_ended_job_in_a_loop_asks_at_most_every_30_s(
+            self, machine):
+        from fastmdxplora.remote import api
+
+        _queued_h(machine, 'echo "slurm_load_jobs error: Invalid job id specified" >&2; '
+                  "exit 1", NO_ACCOUNTING_H, state="failed", exit_code="3")
+        status("queued", transport=machine.transport())
+        before = len(machine.commands)
+        for _ in range(4):
+            assert api.cancel("queued", transport=machine.transport()).detail == \
+                "exit code 3"
+        assert len(machine.commands) - before == 0
+
+    def test_a_job_that_may_still_be_going_is_not_fetched(self, machine):
+        from fastmdxplora.remote.send import fetch
+
+        _queued_h(machine, QUEUE_SILENT, NO_ACCOUNTING_H, state="failed")
+        with pytest.raises(ValueError) as caught:
+            fetch("queued", transport=machine.transport(), local_runner=machine.local)
+        assert refusal_of(caught.value).code == "remote.job.unfinished"
+
+    def test_a_silent_queue_is_asked_once(self, machine):
+        log = machine.home / "squeue-calls"
+        _queued_h(machine, f'echo x >> "{log}"; {QUEUE_SILENT}', NO_ACCOUNTING_H)
+        job = status("queued", transport=machine.transport())
+        assert job.state == "running" and "did not answer" in job.detail
+        assert len(log.read_text().splitlines()) == 1
+
+
+class TestFifteenthReviewAHeldJob:
+    def test_a_held_job_says_it_is_held(self, machine):
+        squeue = ('case "$*" in *%r*) echo "PENDING JobHeldUser";; '
+                  '*) echo PENDING;; esac; exit 0')
+        _queued_h(machine, squeue, NO_ACCOUNTING_H, state="ready")
+        job = status("queued", transport=machine.transport())
+        assert (job.state, job.detail) == (
+            "ready", "pending, held (JobHeldUser): it starts only once released")
+
+    def test_a_waiting_job_says_why(self, machine):
+        _queued_h(machine, 'echo "PENDING Priority"', NO_ACCOUNTING_H, state="ready")
+        assert status("queued", transport=machine.transport()).detail == \
+            "pending (Priority)"
+
+
+class TestFifteenthReviewTheSendGate:
+    def test_a_local_start_s_state_does_not_reach_the_machine(self, app):
+        from fastmdxplora.mcp.tools import plan_id_of
+
+        file = app.root / "ghg.yml"
+        state = app.server.state_for(
+            "tools/call", f"start_study:{file}:{plan_id_of(file)}:{app.root / 'other'}")
+        arguments = {"config": "ghg.yml", "plan_id": plan_id_of(file), "machine": "box"}
+        for _ in range(3):
+            result = app.request("tools/call", {
+                "name": "start_study", "arguments": arguments,
+                "inputResponses": {"send": YES}, "requestState": state},
+                capabilities={})["result"]
+            assert "Sent to" not in _text(result)
+        assert app.machine.commands == []

@@ -408,12 +408,16 @@ print("\n".join(describe_sending(sending)))   # what travels, sizes, job.sh
 job = api.send_planned(sending)
 
 api.status(job.name)               # asked of the machine at most every 30 s
-sizes = api.fetch_sizes(job.name)  # bytes, with and without trajectories
+sizes = api.fetch_sizes(job.name, max_age_s=30)  # bytes, kept 30 s once ended
 job, warnings = api.fetch(job.name, with_trajectory=False,
                           most_bytes=sizes.bringing(False))  # caps any one file
-api.cancel(job.name)
+job = api.cancel(job.name)         # "abandoned" once stopped; an ended job as it ended
 api.jobs(under="runs")             # the jobs whose results come back under runs/
 ```
+
+`api.cancel` returns a job that had ended as it ended, and refuses a cancel
+the cluster does not take, or one asked while the cluster's queue does not
+answer about a job last read as failed (`remote.job.cancel_not_taken`).
 
 `api.send(config, machine, output=)` plans and sends in one call. As with
 `remote send`, only the files in the folder holding the Config travel

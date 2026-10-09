@@ -53,8 +53,10 @@ job sent again. The queue's word and its accounting's are read apart:
 accounting that says a job the queue no longer knows is waiting or running
 is not believed. A cancel the cluster does not take is refused
 (`remote.job.cancel_not_taken`), and a job that has ended keeps how it
-ended. A machine record with fields of the wrong kind is refused by name,
-and the listings go on past it.
+ended; one last read as failed whose queue does not answer is neither
+signalled nor fetched. A job waiting in the queue says why, a hold above
+all. A machine record with fields of the wrong kind is refused by name, and
+the listings go on past it.
 
 **Changed:** a fetch copies into a folder of its own inside the results
 folder, takes out links, named pipes and set-id bits, and moves the results

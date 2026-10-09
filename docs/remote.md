@@ -347,7 +347,11 @@ fastmdx remote cancel lysozyme
 stops the job, `scancel` on a cluster or the whole process group on a
 workstation. Its folder on the machine is left as it is. A job the machine says
 has ended is not signalled and keeps how it ended; a cancel the cluster does not
-take is refused, and the job is asked about as before.
+take is refused, and the job is asked about as before. A cluster's job last
+read as failed whose queue does not answer now is neither signalled nor fetched
+(`remote.job.cancel_not_taken`, `remote.job.unfinished`): nothing says whether
+it is still going. A job waiting in the queue says why (its reason), a hold
+above all, which ends only by hand.
 
 ---
 
