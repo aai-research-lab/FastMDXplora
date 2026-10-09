@@ -415,11 +415,14 @@
       function (n) { n.setAttribute("data-state", "done"); });
   }
 
-  /* Under a reply: Useful or Wrong, kept with the conversation for the
-   * Agent's evaluation (a second press takes it back), and what the reply
-   * took, in tokens. Each mark is a line icon named on hover and to a screen
-   * reader (user, 10-09: "those buttons should be line icons"), filled while
-   * pressed, so which is pressed is not said by its colour alone. */
+  /* Under a reply, on one row with Copy: Useful or Wrong, kept with the
+   * conversation for the Agent's evaluation (a second press takes it back),
+   * and what the reply took, in tokens, shown only once its icon is pressed
+   * (user, 10-09: "a button that user needs to click first to reveal the
+   * token info ... on the same row with copy"). Each is a line icon named
+   * on hover and to a screen reader (user, 10-09: "those buttons should be
+   * line icons"), filled while pressed, so which is pressed is not said by
+   * its colour alone. */
   var FEEDBACK = { useful: "Useful", wrong: "Wrong" };
 
   function feedbackShown(b, pressed) {
@@ -442,8 +445,15 @@
 
   function meta(r, entry) {
     var body = r.part("body") || r.node;
-    var row = document.createElement("div");
-    row.className = "agent-meta";
+    /* The reply's own row of tools, Copy first; one is made where a reply
+     * has none, so the marks are never on a row of their own. */
+    var row = body.querySelector(".agent-msg-tools");
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "agent-msg-tools";
+      body.appendChild(row);
+    }
+    row.classList.add("agent-meta");
     ["useful", "wrong"].forEach(function (kind) {
       var b = window.FastMDXIcons.button(kind, FEEDBACK[kind], "agent-feedback");
       b.setAttribute("data-feedback", kind);
@@ -461,13 +471,25 @@
     if (used) {
       var said = document.createElement("span");
       said.className = "agent-usage";
+      said.id = "agent-usage-" + (++usageShown);
       said.textContent = used;
+      said.hidden = true;
+      var show = window.FastMDXIcons.button("usage", "Tokens this reply took",
+                                            "agent-usage-toggle");
+      show.title = "Show the tokens this reply took";
+      show.setAttribute("aria-expanded", "false");
+      show.setAttribute("aria-controls", said.id);
+      show.addEventListener("click", function () {
+        said.hidden = !said.hidden;
+        show.setAttribute("aria-expanded", said.hidden ? "false" : "true");
+        show.title = (said.hidden ? "Show" : "Hide") + " the tokens this reply took";
+      });
+      row.appendChild(show);
       row.appendChild(said);
     }
-    var tools = body.querySelector(".agent-msg-tools");
-    body.insertBefore(row, tools);
     return row;
   }
+  var usageShown = 0;
 
   /* What the Agent is doing, said by its icon beside the reply. */
   var STATES = { working: "Working", waiting: "Waiting for you", done: "Done",

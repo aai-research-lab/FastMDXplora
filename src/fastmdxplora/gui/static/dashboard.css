@@ -3493,11 +3493,17 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-step::before { content: "\2713"; color: var(--status-completed); margin-right: 7px; }
 .agent-step.is-now { color: var(--text-secondary); }
 .agent-step.is-now::before { content: "\2026"; color: var(--status-live); }
-/* Under a reply: Useful or Wrong, and what it took. */
-.agent-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+/* Under a reply, on Copy's row: Useful or Wrong, and what it took, shown
+   once its icon is pressed. The row stays in view, as the marks did. */
+.agent-msg-tools.agent-meta { visibility: visible; flex-wrap: wrap; align-items: center;
+    height: auto; min-height: 24px; gap: 2px 2px;
     font-size: var(--text-xs); color: var(--text-muted); }
 .agent-feedback { border: 1px solid transparent; background: none; color: var(--text-muted);
-    border-radius: 999px; padding: 1px 8px; font: inherit; cursor: pointer; }
+    border-radius: 999px; padding: 0; font: inherit; cursor: pointer; }
+.agent-msg-tools .agent-usage-toggle[aria-expanded="true"] { color: var(--accent-text); }
+/* The marks keep their 28 px target on Copy's row, the tokens icon with them. */
+.agent-msg-tools .agent-feedback, .agent-msg-tools .agent-usage-toggle { width: 28px; height: 28px; }
+.agent-meta .agent-usage { margin-left: 6px; }
 .agent-feedback:hover { color: var(--text-primary); }
 .agent-feedback[aria-pressed="true"] { color: var(--accent-text); border-color: var(--accent-cyan); }
 .agent-feedback[data-feedback="wrong"][aria-pressed="true"] { color: var(--status-error);

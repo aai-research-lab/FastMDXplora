@@ -7,6 +7,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A reply's tokens, when asked
+
+**Changed:** the tokens each of the Agent's replies took ("60,049 tokens in
+(58,416 from the cache, 1,625 written to the cache) · 1,601 out") are shown
+only when asked, by a bars icon on the row of the reply's Copy, Useful and
+Wrong, which were on two rows; the line was under every reply.
+
 ### A run's notice when it ends
 
 **Fixed:** a run's notice is for the study whose status ends it. A study
