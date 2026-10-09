@@ -9,6 +9,7 @@ nobody can answer.
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -2003,6 +2004,7 @@ class TestThirteenthReviewTheQueue:
                             env=Environment(path="/opt/envs/fmdx", version="1.0"),
                             container="", scheduler="slurm", force=False)
         assert "#SBATCH --no-requeue" in script
+        assert "\nrm -f exit_code\n" in script     # a job started again by hand
 
     def test_a_job_sent_again_that_the_cluster_refuses_leaves_the_last_as_it_ended(
             self, machine):
@@ -2087,3 +2089,309 @@ class TestThirteenthReviewRecords:
                 "name": "start_study", "arguments": arguments, "inputResponses": {},
                 "requestState": first["requestState"]}, capabilities={})
         assert app.machine.commands[before:] == []
+
+
+# ---------------------------------------------------------------------------
+# The fourteenth review's cases (accounting apart from the queue, records)
+# ---------------------------------------------------------------------------
+GONE_K = 'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1'
+SCANCEL_GONE_K = ('echo "scancel: error: Kill job error on job id 4242: '
+                'Invalid job id specified" >&2; exit 1')
+
+
+class TestFourteenthReviewKRunawayPendingAccounting:
+    """The queue says it does not know the job; accounting left behind (a
+    runaway record) still says PENDING; the job wrote exit code 0."""
+
+    def test_status_is_not_waiting_forever(self, machine):
+        _queued_h(machine, GONE_K, 'echo "   PENDING "', state="ready", exit_code="0")
+        job = status("queued", transport=machine.transport())
+        assert job.state != "ready", (job.state, job.detail)
+
+    def test_it_can_be_cancelled_or_is_ended(self, machine):
+        _queued_h(machine, GONE_K, 'echo "   PENDING "', state="ready",
+                  scancel=SCANCEL_GONE_K)
+        try:
+            job = cancel("queued", transport=machine.transport())
+        except ValueError as exc:
+            pytest.fail(f"cancel refused: {exc}")
+        assert job.state != "ready"
+
+    def test_its_results_can_be_fetched(self, machine):
+        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.remote.send import fetch
+
+        _queued_h(machine, GONE_K, 'echo "   PENDING "', state="ready", exit_code="0")
+        try:
+            fetch("queued", transport=machine.transport(), local_runner=machine.local)
+        except ValueError as exc:
+            assert refusal_of(exc).code != "remote.job.unfinished", str(exc)
+
+
+class TestFourteenthReviewKTheQueueReadThroughAFileInTheJobFolder:
+    """The status script keeps squeue's stderr in .fmdx-queue in the job's
+    folder: where that file cannot be made (inode quota spent, as a job that
+    ran out of it leaves things; here a folder of that name stands in), the
+    queue is never asked, and a job the queue no longer knows reads as
+    still running, so it can be neither fetched nor cancelled."""
+
+    def test_a_job_gone_from_the_queue_is_not_left_running(self, machine):
+        _queued_h(machine, GONE_K, NO_ACCOUNTING_H, state="running")
+        (machine.home / "fastmdxplora-jobs" / "queued" / ".fmdx-queue").mkdir()
+        job = status("queued", transport=machine.transport())
+        assert job.state == "failed", (job.state, job.detail)
+
+
+class TestFourteenthReviewKAMachineRecordOfTheWrongKinds:
+    """load_machine checks a record by reading it for code "0", which holds
+    no installation, so the fields read only for an installation that holds
+    this computer's code (its `info`), and the GPUs the listings count, are
+    never looked at: such a record passes, and stops the listings."""
+
+    @staticmethod
+    def _write(record):
+        import json
+
+        from fastmdxplora.remote.machines import machines_dir
+
+        (machines_dir() / "broken.json").write_text(json.dumps(record))
+
+    @pytest.mark.parametrize("kind", ["info", "gpus"])
+    def test_the_listings_go_on(self, machine, kind, capsys):
+        from fastmdxplora.remote import api
+        from tests.test_a_study_travels_and_comes_back import RELEASE
+
+        record = {"name": "broken", "inspected_at": "",
+                  "inspection": {"environments": [
+                      {"path": "/opt/fmdx", "version": RELEASE.version}]},
+                  "info": {}}
+        if kind == "info":
+            record["info"] = {"/opt/fmdx": "not a mapping"}
+        else:
+            record["inspection"]["gpus"] = [
+                {"name": ["A100"], "memory_mb": 1, "driver": "x"}]
+        self._write(record)
+        try:
+            names = [m.name for m in api.machines(code=RELEASE)]
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"api.machines raised {type(exc).__name__}: {exc}")
+        assert names == ["box"]
+
+    def test_an_ai_app_still_lists_machines(self, app):
+        from tests.test_a_study_travels_and_comes_back import RELEASE
+        from tests.test_remote_from_every_interface import _call, _text
+
+        self._write({"name": "broken", "inspected_at": "",
+                     "inspection": {"environments": [
+                         {"path": "/opt/fmdx", "version": RELEASE.version}]},
+                     "info": {"/opt/fmdx": "not a mapping"}})
+        result = _call(app, "list_machines")
+        assert not result.get("isError"), _text(result)
+
+
+GONE_L = 'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1'
+NO_ACCOUNTING_L = 'echo "sacct: error: accounting storage is disabled" >&2; exit 1'
+QUEUE_TIMES_OUT_L = 'echo "slurm_load_jobs error: Socket timed out on send/recv" >&2; exit 1'
+
+
+# ---------------------------------------------------------------------------
+# M1: accounting left behind that says PENDING is believed, though the queue
+# no longer knows the job, and it outranks the job's own exit code.
+# ---------------------------------------------------------------------------
+class TestFourteenthReviewLStalePendingAccounting:
+    def test_a_job_that_ended_with_0_is_not_read_as_waiting(self, machine):
+        # Gone from the queue (MinJobAge), the run wrote exit_code 0, and
+        # the accounting record left behind still says PENDING.
+        _queued_h(machine, GONE_L, 'echo "   PENDING "', state="running", exit_code="0")
+        job = status("queued", transport=machine.transport())
+        assert job.state == "done", (job.state, job.detail)
+
+    def test_a_job_gone_with_pending_accounting_is_not_left_waiting(self, machine):
+        # As RUNNING left behind is not believed (TestThirteenthReviewTheQueue),
+        # neither is PENDING: the job is no longer anywhere to wait.
+        _queued_h(machine, GONE_L, 'echo "   PENDING "', state="ready")
+        job = status("queued", transport=machine.transport())
+        assert job.state == "failed", (job.state, job.detail)
+
+
+# ---------------------------------------------------------------------------
+# L1: a damaged machine record that holds this computer's code passes
+# load_machine (checked against CodeIdentity("0") only) and then breaks the
+# listings that read it against the real code.
+# ---------------------------------------------------------------------------
+class TestFourteenthReviewLDamagedMachineRecordHoldingThisCode:
+    def _damaged(self, machine):
+        from fastmdxplora.remote.machines import machines_dir
+
+        env = machine.home / ".conda" / "envs" / "fastmdx-1.0"
+        path = machines_dir() / "box.json"
+        record = json.loads(path.read_text())
+        record["inspection"]["environments"] = [{"path": str(env), "version": "1.0"}]
+        record["info"] = {str(env): "not a mapping"}
+        path.write_text(json.dumps(record))
+
+    def test_the_api_listing_skips_it(self, machine):
+        from fastmdxplora.remote import api
+
+        self._damaged(machine)
+        try:
+            found = api.machines(code=RELEASE)
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"api.machines raised {type(exc).__name__}: {exc}")
+        assert [m.name for m in found] == []
+
+    def test_load_machine_refuses_it_by_name(self, machine):
+        from fastmdxplora.remote.machines import load_machine, readiness
+
+        self._damaged(machine)
+        try:
+            readiness(load_machine("box"), RELEASE)
+        except ValueError:
+            return  # refused by name: what the branch says it does
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"{type(exc).__name__} escaped: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# L2: while the queue is silent, the run's live record overwrites the detail
+# that says so: a job whose node died reads as running, with progress.
+# ---------------------------------------------------------------------------
+class TestFourteenthReviewLSilentQueueDetail:
+    def test_a_silent_queue_is_still_said(self, machine):
+        _queued_h(machine, QUEUE_TIMES_OUT_L, NO_ACCOUNTING_L, state="running")
+        live = machine.home / "fastmdxplora-jobs" / "queued" / "run" / "simulation"
+        live.mkdir(parents=True)
+        (live / "live_status.json").write_text(json.dumps(
+            {"stage": "production", "current_step": 400, "total_planned_steps": 1000}))
+        job = status("queued", transport=machine.transport())
+        assert job.state == "running"
+        assert "did not answer" in job.detail, job.detail
+
+
+# ---------------------------------------------------------------------------
+# L3: Slurm's scancel exits 0 for a job it no longer knows (SIGKILL, the
+# default, ignores ESLURM_INVALID_JOB_ID / ESLURM_ALREADY_DONE). A job read
+# as failed with a time limit, cancelled while the queue is silent, is
+# rewritten as abandoned: how it ended is lost.
+# ---------------------------------------------------------------------------
+class TestFourteenthReviewLCancelOfAnEndedJobWhileTheQueueIsSilent:
+    def test_how_it_ended_is_kept(self, machine):
+        from fastmdxplora.remote.jobs import load_job
+
+        _queued_h(machine, GONE_L, 'echo "TIMEOUT"', state="running")
+        assert status("queued", transport=machine.transport()).detail == "timeout"
+        # Now the controller is busy for squeue and sacct; scancel, a moment
+        # later, reaches it and is told the job is gone, which it ignores.
+        travels._tool(machine.home / "slurm-bin" / "squeue", QUEUE_TIMES_OUT_L)
+        travels._tool(machine.home / "slurm-bin" / "sacct", NO_ACCOUNTING_L)
+        job = cancel("queued", transport=machine.transport())
+        assert job.state == "failed" and job.detail.startswith("timeout; cancelled ")
+        assert load_job("queued").state == "failed"
+
+
+# ---------------------------------------------------------------------------
+# L4: a cancel the cluster did not take is refused as
+# environment.service.machine_unreachable, which refusals.md defines as "ssh
+# could not reach a machine", and the AI app adds sign-in advice to it,
+# though ssh reached the machine and scancel answered.
+# ---------------------------------------------------------------------------
+SCANCEL_TIMES_OUT_L = ('echo "scancel: error: Kill job error on job id 4242: '
+                     'Socket timed out on send/recv operation" >&2; exit 1')
+
+
+class TestFourteenthReviewLACancelNotTakenIsNotAnSshFailure:
+    def test_the_refusal_is_not_said_as_an_unreachable_machine(self, machine):
+        from fastmdxplora.refusals import refusal_of
+
+        _queued_h(machine, "echo RUNNING", NO_ACCOUNTING_L, scancel=SCANCEL_TIMES_OUT_L)
+        with pytest.raises(ValueError) as caught:
+            cancel("queued", transport=machine.transport())
+        assert refusal_of(caught.value).code != "environment.service.machine_unreachable"
+
+    def test_an_ai_app_is_not_told_to_sign_in(self, app):
+        from tests.test_remote_from_every_interface import ELICIT, YES, _call, _text
+
+        _queued_h(app.machine, "echo RUNNING", NO_ACCOUNTING_L, scancel=SCANCEL_TIMES_OUT_L,
+                  local_output=str(app.root / "queued"))
+        first = _call(app, "cancel_study", capabilities=ELICIT, job="queued")
+        done = app.request("tools/call", {
+            "name": "cancel_study", "arguments": {"job": "queued"},
+            "inputResponses": {"cancel": YES}, "requestState": first["requestState"]},
+            capabilities=ELICIT)["result"]
+        assert done.get("isError")
+        assert "second factor" not in _text(done), _text(done)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap (not a defect today): no test fails when the send stops
+# setting the last exit code aside once sbatch takes the new job. With the
+# queue silent while the new job waits, the last run's exit code is read.
+# ---------------------------------------------------------------------------
+class TestFourteenthReviewLResentJobWhileTheQueueIsSilent:
+    def test_the_last_run_s_exit_code_is_not_read(self, machine):
+        from fastmdxplora.remote.send import job_script, prepare, send
+
+        tools = machine.home / "slurm-bin"
+        machine.env["FAKE_EXIT"] = "1"
+        travels._tool(tools / "sbatch", "sh job.sh > job.log 2>&1; echo 4242")
+        travels._tool(tools / "squeue", GONE_L)
+        travels._tool(tools / "sacct", NO_ACCOUNTING_L)
+
+        def slurm_sending():
+            sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+                              code=RELEASE, transport=machine.transport())
+            sending.scheduler = "slurm"
+            sending.script = job_script(remote_dir=sending.remote_dir,
+                                        job_name=sending.job_name,
+                                        env=sending.installation, container="",
+                                        scheduler="slurm", force=True)
+            return sending
+
+        first = slurm_sending()
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        job = send(first, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        assert status(job.name, transport=machine.transport()).state == "failed"
+        travels._tool(tools / "sbatch", "echo 4243")
+        machine.env["PATH"] = machine.env["PATH"].split(":", 1)[1]
+        again = slurm_sending()
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        job = send(again, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        travels._tool(tools / "squeue", QUEUE_TIMES_OUT_L)
+        job = status(job.name, transport=machine.transport())
+        assert job.state == "ready", (job.state, job.detail)
+
+
+class TestFourteenthReviewSilenceIsForgotten:
+    def test_a_queue_silent_once_does_not_let_a_cancel_rewrite_how_a_job_ended(
+            self, machine):
+        from pathlib import Path
+
+        _queued_h(machine,
+                  'echo "slurm_load_jobs error: Socket timed out on send/recv" >&2; '
+                  "exit 1", NO_ACCOUNTING_H)
+        assert status("queued", transport=machine.transport()).extra["queue_silent"]
+        where = Path(machine.home / "fastmdxplora-jobs" / "queued")
+        (where / "exit_code").write_text("3\n")
+        travels._tool(machine.home / "slurm-bin" / "squeue",
+                      'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
+        job = status("queued", transport=machine.transport())
+        assert (job.state, job.detail) == ("failed", "exit code 3")
+        job = cancel("queued", transport=machine.transport())
+        assert (job.state, job.detail) == ("failed", "exit code 3")
+        assert not any("scancel" in command for command in machine.commands)
+
+    def test_the_command_line_says_nothing_was_stopped(self, machine, capsys,
+                                                      monkeypatch):
+        from fastmdxplora.cli.main import main
+        from fastmdxplora.remote import send as sending
+
+        monkeypatch.setattr(sending, "Transport", lambda *a, **k: machine.transport())
+
+        _queued_h(machine,
+                  'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                  'echo "TIMEOUT"')
+        assert main(["remote", "cancel", "queued"]) == 0
+        assert "had ended already (failed, timeout); nothing was stopped" in (
+            capsys.readouterr().out)

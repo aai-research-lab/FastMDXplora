@@ -97,13 +97,13 @@ def machines(*, code: CodeIdentity | None = None) -> list[RunTarget]:
     for name in machine_names():
         try:
             machine = load_machine(name)
-        except ValueError:
+            verdict = readiness(machine, code)
+            found.append(RunTarget(name=name, kind=machine.inspection.kind,
+                                   ready=verdict.ready, summary=verdict.summary,
+                                   gpus=_gpus(machine.inspection),
+                                   inspected_at=machine.inspected_at))
+        except (ValueError, TypeError, AttributeError, KeyError):
             continue  # a record that cannot be read is no machine to offer
-        verdict = readiness(machine, code)
-        found.append(RunTarget(name=name, kind=machine.inspection.kind,
-                               ready=verdict.ready, summary=verdict.summary,
-                               gpus=_gpus(machine.inspection),
-                               inspected_at=machine.inspected_at))
     return found
 
 

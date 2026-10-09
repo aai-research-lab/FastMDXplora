@@ -150,12 +150,20 @@ def load_machine(name: str) -> Machine:
         # Read as the listings read it, so a field of the wrong kind is
         # found here rather than in every listing.
         readiness(machine, CodeIdentity("0"))
+        # Each installation's record is a mapping, which the readiness of a
+        # machine holding this computer's code reads.
+        mapped = all(isinstance(said, dict) for said in machine.info.values())
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise UnknownMachine(
             f"The record for {name!r} at {target} is not a machine's record. "
             "Inspect the machine again to rewrite it.",
             given=name, permitted=machine_names(),
         ) from exc
+    if not mapped:
+        raise UnknownMachine(
+            f"The record for {name!r} at {target} is not a machine's record. "
+            "Inspect the machine again to rewrite it.",
+            given=name, permitted=machine_names())
     if machine.name != name:
         raise UnknownMachine(
             f"The record for {name!r} at {target} names another machine "

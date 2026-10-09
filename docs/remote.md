@@ -264,11 +264,12 @@ in home, and the run is written to `run/` inside it.
 group, so it outlives the connection and can be stopped whole. **On a
 cluster** it is an `sbatch` job asking for one GPU and not to be requeued (run
 again after a preemption, it would find its own run folder and stop: it ends
-instead, read as failed, `preempted`); `--partition` and `--time` are passed
-to it, and without `--time` the partition's default applies. Either way the
-job writes its exit code beside itself when it ends, so a finished run and a
-killed one are told apart; a job sent again keeps the last one's until the
-cluster takes the new one.
+instead, read as failed: `preempted` where the cluster still says so, else no
+longer in its queue); `--partition` and `--time` are passed to it, and without
+`--time` the partition's default applies. Either way the job writes its exit
+code beside itself when it ends, so a finished run and a killed one are told
+apart; a job sent again keeps the last one's until the cluster takes the new
+one.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
 once it has ended; one still waiting or running there is refused, on a

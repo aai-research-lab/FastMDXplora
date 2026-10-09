@@ -531,16 +531,19 @@ def _status_script(job: Job) -> str:
         # Its state is a word in capitals on its own line: a warning the
         # queue prints (a version mismatch, a setting it does not know) is
         # not one, and is read apart.
-        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>.fmdx-queue); answered=$?\n'
+        # The queue's word and its accounting's are said apart: the queue
+        # says what the job is now, accounting only how it was last seen.
+        # The queue is asked a second time, for its complaint alone, only
+        # where it did not answer.
+        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>/dev/null); answered=$?\n'
                  'state=$(printf \'%s\\n\' "$asked" | grep -E \'^[A-Z_]+$\' | head -n 1)\n'
-                 'if grep -q "Invalid job id" .fmdx-queue 2>/dev/null; then '
-                 'echo fmdx:slurm_gone=1; '
-                 'elif [ "$answered" -eq 0 ] && [ -z "$state" ]; then echo fmdx:slurm_gone=1; fi\n'
-                 'rm -f .fmdx-queue\n'
-                 f'[ -z "$state" ] && state=$(sacct -n -X -j {job.handle} '
+                 'if [ "$answered" -eq 0 ]; then [ -z "$state" ] && echo fmdx:slurm_gone=1; '
+                 f'elif squeue -h -j {job.handle} -o %T 2>&1 >/dev/null '
+                 '| grep -q "Invalid job id"; then echo fmdx:slurm_gone=1; fi\n'
+                 'echo "fmdx:slurm=$state"\n'
+                 f'[ -z "$state" ] && echo "fmdx:account=$(sacct -n -X -j {job.handle} '
                  f'-o State%30 2>/dev/null | grep -E \'^ *[A-Z_]+\' | head -n 1 '
-                 '| awk \'{print $1}\')\n'
-                 'echo "fmdx:slurm=$state"\n')
+                 '| awk \'{print $1}\')"\n')
     else:
         alive = f"kill -0 {job.handle} 2>/dev/null && echo fmdx:alive=1\n"
     return (f"cd {where} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
@@ -564,6 +567,12 @@ def _read(text: str) -> dict[str, list[str]]:
             if len(values) < 50:
                 values.append(value[:4096])
     return found
+
+
+def _slurm_word(found: dict[str, list[str]], key: str) -> str:
+    """A state SLURM gave under ``key``, as a word of capitals, or ""."""
+    said = (found.get(key) or [""])[0].strip().split(" ")[0].rstrip("+")
+    return said if re.fullmatch(r"[A-Z_]{1,40}", said) else ""
 
 
 def _progress(live: str) -> str:
@@ -638,44 +647,49 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     ended_with = (found.get("exit_code") or [""])[0].strip()
     if not re.fullmatch(r"-?[0-9]{1,6}", ended_with):
         ended_with = "unreadable" if ended_with else ""
-    slurm = (found.get("slurm") or [""])[0].strip().split(" ")[0].rstrip("+")
-    if not re.fullmatch(r"[A-Z_]{1,40}", slurm):
-        slurm = ""
+    slurm = _slurm_word(found, "slurm")         # the queue's, now
+    account = _slurm_word(found, "account")     # accounting's, as last seen
+    gone = "slurm_gone" in found
     if job.scheduler == "slurm" and slurm in _SLURM_WAITING:
         # Waiting again (requeued): an exit code there is the last run's.
         job.state, job.detail = READY, slurm.lower()
     elif ended_with:
         job.state = DONE if ended_with == "0" else FAILED
         job.detail = "" if ended_with == "0" else f"exit code {ended_with}"
-    elif (job.scheduler == "slurm" and slurm and "slurm_gone" in found
-          and _SLURM_STATES.get(slurm, RUNNING) in (READY, RUNNING)):
-        # The queue does not know it, so accounting that says it is going
-        # is a record left behind (a runaway job), not the job.
-        job.state = FAILED
-        job.detail = ("no longer in the cluster's queue, though its accounting "
-                      f"still says {slurm.lower()}; its log says more")
     elif job.scheduler == "slurm" and slurm:
         job.state = _SLURM_STATES.get(slurm, RUNNING)
         job.detail = slurm.lower()
     elif job.scheduler == "process" and "alive" in found:
         job.state, job.detail = RUNNING, ""
-    elif job.scheduler == "slurm" and "slurm_gone" in found:
+    elif job.scheduler == "slurm" and account and _SLURM_STATES.get(
+            account, RUNNING) not in (READY, RUNNING):
+        # Ended, as accounting saw it end.
+        job.state, job.detail = _SLURM_STATES[account], account.lower()
+    elif job.scheduler == "slurm" and gone and account:
+        # The queue does not know it, so accounting that says it is going
+        # is a record left behind (a runaway job), not the job.
+        job.state = FAILED
+        job.detail = ("no longer in the cluster's queue, though its accounting "
+                      f"still says {account.lower()}; its log says more")
+    elif job.scheduler == "slurm" and gone:
         job.state = FAILED
         job.detail = ("no longer in the cluster's queue, and the cluster keeps no "
-                      "record of how it ended (a time limit, or cancelled there); "
-                      "its log says more")
+                      "record of how it ended (a time limit, a preemption or a node "
+                      "failure, or cancelled there); its log says more")
     elif job.scheduler == "slurm":
-        # Neither the queue nor its accounting answered (a busy controller
-        # times out): that says nothing of the job, so its state stays.
+        # The queue did not answer (a busy controller times out): that says
+        # nothing of the job, so its state stays.
         job.extra["queue_silent"] = True
-        job.detail = "the cluster's queue did not answer; asked again next time"
+        if job.state not in FINISHED:   # how an ended job ended stays said
+            job.detail = "the cluster's queue did not answer; asked again next time"
     else:
         job.state = FAILED
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
     live = (found.get("live") or [""])[0]
     # Progress only of a run going: one waiting, or suspended, has a live
     # record only from an earlier run.
-    if job.state == RUNNING and live and slurm not in ("SUSPENDED",):
+    if (job.state == RUNNING and live and slurm != "SUSPENDED"
+            and not job.extra.get("queue_silent")):
         job.detail = (_progress(live) or job.detail)[:_SAID_CHARS]
     job.extra["log_tail"] = [line[:_SAID_CHARS] for line in
                              _telling(found.get("log", []))[-_SAID_LINES:]]
@@ -1198,6 +1212,14 @@ def _cancel(name: str, transport: Transport | None) -> Job:
         return job
     if job.scheduler == "slurm":
         stopped = link.run(["scancel", job.handle])
+        if stopped.returncode == 0 and job.state == FAILED:
+            # Read as failed and asked while the queue was silent: stopped
+            # all the same, in case, and how it was last read is kept.
+            job.detail = (f"{job.detail}; cancelled {now_utc()} while the queue did "
+                          "not answer")[:_SAID_CHARS]
+            job.extra["cancelled_at"] = time.time()
+            save_job(job)
+            return job
         if stopped.returncode != 0:
             # Not stopped as far as anyone knows: its record keeps saying
             # what was last known, and it is asked about again.
@@ -1206,8 +1228,7 @@ def _cancel(name: str, transport: Transport | None) -> Job:
                 f"The cluster did not take the cancel of {job.name}"
                 + (f": {said}" if said else "") + f". It may still be {job.state}; "
                 f"cancel it again, or with `scancel {job.handle}` there.",
-                code="environment.service.machine_unreachable",
-                machine=job.machine, reason="scancel failed")
+                code="remote.job.cancel_not_taken", job=job.name, machine=job.machine)
     else:
         link.run(["sh", "-c", f"kill -TERM -{job.handle} 2>/dev/null || "
                               f"kill -TERM {job.handle} 2>/dev/null; true"])

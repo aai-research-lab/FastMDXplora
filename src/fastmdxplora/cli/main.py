@@ -2746,13 +2746,18 @@ def _cmd_remote(args: argparse.Namespace) -> int:
     from fastmdxplora.remote.send import job_line
 
     # A record that cannot be read is said, and the others are still listed.
-    machines, unread = [], []
+    from fastmdxplora.remote.describe import overview as said_of
+
+    machines, unread, code = [], [], this_code()
     for name in machine_names():
         try:
-            machines.append(load_machine(name))
-        except ValueError as exc:
-            unread.append(str(exc))
-    for line in overview(machines, this_code()):
+            machine = load_machine(name)
+            said_of([machine], code)  # read as the listing reads it
+            machines.append(machine)
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            unread.append(f"The record for {name!r} could not be read ({exc}). "
+                          f"Inspect the machine again to rewrite it.")
+    for line in overview(machines, code):
         print(line)
     jobs = []
     for name in job_names():
@@ -2848,6 +2853,11 @@ def _remote_job(args: argparse.Namespace) -> int:
         return 0
     if action == "cancel":
         job = cancel(args.job)
+        if job.state != "abandoned":
+            print(f"  {job.name} had ended already ({job.state}"
+                  + (f", {job.detail}" if job.detail else "")
+                  + "); nothing was stopped.")
+            return 0
         print(f"  \u2713 {job.name}: {job.state}. Its folder on {job.machine} "
               f"is left at {job.remote_dir}.")
         return 0

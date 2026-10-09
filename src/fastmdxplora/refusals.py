@@ -868,6 +868,11 @@ CODES: tuple[Code, ...] = (
          "running.",
          Kind.STRUCTURAL, Disclosure.ACTION,
          detail_keys=("given", "state")),
+    Code("remote.job.cancel_not_taken",
+         "A cluster did not take the cancel of a job (its controller did not "
+         "answer, or refused it); the job may still be going.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION,
+         detail_keys=("job", "machine")),
     Code("remote.job.gone",
          "A job's folder is no longer on the machine it ran on.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
