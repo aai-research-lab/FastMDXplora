@@ -104,6 +104,102 @@ class TestTheStudiesPage:
         assert [d["setting"] for d in said["settings"]] == ["simulation.duration_ns"]
         assert said["unrecorded"] == ["simulation.ensemble"]
 
+    def test_a_study_that_never_reached_its_analysis_asked_for_no_other(self, tmp_path):
+        """A study that failed before its analysis was listed as asking for
+        no analyses against the default list another recorded."""
+        import json
+
+        from fastmdxplora.gui.workspace import studies_compared
+
+        ran = _study(tmp_path / "ran", {"analysis": {"include": ["rmsd", "rg"]}})
+        (ran / "manifest.json").write_text(json.dumps(
+            {"phases": [{"name": "analysis", "status": "ok"}]}), encoding="utf-8")
+        failed = _study(tmp_path / "failed", {"analysis": {"include": None}})
+        said = studies_compared(ran, failed)
+        assert "analysis.include" not in [d["setting"] for d in said["settings"]]
+        assert "analysis.include" in said["unrecorded"]
+
+    def test_a_phase_one_study_did_not_run_is_not_compared(self, tmp_path):
+        """A trajectory analysed was listed against a run for its platform
+        ("CPU | auto"), its length and its equilibration."""
+        from fastmdxplora.gui.workspace import studies_compared
+
+        run = _study(tmp_path / "run", {"simulation": {"duration_ns": 0.1, "platform": "CPU"}})
+        analysed = _study(tmp_path / "analysed", {"include_phase": ["analysis", "report"]})
+        settings = [d["setting"] for d in studies_compared(run, analysed)["settings"]]
+        assert "include_phase" in settings
+        assert not [s for s in settings if s.startswith(("simulation.", "setup."))]
+
+    def test_a_study_is_compared_by_the_phases_its_records_say_it_ran(self, tmp_path):
+        """A simulated study whose Config said `[analysis, report]` (as
+        Analyze again wrote it) was compared as a trajectory analysed: a
+        tenfold difference in length went unsaid. And a study that ran its
+        analyses with the default list was listed as "not set" against the
+        same list written out."""
+        import json
+
+        from fastmdxplora.gui.workspace import studies_compared
+
+        names = ["rmsd", "rg"]
+        run = _study(tmp_path / "run", {"simulation": {"duration_ns": 0.1},
+                                        "analysis": {"include": names}})
+        rewritten = _study(tmp_path / "rewritten", {
+            "include_phase": ["analysis", "report"], "simulation": {"duration_ns": 0.01},
+            "analysis": {"include": None}})
+        for study in (run, rewritten):
+            (study / "simulation").mkdir()
+            (study / "simulation" / "live_status.json").write_text(json.dumps(
+                {"status": "completed", "stage_states": {"production": "completed"}}),
+                encoding="utf-8")
+            (study / "manifest.json").write_text(json.dumps({"phases": [
+                {"name": phase, "status": "ok"} for phase in ("setup", "simulation",
+                                                               "analysis", "report")]}),
+                encoding="utf-8")
+            (study / "analysis").mkdir()
+            (study / "analysis" / "analysis_manifest.json").write_text(
+                json.dumps({"plan": names}), encoding="utf-8")
+        said = studies_compared(run, rewritten)
+        settings = [d["setting"] for d in said["settings"]]
+        assert "simulation.duration_ns" in settings
+        assert "analysis.include" not in settings + said["unrecorded"]
+        # Both ran the same four phases, whatever the rewritten Config says.
+        assert "include_phase" not in settings
+
+    def test_a_run_that_ended_early_asked_for_what_it_asked_for(self, tmp_path):
+        """A stopped or failed run compared with a finished one had a row
+        `include_phase ["setup","simulation"] | [all four]`: how far it got,
+        said as a setting it asked for. And a study that ran the default
+        analyses was "not set" against another list."""
+        import json
+
+        from fastmdxplora.gui.workspace import studies_compared
+
+        def recorded(study, phases, plan):
+            (study / "simulation").mkdir()
+            (study / "simulation" / "live_status.json").write_text(json.dumps(
+                {"status": "stopped", "stage_states": {"production": "stopped"}}),
+                encoding="utf-8")
+            (study / "manifest.json").write_text(json.dumps({"phases": [
+                {"name": phase, "status": "ok"} for phase in phases]}), encoding="utf-8")
+            if plan:
+                (study / "analysis").mkdir()
+                (study / "analysis" / "analysis_manifest.json").write_text(
+                    json.dumps({"plan": plan}), encoding="utf-8")
+
+        done = _study(tmp_path / "done", {"analysis": {"include": None}})
+        recorded(done, ("setup", "simulation", "analysis", "report"), ["rmsd", "rg", "sasa"])
+        short = _study(tmp_path / "short", {
+            "include_phase": ["setup", "simulation", "analysis", "report"],
+            "analysis": {"include": ["rmsd", "rg"]}})
+        recorded(short, ("setup", "simulation"), None)
+        said = studies_compared(done, short)
+        assert "include_phase" not in [d["setting"] for d in said["settings"]], said
+        other = _study(tmp_path / "other", {"analysis": {"include": ["rmsd"]}})
+        recorded(other, ("setup", "simulation", "analysis", "report"), ["rmsd"])
+        [row] = [d for d in studies_compared(done, other)["settings"]
+                 if d["setting"] == "analysis.include"]
+        assert "not set" not in json.dumps(row) and "sasa" in json.dumps(row), row
+
     def test_an_analysis_is_named_by_its_heading(self, tmp_path):
         from fastmdxplora.gui.workspace import _label_of
 

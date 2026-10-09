@@ -235,9 +235,34 @@ def studies_compared(first: Path | str, second: Path | str) -> dict[str, Any]:
         from fastmdxplora.refusals import refusal_of
 
         return {"ok": False, "reason": refusal_of(exc).message}
-    found = [d for d in differences(left, right) if not d.where_only]
-    settings = [d.as_record() for d in found if not d.unrecorded]
-    unrecorded = [d.setting for d in found if d.unrecorded]
+    found = [d for d in differences(left, right, ran=(_phases_ran(a), _phases_ran(b)))
+             if not d.where_only]
+
+    def not_reached(d: Any) -> bool:
+        # The analyses left to their default by a study that never reached
+        # its analysis: null there is not a choice of none, and was listed
+        # against the default list the other study recorded.
+        return d.setting == "analysis.include" and any(
+            value is None and not _analysed(where)
+            for value, where in ((d.first, a), (d.second, b)))
+
+    def as_ran(d: Any) -> Any:
+        # Left to the default by a study that ran its analyses: what it ran
+        # is what that default was. Listed as "not set" against the same
+        # list written out, or against another list.
+        if d.setting != "analysis.include":
+            return d
+        first = _ran_analyses(a) if d.first is None else d.first
+        second = _ran_analyses(b) if d.second is None else d.second
+        if (isinstance(first, list) and isinstance(second, list)
+                and sorted(map(str, first)) == sorted(map(str, second))):
+            return None
+        return type(d)(d.setting, d.first if first is None else first,
+                       d.second if second is None else second)
+
+    found = [d for d in (as_ran(d) for d in found) if d is not None]
+    settings = [d.as_record() for d in found if not (d.unrecorded or not_reached(d))]
+    unrecorded = [d.setting for d in found if d.unrecorded or not_reached(d)]
 
     mine, theirs = dict(_means(a)), dict(_means(b))
     measures = []
@@ -257,6 +282,33 @@ def studies_compared(first: Path | str, second: Path | str) -> dict[str, Any]:
     return {"ok": True, "first": card_of(a), "second": card_of(b),
             "settings": settings, "unrecorded": unrecorded, "measures": measures,
             "resolved_at": RESOLVED_AT}
+
+
+def _phases_ran(base: Path) -> set[str] | None:
+    """The phases the study's records say it ran: its Manifest's, and setup
+    and simulation where its live record says it simulated. None where
+    neither says (its Config's phases are read then)."""
+    manifest = _read_json(base / "manifest.json")
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    ran = {str(p.get("name")) for p in phases or [] if isinstance(p, dict) and p.get("name")
+           and str(p.get("status") or "").lower() != "skipped"}
+    if _simulated(base):
+        ran |= {"setup", "simulation"}
+    return ran or None
+
+
+def _ran_analyses(base: Path) -> list[str] | None:
+    """The analyses the study ran, as its analysis manifest planned them."""
+    manifest = _read_json(base / "analysis" / "analysis_manifest.json")
+    plan = manifest.get("plan") if isinstance(manifest, dict) else None
+    return [str(name) for name in plan] if isinstance(plan, list) and _analysed(base) else None
+
+
+def _analysed(base: Path) -> bool:
+    """Whether the study's analysis ran: its Manifest names the phase."""
+    manifest = _read_json(base / "manifest.json")
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    return any(isinstance(p, dict) and p.get("name") == "analysis" for p in phases or [])
 
 
 # ---------------------------------------------------------------------------

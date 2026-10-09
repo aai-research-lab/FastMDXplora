@@ -142,17 +142,53 @@ def settings_of(config: dict[str, Any]) -> dict[str, Any]:
     return flat
 
 
-def differences(first: dict[str, Any], second: dict[str, Any]) -> list[Difference]:
-    """The settings two Configs disagree on, in the order they appear."""
+def differences(first: dict[str, Any], second: dict[str, Any], *,
+                ran: tuple[set[str] | None, set[str] | None] = (None, None)) -> list[Difference]:
+    """The settings two Configs disagree on, in the order they appear.
+
+    ``ran`` is the phases each study's records say it ran, where known: a
+    study whose Config names fewer (Analyze again wrote `[analysis,
+    report]` into a simulated study's) ran what its records say."""
     a, b = settings_of(first), settings_of(second)
+    # A phase one study did not run was not asked anything of: a trajectory
+    # analysed was listed against a run for its platform, its length and
+    # its equilibration ("CPU | auto"). That the phases differ is said once.
+    from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+    not_both = {phase for phase in PHASE_SCHEMAS
+                if not (_runs(a, phase, ran[0]) and _runs(b, phase, ran[1]))}
+    # Where both studies' records say what they ran, the phases each asked
+    # for are its Config's and every phase it ran: a study analysed again
+    # before Analyze again kept its phases says `[analysis, report]` and ran
+    # all four; a run that stopped early asked for all four and reached two,
+    # which is how far it got, not a setting that differs.
+    known = ran[0] is not None and ran[1] is not None
     found = []
+    if known:
+        order = [str(phase) for phase in PHASE_SCHEMAS]
+        asked = [[p for p in order if p in done or _runs(flat, p)]
+                 for flat, done in ((a, ran[0]), (b, ran[1]))]
+        if asked[0] != asked[1]:
+            found.append(Difference("include_phase", asked[0], asked[1]))
     for setting in list(a) + [key for key in b if key not in a]:
+        if setting.split(".", 1)[0] in not_both:
+            continue
+        if known and setting in ("include_phase", "exclude_phase"):
+            continue
         left, right = a.get(setting, ABSENT), b.get(setting, ABSENT)
         if not _same(left, right):
             found.append(Difference(setting, left, right))
     differing = {d.setting for d in found}
     return [d for d in found
             if not any(source in differing for source in FOLLOWS_FROM.get(d.setting, ()))]
+
+
+def _runs(flat: dict[str, Any], phase: str, ran: set[str] | None = None) -> bool:
+    if ran is not None:
+        return phase in ran
+    included = flat.get("include_phase")
+    excluded = flat.get("exclude_phase") or []
+    return (not isinstance(included, list) or phase in included) and phase not in excluded
 
 
 def _unset(value: Any) -> bool:
