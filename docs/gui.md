@@ -41,7 +41,12 @@ you. Nothing is uploaded anywhere.
 
 Everyday controls are line icons, each named when you point at it (and to a
 screen reader): open, browse, tag, close, copy, download, edit, remove, reset,
-clear, compare, back and show. Buttons that run or write something (**Run on
+clear, compare, back and show. Under each of the Agent's replies, a thumb up
+(**Useful**) and a thumb down (**Wrong**) mark the reply, filled while pressed;
+the mark is kept with the conversation (in the study's `agent/conversations/`,
+or the workspace's `.fastmdxplora_agent_conversations/` for a chat of no
+study), for evaluating the Agent, and is sent nowhere. Buttons that run or
+write something (**Run on
 this machine**, **Stop the run**, **Analyze again**, **Write it again**), a
 dialog's answers, tabs, menus, the Viewer's show and hide switches and the
 Agent's starting questions keep their words.

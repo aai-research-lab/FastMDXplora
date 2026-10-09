@@ -417,7 +417,17 @@
 
   /* Under a reply: Useful or Wrong, kept with the conversation for the
    * Agent's evaluation (a second press takes it back), and what the reply
-   * took, in tokens. */
+   * took, in tokens. Each mark is a line icon named on hover and to a screen
+   * reader (user, 10-09: "those buttons should be line icons"), filled while
+   * pressed, so which is pressed is not said by its colour alone. */
+  var FEEDBACK = { useful: "Useful", wrong: "Wrong" };
+
+  function feedbackShown(b, pressed) {
+    b.setAttribute("aria-pressed", pressed ? "true" : "false");
+    var drawn = b.querySelector("svg");
+    if (drawn) drawn.setAttribute("fill", pressed ? "currentColor" : "none");
+  }
+
   function usageSaid(u) {
     if (!u || !(u.input_tokens || u.cache_read_tokens || u.cache_write_tokens)) return "";
     var sent = (u.input_tokens || 0) + (u.cache_read_tokens || 0) + (u.cache_write_tokens || 0);
@@ -435,17 +445,13 @@
     var row = document.createElement("div");
     row.className = "agent-meta";
     ["useful", "wrong"].forEach(function (kind) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.className = "agent-feedback";
+      var b = window.FastMDXIcons.button(kind, FEEDBACK[kind], "agent-feedback");
       b.setAttribute("data-feedback", kind);
-      b.textContent = kind === "useful" ? "Useful" : "Wrong";
-      b.setAttribute("aria-pressed", entry.feedback === kind ? "true" : "false");
+      feedbackShown(b, entry.feedback === kind);
       b.addEventListener("click", function () {
         entry.feedback = entry.feedback === kind ? null : kind;
         Array.prototype.forEach.call(row.querySelectorAll(".agent-feedback"), function (x) {
-          x.setAttribute("aria-pressed", x.getAttribute("data-feedback") === entry.feedback
-            ? "true" : "false");
+          feedbackShown(x, x.getAttribute("data-feedback") === entry.feedback);
         });
         persist();
       });

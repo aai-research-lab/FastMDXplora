@@ -106,6 +106,14 @@ ICONS: dict[str, str] = {
     "expand": '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
     "copy": ('<rect x="8" y="8" width="12" height="12" rx="2"/>'
              '<path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>'),
+    # A reply marked useful, and marked wrong: a thumb up, and turned down.
+    "useful": ('<path d="M7.5 20H5a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 5 10h2.5z"/>'
+               '<path d="M7.5 10l3.6-6.2a1.6 1.6 0 0 1 2.9 1.2L13.3 9h5.2a2 2 0 0 1 2 2.3'
+               'l-1.2 7A2 2 0 0 1 17.3 20H7.5z"/>'),
+    "wrong": ('<g transform="rotate(180 12 12)">'
+              '<path d="M7.5 20H5a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 5 10h2.5z"/>'
+              '<path d="M7.5 10l3.6-6.2a1.6 1.6 0 0 1 2.9 1.2L13.3 9h5.2a2 2 0 0 1 2 2.3'
+              'l-1.2 7A2 2 0 0 1 17.3 20H7.5z"/></g>'),
 }
 
 _MARKER = re.compile(r"<!--icon:([a-z]+):([A-Za-z0-9 _-]+)-->")

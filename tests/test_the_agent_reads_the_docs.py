@@ -1,20 +1,26 @@
-"""The software's own docs, inside the package and read by passage.
+"""The Agent reads the software's own docs, and Useful and Wrong are icons.
 
-The Agent was asked on its page what **Useful** and **Wrong** under its
-replies do and could not say: no look read the docs, and an installed copy
-had none to read, since the package did not ship them (user, 10-09: "why the
+Asked on its page what **Useful** and **Wrong** under its replies do, the
+Agent answered that it could not say: its instructions carried the config
+language and its rules, no look read the docs, and an installed copy had no
+docs to read, since the package did not ship them (user, 10-09: "why the
 agent doesn't have access to the software docs?"; "if that is the
 professinal practice implement it!!"). Now `setup.py` copies `docs/*.md`
-into the wheel as `fastmdxplora/_docs`, a source checkout reads `docs/`, and
-`fastmdxplora.software_docs` finds the passages that answer a question; the
-look `read_docs` gives them to the AI model, which is told to answer a
-question about the software from them and name the page.
+into the wheel as `fastmdxplora/_docs`, a source checkout reads `docs/`,
+`fastmdxplora.software_docs` finds the passages that answer a question, and
+the look `read_docs` gives them to the AI model, which is told to answer a
+question about the software from them and name the page. And the two marks
+under each reply are line icons (user, 10-09: "and those buttons should be
+line icons").
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import runpy
+import tempfile
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -612,3 +618,114 @@ def test_a_build_with_no_docs_says_so(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(step, "warn", warned.append)
     step.run()
     assert len(warned) == 1 and "carries no docs" in warned[0]
+
+
+# ---------------------------------------------------------------------------
+# Useful and Wrong as line icons
+# ---------------------------------------------------------------------------
+def test_the_marks_are_drawn_from_the_page_s_one_icon_set() -> None:
+    from fastmdxplora.gui.sidebar_icons import ICONS
+
+    assert ICONS["useful"].count("<path") == 2
+    assert ICONS["wrong"].startswith('<g transform="rotate(180 12 12)">')
+    script = (ROOT / "src" / "fastmdxplora" / "gui" / "static" / "agent-panel.js").read_text()
+    assert 'window.FastMDXIcons.button(kind, FEEDBACK[kind], "agent-feedback")' in script
+    assert 'b.textContent = kind === "useful"' not in script
+
+
+def test_the_marks_are_found_in_the_docs_by_what_they_look_like() -> None:
+    said = read_docs("what does the thumbs up under a reply do")
+    assert "a thumb up (**Useful**) and a thumb down (**Wrong**)" in said
+
+
+HAS_PLAYWRIGHT = importlib.util.find_spec("playwright") is not None
+
+
+@pytest.fixture
+def session(tmp_path, monkeypatch):
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", tempfile.mkdtemp())
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = tmp_path / "workspace" / "study"
+    (study / "analysis").mkdir(parents=True)
+    started = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    yield started
+    started.server.shutdown()
+
+
+@pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="needs Playwright")
+def test_useful_and_wrong_are_line_icons_named_and_filled_when_pressed(session) -> None:
+    from playwright.sync_api import sync_playwright
+
+    reply = {"ok": False, "answer": "It has 76 residues.", "cites": [], "attempts": [],
+             "usage": {"calls": 1, "input_tokens": 93, "cache_read_tokens": 0,
+                       "cache_write_tokens": 0, "output_tokens": 49}}
+    errors: list[str] = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        try:
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(30000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            page.wait_for_selector("#agent-request", state="visible")
+            page.route("**/api/agent/propose*", lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(reply)))
+            page.fill("#agent-request", "How many residues?")
+            page.keyboard.press("Enter")
+            page.wait_for_selector("#agent-thread .agent-answer:has-text('76 residues')")
+            marks = """() => [...document.querySelectorAll(
+                '#agent-thread .agent-meta [data-feedback]')].slice(-2).map(b => ({
+                kind: b.dataset.feedback, label: b.getAttribute('aria-label'),
+                title: b.title || (window.FastMDXTooltips
+                                   ? window.FastMDXTooltips.titleOf(b) : ''),
+                text: b.textContent.trim(), icon: b.classList.contains('line-btn'),
+                drawn: !!b.querySelector('svg.line-icon path'),
+                pressed: b.getAttribute('aria-pressed'),
+                fill: b.querySelector('svg').getAttribute('fill'),
+                colour: getComputedStyle(b).color,
+                wide: Math.round(b.getBoundingClientRect().width)}))"""
+            before = page.evaluate(marks)
+            page.locator("#agent-thread .agent-meta").last.locator(
+                "[data-feedback=useful]").click()
+            useful = page.evaluate(marks)
+            page.locator("#agent-thread .agent-meta").last.locator(
+                "[data-feedback=wrong]").click()
+            wrong = page.evaluate(marks)
+            page.locator("#agent-thread .agent-meta").last.locator(
+                "[data-feedback=wrong]").click()
+            neither = page.evaluate(marks)
+            page.locator("#agent-thread .agent-meta").last.locator(
+                "[data-feedback=wrong]").click()
+            page.wait_for_timeout(600)
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_selector("#agent-thread .agent-meta [data-feedback=wrong]")
+            kept = page.evaluate(marks)
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.wait_for_timeout(300)
+            phone = page.evaluate("""() => ({
+                marks: [...document.querySelectorAll('#agent-thread .agent-meta [data-feedback]')]
+                    .slice(-2).map(b => { const r = b.getBoundingClientRect();
+                        return [Math.round(r.width), Math.round(r.height),
+                                r.left >= 0 && r.right <= window.innerWidth]; }),
+                sideways: document.documentElement.scrollWidth > window.innerWidth})""")
+        finally:
+            browser.close()
+    assert [(m["kind"], m["label"], m["title"], m["text"], m["icon"], m["drawn"])
+            for m in before] == [("useful", "Useful", "Useful", "", True, True),
+                                 ("wrong", "Wrong", "Wrong", "", True, True)]
+    assert [(m["pressed"], m["fill"]) for m in before] == [("false", "none")] * 2
+    assert [(m["pressed"], m["fill"]) for m in useful] == [("true", "currentColor"),
+                                                           ("false", "none")]
+    assert [(m["pressed"], m["fill"]) for m in wrong] == [("false", "none"),
+                                                          ("true", "currentColor")]
+    assert wrong[1]["colour"] != wrong[0]["colour"] and useful[0]["colour"] != before[0]["colour"]
+    assert [(m["pressed"], m["fill"]) for m in neither] == [("false", "none")] * 2
+    assert [(m["pressed"], m["fill"]) for m in kept] == [("false", "none"),
+                                                         ("true", "currentColor")]
+    assert all(m["wide"] == 28 for m in before)
+    assert phone == {"marks": [[28, 28, True], [28, 28, True]], "sideways": False}
+    assert errors == []
+    assert json.loads(urllib.request.urlopen(session.url + "/api/agent/conversation",
+                                             timeout=10).read())["entries"][-1][
+        "feedback"] == "wrong"
