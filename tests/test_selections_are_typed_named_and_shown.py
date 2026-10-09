@@ -77,6 +77,19 @@ def test_a_typed_selection_names_the_atoms_by_their_place(study):
     assert atoms_selected(pdb, "resname XYZ", key=key)["atoms"] == []
 
 
+@pytest.mark.parametrize("expression", [
+    "resSeq < 10 and name CA", "mass > 12", "resSeq == 10", "name =~ 'C.*'",
+    "resid lt 5", "name eq CA", "(resSeq < 5) and name CA", "resname != ALA"])
+def test_a_property_compared_is_read_as_mdtraj_reads_it(study, expression):
+    # A comparison is how a property takes its value; the check for a
+    # property with none refused every one of these.
+    pdb, key = _pdb(study / "setup" / "topology.pdb")
+    said = atoms_selected(pdb, expression, key=key)
+    topology = md.load_topology(str(study / "setup" / "topology.pdb"))
+    assert said["ok"], said
+    assert said["atoms"] == list(topology.select(expression))
+
+
 @pytest.mark.parametrize("expression, reason", [
     ("", "Type a selection"),
     ("x" * 501, "at most 500 characters"),
@@ -92,6 +105,10 @@ def test_a_typed_selection_names_the_atoms_by_their_place(study):
     # An unfinished range inside it, not only at its end.
     ("resSeq 10 to and name CA", "'to' is followed by 'and'"),
     ("(resSeq 10 to) and name CA", "'to' is followed by ')'"),
+    # A property with no value: every CA was selected, the property dropped.
+    ("resname and name CA", "'resname' is followed by 'and'"),
+    ("name and resSeq 5", "'name' is followed by 'and'"),
+    ("(resSeq) or name CA", "'resSeq' is followed by ')'"),
 ])
 def test_what_cannot_be_read_is_said(study, expression, reason):
     pdb, key = _pdb(study / "setup" / "topology.pdb")

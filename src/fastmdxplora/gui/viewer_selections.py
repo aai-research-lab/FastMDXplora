@@ -77,6 +77,9 @@ def atoms_selected(pdb: bytes | None, expression: Any, *, key: tuple[str, int, i
 #: "to" in a range, and a property named with no value.
 _WAITING = {"and", "or", "not", "!", "&&", "||", "to", "==", "!=", "<", "<=", ">", ">=",
             "eq", "ne", "lt", "le", "gt", "ge", "=~"}
+#: A comparison after a property is how MDTraj takes its value
+#: ("resSeq < 10", "name =~ 'C.*'"), so a property may be followed by one.
+_COMPARES = {"==", "!=", "<", "<=", ">", ">=", "eq", "ne", "lt", "le", "gt", "ge", "=~"}
 _NEEDS_A_VALUE = {"chainid", "code", "element", "index", "mass", "n_bonds", "name",
                   "resSeq", "resc", "rescode", "resi", "resid", "residue", "resn",
                   "resname", "segment_id", "segname", "symbol", "type"}
@@ -100,6 +103,12 @@ def _unfinished(expression: str) -> str | None:
     for word, after in zip(words, words[1:]):
         if word in _WAITING and word not in ("not", "!") and (after in joins or after == ")"):
             return (f"'{word}' is followed by '{after}', not by what it waits for. "
+                    f"Finish it, as in: {EXAMPLE}.")
+        # A property with no value: "resname and name CA" selected every
+        # CA, the property dropped.
+        if word in _NEEDS_A_VALUE and (after in joins - _COMPARES or after == ")"
+                                       or after in _NEEDS_A_VALUE):
+            return (f"'{word}' is followed by '{after}', not by the value it needs. "
                     f"Finish it, as in: {EXAMPLE}.")
     if expression.count("(") != expression.count(")"):
         return f"Its brackets do not close. Finish it, as in: ({EXAMPLE})."
