@@ -127,7 +127,8 @@ def plan_send(config: str | Path, machine: str, *, output: str | Path | None = N
 
     The Config is read as ``explore -c`` reads it and the files it names are
     gathered (only those in its own folder); the machine is asked whether
-    it is ready and free. Nothing is copied. :func:`describe_sending` in
+    it is ready and, for a workstation, whether a GPU has room for it.
+    Nothing is copied. :func:`describe_sending` in
     :mod:`fastmdxplora.remote.send` gives the lines to show.
     """
     load_machine(machine)  # a record, or a refusal naming the ones there are

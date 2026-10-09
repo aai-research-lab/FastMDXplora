@@ -277,37 +277,49 @@ cluster too, so cancel it first.
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
 workstation's GPUs (`nvidia-smi`) how much memory each has free, and the
-study goes to the one with the most, pinned there by its UUID
+study goes to one it fits on: the one with the fewest studies from here,
+then the most free memory. It is pinned there by the GPU's UUID
 (`CUDA_VISIBLE_DEVICES`). The plan says each GPU's free memory and how busy
 it is, and the jobs sent from here running there: a study sharing a GPU runs
 slower than alone. A study that needs more memory than the GPU has free is
 refused, with the numbers (`remote.machine.no_room`); `--dry-run` still
 shows the plan, with a line saying so. The send asks again just before the
 copy, holding a lock for the machine until the job is recorded, so two sends
-at once do not both take the room for one, and the job script asks once more
-as the run starts, ending with exit code 75 and a line saying why where the
-room has gone.
+at once do not both take the room for one; a GPU that no longer has room, or
+GPUs that do not answer, refuse the send, naming another GPU with room where
+there is one. The job script asks once more as the run starts, ending with
+exit code 75 and a line saying why where the room has gone.
 
-What a study needs is learned from the runs on that machine. Each job's
-script reads its processes' GPU memory every 15 s, and once a run has ended
-the most it held is kept with its particles (`gpu_memory/<machine>.json` in
-the settings folder). From one run, the need is its memory scaled up by
-particles (never down); from runs of two sizes or more, a straight line
-through them; then 15% more. The particles are estimated from the structure
-file, as the builder's preview estimates them; where they cannot be (a PDB
-identifier, a prepared study), the most any run there held is used. Until a
-run on that machine has finished, the need is not known: the plan says so,
-the GPU with the most free memory is chosen, and nothing is refused. A study
-sent from here and still starting holds little yet (setup takes minutes), so
-what it is expected to need, less what it holds, is kept back for it.
+What a run needs is learned from the runs on that machine. Each job's script
+reads its processes' GPU memory every 15 s, and once a run alone on its GPU
+has ended, the most it held is kept with its particles and precision
+(`gpu_memory/<machine>.json` in the settings folder). For a new study, from
+runs in its precision: from one size, the most they held, scaled up by
+particles and never down; from two sizes or more, a straight line through
+them, never below a run of the same size or smaller, and past the largest
+never below the largest scaled up by particles; then 15% more. The
+particles are estimated from each run's structure file and setup, as the
+builder's preview estimates them, sweeps included; where they cannot be (a
+PDB identifier, a CIF or SDF file, a membrane, more than 20 kinds of run),
+the most any run there held is used, and the plan says so. Until a run in
+that precision has finished there, the need is not known: the plan says so,
+a GPU is chosen as above, and nothing is refused. A study sent from here
+that does not yet hold what it was expected to need (setup takes minutes)
+has the difference kept back for it.
 
-A config that names its GPUs (`simulation.device_index`, or
-`execution.devices` for runs side by side) keeps them, numbered as
-`nvidia-smi` numbers them (`CUDA_DEVICE_ORDER=PCI_BUS_ID`), and each is
-checked for room for the runs on it; only a run alone on its GPU is learned
-from. A study on the `CPU` or `HIP` platform is not checked, nor is a
-machine without `nvidia-smi`, which the plan says. A cluster's scheduler
-gives each job its GPU, so nothing is asked there.
+Runs side by side count: a study run in parallel needs room for as many
+runs at once as the explorer starts (its `workers`, else one per device
+listed, else the machine's cores, up to the number of runs), and is not
+learned from. A config that names its own GPUs (`simulation.device_index`
+in the study, a system or a sweep, or `execution.devices`) keeps them,
+nothing pinned, and each is checked for room for the runs on it, by its
+number as `nvidia-smi` gives it; where the machine's GPUs are not all alike,
+CUDA may number them otherwise, so their memory is not checked and the plan
+says so. A continuation (`simulation.resume_from`) runs on the GPU its
+study's record names, so none is chosen or checked. A study on the `CPU` or
+`HIP` platform is not checked, nor is a machine without `nvidia-smi`, which
+the plan says. A cluster's scheduler gives each job its GPU, so nothing is
+asked there.
 
 ---
 

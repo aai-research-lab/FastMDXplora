@@ -2,23 +2,23 @@
 
 Studies sent to a workstation share its GPUs, so a send asks the GPUs how
 much memory each has free now (``nvidia-smi``, over the connection already
-open) and goes to the one with the most, pinned there by its UUID in
-``CUDA_VISIBLE_DEVICES``. A study that would not fit is refused before
-anything is copied, with the numbers.
+open) and goes to one it fits on, the one with the fewest studies from here
+and then the most free memory, pinned there by its UUID in
+``CUDA_VISIBLE_DEVICES``. A config that names its own GPUs keeps them,
+checked for room. A study that would not fit is refused before anything is
+copied, with the numbers.
 
 **What a study needs is learned, not guessed.** Each run on a GPU has its
 memory read every 15 s by its own job script, and the most it held is
-recorded with the particles its system had (``cost.json``). From those
-runs on that machine the need of the next is worked out: from one run, its
-memory scaled up by particles (never down); from two or more of different
-sizes, a straight line through them, a fixed part (the CUDA context and
-OpenMM's kernels) and a part per particle. Then 15% more. Until a run on
-that machine has finished, the need is not known, and the plan says so:
-the GPU with the most free memory is chosen and nothing is refused.
+recorded with the particles its system had and its precision
+(``cost.json``). From the runs in a study's precision on that machine its
+need is worked out (:func:`_fitted`), then 15% more. Until such a run has
+finished there, the need is not known, and the plan says so: a GPU is
+chosen and nothing is refused.
 
 **A run just started holds little yet.** Setup can take minutes before the
-simulation takes its memory, so each study sent from here and still running
-keeps back what it was expected to need less what it holds now.
+simulation takes its memory, so each study sent from here that does not
+yet hold what it was expected to keeps back the difference.
 
 Clusters are not asked: their scheduler gives each job its GPU.
 """
@@ -32,6 +32,7 @@ import re
 import tempfile
 import threading
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -142,6 +143,9 @@ def room_from(found: dict[str, list[str]]) -> Room | None:
 # ---------------------------------------------------------------------------
 _LEARNING = threading.Lock()
 
+#: A count kept: a run's particles or its memory in MB.
+_MOST = 10 ** 9
+
 
 def _store(machine: str) -> Path:
     from fastmdxplora.remote.transport import check_machine_name
@@ -150,30 +154,60 @@ def _store(machine: str) -> Path:
     return user_config_dir() / "gpu_memory" / f"{check_machine_name(machine)}.json"
 
 
+def _count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 < value < _MOST
+
+
 def measured(machine: str) -> list[dict[str, Any]]:
-    """The runs measured on ``machine``: each one's particles and the most
-    GPU memory it held, in MB. A record that cannot be read gives none."""
+    """The runs measured on ``machine``: each one's particles, the most GPU
+    memory it held in MB, and its precision. A record that cannot be read
+    gives none."""
     try:
         record = json.loads(_store(machine).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     runs = record.get("runs") if isinstance(record, dict) else None
-    return [run for run in runs or []
-            if isinstance(run, dict)
-            and isinstance(run.get("particles"), int) and run["particles"] > 0
-            and isinstance(run.get("peak_mb"), int) and run["peak_mb"] > 0][-_KEPT:]
+    if not isinstance(runs, list):
+        return []
+    return [run for run in runs
+            if isinstance(run, dict) and _count(run.get("particles"))
+            and _count(run.get("peak_mb"))
+            and isinstance(run.get("precision", "mixed"), str)][-_KEPT:]
 
 
-def learn(machine: str, *, job: str, particles: int, peak_mb: int, gpu: str) -> None:
+@contextmanager
+def _one_learner(target: Path):
+    """One writer of a machine's record at a time, in this process and
+    across processes (a terminal and an AI app learning at once)."""
+    with _LEARNING:
+        try:
+            import fcntl
+        except ImportError:  # Windows: one process at a time is not enforced
+            yield
+            return
+        with open(target.with_name(f".{target.name}.lock"), "a+") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            except OSError:
+                yield
+                return
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def learn(machine: str, *, job: str, particles: int, peak_mb: int, gpu: str,
+          precision: str = "mixed") -> None:
     """Record what a run on ``machine`` held, once per job."""
-    if particles <= 0 or peak_mb <= 0:
+    if not (_count(particles) and _count(peak_mb)):
         return
     target = _store(machine)
-    with _LEARNING:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with _one_learner(target):
         runs = [run for run in measured(machine) if run.get("job") != job]
         runs.append({"job": job, "particles": particles, "peak_mb": peak_mb,
-                     "gpu": gpu[:80]})
-        target.parent.mkdir(parents=True, exist_ok=True)
+                     "gpu": gpu[:80], "precision": precision[:20]})
         handle, scratch = tempfile.mkstemp(dir=target.parent, prefix=f".{machine}.",
                                            suffix=".part")
         try:
@@ -188,22 +222,25 @@ def learn(machine: str, *, job: str, particles: int, peak_mb: int, gpu: str) -> 
 
 @dataclass(frozen=True)
 class Need:
-    """The memory a study is expected to hold on one GPU, and how that was
-    worked out; ``mb`` is ``None`` where it is not known."""
+    """The memory one run of a study is expected to hold on its GPU, and how
+    that was worked out; ``mb`` is ``None`` where it is not known."""
 
     mb: int | None
     how: str
 
 
-def need_for(machine: str, particles: int | None, *, at_once: int = 1) -> Need:
-    """What a study of ``particles`` (``None`` where it could not be worked
-    out here) is expected to hold on a GPU of ``machine``, ``at_once`` of
-    its runs side by side on it."""
-    runs = measured(machine)
+def need_for(machine: str, particles: int | None, *, precision: str = "mixed") -> Need:
+    """What one run of ``particles`` (``None`` where they could not be
+    worked out here) in ``precision`` is expected to hold on a GPU of
+    ``machine``, from the runs measured there in that precision."""
+    runs = [run for run in measured(machine)
+            if run.get("precision", "mixed") == precision]
     if not runs:
-        return Need(None, f"not known yet: no run sent from here has finished on "
-                          f"{machine} with its GPU memory measured; this one is")
-    counted = f"{len(runs)} run{'s' if len(runs) != 1 else ''} measured on {machine}"
+        return Need(None, f"not known yet: no run in {precision} precision sent from here "
+                          f"has finished on {machine} with its GPU memory measured; this "
+                          "one is")
+    counted = (f"{len(runs)} run{'s' if len(runs) != 1 else ''} in {precision} precision "
+               f"measured on {machine}")
     peaks = [(run["particles"], run["peak_mb"]) for run in runs]
     if particles is None:
         expected = max(peak for _, peak in peaks)
@@ -212,24 +249,30 @@ def need_for(machine: str, particles: int | None, *, at_once: int = 1) -> Need:
     else:
         expected = _fitted(peaks, particles)
         how = f"from {counted}, for about {particles:,} particles"
-    mb = math.ceil(round(expected * MARGIN, 6)) * at_once
-    if at_once > 1:
-        how += f", {at_once} runs side by side"
-    return Need(mb, how)
+    return Need(math.ceil(round(expected * MARGIN, 6)), how)
 
 
 def _fitted(peaks: list[tuple[int, int]], particles: int) -> float:
-    """Memory for ``particles``: a line through runs of different sizes, or
-    from one size scaled up by particles; never below the least measured."""
+    """Memory for ``particles``. From runs of one size, the most they held,
+    scaled up by particles and never down. From runs of two sizes or more, a
+    straight line through them; past the largest, never below the largest
+    scaled up by particles; and never below a run of the same size or
+    smaller."""
+    scaled = max(p * max(1.0, particles / n) for n, p in peaks)
     sizes = {n for n, _ in peaks}
-    if len(sizes) >= 2:
-        mean_n = sum(n for n, _ in peaks) / len(peaks)
-        mean_p = sum(p for _, p in peaks) / len(peaks)
-        spread = sum((n - mean_n) ** 2 for n, _ in peaks)
-        slope = sum((n - mean_n) * (p - mean_p) for n, p in peaks) / spread
-        if slope > 0:
-            return max(mean_p + slope * (particles - mean_n), min(p for _, p in peaks))
-    return max(p * max(1.0, particles / n) for n, p in peaks)
+    if len(sizes) < 2:
+        return scaled
+    mean_n = sum(n for n, _ in peaks) / len(peaks)
+    mean_p = sum(p for _, p in peaks) / len(peaks)
+    spread = sum((n - mean_n) ** 2 for n, _ in peaks)
+    slope = sum((n - mean_n) * (p - mean_p) for n, p in peaks) / spread
+    if slope <= 0:
+        return scaled
+    largest = max(sizes)
+    floor = max([p for n, p in peaks if n <= particles] or [min(p for _, p in peaks)])
+    if particles > largest:
+        floor = max(floor, max(p for n, p in peaks if n == largest) * particles / largest)
+    return max(mean_p + slope * (particles - mean_n), floor)
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +281,8 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float:
 @dataclass(frozen=True)
 class Held:
     """A study sent from here and still running on a GPU of the machine:
-    what it was expected to need there, which it may not hold yet."""
+    what it was expected to need there (0 where not known), which it may not
+    hold yet."""
 
     job: str
     uuid: str
@@ -256,35 +300,43 @@ class Choice:
     uuids: tuple[str, ...] = ()
     #: What it needs on each, by UUID, where that is known.
     wanted: dict[str, int] = field(default_factory=dict)
+    #: What one run needs.
     need: Need = field(default_factory=lambda: Need(None, ""))
+    #: Runs side by side on each GPU it uses, by UUID.
+    at_once: dict[str, int] = field(default_factory=dict)
     lines: list[str] = field(default_factory=list)
     #: Why it does not fit now, or "".
     refused: str = ""
     #: Whether its run is alone on its GPU, so what it holds is learned from.
     learn: bool = False
+    #: Its precision, recorded with what it held.
+    precision: str = "mixed"
 
 
-def _kept_back(room: Room, gpu: Gpu, held: list[Held]) -> tuple[int, list[str]]:
-    """Memory on ``gpu`` kept for studies from here that may not hold all
-    they need yet, and their names."""
-    kept, names = 0, []
+def _kept_back(room: Room, gpu: Gpu, held: list[Held]) -> tuple[int, int]:
+    """Memory on ``gpu`` kept for studies from here that do not hold what
+    they were expected to yet, and how many there are."""
+    kept = count = 0
     for each in held:
-        if each.uuid != gpu.uuid:
+        if each.uuid != gpu.uuid or not each.need_mb:
             continue
-        short = max(0, each.need_mb - room.used_by(each.group, gpu.uuid))
-        if short:
-            kept += short
-            names.append(each.job)
-    return kept, names
+        holds = room.used_by(each.group, gpu.uuid)
+        # Expected, without the margin kept above it: a run holding that has
+        # taken its memory.
+        if math.ceil(round(holds * MARGIN, 6)) < each.need_mb:
+            kept += each.need_mb - holds
+            count += 1
+    return kept, count
 
 
-def _said(gpu: Gpu, kept: int, names: list[str]) -> str:
+def _said(gpu: Gpu, kept: int, count: int) -> str:
     line = (f"GPU {gpu.index} ({gpu.name}): {gpu.free_mb:,} MB free of "
             f"{gpu.total_mb:,} MB")
     if gpu.busy_pct is not None:
         line += f", {gpu.busy_pct}% busy"
     if kept:
-        line += f", {kept:,} MB of it kept for {', '.join(names)}, still starting"
+        line += (f", {kept:,} MB of it kept for {count} run{'s' if count != 1 else ''} "
+                 "from here not yet holding what it needs")
     return line
 
 
@@ -293,65 +345,83 @@ def _free(room: Room, held: list[Held]) -> tuple[dict[str, int], list[str]]:
     take, by UUID, and a line saying each."""
     free, lines = {}, []
     for gpu in room.gpus:
-        kept, names = _kept_back(room, gpu, held)
+        kept, count = _kept_back(room, gpu, held)
         free[gpu.uuid] = gpu.free_mb - kept
-        lines.append(_said(gpu, kept, names))
+        lines.append(_said(gpu, kept, count))
     return free, lines
 
 
 def choose(machine: str, room: Room, need: Need, held: list[Held], *,
-           named: list[int] | None = None) -> Choice:
-    """The GPU with the most free memory, less what studies from here are
-    still to take, and whether ``need`` fits on it; or, where the config
-    names its GPUs (``named``, as ``nvidia-smi`` numbers them, once for each
-    run on it at a time), whether it fits on each of those."""
+           at_once: int = 1, named: Counter | None = None) -> Choice:
+    """Where a study goes. With ``named`` (the GPUs the config names, as
+    ``nvidia-smi`` numbers them, each with the runs on it at a time),
+    whether it fits on each of those. Otherwise the GPU it fits on with the
+    fewest studies from here, then the most free memory (less what studies
+    from here are still to take), ``at_once`` of its runs side by side."""
     free, lines = _free(room, held)
-    by_index = {gpu.index: gpu for gpu in room.gpus}
     if named is not None:
-        missing = [i for i in dict.fromkeys(named) if i not in by_index]
+        by_index = {gpu.index: gpu for gpu in room.gpus}
+        missing = [i for i in named if i not in by_index]
         if missing:
             return Choice(need=need, lines=lines, refused=(
                 f"The config names GPU {', '.join(map(str, missing))}, and "
                 f"{machine} has GPU {', '.join(str(g.index) for g in room.gpus)}."))
-        shares = Counter(named)
-        using = [by_index[i] for i in shares]
-        choice = Choice(uuids=tuple(g.uuid for g in using), need=need, lines=lines)
-        if need.mb is not None:
-            choice.wanted = {g.uuid: need.mb * shares[g.index] for g in using}
+        using = [by_index[i] for i in named]
+        choice = Choice(uuids=tuple(g.uuid for g in using), need=need, lines=lines,
+                        at_once={g.uuid: named[g.index] for g in using})
     else:
-        best = max(room.gpus, key=lambda g: (free[g.uuid], -g.index))
+        from_here = Counter(each.uuid for each in held)
+        wanted = need.mb * at_once if need.mb is not None else 0
+
+        def order(g: Gpu) -> tuple:
+            fits = free[g.uuid] >= wanted
+            return (fits, -from_here[g.uuid] if fits else 0, free[g.uuid], -g.index)
+
+        best = max(room.gpus, key=order)
         choice = Choice(gpu=best, uuids=(best.uuid,), need=need, lines=lines,
-                        wanted={best.uuid: need.mb} if need.mb is not None else {})
+                        at_once={best.uuid: at_once})
+    if need.mb is not None:
+        choice.wanted = {uuid: need.mb * n for uuid, n in choice.at_once.items()}
     choice.refused = still_fits(machine, room, choice, held, free=free)
     return choice
 
 
 def still_fits(machine: str, room: Room, choice: Choice, held: list[Held], *,
-               free: dict[str, int] | None = None) -> str:
+               free: dict[str, int] | None = None, again: bool = False) -> str:
     """Why ``choice`` does not fit on ``room`` now, or "": each of its GPUs
-    still there, with room for what it needs on it."""
+    still there, with room for what it needs on it. ``again``: asked as the
+    send starts, of the GPUs the plan chose."""
     if free is None:
         free, _ = _free(room, held)
     by_uuid = {gpu.uuid: gpu for gpu in room.gpus}
     for uuid in choice.uuids:
         gpu = by_uuid.get(uuid)
         if gpu is None:
-            return f"A GPU of {machine} the plan chose ({uuid}) is no longer there."
+            return (f"A GPU of {machine} the plan chose ({uuid}) is no longer there. "
+                    "Plan the send again.")
         wanted = choice.wanted.get(uuid)
-        if wanted is not None and wanted > free[uuid]:
-            return _no_room(machine, gpu, wanted, free[uuid], choice.need,
-                            most=choice.gpu is not None and len(room.gpus) > 1)
+        if wanted is None or wanted <= free[uuid]:
+            continue
+        said = _no_room(machine, gpu, wanted, free[uuid], choice.need,
+                        choice.at_once.get(uuid, 1), chosen=again)
+        if again:
+            others = [g for g in room.gpus if g.uuid != uuid and free[g.uuid] >= wanted]
+            if others:
+                said += (f" GPU {others[0].index} has {free[others[0].uuid]:,} MB free: "
+                         "plan the send again to go there.")
+        return said
     return ""
 
 
-def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need, *,
-             most: bool = False) -> str:
+def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need,
+             at_once: int, *, chosen: bool = False) -> str:
+    side = f", {at_once} runs side by side" if at_once > 1 else ""
+    said = f"This study needs about {wanted:,} MB of GPU memory ({need.how}{side})"
     if wanted > gpu.total_mb:
-        return (f"This study needs about {wanted:,} MB of GPU memory ({need.how}), "
-                f"more than GPU {gpu.index} on {machine} ({gpu.name}) has at all "
+        return (f"{said}, more than GPU {gpu.index} on {machine} ({gpu.name}) has at all "
                 f"({gpu.total_mb:,} MB).")
-    return (f"This study needs about {wanted:,} MB of GPU memory ({need.how}), and "
-            f"{'the most free on any GPU of' if most else 'GPU ' + str(gpu.index) + ' on'} "
-            f"{machine} is {max(free, 0):,} MB"
-            + (f" (GPU {gpu.index}, {gpu.name})" if most else f" ({gpu.name})")
-            + ". Send it once a run there has ended, or to another machine.")
+    where = (f"GPU {gpu.index} on {machine} ({gpu.name}), chosen when the send was "
+             "planned, has" if chosen else
+             f"GPU {gpu.index} on {machine} ({gpu.name}) has")
+    return (f"{said}, and {where} {max(free, 0):,} MB free for it now. Send it once a "
+            "run there has ended, or to another machine.")

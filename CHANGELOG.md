@@ -53,11 +53,14 @@ the Config, and the run there takes none of the machine's (`--no-defaults`).
 Before, any file the Config named anywhere on the computer was sent.
 
 **Changed:** studies sent to a workstation share its GPUs where they fit.
-The plan says each GPU's room and the jobs from here running there. A study
-that needs more than is free is refused (`remote.machine.no_room`;
-`--dry-run` says so and still shows the plan), asked again under a lock at
-the send and once more as the run starts. The need is learned from the runs
-measured on that machine, and is not guessed before the first.
+Each send goes to a GPU it fits on, the one with the fewest studies from
+here and then the most free memory, pinned by its UUID; a config that names
+its own GPUs keeps them. The plan says each GPU's room and the jobs from
+here running there. A study that needs more than is free, for as many runs
+as it runs at once, is refused (`remote.machine.no_room`; `--dry-run` says
+so and still shows the plan), asked again under a lock at the send and once
+more as the run starts. The need is learned from the runs measured on that
+machine, by particles and precision, and is not guessed before the first.
 `--force-overwrite` no longer replaces a job still waiting or running
 (`environment.path.exists`); cancel it first. `--partition` and `--time`
 take letters, digits and `_ . , : + -` only, at most 64. A cluster's job
