@@ -213,3 +213,69 @@ def test_the_report_rounds_an_error_once():
     assert _six_figures(0.0017484) == 0.0017484
     assert with_its_error(0.098812, _six_figures(0.0017484)) == with_its_error(0.098812, 0.0017484)
     assert _six_figures(-45427.123456) == -45427.12346
+
+
+def test_a_mean_withheld_for_want_of_a_longer_run_says_how_much_longer():
+    """SASA withheld at 18 independent samples recorded no figure for how
+    much longer (the shortfall read the correlation again and found it met),
+    and the Agent told the person to analyse again for one."""
+    from fastmdxplora.statistics import WANT_A_LONGER_RUN, mean_record
+
+    asked = 0
+    for seed in range(60):
+        rng = np.random.RandomState(seed)
+        n = 60 + 20 * (seed % 10)
+        noise = rng.normal(size=n)
+        series = np.empty(n)
+        series[0] = noise[0]
+        for i in range(1, n):
+            series[i] = 0.8 * series[i - 1] + noise[i]
+        record = mean_record(series, frame_interval_ns=0.001)
+        why = record.get("not_a_measurement")
+        code = getattr(getattr(why, "refusal", None), "code", "")
+        if code in WANT_A_LONGER_RUN:
+            asked += 1
+            assert record.get("shortfall", {}).get("more_frames", 0) > 0, (seed, code)
+            assert record["shortfall"]["more_ns"] > 0
+    assert asked > 10
+
+
+def test_the_figure_for_how_much_longer_rests_on_the_count_it_was_withheld_on():
+    """A mean withheld at 1 independent sample in 5 frames recorded 5 more
+    frames, read from the frames' correlation once more, where the count it
+    was withheld on wants 45; and a correlation the summary resolved was
+    said to be a floor."""
+    from fastmdxplora.statistics import WANT_A_LONGER_RUN, mean_record
+
+    checked = 0
+    for seed in range(400):
+        rng = np.random.RandomState(seed)
+        n = 20 + 10 * (seed % 20)
+        rho = (0.3, 0.6, 0.8, 0.9, 0.95)[seed % 5]
+        noise = rng.normal(size=n)
+        series = np.empty(n)
+        series[0] = noise[0]
+        for i in range(1, n):
+            series[i] = rho * series[i - 1] + noise[i]
+        record = mean_record(series, frame_interval_ns=0.001)
+        code = getattr(getattr(record.get("not_a_measurement"), "refusal", None), "code", "")
+        if code not in WANT_A_LONGER_RUN or "effective_samples" not in record:
+            continue
+        checked += 1
+        short = record["shortfall"]
+        kept = n - int(record["discard"])
+        have = float(record["effective_samples"])
+        wanted = int(np.ceil(short["target_independent"] * kept / have)) - kept if have > 0 else 1
+        assert short["more_frames"] >= wanted, (seed, short, kept, have)
+        unresolved = code == "analysis.sampling.correlation_unresolved"
+        assert bool(short.get("lower_bound")) is unresolved, (seed, code, short)
+    assert checked > 50
+
+
+def test_a_quantity_the_same_in_every_frame_asks_for_no_longer_run():
+    """A strand fraction of 0 in every frame asked for 816 more frames as a
+    floor, and set the whole study's ask and price."""
+    from fastmdxplora.statistics import mean_record
+
+    record = mean_record(np.zeros(34), frame_interval_ns=0.001)
+    assert "shortfall" not in record

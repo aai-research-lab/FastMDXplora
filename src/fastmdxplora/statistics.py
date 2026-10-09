@@ -761,6 +761,29 @@ def shared_start(series: "list[np.ndarray]") -> int:
     return int(detect_equilibration(average)[0]) if average.size else 0
 
 
+def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", target: float,
+                             frame_interval_ns: float | None, *, unresolved: bool) -> Shortfall:
+    """The shortfall from the count the mean was withheld on.
+
+    The shortfall reads the frames' correlation once more, without the
+    corrections the withholding made (the sample mean's bias, the whole
+    run's error widened): a mean withheld for 18 independent samples read
+    the count met and said no figure for how much longer, and one withheld
+    at 1 sample in 5 frames asked for 5 more frames where 45 were wanted.
+    Read from the summary's own count, an unresolved correlation needs at
+    least as long again, and only that figure is a floor."""
+    finite = int(np.isfinite(np.asarray(values, dtype=float)).sum())
+    kept = max(finite - int(equilibrated.discard), 1)
+    have = float(equilibrated.effective_samples)
+    g = kept / have if have > 0 else float(kept)
+    more = max(int(np.ceil(float(target) * g)) - kept, kept if unresolved else 1)
+    return Shortfall(
+        target=float(target), have=have, inefficiency=float(g), more_frames=more,
+        more_ns=None if frame_interval_ns is None else float(more * frame_interval_ns),
+        resolved=not unresolved,
+    )
+
+
 def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
                 start_at_least: int = 0) -> dict[str, Any]:
     """What an analysis records of a per-frame series: its mean and error
@@ -780,13 +803,26 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
         # length to guess, and the correlation the series already shows
         # says how much longer.
         code = getattr(getattr(reason, "refusal", None), "code", "")
-        if code in WANT_A_LONGER_RUN:
+        finite = values[np.isfinite(values)]
+        # The same in every frame (a strand fraction of 0 throughout): no
+        # spread, so no correlation time either, and a longer run answers
+        # nothing; it asked 816 frames, the frame count as an inefficiency.
+        constant = finite.size > 0 and float(np.ptp(finite)) == 0.0
+        if code in WANT_A_LONGER_RUN and not constant:
             # An unresolved correlation is answered at the count that
             # resolves it, not at the fewest a mean may rest on.
             target = (RESOLVED_SAMPLES if code == "analysis.sampling.correlation_unresolved"
                       else MINIMUM_EFFECTIVE_SAMPLES)
             shortfall = sampling_shortfall(values, target_independent=target,
                                            frame_interval_ns=frame_interval_ns)
+            if equilibrated is not None:
+                # The larger of the two: the count the mean was withheld
+                # on, and the frames' own reading where it asks for more.
+                summarised = _shortfall_as_summarised(
+                    values, equilibrated, target, frame_interval_ns,
+                    unresolved=code == "analysis.sampling.correlation_unresolved")
+                if shortfall.met or summarised.more_frames >= shortfall.more_frames:
+                    shortfall = summarised
             if not shortfall.met:
                 record["shortfall"] = shortfall.as_record()
     record["n_frames"] = int(values.size)
