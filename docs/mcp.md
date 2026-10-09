@@ -176,8 +176,8 @@ given. So two never start at the same moment, and the GUI's rule holds between
 them: a study on a GPU of this computer starts beside the others where it fits
 on one, given that GPU, and the question says each GPU's room and that the
 computer is shared; work on the CPU, a study whose GPU is not chosen here (a
-continuation), and every study where `nvidia-smi` reads no GPU, waits for the
-other such work; and nothing starts in a folder a run is writing. The GPU is
+continuation), and every study where `nvidia-smi` reads no GPU, each waits for
+the other such work; and nothing starts in a folder a run is writing. The GPU is
 chosen again as the study starts, and the answer says the one it was given. A
 refusal names the study running and who started it, or the memory needed and
 what is free. The GUI keeps the rule

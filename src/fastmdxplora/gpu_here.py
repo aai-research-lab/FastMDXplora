@@ -9,7 +9,7 @@ one run needs learned from the studies here that completed with their runs
 one at a time on the GPU chosen (kept in the settings as
 ``gpu_memory_here.json``, apart from the machines'). A study on the CPU, one
 whose GPU is not chosen here, and every study on a computer whose GPUs
-``nvidia-smi`` does not read, waits for the other such work
+``nvidia-smi`` does not read, each waits for the other such work
 (:mod:`fastmdxplora.runs_here`).
 
 What a study's processes hold is read while it runs by a small process of

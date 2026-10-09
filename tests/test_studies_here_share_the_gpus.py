@@ -378,6 +378,42 @@ class TestNoTwoRunsWriteOneFolder:
         assert len(held) == 1
         assert not (workspace / "continuations").exists()
 
+    @pytest.mark.parametrize("named", ["absolute", "relative"])
+    def test_a_config_run_as_it_is_that_continues_a_study_running_is_refused(
+            self, workspace, gpus, started, named):
+        """Third review: **Run a config file** with ``resume_from`` naming a
+        study running on a GPU started beside it, both writing the study,
+        since the folder checked was the new ``<config>_output``."""
+        held, _ = started
+        gpus((0, UUID_0, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+        (workspace / "first").mkdir(exist_ok=True)
+        study = workspace / "first" if named == "absolute" else "first"
+        config = workspace / "more.yml"
+        config.write_text(f"systems:\n  - system: {workspace / 'top.pdb'}\n"
+                          f"simulation:\n  resume_from: {study}\n  duration_ns: 2\n")
+        window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
+        refused = window.launch_existing_config(str(config))
+        assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
+        assert len(held) == 1
+        assert not (workspace / "more_output").exists()
+
+    def test_a_continuation_is_read_as_the_command_line_reads_it(
+            self, workspace, gpus, started):
+        """A study still in setup has no record that marks it a study yet;
+        a config continuing it continues it all the same."""
+        held, _ = started
+        gpus((0, UUID_0, 24000, 23000))
+        assert _start(workspace, "first")["launched"]
+        (workspace / "first").mkdir(exist_ok=True)
+        window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
+        refused = window.launch_from_config(None, config={
+            "systems": [{"system": str(workspace / "top.pdb")}],
+            "simulation": {"resume_from": str(workspace / "first"), "duration_ns": 2},
+            "output": str(workspace / "elsewhere")})
+        assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
+        assert len(held) == 1
+
     def test_a_refused_launch_takes_back_the_folders_it_made(self, workspace, gpus, started):
         gpus((0, UUID_0, 24000, 1000))
         _needs(2000)

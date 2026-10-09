@@ -395,9 +395,10 @@ and nothing is refused. Work on the CPU (a study on the CPU, an analysis or a
 report written again, a fix), a study whose GPU is not chosen here (a
 continuation, which runs on its study's GPU, or a config that names its GPUs in
 a way not checked here), and every study on a computer whose GPUs `nvidia-smi`
-does not read (a Mac), runs one at a time: the refusal names the study running
-and who started it. No two runs ever write one folder: a study, or a
-continuation, whose folder a run is writing in, or around, is refused
+does not read (a Mac), each waits for the other such work: the refusal names
+the study running and who started it. No two runs ever write one folder: a
+study whose folder a run is writing, in or around it, is refused, and so is a
+continuation of a study still running, from any page
 (`environment.workspace.run_going`). The rule is kept in the folder the GUI
 was started in and the folder it puts new studies in, never your home folder.
 

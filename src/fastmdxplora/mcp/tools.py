@@ -1098,7 +1098,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             "the AI app does not stop it. read_study says how far it has got; "
             "stop_study stops it. Its log is "
             f"{ctx.workspace.shown(folder / 'exploration.log')}."
-            + ("\nAs it started: " + " ".join(shared) if shared else ""))
+            + ("\nAs it started:\n" + "\n".join(shared) if shared else ""))
 
 
 def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:

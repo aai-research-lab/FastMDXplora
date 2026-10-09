@@ -4,9 +4,10 @@ The GUI's Run and an AI app's ``start_study`` (``fastmdx mcp``) start a
 study the same way, and keep the same rule about when they may
 (:func:`may_start`): a study on a GPU of this computer starts beside the
 others where it fits, as on a workstation (:mod:`fastmdxplora.gpu_here`);
-work on the CPU, and every study on a computer whose GPUs ``nvidia-smi``
-does not read, runs one at a time, so each has the processors to itself
-and its timings mean what they say. Two things in the workspace make the
+work on the CPU, a study whose GPU is not chosen here, and every study on a
+computer whose GPUs ``nvidia-smi`` does not read, each waits for the other
+such work, so each has the processors to itself and its timings mean what
+they say; and no two runs write one folder. Two things in the workspace make the
 rule hold between them, and between two windows or two AI apps:
 
 - **a starting lock** (:data:`STARTING_FILE`), held from the check that
@@ -237,8 +238,8 @@ def said_going(roots: Path | list[Path], going: list[tuple[Path, str]], *,
     roots = [Path(r).resolve() for r in (roots if isinstance(roots, list) else [roots])]
     return (f"{_named(roots, going)} {'is' if len(going) == 1 else 'are'} running in this "
             "workspace. Work on the CPU, and a study whose GPU is not chosen here (where "
-            "nvidia-smi reads no GPU, or where the study's GPUs are not checked), waits for "
-            "the other such work, so each has the processors to itself and its timings mean "
+            "nvidia-smi reads no GPU, or where the study's GPUs are not checked), each waits "
+            "for the other such work, so each has the processors to itself and its timings mean "
             f"what they say; {then}")
 
 
@@ -306,11 +307,12 @@ def may_start(folders: list[Path], config: dict[str, Any] | None,
         for run in going_in(root, walk=walk):
             going.setdefault(run["folder"], run)
     runs = list(going.values())
-    if target is not None:
-        here = Path(target).resolve()
+    targets = [Path(t).resolve() for t in (target, *_continued(config, config_folder))
+               if t is not None]
+    if targets:
         same = [(Path(r["folder"]), r["by"]) for r in runs
-                if here == Path(r["folder"]) or here.is_relative_to(Path(r["folder"]))
-                or Path(r["folder"]).is_relative_to(here)]
+                if any(here == Path(r["folder"]) or here.is_relative_to(Path(r["folder"]))
+                       or Path(r["folder"]).is_relative_to(here) for here in targets)]
         if same:
             return Start(refused={"ok": False, "error": said_same(roots, same, then=then),
                                   "code": "environment.workspace.run_going"})
@@ -337,6 +339,22 @@ def may_start(folders: list[Path], config: dict[str, Any] | None,
     lines = [*choice.lines, f"{where}; {need}."]
     return Start(choice=choice, env=env_for(choice), notes=[*lines, *notes,
                                                           *_shared(roots, runs)])
+
+
+def _continued(config: dict[str, Any] | None, folder: Path | None) -> list[Path]:
+    """The study a config continues, which its run writes in, read as the
+    command line reads it (``simulation.resume_from`` naming a folder, by
+    :func:`~fastmdxplora.simulation.resume.study_to_continue`'s rule), a
+    relative one from ``folder``, where the run starts. Whichever page
+    starts it, a run going in that study refuses it."""
+    simulation = (config or {}).get("simulation") if isinstance(config, dict) else None
+    named = simulation.get("resume_from") if isinstance(simulation, dict) else None
+    if not named or not isinstance(named, (str, Path)):
+        return []
+    study = Path(str(named)).expanduser()
+    if not study.is_absolute() and folder is not None:
+        study = Path(folder) / study
+    return [study] if study.is_dir() else []
 
 
 def _shared(roots: list[Path], runs: list[dict[str, Any]]) -> list[str]:
