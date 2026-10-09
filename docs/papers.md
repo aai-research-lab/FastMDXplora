@@ -156,10 +156,18 @@ contain, or by reference to another paper), the study needs you.
   accelerated MD, QM/MM, coarse-grained models, implicit solvent,
   milestoning and weighted ensemble cannot run here; a kind of replica
   exchange is named as the paper names it (simulated tempering, solute
-  tempering) where it names one kind alone. The AI model's word for the
-  method decides first. The study's details are then read for these
-  methods' names, as written and with line-end hyphens joined: a name with
-  nothing in its sentence that qualifies it makes the study that method.
+  tempering) where it names one kind alone; constant-pH replica exchange
+  (pH-REMD) is replica exchange. The AI model's word for the method
+  decides first. The study's details are then read for these methods'
+  names with line-end hyphens joined: a name with nothing in its sentence
+  that qualifies it makes the study that method, and so does a name read
+  as written before a hyphen and one of a fixed list of words (based,
+  like, type, style, and, or, driven, guided, biased, derived, enhanced,
+  generated, sampling, simulation or simulations, run or runs, MD,
+  trajectory or trajectories: "QM/MM-based"
+  broken at its hyphen, "REMD- and MD-based"). Any other name found only
+  as the words are written ("proper-" at a line's end before "ties" reads
+  TIES) is put to you.
   Everything else such words may mean is put to you, the words shown, and
   the study runs once you confirm it is not that method: a name beside
   words that may deny it or give it elsewhere ("no REMD was used",
@@ -176,26 +184,29 @@ contain, or by reference to another paper), the study needs you.
   run, tools used for them and for runnable methods alike, and words that
   may mean one are put to you: the string method, constant pH (CpHMD),
   Brownian dynamics, adaptive biasing force (ABF, eABF), TAMD,
-  hyperdynamics, parallel replica dynamics, d-AFED, AWH, targeted MD,
-  SuMD, grand canonical Monte Carlo, adaptive sampling, "enhanced
-  sampling", "free energy calculations", a thermodynamic cycle, the
-  Bennett acceptance ratio, MBAR, pymbar, alchemlyb, perses, YANK,
-  QligFEP, pmx, OpenFE, SOMD, BioSimSpace, Crooks, Jarzynski, Zwanzig,
+  hyperdynamics, parallel replica dynamics, d-AFED, AWH, targeted MD, SuMD,
+  supervised MD, grand canonical Monte Carlo (GCMC, GCNCMC, μVT), adaptive
+  sampling, "enhanced sampling", "free energy calculations", a thermodynamic
+  cycle, the Bennett acceptance ratio, MBAR, pymbar, alchemlyb, perses,
+  YANK, QligFEP, pmx, OpenFE, SOMD, BioSimSpace, Crooks, Jarzynski, Zwanzig,
   "rest simulations", and Metropolis acceptance between temperatures or
-  replicas. In a method's details, letters and slashes that only look
-  Latin (a Cyrillic "е", a small capital "ᴇ", "∖") are read as the ones
-  they look like. A fixed list of plain phrases is not read as such
-  words (no words around them are read to decide this): "GPU-accelerated",
-  "CUDA-accelerated", "AMD" followed by a GPU or processor name or word
-  (GPUs, CPUs, processors, hardware, Radeon, Instinct, MI250X, EPYC,
-  Ryzen, Threadripper, Opteron, ROCm, HIP), "λ", "lambda", "λ =" or
-  "λ of" before a wavelength from 100 to 999 nm ("λ = 488 nm"), an
-  acknowledgement in capitals ("WE THANK", "WE ACKNOWLEDGE"), and
-  gigabytes of storage or memory. Any other such word in the same details
-  is still read. Phrases that could be part of another method's
-  description still ask: a force field before "/AMBER" (the MM half of a
-  QM/MM label), an exchange of water (a grand canonical move), a gas-phase
-  optimisation, a run "accelerated using GPUs".
+  replicas. In a method's details, letters and slashes that only look Latin
+  (Cyrillic "е" and "ё", Greek "ο", "ι" and "κ", accented or not, small
+  capitals such as "ᴇ" and "ꜱ", "∖", the vertical bars "│", "┃" and "ǀ") are
+  read as the ones they look like. A fixed list of plain phrases is not read
+  as such words (no words around them are read to decide this):
+  "GPU-accelerated", "CUDA-accelerated", "AMD" followed (after a space or a
+  hyphen) by a GPU or processor name or word (GPUs, CPUs, processors,
+  hardware, Radeon, Instinct, MI250X, EPYC, Ryzen, Threadripper, Opteron,
+  ROCm, HIP), "λ" or "lambda", alone or as "λ =", "λ of", "λmax", "λem",
+  "λex", "λexc", "λabs" ("lambda max", "lambda_max" too), before a
+  wavelength from 100 to 999 nm ("λ = 488 nm", "λmax = 280 nm"), a drug
+  "targeted" at MDM2 or MDMX, an acknowledgement in capitals ("WE THANK",
+  "WE ACKNOWLEDGE"), and gigabytes of storage or memory. Any other such word
+  in the same details is still read. Phrases that could be part of another
+  method's description still ask: a force field before "/AMBER" (the MM half
+  of a QM/MM label), an exchange of water (a grand canonical move), a
+  gas-phase optimisation, a run "accelerated using GPUs".
 - **A membrane.** A bilayer of one lipid this software builds, however the
   paper words it ("a POPC bilayer of 144 lipids"), in a rectangular box; a
   mixture cannot run here where the second lipid is one this software
@@ -204,14 +215,19 @@ contain, or by reference to another paper), the study needs you.
   lipid's own name written out ("POPC
   (1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine)"), the bilayer's, its
   ions', its water's, its box's, or the protein's placed in it. Any other
-  word or share ("SM-free", "80 mol%", "70/30", two counts of lipids
-  however written, "(96, 32)" included, a named leaflet, "brain extract",
-  "AMPA receptor in a POPC bilayer")
+  word or share ("SM-free", "80 mol%", "70/30", "96,32.5", two counts of
+  lipids however written, "(96, 32)" included, a named leaflet, "brain
+  extract", "AMPA receptor in a POPC bilayer")
   leaves the lipid set and needs you to confirm the bilayer is that lipid
   alone; a word in letters that only look Latin needs you too. A decimal
-  comma or a range with its unit ("0,15 M NaCl", "1-1.5 nm") is no share.
-  Beside an AMBER
-  force field that names no lipid force field, Lipid17 is used, said so.
+  comma or a range with its unit ("0,15 M NaCl", "1-1.5 nm") is no share;
+  "2 x 64" is 64 lipids in each leaflet; a count beside a per-leaflet count
+  must be it or twice it ("128 lipids, 64 per leaflet"), and a "2 x" count
+  must be it; "at" or "pressure of" before 1 bar or 1 atm (1 written "1.0"
+  or "1.00" too, and "1.01325 bar"), with "pressure" after it or not, are
+  plain words, as this software keeps 1 bar; any other pressure needs you.
+  Beside an AMBER force field that names no lipid force field, Lipid17 is
+  used, said so.
 
 The config carries `decisions` (each setting's reason, the paper's words with
 where they are) and `paper` (the paper's DOI and title, which study, the AI

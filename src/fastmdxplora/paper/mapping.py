@@ -28,7 +28,7 @@ from __future__ import annotations
 import bisect
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from fastmdxplora.paper.quotes import squash
 
@@ -330,7 +330,8 @@ def _method_of(said: str) -> str:
 #: looser. The AI model's word for the method decides first; these names
 #: are a second look, and a name it misses leaves that word to decide.
 _DETAIL_WORDS = {
-    "replica_exchange": r"bias[-\s]*exchange|replica[-\s]*exchange|\b(?:[thm]|re)?-?remds?\d{0,3}\b"
+    "replica_exchange": r"bias[-\s]*exchange|replica[-\s]*exchange"
+                        r"|\b(?:[thm]|re|ph)?-?remds?\d{0,3}\b"
                         r"|(?-i:\b(?:T-?)?REX\d{0,3}\b)|\bre-md\b|parallel[-\s]*tempering"
                         r"|\bpt-?(?:wte|metad)|\bbe-?meta|solute[-\s]*tempering"
                         r"|(?-i:\bg?REST[23]?\d{0,3}\b)|\bg?rest[23]\d{0,3}\b|\bh-?rex\d{0,3}\b"
@@ -384,13 +385,13 @@ _DETAIL_WORDS = {
 _LOOSE_WORDS = (
     r"quantum[-\s]*mechanic|coarse[-\s]*grain|decoupl|\bin\s+vacuo\b|\bvacuum\b|gas[-\s]*phase"
     r"|(?:absolute|relative|binding|hydration|solvation)\s+free[-\s]*energ|\bpmf\b"
-    r"|(?-i:\bAMD\b)(?!\s+(?:gpus?|radeon|instinct|epyc|ryzen|threadripper|opteron|mi\d+\w*"
-    r"|hardware|rocm|hip|processors?|cpus?)\b)|(?<!\d\s)(?<!\d)\bgb\b|dielectric|(?-i:\bM?BAR\b)"
-    r"|lambda[-\s]*dynamics|\bboost"
+    r"|(?-i:\bAMD\b)(?![-\s]+(?:gpus?|radeon|instinct|epyc|ryzen|threadripper|opteron"
+    r"|mi\d{2,4}[ax]?|hardware|rocm|hip|processors?|cpus?)\b)"
+    r"|(?<!\d\s)(?<!\d)\bgb\b|dielectric|(?-i:\bM?BAR\b)|lambda[-\s]*dynamics|\bboost"
     r"|(?-i:\bRest\d?\b)|semi[-\s]*empirical|\bdft\b|metadynamics|\bmetad\b|\bopes\b|umbrella|steered|\bsmd\b"
     r"|\bplumed\b|collective\s+variable|\bwham\b|\bexchang|\bswap|continuum|without\s+(?:any\s+)?"
     r"(?:water|solvent)|solvent[-\s]free|soft[-\s]?core|(?:turned|switched)\s+off|\blambda\b|\u03bb"
-    r"|\bwalkers?\b|\belnedyn|\bbeads?\b|[\w()+-]{1,40}\s*[/\\|]\s*(?:mm|amber|charmm)\b|\bxtb\b"
+    r"|\bwalkers?\b|\belnedyn|\bbeads?\b|[\w()+*,-]{1,40}\s*[/\\|]\s*(?:mm|amber|charmm)\b|\bxtb\b"
     r"|\bpm[367]\b|\bigamd|(?-i:\bWE\b)|poisson[-\s]*boltzmann|(?<!gpu-)(?<!gpu\s)(?<!cuda-)(?<!cuda\s)"
     r"(?<!hardware-)\baccelerat|\bg[o\u014d][-\s]+(?:like|model)"
     r"|thermodynamic[-\s]+cycle|string[-\s]+method|temperature\s+string|constant[-\s]*ph\b"
@@ -399,25 +400,31 @@ _LOOSE_WORDS = (
     r"|\bd-?afed\b|adiabatic\s+free[-\s]*energy|enhanced[-\s]*sampling|(?<!\d\s)(?<!\d)\bmbar\b"
     r"|\bbiosimspace\b|\bcrooks|jarzynski|zwanzig"
     r"|free[-\s]*energ\w*\s+(?:calculations?|computations?|estimat\w*)"
-    r"|\bpymbar|\bpmx\b|\bopen-?fe\b|open\s+free\s+energy|\bsomd\d?\b|\bawh\b|targeted\s+(?:md|molecular)"
-    r"|bennett(?:['\u2019]s)?[-\s]+acceptance|\balchemlyb\b|\bperses\b|(?-i:\bYANK\b)|\bq-?ligfep\b"
-    r"|\bsumd\b|\bgcmc\b|grand[-\s]+canonical|adaptive\s+sampling"
+    r"|\bpymbar|\bpmx\b|\bopen-?fe\b|open\s+free\s+energy|\bsomd\d?\b|\bawh\b"
+    r"|targeted[-\s]+(?:md|molecular)|bennett(?:['\u2019]s)?[-\s]+acceptance|\balchemlyb\b"
+    r"|\bperses\b|(?-i:\bYANK\b)|\bq[-\s]?ligfep\b"
+    r"|\bsumd\b|supervised[-\s]+(?:md|molecular)|\bgc(?:nc)?mc\b|grand[-\s]+canonical"
+    r"|(?:\u03bc|\bmu)[-\s]?vt\b"
+    r"|adaptive[-\s]+sampling"
     r"|\brest\s+(?:simulations?|md|runs?|replicas?|protocol|scheme)\b")
 
 #: Plain phrases holding one of those words, named one by one (a fixed list,
 #: no word read around them), each of which can name nothing else: a
 #: wavelength of visible or ultraviolet light, weighted ensemble's capital
 #: letters before an acknowledgement in capitals, gigabytes of storage or
-#: memory. A loose word inside one of these is no sign; another loose word
-#: in the same sentence still is. Phrases that could stand beside or inside
-#: another method's description (a force field before "/AMBER", which may be
-#: a QM/MM label's MM half; an exchange of water, which may be a grand
-#: canonical move; a gas-phase optimisation, which may be of the whole
-#: system; a run accelerated on GPUs) are not on it, and ask.
+#: memory, a drug "targeted" at MDM2 or MDMX. A loose word inside one of
+#: these is no sign; another loose word in the same sentence still is.
+#: Phrases that could stand beside or inside another method's description
+#: (a force field before "/AMBER", which may be a QM/MM label's MM half; an
+#: exchange of water, which may be a grand canonical move; a gas-phase
+#: optimisation, which may be of the whole system; a run accelerated on
+#: GPUs) are not on it, and ask.
 _PLAIN_PHRASES = re.compile(
-    r"(?:\blambda|\u03bb)\s*(?:(?:=|of|:)\s*)?[1-9]\d\d(?:\.\d+)?\s*nm\b"
+    r"(?:\blambda|(?<!\w)\u03bb)(?:[\s_]?(?:max|em|ex|exc|abs))?\s*(?:(?:=|of|:)\s*)?"
+    r"[1-9]\d\d(?:\.\d+)?\s*nm\b"
     r"|(?-i:\bWE\s+(?:THANK|THANKS|ACKNOWLEDGE|GRATEFULLY|ARE\s+GRATEFUL)\b)"
-    r"|(?<![\d.])\bgb\s+(?:of\s+)?(?:storage|memory|ram|vram|disk)\b", re.IGNORECASE)
+    r"|(?<![\d.])\bgb\s+(?:of\s+)?(?:storage|memory|ram|vram|disk)\b"
+    r"|\btargeted\s+mdm[2x]\b", re.IGNORECASE)
 
 #: Words in a sentence that make a method's name in it something other than
 #: what the study did, or might: a denial, a comparison, another work, a
@@ -458,15 +465,17 @@ _PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u201
 #: \u0435xchange" with a Cyrillic e), read as the Latin letter they look like,
 #: and slashes and bars drawn as other symbols as "\\", "|" and "/". Greek
 #: letters with a meaning of their own here (lambda, sigma, mu, nu) are left
-#: as they are.
+#: as they are; iota and kappa are read as i and k.
 _LOOK_ALIKES = str.maketrans(
     "\u0410\u0412\u0421\u0415\u041d\u0406\u0408\u041a\u041c\u041e\u0420\u0405\u0422\u0425\u0423"
     "\u0430\u0441\u0435\u0456\u0458\u043e\u0440\u0455\u0445\u0443\u0501\u051b\u051d\u04bb\u04cf"
     "\u0391\u0392\u0395\u0396\u0397\u0399\u039a\u039c\u039d\u039f\u03a1\u03a4\u03a5\u03a7\u03bf"
     "\u1d00\u0299\u1d04\u1d05\u1d07\u0262\u029c\u026a\u1d0a\u1d0b\u029f\u1d0d\u0274\u1d0f\u1d18\u0280"
-    "\u1d1b\u1d1c\u1d20\u1d21\u028f\u1d22"
-    "\u2216\u29f5\u2223\u29f8\u2571",
-    "ABCEHIJKMOPSTXY" "aceijopsxydqwhl" "ABEZHIKMNOPTYXo" "ABCDEGHIJKLMNOPRTUVWYZ" "\\\\|//")
+    "\u1d1b\u1d1c\u1d20\u1d21\u028f\u1d22\ua730\ua731"
+    "\u0451\u0401\u03b9\u03ba"
+    "\u2216\u29f5\u2223\u29f8\u2571\u2502\u2503\u01c0",
+    "ABCEHIJKMOPSTXY" "aceijopsxydqwhl" "ABEZHIKMNOPTYXo" "ABCDEGHIJKLMNOPRTUVWYZFS" "eEik"
+    "\\\\|//|||")
 
 
 def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str:
@@ -490,6 +499,8 @@ def _plain_text(words: str, join: bool = True, look_alikes: bool = False) -> str
     words = unicodedata.normalize("NFKC", words).translate(_PLAIN_TEXT)
     words = "".join(ch for ch in unicodedata.normalize("NFKD", words)
                     if not unicodedata.combining(ch) and unicodedata.category(ch) != "Cf")
+    if look_alikes:  # once more: an accent may have hidden the letter ("\u0451", "\u03af")
+        words = words.translate(_LOOK_ALIKES)
     if join:
         words = re.sub(r"(?<=[A-Za-z])-[ \t]*\n\s*(?=[A-Za-z])", "", words)
         words = re.sub(r"(?<=[A-Za-z])- (?=[A-Za-z])", "", words)
@@ -504,19 +515,38 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     ``"mentioned"`` (a name beside words that may deny it or give it
     elsewhere) or ``"signs"`` (a word that may mean such a method, or a run
     of one described without its name). The plan asks the person to
-    confirm both: it does not guess what such words mean. The words are
-    read as written and with line-end hyphens joined, and either reading
-    that names a method makes the study that method."""
-    aside: list[tuple[str, str]] = []
-    for join in (False, True):
-        method, found = _read_details(_plain_text(words, join=join, look_alikes=True))
-        if method:
-            return method, found
-        aside += [item for item in found if item not in aside]
-    return None, aside
+    confirm both: it does not guess what such words mean. A name read with
+    line-end hyphens joined makes the study that method, and so does one
+    read as written before a
+    hyphen and one of a fixed list of words (``_WHOLE_BEFORE``: "QM/MM-\n
+    based", "REMD- and MD-based"), where joining breaks a whole name. Any
+    other name read only as written ("proper-\nties" reads TIES) may be a
+    piece of a broken word, so it puts the study to the person."""
+    method, aside = _read_details(_plain_text(words, join=True, look_alikes=True))
+    if method:
+        return method, aside
+    text = _plain_text(words, join=False, look_alikes=True)
+    method, found = _read_details(text, lambda name: bool(_WHOLE_BEFORE.match(text, name.end())))
+    seen = set(aside)
+    for item in found:
+        if item not in seen:
+            seen.add(item)
+            aside.append(item)
+    return method, aside
 
 
-def _read_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
+#: Words after a hyphen that show the name before it was whole ("QM/MM-
+#: based", "REMD- and MD-based"), not a piece of a word broken there
+#: ("reus-\nable", "unres-\ntrained").
+_WHOLE_BEFORE = re.compile(
+    r"-\s+(?:based|like|type|style|and|or|driven|guided|biased|derived|enhanced|generated"
+    r"|sampling|simulations?|runs?|md|trajector(?:y|ies))\b", re.IGNORECASE)
+
+
+def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = None
+                  ) -> tuple[str | None, list[tuple[str, str]]]:
+    """``whole``, where given, says whether an unqualified name found is
+    whole; one that is not is put to the person."""
     found = sorted(((match, method) for method, pattern in _DETAIL_WORDS.items()
                     for match in re.finditer(pattern, words, re.IGNORECASE)),
                    key=lambda pair: pair[0].start())
@@ -524,7 +554,8 @@ def _read_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     for match, method in found:
         sentence = _sentence_of(words, match)
         if _QUALIFIED.search(sentence) or (
-                method in ("implicit_solvent", "free_energy") and _RESCORING.search(sentence)):
+                method in ("implicit_solvent", "free_energy") and _RESCORING.search(sentence)) or (
+                whole is not None and not whole(match)):
             aside.append((_short(sentence.strip(), 160), "mentioned"))
         else:
             return method, aside
@@ -1676,15 +1707,28 @@ def _unexplained(said: str, lipid: str) -> list[str]:
     left += re.findall(r"(?<![\d.])\d+(?:\.\d+)?\s*[/:]\s*\d+|\b\d+\s+to\s+\d+\b|\u2030", text)
     left += re.findall(r"(?<![\d.])0?\.\d+(?![\d])(?!\s*(?:m|mm|nm|ns|k)\b)", text)
     # "96,32" or "70-30", but not a decimal comma or a range with its unit ("0,15 M", "1-1.5 nm").
-    left += re.findall(r"(?<![\d.,])\d+,\d+(?!\.?\d)" + unit
+    left += re.findall(r"(?<![\d.,])\d+,\d+(?:\.\d+)?(?!\.?\d)" + unit
                        + r"|(?<![\d.])\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?(?!\.?\d)" + unit, text)
-    # Two counts not of a unit ("2 x 64 and 2 x 16", "96 POPC and 32", "(96, 32)"): more
-    # than one lipid.
-    counts = re.findall(r"(?<![\w.-])\d+(?![\w%-])(?![.,]\d)(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns|ps|us"
-                        r"|fs|bar|atm|deg|c|per\s+leaflet|in\s+each\s+leaflet)\b)", text)
+    # Two counts not of a unit ("96 POPC and 32", "(96, 32)", "2 x 64 and 2 x 16"): more
+    # than one lipid. "2 x 64" is 64 in each leaflet; a count beside a
+    # per-leaflet count must be it or twice it, and a "2 x" count must be it.
+    per_two = (r"(?<![\w.-])(?<![x\u00d7*]\s)2\s*[x\u00d7*]\s*(?=(\d{1,5})(?!\d)(?![.,]\d)"
+               r"(?!\s*[x\u00d7*])(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns|ps|us|fs|bar|atm|deg|c)\b))")
+    doubled = set(re.findall(per_two, text))
+    text = re.sub(per_two, " ", text)
+    # The pressure this software keeps, in a few fixed phrases ("at 1 bar",
+    # "pressure of 1 atm"); any other pressure is still read.
+    text = re.sub(r"(?:\bpressure\s+of|\bat)\s+1(?:(?:\.0+)?\s*(?:bar|atm)|\.01325\s*bar)\b"
+                  r"(?:\s+pressure\b)?", " ", text)
+    counts = re.findall(r"(?<![\w.-])\d+(?![\w%-])(?![.,]\d)(?!\s*(?:mm|m|mol|k|nm|nm2|a2|a|ns"
+                        r"|ps|us|fs|bar|atm|deg|c|per\s+leaflet|in\s+each\s+leaflet)\b)", text)
     per_leaflet = set(re.findall(r"(?<![\w.-])(\d+)\s*(?:lipids\s+)?(?:per|in\s+each)\s+leaflet",
                                  text))
-    if len(counts) > 1 or len(per_leaflet) > 1:
+    leaf = min(per_leaflet, default="")
+    twice = str(2 * int(leaf)) if 0 < len(leaf) < 7 else ""
+    apart = bool(leaf) and any(count not in ((leaf,) if count in doubled else (leaf, twice))
+                               for count in counts)
+    if len(counts) > 1 or len(per_leaflet) > 1 or apart:
         left += counts + sorted(per_leaflet)
     for token in re.findall(r"(?<![\d.])\d+(?:\.\d+)?\s*(?:mol\s*|w/w\s*|wt\s*)?%"
                             r"|[^\W\d_][^\W_]*", text):

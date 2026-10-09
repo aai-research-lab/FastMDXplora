@@ -1907,3 +1907,153 @@ def test_counts_of_lipids_are_read_as_counts(membrane, state):
                   "membrane": _stated(membrane)})
     assert plan["state"] == state
     assert plan["config"]["setup"]["membrane"] == membrane[:4]
+
+
+# -- 1606: names across a line's end, more spellings, counts said once -------
+@pytest.mark.parametrize("details, method", [
+    ("unres-\ntrained MD of the protein", "confirm"),
+    ("Unres-\ntricted sampling", "confirm"),
+    ("reus-\nable scripts", "confirm"),
+    ("remd-\nesivir binding", "confirm"),
+    ("Martini-\nque style", "confirm"),
+    ("Material proper-\nties were computed. We used QM/MM-\nbased dynamics.", "qm_mm"),
+    ("tar-\ngeted MD- and US-based runs", "confirm"),
+    ("Material proper-\nties were computed.", "confirm"),
+    ("The structural proper-\nties were analysed.", "confirm"),
+    ("TI-\nTRATION CURVES WERE FITTED.", "confirm"),
+    ("We used QM/MM-\nbased dynamics.", "qm_mm"),
+    ("REMD-\nbased sampling with 24 replicas.", "replica_exchange"),
+    ("GaMD-\nbased runs.", "accelerated"),
+    ("REMD- and US-based sampling.", "replica_exchange"),
+    ("We ran replica ex-\nchange MD.", "replica_exchange"),
+    ("REMD\u00ad\nsimulations with 24 replicas", "replica_exchange"),
+    ("REMD\u00ad simulations with 24 replicas", "replica_exchange"),
+    ("Mar-\ntini\u00ad model of the protein", "coarse_grained"),
+    ("We used the Mar-\ntini\u00ad\nforce field.", "coarse_grained"),
+    ("T-RE-\nMD\u00ad\nsimulations were run.", "replica_exchange"),
+    ("We ran Ga-\nMD\u00ad\nsimulations of the receptor.", "accelerated"),
+    ("with\u00ad\nRE-\nMD runs", "replica_exchange"),
+    ("\u03b1MD simulations of the helix", "plain"),
+])
+def test_a_name_found_only_across_a_line_s_end_asks(details, method):
+    """A name read with line-end hyphens joined makes the study that
+    method, and so does one read as written before a hyphen and a word
+    of a fixed list ("QM/MM-" before "based"); one read only as the words
+    are written otherwise ("proper-" before "ties" reads TIES) may be a
+    piece of a broken word, so the person decides."""
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("details, method", [
+    ("pHREMD simulations at pH 4 to 8", "replica_exchange"),
+    ("targeted-MD toward the open state", "confirm"),
+    ("adaptive-sampling rounds of 50 runs", "confirm"),
+    ("Supervised MD of the ligand's approach", "confirm"),
+    ("Water was sampled with GCNCMC moves.", "confirm"),
+    ("We used GCMC.", "confirm"),
+    ("Targeted MDs pulled the ligand out.", "confirm"),
+    ("Ten targeted MD1-MD10 runs", "confirm"),
+    ("Supervised MDs of the ligand", "confirm"),
+    ("Buried waters were placed by GCMC.", "confirm"),
+    ("Simulations in the muVT ensemble", "confirm"),
+    ("Simulated temper\u03afng over 300 to 400 K", "replica_exchange"),
+    ("Replica \u0401xchange MD", "replica_exchange"),
+    ("Simulations in the \u03bcVT ensemble", "confirm"),
+    ("Simulations in the \u00b5VT ensemble", "confirm"),
+    ("Q ligFEP was used for the series.", "confirm"),
+    ("QM\u2502MM simulations of the active site", "qm_mm"),
+    ("QM\u2503MM simulations of the active site", "qm_mm"),
+    ("QM\u01c0MM simulations of the active site", "qm_mm"),
+    ("B3LYP/6-31G*/MM optimisation of the cofactor", "confirm"),
+    ("Replica \u0451xchange MD", "replica_exchange"),
+    ("Simulated temper\u03b9ng over 300 to 400 K", "replica_exchange"),
+    ("Hamiltonian replica ex\u0441hange", "replica_exchange"),
+    ("\ua730EP of the ligand series", "free_energy"),
+    ("\ua731MD of the pulling", "confirm"),
+])
+def test_more_spellings_of_another_method_are_never_plain_md_that_runs(details, method):
+    assert _method_said(details) == method
+
+
+@pytest.mark.parametrize("details", [
+    "\u03bbmax = 280 nm",
+    "lambda_max = 280 nm",
+    "\u03bbem 520 nm",
+    "Runs on AMD-MI250X GPUs",
+    "Runs on AMD-EPYC processors",
+    "Runs on AMD MI300A and MI250X GPUs",
+    "targeted MDM2 inhibitors",
+])
+def test_more_plain_wordings_ask_nothing(details):
+    assert _method_said(details) == "plain"
+
+
+@pytest.mark.parametrize("details", [
+    "\u03bbmax = 280 nm; 21 \u03bb windows",
+    "AMD-boosted dihedrals",
+    "TIP3P | AMBER",
+    "REMD\u03bbmax = 280 nm",
+    "FEP\u03bbmax = 280 nm",
+    "AMD-MI250XREMD",
+    "REST2\u03bbmax = 280 nm",
+    "PM6\u03bbmax = 280 nm",
+    "AMD-MI210TI",
+    "AMD-MI100US",
+])
+def test_a_plain_wording_beside_another_word_still_asks(details):
+    assert _method_said(details) != "plain"
+
+
+@pytest.mark.parametrize("membrane, state", [
+    ("POPC bilayer 96,32.5", "needs_you"),
+    ("POPC bilayer 70,30.0", "needs_you"),
+    ("POPC bilayer, 70,1.5 m", "needs_you"),
+    ("POPC bilayer 1,234.5", "needs_you"),
+    ("POPC bilayer, 0,15 M NaCl.", "ready"),
+    ("POPC bilayer of 2 x 64 lipids", "ready"),
+    ("POPC bilayer of 2 x 64 lipids.", "ready"),
+    ("POPC bilayer of 2\u00d764 lipids", "ready"),
+    ("POPC bilayer of 2x64 lipids", "ready"),
+    ("POPC bilayer, (64, 64) lipids per leaflet", "needs_you"),
+    ("POPC bilayer, 64 and 64 lipids per leaflet", "needs_you"),
+    ("POPC bilayer, leaflets of 2 x 64 and 64 lipids", "needs_you"),
+    ("POPC bilayer, 64 and 64 lipids", "needs_you"),
+    ("POPC bilayer (50, 50)", "needs_you"),
+    ("POPC bilayer, 1 and 1", "needs_you"),
+    ("POPC 72 and 72 and 72 lipids per leaflet", "needs_you"),
+    ("POPC bilayer, 2 x 2 x 64", "needs_you"),
+    ("POPC bilayer, 2 x 72 lipids, 64 per leaflet", "needs_you"),
+    ("POPC bilayer, 2 x 64 and 2 per leaflet", "needs_you"),
+    ("POPC bilayer of 128 lipids, 64 per leaflet", "ready"),
+    ("POPC bilayer of 2 x 64 lipids, 64 per leaflet", "ready"),
+    ("POPC bilayer, 2 x 64 lipids, 32 per leaflet", "needs_you"),
+    ("POPC bilayer, 2 x 128 lipids, 64 per leaflet", "needs_you"),
+    ("POPC bilayer, leaflets of 72 and 72 lipids, 2 x 10 nm", "needs_you"),
+    ("POPC bilayer, (96, 32) lipids per leaflet", "needs_you"),
+    ("POPC bilayer, 2 x 64 and 2 x 16 lipids", "needs_you"),
+    ("POPC bilayer 64 x 64", "needs_you"),
+    ("POPC bilayer 70 x 30.", "needs_you"),
+    ("POPC bilayer at 1 bar", "ready"),
+    ("POPC bilayer at 1 atm pressure", "ready"),
+    ("POPC bilayer at 310 K, at a pressure of 1.01325 bar", "ready"),
+    ("POPC bilayer at -100 bar", "needs_you"),
+    ("POPC bilayer at 2000 bar", "needs_you"),
+    ("POPC bilayer, pressure of -50 bar", "needs_you"),
+    ("POPC bilayer at \u2212 1 bar", "needs_you"),
+    ("POPC bilayer at 100 \u00b1 1 bar", "needs_you"),
+    ("POPC bilayer at 1 bar and 2000 bar", "needs_you"),
+    ("POPC bilayer under a surface pressure of 1 bar", "needs_you"),
+    ("POPC bilayer at 1.01325 atm", "needs_you"),
+    ("POPC bilayer, 130 lipids, 64 per leaflet", "needs_you"),
+])
+def test_counts_said_per_leaflet_are_one_count(membrane, state):
+    """"2 x 64" is 64 lipids in each leaflet; a count beside a per-leaflet
+    count must be it or twice it, and a "2 x" count must be it; two counts
+    otherwise still need the person; a share whose second number has a
+    decimal is still a share; only the pressure kept, 1 bar, said in a
+    few fixed phrases, is plain."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
+                  "membrane": _stated(membrane)})
+    assert plan["state"] == state
+    assert plan["config"]["setup"]["membrane"] == membrane[:4]
