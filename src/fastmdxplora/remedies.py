@@ -1103,7 +1103,9 @@ def _round_up(value: float) -> float:
 
 
 def _ns(value: float) -> str:
-    return f"{value:g} ns"
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    return length_said(value)
 
 
 def _duration(seconds: float) -> str:

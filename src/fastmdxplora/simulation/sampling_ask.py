@@ -144,6 +144,16 @@ def _time_here(root: Path, more_ns: float) -> tuple[float | None, str]:
 
 
 def _ns(value: float) -> str:
+    return length_said(value)
+
+
+def length_said(ns: float) -> str:
+    """A simulated length in the unit it reads in, as the pages give it:
+    picoseconds under one nanosecond ("11.4 ps", not "0.0114 ns"), to a
+    tenth of a picosecond; nanoseconds from there, as given."""
+    value = float(ns)
+    if abs(value) < 1.0:
+        return f"{round(value * 1000.0, 1):g} ps"
     return f"{value:g} ns"
 
 

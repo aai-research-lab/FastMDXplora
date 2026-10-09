@@ -382,3 +382,32 @@ def test_analysing_again_keeps_the_phases_the_study_ran(tmp_path):
     (root / "resolved_config.yml").write_text(
         "system: 1L2Y\ninclude_phase: [analysis, report]\n", encoding="utf-8")
     assert card_of(root)["kind"] != "a trajectory analysed"
+
+
+def test_a_length_under_a_nanosecond_is_said_in_picoseconds():
+    """The fix card said "Costs 0.0114 ns of production", the report "at
+    least 0.062 ns more production" and the stop "(0.009 of 0.020 ns)",
+    beside "8.6 ps production" on the same page."""
+    from fastmdxplora.remedies import Price
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    assert length_said(0.0114) == "11.4 ps"
+    assert length_said(0.0004) == "0.4 ps"
+    assert length_said(0.062) == "62 ps"
+    assert length_said(2.5) == "2.5 ns"
+    price = Price(production_ns=0.0114, equilibration_ns=0.004, runs=1, seconds=None,
+                  platform="CPU", lower_bound=False)
+    assert price.as_text().startswith("11.4 ps of production and 4 ps of equilibration")
+    # The stop's own message, as a stopped run raises it.
+    import signal
+
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.runner import _end_the_stopped_run, _StopRequests
+
+    stop = _StopRequests()
+    stop.signal, stop.at_step, stop.on_frame = signal.SIGTERM, 4600, False
+    with pytest.raises(StudyError) as raised:
+        _end_the_stopped_run(None, stop, checkpoint=Path("/s/simulation/checkpoint.chk"),
+                             sidecar={}, planned_steps=10000,
+                             trajectory_interval_steps=500, timestep_fs=2.0)
+    assert "at step 4,600 (9.2 ps of 20 ps)" in str(raised.value), str(raised.value)

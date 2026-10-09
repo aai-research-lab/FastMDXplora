@@ -95,7 +95,7 @@ class TestAStudyOfOne:
         assert remedy.price.equilibration_ns == 0
         assert remedy.price.seconds == pytest.approx(900.0)
         text = remedy.as_text()
-        assert "0.3 ns of production" in text and "on CUDA, about 15 min" in text
+        assert "300 ps of production" in text and "on CUDA, about 15 min" in text
         assert "kept" in remedy.fix
 
     def test_a_refusal_only_the_person_can_answer_names_where_and_not_what(self, tmp_path):
@@ -435,7 +435,7 @@ class TestWhereItIsSaid:
         assert lines[0] == "What would fix it:"
         assert lines[2].startswith("    Fix: Carry it on from where it stopped.")
         assert lines[3] == f"    Run: fastmdx resume {shlex.quote(str(root.resolve()))}"
-        assert lines[4].startswith("    Costs 0.3 ns of production")
+        assert lines[4].startswith("    Costs 300 ps of production")
 
     def test_resume_refusing_gives_the_remedies_to_a_program(self, tmp_path, capsys):
         from fastmdxplora.cli.main import main

@@ -1045,9 +1045,11 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 "last interval checkpoint stands; `fastmdx resume "
                 f"{where}` carries the run on from it, running again the steps "
                 "after it.")
+    from fastmdxplora.simulation.sampling_ask import length_said
+
     raise StudyError(
         f"Production was stopped by {_who_asked(stop.name)} at step {step:,} "
-        f"({done_ns:.3f} of {planned_ns:.3f} ns). {said}",
+        f"({length_said(done_ns)} of {length_said(planned_ns)}). {said}",
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})

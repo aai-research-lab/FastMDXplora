@@ -55,7 +55,7 @@ class TestWhatThePageIsGiven:
         (fix,) = page["fixes"]
         assert page["ok"] and fix["runnable"] and fix["index"] == 0
         assert fix["argv"] == ["resume", str(stopped.resolve())]
-        assert fix["price_said"].startswith("0.3 ns of production")
+        assert fix["price_said"].startswith("300 ps of production")
 
     def test_a_choice_only_the_person_can_make_is_not(self, undecided):
         (fix,) = fixes_payload(undecided)["fixes"]
@@ -191,7 +191,7 @@ def test_the_overview_card_runs_it_after_asking(stopped) -> None:
     finally:
         session.server.shutdown()
     assert "The run was asked to stop" in said and "fastmdx resume" in said
-    assert asked.startswith("Run the command above now? It costs 0.3 ns of production")
+    assert asked.startswith("Run the command above now? It costs 300 ps of production")
     assert said.startswith("The study's simulation: ")
     assert ran == [{"index": 0}]
     assert errors == []
@@ -240,7 +240,7 @@ def test_the_agent_asks_then_runs_it(stopped, monkeypatch) -> None:
     finally:
         session.server.shutdown()
     assert asked == f"Run fastmdx resume {stopped.resolve()}?"
-    assert price == ("It costs 0.3 ns of production; at this study's own speed on CUDA, "
+    assert price == ("It costs 300 ps of production; at this study's own speed on CUDA, "
                      "about 15 min.")
     assert ran == [{"index": 0}]
     assert errors == []
