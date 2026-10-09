@@ -59,10 +59,16 @@ its own GPUs keeps them. The plan says each GPU's room and the jobs from
 here running there. A study that needs more than is free, for as many runs
 as it runs at once, is refused (`remote.machine.no_room`; `--dry-run` says
 so and still shows the plan), asked again under a lock at the send and once
-more as the run starts. The need is learned from the runs measured on that
-machine, by particles and precision, and is not guessed before the first.
+more as the run starts. The need is learned from the GPU runs measured on
+that machine, by particles and precision, never scaled from another size by
+particles alone; where those runs do not reach a study's size, or its size
+cannot be worked out here, it is not known and nothing is refused. Runs are
+counted where the explorer puts them, each round of a study run until it is
+determined and the pull that seeds an umbrella's windows included, and only
+among the GPUs the account's own `CUDA_VISIBLE_DEVICES` gives.
 `--force-overwrite` no longer replaces a job still waiting or running
-(`environment.path.exists`); cancel it first. `--partition` and `--time`
+(`environment.path.exists`); cancel it first, and on a workstation it waits
+for the cancelled run to stop. `--partition` and `--time`
 take letters, digits and `_ . , : + -` only, at most 64. A cluster's job
 whose queue does not answer keeps its state, where it was read as failed;
 one the queue no longer knows, with no accounting to say how it ended, reads
