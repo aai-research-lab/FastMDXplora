@@ -2,9 +2,9 @@
 
 Give FastMDXplora a paper, and it lists the molecular dynamics studies the
 paper reports. Choose one, several or all, and each is written as a config
-that sets what the paper states, as the paper states it, with the paper's own
-words as each setting's reason. Once a study has run, its report sets what the
-paper reports beside what the study determined.
+that holds what the paper states, as the paper states it, with the paper's
+own words as the reason for each value. Once a study has run, its report
+places what the paper reports beside what the study determined.
 
 ```bash
 fastmdx config --paper paper.pdf                                  # list its studies
