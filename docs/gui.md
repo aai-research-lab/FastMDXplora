@@ -651,6 +651,7 @@ a movie's frames at 64 MB.
 | `POST /api/study-tags` | A study's tags and note, `{"path", "tags", "note"}`, replacing those it had (without `note`, the note kept), kept in its `study_tags.json`; loopback only, and inside the workspace when hosted |
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |
 | `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |
+| `GET /api/remote/machines`, `/api/remote/job?job=`, `/api/remote/fetch-sizes?job=` | Your machines as recorded at a terminal ([Other machines](remote.md)) and the jobs whose results come back into the workspace, nothing asked of any machine; a job's state, asked of its machine at most every 30 s; what a fetch of an ended job would bring, each part's size; loopback only, and not in a hosted GUI |
 | `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
 | `GET /api/stopping` | For a study run until it is determined: the rule, each quantity's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
 | `GET /api/runs-compared` | For a study of several runs: each run, the settings that differ, and each quantity's recorded mean with its error and whether it differs from the first run's by more than twice their combined error |
@@ -671,6 +672,10 @@ a movie's frames at 64 MB.
 | `POST /api/run` | Start a run from form state |
 | `POST /api/run-config` | Start a run from a Config file, unmodified |
 | `POST /api/explore/stop` | Terminate the running workflow |
+| `POST /api/remote/plan` | What sending a Config in the workspace (`config`) to one of your machines (`machine`) would do, sending nothing: what travels with each size, where it runs, the GPUs' room, the job script; with a token (`plan`) kept ten minutes. Only files in the Config's folder, inside the workspace, travel; loopback only, and not in a hosted GUI |
+| `POST /api/remote/send` | Send the plan shown (`{"plan"}`), once, and only while what would travel is what was shown; loopback only |
+| `POST /api/remote/fetch` | Bring an ended job's results (`job`, `with_trajectory`), only at the size shown (`bringing`, in bytes); loopback only |
+| `POST /api/remote/cancel` | Stop a job, as `fastmdx remote cancel` does; loopback only |
 | `POST /api/report/write` | Write the report of the study open again, as `fastmdx report --output <study> --rerun` does; loopback only |
 | `GET /api/again` | What can be run again on the study open and why not, the analyses it ran last and those this release has; loopback only |
 | `POST /api/again` | Run the study open's analysis or report again (`phases`, `analyses`), by the phase command with `--rerun`; loopback only |

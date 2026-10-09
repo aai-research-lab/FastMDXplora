@@ -443,6 +443,10 @@ def make_handler(
         active_root=root,
     )
     cfg = config or DashboardConfig()
+    # Your machines (`/api/remote/...`): see `gui/remote_routes.py`.
+    from fastmdxplora.gui.remote_routes import RemoteDesk
+
+    remote_desk = RemoteDesk(app_runtime.workspace_root, hosted=hosting is not None)
     html = template_html if template_html is not None else _load_template()
     from fastmdxplora.gui.sidebar_icons import with_icons
 
@@ -623,6 +627,10 @@ def make_handler(
                     # included. Beyond loopback one FastMDXplora did not
                     # write is served as no run at all.
                     root = app_runtime.workspace_root / _NO_CURRENT_RUN
+            remote_answer = remote_desk.get(path, parse_qs(parsed.query))
+            if remote_answer is not None:
+                self._send_json(remote_answer)
+                return
             study_root = root
             if path in _READ_FROM_THE_RUN_SHOWN:
                 from fastmdxplora.gui.runs_together import run_shown
@@ -1290,6 +1298,10 @@ def make_handler(
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
             payload = self._read_json_body()
+            remote_answer = remote_desk.post(path, payload or {})
+            if remote_answer is not None:
+                self._send_json(remote_answer)
+                return
             if path == "/api/files/reveal":
                 # A file of the study shown in the file manager, selected:
                 # on the person's own computer only, where a window opening

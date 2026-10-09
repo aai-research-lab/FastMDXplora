@@ -7,7 +7,8 @@ FastMDXplora/
 │       ├── __init__.py            # Top-level exports, metadata, supported Python range
 │       ├── _version.py            # Written by setuptools-scm (not committed)
 │       ├── orchestrator.py        # FastMDXplora project-level orchestrator
-│       ├── runs_here.py           # One study at a time in a workspace: its starting lock and runs
+│       ├── runs_here.py           # When a study may start beside the others in a workspace: its starting lock and runs
+│       ├── gpu_here.py            # This computer's GPUs shared by the studies started on it, and what each run held
 │       ├── stop_after.py          # Sees a stop through, in a process that outlives the asker
 │       ├── dependencies.py        # Optional-backend detection (OpenMM, PDBFixer, …)
 │       ├── statistics.py          # Statistical inefficiency: how many independent samples a mean rests on
@@ -141,6 +142,7 @@ FastMDXplora/
 │       │   └── bundle.py          # Self-contained .zip project archive
 │       ├── gui/                   # All user-interface code: server, views, assets
 │       │   ├── exploration.py     # Study builder, config export, run control
+│       │   ├── remote_routes.py   # The routes to your machines: plan, send, watch, fetch, stop
 │       │   ├── server.py          # Dependency-free ThreadingHTTPServer, on loopback unless bound elsewhere
 │       │   ├── telemetry.py       # Phase/progress telemetry feed
 │       │   ├── trajectory_frames.py, live_frames.py   # Frame streaming
