@@ -183,7 +183,12 @@ as it runs at once, is refused (`remote.machine.no_room`; `--dry-run` says
 so and still shows the plan), asked again under a lock at the send and once
 more as the run starts. The need is learned from the GPU runs measured on
 that machine, by particles and precision, never scaled from another size by
-particles alone; where those runs do not reach a study's size, or its size
+particles alone: up to the largest size measured, never below the most a run
+of its size or smaller held, carried on as it rose up to the most a larger
+run held; past it, a line through the most each size held, or the most held
+carried on as steeply as it rose from sizes a tenth of the span apart,
+whichever is more, so neither a size that held less nor two sizes close
+together sets it; where those runs do not reach a study's size, or its size
 cannot be worked out here, it is not known and nothing is refused. Runs are
 counted where the explorer puts them, each round of a study run until it is
 determined and the pull that seeds an umbrella's windows included, and only
@@ -194,16 +199,26 @@ not, while a job of that name works in its folder on the machine (on a
 workstation read from `/proc`, where it has one; on a cluster from the
 account's queue), or while one of that name was last read waiting or running
 on another machine. A job whose script was killed while its run goes on
-reads as running, and `cancel` stops its run. `--partition` and `--time`
-take letters, digits and `_ . , : + -` only, at most 64. A cluster's job
-whose queue does not answer keeps its state, where it was read as failed;
-one the queue no longer knows, with no accounting to say how it ended, reads
-as failed; the queue's warnings are not read as a state, and a job waiting
-again in the queue is read as waiting. A cluster job asks not to be
-requeued, and keeps the last run's exit code until the cluster takes a job
-sent again. The queue's word and its accounting's are read apart: accounting
-that says a job the queue no longer knows is waiting or running is not
-believed. A cancel the cluster does not take is refused
+reads as running, and `cancel` stops its run. What a workstation job's run
+leaves going once the job has ended (an explorer that died with its runs
+going) is said, and `cancel` asks it to stop by an id only that send's run
+carries, never by the folder or the name. Each process is asked once: the
+machine keeps each stop asked, a cancel within ten minutes of one sends
+nothing more (a run told twice stops at once, without its checkpoint), and
+one after that stops them at once and says so. A job's number given to
+another process after a restart is not read as the job, and on a Mac, which
+has no `setsid`, a job is a process group of its own. On a cluster, the
+job's folder is compared as the machine resolves it, so one reached through
+a link is found, and a refusal names the job's number. `--partition` and
+`--time` take letters, digits and `_ . , : + -` only, at most 64. A
+cluster's job whose queue does not answer keeps its state, where it was read
+as failed; one the queue no longer knows, with no accounting to say how it
+ended, reads as failed; the queue's warnings are not read as a state, and a
+job waiting again in the queue is read as waiting. A cluster job asks not to
+be requeued, and keeps the last run's exit code until the cluster takes a
+job sent again. The queue's word and its accounting's are read apart:
+accounting that says a job the queue no longer knows is waiting or running
+is not believed. A cancel the cluster does not take is refused
 (`remote.job.cancel_not_taken`), and a job that has ended keeps how it
 ended; one last read as failed whose queue does not answer is neither
 signalled nor fetched. A job waiting in the queue says why, a hold above
