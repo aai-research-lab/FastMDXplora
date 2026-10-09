@@ -535,3 +535,28 @@ def test_a_speed_of_nothing_is_no_speed(tmp_path) -> None:
     said, errors = _open(root, check)
     assert not errors, errors
     assert said == "\u2014"
+
+
+def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
+    """A tile read "0 independent samples · from 17.6 ps" beside its mean."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui import overview_view
+
+    root = _browser_study(tmp_path / "study", "completed")
+    tiles_of = overview_view._tiles
+
+    def few(where):
+        said = tiles_of(where)
+        for tile in said["tiles"]:
+            if tile.get("analysis") == "rg":
+                tile["samples"] = 0.3
+        return said
+
+    monkeypatch.setattr(overview_view, "_tiles", few)
+
+    def check(page):
+        return page.text_content('#overview-tiles [data-tile-analysis="rg"] .tile-note')
+
+    note, errors = _open(root, check)
+    assert not errors, errors
+    assert note.startswith("under 1 independent sample"), note

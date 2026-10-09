@@ -16,6 +16,14 @@
 (function () {
   "use strict";
 
+  /* Independent samples as a count: under one is said so, where rounding
+   * gave "0 independent samples" beside a mean. */
+  function samplesSaid(n) {
+    if (n < 0.5) return "under 1 independent sample";
+    var whole = Math.round(n);
+    return whole + " independent sample" + (whole === 1 ? "" : "s");
+  }
+
   var SVG = "http://www.w3.org/2000/svg";
   var data = null;
   var loading = null;
@@ -101,8 +109,7 @@
     link.appendChild(make("div", "tile-value mono", tile.said));
     var note = perResidue
       ? "over " + tile.count.toLocaleString() + " " + tile.each + "s, mean " + tile.mean_said
-      : [tile.samples != null ? Math.round(tile.samples) + " independent sample" +
-           (Math.round(tile.samples) === 1 ? "" : "s") : "",
+      : [tile.samples != null ? samplesSaid(tile.samples) : "",
          tile.from_ns != null ? "from " + sayTime(tile.from_ns) : "",
          tile.reweighted ? "reweighted" : ""].filter(Boolean).join(" · ");
     link.appendChild(make("div", "tile-note", note));

@@ -371,6 +371,27 @@ class TestThePage:
         assert panel.locator(".convergence-level").count() >= 2
         assert page.errors == []
 
+    def test_one_independent_sample_is_said_in_the_singular(self, page) -> None:
+        """"so about 1 independent samples" for a count that rounds to 1."""
+        import json
+
+        def one(route):
+            answer = route.fetch()
+            body = answer.json()
+            body.setdefault("equilibration", {}).update(
+                effective_samples=1.2, statistical_inefficiency=40.0)
+            route.fulfill(response=answer, body=json.dumps(body))
+
+        page.route("**/api/convergence?analysis=rmsd*", one)
+        page.locator('#analysis-sections [data-convergence="rmsd"]').click()
+        panel = page.locator('#analysis-sections .convergence-panel[data-analysis="rmsd"]')
+        page.wait_for_function(
+            "() => /independent sample/.test((document.querySelector("
+            "'.convergence-panel[data-analysis=\"rmsd\"] .convergence-said') || {}).textContent || '')",
+            timeout=20000)
+        said = panel.locator(".convergence-said").text_content()
+        assert "so about 1 independent sample." in said, said
+
     def test_a_card_links_its_data(self, page) -> None:
         link = page.locator('#analysis-sections .analysis-card[data-analysis="rmsd"] [data-data-file]')
         assert link.get_attribute("href") == "/artifacts/analysis/rmsd/rmsd.dat"

@@ -492,7 +492,9 @@
       parts.push("Statistical inefficiency " + Number(eq.statistical_inefficiency).toPrecision(3) + " frames" +
         (auto.tau_int_time != null && timed ? " (integrated correlation time " +
           sayLength(auto.tau_int_time) + ")" : "") +
-        ", so about " + count(Math.round(eq.effective_samples || 0)) + " independent samples.");
+        ((eq.effective_samples || 0) < 0.5 ? ", so under 1 independent sample."
+          : ", so about " + count(Math.round(eq.effective_samples)) + " independent sample" +
+            (Math.round(eq.effective_samples) === 1 ? "." : "s.")));
     }
     // As the table above says it (`recorded.said`, the server's): an error
     // only where the record stands behind it.
