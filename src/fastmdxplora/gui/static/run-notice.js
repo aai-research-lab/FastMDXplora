@@ -49,7 +49,16 @@
 
   function notify(state) {
     if (!wanted() || !("Notification" in window) || Notification.permission !== "granted") return;
-    var ended = { failed: "failed", stopped: "stopped", interrupted: "was interrupted" }[state.run]
+    var run = state.run;
+    if (!run && !state.said) {
+      // No record says how it ended (its process ended before writing
+      // one, or a study of several runs): the process's own end, as the
+      // app state says it, failed or stopped.
+      var app = window.FastMDXDashboard && window.FastMDXDashboard.state.appState;
+      var word = app ? String(app.status || "") : "";
+      if (word === "failed" || word === "stopped") run = word;
+    }
+    var ended = { failed: "failed", stopped: "stopped", interrupted: "was interrupted" }[run]
       || "completed";
     try {
       var notice = new Notification(state.name + " " + ended, {
@@ -57,6 +66,19 @@
       });
       notice.onclick = function () { window.focus(); notice.close(); };
     } catch (e) { /* a browser that shows notices only from a service worker */ }
+  }
+
+  /* Whether a status after one seen running is that run's end. */
+  function ended(was, state) {
+    if (!was.study || was.study !== state.study) return false;
+    // No record: the end of a run that had none either (a study of several
+    // runs keeps its records in its runs, not at its top; a run's process
+    // can end before it writes one), said as its process ends. A record
+    // seen and then gone was cleared (a rerun forced in its folder).
+    if (!state.said) return !was.said;
+    if (!was.started || was.started === state.started) return true;
+    var then = Date.parse(was.started), since = Date.parse(state.started);
+    return isFinite(then) && isFinite(since) && since > then;
   }
 
   function said(message) {
@@ -100,23 +122,25 @@
     if (box) box.addEventListener("change", function (event) {
       if (event.isTrusted) askedFor();
     });
-    // A run is known by when its live record says it started, which the
-    // folder's record keeps until a rerun clears it, and by the study open,
-    // which says when it changes (run-changed); not by the name shown. A
-    // poll's status comes before the study's records, so a run was named by
-    // the dashboard and then by the study, and a run that ended at the next
-    // status was taken for another. A status of another record, or of none,
-    // after one seen running (another study opened elsewhere as a poll was
-    // answered) is not this run ending. A run seen running with no record of
-    // when it started (its record not written yet, a study of several runs,
-    // an older record) is taken to be the run that ends.
+    // A run is the study's whose status says it, by the folder the server
+    // read, which it names (a study opened elsewhere as a poll was answered
+    // gives another folder's status); and by when its live record says it
+    // started, which the folder's record keeps until a rerun clears it; not
+    // by the name shown, which changes as the study's records arrive. Its
+    // end is said where the record that ends it is the same run's, one seen
+    // running with no start (its record not written yet, a study of several
+    // runs, an older record), or the folder's run started again later (a
+    // rerun forced in its folder, ended before the page saw it going). A
+    // record seen and then gone says nothing ended.
     window.addEventListener("dashboard:status-updated", function (event) {
       var state = now();
-      var status = (event.detail && event.detail.status) || {};
+      var detail = event.detail || {};
+      var status = detail.status || {};
       state.started = status.run_started_at ? String(status.run_started_at) : "";
+      state.said = status.status ? String(status.status) : "";
+      state.study = detail.study ? String(detail.study) : "";
       title(state);
-      if (last && last.run === "running" && state.run !== "running"
-          && (!last.started || last.started === state.started)) {
+      if (last && last.run === "running" && state.run !== "running" && ended(last, state)) {
         notify(state);
       }
       last = state;

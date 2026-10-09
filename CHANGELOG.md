@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A run's notice when it ends
+
+**Fixed:** a run's notice is for the study whose status ends it. A study
+opened elsewhere between two polls gave its finished status to the page and,
+for a run seen running with no start yet, a notice that it had completed. A
+rerun forced in the same folder that ended before the page saw it going said
+nothing; it says so now. A study of several runs, which keeps no record at
+its top, is said as its process ends, and a process that failed or was
+stopped before writing any record is said as failed or stopped, not
+completed.
+
 ### The Agent reads the software's docs
 
 **Added:** the Agent answers a question about FastMDXplora itself (a page, a

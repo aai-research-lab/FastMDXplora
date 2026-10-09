@@ -8,6 +8,7 @@ and caches the result.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import csv
 import json
@@ -823,6 +824,11 @@ def make_handler(
                     # stage greyed out forever reads as a run that stalled.
                     "stages": run_stages(root),
                     "phases": run_phases(root),
+                    # Which study this is, as a key (no path said beyond
+                    # this computer): a page told of a run ending tells it
+                    # from another study's status, read as a study was
+                    # opened elsewhere between two polls.
+                    "study": hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16],
                 }
                 self._send_json(payload)
                 return

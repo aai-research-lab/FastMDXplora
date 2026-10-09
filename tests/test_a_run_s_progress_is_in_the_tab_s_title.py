@@ -61,7 +61,7 @@ def test_the_title_and_the_notice(tmp_path) -> None:
     assert kept is True
 
 
-def _ended_at_the_first_status(tmp_path, started=None, ended_started=None):
+def _ended_at_the_first_status(tmp_path, started=None, ended_started=None, app_word=None):
     """A run that ends as the page hears its first status: the end is
     written from that status's own listener, so the page's next status is,
     unless a poll was already on its way, the run's last. Gives the title
@@ -81,13 +81,24 @@ def _ended_at_the_first_status(tmp_path, started=None, ended_started=None):
         ended["run_started_at"] = ended_started
 
     def end_the_run():
-        live.write_text(json.dumps(ended), encoding="utf-8")
+        if ended_started == "cleared":
+            # A rerun forced in its folder clears the record first.
+            live.unlink(missing_ok=True)
+        else:
+            live.write_text(json.dumps(ended), encoding="utf-8")
 
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     try:
         for page in _open(session, "#overview"):
             page.set_default_timeout(60000)
             page.expose_function("endTheRun", end_the_run)
+            if app_word:
+                def app_state(route):
+                    answer = route.fetch()
+                    state = answer.json()
+                    state["status"] = app_word
+                    route.fulfill(response=answer, body=json.dumps(state))
+                page.route("**/api/app-state*", app_state)
             page.add_init_script("""
                 window.__notices = [];
                 window.__statuses = 0;
@@ -132,26 +143,188 @@ def test_a_run_ending_as_the_page_opens_still_says_so(tmp_path) -> None:
     assert notices == ["study completed"]
 
 
+def test_a_record_that_says_completed_is_said_so(tmp_path) -> None:
+    """The process's word (an earlier run stopped from this page, its stop
+    still in the app state) is not taken over a record that says how the
+    run ended."""
+    pytest.importorskip("playwright.sync_api")
+    _, notices = _ended_at_the_first_status(tmp_path, app_word="stopped")
+    assert notices == ["study completed"]
+
+
 STARTED = "2026-10-08T09:00:00+00:00"
 
 
 @pytest.mark.parametrize(("ended_started", "said"), [
-    (STARTED, ["study completed"]), ("2026-10-08T09:30:00+00:00", []), (None, []),
-    ("from no record", ["study completed"])])
+    (STARTED, ["study completed"]), ("2026-10-08T09:30:00+00:00", ["study completed"]),
+    ("2026-10-08T08:30:00+00:00", []), (None, []), ("from no record", ["study completed"]),
+    ("cleared", [])])
 def test_a_notice_is_for_the_run_that_ran(tmp_path, ended_started, said) -> None:
     """A run is the run its live record says started when: the folder's
-    record keeps it until a rerun clears it. The status of a record started
-    at another time, or of no record, after a running one (another study
-    opened elsewhere as a poll was answered, its app state and status read
-    either side of the change) is not this run ending, and says nothing."""
+    record keeps it until a rerun clears it. The same folder's record
+    started later and ended is the study run again (a rerun forced in its
+    folder that ended before the page saw it going), and says so; one
+    started earlier, or a status with no start after one with a start,
+    is not this run ending."""
     pytest.importorskip("playwright.sync_api")
-    if ended_started == "from no record":
+    if ended_started == "cleared":
+        # Seen running with no start, then its record cleared (a rerun
+        # forced in its folder, its own record not written yet): nothing
+        # has ended that can be said.
+        _, notices = _ended_at_the_first_status(tmp_path, None, "cleared")
+    elif ended_started == "from no record":
         # Seen running before its record said when it started (the run's
         # process going, its record not written yet): its end is its end.
         _, notices = _ended_at_the_first_status(tmp_path, None, STARTED)
     else:
         _, notices = _ended_at_the_first_status(tmp_path, STARTED, ended_started)
     assert notices == said
+
+
+_PAGE_WATCHED = """
+    window.__notices = [];
+    window.__statuses = 0;
+    window.Notification = function (t) { window.__notices.push(t); };
+    window.Notification.permission = 'granted';
+    localStorage.setItem('fmx.preferences', JSON.stringify({notify: true}));
+    window.addEventListener('dashboard:status-updated', () => { window.__statuses += 1; });
+"""
+
+
+def _touch(path):
+    """The file written again as it is: the page's change stream asks for
+    a poll."""
+    path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+@pytest.mark.parametrize("started", [None, STARTED])
+def test_another_study_s_status_ends_nothing(tmp_path, started) -> None:
+    """Another study opened elsewhere as a poll was answered: the poll's
+    app state is this study's, its status the other's, finished. A run seen
+    running here, with or without a start, has not ended, and nothing is
+    said; the server names the study each status is of."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _write_study(tmp_path / "study")
+    _running(study)
+    live = study / "simulation" / "live_status.json"
+    if started:
+        live.write_text(json.dumps({**json.loads(live.read_text()), "run_started_at": started}),
+                        encoding="utf-8")
+    other = _write_study(tmp_path / "other")
+    other_live = other / "simulation" / "live_status.json"
+    other_live.write_text(json.dumps(
+        {"status": "completed", "stage": "production", "current_step": 2500,
+         "total_steps": 2500}), encoding="utf-8")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    armed, kept, stale, switched = [], [], [], []
+
+    def app_state(route):
+        # The poll after the run was seen running answers this study's app
+        # state as it was before the switch, whichever request comes first.
+        if armed and not stale:
+            stale.append(True)
+            route.fulfill(status=200, content_type="application/json", body=kept[-1])
+            return
+        answer = route.fetch()
+        kept.append(answer.text())
+        route.fulfill(response=answer)
+
+    def status(route):
+        # And its status after the switch: the other study's.
+        if armed and not switched:
+            switched.append(session.runtime.switch_to(other))
+        route.fulfill(response=route.fetch())
+
+    try:
+        for page in _open(session, "#overview"):
+            page.set_default_timeout(60000)
+            page.add_init_script(_PAGE_WATCHED)
+            page.route("**/api/app-state*", app_state)
+            page.route("**/api/status*", status)
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("() => /^\\d+% · /.test(document.title)")
+            armed.append(True)
+            seen = page.evaluate("() => window.__statuses")
+            _touch(live)
+            page.wait_for_function(f"() => window.__statuses > {seen}")
+            # And the next poll, which reads the other study whole.
+            seen = page.evaluate("() => window.__statuses")
+            _touch(other_live)
+            page.wait_for_function(f"() => window.__statuses > {seen}")
+            notices = page.evaluate("() => window.__notices")
+            assert not page.errors, page.errors
+    finally:
+        session.server.shutdown()
+    assert stale and switched and switched[0]["ok"], (stale, switched)
+    assert notices == []
+
+
+@pytest.mark.parametrize(("how", "said"), [
+    ("completed", "study completed"), ("failed", "study failed"), ("stopped", "study stopped")])
+def test_a_study_with_no_record_of_its_own_says_its_end(tmp_path, how, said) -> None:
+    """A study of several runs keeps its live records in its runs, none at
+    its top, and a run's process can end before it writes one: it runs
+    while its process does, and its end is said as the process ends, in the
+    process's own word (a failure at its start said as failed, not as
+    completed)."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _write_study(tmp_path / "study")
+    (study / "simulation" / "live_status.json").unlink(missing_ok=True)
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    going = [True]
+
+    def app_state(route):
+        answer = route.fetch()
+        state = answer.json()
+        state["process_running"] = going[0]
+        if not going[0]:
+            state["status"] = how
+            state["returncode"] = {"completed": 0, "failed": 1, "stopped": -15}[how]
+        route.fulfill(response=answer, body=json.dumps(state))
+
+    try:
+        for page in _open(session, "#overview"):
+            page.set_default_timeout(60000)
+            page.add_init_script(_PAGE_WATCHED)
+            page.route("**/api/app-state*", app_state)
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function(
+                "() => document.getElementById('sidebar-progress')"
+                ".getAttribute('data-run') === 'running'")
+            going[0] = False
+            page.wait_for_function("() => window.__notices.length > 0")
+            notices = page.evaluate("() => window.__notices")
+            assert not page.errors, page.errors
+    finally:
+        session.server.shutdown()
+    assert notices == [said]
+
+
+def test_the_status_names_its_study(tmp_path) -> None:
+    """`/api/status` names the study it read, as a key and not a path."""
+    from urllib.request import urlopen
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _write_study(tmp_path / "study")
+    _running(study)
+    other = _write_study(tmp_path / "other")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        def key():
+            with urlopen(session.url + "/api/status") as answer:
+                return json.loads(answer.read())["study"]
+        first = key()
+        session.runtime.switch_to(other)
+        second = key()
+    finally:
+        session.server.shutdown()
+    assert first and second and first != second
+    assert str(tmp_path) not in first and "/" not in first
 
 
 def test_a_finished_study_opened_says_nothing(tmp_path) -> None:

@@ -717,7 +717,7 @@
       renderHealth({});
       renderStageTimeline({});
       renderLiveProgress({});
-      emit("status-updated", {status: {}, health: {}});
+      emit("status-updated", {status: {}, health: {}, study: ""});
       return;
     }
     const status = payload.status || {};
@@ -733,7 +733,9 @@
     renderHealth(health);
     renderStageTimeline(status);
     renderLiveProgress(status);
-    emit("status-updated", {status, health, times: state.times});
+    // The folder read, so a listener can tell one study's status from
+    // another's (a study opened elsewhere between two polls).
+    emit("status-updated", {status, health, times: state.times, study: payload.study || ""});
   }
 
   /* The Overview's blocks in the order they are read, in the page itself,
