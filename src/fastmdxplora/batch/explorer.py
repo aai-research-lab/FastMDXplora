@@ -1054,6 +1054,37 @@ def _what_differs(found: dict[str, Any], wanted: dict[str, Any]) -> list[str]:
     return changed
 
 
+def _phases_it_recorded(output_dir: Path, study: dict[str, Any]) -> "tuple[Any, Any] | None":
+    """The phases a study of several runs recorded, where this run asks for
+    none of its simulation and the record says it simulated: its analysis
+    or report run again is still that study, and writing `[analysis,
+    report]` over its record made the Config that reproduces it reproduce
+    only its analysis (as a study of one run's does, `orchestrator`)."""
+    def simulates(include: Any, exclude: Any) -> bool:
+        return ((not isinstance(include, list) or not include or "simulation" in include)
+                and not (isinstance(exclude, list) and "simulation" in exclude))
+
+    if simulates(study.get("include_phase"), study.get("exclude_phase")):
+        return None
+    try:
+        import yaml
+
+        recorded = yaml.safe_load((Path(output_dir) / "resolved_config.yml").read_text(
+            encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - nothing recorded, nothing kept
+        return None
+    if not isinstance(recorded, dict) or not any(
+            (Path(output_dir) / "runs").glob("*/simulation/live_status.json")):
+        return None
+    include, exclude = recorded.get("include_phase"), recorded.get("exclude_phase")
+    if not simulates(include, exclude):
+        return None
+    from fastmdxplora.orchestrator import _with_the_phases_run
+
+    now = study.get("include_phase")
+    return _with_the_phases_run(include, exclude, now if isinstance(now, list) else None)
+
+
 class BatchExplorer:
     """Run one or more FastMDXplora studies (systems × sweep).
 
@@ -2823,6 +2854,9 @@ class BatchExplorer:
         study = {key: value for key, value in self._raw.items() if key not in PHASE_KEYS}
         study["options"] = {key: value for key, value in self._raw.items() if key in PHASE_KEYS}
         study["output"] = str(self.output_dir)
+        kept = _phases_it_recorded(self.output_dir, study)
+        if kept is not None:
+            study["include_phase"], study["exclude_phase"] = kept
         write_resolved_config(study, self.output_dir)
 
     def _write_batch_manifest(self) -> None:

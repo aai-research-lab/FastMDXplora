@@ -647,6 +647,14 @@ class FastMDXplora:
         # any per-call overrides), not just the construction-time config.
         self._resolved_include = include
         self._resolved_exclude = exclude
+        self._recorded_phases = None
+        if "simulation" not in plan and _a_simulation_recorded(self.output_dir):
+            # The analysis or report run again over a recorded simulation,
+            # from the GUI, the command line or Python: the study is still
+            # the run it recorded, so its record keeps the phases it ran
+            # (written as `[analysis, report]`, it read as a trajectory
+            # analysed, and reproduced only the analysis).
+            self._recorded_phases = self._recorded_phase_selection(plan)
         self._resolved_options = {
             p: opts for p, opts in merged_options.items() if opts
         }
@@ -1625,6 +1633,28 @@ class FastMDXplora:
             json.dump(manifest, fh, indent=2)
         logger.debug("Wrote manifest: %s", manifest_path)
 
+    def _recorded_phase_selection(self, plan: "list[str] | None" = None
+                                  ) -> "tuple[Any, Any] | None":
+        """The phases the study's resolved config already records, where
+        they include the simulation, with the phases run now (``plan``)
+        added; or None. A study recorded as `[setup, simulation]` and then
+        analysed was kept so, its analysis left out of its record."""
+        import yaml
+
+        try:
+            data = yaml.safe_load((self.output_dir / "resolved_config.yml").read_text(
+                encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        include, exclude = data.get("include_phase"), data.get("exclude_phase")
+        if isinstance(include, list) and include and "simulation" not in include:
+            return None
+        if isinstance(exclude, list) and "simulation" in exclude:
+            return None
+        return _with_the_phases_run(include, exclude, plan)
+
     def _write_resolved_config(self) -> None:
         """Write the fully-merged configuration for reproducibility.
 
@@ -1636,14 +1666,19 @@ class FastMDXplora:
         from fastmdxplora.config import write_resolved_config
         from fastmdxplora.utils.presenter import get_presenter
 
+        recorded = getattr(self, "_recorded_phases", None)
+        include = getattr(self, "_resolved_include", None) or self._config_include
+        exclude = getattr(self, "_resolved_exclude", None) or self._config_exclude
+        if recorded is not None:
+            include, exclude = recorded
         resolved = {
             "system": self.system,
             "system_id": getattr(self, "_system_id", None),
             "output": str(self.output_dir),
             "verbose": self.verbose,
             "explain": bool(getattr(get_presenter(), "explain", True)),
-            "include_phase": getattr(self, "_resolved_include", None) or self._config_include,
-            "exclude_phase": getattr(self, "_resolved_exclude", None) or self._config_exclude,
+            "include_phase": include,
+            "exclude_phase": exclude,
             "options": getattr(self, "_resolved_options", None) or self.options,
             # How the study was written travels with it. The config that
             # comes back out has to say the same thing the one that went in
@@ -1729,6 +1764,18 @@ def _same_directory(first: Path, second: Path) -> bool:
         return Path(first).resolve() == Path(second).resolve()
     except OSError:
         return False
+
+
+def _with_the_phases_run(include: Any, exclude: Any, plan: "list[str] | None") -> tuple[Any, Any]:
+    """A recorded phase selection with the phases run now added."""
+    from fastmdxplora.config.schema import PHASE_SCHEMAS
+
+    now = [str(p) for p in plan or []]
+    if isinstance(include, list) and include:
+        include = [p for p in PHASE_SCHEMAS if p in {str(x) for x in include} | set(now)]
+    if isinstance(exclude, list) and exclude:
+        exclude = [p for p in exclude if str(p) not in now] or None
+    return include, exclude
 
 
 def _a_simulation_recorded(output_dir: Path) -> bool:

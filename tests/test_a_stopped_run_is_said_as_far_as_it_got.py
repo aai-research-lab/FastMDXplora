@@ -282,3 +282,103 @@ def test_a_run_stopped_in_its_own_analysis_reads_completed_once_analysed_again(t
     after = read_status(root)
     assert after["status"] == "completed" and after.get("latest_error") is None
     assert "ended_as" not in after
+
+
+def test_analysing_again_from_the_command_line_keeps_the_phases_too(tmp_path, monkeypatch):
+    """Only the GUI's run kept them: `fastmdx explore --include-phase
+    analysis report` from a terminal wrote `[analysis, report]` for the
+    whole run, and a run killed in its analysis, or one from Python, left
+    it so."""
+    import yaml
+
+    from fastmdxplora.orchestrator import FastMDXplora, PhaseResult
+
+    monkeypatch.delenv("FASTMDX_DASHBOARD_ACTIVE", raising=False)
+    root = _completed(tmp_path / "study")
+    (root / "resolved_config.yml").write_text(
+        "system: 1L2Y\ninclude_phase: [setup, simulation, analysis, report]\n",
+        encoding="utf-8")
+    seen = []
+
+    def phase(self, name, options):
+        # What the record says while the phase runs, as a run killed here
+        # would leave it.
+        seen.append(yaml.safe_load((root / "resolved_config.yml").read_text(
+            encoding="utf-8"))["include_phase"])
+        return PhaseResult(name=name, status="ok", output_dir=root / name)
+
+    monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
+    monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
+    FastMDXplora("1L2Y", output_dir=str(root)).explore(include_phase=["analysis", "report"])
+    assert seen and all(kept == ["setup", "simulation", "analysis", "report"] for kept in seen)
+
+
+def test_a_study_of_several_runs_analysed_again_keeps_its_phases(tmp_path):
+    """The root record of a sweep analysed again said `[analysis, report]`
+    while it ran, and after a run from Python too."""
+    import yaml
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    config = tmp_path / "sweep.yml"
+    config.write_text("systems:\n  - system: 1L2Y\nsweep:\n  simulation.random_seed: [11, 12]\n",
+                      encoding="utf-8")
+    out = tmp_path / "out"
+    first = BatchExplorer(config=str(config), output_dir=str(out))
+    (out / "runs").mkdir(parents=True)
+    first._write_study_config()
+    assert yaml.safe_load((out / "resolved_config.yml").read_text()).get("include_phase") in (
+        None, ["setup", "simulation", "analysis", "report"])
+    again = BatchExplorer(config=str(config), output_dir=str(out))
+    again._raw["include_phase"] = ["analysis", "report"]
+    # Before any run simulated, the study is what it now asks for.
+    again._write_study_config()
+    assert yaml.safe_load((out / "resolved_config.yml").read_text()).get("include_phase") == [
+        "analysis", "report"]
+    first._write_study_config()
+    for run in ("seed-11", "seed-12"):
+        (out / "runs" / run / "simulation").mkdir(parents=True)
+        (out / "runs" / run / "simulation" / "live_status.json").write_text(
+            '{"status": "completed"}', encoding="utf-8")
+    again._write_study_config()
+    kept = yaml.safe_load((out / "resolved_config.yml").read_text()).get("include_phase")
+    assert kept != ["analysis", "report"] and (kept is None or "simulation" in kept)
+
+
+def test_analysing_again_keeps_the_phases_the_study_ran(tmp_path):
+    """Analyze again wrote `include_phase: [analysis, report]` into the
+    study's resolved config: All studies then called the run a trajectory
+    analysed, Compare listed it as a difference, and the config that says
+    how to reproduce the study reproduced only its analysis."""
+    import yaml
+
+    from fastmdxplora.gui.workspace import card_of
+    from fastmdxplora.orchestrator import FastMDXplora
+
+    root = _completed(tmp_path / "study")
+    (root / "resolved_config.yml").write_text(
+        "system: 1L2Y\ninclude_phase: [setup, simulation, analysis, report]\n",
+        encoding="utf-8")
+    run = object.__new__(FastMDXplora)
+    run.output_dir = root
+    assert run._recorded_phase_selection() == (["setup", "simulation", "analysis", "report"], None)
+    # A study recorded as its setup and simulation, then analysed: the
+    # analysis joins its record, not left out of it.
+    (root / "resolved_config.yml").write_text(
+        "system: 1L2Y\ninclude_phase: [setup, simulation]\n", encoding="utf-8")
+    assert run._recorded_phase_selection(["analysis"]) == (
+        ["setup", "simulation", "analysis"], None)
+    (root / "resolved_config.yml").write_text(
+        "system: 1L2Y\ninclude_phase: [setup, simulation, analysis, report]\n",
+        encoding="utf-8")
+    run.system, run.verbose, run.options = "1L2Y", False, {}
+    run._config_include, run._config_exclude = ["analysis", "report"], None
+    run._resolved_include, run._resolved_exclude = ["analysis", "report"], None
+    run._recorded_phases = run._recorded_phase_selection()
+    run._write_resolved_config()
+    kept = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8"))
+    assert kept["include_phase"] == ["setup", "simulation", "analysis", "report"]
+    # A study rewritten so before this is still read as the run it was.
+    (root / "resolved_config.yml").write_text(
+        "system: 1L2Y\ninclude_phase: [analysis, report]\n", encoding="utf-8")
+    assert card_of(root)["kind"] != "a trajectory analysed"

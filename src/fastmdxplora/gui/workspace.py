@@ -114,7 +114,7 @@ def card_of(folder: Path | str) -> dict[str, Any]:
         # and what named it: a PDB entry, or its structure file's name.
         "system": system_id(named),
         "structure": named,
-        "kind": _kind_of(config, batch),
+        "kind": _kind_of(config, batch, simulated=_simulated(base)),
         "state": _state_of(base, batch, manifest),
         "when": _when(base, manifest),
         # When anything was last done with it: run, analysed, reported,
@@ -323,7 +323,20 @@ def _short(system: str) -> str:
     return Path(system).name if ("/" in system or "\\" in system) else system
 
 
-def _kind_of(config: Any, batch: Any) -> str:
+def _simulated(base: Path) -> bool:
+    """Whether the study's own live record says it simulated: its
+    production taken, or steps planned. Analyze again wrote its config's
+    phases as `[analysis, report]`, and a run read as a trajectory analysed."""
+    record = _read_json(base / "simulation" / "live_status.json")
+    if not isinstance(record, dict):
+        return False
+    states = record.get("stage_states") if isinstance(record.get("stage_states"), dict) else {}
+    taken = str(states.get("production") or "waiting").lower() not in ("waiting", "skipped")
+    planned = record.get("total_planned_steps")
+    return taken or (isinstance(planned, (int, float)) and planned > 0)
+
+
+def _kind_of(config: Any, batch: Any, *, simulated: bool = False) -> str:
     if isinstance(batch, dict):
         planned = batch.get("planned") or []
         runs = int(batch.get("n_runs") or len(planned) or 0)
@@ -342,7 +355,7 @@ def _kind_of(config: Any, batch: Any) -> str:
             return f"{runs} runs across {', '.join(a.split('.')[-1] for a in axes)}"
         return f"{runs} runs"
     phases = (config or {}).get("include_phase") if isinstance(config, dict) else None
-    if isinstance(phases, list) and phases and "simulation" not in phases:
+    if isinstance(phases, list) and phases and "simulation" not in phases and not simulated:
         return "a trajectory analysed" if "analysis" in phases else "prepared"
     simulation = (config or {}).get("simulation") if isinstance(config, dict) else None
     if isinstance(simulation, dict):
