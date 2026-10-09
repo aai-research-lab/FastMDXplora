@@ -136,18 +136,13 @@ def look_said(tool: str, asked: dict[str, Any] | None, *, doing: bool = False) -
         return text
     if tool == "read_docs":
         # A question, else a section or a page read whole; nothing asked, the
-        # pages. Only words are said: anything else is refused by the look.
-        value = ""
-        for key in ("query", "value", "section", "page"):
-            given = (asked or {}).get(key)
-            if (isinstance(given, (str, int, float)) and not isinstance(given, bool)
-                    and not (isinstance(given, int) and given.bit_length() > 1000)):
-                value = " ".join(str(given).split())
-                if value:
-                    break
-        if not value and asked:
-            # Asked something the look cannot read: it is refused, not a list.
+        # pages. A look the software refuses is said as refused, from the
+        # same reading of what was asked.
+        try:
+            query, page, section, _ = _docs_call(asked or {})
+        except _Refused:
             return "Reading the docs" if doing else "Read the docs"
+        value = query or section or page or ""
         if not value:
             return "Listing the docs' pages" if doing else "Listed the docs' pages"
     else:
@@ -806,10 +801,10 @@ def _methods_of_study(box: Toolbox, asked: dict[str, Any]) -> str:
             f"(a gap they name was not recorded):\n\n{prose}")
 
 
-def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
-    """What the docs of this installed version say (:mod:`fastmdxplora.software_docs`)."""
-    from fastmdxplora.software_docs import DocsNotFound, read_docs
-
+def _docs_asked(asked: dict[str, Any]) -> dict[str, Any]:
+    """What ``read_docs`` was asked, as the look reads it: the text
+    protocol's ``value`` as the query, and a bare question YAML read as a
+    mapping put back together."""
     asked = dict(asked)
     if "value" in asked and "query" not in asked:
         # The text protocol's ``USE: read_docs how do I resume``, which YAML
@@ -826,6 +821,17 @@ def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
         # which YAML reads as a mapping: the question, put back together.
         key = stray[0]
         asked = {"query": f"{key}: {asked[key] or ''}".strip()}
+    return asked
+
+
+def _docs_call(asked: dict[str, Any]) -> tuple[str | None, str | None, str | None, int | None]:
+    """The query, page, section and part ``read_docs`` was asked for, as the
+    look reads them; raises :class:`_Refused` for what it does not take
+    (another key, a value that is not words, a part that is not a whole
+    number of 1 or more, a section with no page, a later part of no
+    section)."""
+    asked = _docs_asked(asked)
+    taken = {"query", "page", "section", "part"}
     unknown = sorted(str(key) for key in asked if key not in taken)
     if unknown:
         raise _Refused("read_docs takes `query`, or `page` with `section` and `part`; not "
@@ -841,6 +847,7 @@ def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
             raise _Refused(f"`{key}` is words, not a number of {value.bit_length()} bits.")
         return " ".join(str(value).split())[:300] or None
 
+    query, page, section = text("query"), text("page"), text("section")
     part = asked.get("part")
     if part is not None:
         whole = isinstance(part, int) and not isinstance(part, bool)
@@ -848,9 +855,21 @@ def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
             part, whole = int(part), True
         if not whole or part < 1:
             raise _Refused("`part` is a whole number, 1 or more.")
+    if section and not page:
+        raise _Refused("Name the page a section is on, as `page`.")
+    if part not in (None, 1) and not section:
+        raise _Refused("`part` is for a section read in parts: name it with `page` and "
+                       "`section`.")
+    return query, page, section, part
+
+
+def _read_docs(box: Toolbox, asked: dict[str, Any]) -> str:
+    """What the docs of this installed version say (:mod:`fastmdxplora.software_docs`)."""
+    from fastmdxplora.software_docs import DocsNotFound, read_docs
+
+    query, page, section, part = _docs_call(asked)
     try:
-        return read_docs(query=text("query"), page=text("page"), section=text("section"),
-                         part=part)
+        return read_docs(query=query, page=page, section=section, part=part)
     except DocsNotFound as exc:
         raise _Refused(str(exc)) from None
 

@@ -292,11 +292,199 @@ def test_a_line_across_the_page_is_no_passage() -> None:
     ("minimization", "minimise"), ("analyzed", "analysed"), ("parameterized", "parameterises"),
     ("equilibrate", "equilibration"), ("equilibrated", "equilibrating"), ("seeded", "seed"),
     ("needed", "need"), ("separated", "separation"),
+    # -ation at any length, y and i, and the words the endings get wrong.
+    ("rotation", "rotate"), ("creation", "creates"), ("durations", "duration"),
+    ("applies", "apply"), ("applied", "applies"), ("studies", "studying"),
+    ("used", "use"), ("using", "usage"), ("uses", "use"), ("gpus", "GPU".lower()),
+    ("cpus", "cpu"), ("menus", "menu"), ("usages", "use"),
 ])
 def test_a_word_is_found_in_any_of_its_forms(written, asked) -> None:
     assert software_docs._stem(written) == software_docs._stem(asked)
     assert software_docs._stem("status") == "status"
     assert software_docs._stem("process") == "process"
+
+
+@pytest.mark.parametrize("one, other", [
+    ("duration", "during"), ("status", "state"), ("key", "ki"), ("use", "us"),
+    # A short word ending in -ation is a word of its own.
+    ("cation", "cat"), ("station", "state"), ("ration", "rate"),
+])
+def test_words_that_only_look_alike_stay_apart(one, other) -> None:
+    assert software_docs._stem(one) != software_docs._stem(other)
+
+
+def test_two_words_are_matched_with_one_only_where_both_are_written_as_words(
+        tmp_path, monkeypatch) -> None:
+    _synthetic(tmp_path, monkeypatch,
+               "# A\n\n## Errors\n\nA script catches `StudyFailed` and reads its phase.\n\n"
+               "## Kept\n\nA study that failed keeps its log.\n\n"
+               "## Integrator\n\n| Setting | Default |\n|---|---|\n| `timestep_fs` | 2.0 |\n\n"
+               "## Prose\n\nThe timestep is chosen for you.\n\n"
+               "## Apart\n\nEach time a step is taken it is kept.\n")
+    found = [p.trail[-1] for p in software_docs.search("study failed")]
+    # Two words glued into a name at a capital may be a name of its own:
+    # what writes the two words comes first.
+    assert found[0] == "Kept"
+    found = [p.trail[-1] for p in software_docs.search("the time step")]
+    # One word in prose or in a name of code, for the two asked, as well as
+    # the two written apart.
+    assert set(found) >= {"Integrator", "Prose", "Apart"}
+    found = [p.trail[-1] for p in software_docs.search("the timestep")]
+    assert set(found) >= {"Integrator", "Prose"}
+
+
+def test_two_words_of_prose_asked_as_one_are_found() -> None:
+    assert "force field" in read_docs("which forcefield is used")
+    assert "`timestep_fs`" in read_docs("what time step is used")
+
+
+@pytest.mark.parametrize("question, row", [
+    ("what box shape", "`box_shape`"), ("which water model", "`water_model`"),
+    ("what does ligand forcefield do", "`ligand_forcefield`"),
+    ("what does ligand pose do", "`ligand_pose`"),
+])
+def test_a_setting_s_name_asked_in_words_finds_its_row(question, row) -> None:
+    # ``box_shape`` is "box shape" written as one name.
+    assert row in read_docs(question)
+
+
+def test_pairs_are_read_inside_names_and_never_across_code() -> None:
+    joined = [j for j, _ in software_docs._joined("set `box_shape` up, re-run --read-only")]
+    assert {"boxshap", "rerun", "readonli"} <= set(joined)
+    # A span of code between two words parts them; the words of a span of
+    # code pair with each other.
+    assert "timestep" not in [j for j, _ in software_docs._joined("each time `x` step")]
+    assert "timestep" in [j for j, _ in software_docs._joined("each time step")]
+    assert "fastmdxsetup" in [j for j, _ in software_docs._joined("run `fastmdx setup` first")]
+    # A run of words ends at a sentence's end and at a table's cell.
+    joined = [j for j, _ in software_docs._joined(
+        "The run stops. Time step `x`\n| Setting | Type |")]
+    assert "stopstim" not in joined and "settingtyp" not in joined
+    # A block of code parts the prose around it.
+    assert "timestep" not in [j for j, _ in software_docs._joined(
+        "the time\n```\nx = 1\n```\nstep is two")]
+    # The second word may be a particle ("set up", "read only"), no other
+    # short word; two short words make no pair.
+    joined = [j for j, _ in software_docs._joined("use the GUI to set up a run that stopped")]
+    assert "setup" in joined and not {"useth", "guito", "runthat"} & set(joined)
+    assert software_docs._joined("`in_out`") == []
+    # Two words glued at a capital are a name, not a pair, in prose or code.
+    assert not any("studyfail" in j for j, _ in software_docs._joined("a StudyFailed error"))
+    assert software_docs._name_parts("fooBar_baz and box_shape") == [["box", "shape"]]
+    assert software_docs._written_as_one("StudyFailed timestep_fs") == (
+        ["timestep", "fs"], ["studyfailed"])
+
+
+def test_a_short_word_after_another_is_part_of_the_pair() -> None:
+    assert ("setup", ("set", "up")) in software_docs._joined("how do I set up a cluster")
+    assert "`clusters`" in read_docs("how do I setup a cluster")
+    # "set up" is the verb, found only where the docs write it apart; the
+    # phase written as one (``setup_from``) is not what was asked.
+    first = software_docs.search("how to set up umbrella sampling")[0]
+    assert "Umbrella sampling" in first.trail
+    found = software_docs.search("How do I set up a study?")
+    assert not any("`setup_from`" in p.text or "setup.prepared" in p.text for p in found)
+    assert any(p.trail[-1] == "Designing a study" for p in found)
+
+
+def test_a_command_s_name_finds_what_it_does() -> None:
+    for command, does in (("simulate", "Run dynamics on a prepared system"),
+                          ("setup", "Prepare a system and stop")):
+        assert does in read_docs(f"What does fastmdx {command} do?")
+    first = software_docs.search("What does fastmdx explore do?")[0]
+    assert "`fastmdx explore` runs all four" in first.text
+
+
+def test_a_name_glued_at_a_capital_is_found_by_its_two_words(tmp_path, monkeypatch) -> None:
+    _synthetic(tmp_path, monkeypatch,
+               "# A\n\n## Install\n\nInstall AmberTools first, before anything.\n\n"
+               "## Other\n\nAmber is a colour, and so are others.\n")
+    assert software_docs.search("amber tools")[0].trail[-1] == "Install"
+
+
+def test_a_page_s_opening_is_lifted_not_a_long_row_s(tmp_path, monkeypatch) -> None:
+    # Many other passages, so the page's name is a word few of them say.
+    others = "".join(f"## Part {n}\n\nSomething else, number {n}.\n\n" for n in range(120))
+    _synthetic(tmp_path, monkeypatch, f"# A\n\n{others}")
+    filler = " ".join(["The row goes on about other things."] * 30)
+    (tmp_path / "docs" / "quokkas.md").write_text(
+        "# Quokkas\n\nA page of wombats.\n\n## Table\n\n| Name | What |\n|---|---|\n"
+        f"| `q` | Wombats. {filler} |\n\n## Prose\n\nWombats here. "
+        + " ".join(["Other words go on."] * 8) + "\n")
+    found = software_docs.search("quokkas wombats")
+    # The page's own opening is lifted by the name; a long row's opening is
+    # lifted as any row's is, not by the page's name.
+    assert found[0].trail == ("Quokkas",)
+    row = next(p for p in found if p.trail[-1] == "Table")
+    assert row.opening and found.index(row) > found.index(next(
+        p for p in found if p.trail[-1] == "Prose"))
+
+
+def test_a_page_is_lifted_only_by_a_word_that_names_it() -> None:
+    assert software_docs.search("show me the examples")[0].page == "examples"
+    # "study" is said on nearly every page: it lifts no page's opening.
+    assert software_docs._page_word("studies") == software_docs._stem("study")
+    found = software_docs.search("How do I name my study?")
+    assert not any(p.page == "studies" and p.opening and not p.trail[1:] for p in found)
+
+
+def test_a_short_passage_is_scored_as_part_of_something_longer() -> None:
+    docs = software_docs._docs()
+    # Its words and pairs of words; not the same words again as one.
+    counts = [sum(n for key, n in c.items() if not key.startswith(("~", "^")))
+              for c in docs.terms]
+    assert docs.average == pytest.approx(sum(counts) / len(counts))
+    assert list(docs.lengths) == [max(n, software_docs._SHORTEST * docs.average)
+                                  for n in counts]
+    assert any(length > count for length, count in zip(docs.lengths, counts))
+
+
+def test_one_table_takes_at_most_two_places_unless_nothing_else_answers(
+        tmp_path, monkeypatch) -> None:
+    filler = " ".join(["The row goes on about other things."] * 5)
+    rows = "\n".join(f"| `row{n}` | Quokka wombat quokka. {filler} |" for n in range(4))
+    table = f"| Name | What |\n|---|---|\n{rows}"
+    other = "A quokka and a wombat, and the rest of it said at length here, number nine."
+    _synthetic(tmp_path, monkeypatch, f"# A\n\n## Many\n\n{table}\n\n## Other\n\n{other}\n")
+    found = [p.trail[-1] for p in software_docs.search("quokka wombat")]
+    assert found == ["Many", "Many", "Other", "Many"], found
+    (tmp_path / "alone").mkdir()
+    _synthetic(tmp_path / "alone", monkeypatch,
+               f"# A\n\n## Many\n\n{table}\n\n## Other\n\nNothing.\n")
+    found = [p.trail[-1] for p in software_docs.search("quokka wombat")]
+    assert found == ["Many"] * 4
+    # A third row is put back, not dropped: before what answers less than
+    # half as well.
+    weak = "A wombat, and only a wombat, with a great deal more said about other things here."
+    (tmp_path / "weak").mkdir()
+    _synthetic(tmp_path / "weak", monkeypatch,
+               f"# A\n\n## Many\n\n{table}\n\n## Weak\n\n{weak}\n")
+    found = [p.trail[-1] for p in software_docs.search("quokka wombat")]
+    assert found == ["Many"] * 4, found
+    # Paragraphs of one section that each answer are each kept: the cap is
+    # for the rows of one table, or the windows of one long block.
+    paragraphs = "\n\n".join(f"Quokka wombat quokka, number {n}." for n in range(4))
+    (tmp_path / "paragraphs").mkdir()
+    _synthetic(tmp_path / "paragraphs", monkeypatch,
+               f"# A\n\n## Many\n\n{paragraphs}\n\n## Other\n\n{other}\n")
+    assert [p.trail[-1] for p in software_docs.search("quokka wombat")] == ["Many"] * 4
+
+
+def test_the_rows_of_one_table_that_answer_are_not_dropped_for_others() -> None:
+    said = read_docs("how long is NVT equilibration")
+    assert "`nvt_duration_ns`" in said.split("\n\n", 2)[1]
+
+
+def test_each_window_of_a_long_row_is_led_by_its_first_cell() -> None:
+    assert software_docs._lead_cell("| **Viewer** | The molecule | in 3D |") == \
+        ("| **Viewer** |", " The molecule   in 3D ")
+    windows = [p for p in software_docs._docs().passages
+               if p.page == "gui" and "| **Viewer** |" in p.text]
+    assert len(windows) > 2
+    for passage in windows:
+        row = passage.text.splitlines()[-1]
+        assert row.startswith("| **Viewer** |"), row[:40]
+        assert len(passage.text) <= software_docs.LONG_BLOCK
 
 
 @pytest.mark.parametrize("question, found", [
@@ -442,6 +630,63 @@ def test_a_page_s_opening_has_no_line_across_it() -> None:
     assert "\n---" not in read_docs(page="results")
 
 
+def test_a_block_of_code_left_open_is_closed(tmp_path, monkeypatch) -> None:
+    _synthetic(tmp_path, monkeypatch,
+               "# A\n\nStart it with:\n\n```bash\nfastmdx gui\n")
+    said = read_docs(page="agent")
+    assert said.count("```") == 2 and said.rstrip().endswith("```")
+    said = read_docs("fastmdx gui")
+    assert said.count("```") == 2 and said.rstrip().endswith("```")
+    (tmp_path / "section").mkdir()
+    _synthetic(tmp_path / "section", monkeypatch, "# A\n\n## S\n\nRun:\n\n```bash\nfastmdx gui\n")
+    said = read_docs(page="agent", section="S")
+    assert said.count("```") == 2 and said.rstrip().endswith("```")
+
+
+def test_a_lead_in_shares_the_number_of_the_block_it_introduces() -> None:
+    passages = software_docs._passages_of(
+        "First:\n\nPara one.\n\nThe table:\n\n| a | b |\n|---|---|\n| r0 | " + "word " * 80
+        + " |\n| r1 | " + "word " * 80 + " |\n\nLast lead-in:")
+    assert [block for _, _, block in passages] == [1, 3, 3, 4]
+
+
+def test_a_cut_on_a_fence_and_code_within_a_line_read_as_they_are() -> None:
+    assert software_docs._cut("```\ncode\n```\n\nmore words here", 12) == "```\ncode\n```\n..."
+    # Cut at a block's opening, the opening is left off; with nothing before
+    # it, the opening is said, closed.
+    assert software_docs._cut("intro words\n```bash\ncode", 18) == "intro words ..."
+    assert software_docs._cut("```" + "p" * 20 + "\ncode", 10).startswith("```" + "p" * 7)
+    # Three backticks with a backtick after them on the line are code within
+    # the line, not a fence.
+    assert software_docs._closed("```x``` is inline") == "```x``` is inline"
+    assert software_docs._fence_of("```bash") == "```"
+    assert software_docs._fence_of("~~~ `x`") == "~~~"
+
+
+def test_a_table_head_too_wide_to_repeat_is_left_off_its_row_s_windows() -> None:
+    head = "| " + " | ".join(f"column {n}" for n in range(60)) + " |\n|" + "---|" * 60
+    row = "| `name` | " + "Words go on here. " * 120 + "|"
+    pieces = software_docs._row_pieces(head, row)
+    assert len(pieces) < 10
+    assert all(text.startswith("| `name` |") and len(text) <= software_docs.LONG_BLOCK
+               for text, _ in pieces)
+    # A first cell too long to repeat is cut, so each window keeps its room.
+    head = "| h | " + "x" * 290 + " |\n|---|---|"
+    row = "| " + "y " * 190 + " | " + "Words go on. " * 90 + "|"
+    pieces = software_docs._row_pieces(head, row)
+    assert all(len(text) <= software_docs.LONG_BLOCK for text, _ in pieces)
+    assert all(" ... |" in text.splitlines()[2] for text, _ in pieces)
+
+
+def test_a_heading_with_nothing_under_it_says_so(tmp_path, monkeypatch) -> None:
+    _synthetic(tmp_path, monkeypatch, "# A\n\n## The API\n\n## Next\n\nText.\n")
+    said = read_docs(page="agent", section="The API")
+    assert "Nothing is written under this heading" in said
+    assert "rather than guess" in said
+    with pytest.raises(DocsNotFound, match="read in 1 part"):
+        read_docs(page="agent", section="The API", part=7)
+
+
 def test_a_long_table_is_found_by_its_row() -> None:
     said = read_docs("methods_of_study methods paragraphs report")
     row = next(block for block in said.split("\n\n")[1:] if "methods_of_study" in block)
@@ -520,10 +765,35 @@ def test_the_look_is_said_as_the_person_reads_it() -> None:
     assert look_said("read_docs", {}) == "Listed the docs' pages"
     assert look_said("read_docs", {}, doing=True) == "Listing the docs' pages"
     assert look_said("read_docs", {"page": 0}) == "Read the docs on “0”"
-    assert look_said("read_docs", {"query": True, "page": "gui"}) == "Read the docs on “gui”"
+    # A value the look does not take is refused, and said so.
+    assert look_said("read_docs", {"query": True, "page": "gui"}) == "Read the docs"
     assert look_said("read_docs", {"value": "resume"}) == "Read the docs on “resume”"
     # Something it cannot read is refused, not a list of the pages.
     assert look_said("read_docs", {"query": ["x"]}) == "Read the docs"
+    # As the look reads it: a question YAML split at its colon, and nothing
+    # asked but blanks, which lists the pages.
+    assert look_said("read_docs", {"what does resume": "true do"}) == \
+        "Read the docs on “what does resume: true do”"
+    for blank in ({"query": ""}, {"query": "  ", "page": None}, {"value": ""}, {"part": 1},
+                  {"part": 1.0}, {"query": "  ", "part": 1}):
+        assert look_said("read_docs", blank) == "Listed the docs' pages", blank
+        assert Toolbox().use("read_docs", blank).said.startswith("The docs of"), blank
+    # What the look refuses is said as refused, never as a listing or a
+    # reading: a key it does not take, a section with no page, a part alone.
+    for refused in ({"query": "  ", "bogus": None}, {"page": None, "bogus": None},
+                    {(1, 2): None}, {"part": 2}, {"section": "x"}, {"query": "x", "foo": "y"},
+                    {"query": "x", "part": 2}, {"query": "resume", "part": 0},
+                    {"query": "x", "page": ["agent"]}, {"page": "agent", "value": False},
+                    {"page": "gui", "part": 2}):
+        assert look_said("read_docs", refused) == "Read the docs", refused
+        assert not Toolbox().use("read_docs", refused).ok, refused
+
+
+def test_a_question_is_read_to_its_first_300_characters() -> None:
+    box = Toolbox()
+    assert "From the docs" in box.use("read_docs", {"query": "zzz " * 60 + "resume"}).said
+    cut = box.use("read_docs", {"query": "zzz " * 80 + "resume"})
+    assert cut.ok and cut.said.startswith("Nothing in the docs")
 
 
 def test_the_agent_looks_in_the_docs_and_answers_from_them() -> None:
