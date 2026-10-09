@@ -380,13 +380,21 @@ otherwise be shown a box length from its pocket. A snapshot written before
 its box was recorded names the box the run started with, so it is imaged
 in the box of the trajectory's last frame.
 
-One run at a time. Starting a second returns *"A FastMDXplora workflow is
-already running."* The rule holds beyond this window too: a study started in
-the same workspace by another window or by an AI app
-([FastMDXplora from your AI app](mcp.md)) is found from the workspace's list of
-runs, and the refusal names it and who started it. The rule is kept in the
-folder the GUI was started in and the folder it puts new studies in, never
-your home folder.
+One run per window. Starting a second from the same window returns *"A
+FastMDXplora workflow is already running."* Beside the studies started in the
+same workspace by another window or by an AI app ([FastMDXplora from your AI
+app](mcp.md)), found from the workspace's list of runs, a study that simulates
+on a GPU of this computer starts where it fits: on the GPU with the fewest
+studies from here and then the most free memory, read with `nvidia-smi`, and
+given that GPU. One that does not fit is refused with the memory it needs and
+what is free (`environment.workspace.no_room`). The memory one run needs is
+learned from the runs here that ran alone on their GPU to the end, as on a
+workstation ([Other machines](remote.md#sending-a-study)); until one has, it is
+not known and nothing is refused. Work on the CPU (a study on the CPU, an
+analysis or a report written again, a fix), and every study on a computer whose
+GPUs `nvidia-smi` does not read (a Mac), runs one at a time: the refusal names
+the study running and who started it. The rule is kept in the folder the GUI
+was started in and the folder it puts new studies in, never your home folder.
 
 ---
 

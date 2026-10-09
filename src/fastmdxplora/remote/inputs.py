@@ -162,7 +162,7 @@ _PRIVATE_PAIRS = frozenset({(".config", "gcloud"), (".config", "gh"),
 
 #: FastMDXplora's own settings: the AI model's key, the machines, the jobs.
 _SETTINGS_KEPT = ("model.json", "calibration.json", "machines", "jobs", "sockets",
-                  "gpu_memory")
+                  "gpu_memory", "gpu_memory_here.json")
 
 
 def _settings_kept() -> tuple[str, ...]:

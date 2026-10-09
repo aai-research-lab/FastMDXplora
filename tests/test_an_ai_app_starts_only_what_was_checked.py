@@ -119,7 +119,8 @@ class TestWhatRuns:
             refused = start(wire, workspace)
             assert refused["isError"]
             assert refused["content"][0]["text"].startswith(
-                "busy is running in this workspace. One study runs here at a time")
+                "busy is running in this workspace. A study on the CPU, or on GPUs "
+                "nvidia-smi does not read here, runs one at a time")
         finally:
             sleeper.kill()
             sleeper.wait()

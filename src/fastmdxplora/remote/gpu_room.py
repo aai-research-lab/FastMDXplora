@@ -203,10 +203,17 @@ _LEARNING = threading.Lock()
 _MOST = 10 ** 9
 
 
+#: This computer, as the runs learned from are kept: not a machine name ssh
+#: is given (it has a space), and kept apart from the machines' records.
+HERE = "this computer"
+
+
 def _store(machine: str) -> Path:
     from fastmdxplora.remote.transport import check_machine_name
     from fastmdxplora.user_dir import user_config_dir
 
+    if machine == HERE:
+        return user_config_dir() / "gpu_memory_here.json"
     return user_config_dir() / "gpu_memory" / f"{check_machine_name(machine)}.json"
 
 
@@ -264,7 +271,7 @@ def learn(machine: str, *, job: str, particles: int, peak_mb: int, gpu: str,
         runs = [run for run in measured(machine) if run.get("job") != job]
         runs.append({"job": job, "particles": particles, "peak_mb": peak_mb,
                      "gpu": gpu[:80], "precision": precision[:20]})
-        handle, scratch = tempfile.mkstemp(dir=target.parent, prefix=f".{machine}.",
+        handle, scratch = tempfile.mkstemp(dir=target.parent, prefix=f".{target.stem}.",
                                            suffix=".part")
         try:
             with os.fdopen(handle, "w", encoding="utf-8") as out:
@@ -274,6 +281,32 @@ def learn(machine: str, *, job: str, particles: int, peak_mb: int, gpu: str,
         except BaseException:
             Path(scratch).unlink(missing_ok=True)
             raise
+
+
+def what_runs_say(records: list[Any], precision: str) -> tuple[int, str] | None:
+    """What a study's runs say to learn its GPU memory against: the most
+    particles any held on a GPU, and their one precision (``precision``
+    where a run does not say). ``None`` where there is nothing to learn: no
+    run on the GPU, one in more than one precision (a peak is one size's),
+    or one shorter than three readings (read perhaps only while its context
+    was being made, or holding the peak read without its size kept)."""
+    particles, precisions, short = [], set(), False
+    for record in records:
+        # A run on the CPU holds no GPU memory: its particles say nothing
+        # of what the GPU held.
+        if not (isinstance(record, dict) and isinstance(record.get("particles"), int)
+                and not isinstance(record.get("particles"), bool)
+                and 0 < record["particles"] < 100_000_000
+                and record.get("platform") in ("CUDA", "OpenCL")):
+            continue
+        seconds = record.get("seconds")
+        short |= not (isinstance(seconds, (int, float)) and not isinstance(seconds, bool)
+                      and seconds >= 3 * SAMPLE_EVERY_S)
+        particles.append(record["particles"])
+        precisions.add(str(record.get("precision") or precision or "mixed"))
+    if not particles or short or len(precisions) != 1:
+        return None
+    return max(particles), precisions.pop()[:20]
 
 
 @dataclass(frozen=True)
@@ -553,5 +586,7 @@ def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need,
     where = (f"GPU {gpu.index} on {machine} ({gpu.name}), chosen when the send was "
              "planned, has" if chosen else
              f"GPU {gpu.index} on {machine} ({gpu.name}) has")
-    return (f"{said}, and {where} {max(free, 0):,} MB free for it now. Send it once a "
-            "run there has ended, or to another machine.")
+    then = ("Start it once a study here has ended, or send it to one of your machines."
+            if machine == HERE else
+            "Send it once a run there has ended, or to another machine.")
+    return f"{said}, and {where} {max(free, 0):,} MB free for it now. {then}"

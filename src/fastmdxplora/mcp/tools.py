@@ -984,14 +984,19 @@ def _time_here(ctx: Context, config: dict[str, Any]) -> str | None:
                 None)
 
 
-def _none_running(ctx: Context) -> None:
-    from fastmdxplora.runs_here import running_in, said_going
+def _may_start(ctx: Context, config: dict[str, Any] | None) -> list[str]:
+    """Refuses a start that must wait for the studies running in the
+    workspace (`fastmdxplora.runs_here.may_start`): work on the CPU waits
+    for the other such work; a study on a GPU of this computer goes where it
+    fits. Returns what the person is told of the GPUs and of the computer
+    being shared."""
+    from fastmdxplora.runs_here import may_start
 
-    going = running_in(ctx.workspace.root)
-    if going:
-        raise ToolError(said_going(ctx.workspace.root, going,
-                                   then="stop_study stops it, once the person agrees."),
-                        code="environment.workspace.run_going")
+    start = may_start([ctx.workspace.root], config, ctx.workspace.root, walk=True,
+                      then="stop_study stops it, once the person agrees.")
+    if start.refused is not None:
+        raise ToolError(str(start.refused["error"]), code=str(start.refused["code"]))
+    return list(start.notes)
 
 
 def _unused(ctx: Context, folder: Path) -> None:
@@ -1034,7 +1039,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
     lacking = _cannot_run_here(config)
     if lacking:
         raise ToolError(f"This machine cannot run it yet: {lacking}")
-    _none_running(ctx)
+    sharing = _may_start(ctx, config)
     if continuing is not None:
         where = continuing
     else:
@@ -1055,6 +1060,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
         *([f"It continues {shown} in place."] if continuing is not None
           else [f"Results: {shown}"]),
         *([line] if (line := _time_here(ctx, config)) else []),
+        *sharing,
     ])
     agreed = _went_ahead(ctx, "start", message, f"start_study:{file}:{now}:{where}")
     if agreed is False:
@@ -1068,7 +1074,7 @@ def _start_study(ctx: Context, args: dict[str, Any]) -> str:
             # Asked again now: the person may have taken minutes to answer.
             if ctx.call is not None and ctx.call.cancelled:
                 return "Not started: the call was cancelled."
-            _none_running(ctx)
+            _may_start(ctx, config)
             if continuing is None:
                 _unused(ctx, where)
             runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
@@ -1105,7 +1111,7 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
         found = refusal_of(exc)
         raise ToolError(found.message.replace(str(folder), ctx.workspace.shown(folder)),
                         code=found.code) from None
-    _none_running(ctx)
+    _may_start(ctx, None)
     shown = ctx.workspace.shown(folder)
     message = f"Run {' and '.join(planned.phases)} again on {shown}? " + planned.said()
     bound = f"run_phases_again:{folder}:{','.join(planned.phases)}:" + ",".join(
@@ -1117,7 +1123,7 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
         with starting_in(ctx.workspace.root):
             if ctx.call is not None and ctx.call.cancelled:
                 return "Not run: the call was cancelled."
-            _none_running(ctx)
+            _may_start(ctx, None)
             runtime = DashboardRuntime(workspace_root=ctx.workspace.root,
                                        exploration_root=ctx.workspace.root,
                                        hosting=_Inside(ctx.workspace),

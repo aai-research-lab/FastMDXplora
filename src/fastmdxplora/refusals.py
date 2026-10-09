@@ -373,7 +373,13 @@ CODES: tuple[Code, ...] = (
          "declined, or what came back was not a reply to what was asked.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.workspace.run_going",
-         "Another study is running in this workspace; one runs there at a time.",
+         "A study is running where this would run: the same study, or other work "
+         "on the CPU in this workspace, which runs one at a time there (as every "
+         "study does where nvidia-smi reads no GPU).",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+    Code("environment.workspace.no_room",
+         "A study on this computer's GPU needs more memory than its GPU has free "
+         "now, beside the studies running there.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.workspace.run_starting",
          "Another study is being started in this workspace at this moment.",

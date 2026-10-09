@@ -3444,7 +3444,8 @@
       button.disabled = false;
       return;
     }
-    text(el("run-note"), `Running ${started.config_path} as it stands.`);
+    text(el("run-note"), `Running ${started.config_path} as it stands.`
+      + sharedSaid(started));
     if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
       window.FastMDXDashboard.navigate("overview");
     }
@@ -3502,6 +3503,14 @@
     });
   }
 
+  /* Where it was started beside other studies on this computer: the GPU it
+   * was given and that the computer is shared. */
+  function sharedSaid(started) {
+    const lines = Array.isArray(started.shared)
+      ? started.shared.filter((line) => typeof line === "string") : [];
+    return lines.length ? " " + lines.join(" ") : "";
+  }
+
   async function start() {
     const button = el("run-start-button");
     if (!ready()) return;
@@ -3533,7 +3542,8 @@
     // The study is now its config file, saved beside its results; the
     // draft has done its work.
     discardDraft();
-    text(el("run-note"), `Running. Config saved to ${started.config_path}`);
+    text(el("run-note"), `Running. Config saved to ${started.config_path}`
+      + sharedSaid(started));
     if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
       window.FastMDXDashboard.navigate("overview");
     }

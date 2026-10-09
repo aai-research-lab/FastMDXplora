@@ -1,7 +1,9 @@
 """The GUI's Run and an AI app's start_study keep one rule between them.
 
-One study runs in a workspace at a time, so each has the machine to itself
-and its timings mean what they say. The AI app held to that and the GUI
+Work on the CPU, and every study on a computer whose GPUs nvidia-smi does
+not read (as here), runs in a workspace one at a time, so each has the
+processors to itself and its timings mean what they say. The AI app held to
+that and the GUI
 did not know of it: a window could start a study while an AI app's ran,
 or both could start at the same moment. Both now take the workspace's
 starting lock and read the workspace's list of runs started there
@@ -100,8 +102,8 @@ def test_the_gui_does_not_start_while_an_ai_app_s_study_runs(workspace, spawns):
     refused = _gui(workspace)._spawn(_command(workspace / "mine"), workspace / "mine", None)
     assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
     assert refused["error"].startswith(
-        "ghg_run (started by an AI app) is running in this workspace. One study runs "
-        "here at a time")
+        "ghg_run (started by an AI app) is running in this workspace. A study on the "
+        "CPU, or on GPUs nvidia-smi does not read here, runs one at a time")
 
 
 def test_an_ai_app_does_not_start_while_the_gui_s_study_runs(workspace, spawns):

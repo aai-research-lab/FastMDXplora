@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -496,6 +497,19 @@ def _is_nonempty_file(path: Path) -> bool:
         return False
 
 
+def _taken_back(config_path: Path, folder: Path, existed: bool) -> None:
+    """What a launch refused as it started wrote, taken back: its config,
+    and the folder it made for it where that holds nothing else, so the
+    same folder can be given again once there is room."""
+    try:
+        if config_path.parent == Path(folder):
+            config_path.unlink(missing_ok=True)
+        if not existed:
+            Path(folder).rmdir()
+    except OSError:
+        pass
+
+
 @dataclass
 class DashboardRuntime:
     """Mutable state shared by all request-handler threads."""
@@ -894,29 +908,45 @@ class DashboardRuntime:
         command: list[str],
         output_dir: Path,
         dashboard_url: str | None,
+        *,
+        config_path: str | Path | None = None,
     ) -> dict[str, Any]:
         """Start a run and take ownership of the process.
 
         Shared, because there is more than one way to describe a run but only
         one way to run it. Assumes the caller holds the lock and has already
-        refused a second concurrent run of its own. Runs started by anyone
-        else in the workspace (another window, an AI app) are refused
-        here, under the workspace's starting lock, by the rule an AI app
-        is held to (`fastmdxplora.runs_here`).
+        refused a second concurrent run of its own. Beside runs started by
+        anyone else in the workspace (another window, an AI app), the rule an
+        AI app is held to decides, under the workspace's starting lock
+        (`fastmdxplora.runs_here.may_start`): a study the config at
+        ``config_path`` says simulates on a GPU goes where it fits on this
+        computer's GPUs, given that GPU; anything else waits for the other
+        work on the CPU.
         """
+        from fastmdxplora.gpu_here import start_sampler
         from fastmdxplora.refusals import refusal_of
-        from fastmdxplora.runs_here import StartRefused, record_start, starting_in
+        from fastmdxplora.runs_here import StartRefused, may_start, record_start, starting_in
 
         folders = self._rule_folders()
+        config = None
+        if config_path is not None:
+            read = _json_mapping_or_yaml(Path(config_path))
+            config = dict(read) if isinstance(read, Mapping) else None
         try:
             with starting_in(*folders):
-                refused = self._others_running()
-                if refused is not None:
-                    return refused
-                started = self._spawn_now(command, output_dir, dashboard_url)
+                start = may_start(folders, config, self.exploration_root, walk=False)
+                if start.refused is not None:
+                    return start.refused
+                since = time.time()
+                started = self._spawn_now(command, output_dir, dashboard_url,
+                                          **({"env": start.env} if start.env else {}))
                 for folder in folders:
                     record_start(folder, output_dir, started["pid"], command,
-                                 by=self.started_by)
+                                 by=self.started_by, gpu=start.gpu)
+                if start.choice is not None:
+                    start_sampler(int(started["pid"]), Path(output_dir), start.choice, since)
+                if start.notes:
+                    started["shared"] = list(start.notes)
                 return started
         except StartRefused as exc:
             found = refusal_of(exc)
@@ -932,24 +962,32 @@ class DashboardRuntime:
         return [folder for folder in dict.fromkeys((self.workspace_root, self.exploration_root))
                 if folder != home and folder not in home.parents]
 
-    def _others_running(self) -> dict[str, Any] | None:
-        """The refusal for a start while a study started elsewhere (another
-        window, an AI app) runs in this window's folders, or None. Asked
-        before anything is written for a run, and again under the lock."""
-        from fastmdxplora.runs_here import running_in, said_going
+    def _others_running(self, *, on_cpu: bool = False) -> dict[str, Any] | None:
+        """The refusal for a start that must wait for work started elsewhere
+        (another window, an AI app) in this window's folders, or None.
+        Asked before anything is written for a run, where it is certain: for
+        work on the CPU (``on_cpu``), and for any study on a computer whose
+        GPUs nvidia-smi does not read. A study that may go on a GPU is
+        decided as it starts, from its config (:meth:`_spawn`)."""
+        from fastmdxplora.runs_here import may_start
 
-        folders = self._rule_folders()
-        going = sorted({run for folder in folders for run in running_in(folder, walk=False)})
-        if not going:
-            return None
-        return {"ok": False, "error": said_going(folders, going),
-                "code": "environment.workspace.run_going"}
+        if not on_cpu:
+            from fastmdxplora.gpu_here import room_here
+
+            room = room_here()
+            if room is not None and room.gpus:
+                return None
+        return may_start(self._rule_folders(), None, walk=False).refused
 
     def _spawn_now(self, command: list[str], output_dir: Path,
-                   dashboard_url: str | None) -> dict[str, Any]:
-        """The process itself, started and held."""
+                   dashboard_url: str | None, *,
+                   env: Mapping[str, str] | None = None) -> dict[str, Any]:
+        """The process itself, started and held, given ``env`` (the GPU it
+        was chosen) beside this process's environment."""
         log_path = output_dir / "exploration.log"
+        given = dict(env or {})
         env = os.environ.copy()
+        env.update(given)
         env["FASTMDX_DASHBOARD_ACTIVE"] = "1"
         env["FASTMDX_DASHBOARD_OUTPUT"] = str(output_dir)
         if dashboard_url:
@@ -1098,6 +1136,7 @@ class DashboardRuntime:
                     ),
                 }
 
+            existed = output_dir.exists()
             prepared = prepare_run(dict(state) if state else None, output_dir,
                                    config=dict(config) if config is not None else None)
             if not prepared["ok"]:
@@ -1116,7 +1155,11 @@ class DashboardRuntime:
             # This is a new process and must become the current run even when
             # it is launched from the config-based Run page.
             self.data_stale = False
-            started = self._spawn(prepared["command"], output_dir, dashboard_url)
+            started = self._spawn(prepared["command"], output_dir, dashboard_url,
+                                  config_path=prepared["config_path"])
+            if started.get("ok") is False:
+                _taken_back(Path(prepared["config_path"]), output_dir, existed)
+                return started
             return {
                 "ok": True,
                 "error": None,
@@ -1165,7 +1208,10 @@ class DashboardRuntime:
         if not prepared["ok"]:
             return prepared
         self.data_stale = False
-        started = self._spawn(prepared["command"], study, dashboard_url)
+        started = self._spawn(prepared["command"], study, dashboard_url,
+                              config_path=prepared["config_path"])
+        if started.get("ok") is False:
+            return started
         return {"ok": True, "error": None, "config_path": prepared["config_path"],
                 "continues": str(study), **started}
 
@@ -1265,6 +1311,7 @@ class DashboardRuntime:
                     "error": detail,
                     "next_action": "Choose a new output folder; the previous run was preserved.",
                 }
+            existed = output_dir.exists()
             output_dir.mkdir(parents=True, exist_ok=True)
             self.data_stale = False
 
@@ -1272,7 +1319,11 @@ class DashboardRuntime:
                 sys.executable, "-m", "fastmdxplora", "explore",
                 "--config", str(source), "--output", str(output_dir),
             ]
-            started = self._spawn(command, output_dir, dashboard_url)
+            started = self._spawn(command, output_dir, dashboard_url, config_path=source)
+            if started.get("ok") is False:
+                if not existed:
+                    _taken_back(Path(source), output_dir, existed)
+                return started
             return {
                 "ok": True,
                 "error": None,
@@ -1496,7 +1547,7 @@ class DashboardRuntime:
             if self.process is not None and self.process.poll() is None:
                 return {"ok": False,
                         "error": "A FastMDXplora workflow is already running."}
-            refused = self._others_running()
+            refused = self._others_running(on_cpu=True)
             if refused is not None:
                 return refused
             study = study_of(self.active_root)
@@ -1536,7 +1587,7 @@ class DashboardRuntime:
             if self.process is not None and self.process.poll() is None:
                 return {"ok": False,
                         "error": "A FastMDXplora workflow is already running."}
-            refused = self._others_running()
+            refused = self._others_running(on_cpu=True)
             if refused is not None:
                 return refused
             study = study_of(self.active_root)
@@ -1580,7 +1631,7 @@ class DashboardRuntime:
             if self.process is not None and self.process.poll() is None:
                 return {"ok": False,
                         "error": "A FastMDXplora workflow is already running."}
-            refused = self._others_running()
+            refused = self._others_running(on_cpu=True)
             if refused is not None:
                 return refused
             # The folder open, not its campaign as for a fix: a run of a

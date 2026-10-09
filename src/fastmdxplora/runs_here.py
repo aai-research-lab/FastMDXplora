@@ -1,10 +1,13 @@
-"""Which studies a workspace has running, and starting them one at a time.
+"""Which studies a workspace has running, and when another may start.
 
 The GUI's Run and an AI app's ``start_study`` (``fastmdx mcp``) start a
-study the same way, and keep the same rule about when they may: one study
-runs in a workspace at a time, so each has the machine to itself and its
-timings mean what they say. Two things in the workspace make the rule hold
-between them, and between two windows or two AI apps:
+study the same way, and keep the same rule about when they may
+(:func:`may_start`): a study on a GPU of this computer starts beside the
+others where it fits, as on a workstation (:mod:`fastmdxplora.gpu_here`);
+work on the CPU, and every study on a computer whose GPUs ``nvidia-smi``
+does not read, runs one at a time, so each has the processors to itself
+and its timings mean what they say. Two things in the workspace make the
+rule hold between them, and between two windows or two AI apps:
 
 - **a starting lock** (:data:`STARTING_FILE`), held from the check that
   nothing is running to the start itself, so two starters cannot both find
@@ -12,9 +15,9 @@ between them, and between two windows or two AI apps:
   the file being there: it goes with the process holding it, however that
   process ends, so none is ever left behind to be taken over;
 - **the runs started there** (:data:`RUNS_FILE`), each with its folder,
-  process and command, so a run is known to every starter from the moment
-  it starts, before it has written its own record, and wherever its folder
-  is.
+  process and command, and the GPU it was given, so a run is known to every
+  starter from the moment it starts, before it has written its own record,
+  and wherever its folder is.
 
 A run is taken as going while its process is still that run. "Cannot tell"
 (the command line could not be read) counts as going, so a start is refused
@@ -32,14 +35,15 @@ import os
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastmdxplora.refusals import CodedError
 
-__all__ = ["STARTING_FILE", "RUNS_FILE", "StartRefused", "starting_in", "running_in",
-           "record_start", "said_going"]
+__all__ = ["STARTING_FILE", "RUNS_FILE", "StartRefused", "Start", "starting_in",
+           "running_in", "may_start", "record_start", "said_going"]
 
 #: Held in the workspace while a study is being started.
 STARTING_FILE = ".fastmdxplora-starting"
@@ -163,14 +167,21 @@ def running_in(workspace: Path, *, walk: bool = True) -> list[tuple[Path, str]]:
     those started there by the GUI or an AI app, and, with ``walk``,
     every run found by the record it keeps while it runs, down to
     :data:`DEEPEST` folders (a run started by hand included)."""
+    return [(Path(run["folder"]), run["by"]) for run in going_in(workspace, walk=walk)]
+
+
+def going_in(workspace: Path, *, walk: bool = True) -> list[dict[str, Any]]:
+    """As :func:`running_in`, each run as its start record has it (its
+    ``folder``, ``by``, ``pid`` and ``gpu``, where it was given one); a run
+    found only by its own record has no ``gpu``."""
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 
     root = Path(workspace).resolve()
-    going: dict[Path, str] = {}
+    going: dict[Path, dict[str, Any]] = {}
     for run in _started_here(root):
         folder = Path(str(run.get("folder") or ""))
         if folder.is_absolute() and _going(run.get("pid"), folder, run.get("argv"), run):
-            going[folder] = str(run.get("by") or "")
+            going[folder] = {**run, "folder": str(folder), "by": str(run.get("by") or "")}
     if walk:
         for here, folders, files in os.walk(root, followlinks=False):
             depth = len(Path(here).relative_to(root).parts)
@@ -188,12 +199,12 @@ def running_in(workspace: Path, *, walk: bool = True) -> list[tuple[Path, str]]:
                 continue
             if isinstance(record, dict) and _going(record.get("pid"), Path(here),
                                                    record.get("argv"), record):
-                going[Path(here)] = ""
-    return sorted(going.items())
+                going[Path(here)] = {"folder": str(Path(here)), "by": ""}
+    return [going[folder] for folder in sorted(going)]
 
 
 def record_start(workspace: Path, folder: Path, pid: int, argv: list[str], *,
-                 by: str) -> None:
+                 by: str, gpu: dict[str, Any] | None = None) -> None:
     """Add a run just started to the workspace's list, and drop the runs
     there that have ended. Called with the starting lock held. A list that
     cannot be written leaves the run going, known by its own record once
@@ -205,7 +216,8 @@ def record_start(workspace: Path, folder: Path, pid: int, argv: list[str], *,
             if _going(run.get("pid"), Path(str(run.get("folder") or "")), run.get("argv"), run)]
     runs.append({"folder": str(Path(folder).resolve()), "pid": int(pid),
                  "argv": [str(a) for a in argv], "by": by,
-                 "started_at": datetime.now(timezone.utc).isoformat(), **this_machine()})
+                 "started_at": datetime.now(timezone.utc).isoformat(), **this_machine(),
+                 **({"gpu": gpu} if gpu else {})})
     target = root / RUNS_FILE
     partial = root / f"{RUNS_FILE}.{os.getpid()}.partial"
     try:
@@ -220,9 +232,16 @@ def record_start(workspace: Path, folder: Path, pid: int, argv: list[str], *,
 
 def said_going(roots: Path | list[Path], going: list[tuple[Path, str]], *,
                then: str = "stop it, or wait for it to finish.") -> str:
-    """The refusal for a start while others run, naming them, each from
-    the first of ``roots`` it is inside."""
+    """The refusal for work on the CPU while other such work runs, naming
+    it, each from the first of ``roots`` it is inside."""
     roots = [Path(r).resolve() for r in (roots if isinstance(roots, list) else [roots])]
+    return (f"{_named(roots, going)} {'is' if len(going) == 1 else 'are'} running in this "
+            "workspace. A study on the CPU, or on GPUs nvidia-smi does not read here, runs "
+            "one at a time, so each has the processors to itself and its timings mean what "
+            f"they say; {then}")
+
+
+def _named(roots: list[Path], going: list[tuple[Path, str]]) -> str:
     named = []
     for folder, by in going:
         shown = str(folder)
@@ -233,7 +252,74 @@ def said_going(roots: Path | list[Path], going: list[tuple[Path, str]], *,
             except ValueError:
                 continue
         named.append(f"{shown} (started {by})" if by else shown)
-    verb = "is" if len(named) == 1 else "are"
-    return (f"{', '.join(named)} {verb} running in this workspace. One study runs here at a "
-            f"time, so each has the machine to itself and its timings mean what they say; "
-            f"{then}")
+    return ", ".join(named)
+
+
+@dataclass
+class Start:
+    """Whether a study may start now, and how: refused (the reason and its
+    code), or the GPU it is given and what to tell the person."""
+
+    refused: dict[str, Any] | None = None
+    #: The GPU chosen here, where one was (its record goes with the run's).
+    choice: Any = None
+    #: What the run is started with: the GPU it was chosen.
+    env: dict[str, str] = field(default_factory=dict)
+    #: The GPUs' room, and that the computer is shared, where it is.
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def gpu(self) -> dict[str, Any] | None:
+        from fastmdxplora.gpu_here import gpu_record
+
+        return gpu_record(self.choice) if self.choice is not None else None
+
+
+def may_start(folders: list[Path], config: dict[str, Any] | None,
+              config_folder: Path | None = None, *, walk: bool = False,
+              then: str = "stop it, or wait for it to finish.") -> Start:
+    """Whether a study may start beside those going in ``folders``. With
+    ``config`` (the study's, paths read from ``config_folder``), a study
+    that simulates on a GPU of this computer goes where it fits, refused
+    where it does not; without one, or one on the CPU, or on a computer
+    whose GPUs ``nvidia-smi`` does not read, it waits for the other work on
+    the CPU (a run whose start record gives no GPU counts as such)."""
+    from fastmdxplora.gpu_here import choice_here, env_for, held_from, room_here
+    from fastmdxplora.remote.send import simulates_on_gpu
+
+    roots = [Path(f).resolve() for f in folders]
+    going: dict[str, dict[str, Any]] = {}
+    for root in roots:
+        for run in going_in(root, walk=walk):
+            going.setdefault(run["folder"], run)
+    runs = list(going.values())
+    on_gpu = config is not None and simulates_on_gpu(config, os.cpu_count())
+    room = room_here() if on_gpu else None
+    if room is None or not room.gpus:
+        on_cpu = [(Path(r["folder"]), r["by"]) for r in runs if not isinstance(r.get("gpu"), dict)]
+        if on_cpu:
+            return Start(refused={"ok": False, "error": said_going(roots, on_cpu, then=then),
+                                  "code": "environment.workspace.run_going"})
+        return Start(notes=_shared(roots, runs))
+    choice, notes = choice_here(config, Path(config_folder or roots[0]), held_from(runs))
+    if choice is not None and choice.refused:
+        return Start(refused={"ok": False, "error": choice.refused,
+                              "code": "environment.workspace.no_room"})
+    lines = []
+    if choice is not None:
+        where = (f"Runs on GPU {choice.gpu.index}" if choice.gpu is not None
+                 else "Runs on the GPUs the config names")
+        need = (f"one run needs about {choice.need.mb:,} MB ({choice.need.how})"
+                if choice.need.mb is not None else
+                f"the memory one run needs is {choice.need.how}")
+        lines = [*choice.lines, f"{where}; {need}."]
+    return Start(choice=choice, env=env_for(choice), notes=[*lines, *notes,
+                                                          *_shared(roots, runs)])
+
+
+def _shared(roots: list[Path], runs: list[dict[str, Any]]) -> list[str]:
+    if not runs:
+        return []
+    going = [(Path(r["folder"]), r["by"]) for r in runs]
+    return [f"{_named(roots, going)} {'is' if len(going) == 1 else 'are'} running here too: "
+            "this study shares the computer, and each runs slower than alone."]

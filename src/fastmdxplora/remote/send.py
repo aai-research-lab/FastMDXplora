@@ -58,6 +58,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,7 @@ from fastmdxplora.remote.gpu_room import (
     Choice,
     Held,
     Need,
+    Room,
     choose,
     learn,
     need_for,
@@ -788,9 +790,33 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
              running: list[Job]) -> tuple[Choice | None, list[str]]:
     """Where the study runs on the workstation's GPUs, and what is said of
     them where they are not checked."""
-    name = machine.name
+    def read_room() -> Room | None:
+        return room_from(_read(link.run(["sh", "-s"], stdin=GPU_SCRIPT).stdout))
+
+    return gpu_choice(machine.name, read_room, raw, folder, _held(running),
+                      cpus=machine.inspection.cpus)
+
+
+def simulates_on_gpu(raw: object, cpus: int | None) -> bool:
+    """Whether a study simulates on a GPU, as its config gives its runs (a
+    continuation, and runs whose GPUs cannot be worked out here, do)."""
+    runs = _runs_of(raw if isinstance(raw, dict) else {}, cpus)
+    if runs.unread:
+        return True
+    if not runs.simulates:
+        return False
+    return not runs.each or any(_on_a_gpu(each[2]) for each in runs.each)
+
+
+def gpu_choice(name: str, read_room: Callable[[], Room | None], raw: object, folder: Path,
+               held: list[Held], *, cpus: int | None) -> tuple[Choice | None, list[str]]:
+    """Where a study runs on ``name``'s GPUs, read by ``read_room`` (asked
+    only where the study simulates on a GPU), beside the studies ``held``
+    there; and what is said where they are not checked. ``None`` where no
+    GPU is chosen: a study on the CPU, one that runs no simulation, or GPUs
+    that cannot be read. Paths in the config are read from ``folder``."""
     config = raw if isinstance(raw, dict) else {}
-    runs = _runs_of(config, machine.inspection.cpus)
+    runs = _runs_of(config, cpus)
     on_gpu = [each for each in runs.each if _on_a_gpu(each[2])]
     if not runs.simulates:
         return None, ["The study runs no simulation, so no GPU memory is checked "
@@ -802,7 +828,7 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
         runs.at_once = min(runs.at_once, len(on_gpu))
         if runs.named is not None:
             runs.named = Counter({i: min(n, len(on_gpu)) for i, n in runs.named.items()})
-    room = room_from(_read(link.run(["sh", "-s"], stdin=GPU_SCRIPT).stdout))
+    room = read_room()
     if room is None:
         return None, [f"{name} has no GPU that nvidia-smi reads, so no GPU memory is "
                       "checked."]
@@ -812,7 +838,6 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
         return None, [f"The account's CUDA_VISIBLE_DEVICES on {name} is {room.visible}, "
                       f"which is not read here as GPUs nvidia-smi lists{how}, so no GPU "
                       "is chosen and no GPU memory is checked."]
-    held = _held(running)
     if runs.unread:
         free_lines = choose(name, room, Need(None, ""), held).lines
         return None, [*free_lines, f"The study's GPUs are its own: {runs.unread}, so no "
@@ -1510,35 +1535,21 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
         job.extra["gpu_peak_mb"] = int(peak)
     if job.state != DONE or gpu.get("learn") is not True or gpu.get("learned"):
         return
-    particles, precisions, short = [], set(), False
+    records = []
     for text in found.get("cost", []):
         try:
-            record = json.loads(text)
+            records.append(json.loads(text))
         except ValueError:
             continue
-        # A run on the CPU holds no GPU memory: its particles say nothing
-        # of what the GPU held.
-        if not (isinstance(record, dict) and isinstance(record.get("particles"), int)
-                and 0 < record["particles"] < 100_000_000
-                and record.get("platform") in ("CUDA", "OpenCL")):
-            continue
-        seconds = record.get("seconds")
-        # A run shorter than a few readings may have been read only while
-        # its context was being made, or may have held the peak read
-        # without its size being kept: nothing of the send is learned.
-        short |= not (isinstance(seconds, (int, float)) and not isinstance(seconds, bool)
-                      and seconds >= 3 * gpu_room.SAMPLE_EVERY_S)
-        particles.append(record["particles"])
-        precisions.add(str(record.get("precision") or gpu.get("precision") or "mixed"))
+    said = gpu_room.what_runs_say(records, str(gpu.get("precision") or "mixed"))
     held_mb = job.extra.get("gpu_peak_mb")
-    # Learned only where every run says one precision: a peak is one size's.
-    if particles and not short and isinstance(held_mb, int) and len(precisions) == 1:
+    if said is not None and isinstance(held_mb, int):
         # Once per job sent: a name sent again is another run. A record here
         # that cannot be written leaves the job's state to be said.
         try:
             learn(job.machine, job=f"{job.name}@{job.submitted_at}",
-                  particles=max(particles), peak_mb=held_mb,
-                  gpu=str(gpu.get("name") or ""), precision=precisions.pop()[:20])
+                  particles=said[0], peak_mb=held_mb,
+                  gpu=str(gpu.get("name") or ""), precision=said[1])
         except OSError as exc:
             logger.warning("What %s held on its GPU was not recorded: %s", job.name, exc)
             return

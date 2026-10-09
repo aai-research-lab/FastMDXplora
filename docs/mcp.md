@@ -167,18 +167,21 @@ happens whether or not the AI app is still open, and the run is identified
 again first, so a process number given to something else since is never
 signalled.
 
-The GUI keeps the same rule. Every start, from the GUI's **Run** or an AI
-app's `start_study`, holds the workspace's starting lock
-(`.fastmdxplora-starting`, a lock the operating system holds for the process,
-so none is left behind by one that crashed) from its check to the start, and
-adds the run to the workspace's list of runs started there
-(`.fastmdxplora-runs.json`). So neither starts while the other's study runs,
-and two never start at the same moment. A refusal names the study running and
-who started it. The GUI keeps the rule in the folder it was started in and in
-the folder it puts new studies in (never your home folder): give the AI app
-either as `--workspace` and the two take turns. An AI app also finds a run
-started by hand in its workspace, by the record the run keeps; the GUI goes by
-the list.
+The GUI keeps the same rule. Every start, from the GUI's **Run** or an AI app's
+`start_study`, holds the workspace's starting lock (`.fastmdxplora-starting`, a
+lock the operating system holds for the process, so none is left behind by one
+that crashed) from its check to the start, and adds the run to the workspace's
+list of runs started there (`.fastmdxplora-runs.json`), with the GPU it was
+given. So two never start at the same moment, and the GUI's rule holds between
+them: a study on a GPU of this computer starts beside the others where it fits
+on one, given that GPU, and the question says each GPU's room and that the
+computer is shared; work on the CPU, and every study where `nvidia-smi` reads
+no GPU, waits for the other such work. A refusal names the study running and
+who started it, or the memory needed and what is free. The GUI keeps the rule
+in the folder it was started in and in the folder it puts new studies in (never
+your home folder): give the AI app either as `--workspace` and the two take
+turns. An AI app also finds a run started by hand in its workspace, by the
+record the run keeps; the GUI goes by the list.
 
 ## Running on another machine
 
