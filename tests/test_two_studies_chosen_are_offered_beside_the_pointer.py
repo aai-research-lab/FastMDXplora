@@ -148,10 +148,14 @@ def test_chosen_from_the_keyboard_it_comes_beside_the_box_and_tab_reaches_it(man
             page.keyboard.press("Tab")
             page.keyboard.press("Enter")
             page.wait_for_selector(".studies-means")
+            page.wait_for_timeout(1200)
             reading = page.evaluate("() => document.activeElement.id")
             page.keyboard.press("Tab")
             page.keyboard.press("Enter")
-            closed = page.evaluate("() => document.activeElement.dataset.path || ''")
+            page.wait_for_timeout(600)
+            closed = page.evaluate("""() => {
+              const a = document.activeElement, r = a.getBoundingClientRect();
+              return (a.dataset.path || '') + (r.top >= 0 && r.bottom <= innerHeight + 1 ? '' : ' unseen'); }""")
             # Cleared from the keyboard with the study scrolled away: it is
             # brought back into view with the focus.
             page.evaluate("""() => { window.scrollTo(0, 0);
@@ -665,4 +669,149 @@ def test_on_a_phone_it_is_never_under_the_bars_kept_at_the_top(many) -> None:
         session.server.shutdown()
     assert seen["boxUnder"], seen
     assert seen["below"] and seen["hit"], seen
+    assert errors == []
+
+
+def test_closed_with_no_study_chosen_left_the_focus_stays_on_the_page(many) -> None:
+    """Both unticked with the comparison open: Close from the keyboard has
+    no study chosen to go back to, and Compare is hidden; the focus goes to
+    the search, not to nothing."""
+    from playwright.sync_api import sync_playwright
+
+    session = _open(many)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session, many)
+            _box(page, "study11").click()
+            _box(page, "study10").click()
+            page.wait_for_selector("#studies-compare-bar:not([hidden])")
+            page.click("#studies-compare")
+            page.wait_for_selector(".studies-means")
+            _box(page, "study11").uncheck()
+            _box(page, "study10").uncheck()
+            page.focus('#studies-compared button[aria-label="Close"]')
+            page.keyboard.press("Enter")
+            focus = page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert focus == "studies-search", focus
+    assert errors == []
+
+
+def test_closed_with_the_second_narrowed_away_the_focus_goes_to_the_first(many) -> None:
+    from playwright.sync_api import sync_playwright
+
+    session = _open(many)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session, many)
+            _box(page, "study11").click()
+            _box(page, "study10").click()
+            page.wait_for_selector("#studies-compare-bar:not([hidden])")
+            page.click("#studies-compare")
+            page.wait_for_selector(".studies-means")
+            # The second narrowed away: the first is the one left to go to.
+            page.fill("#studies-search", "study11")
+            page.wait_for_timeout(300)
+            page.focus('#studies-compared button[aria-label="Close"]')
+            page.keyboard.press("Enter")
+            focus = page.evaluate("() => document.activeElement.dataset.path || ''")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert focus.endswith("/study11"), focus
+    assert errors == []
+
+
+def test_closed_with_both_narrowed_away_and_the_bar_aside_the_focus_is_not_hidden(many) -> None:
+    """On a phone the comparison fills the window and the bar is put aside:
+    with both studies narrowed away, Close does not send the focus to the
+    hidden Compare."""
+    from playwright.sync_api import sync_playwright
+
+    session = _open(many)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session, many, width=390, height=480)
+            _box(page, "study05").click()
+            target = _box(page, "study04")
+            target.scroll_into_view_if_needed()
+            target.click()
+            page.wait_for_selector("#studies-compare-bar:not([hidden])")
+            page.click("#studies-compare")
+            page.wait_for_selector(".studies-means")
+            page.wait_for_timeout(1200)
+            page.fill("#studies-search", "study07")
+            page.wait_for_timeout(300)
+            aside = page.evaluate("""() => document.getElementById('studies-compare-bar')
+              .classList.contains('is-aside')""")
+            page.focus('#studies-compared button[aria-label="Close"]')
+            page.keyboard.press("Enter")
+            focus = page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert aside
+    assert focus == "studies-search", focus
+    assert errors == []
+
+
+def test_put_aside_is_said_once_for_the_pair(many) -> None:
+    """Scrolled up and down past a comparison taller than the window, the
+    bar is put aside and back again each time; a screen reader hears that
+    once, not at every turn."""
+    from playwright.sync_api import sync_playwright
+
+    session = _open(many)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session, many, width=390, height=480)
+            _box(page, "study05").click()
+            target = _box(page, "study04")
+            target.scroll_into_view_if_needed()
+            target.click()
+            page.wait_for_selector("#studies-compare-bar:not([hidden])")
+            page.evaluate("""() => { window.heardSaid = [];
+              new MutationObserver(() => window.heardSaid.push(
+                document.getElementById('studies-chosen-heard').textContent))
+                .observe(document.getElementById('studies-chosen-heard'),
+                         {childList: true, characterData: true, subtree: true}); }""")
+            page.click("#studies-compare")
+            page.wait_for_selector(".studies-means")
+            page.wait_for_timeout(1200)
+            for _ in range(3):
+                target.scroll_into_view_if_needed()
+                page.wait_for_timeout(300)
+                page.evaluate("() => document.getElementById('studies-compared').scrollIntoView()")
+                page.wait_for_timeout(300)
+            aside = page.evaluate("""() => document.getElementById('studies-compare-bar')
+              .classList.contains('is-aside')""")
+            said = page.evaluate("() => window.heardSaid")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert aside
+    assert sum(t.endswith("come back as the page is scrolled.") for t in said) == 1, said
+    assert errors == []
+
+
+def test_the_bar_is_not_printed(many) -> None:
+    """Fixed to the window, it was printed on every page of a printout."""
+    from playwright.sync_api import sync_playwright
+
+    session = _open(many)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session, many)
+            _box(page, "study11").click()
+            _box(page, "study10").click()
+            page.wait_for_selector("#studies-compare-bar:not([hidden])")
+            page.emulate_media(media="print")
+            shown = page.evaluate("""() => getComputedStyle(
+              document.getElementById('studies-compare-bar')).display""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert shown == "none"
     assert errors == []

@@ -14,7 +14,8 @@ the page, above the cards: a second study chosen far down was compared only
 after scrolling back up. They now come beside the pointer that chose the
 second (beside its box, chosen from the keyboard), only while two are
 chosen, and stay clear of the comparison, of tags being changed and of the
-Agent drawn over the page.
+Agent drawn over the page. They are left out of a printout, and closing the
+comparison from the keyboard keeps the focus on the page.
 
 ### A reply's tokens, when asked
 

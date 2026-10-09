@@ -937,9 +937,15 @@
       var within = host.contains(document.activeElement);
       host.hidden = true;
       moved();
-      // Closed from within: back to the study chosen, else to Compare.
-      var box = boxOf(chosen[chosen.length - 1]);
-      if (within) (box || el("studies-compare")).focus({ preventScroll: event.detail !== 0 });
+      // Closed from within: back to the study last chosen, else the other,
+      // else Compare where it shows, else the search, as Clear does.
+      if (!within) return;
+      var bar = el("studies-compare-bar");
+      var shows = bar && !bar.hidden && !bar.classList.contains("is-aside") &&
+        bar.getClientRects().length > 0;
+      var back = boxOf(chosen[chosen.length - 1]) || boxOf(chosen[0]) ||
+        (shows ? el("studies-compare") : null) || el("studies-search");
+      if (back) back.focus({ preventScroll: event.detail !== 0 });
     });
     head.appendChild(close);
     host.appendChild(head);
