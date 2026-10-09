@@ -163,11 +163,19 @@ contain, or by reference to another paper), the study needs you.
   that qualifies it makes the study that method, and so does a name read
   as written before a hyphen and one of a fixed list of words (based,
   like, type, style, and, or, driven, guided, biased, derived, enhanced,
-  generated, sampling, simulation or simulations, run or runs, MD,
-  trajectory or trajectories: "QM/MM-based"
+  generated, sampling, simulation or simulations, run or runs, MD or MDs,
+  trajectory or trajectories, model or models, protocol or protocols,
+  method or methods, scheme or schemes, calculation or calculations:
+  "QM/MM-based"
   broken at its hyphen, "REMD- and MD-based"). Any other name found only
   as the words are written ("proper-" at a line's end before "ties" reads
-  TIES) is put to you.
+  TIES) is put to you, as is a name read only where a soft hyphen at a
+  line's end is joined, and a name in capitals glued to a word or a
+  number ("REMDsimulations", "32REMD"). A line's end inside a name ("G-"
+  before "REST") reads it whole. Words that qualify a name are read with
+  a line's end inside them joined too ("with-" before "out"); where one is
+  read only across a soft hyphen at a line's end, no name decides the
+  method, and each is put to you.
   Everything else such words may mean is put to you, the words shown, and
   the study runs once you confirm it is not that method: a name beside
   words that may deny it or give it elsewhere ("no REMD was used",
@@ -177,7 +185,8 @@ contain, or by reference to another paper), the study needs you.
   "binding free energy", "AMD", "accelerated", "lambda"), with no
   exception read from the words around it; a run described without its
   name ("32 replicas exchanged every 2 ps"); an implicit-solvent or
-  free-energy name in a sentence about MM/GBSA; and metadynamics,
+  free-energy name in a sentence about MM/GBSA ("MM / GBSA" too); and
+  metadynamics,
   umbrella sampling or steered MD named where the method is said to be
   plain MD. This software does not guess what such words mean.
   Temperature-accelerated MD is accelerated MD. Other methods it does not
@@ -191,9 +200,10 @@ contain, or by reference to another paper), the study needs you.
   YANK, QligFEP, pmx, OpenFE, SOMD, BioSimSpace, Crooks, Jarzynski, Zwanzig,
   "rest simulations", and Metropolis acceptance between temperatures or
   replicas. In a method's details, letters and slashes that only look Latin
-  (Cyrillic "е" and "ё", Greek "ο", "ι" and "κ", accented or not, small
-  capitals such as "ᴇ" and "ꜱ", "∖", the vertical bars "│", "┃" and "ǀ") are
-  read as the ones they look like. A fixed list of plain phrases is not read
+  (Cyrillic "е" and "ё", Greek "ο", "ι", "κ" and "χ", accented or not,
+  Lisu capitals such as "ꓣ" and "ꓰ", small capitals such as "ᴇ" and "ꜱ",
+  "∖", the vertical bars "│", "┃" and "ǀ") are read as the ones they look
+  like. A fixed list of plain phrases is not read
   as such words (no words around them are read to decide this):
   "GPU-accelerated", "CUDA-accelerated", "AMD" followed (after a space or a
   hyphen) by a GPU or processor name or word (GPUs, CPUs, processors,
@@ -202,7 +212,9 @@ contain, or by reference to another paper), the study needs you.
   "λex", "λexc", "λabs" ("lambda max", "lambda_max" too), before a
   wavelength from 100 to 999 nm ("λ = 488 nm", "λmax = 280 nm"), a drug
   "targeted" at MDM2 or MDMX, an acknowledgement in capitals ("WE THANK",
-  "WE ACKNOWLEDGE"), and gigabytes of storage or memory. Any other such word
+  "WE ACKNOWLEDGE"), and gigabytes of storage or memory ("16 GB of
+  memory"; any other "GB" after a number asks, and "MDM2 GB model" is read
+  as GB). Any other such word
   in the same details is still read. Phrases that could be part of another
   method's description still ask: a force field before "/AMBER" (the MM half
   of a QM/MM label), an exchange of water (a grand canonical move), a
@@ -222,10 +234,16 @@ contain, or by reference to another paper), the study needs you.
   alone; a word in letters that only look Latin needs you too. A decimal
   comma or a range with its unit ("0,15 M NaCl", "1-1.5 nm") is no share;
   "2 x 64" is 64 lipids in each leaflet; a count beside a per-leaflet count
-  must be it or twice it ("128 lipids, 64 per leaflet"), and a "2 x" count
-  must be it; "at" or "pressure of" before 1 bar or 1 atm (1 written "1.0"
-  or "1.00" too, and "1.01325 bar"), with "pressure" after it or not, are
-  plain words, as this software keeps 1 bar; any other pressure needs you.
+  must be it, or twice it as the lipids' total ("128 lipids, 64 per
+  leaflet", "a total of 128"), and a "2 x" count must be it; a count of
+  waters or ions said as a whole phrase ("6000 waters,", "20 Na+ ions and")
+  is no count of lipids, but one before other words ("32 Na+ lipids", "60
+  ions per leaflet") is; a water model's name ("SPC", "OPC") is water only
+  before "water" or "waters"; a share written with decimals ("70.5 and 29.5"),
+  "2 x 0", and a count beside "bilayers" or "membranes" need you; "at" or
+  "pressure of" before 1 bar or 1 atm (1 written "1.0" or "1.00" too, and
+  "1.01325 bar"), with "pressure" after it or not, are plain words, as this
+  software keeps 1 bar; any other pressure needs you.
   Beside an AMBER force field that names no lipid force field, Lipid17 is
   used, said so.
 

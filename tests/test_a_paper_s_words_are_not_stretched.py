@@ -672,8 +672,9 @@ def test_a_membrane_is_read_however_it_is_worded(membrane, state, lipid):
     ('The MM/GBSA binding energy was computed from the trajectories.', 'plain'),
     ('The trajectory was coarse-grained to Ca atoms for analysis.', 'confirm'),
     ('Partial charges were fitted to quantum mechanical calculations.', 'confirm'),
-    ('The trajectory occupied 50 GB model files.', 'plain'),
-    ('Each 5 GB solvated system file was stored.', 'plain'),
+    ('The trajectory occupied 50 GB model files.', 'confirm'),
+    ('Each 5 GB solvated system file was stored.', 'confirm'),
+    ('The trajectory occupied 50 GB of storage.', 'plain'),
 ])
 
 def test_a_method_s_details_make_it_another_only_where_they_say_so(details, method):
@@ -1418,7 +1419,7 @@ def test_plain_md_s_own_words_leave_it_plain(details):
 @pytest.mark.parametrize("details", [
     'GPU-accelerated MD simulations with pmemd.cuda.',
     'CUDA-accelerated simulations',
-    'The trajectory occupied 50 GB model files.',
+    'The trajectory occupied 50 GB of storage.',
     'Three independent replicas were heated from 0 to 300 K.',
     'Unbiased MD of the folded protein at 1 bar',
     'Plain MD run on AMD GPUs',
@@ -2052,6 +2053,130 @@ def test_counts_said_per_leaflet_are_one_count(membrane, state):
     otherwise still need the person; a share whose second number has a
     decimal is still a share; only the pressure kept, 1 bar, said in a
     few fixed phrases, is plain."""
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
+                  "membrane": _stated(membrane)})
+    assert plan["state"] == state
+    assert plan["config"]["setup"]["membrane"] == membrane[:4]
+
+
+# -- 1607: soft hyphens, glued names, more readings, counts of each kind ------
+@pytest.mark.parametrize("details, method", [
+    ("We ran RE\u00ad\nMD of the peptide", "confirm"),
+    ("Metady\u00ad\nnamics of the loop", "confirm"),
+    ("REMDsimulations with 24 replicas", "confirm"),
+    ("Runs on AMD-EPYC processorsREMD", "confirm"),
+    ("REMDlambda max = 280 nm", "confirm"),
+    ("The QM-\nregion held the cofactor.", "qm_mm"),
+    ("A G\u014d-\nlike model of the protein", "coarse_grained"),
+    ("G-\nREST over the binding site", "replica_exchange"),
+    ("gREST over the binding site", "replica_exchange"),
+    ("REMD-\nmodels of the loop", "replica_exchange"),
+    ("GaMD-\nprotocols of the receptor", "accelerated"),
+    ("FEP-\ncalculations of the series", "free_energy"),
+    ("REMD-\nMDs of the loop", "replica_exchange"),
+    ("Replica e\u03c7change MD", "replica_exchange"),
+    ("\ua4e3\ua4f0\ua4df\ua4d3 simulations with 24 replicas", "replica_exchange"),
+    ("We targeted MDM2 GB model runs.", "implicit_solvent"),
+    ("We targeted MDM2 with GB simulations.", "implicit_solvent"),
+    ("HIV-1 GB simulations were run.", "confirm"),
+    ("2 GB simulations of 100 ns each.", "confirm"),
+    ("REMDSimulations were run.", "confirm"),
+    ("32REMD replicas.", "confirm"),
+    ("REMD32replicas", "confirm"),
+    ("HREXsimulations", "confirm"),
+    ("MARTINImodel of the protein", "confirm"),
+    ("Simulations were run with-\nout replica-\nexchange.", "confirm"),
+    ("Our results were com-\npared with REMD-\nmethods.", "confirm"),
+    ("Ex-\ncept the QM- atoms, all was MM.", "confirm"),
+    ("Binding energies came from MM/\nGBSA-\ncalculations on the trajectory.", "confirm"),
+    ("Binding energies were computed with MM / GBSA.", "confirm"),
+    ("Binding energies were computed with MM/ GBSA.", "confirm"),
+    ("Simulations were run with\u00ad\nout REMD-\nmethods.", "confirm"),
+    ("Simulations were run wit\u00ad\nhout REMD.", "confirm"),
+    ("Simulations were run ins -\ntead GaMD-\nprotocols here.", "confirm"),
+    ("Binding energies from MM/GB\u00ad\nSA with an implicit solvent model.", "confirm"),
+    ("REMD\u00ad\nsimulations were run without restraints.", "confirm"),
+    ("Simulations were run with\u00ad\nout REMD-\nmethods; not\u00ad\nably, it folded.", "confirm"),
+    ("Simulations were run with\u00ad\nout REMD-\nmethods. No\u00ad\nnetheless, it folded.",
+     "confirm"),
+    ("REMDsimulations were run with\u00ad\nout restraints.", "confirm"),
+])
+def test_a_name_broken_softly_or_glued_to_a_word_asks(details, method):
+    """A name read only where a soft hyphen at a line's end is joined, or a
+    name of capitals glued to a word, may be a piece of another word, so
+    the person decides; a break inside the name itself, or a hyphen before a
+    word of the fixed list ("models", "trajectories"), reads it whole."""
+    assert _method_said(details) == method
+
+
+def test_a_long_list_of_places_is_cut_short():
+    details = " ".join(f"Run {n} was a targeted MD." for n in range(20))
+    plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
+                  "method": _stated("plain"), "method_details": _stated(details, details)})
+    why = [c["why"] for c in _choices(plan, "method_details") if c["label"] == "needs_you"]
+    assert len(why) == 1
+    assert '"Run 11 was a targeted MD"; and 8 more places,' in why[0]
+    assert "Run 12 was" not in why[0]
+
+
+@pytest.mark.parametrize("membrane, state", [
+    ("POPC bilayer, 128 and 64 per leaflet", "needs_you"),
+    ("POPC bilayers, 2 x 128 lipids", "needs_you"),
+    ("POPC bilayers of 128 lipids each", "needs_you"),
+    ("POPC bilayer 96.5,32", "needs_you"),
+    ("POPC bilayer (70.0, 30.0)", "needs_you"),
+    ("POPC bilayer, 70.5 and 29.5", "needs_you"),
+    ("POPC bilayer, 2 x 0 lipids", "needs_you"),
+    ("POPC bilayer, 2 x 64 lipids, 128 total", "needs_you"),
+    ("POPC bilayer, 1.5 nm of water", "ready"),
+    ("POPC bilayer of 128 lipids, 64 per leaflet", "ready"),
+    ("POPC bilayer of 128 lipids (64 per leaflet)", "ready"),
+    ("POPC bilayer, a total of 128, 64 per leaflet", "ready"),
+    ("POPC bilayer of 128 lipids, 6000 waters and 20 ions", "ready"),
+    ("POPC bilayer of 128 lipids, 17 Na+ and 17 Cl- ions", "ready"),
+    ("POPC bilayer of 128 lipids, 17 Na and 17 Cl", "needs_you"),
+    ("POPC bilayer of 128 lipids, 5000 SPC waters", "ready"),
+    ("POPC bilayer with 120 POPC and 8 SPC", "needs_you"),
+    ("POPC bilayer of 120 lipids and 8 SPC molecules", "needs_you"),
+    ("POPC bilayer, 64 per leaflet and 32 SPC", "needs_you"),
+    ("POPC bilayer of 120 POPC and 8 OPC", "needs_you"),
+    ("POPC bilayer, 75 and 25 mol", "needs_you"),
+    ("POPC bilayer, 70 mol and 30 mol", "needs_you"),
+    ("POPC bilayer with 50.0 waters per lipid", "ready"),
+    ("POPC bilayer of 128 POPC, 64 per leaflet", "ready"),
+    ("POPC bilayer, 64 per leaflet, total 128", "ready"),
+    ("POPC bilayer, 64 per leaflet, total: 128", "ready"),
+    ("POPC bilayer, 64 POPC-60 per leaflet", "needs_you"),
+    ("POPC bilayer of 96 POPC-32 lipids", "needs_you"),
+    ("POPC bilayer of 96 POPC\u201432", "needs_you"),
+    ("POPC bilayer of 96 POPC -32", "needs_you"),
+    ("POPC bilayer, 2 x 64 POPC-16", "needs_you"),
+    ("POPC bilayer, 96 POPC and 32 Na+ (lipids)", "needs_you"),
+    ("POPC bilayer, 96 POPC and 32 Na+ bilayer lipids", "needs_you"),
+    ("POPC bilayer, 96 POPC and 32 Na+-POPC", "needs_you"),
+    ("POPC bilayer, 64 per leaflet, 60 ions per leaflet", "needs_you"),
+    ("POPC bilayer, 64 per leaflet and 60 sodium per leaflet", "needs_you"),
+    ("POPC bilayer of 128 lipids, CHARMM-36", "ready"),
+    ("POPC bilayer, 64 per leaflet, CHARMM-36", "ready"),
+    ("POPC bilayer, 128 lipids, 40 waters per lipid", "ready"),
+    ("POPC bilayer of 128 lipids with 20 Na+ ions and 20 Cl- ions", "ready"),
+    ("POPC bilayer, 64 per leaflet and 60 na+ lipids per leaflet", "needs_you"),
+    ("POPC bilayer of 96 POPC and 32 Na+ lipids", "needs_you"),
+    ("POPC bilayer, 96 POPC and 32 sodium POPC", "needs_you"),
+    ("POPC bilayer, 96 lipids and 32 Na+ salt lipids", "needs_you"),
+    ("POPC bilayer of 128 lipids and 5000 water molecules", "ready"),
+    ("POPC bilayer, 64 POPC per leaflet, 128 lipids", "ready"),
+    ("POPC bilayer in a 7.5 x 7.5 x 10 nm box", "ready"),
+    ("POPC bilayer, 0.15 M NaCl at 310.15 K", "ready"),
+    ("POPC bilayer of 2 x 64 lipids", "ready"),
+    ("POPC bilayer at 1.0 bar", "ready"),
+])
+def test_counts_of_waters_and_ions_are_not_lipids(membrane, state):
+    """A count of waters or ions is not a count of lipids; twice a count per
+    leaflet is plain only as the lipids' total; a share written with
+    decimals, a "2 x 0" and a count beside more than one bilayer still need
+    the person."""
     plan = _plan({"pdb_id": _stated("1UBQ"), "production": _stated(100.0),
                   "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
                   "membrane": _stated(membrane)})
