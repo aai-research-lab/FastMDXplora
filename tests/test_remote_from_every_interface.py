@@ -56,6 +56,8 @@ def _gpus(machine, *rows: tuple[int, str, int, int]) -> None:
     # take none.
     machine.study.write_text(machine.study.read_text().replace(
         "include_phase: [analysis]\n", ""))
+    # Its size worked out here, under the 2,000 particles a stand-in run says.
+    _peptide(machine.study.parent / "top.pdb")
     lines = [f"{index}, {uuid}, Stand-in GPU, {total}, {total - free}, {free}, 7"
              for index, uuid, total, free in rows]
     (machine.home / "gpus.csv").write_text("\n".join(lines) + "\n")
@@ -313,12 +315,16 @@ class TestWhatAStudyNeeds:
     def settings(self, tmp_path, monkeypatch):
         monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
 
-    def test_one_run_is_scaled_up_by_particles_and_never_down(self):
+    def test_one_run_covers_studies_up_to_its_size_and_says_nothing_past_it(self):
         from fastmdxplora.remote.gpu_room import learn, need_for
 
         learn("box", job="a", particles=10_000, peak_mb=1000, gpu="g")
-        assert need_for("box", 20_000).mb == 2300
+        # Most of a small run's memory is CUDA's own, the same at any size:
+        # scaling it by particles would ask for room no run takes.
         assert need_for("box", 5_000).mb == 1150
+        assert need_for("box", 10_000).mb == 1150
+        past = need_for("box", 20_000)
+        assert past.mb is None and "up to 10,000 particles" in past.how
 
     def test_runs_of_different_sizes_give_a_line(self):
         from fastmdxplora.remote.gpu_room import learn, need_for
@@ -328,6 +334,23 @@ class TestWhatAStudyNeeds:
         # 500 MB, and 10 MB per 1,000 particles: 1,100 MB, and 15% more.
         assert need_for("box", 60_000).mb == 1265
         assert need_for("box", 0).mb == 690          # never below the least measured
+
+    def test_a_line_never_asks_more_than_a_run_of_that_size_or_larger_held(self):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        for job, (particles, mb) in enumerate(((10_000, 500), (20_000, 3000),
+                                               (30_000, 3000))):
+            learn("box", job=str(job), particles=particles, peak_mb=mb, gpu="g")
+        # The line through them says 3,667 MB at 30,000; a run of that size
+        # held 3,000.
+        assert need_for("box", 30_000).mb == 3450
+
+    def test_a_study_whose_size_is_not_known_here_is_not_given_a_need(self):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        learn("box", job="a", particles=10_000, peak_mb=1000, gpu="g")
+        need = need_for("box", None)
+        assert need.mb is None and "size could not be worked out here" in need.how
 
     def test_another_machine_has_its_own_runs(self):
         from fastmdxplora.remote.gpu_room import learn, need_for
@@ -2736,7 +2759,7 @@ def _go(machine, sending):
 
 def _systems(machine, *names, more=""):
     for name in names[1:]:
-        (machine.study.parent / name).write_text("ATOM\n")
+        _peptide(machine.study.parent / name)
     machine.study.write_text(
         "systems:\n" + "".join(f"  - system: {name}\n" for name in names)
         + "analysis:\n  topology: top.pdb\n" + more)
@@ -2914,14 +2937,16 @@ class TestNinthReviewWhatIsLearned:
         learn("box", job="c", particles=60_000, peak_mb=1500, gpu="g")
         assert need_for("box", 20_000).mb == 2300
 
-    def test_past_the_largest_run_is_never_below_it_scaled(self, tmp_path, monkeypatch):
+    def test_a_line_is_followed_one_span_past_the_largest_run_and_no_further(
+            self, tmp_path, monkeypatch):
         from fastmdxplora.remote.gpu_room import learn, need_for
 
         monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
         learn("box", job="a", particles=10_000, peak_mb=600, gpu="g")
         learn("box", job="b", particles=11_000, peak_mb=601, gpu="g")
-        # 601 MB for 11,000, scaled to 100,000, and 15% more.
-        assert need_for("box", 100_000).mb == 6284
+        # 1 MB per 1,000 particles: 602 MB at 12,000, and 15% more.
+        assert need_for("box", 12_000).mb == 693
+        assert need_for("box", 100_000).mb is None
 
     @pytest.mark.parametrize("runs", ["5", "true", "1.5", '[{"particles": 1000, '
                                       '"peak_mb": 1' + "0" * 400 + "}]"])
@@ -3101,8 +3126,9 @@ class TestTenthReviewWhatIsSized:
         _gpus(machine, (0, UUID_0, 24000, 23000))
         _measured(machine, mb=1500)
         need = _plan(machine, tmp_path).gpu.need
-        assert "for about 30,000 particles" in need.how
-        assert need.mb == 25875            # 1,500 MB scaled by 15, and 15% more
+        # Sized from the 30,000 atoms prepared, not the peptide, and so past
+        # what the one run of 2,000 particles can say.
+        assert "about 30,000 particles" in need.how and need.mb is None
 
     def test_a_study_running_no_simulation_is_not_checked(self, machine, tmp_path):
         _gpus(machine, (0, UUID_0, 24000, 1000))

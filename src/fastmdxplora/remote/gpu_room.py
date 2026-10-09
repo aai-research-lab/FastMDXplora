@@ -233,49 +233,68 @@ def need_for(machine: str, particles: int | None, *, precision: str = "mixed",
              learned_here: bool = True) -> Need:
     """What one run of ``particles`` (``None`` where they could not be
     worked out here) in ``precision`` is expected to hold on a GPU of
-    ``machine``, from the runs measured there in that precision.
-    ``learned_here``: whether this study's run is learned from."""
+    ``machine``, from the runs measured there in that precision; not known
+    where they do not reach it. ``learned_here``: whether this study's run
+    is learned from."""
+    this_one = ("; this one is" if learned_here else
+                ", and this one, not alone on one GPU, is not")
     runs = [run for run in measured(machine)
             if run.get("precision", "mixed") == precision]
     if not runs:
         return Need(None, f"not known yet: no run in {precision} precision sent from here "
                           f"has finished on {machine} with its GPU memory measured"
-                          + ("; this one is" if learned_here else
-                             ", and this one, not alone on one GPU, is not"))
+                          + this_one)
     counted = (f"{len(runs)} run{'s' if len(runs) != 1 else ''} in {precision} precision "
                f"measured on {machine}")
-    peaks = [(run["particles"], run["peak_mb"]) for run in runs]
     if particles is None:
-        expected = max(peak for _, peak in peaks)
-        how = (f"the most any of {counted} held, since this study's size could "
-               "not be worked out here")
-    else:
-        expected = _fitted(peaks, particles)
-        how = f"from {counted}, for about {particles:,} particles"
-    return Need(math.ceil(round(expected * MARGIN, 6)), how)
+        return Need(None, "not known: this study's size could not be worked out here "
+                          f"(a structure fetched by its identifier, a file other than "
+                          f"PDB, a membrane), and {counted} say nothing of another size"
+                          + this_one)
+    peaks = [(run["particles"], run["peak_mb"]) for run in runs]
+    expected = _fitted(peaks, particles)
+    if expected is None:
+        largest = max(n for n, _ in peaks)
+        return Need(None, f"not known yet: about {particles:,} particles is past what "
+                          f"{counted} (up to {largest:,} particles) can say"
+                          + this_one)
+    return Need(math.ceil(round(expected * MARGIN, 6)),
+                f"from {counted}, for about {particles:,} particles")
 
 
-def _fitted(peaks: list[tuple[int, int]], particles: int) -> float:
-    """Memory for ``particles``. From runs of one size, the most they held,
-    scaled up by particles and never down. From runs of two sizes or more, a
-    straight line through them; past the largest, never below the largest
-    scaled up by particles; and never below a run of the same size or
-    smaller."""
-    scaled = max(p * max(1.0, particles / n) for n, p in peaks)
-    sizes = {n for n, _ in peaks}
-    if len(sizes) < 2:
-        return scaled
-    mean_n = sum(n for n, _ in peaks) / len(peaks)
-    mean_p = sum(p for _, p in peaks) / len(peaks)
-    spread = sum((n - mean_n) ** 2 for n, _ in peaks)
-    slope = sum((n - mean_n) * (p - mean_p) for n, p in peaks) / spread
-    if slope <= 0:
-        return scaled
-    largest = max(sizes)
-    floor = max([p for n, p in peaks if n <= particles] or [min(p for _, p in peaks)])
-    if particles > largest:
-        floor = max(floor, max(p for n, p in peaks if n == largest) * particles / largest)
-    return max(mean_p + slope * (particles - mean_n), floor)
+def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
+    """Memory for ``particles``, or ``None`` where the runs measured do not
+    say. A run holds a fixed part (the CUDA context, OpenMM's kernels and
+    FFT plans) and a part per particle, so a size is never scaled from
+    another by particles alone.
+
+    No larger than a larger run measured held, and no smaller than a run
+    of its size or smaller held. From runs of two sizes or more whose
+    memory grows with size, a straight line through them, its fixed part
+    included; trusted past the largest size by as far again as the sizes
+    measured span, and not past that. From one size alone, nothing past it.
+    """
+    sizes = sorted({n for n, _ in peaks})
+    smallest, largest = sizes[0], sizes[-1]
+    at_or_below = [p for n, p in peaks if n <= particles]
+    floor = max(at_or_below) if at_or_below else max(
+        p for n, p in peaks if n == smallest)
+    if particles < smallest:
+        return floor          # a smaller system holds no more than the smallest did
+    line = None
+    if len(sizes) >= 2:
+        mean_n = sum(n for n, _ in peaks) / len(peaks)
+        mean_p = sum(p for _, p in peaks) / len(peaks)
+        spread = sum((n - mean_n) ** 2 for n, _ in peaks)
+        slope = sum((n - mean_n) * (p - mean_p) for n, p in peaks) / spread
+        if slope > 0:
+            line = mean_p + slope * (particles - mean_n)
+    if particles <= largest:
+        above = max(p for n, p in peaks if n >= particles)
+        return max(min(line, above), floor) if line is not None else max(above, floor)
+    if line is None or particles > largest + (largest - smallest):
+        return None
+    return max(line, floor)
 
 
 # ---------------------------------------------------------------------------

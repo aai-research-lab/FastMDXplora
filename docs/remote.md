@@ -303,18 +303,21 @@ reads its processes' GPU memory every 15 s, and once a job that ran one run
 at a time on the GPU chosen for it has ended done, the most it held is kept
 with the particles its runs had and their precision
 (`gpu_memory/<machine>.json` in the settings folder; only the runs of that
-send, never one an earlier send of the same name left). For a new study,
-from runs in its precision: from one size, the most they held, scaled up by
-particles and never down; from two sizes or more, a straight line through
-them, never below a run of the same size or smaller, and past the largest
-never below the largest scaled up by particles; then 15% more. The particles
-are those of the prepared system a run starts from (`setup_from`), else
+send, never one an earlier send of the same name left). Much of a small
+run's memory is CUDA's own and the same at any size, so a size is never
+scaled from another by particles alone. For a new study, from runs in its
+precision: no less than a run of its size or smaller held, and no more than
+one of its size or larger held; from two sizes or more whose memory grows
+with size, a straight line through them, followed past the largest size by
+as far again as the sizes measured span; then 15% more. The particles are
+those of the prepared system a run starts from (`setup_from`), else
 estimated from each run's structure file and setup, as the builder's preview
-estimates them, sweeps included; where they cannot be (a PDB identifier, a
-file other than PDB, a membrane, more than 20 kinds of run), the most any
-run there held is used, and the plan says so. Until a run in that precision
-has finished there, the need is not known: the plan says so, a GPU is chosen
-as above, and nothing is refused. A study sent from here that does not yet
+estimates them, sweeps included. The need is not known where no run in that
+precision has finished there, where the study is larger than the runs
+measured can say (past the one size measured, or past the line's reach), or
+where its size cannot be worked out here (a PDB identifier, a file other
+than PDB, a membrane, more than 20 kinds of run): the plan says which, a GPU
+is chosen as above, and nothing is refused. A study sent from here that does not yet
 hold what it was expected to need (setup takes minutes) has the difference
 kept back for it, on each GPU its share.
 
