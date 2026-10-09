@@ -259,8 +259,8 @@ job.sh:
   ... (refused with exit 75 and a no_room file where less than 1,840 MB is free)
   fmdx_peak() { ... }      (reads the job's GPU memory every 15 s into gpu_peak)
   fmdx_peak $$ &
-  /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run --no-defaults
-  echo $? > exit_code
+  FMDX_JOB_DIR="$(pwd -P)" /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run --no-defaults
+  rc=$?; cd / && echo "$rc" > /home/me/fastmdxplora-jobs/lysozyme/exit_code
 ```
 
 The job's **name** is its output folder's name, the same on both computers:
@@ -281,11 +281,22 @@ one.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
 once it has ended; one still waiting or running there is refused, on a cluster
-too, so cancel it first. A workstation job cancelled from here stops at its
-run's next frame, and is replaced once no process of it works in its folder
-(where the machine has no `/proc` to say, once its process group has gone, or
-an hour after the cancel; a machine without `setsid` gives a job no process
-group of its own, so there it is not found).
+too, so cancel it first; one of that name last read waiting or running on
+another machine, or cancelled there within the hour, is refused too. On a
+cluster no send is made, forced or not, while the account's queue holds a job
+of that name waiting or running in the job's folder (one of that name working
+elsewhere is not counted). On a workstation no send is made, forced or not,
+whatever the record here says or with no record here at all, while a process
+of a job works for the job's folder: one carrying the folder as
+`FMDX_JOB_DIR`, which a job's run and every process it starts carry, or a
+job's script or run working in it (a shell or a reader left there is not
+counted). A run cancelled from here stops at its next frame; a job whose
+script was killed while its run goes on reads as running, and `cancel` stops
+its run. This is read from the machine's `/proc`, and a send whose check is
+not answered to the end is refused; where the machine has no `/proc`, a forced
+send after a cancel from here is refused while the job's process group is
+there, up to an hour after the cancel, and a machine without `setsid` gives a
+job no process group of its own, so there it is not found.
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
 workstation's GPUs (`nvidia-smi`) how much memory each has free, and the study
@@ -310,30 +321,32 @@ room has gone.
 What a run needs is learned from the runs on that machine. Each job's script
 reads its processes' GPU memory every 15 s, and once a job that ran one run at
 a time on the GPU chosen for it has ended done, the most it held is kept with
-the particles its runs on the GPU (CUDA or OpenCL, each at least three
-readings long, so read once it held its memory) had and their precision
-(`gpu_memory/<machine>.json` in the settings folder; only the runs of that
-send, newer by the machine's own clock than the send, never one an earlier
-send of the same name left). A study refused as needing more than a GPU has at
-all names that file: a run in it that does not stand for the study can be
-taken out. Much of a small run's memory is CUDA's own and the same at any
-size, so a size is never scaled from another by particles alone. For a new
-study, from runs in its precision: no less than a run of its size or smaller
-held, and no more than one of its size or larger held; from two sizes or more
-whose memory grows with size, a straight line through the most each size held,
-followed past the largest size by as far again as the sizes measured span;
-then 15% more. The particles are those of the prepared system a run starts
-from (`setup_from`), else estimated from each run's structure file and setup,
-as the builder's preview estimates them, sweeps included. The need is not
-known where no run in that precision has finished there, where the study is
-larger than the runs measured can say (past the one size measured, or past the
-line's reach), or where its size cannot be worked out here (a PDB identifier,
-a file other than PDB, a membrane, more than 20 kinds of run): the plan says
-which, a GPU is chosen as above, and nothing is refused. A study sent from
-here that does not yet hold what it was expected to need (setup takes minutes)
-has the difference kept back for it, on each GPU its share; one whose
-processes' memory the machine does not give (`[N/A]`, as in a container or
-WSL) is taken as holding it.
+the particles its runs on the GPU (CUDA or OpenCL; nothing is learned where
+one was shorter than three readings, read perhaps before it held its memory)
+had and their precision (`gpu_memory/<machine>.json` in the settings folder;
+only the runs of that send, newer by the machine's own clock than the send,
+never one an earlier send of the same name left). A study refused as needing
+more than a GPU has at all names that file: a run in it that does not stand
+for the study can be taken out. Much of a small run's memory is CUDA's own and
+the same at any size, so a size is never scaled from another by particles
+alone. For a new study, from runs in its precision: up to the largest size
+measured, what the next size measured at or above it held at most (where the
+sizes above hold more as they grow; else the most any of them held), and never
+less than a run of its size or smaller held; past the largest, from two sizes
+or more whose memory grows with size, the larger of a straight line through
+the most each size held and the slope between the two largest sizes, followed
+by as far again as the sizes measured span; then 15% more. The particles are
+those of the prepared system a run starts from (`setup_from`), else estimated
+from each run's structure file and setup, as the builder's preview estimates
+them, sweeps included. The need is not known where no run in that precision
+has finished there, where the study is larger than the runs measured can say
+(past the one size measured, or past the line's reach), or where its size
+cannot be worked out here (a PDB identifier, a file other than PDB, a
+membrane, more than 20 kinds of run): the plan says which, a GPU is chosen as
+above, and nothing is refused. A study sent from here that does not yet hold
+what it was expected to need (setup takes minutes) has the difference kept
+back for it, on each GPU its share; one whose processes' memory the machine
+does not give (`[N/A]`, as in a container or WSL) is taken as holding it.
 
 Runs side by side count: a study run in parallel needs room for as many runs
 at once as the explorer starts (its `workers`, else one per device listed,
@@ -358,11 +371,14 @@ GPUs (`-1`, a MIG device) leaves the GPUs unchecked, and the plan says so. A
 continuation (`simulation.resume_from`) runs on the GPU its study's record
 names, so none is chosen or checked. A study that runs no simulation (setup
 holds a GPU briefly at most), or runs it on the `CPU` or `HIP` platform, is
-not checked, nor is a machine without `nvidia-smi`, and the plan says why. An
-umbrella study asked for its setup with other phases but not its simulation
-still runs the steered pull that seeds its windows, and that one run is
+not checked, nor is a machine without `nvidia-smi`, and the plan says why. The
+pull is run only where the windows start from one prepared system (a prepared
+system named by `setup_from`, or setup among the phases with one setup for
+every window) and more than setup is asked for, as the explorer decides it, a
+study sent from its own `resolved_config.yml` included: an umbrella study
+asked for those but not its simulation still runs it, and that one run is
 checked. A cluster's scheduler gives each job its GPU, so nothing is asked
-there.
+there, and the plan says so.
 
 ---
 

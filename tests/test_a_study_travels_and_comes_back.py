@@ -280,7 +280,7 @@ def test_the_job_script_asks_slurm_for_a_gpu():
     assert "#SBATCH --partition=gpu" in script
     assert "#SBATCH --time=24:00:00" in script
     assert "/e/fastmdx-1.0/bin/fastmdx explore -c study.yml --output run" in script
-    assert script.rstrip().endswith("echo $? > exit_code")
+    assert script.rstrip().endswith('rc=$?; cd / && echo "$rc" > /scratch/me/j/exit_code')
 
 
 def test_an_image_runs_with_the_gpu_passed_through():

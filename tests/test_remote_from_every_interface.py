@@ -9,13 +9,26 @@ made at a terminal, and no prompt nobody can answer.
 
 from __future__ import annotations
 
+import copy
 import json
+import subprocess
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from fastmdxplora.refusals import refusal_of
-from fastmdxplora.remote.send import STATUS_KEPT_S, cancel, describe_sending, prepare, send, status
+from fastmdxplora.remote.send import (
+    STATUS_KEPT_S,
+    cancel,
+    describe_sending,
+    job_script,
+    prepare,
+    send,
+    status,
+)
 from tests import test_a_study_travels_and_comes_back as travels
 from tests.test_a_study_travels_and_comes_back import RELEASE, _send
 
@@ -330,13 +343,16 @@ class TestWhatAStudyNeeds:
         past = need_for("box", 20_000)
         assert past.mb is None and "up to 10,000 particles" in past.how
 
-    def test_runs_of_different_sizes_give_a_line(self):
+    def test_runs_of_different_sizes_give_a_line_past_the_largest(self):
         from fastmdxplora.remote.gpu_room import learn, need_for
 
         learn("box", job="a", particles=10_000, peak_mb=600, gpu="g")
         learn("box", job="b", particles=110_000, peak_mb=1600, gpu="g")
-        # 500 MB, and 10 MB per 1,000 particles: 1,100 MB, and 15% more.
-        assert need_for("box", 60_000).mb == 1265
+        # 500 MB, and 10 MB per 1,000 particles: 2,100 MB at 160,000, and
+        # 15% more.
+        assert need_for("box", 160_000).mb == 2415
+        # Between the two, what the larger held: memory grows with size.
+        assert need_for("box", 60_000).mb == 1840
         assert need_for("box", 0).mb == 690          # never below the least measured
 
     def test_a_line_never_asks_more_than_a_run_of_that_size_or_larger_held(self):
@@ -1993,6 +2009,13 @@ NO_ACCOUNTING_H = 'echo "sacct: error: accounting storage is disabled" >&2; exit
 QUEUE_WARNING = 'echo "squeue: error: _parse_next_key: Parsing error at unrecognized key: X" >&2'
 
 
+def _queue_by_name_answers(tools, squeue: str) -> None:
+    """A stand-in ``squeue`` answering as ``squeue`` does, and, asked for the
+    account's jobs of a name (as a send asks), that it holds none."""
+    travels._tool(tools / "squeue",
+                  'case "$*" in *" -n "*) exit 0 ;; esac\n' + squeue)
+
+
 def _queued_h(machine, squeue: str, sacct: str, state: str = "running",
             exit_code: str | None = None, scancel: str = "exit 0",
             local_output: str | None = None):
@@ -2089,21 +2112,21 @@ class TestTwelfthReviewResentClusterJob:
         machine.env["FAKE_EXIT"] = "1"
         # The first run: sbatch runs it there and then.
         travels._tool(tools / "sbatch", "sh job.sh > job.log 2>&1; echo 4242")
-        travels._tool(tools / "squeue",
+        _queue_by_name_answers(tools,
                       'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
         travels._tool(tools / "sacct", NO_ACCOUNTING_H)
 
-        def slurm_sending():
-            sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+        def slurm_sending(force=True):
+            sending = prepare(machine.study, "box", output=str(machine.back), force=force,
                               code=RELEASE, transport=machine.transport())
             sending.scheduler = "slurm"
             sending.script = job_script(remote_dir=sending.remote_dir,
                                         job_name=sending.job_name,
                                         env=sending.installation, container="",
-                                        scheduler="slurm", force=True)
+                                        scheduler="slurm", force=force)
             return sending
 
-        first = slurm_sending()
+        first = slurm_sending(force=False)
         machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
         job = send(first, transport=machine.transport(), local_runner=machine.local,
                    code=RELEASE)
@@ -2112,7 +2135,7 @@ class TestTwelfthReviewResentClusterJob:
         # Sent again: this time it waits in the queue.
         travels._tool(tools / "sbatch", "echo 4243")
         # The queue knows the new job only; the last one has gone from it.
-        travels._tool(tools / "squeue",
+        _queue_by_name_answers(tools,
                       '[ "$3" = 4243 ] && echo PENDING && exit 0; '
                       'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
         machine.env["PATH"] = machine.env["PATH"].split(":", 1)[1]
@@ -2270,21 +2293,21 @@ class TestThirteenthReviewTheQueue:
 
         tools = machine.home / "slurm-bin"
         travels._tool(tools / "sbatch", "sh job.sh > job.log 2>&1; echo 4242")
-        travels._tool(tools / "squeue",
+        _queue_by_name_answers(tools,
                       'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1')
         travels._tool(tools / "sacct", NO_ACCOUNTING_H)
 
-        def slurm_sending():
-            sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+        def slurm_sending(force=True):
+            sending = prepare(machine.study, "box", output=str(machine.back), force=force,
                               code=RELEASE, transport=machine.transport())
             sending.scheduler = "slurm"
             sending.script = job_script(remote_dir=sending.remote_dir,
                                         job_name=sending.job_name,
                                         env=sending.installation, container="",
-                                        scheduler="slurm", force=True)
+                                        scheduler="slurm", force=force)
             return sending
 
-        first = slurm_sending()
+        first = slurm_sending(force=False)
         machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
         job = send(first, transport=machine.transport(), local_runner=machine.local,
                    code=RELEASE)
@@ -2586,20 +2609,20 @@ class TestFourteenthReviewLResentJobWhileTheQueueIsSilent:
         tools = machine.home / "slurm-bin"
         machine.env["FAKE_EXIT"] = "1"
         travels._tool(tools / "sbatch", "sh job.sh > job.log 2>&1; echo 4242")
-        travels._tool(tools / "squeue", GONE_L)
+        _queue_by_name_answers(tools, GONE_L)
         travels._tool(tools / "sacct", NO_ACCOUNTING_L)
 
-        def slurm_sending():
-            sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+        def slurm_sending(force=True):
+            sending = prepare(machine.study, "box", output=str(machine.back), force=force,
                               code=RELEASE, transport=machine.transport())
             sending.scheduler = "slurm"
             sending.script = job_script(remote_dir=sending.remote_dir,
                                         job_name=sending.job_name,
                                         env=sending.installation, container="",
-                                        scheduler="slurm", force=True)
+                                        scheduler="slurm", force=force)
             return sending
 
-        first = slurm_sending()
+        first = slurm_sending(force=False)
         machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
         job = send(first, transport=machine.transport(), local_runner=machine.local,
                    code=RELEASE)
@@ -2610,7 +2633,7 @@ class TestFourteenthReviewLResentJobWhileTheQueueIsSilent:
         machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
         job = send(again, transport=machine.transport(), local_runner=machine.local,
                    code=RELEASE)
-        travels._tool(tools / "squeue", QUEUE_TIMES_OUT_L)
+        _queue_by_name_answers(tools, QUEUE_TIMES_OUT_L)
         job = status(job.name, transport=machine.transport())
         assert job.state == "ready", (job.state, job.detail)
 
@@ -3060,7 +3083,7 @@ class TestNinthReviewWhatTheMachineSays:
 
         gpu = Gpu(0, UUID_0, "g", 1, 0, 1, None)
         said = "\n".join(_gpu_lines(Choice(gpu=gpu, uuids=(UUID_0,))))
-        assert 'while [ ! -f exit_code ] && kill -0 "$1"' in said
+        assert 'while [ ! -f "$d/exit_code" ] && kill -0 "$1"' in said
 
 
 class TestNinthReviewAnAIApp:
@@ -3647,7 +3670,7 @@ class TestTwelfthReviewSentAgain:
             with pytest.raises(ValueError) as caught:
                 send(again, transport=machine.transport(), local_runner=machine.local,
                      code=RELEASE)
-            assert "still stopping" in str(caught.value)
+            assert "cancelled from here, stops at its run's next frame" in str(caught.value)
             assert (machine.home / "started").read_text().count("x") == 1
         finally:
             _stopped(first)
@@ -3751,7 +3774,7 @@ class TestThirteenthReviewGpusWhatIsHeld:
             with pytest.raises(ValueError) as caught:
                 send(again, transport=machine.transport(), local_runner=machine.local,
                      code=RELEASE)
-            assert "still stopping" in str(caught.value)
+            assert "cancelled from here, stops at its run's next frame" in str(caught.value)
         finally:
             _stopped(first)
 
@@ -3788,3 +3811,685 @@ class TestThirteenthReviewGpusWhatIsSaid:
         first, _ = _start(app)
         asked = first["inputRequests"]["send"]["params"]["message"]
         assert "The study runs on the CPU, so no GPU memory is checked." in asked
+
+
+# ---------------------------------------------------------------------------
+# The fourteenth review's cases, of the GPUs
+# ---------------------------------------------------------------------------
+_FASTMDX = (".conda", "envs", "fastmdx-1.0", "bin", "fastmdx")
+
+
+def _until_there(path, seconds=30):
+    deadline = time.monotonic() + seconds
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path} never appeared"
+        time.sleep(0.05)
+
+
+def _process_there(pid: str) -> bool:
+    """Whether the process runs (not ended, nor a zombie left unreaped)."""
+    import subprocess
+
+    said = subprocess.run(["ps", "-o", "stat=", "-p", pid], capture_output=True,
+                          text=True).stdout.strip()
+    return bool(said) and not said.startswith("Z")
+
+
+def _group_killed(handle):
+    import os
+    import signal
+
+    try:
+        os.killpg(int(handle), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, ValueError):
+        pass
+
+
+def _another_machine(machine, tmp_path):
+    """``box2``, a stand-in machine of its own, and its connection, which
+    answers that a folder of ``box``'s is not there (``asked`` keeps what
+    it was asked of it)."""
+    import subprocess
+
+    from fastmdxplora.remote.machines import Inspection, Machine, load_machine, save_machine
+    from fastmdxplora.remote.transport import Transport
+
+    (tmp_path / "other").mkdir()
+    other = travels.Here(tmp_path / "other", machine.env["PATH"], FAKE_SLEEP="0",
+                         FAKE_EXIT="0")
+    env = other.home / ".conda" / "envs" / "fastmdx-1.0"
+    travels._tool(env / "bin" / "python", "echo '1.0|||'")
+    travels._tool(env / "bin" / "fastmdx", "sleep 0")
+    box = load_machine("box")
+    save_machine(Machine("box2", box.inspected_at, Inspection(home=str(other.home)),
+                         info={str(env): next(iter(box.info.values()))}))
+    asked: list[str] = []
+
+    def connect(folder):
+        def runner(command, input=None, **kwargs):
+            said = (input.decode() if isinstance(input, bytes) else input or "") + command[-1]
+            if folder in said:
+                asked.append(said)
+                return subprocess.CompletedProcess(command, 0, b"fmdx:gone=1\n", b"")
+            return other.ssh(command, input=input, **kwargs)
+        return Transport("box2", runner=runner, interactive=False)
+
+    return connect, asked
+
+
+class TestFourteenthReviewGpusSentAgain:
+    def test_a_run_still_working_after_its_script_was_killed_is_not_replaced(
+            self, machine):
+        import os
+        import signal
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      'echo x >> "$HOME/started"\n: > "$HOME/working"\nsleep 20')
+        first = _send(machine)
+        _until_there(machine.home / "working")
+        # The process number the send printed, stopped by hand there: only
+        # the job script ends, and the explorer works on in the folder.
+        os.kill(int(first.handle), signal.SIGTERM)
+        try:
+            deadline = time.monotonic() + 10
+            while _process_there(first.handle):
+                assert time.monotonic() < deadline, "the script never ended"
+                time.sleep(0.05)
+            # Its explorer is the job still: read running, not replaced, and
+            # stopped by a cancel.
+            assert status(first.name, transport=machine.transport()).state == "running"
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert "is still running on box" in str(caught.value)
+            assert (machine.home / "started").read_text().count("x") == 1
+            cancel(first.name, transport=machine.transport())
+            _stopped(first)
+        finally:
+            _group_killed(first.handle)
+
+    def test_a_folder_worked_in_with_no_record_here_is_not_replaced(
+            self, machine, tmp_path):
+        from fastmdxplora.remote.jobs import _path_for
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      ': > "$HOME/working"\nsleep 20')
+        first = _send(machine)
+        _until_there(machine.home / "working")
+        _path_for(first.name).unlink()           # sent from another computer
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert refusal_of(caught.value).code == "environment.path.exists"
+        finally:
+            _group_killed(first.handle)
+
+    def test_a_cancelled_run_is_not_replaced_where_the_machine_has_no_ps(
+            self, machine, tmp_path):
+        import os
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      'trap \'\' TERM\necho x >> "$HOME/started"\n'
+                      ': > "$HOME/trapped"\nsleep 8')
+        first = _send(machine)
+        _until_there(machine.home / "trapped")
+        cancel(first.name, transport=machine.transport())
+        bare = tmp_path / "bare-bin"                  # a container without procps
+        bare.mkdir()
+        for folder in machine.env["PATH"].split(":"):
+            for tool in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+                if tool != "ps" and not (bare / tool).exists():
+                    (bare / tool).symlink_to(os.path.join(folder, tool))
+        machine.env["PATH"] = str(bare)
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert "cancelled from here" in str(caught.value)
+            assert (machine.home / "started").read_text().count("x") == 1
+        finally:
+            _group_killed(first.handle)
+
+    def test_a_forced_send_to_another_machine_does_not_misread_the_running_job(
+            self, machine, tmp_path):
+        from fastmdxplora.remote.jobs import load_job
+
+        machine.env["FAKE_SLEEP"] = "30"
+        first = _send(machine)                       # running on box
+        try:
+            connect, asked = _another_machine(machine, tmp_path)
+            link = connect(first.remote_dir)
+            again = prepare(machine.study, "box2", output=str(machine.back), force=True,
+                            code=RELEASE, transport=link)
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=link, local_runner=machine.local, code=RELEASE)
+            assert "was sent to box, and was last read running there" in str(caught.value)
+            job = load_job(first.name)
+            assert (job.machine, job.state) == ("box", "running") and asked == []
+        finally:
+            _group_killed(first.handle)
+
+
+class TestFourteenthReviewGpusWhereRunsGo:
+    @pytest.mark.parametrize("phases", ["include_phase: [analysis, report]\n",
+                                        "exclude_phase: [setup, simulation]\n"])
+    def test_no_pull_is_counted_where_nothing_is_prepared_or_named(self, phases):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        study = yaml.safe_load(UMBRELLA.replace(
+            "execution:\n  workers: 2\n  devices: [1]\n", phases))
+        assert not _runs_of(study, 8).simulates
+        study["simulation"]["setup_from"] = "earlier"   # a system it names
+        assert _runs_of(study, 8).simulates
+
+    def test_a_cpu_run_placed_on_a_listed_device_is_not_counted_there(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 100), (1, UUID_1, 24000, 20000))
+        _measured(machine, 6000)
+        _systems(machine, "top.pdb", more="sweep:\n  simulation.platform: [CPU, CUDA]\n"
+                                          "execution:\n  workers: 2\n  devices: [0, 1]\n")
+        sending = _plan(machine, tmp_path)
+        assert sending.no_room == "" and sending.gpu.uuids == (UUID_1,)
+
+
+class TestFourteenthReviewGpusWhatIsSaid:
+    def test_the_refusal_s_need_is_what_did_not_fit_on_the_gpu_that_refused(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 20000), (1, UUID_1, 24000, 20000))
+        _measured(machine, 6000)
+        _systems(machine, "top.pdb", "b.pdb", "c.pdb",
+                 more="execution:\n  devices: [0, 0, 1]\n")
+        sending = _plan(machine, tmp_path)
+        assert sending.gpu.wanted == {UUID_0: 13800, UUID_1: 6900}
+        _gpus(machine, (0, UUID_0, 24000, 20000), (1, UUID_1, 24000, 5000))
+        with pytest.raises(ValueError) as caught:
+            _go(machine, sending)
+        assert "needs about 6,900 MB" in str(caught.value)       # GPU 1's share
+        assert refusal_of(caught.value).details["need_mb"] == 6900
+
+    def test_a_cluster_plan_says_why_its_gpus_are_not_checked(self, machine, tmp_path):
+        from fastmdxplora.remote.send import room_said
+
+        travels._tool(machine.home / "slurm-bin" / "sbatch", "echo 1")
+        machine.env["PATH"] = f"{machine.home / 'slurm-bin'}:{machine.env['PATH']}"
+        machine.study.write_text(machine.study.read_text().replace(
+            "include_phase: [analysis]\n", ""))
+        sending = prepare(machine.study, "box", output=str(tmp_path / "back" / "c"),
+                          code=RELEASE, transport=machine.transport(), time_limit="1:00:00")
+        assert sending.scheduler == "slurm"
+        assert ("A cluster's scheduler gives each job its GPU, so no GPU memory is "
+                "checked here.") in room_said(sending)
+
+
+class TestFourteenthReviewGpusWhatIsLearned:
+    def test_a_short_run_s_memory_is_not_learned_against_another_run_s_size(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import measured
+        from fastmdxplora.remote.send import _gpu_said
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        job = TestEleventhReviewWhatIsLearned()._job()
+        job.extra["gpu_peak_mb"] = 3000
+        _gpu_said(job, {"cost": [
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed", "seconds": 600}',
+            '{"particles": 50000, "platform": "CUDA", "precision": "mixed", "seconds": 20}',
+        ]}, "0")
+        assert measured("box") == []
+
+    def test_a_measured_size_needs_no_more_than_the_most_that_size_held(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        for job, (particles, mb) in enumerate(((10_000, 1000), (20_000, 1100),
+                                               (30_000, 2500))):
+            learn("box", job=str(job), particles=particles, peak_mb=mb, gpu="g")
+        # The line says 1,533 MB at 20,000; the one run of that size held 1,100.
+        assert need_for("box", 20_000).mb == 1265
+        assert need_for("box", 15_000).mb == 1265        # capped by 20,000's too
+
+
+# ---------------------------------------------------------------------------
+# The fifteenth review's cases, of the GPUs
+# ---------------------------------------------------------------------------
+class TestFifteenthReviewGpusSentAgain:
+    def test_a_forced_send_as_soon_as_a_job_reads_done_is_made(self, machine):
+        _gpus(machine, (0, UUID_0, 24000, 23000))
+        first = _send(machine)
+        assert "fmdx_peak" in (Path(first.remote_dir) / "job.sh").read_text()
+        _ended_there(first)
+        assert status(first.name, transport=machine.transport()).state == "done"
+        # Its GPU reader, still asleep, works from / and not in the folder.
+        again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                        code=RELEASE, transport=machine.transport())
+        job = send(again, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        travels._until_finished(machine, job.name)
+
+    def test_a_send_not_forced_does_not_start_a_second_job_where_one_works(
+            self, machine):
+        from fastmdxplora.remote.jobs import _path_for
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      'echo x >> "$HOME/started"\n: > "$HOME/working"\nsleep 20')
+        first = _send(machine)
+        _until_there(machine.home / "working")
+        _path_for(first.name).unlink()           # sent from another computer
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back),
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert refusal_of(caught.value).code == "environment.path.exists"
+            assert (machine.home / "started").read_text().count("x") == 1
+        finally:
+            _group_killed(first.handle)
+
+    def test_a_folder_check_cut_short_refuses_the_send(self, machine):
+        import subprocess
+
+        from fastmdxplora.remote.jobs import _path_for
+        from fastmdxplora.remote.transport import Transport
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      'echo x >> "$HOME/started"\n: > "$HOME/working"\nsleep 20')
+        first = _send(machine)
+        _until_there(machine.home / "working")
+        _path_for(first.name).unlink()
+
+        def runner(command, input=None, **kwargs):
+            said = input.decode() if isinstance(input, bytes) else (input or "")
+            if "in_folder" in said:                  # its shell killed mid-scan
+                return subprocess.CompletedProcess(command, 137, b"", b"Killed\n")
+            return machine.ssh(command, input=input, **kwargs)
+
+        link = Transport("box", runner=runner, interactive=False)
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=link)
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=link, local_runner=machine.local, code=RELEASE)
+            assert "could not be asked to the end" in str(caught.value)
+            assert (machine.home / "started").read_text().count("x") == 1
+        finally:
+            _group_killed(first.handle)
+
+    def test_a_forced_send_to_a_cluster_does_not_replace_a_job_in_its_queue(
+            self, machine):
+        from fastmdxplora.remote.send import job_script
+
+        tools = machine.home / "slurm-bin"
+        where = machine.home / "fastmdxplora-jobs" / "trial"
+        (where / "run").mkdir(parents=True)            # another computer's run
+        travels._tool(tools / "sbatch", 'echo x >> "$HOME/submitted"; echo 4243')
+        travels._tool(tools / "squeue", f'echo "4242 RUNNING {where}"')
+        sending = prepare(machine.study, "box", output=str(machine.back), force=True,
+                          code=RELEASE, transport=machine.transport())
+        sending.scheduler = "slurm"
+        sending.script = job_script(remote_dir=sending.remote_dir,
+                                    job_name=sending.job_name, env=sending.installation,
+                                    container="", scheduler="slurm", force=True)
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        with pytest.raises(ValueError) as caught:
+            send(sending, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
+        assert "holds a job called trial (running)" in str(caught.value)
+        assert not (machine.home / "submitted").exists()
+        travels._tool(tools / "squeue", "exit 0")      # the queue holds none of it
+        job = send(sending, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        assert (machine.home / "submitted").exists() and job.handle == "4243"
+
+
+class TestFifteenthReviewGpusWhereRunsGo:
+    def test_a_round_run_until_determined_may_put_a_gpu_run_where_a_cpu_run_was(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        config = yaml.safe_load(
+            "systems:\n  - system: a.pdb\nsweep:\n  simulation.platform: [CPU, CUDA]\n"
+            "simulation:\n  duration_ns: 5\n  stop_when:\n    measures:\n"
+            "      - {analysis: rmsd, standard_error: 0.01}\n    max_duration_ns: 50\n"
+            "    independent_starts: not_required\n"
+            "execution:\n  workers: 2\n  devices: [0, 1]\n")
+        # The CPU run failed, the CUDA run extended alone, on device 0.
+        assert _runs_of(config, 8).named.get(0, 0) >= 1
+
+    def test_no_pull_is_counted_for_windows_swept_over_their_setup(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        study = yaml.safe_load(UMBRELLA.replace(
+            "execution:\n  workers: 2\n  devices: [1]\n",
+            "include_phase: [setup, analysis]\nsweep:\n  setup.ph: [7.0, 7.4]\n"))
+        assert not _runs_of(study, 8).simulates
+
+
+class TestFifteenthReviewGpusWhatIsSaid:
+    def test_a_larger_size_that_held_less_does_not_cap_a_smaller_one(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        for job, (particles, mb) in enumerate(((30_000, 2000), (60_000, 3500),
+                                               (90_000, 1500))):
+            learn("box", job=str(job), particles=particles, peak_mb=mb, gpu="g")
+        # The highs do not grow with size: no more than the most any held.
+        assert need_for("box", 59_000).mb == 4025
+
+    def test_the_documented_fix_for_path_exists_names_what_to_do_when_refused(self):
+        row = next(line for line in (Path(__file__).resolve().parents[1] / "docs"
+                                     / "refusals.md").read_text().splitlines()
+                   if line.startswith("| `environment.path.exists`"))
+        assert "wait for it or cancel it, or give another `--output`" in row
+
+
+class TestFifteenthReviewGpusAJobWhoseScriptEnded:
+    def test_its_run_going_on_is_read_running_and_stopped_by_a_cancel(self, machine):
+        import subprocess
+
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        where = machine.home / "fastmdxplora-jobs" / "orphan"
+        (where / "run").mkdir(parents=True)
+        # The job's script ended (and was reaped); its run goes on in its
+        # process group.
+        script = subprocess.Popen(["sh", "-c", "sleep 30 & exit 0"], cwd=where,
+                                  start_new_session=True)
+        script.wait()
+        handle = str(script.pid)
+        try:
+            save_job(Job(name="orphan", machine="box", remote_dir=str(where),
+                         scheduler="process", handle=handle,
+                         submitted_at="2026-10-09T00:00:00Z", code={},
+                         local_output=str(machine.back), state="running"))
+            assert status("orphan", transport=machine.transport()).state == "running"
+            assert cancel("orphan", transport=machine.transport()).state == "abandoned"
+            deadline = time.monotonic() + 10
+            while travels._alive(handle):
+                assert time.monotonic() < deadline, "its run was not stopped"
+                time.sleep(0.05)
+        finally:
+            _group_killed(handle)
+
+
+# ---------------------------------------------------------------------------
+# The sixteenth review's cases, of the GPUs and the folders
+# ---------------------------------------------------------------------------
+def _three_files(where: Path) -> None:
+    where.mkdir(parents=True, exist_ok=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (where / name).write_text("x\n", encoding="utf-8")
+
+
+def _explorer_pulls(config: dict, out: Path, monkeypatch) -> list[str]:
+    """Run the explorer's own preparation step (nothing simulated) and say
+    where each run it started went: the pull that seeds the windows is the
+    one written to ``seed_pull``."""
+    from fastmdxplora.batch import explorer as explorer_module
+    from fastmdxplora.simulation import seeding
+
+    started: list[str] = []
+
+    def fake_execute(spec_dict, run_out, include, exclude, verbose, device, **kw):
+        started.append(str(run_out))
+        if include == ["setup"]:
+            _three_files(Path(run_out) / "setup")
+        return SimpleNamespace(status="ok", message="")
+
+    def fake_seed(pull_output, prepared, centres, where, **kw):
+        Path(where).mkdir(parents=True, exist_ok=True)
+        return []
+
+    monkeypatch.setattr(explorer_module, "_execute_run", fake_execute)
+    monkeypatch.setattr(explorer_module, "_check_selections_against",
+                        lambda *a, **k: None)
+    monkeypatch.setattr(seeding, "seed_windows", fake_seed)
+    explorer = explorer_module.BatchExplorer(config_data=copy.deepcopy(config),
+                                             output_dir=str(out))
+    explorer._maybe_prepare_once(explorer._raw.get("include_phase"),
+                                 explorer._raw.get("exclude_phase"))
+    return started
+
+
+#: A stand-in squeue: the queue holds a job called ``trial`` of this
+#: account's, waiting, in ``$QUEUED_IN`` (another computer's send), and
+#: knows nothing of any job number asked about with -j. It prints the
+#: fields asked for with -o.
+_QUEUE_BY_NAME = r'''
+fmt="%i %T"; prev=""; named=""
+for a in "$@"; do
+  [ "$prev" = -o ] && fmt=$a
+  [ "$prev" = -n ] && named=$a
+  prev=$a
+done
+[ "$named" = trial ] || exit 0
+printf '%s\n' "$fmt" | sed -e 's/%i/4300/' -e 's/%T/PENDING/' -e 's/%j/trial/' \
+  -e "s|%Z|$QUEUED_IN|"
+'''
+
+
+def _cluster_sending(machine, *, force: bool, queued_in: str | None = None):
+    tools = machine.home / "slurm-bin"
+    travels._tool(tools / "sbatch", 'echo x >> "$HOME/submitted"; echo 4301')
+    travels._tool(tools / "squeue", _QUEUE_BY_NAME)
+    sending = prepare(machine.study, "box", output=str(machine.back), force=force,
+                      code=RELEASE, transport=machine.transport())
+    sending.scheduler = "slurm"
+    sending.script = job_script(remote_dir=sending.remote_dir, job_name=sending.job_name,
+                                env=sending.installation, container="",
+                                scheduler="slurm", force=force)
+    machine.env["QUEUED_IN"] = queued_in or sending.remote_dir
+    machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+    return sending
+
+
+class TestSixteenthReviewThePullCounted:
+    def test_setup_from_with_a_swept_setup_still_pulls_and_is_counted(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.send import _runs_of
+
+        monkeypatch.chdir(tmp_path)
+        prepared = tmp_path / "earlier"
+        _three_files(prepared)
+        config = yaml.safe_load(UMBRELLA)
+        config["simulation"]["setup_from"] = str(prepared)
+        config["sweep"] = {"setup.ph": [7.0, 7.4]}
+        started = _explorer_pulls(config, tmp_path / "out", monkeypatch)
+        # The explorer pulls, on CUDA's first device (no device_index named).
+        assert any(run.endswith("seed_pull") for run in started)
+        assert _runs_of(config, 8).named.get(0, 0) >= 1
+
+    def test_a_study_sent_from_its_own_resolved_config_counts_its_pull(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.batch.explorer import BatchExplorer
+        from fastmdxplora.remote.send import _runs_of
+
+        monkeypatch.chdir(tmp_path)
+        first = BatchExplorer(config_data=yaml.safe_load(UMBRELLA),
+                              output_dir=str(tmp_path / "first"))
+        first._write_study_config()
+        # "Feed it straight back to --config to reproduce the run."
+        again = yaml.safe_load((tmp_path / "first" / "resolved_config.yml").read_text())
+        started = _explorer_pulls(again, tmp_path / "again", monkeypatch)
+        assert any(run.endswith("seed_pull") for run in started)
+        assert _runs_of(again, 8).named.get(0, 0) >= 1
+
+
+class TestSixteenthReviewBetweenSizes:
+    def test_a_size_just_below_a_measured_run_needs_at_least_what_it_held(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import learn, need_for
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        for job, (particles, mb) in enumerate(((10_000, 1000), (20_000, 3000),
+                                               (30_000, 3200))):
+            learn("box", job=str(job), particles=particles, peak_mb=mb, gpu="g")
+        # One particle fewer than a run that held 3,000 MB: the least-squares
+        # line says 2,400, and 15% more is still under 3,000.
+        assert need_for("box", 19_999).mb >= 3000
+
+
+class TestSixteenthReviewAClusterJobFromElsewhere:
+    def test_a_forced_send_with_an_ended_record_here_still_asks_the_queue(self, machine):
+        """F1a: a record here of an earlier, ended job of that name skips the
+        queue check, so another computer's job waiting in the same folder is
+        joined by a second one."""
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        sending = _cluster_sending(machine, force=True)
+        where = machine.home / "fastmdxplora-jobs" / "trial"
+        where.mkdir(parents=True)
+        (where / "study.yml").write_text("another computer's study\n")
+        save_job(Job("trial", "box", sending.remote_dir, "slurm", "4100",
+                     "2026-10-01T00:00:00Z", {}, str(machine.back), state="done"))
+        with pytest.raises(ValueError) as caught:
+            send(sending, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
+        assert refusal_of(caught.value).code == "environment.path.exists"
+        assert not (machine.home / "submitted").exists()
+        assert (where / "study.yml").read_text() == "another computer's study\n"
+
+    def test_a_send_not_forced_does_not_overwrite_a_waiting_job_s_study(self, machine):
+        """F1b: no record here, the other computer's job waits (no run folder
+        yet): a plain send replaces its study.yml and queues a second job in
+        the same folder."""
+        sending = _cluster_sending(machine, force=False)
+        where = machine.home / "fastmdxplora-jobs" / "trial"
+        where.mkdir(parents=True)
+        (where / "study.yml").write_text("another computer's study\n")
+        with pytest.raises(ValueError) as caught:
+            send(sending, transport=machine.transport(), local_runner=machine.local,
+                 code=RELEASE)
+        assert refusal_of(caught.value).code == "environment.path.exists"
+        assert not (machine.home / "submitted").exists()
+        assert (where / "study.yml").read_text() == "another computer's study\n"
+
+    def test_a_job_of_that_name_in_another_folder_does_not_refuse_a_send(self, machine):
+        """F5: the account's queue holds an unrelated job called trial that
+        runs elsewhere; the forced send is refused for it."""
+        sending = _cluster_sending(machine, force=True, queued_in="/somewhere/else/trial")
+        job = send(sending, transport=machine.transport(), local_runner=machine.local,
+                   code=RELEASE)
+        assert job.handle == "4301"
+
+
+class TestSixteenthReviewAProcessNotTheJobs:
+    def test_a_shell_left_in_an_ended_job_s_folder_does_not_refuse_a_send(self, machine):
+        """F2: any process of the account whose folder is the job's (a shell,
+        `tail -f job.log`) refuses every send there."""
+        first = _send(machine)
+        travels._until_finished(machine, first.name)
+        shell = subprocess.Popen(["sleep", "30"], cwd=first.remote_dir)
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back), force=True,
+                            code=RELEASE, transport=machine.transport())
+            job = send(again, transport=machine.transport(), local_runner=machine.local,
+                       code=RELEASE)
+            travels._until_finished(machine, job.name)
+        finally:
+            shell.kill()
+            shell.wait()
+
+
+class TestSixteenthReviewWhatAPersonIsTold:
+    def test_a_plain_send_of_a_name_sent_from_here_says_so(self, machine):
+        """F4: before these commits the person was told the name was sent
+        from here; now the folder refusal comes first, and its "send it
+        again once nothing works there" is refused again."""
+        machine.env["FAKE_SLEEP"] = "30"
+        first = _send(machine)
+        try:
+            again = prepare(machine.study, "box", output=str(machine.back),
+                            code=RELEASE, transport=machine.transport())
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=machine.transport(), local_runner=machine.local,
+                     code=RELEASE)
+            assert "A job called trial was already sent from here" in str(caught.value)
+        finally:
+            _group_killed(first.handle)
+
+
+class TestSixteenthReviewWhatAnAIAppIsTold:
+    def test_a_folder_worked_in_names_a_step_an_ai_app_can_take(self, app):
+        """F3: the AI app is told to "give another --output", which it
+        cannot; the fix it can make is the config's `output`."""
+        import os
+
+        where = app.machine.home / "fastmdxplora-jobs" / "ghg_run"
+        where.mkdir(parents=True)
+        # A run of that name sent from elsewhere, working there.
+        shell = subprocess.Popen(["sleep", "30"], cwd=where,
+                                 env={**os.environ, "FMDX_JOB_DIR": str(where.resolve())})
+        try:
+            _, done = _start(app, answer=YES)
+            said = _text(done)
+            assert done.get("isError"), said
+            assert "--output" not in said and "`output`" in said, said
+        finally:
+            shell.kill()
+            shell.wait()
+
+    def test_a_run_folder_there_names_a_step_an_ai_app_can_take(self, app):
+        """F3 (older): a run folder on the machine with no record here tells
+        the AI app to give --output or --force-overwrite, neither of which
+        it can pass."""
+        (app.machine.home / "fastmdxplora-jobs" / "ghg_run" / "run").mkdir(parents=True)
+        first, done = _start(app, answer=YES)
+        said = _text(done)
+        assert done.get("isError"), said
+        assert "--output" not in said and "--force-overwrite" not in said, said
+
+
+class TestSixteenthReviewASharedHome:
+    def test_a_forced_send_to_another_machine_after_a_cancel_waits_for_it(
+            self, machine, tmp_path):
+        """F6: box and box2 share a home (an NFS home in a lab). A job of box's
+        cancelled a moment ago is still stopping in the folder; a forced send
+        to box2 starts a second explorer there."""
+        from fastmdxplora.remote.machines import Inspection, Machine, load_machine, save_machine
+        from fastmdxplora.remote.transport import Transport
+
+        travels._tool(machine.home.joinpath(*_FASTMDX),
+                      'trap \'\' TERM\necho x >> "$HOME/started"\n'
+                      ': > "$HOME/trapped"\nsleep 8')
+        first = _send(machine)
+        _until_there(machine.home / "trapped")
+        cancel(first.name, transport=machine.transport())
+        box = load_machine("box")
+        save_machine(Machine("box2", box.inspected_at, Inspection(home=str(machine.home)),
+                             info=dict(box.info)))
+
+        def box2(command, input=None, **kwargs):
+            said = input.decode() if isinstance(input, bytes) else (input or "")
+            if "in_folder" in said:          # box2 sees none of box's processes
+                return subprocess.CompletedProcess(command, 0, b"scanned\n", b"")
+            return machine.ssh(command, input=input, **kwargs)
+
+        def local(command, **kwargs):
+            return machine.local([a.replace("box2:", "box:", 1) if a.startswith("box2:")
+                                  else a for a in command], **kwargs)
+
+        link = Transport("box2", runner=box2, interactive=False)
+        try:
+            again = prepare(machine.study, "box2", output=str(machine.back), force=True,
+                            code=RELEASE, transport=link)
+            with pytest.raises(ValueError) as caught:
+                send(again, transport=link, local_runner=local, code=RELEASE)
+            assert refusal_of(caught.value).code == "environment.path.exists"
+            time.sleep(0.5)
+            assert (machine.home / "started").read_text().count("x") == 1
+        finally:
+            _group_killed(first.handle)

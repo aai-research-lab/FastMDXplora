@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 __all__ = ["GPU_SCRIPT", "MARGIN", "SAMPLE_EVERY_S", "Choice", "Gpu", "Held", "Need",
-           "Room", "choose", "learn", "measured", "need_for", "room_from",
+           "Room", "choose", "learn", "measured", "need_for", "refused_on", "room_from",
            "still_fits"]
 
 #: How often a job script reads its own GPU memory.
@@ -321,38 +321,44 @@ def _fitted(peaks: list[tuple[int, int]], particles: int) -> float | None:
     """Memory for ``particles``, or ``None`` where the runs measured do not
     say. A run holds a fixed part (the CUDA context, OpenMM's kernels and
     FFT plans) and a part per particle, so a size is never scaled from
-    another by particles alone.
+    another by particles alone, and memory grows with size.
 
-    No larger than a larger run measured held, and no smaller than a run
-    of its size or smaller held. From runs of two sizes or more whose
-    memory grows with size, a straight line through them, its fixed part
-    included; trusted past the largest size by as far again as the sizes
-    measured span, and not past that. From one size alone, nothing past it.
+    Up to the largest size measured: what the next size measured at or
+    above it held at most, where the sizes above hold more as they grow
+    (else the most any of them held), and no less than a run of its size or
+    smaller held. Past the largest, from runs of two sizes or more whose
+    memory grows with size: the larger of a straight line through the most
+    each size held and the slope between the two largest, trusted by as far
+    again as the sizes measured span, and not past that. From one size
+    alone, nothing past it.
     """
     sizes = sorted({n for n, _ in peaks})
+    highs = {n: max(p for m, p in peaks if m == n) for n in sizes}
     smallest, largest = sizes[0], sizes[-1]
     at_or_below = [p for n, p in peaks if n <= particles]
-    floor = max(at_or_below) if at_or_below else max(
-        p for n, p in peaks if n == smallest)
+    floor = max(at_or_below) if at_or_below else highs[smallest]
     if particles < smallest:
         return floor          # a smaller system holds no more than the smallest did
-    line = None
-    if len(sizes) >= 2:
-        # Through the most each size held: runs of one size that held less
-        # (another method, another card) do not pull the line down.
-        most = [(n, max(p for m, p in peaks if m == n)) for n in sizes]
-        mean_n = sum(n for n, _ in most) / len(most)
-        mean_p = sum(p for _, p in most) / len(most)
-        spread = sum((n - mean_n) ** 2 for n, _ in most)
-        slope = sum((n - mean_n) * (p - mean_p) for n, p in most) / spread
-        if slope > 0:
-            line = mean_p + slope * (particles - mean_n)
     if particles <= largest:
-        above = max(p for n, p in peaks if n >= particles)
-        return max(min(line, above), floor) if line is not None else max(above, floor)
-    if line is None or particles > largest + (largest - smallest):
+        # A line between sizes can fall below what the next size held: a
+        # system a little smaller than a run measured is given that run's.
+        above = [highs[n] for n in sizes if n >= particles]
+        return max(above[0] if above == sorted(above) else max(above), floor)
+    if len(sizes) < 2 or particles > largest + (largest - smallest):
         return None
-    return max(line, floor)
+    # Through the most each size held: runs of one size that held less
+    # (another method, another card) do not pull the line down.
+    mean_n = sum(sizes) / len(sizes)
+    mean_p = sum(highs.values()) / len(sizes)
+    slope = (sum((n - mean_n) * (highs[n] - mean_p) for n in sizes)
+             / sum((n - mean_n) ** 2 for n in sizes))
+    if slope <= 0:
+        return None
+    line = mean_p + slope * (particles - mean_n)
+    before = sizes[-2]
+    last = (highs[largest] - highs[before]) / (largest - before)
+    latest = highs[largest] + last * (particles - largest) if last > 0 else line
+    return max(line, latest, floor)
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +487,14 @@ def still_fits(machine: str, room: Room, choice: Choice, held: list[Held], *,
     """Why ``choice`` does not fit on ``room`` now, or "": each of its GPUs
     still there, with room for what it needs on it. ``again``: asked as the
     send starts, of the GPUs the plan chose."""
+    return refused_on(machine, room, choice, held, free=free, again=again)[0]
+
+
+def refused_on(machine: str, room: Room, choice: Choice, held: list[Held], *,
+               free: dict[str, int] | None = None,
+               again: bool = False) -> tuple[str, int | None]:
+    """:func:`still_fits`'s answer, and the memory that did not fit on the
+    GPU it was refused on (``None`` where none was)."""
     if free is None:
         free, _ = _free(room, held)
     by_uuid = {gpu.uuid: gpu for gpu in room.gpus}
@@ -488,7 +502,7 @@ def still_fits(machine: str, room: Room, choice: Choice, held: list[Held], *,
         gpu = by_uuid.get(uuid)
         if gpu is None:
             return (f"A GPU of {machine} the plan chose ({uuid}) is no longer there. "
-                    "Plan the send again.")
+                    "Plan the send again.", choice.wanted.get(uuid))
         wanted = choice.wanted.get(uuid)
         if wanted is None or wanted <= free[uuid]:
             continue
@@ -499,8 +513,8 @@ def still_fits(machine: str, room: Room, choice: Choice, held: list[Held], *,
             if others:
                 said += (f" GPU {others[0].index} has {free[others[0].uuid]:,} MB free: "
                          "plan the send again to go there.")
-        return said
-    return ""
+        return said, wanted
+    return "", None
 
 
 def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need,
@@ -509,8 +523,8 @@ def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need,
     said = f"This study needs about {wanted:,} MB of GPU memory ({need.how}{side})"
     if wanted > gpu.total_mb:
         return (f"{said}, more than GPU {gpu.index} on {machine} ({gpu.name}) has at all "
-                f"({gpu.total_mb:,} MB). The runs that is worked out from are kept in "
-                f"{_store(machine)}; one that does not stand for this study can be "
+                f"({gpu.total_mb:,} MB). The runs the need is worked out from are kept "
+                f"in {_store(machine)}; one that does not stand for this study can be "
                 "taken out of it.")
     where = (f"GPU {gpu.index} on {machine} ({gpu.name}), chosen when the send was "
              "planned, has" if chosen else

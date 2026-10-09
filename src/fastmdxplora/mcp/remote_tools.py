@@ -68,6 +68,21 @@ def _refuse_there(exc: BaseException, machine: str = "") -> NoReturn:
     raise ToolError(said, code=code) from None
 
 
+def _refuse_taken_folder(exc: BaseException, machine: str) -> NoReturn:
+    """A refusal of a send whose folder there is taken, with a step an AI
+    app can take: it gives no --output and never forces a send."""
+    said, code = _said_there(exc, machine)
+    if code == "environment.path.exists":
+        sentences = said.rstrip().split(". ")
+        if "--output" in sentences[-1] or "--force-overwrite" in sentences[-1]:
+            sentences = sentences[:-1]
+        said = (". ".join(sentences).rstrip(".") + ". Set `output` in the config to a new "
+                "folder name, save it and check it again"
+                + (", or start it again once nothing works there" if "works" in said
+                   else "") + ".")
+    raise ToolError(said, code=code) from None
+
+
 def _job_here(ctx: Context, given: str):
     """The job named, if its results come back into the workspace."""
     from fastmdxplora.remote import api
@@ -228,7 +243,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     try:
         job = api.send_planned(sending)
     except Exception as exc:  # noqa: BLE001 - a refusal, said as one
-        _refuse_there(exc, machine)
+        _refuse_taken_folder(exc, machine)
     how = "SLURM job" if job.scheduler == "slurm" else "process"
     return (f"Sent to {machine} as job {job.name} ({how} {job.handle}); it runs there "
             "on its own, whether or not this AI app stays open. remote_status says how "

@@ -426,7 +426,9 @@ GPUs have room for it (`remote.machine.no_room`). `plan.running` names the jobs
 from here it would share the machine with, `plan.gpu` says each GPU's room
 and the one chosen, `plan.room_notes` says the GPUs' room and why where they
 are not checked (`plan.gpu` is then `None`), and `plan.no_room` says why it
-would not fit.
+would not fit. A send, with `force=True` or not, is refused while a job of
+that name is waiting, running or working in its folder there, or was last
+read waiting or running on another machine (`environment.path.exists`).
 
 An install runs only with a yes to the exact plan shown:
 

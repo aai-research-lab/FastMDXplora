@@ -72,8 +72,8 @@ from fastmdxplora.remote.gpu_room import (
     choose,
     learn,
     need_for,
+    refused_on,
     room_from,
-    still_fits,
 )
 from fastmdxplora.remote.identity import CodeIdentity, same_code, this_code
 from fastmdxplora.remote.inputs import Inputs, gather_inputs, link_out_of, private_in, size_of
@@ -120,21 +120,35 @@ JOB_LOG_KEPT = 1 << 20
 #: What of a machine's answer is kept: so many lines, each so long.
 _SAID_LINES, _SAID_CHARS = 12, 300
 
-#: Whether a workstation job's process group is still there (a cancelled
-#: run stops at its next frame, which can take minutes): ``in_folder`` where a
-#: process of it works in the job's folder, ``alive`` where it is there and
-#: the machine has no ``/proc`` to say where its processes work.
-_STILL_GOING = (
-    "here=$(cd {where} 2>/dev/null && pwd -P)\n"
-    "ps -A -o pid= -o pgid= -o stat= 2>/dev/null "
-    "| awk '$2 == {group} && $3 !~ /^Z/ {{print $1}}' | {{\n"
-    "  found=\n"
-    "  while read -r p; do found=1\n"
-    "    [ -n \"$here\" ] && [ \"$(readlink \"/proc/$p/cwd\" 2>/dev/null)\" = \"$here\" ] "
-    "&& {{ echo in_folder; exit 0; }}\n"
-    "  done\n"
-    "  [ -n \"$found\" ] && [ ! -d /proc/self ] && echo alive\n"
-    "}}\n")
+#: Whether a job's process still works for a workstation job's folder (a
+#: run cancelled stops at its next frame, which can take minutes; one whose
+#: script was killed goes on): one carrying the folder as ``FMDX_JOB_DIR``,
+#: or the job's script or run working in it (a job sent before the marker).
+#: A shell or a reader left there is not the job's. Says ``in_folder`` where
+#: one is, read from ``/proc``; ``no_proc`` where the machine has none to
+#: say; ``scanned`` or ``no_folder`` where none is. Any other answer was cut
+#: short.
+_STILL_WORKING = (
+    "here=$(cd {where} 2>/dev/null && pwd -P) || {{ echo no_folder; exit 0; }}\n"
+    "[ -d /proc/self ] && command -v readlink >/dev/null 2>&1 "
+    "|| {{ echo no_proc; exit 0; }}\n"
+    "for d in /proc/[0-9]*; do\n"
+    "  [ -r \"$d/environ\" ] || continue\n"
+    "  if tr '\\000' '\\n' < \"$d/environ\" 2>/dev/null "
+    "| grep -qxF \"FMDX_JOB_DIR=$here\"; then echo in_folder; exit 0; fi\n"
+    "  case \"$(readlink \"$d/cwd\" 2>/dev/null)\" in\n"
+    "    \"$here\"|\"$here\"/*)\n"
+    "      case \"$(tr '\\000' ' ' < \"$d/cmdline\" 2>/dev/null)\" in\n"
+    "        *job.sh*|*fastmdx*) echo in_folder; exit 0 ;;\n"
+    "      esac ;;\n"
+    "  esac\n"
+    "done\n"
+    "echo scanned\n")
+
+#: Whether a job's process group is still there, for a machine with no
+#: ``/proc``: ``alive`` where it is.
+_GROUP_GOING = ("ps -A -o pgid= -o stat= 2>/dev/null | awk '$1 == {group} && "
+                "$2 !~ /^Z/ {{found = 1}} END {{exit !found}}' && echo alive\n")
 
 #: What ``fetch`` leaves on the machine unless asked: trajectories and
 #: checkpoints, which are most of a run's size and are not needed to read
@@ -259,7 +273,13 @@ def job_script(*, remote_dir: str, job_name: str, env: Environment,
         lines.append(path_line)
     if gpu is not None and scheduler != "slurm":
         lines += _gpu_lines(gpu)
-    lines += [shlex.join(command), "echo $? > exit_code", ""]
+    # Out of the folder before its exit code is there: once a job reads
+    # ended, nothing of it works in the folder a send sent again may take.
+    # The run and every process it starts carry the job's folder in their
+    # environment: what works there is known as the job's, wherever it
+    # works from.
+    lines += ['FMDX_JOB_DIR="$(pwd -P)" ' + shlex.join(command),
+              f'rc=$?; cd / && echo "$rc" > {shlex.quote(remote_dir + "/exit_code")}', ""]
     return "\n".join(lines)
 
 
@@ -279,19 +299,21 @@ def _gpu_lines(gpu: Choice) -> list[str]:
             f'then echo "{uuid} $free {wanted}" > no_room; echo 75 > exit_code; '
             "exit 75; fi ;; esac"]
     # The most GPU memory this job's processes hold on any one GPU, read
-    # until it ends: what the next study's need is learned from.
+    # until it ends: what the next study's need is learned from. It works
+    # from /, so the job's folder is free of it once the job has ended.
     lines += [
         "fmdx_peak() {",
-        "  while [ ! -f exit_code ] && kill -0 \"$1\" 2>/dev/null; do",
+        "  d=$(pwd); cd / || return",
+        "  while [ ! -f \"$d/exit_code\" ] && kill -0 \"$1\" 2>/dev/null; do",
         "    nvidia-smi --query-compute-apps=gpu_uuid,pid,used_memory "
         "--format=csv,noheader,nounits 2>/dev/null |",
         "    while IFS=', ' read -r uuid pid used rest; do",
         "      [ \"$(ps -o pgid= -p \"$pid\" 2>/dev/null | tr -d ' ')\" = \"$1\" ] "
         "&& echo \"$uuid $used\"",
-        "    done | awk -v peak=\"$(cat gpu_peak 2>/dev/null)\" "
+        "    done | awk -v peak=\"$(cat \"$d/gpu_peak\" 2>/dev/null)\" "
         "'$2 ~ /^[0-9]+$/ {s[$1] += $2} END {peak += 0; "
         "for (u in s) if (s[u] > peak) peak = s[u]; print peak}' "
-        "> gpu_peak.part && mv gpu_peak.part gpu_peak",
+        "> \"$d/gpu_peak.part\" && mv \"$d/gpu_peak.part\" \"$d/gpu_peak\"",
         f"    sleep {gpu_room.SAMPLE_EVERY_S}",
         "  done",
         "}",
@@ -352,6 +374,9 @@ def prepare(config_path: str | Path, machine_name: str, *,
         running = _running_from_here(machine_name, link, max_age_s=STATUS_KEPT_S)
         gpu, room_notes = _gpu_for(machine, link, raw, config_path.resolve().parent,
                                    running)
+    else:
+        room_notes = ["A cluster's scheduler gives each job its GPU, so no GPU memory is "
+                      "checked here."]
     candidates = (machine.inspection.holding(code)
                   or machine.inspection.installations())
     env = verdict.installation or (candidates[0] if candidates else None)
@@ -529,8 +554,20 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
     phases = ((set(include) if isinstance(include, list) and include
                else {"setup", "simulation", "analysis", "report"})
               - set(exclude if isinstance(exclude, list) else []))
-    if (not runs.simulates and isinstance(simulation, dict) and simulation.get("steered")
-            and simulation.get("umbrella") and phases != {"setup"}):
+    # The explorer pulls once to seed an umbrella's windows from the system
+    # it prepares, or one the study names, unless asked only to prepare.
+    # As the explorer decides it: an umbrella study (its windows expanded,
+    # however the config wrote them) with a steered block pulls from a
+    # prepared system it names, or from the one system it prepares for all
+    # its windows (windows prepared apart, their setup swept, are seeded by
+    # no pull), unless asked only to prepare.
+    simulation = data.get("simulation") if isinstance(data.get("simulation"), dict) else {}
+    one_setup = len({json.dumps(setup, sort_keys=True, default=str)
+                     for _, setup, _ in runs.each}) <= 1
+    pulls = bool(simulation.get("steered") and _an_umbrella(data) and phases != {"setup"}
+                 and (simulation.get("setup_from") or simulation.get("prepared_from")
+                      or ("setup" in phases and one_setup)))
+    if not runs.simulates and pulls:
         # The windows do not run, and the steered pull that seeds them does,
         # as the windows are prepared: one run, on the devices the study's
         # own simulation block names, else on the GPU chosen.
@@ -538,7 +575,7 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if simulation.get("device_index") in (None, ""):
             return runs
         runs.named = Counter()
-        return _with_the_pull(runs, simulation)
+        return _with_the_pull(runs, simulation, pulls)
     count = len(runs.each)
     execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
     workers, devices = execution.get("workers"), execution.get("devices")
@@ -571,23 +608,31 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
             # first listed on a tie; the first runs at once are the most any
             # holds.
             slots = Counter(int(d) for d in listed)
+            on_gpu = [_on_a_gpu(each) for _, _, each in runs.each]
             placed: Counter = Counter()
-            for _ in range(runs.at_once):
-                device = min(slots, key=lambda d: placed[d] / slots[d])
-                placed[device] += 1
+            taken: Counter = Counter()
+            for i in range(runs.at_once):
+                device = min(slots, key=lambda d: taken[d] / slots[d])
+                taken[device] += 1
+                # All its runs at once: each where it was placed, and one on
+                # the CPU holding none of that GPU's memory. Where later runs
+                # take the places of earlier ones, any may be on any.
+                if on_gpu[i] or count > runs.at_once:
+                    placed[device] += 1
             if any(each.get("stop_when") for _, _, each in runs.each):
                 # Each round of a study run until it is determined puts run
                 # i on device i of the list, round and round, as many at
-                # once as the first round.
+                # once as the first round; the runs it extends are numbered
+                # afresh, so a GPU run may take any place.
                 by_place = Counter(int(listed[i % len(listed)]) for i in range(count))
                 for device, there in by_place.items():
                     placed[device] = max(placed[device], min(runs.at_once, there))
-            runs.named = placed
-        return _with_the_pull(runs, simulation)
+            runs.named = +placed
+        return _with_the_pull(runs, simulation, pulls)
     named: Counter = Counter()
     unnamed = 0
     for _, _, each in runs.each:
-        if str(each.get("platform") or "auto").upper() in ("CPU", "HIP"):
+        if not _on_a_gpu(each):
             continue            # no GPU memory, wherever it is numbered
         given = each.get("device_index")
         if given in (None, ""):
@@ -603,17 +648,32 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if unnamed:
             named[0] += unnamed     # CUDA's first device, where none is named
         runs.named = Counter({i: min(n, runs.at_once) for i, n in named.items()})
-        return _with_the_pull(runs, simulation)
+        return _with_the_pull(runs, simulation, pulls)
     return runs
 
 
-def _with_the_pull(runs: _Runs, simulation: object) -> _Runs:
+def _an_umbrella(expanded: dict) -> bool:
+    """Whether the explorer reads a validated config as an umbrella study."""
+    from fastmdxplora.simulation.umbrella import plan_from_expanded
+
+    try:
+        return plan_from_expanded(expanded) is not None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return False
+
+
+def _on_a_gpu(simulation: dict) -> bool:
+    """Whether a run's simulation takes GPU memory: not on the CPU or HIP."""
+    return str(simulation.get("platform") or "auto").upper() not in ("CPU", "HIP")
+
+
+def _with_the_pull(runs: _Runs, simulation: object, pulls: bool) -> _Runs:
     """``runs`` with the steered pull that seeds an umbrella's windows
-    counted where it runs: in the explorer, before the windows, on the
-    devices the study's own simulation block names (CUDA's first where
-    none), whatever a system or ``execution.devices`` gives the windows."""
-    if not (isinstance(simulation, dict) and simulation.get("steered")
-            and simulation.get("umbrella")) or runs.named is None:
+    counted where it runs (``pulls``: where the explorer runs one): in the
+    explorer, before the windows, on the devices the study's own simulation
+    block names (CUDA's first where none), whatever a system or
+    ``execution.devices`` gives the windows."""
+    if not pulls or not isinstance(simulation, dict) or runs.named is None:
         return runs
     given = simulation.get("device_index")
     parts = ["0"] if given in (None, "") else [p.strip() for p in str(given).split(",")]
@@ -633,8 +693,7 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
     name = machine.name
     config = raw if isinstance(raw, dict) else {}
     runs = _runs_of(config, machine.inspection.cpus)
-    on_gpu = [each for each in runs.each
-              if str(each[2].get("platform") or "auto").upper() not in ("CPU", "HIP")]
+    on_gpu = [each for each in runs.each if _on_a_gpu(each[2])]
     if not runs.simulates:
         return None, ["The study runs no simulation, so no GPU memory is checked "
                       "(setup holds a GPU briefly at most, placing hydrogens)."]
@@ -793,25 +852,52 @@ def send(sending: Sending, *, transport: Transport | None = None,
 def _send_held(sending: Sending, link: Transport, local_runner,
                code: CodeIdentity, job_names) -> Job:
     name, where = sending.job_name, sending.remote_dir
-    if name in job_names() and sending.force:
-        before = status(name, transport=link)
-        if before.state in (READY, RUNNING):
-            raise StudyError(
-                f"{name} is still {before.state} on {before.machine}; "
-                "--force-overwrite replaces a job once it has ended. Cancel it first "
-                f"(`fastmdx remote cancel {name}`).",
-                code="environment.path.exists", path=name)
-        if _still_stopping(before, sending.machine.name, link):
-            # Its run would still be writing where the new one starts.
-            raise StudyError(
-                f"{name} is still stopping on {before.machine} since it was cancelled; "
-                "--force-overwrite replaces it once it has stopped, in a minute or so.",
-                code="environment.path.exists", path=name)
+    before: Job | None = None
     if name in job_names() and not sending.force:
         raise StudyError(
             f"A job called {name} was already sent from here. Give another "
             "--output, or --force-overwrite to replace it.",
             code="environment.path.exists", path=name)
+    if name in job_names():
+        before = load_job(name)
+        if before.machine != sending.machine.name:
+            # Asked about only over its own machine's connection: this one
+            # knows nothing of it, and would read it gone. A job cancelled
+            # there within the hour may still stop at its next frame, in a
+            # folder the two machines can share.
+            cancelled = before.extra.get("cancelled_at")
+            if before.state in (READY, RUNNING) or (
+                    before.state == ABANDONED and isinstance(cancelled, (int, float))
+                    and time.time() - cancelled < 3600):
+                raise StudyError(
+                    f"{name} was sent to {before.machine}, and was last read "
+                    f"{before.state} there; --force-overwrite replaces a job once it "
+                    f"has ended. See `fastmdx remote status {name}`, cancel it first, "
+                    "or give another --output.",
+                    code="environment.path.exists", path=name)
+            before = None
+        else:
+            before = status(name, transport=link)
+            if before.state in (READY, RUNNING):
+                raise StudyError(
+                    f"{name} is still {before.state} on {before.machine}; "
+                    "--force-overwrite replaces a job once it has ended. Cancel it "
+                    f"first (`fastmdx remote cancel {name}`).",
+                    code="environment.path.exists", path=name)
+    if sending.scheduler != "slurm" and _still_working(where, before, link):
+        # Its run would still be writing where the new one starts, whatever
+        # the record here says of it, or with no record here at all (a job
+        # of that name sent from another computer, still starting).
+        raise StudyError(
+            f"A process still works in {where} on {sending.machine.name}, or that "
+            "could not be asked to the end"
+            + (f" ({name}, cancelled from here, stops at its run's next frame)"
+               if before is not None and before.state == ABANDONED else
+               " (a run there, or a shell left in that folder)")
+            + ". Send it again once nothing works there, or give another --output.",
+            code="environment.path.exists", path=name)
+    if sending.scheduler == "slurm":
+        _queue_free_of(sending, link)
     if sending.gpu is not None:
         _room_now(sending, link)
     exists = link.run(["test", "-e", f"{where}/run"]).returncode == 0
@@ -900,19 +986,53 @@ def _send_held(sending: Sending, link: Transport, local_runner,
     return job
 
 
-def _still_stopping(job: Job, machine: str, link: Transport) -> bool:
-    """Whether a workstation job cancelled from here still runs in its
-    folder on ``machine``. Its process group's number is taken as its own
-    where a process of it works in the job's folder; where the machine
-    cannot say, for an hour after the cancel."""
-    if (job.state != ABANDONED or job.scheduler != "process" or job.machine != machine
-            or not usable_handle(job.handle)):
+def _queue_free_of(sending: Sending, link: Transport) -> None:
+    """Refuses a send to a cluster while its queue holds a job of this
+    account's waiting or running in the job's folder (sent from another
+    computer, or one this computer's record has lost): both would run
+    there."""
+    name = sending.job_name
+    asked = link.run(["sh", "-c", f"squeue -h -u \"$(id -un)\" -n {shlex.quote(name)} "
+                                  "-o '%i %T %Z' 2>/dev/null; echo fmdx-rc=$?"]).stdout
+    lines = [line.split(None, 2) for line in asked.splitlines()]
+    answered = [line for line in lines if line and line[0].startswith("fmdx-rc=")]
+    if not answered or answered[-1][0] != "fmdx-rc=0":
+        raise StudyError(
+            f"The queue of {sending.machine.name} did not answer, so whether a job "
+            f"called {name} is waiting or running there is not known. Send it again "
+            "in a minute, or give another --output.",
+            code="environment.path.exists", path=name)
+    # Only a job working in this job's folder: one of that name elsewhere
+    # is another's business.
+    going = [line for line in lines if len(line) == 3 and line[1] in _SLURM_WORDS
+             and _SLURM_STATES.get(line[1], RUNNING) in (READY, RUNNING)
+             and line[2].rstrip("/") == sending.remote_dir.rstrip("/")]
+    if going:
+        raise StudyError(
+            f"The queue of {sending.machine.name} holds a job called {name} "
+            f"({going[0][1].lower()}) in its folder there, {sending.remote_dir}; a "
+            "job is sent there again once that one has ended. Cancel it there "
+            "(`scancel` with its number), or give another --output.",
+            code="environment.path.exists", path=name)
+
+
+def _still_working(where: str, job: Job | None, link: Transport) -> bool:
+    """Whether a process still works in the job folder ``where`` on the
+    machine ``link`` reaches, read from ``/proc``. Where the machine has
+    none: whether ``job``, cancelled from here within the hour, still has
+    its process group there (later, its number may be another's)."""
+    said = link.run(["sh", "-s"], stdin=_STILL_WORKING.format(
+        where=shlex.quote(where))).stdout.split()
+    if "in_folder" in said or not {"no_proc", "scanned", "no_folder"} & set(said):
+        # Found, or not asked to the end: nothing says the folder is free.
+        return True
+    cancelled = job.extra.get("cancelled_at") if job is not None else None
+    if ("no_proc" not in said or job is None or job.state != ABANDONED
+            or not usable_handle(job.handle) or not isinstance(cancelled, (int, float))
+            or time.time() - cancelled >= 3600):
         return False
-    said = link.run(["sh", "-s"], stdin=_STILL_GOING.format(
-        group=job.handle, where=shlex.quote(job.remote_dir))).stdout.split()
-    cancelled = job.extra.get("cancelled_at")
-    return "in_folder" in said or ("alive" in said and isinstance(cancelled, (int, float))
-                              and time.time() - cancelled < 3600)
+    return "alive" in link.run(["sh", "-s"], stdin=_GROUP_GOING.format(
+        group=job.handle)).stdout.split()
 
 
 def _room_now(sending: Sending, link: Transport) -> None:
@@ -937,12 +1057,13 @@ def _room_now(sending: Sending, link: Transport) -> None:
             "planned for this study could not be asked again. Send it again.",
             code="remote.machine.no_room", machine=name, need_mb=wanted)
     # A kept answer serves: a job read as running only keeps its room.
-    refused = still_fits(name, room, gpu,
-                         _held(_running_from_here(name, link, max_age_s=STATUS_KEPT_S)),
-                         again=True)
+    refused, short = refused_on(
+        name, room, gpu, _held(_running_from_here(name, link, max_age_s=STATUS_KEPT_S)),
+        again=True)
     if refused:
+        # What did not fit on the GPU that refused it, as its message says.
         raise StudyError(refused, code="remote.machine.no_room", machine=name,
-                         need_mb=wanted)
+                         need_mb=short if short is not None else wanted)
 
 
 def _still_its_own(sending: Sending) -> None:
@@ -992,7 +1113,10 @@ def _status_script(job: Job) -> str:
                  f'-o State%30 2>/dev/null | grep -E \'^ *[A-Z_]+\' | head -n 1 '
                  '| awk \'{print $1}\')"\n')
     else:
-        alive = f"kill -0 {job.handle} 2>/dev/null && echo fmdx:alive=1\n"
+        # The job's script, or its process group: an explorer whose script
+        # was killed works on, and is the job still.
+        alive = (f"{{ kill -0 {job.handle} || kill -0 -{job.handle}; }} 2>/dev/null "
+                 "&& echo fmdx:alive=1\n")
     if _gpu_of(job):
         # Why it did not start, and the most GPU memory it held; once it has
         # ended, the particles each of its systems had.
@@ -1185,7 +1309,7 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
         job.extra["gpu_peak_mb"] = int(peak)
     if job.state != DONE or gpu.get("learn") is not True or gpu.get("learned"):
         return
-    particles, precisions = [], set()
+    particles, precisions, short = [], set(), False
     for text in found.get("cost", []):
         try:
             record = json.loads(text)
@@ -1193,18 +1317,21 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
             continue
         # A run on the CPU holds no GPU memory: its particles say nothing
         # of what the GPU held.
-        # A run shorter than a few readings may have been read only while
-        # its context was being made, before it held its memory.
-        if (isinstance(record, dict) and isinstance(record.get("particles"), int)
+        if not (isinstance(record, dict) and isinstance(record.get("particles"), int)
                 and 0 < record["particles"] < 100_000_000
-                and record.get("platform") in ("CUDA", "OpenCL")
-                and isinstance(record.get("seconds"), (int, float))
-                and record["seconds"] >= 3 * gpu_room.SAMPLE_EVERY_S):
-            particles.append(record["particles"])
-            precisions.add(str(record.get("precision") or gpu.get("precision") or "mixed"))
+                and record.get("platform") in ("CUDA", "OpenCL")):
+            continue
+        seconds = record.get("seconds")
+        # A run shorter than a few readings may have been read only while
+        # its context was being made, or may have held the peak read
+        # without its size being kept: nothing of the send is learned.
+        short |= not (isinstance(seconds, (int, float)) and not isinstance(seconds, bool)
+                      and seconds >= 3 * gpu_room.SAMPLE_EVERY_S)
+        particles.append(record["particles"])
+        precisions.add(str(record.get("precision") or gpu.get("precision") or "mixed"))
     held_mb = job.extra.get("gpu_peak_mb")
     # Learned only where every run says one precision: a peak is one size's.
-    if particles and isinstance(held_mb, int) and len(precisions) == 1:
+    if particles and not short and isinstance(held_mb, int) and len(precisions) == 1:
         # Once per job sent: a name sent again is another run. A record here
         # that cannot be written leaves the job's state to be said.
         try:

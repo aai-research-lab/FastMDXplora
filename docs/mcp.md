@@ -207,6 +207,10 @@ does:
   GPU now is refused before you
   are asked (`remote.machine.no_room`). A cluster's scheduler gives each job its
   GPU.
+- **Never into a job's folder still in use.** A study whose job folder on the
+  machine still holds a job of that name working, or a run, is refused
+  (`environment.path.exists`): set `output` in the config to a new folder name,
+  save it and check it again.
 
 The results come back to the config's `output`, or a folder named after the
 file, inside the workspace and not already used. `remote_status` says how the
