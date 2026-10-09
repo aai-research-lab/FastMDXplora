@@ -469,18 +469,23 @@ _PLAIN_TEXT = str.maketrans({"\u2236": ":", "\u2010": "-", "\u2011": "-", "\u201
 #: beside them, between a letter and a line's end or a space before a letter.
 _INVISIBLE = ("\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
               "\ufff9-\ufffb\U000e0001\U000e0020-\U000e007f")
-#: Letters in a circle or a square, which NFKC reads as Latin ones.
+#: Letters in circles or squares, read as Latin ones, and those in brackets
+#: or black, read as letters only two or more together.
 _FRAMED = "\u24b6-\u24e9\U0001f130-\U0001f149"
-_SOFT_BREAK = re.compile(r"(?:(?<=[^\W\d_])|(?<=[" + _FRAMED + r"])|(?<=[^\W\d_][\u0300-\u036f]))"
+_BOXES = "\u249c-\u24b5\U0001f150-\U0001f169\U0001f170-\U0001f189"
+_SOFT_BREAK = re.compile(r"(?:(?<=[^\W\d_])|(?<=[" + _FRAMED + r"])|(?<=[" + _BOXES + "][" + _BOXES
+                         + r"])|(?<=[^\W\d_][\u0300-\u036f]))"
                          r"[" + _INVISIBLE + r"\u00ad\u2027\u1806]*"
                          r"[\u00ad\u2027\u1806][" + _INVISIBLE + r"]*(?=\s+[" + _INVISIBLE
-                         + r"]*(?:[^\W\d_]|[" + _FRAMED + "]))")
+                         + r"]*(?:[^\W\d_]|[" + _FRAMED + "]|[" + _BOXES + "]{2}))")
 #: Cyrillic, Greek and small-capital letters drawn as Latin ones ("Replica
 #: \u0435xchange" with a Cyrillic e), read as the Latin letter they look like,
 #: and slashes and bars drawn as other symbols as "\\", "|" and "/". Greek
 #: letters with a meaning of their own here (lambda, sigma, mu, nu) are left
 #: as they are; iota, kappa and chi are read as i, k and x, and Lisu and
-#: Cherokee capitals as the Latin capitals they look like.
+#: Cherokee capitals as the Latin capitals they look like; Cyrillic "\u0442"
+#: as the small capital T it looks like, and letters in brackets or in black
+#: circles and squares, two or more together, as the letters.
 _LOOK_ALIKES = str.maketrans(
     "\u0410\u0412\u0421\u0415\u041d\u0406\u0408\u041a\u041c\u041e\u0420\u0405\u0422\u0425\u0423"
     "\u0430\u0441\u0435\u0456\u0458\u043e\u0440\u0455\u0445\u0443\u0501\u051b\u051d\u04bb\u04cf"
@@ -497,6 +502,35 @@ _LOOK_ALIKES = str.maketrans(
     "BPdDTGKJCZFMN" "LSRVHWXYAEIOU"
     "ABCDEGHJKLMPRS" "WVWZTRSGYYWIH"
     "\\\\|//|||")
+_LOOK_ALIKES.update({0x0442: "T"})
+#: Letters in brackets and in black circles and squares, read as letters
+#: only two or more together ("\u24ad\u24a0\u24a8\u249f"): one alone is a list's
+#: mark ("\u249cTI", "\u249cMD"), kept apart from the word beside it.
+_BOXED = str.maketrans({**{0x249C + n: chr(0x61 + n) for n in range(26)},
+                        **{start + n: chr(0x41 + n) for start in (0x1F150, 0x1F170)
+                           for n in range(26)}})
+_BOXED_RUN = re.compile("[\u249c-\u24b5\U0001f150-\U0001f169\U0001f170-\U0001f189]{2,}")
+
+
+def _unboxed(run: re.Match[str]) -> str:
+    """A run of boxed letters as letters, kept apart from a word it touches
+    ("TI\u249c\u249d" is "TI ab", not "TIab")."""
+    before = " " if run.start() and run.string[run.start() - 1].isalnum() else ""
+    after = " " if run.end() < len(run.string) and run.string[run.end()].isalnum() else ""
+    return before + run.group(0).translate(_BOXED) + after
+
+
+def _joined_at(words: str, at: int) -> int:
+    """Where the character at ``at`` of the words read as written stands in
+    the words read with line-end hyphens joined."""
+    low, high = 0, len(words)
+    while low < high:
+        middle = (low + high) // 2
+        if len(_plain_text(words[:middle], join=False, look_alikes=True, breaks=[])) < at:
+            low = middle + 1
+        else:
+            high = middle
+    return len(_plain_text(words[:low], join=True, look_alikes=True, breaks=[]))
 
 
 def _plain_text(words: str, join: bool = True, look_alikes: bool = False,
@@ -517,6 +551,7 @@ def _plain_text(words: str, join: bool = True, look_alikes: bool = False,
     if breaks is not None:
         words = _SOFT_BREAK.sub("\ue000", words)
     if look_alikes:
+        words = _BOXED_RUN.sub(_unboxed, words)
         words = words.translate(_LOOK_ALIKES)
     words = re.sub("[\u2122\u00ae\u2120\u00a9\u00aa\u00ba\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+",
                    " ", words)
@@ -556,7 +591,9 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
     joined = _plain_text(words, join=True, look_alikes=True, breaks=breaks)
     text_breaks: list[int] = []
     text = _plain_text(words, join=False, look_alikes=True, breaks=text_breaks)
-    softly = re.sub(_SOFT_BREAK.pattern + r"\s+[" + _INVISIBLE + "]*", "", str(words))
+    # The soft break joined: a zero-width space dropped later, so a run of
+    # boxed letters it joins is not kept apart ("\U0001f181\U0001f174" before "MD").
+    softly = re.sub(_SOFT_BREAK.pattern + r"\s+[" + _INVISIBLE + "]*", "\u200b", str(words))
     soft = _plain_text(softly, join=True, look_alikes=True)
     if softly != str(words) and _qualifiers(soft) - _qualifiers(joined):
         # A word that qualifies a name, read only with a soft hyphen at a
@@ -566,13 +603,27 @@ def _methods_in_details(words: str) -> tuple[str | None, list[tuple[str, str]]]:
             aside += [item for item in _read_details(reading, lambda name: False)[1]
                       if item not in aside]
         return None, aside + [item for item in _glued(joined) if item not in aside]
-    method, aside = _read_details(joined, lambda name: _whole_by(joined, name, breaks))
+    def whole_as_written(name: re.Match[str]) -> bool:
+        return _whole_by(text, name, text_breaks) and bool(
+            _WHOLE_BEFORE.match(text, name.end()) or re.search(r"-\s", name.group(0))
+            or (_PREFIXED.search(text, 0, name.start())
+                and re.search(r"remd|rex|exchange", name.group(0), re.IGNORECASE)))
+
+    joined_at: list[int] = []
+    method, aside = _read_details(joined, lambda name: _whole_by(joined, name, breaks), joined_at)
     if method:
+        # A whole name the joined reading broke, before the one it read
+        # ("QM/MM-\nbased REMD"), names the study, where nothing qualifies it
+        # in the joined reading's sentence either.
+        written_at: list[int] = []
+        first, before = _read_details(text, whole_as_written, written_at)
+        if first and first != method:
+            at = _joined_at(str(words), written_at[0])
+            there = re.compile(r"\S+").match(joined, at)
+            if at < joined_at[0] and there and not _QUALIFIED.search(_sentence_of(joined, there)):
+                return first, before
         return method, aside
-    method, found = _read_details(text, lambda name: _whole_by(text, name, text_breaks) and bool(
-        _WHOLE_BEFORE.match(text, name.end()) or re.search(r"-\s", name.group(0))
-        or (_PREFIXED.search(text, 0, name.start())
-            and re.search(r"remd|rex|exchange", name.group(0), re.IGNORECASE))))
+    method, found = _read_details(text, whole_as_written)
     if not method and softly != str(words):
         found += _read_details(soft, lambda name: False)[1]
     if not method:
@@ -636,10 +687,11 @@ _PREFIXED = re.compile(r"\b(?:hamiltonian|temperature|solute|replica|reservoir|p
                        re.IGNORECASE)
 
 
-def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = None
-                  ) -> tuple[str | None, list[tuple[str, str]]]:
+def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = None,
+                  at: list[int] | None = None) -> tuple[str | None, list[tuple[str, str]]]:
     """``whole``, where given, says whether an unqualified name found is
-    whole; one that is not is put to the person."""
+    whole; one that is not is put to the person. ``at``, where given, gets
+    where the name that decides stands."""
     found = sorted(((match, method) for method, pattern in _DETAIL_WORDS.items()
                     for match in re.finditer(pattern, words, re.IGNORECASE)),
                    key=lambda pair: pair[0].start())
@@ -656,6 +708,8 @@ def _read_details(words: str, whole: Callable[[re.Match[str]], bool] | None = No
                 whole is not None and not whole(match)):
             aside.append((_short(_sentence_of(words, match).strip(), 160), "mentioned"))
         else:
+            if at is not None:
+                at.append(match.start())
             return method, aside
     unnamed = list(words)
     for match, _method in found:  # the names themselves are not signs

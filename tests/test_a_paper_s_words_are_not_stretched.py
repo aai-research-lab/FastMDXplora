@@ -2333,3 +2333,44 @@ def test_a_lipid_s_name_written_out_after_its_count_is_the_lipid(membrane, state
                   "protein_forcefield": _stated("ff14SB"), "water_model": _stated("TIP3P"),
                   "membrane": _stated(membrane)})
     assert plan["state"] == state
+
+
+# -- 1610: more look-alike letters, the first whole name read -----------------
+@pytest.mark.parametrize("details, method", [
+    ("We used \u0442\u0456\u0435\u0455 for the ligands.", "confirm"),
+    ("We ran \u24ad\u24a0\u00ad\nMD of the peptide", "confirm"),
+    ("We ran \U0001f181\U0001f174\u00ad\nMD of the peptide", "confirm"),
+    ("We ran \U0001f181\U0001f174\U0001f17c\U0001f173 of the peptide", "replica_exchange"),
+    ("We ran \U0001f161\U0001f154\U0001f15c\U0001f153 of the peptide", "replica_exchange"),
+    ("We ran \u24ad\u24a0\u24a8\u249f of the peptide", "replica_exchange"),
+    ("QM/MM-\nbased REMD of the site", "qm_mm"),
+    ("REMD-\nbased QM/MM of the site", "replica_exchange"),
+    ("REMD of the peptide; QM/MM-\nbased scoring later.", "replica_exchange"),
+    ("Protocols: \u249cTI of ligand 1 and \u249dTI of ligand 2.", "free_energy"),
+    ("TI\u249c was used.", "free_energy"),
+    ("\U0001f170TI was used.", "free_energy"),
+    ("\u249cMD of the apo form and \u249dMD of the holo form, 100 ns each.", "plain"),
+    ("\U0001f14c\u00ad\nREMD was used.", "replica_exchange"),
+    ("Struc-\ntures were equi-\nlibrated, mini-\nmized, re-\nlaxed, re-\nsolvated, re-\nheated "
+     "and re-\nequi-\nlibrated. QM/MM-\nbased REMD was run.", "qm_mm"),
+    ("We did not use the struc-\ntures were equi-\nlibrated and mini-\nmized, then re-\nheated, "
+     "re-\nsolvated, re-\nlaxed, re-\nequi-\nlibrated, re-\nchecked, re-\nverified and re-\nsorted "
+     "with alchemical-\nbased transforms; nothing else, so REMD was the method.",
+     "replica_exchange"),
+    ("TI\u249c\u249d was used.", "free_energy"),
+    ("\U0001f170\U0001f171TI", "free_energy"),
+    ("REMD\u00ad\n\u249c was used.", "replica_exchange"),
+    ("We ran \u24ad\u24a0\u24a8\u249fsimulations of the peptide", "replica_exchange"),
+    ("Pre-  pared sys-  tems were equi-  librated by mini-  mization; REMD and QM/MM-\nbased "
+     "refinement were run.", "replica_exchange"),
+    (" ".join(["sys\u2027\ntems"] * 6) + " were run; REMD and QM/MM-\nbased refinement were run.",
+     "replica_exchange"),
+])
+def test_more_letters_that_look_latin_and_the_first_whole_name(details, method):
+    """Cyrillic "\u0442" reads as the small capital T it looks like; letters
+    in brackets and in black circles and squares read as letters two or more
+    together (one alone is a list's mark), beside a soft hyphen too, and a
+    sign in a square is no letter; a whole name the joined reading broke
+    ("QM/MM-" at a line's end before "based") names the study where it comes
+    first and nothing qualifies it in the joined reading."""
+    assert _method_said(details) == method

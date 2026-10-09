@@ -180,11 +180,14 @@ contain, or by reference to another paper), the study needs you.
   "᠆"). A line's end inside a name ("G-" before "REST") reads it whole. TIES
   decides only in capitals in a sentence not all in capitals, or as a tool's
   name ("ties_md", "TIES20"); "ties" in other letters asks, as it may be a
-  word. A letter in a circle or a square beside a soft hyphen is a letter.
-  Words that qualify a name are read with a hyphen inside them joined too,
-  two letters on each side ("with-out", "with-" before "out"); where one is
-  read only across a soft hyphen at a line's end, no name decides the
-  method, and each is put to you.
+  word. A letter in brackets, a circle or a square beside a soft hyphen is a
+  letter. Where a whole name read as written ("QM/MM-" at a line's end
+  before "based") comes before the name the joined reading decides, and
+  nothing qualifies it there, it names the study. Words that qualify a name
+  are read with a hyphen inside them joined too, two letters on each side
+  ("with-out", "with-" before "out"); where one is read only across a soft
+  hyphen at a line's end, no name decides the method, and each is put to
+  you.
   Everything else such words may mean is put to you, the words shown, and
   the study runs once you confirm it is not that method: a name beside
   words that may deny it or give it elsewhere ("no REMD was used",
@@ -211,10 +214,13 @@ contain, or by reference to another paper), the study needs you.
   replicas. In a method's details, letters and slashes that only look Latin
   (Cyrillic "е" and "ё", Greek "ο", "ι", "κ" and "χ", accented or not,
   Cyrillic "Һ", "Ӏ" and "Ԝ", Lisu capitals such as "ꓣ" and "ꓰ", Cherokee
-  capitals such as "Ꭱ" and "Ꭼ", small capitals such as "ᴇ" and "ꜱ",
-  "∖", the vertical bars "│", "┃" and "ǀ") are read as the ones they look
-  like. A fixed list of plain phrases is not read
-  as such words (no words around them are read to decide this):
+  capitals such as "Ꭱ" and "Ꭼ", small capitals such as "ᴇ" and "ꜱ", Cyrillic
+  "т" as the small capital T, letters in brackets ("⒭") and in circles or
+  squares, black or not ("Ⓡ", "🅁", "🆁"; in brackets or black only two or
+  more together, one alone being a list's mark), "∖", the vertical bars "│",
+  "┃" and "ǀ") are read as the ones they look like. A fixed list of plain
+  phrases is not read as such words (no words around them are read to decide
+  this):
   "GPU-accelerated", "CUDA-accelerated", "AMD" followed (after a space or a
   hyphen) by a GPU or processor name or word (GPUs, CPUs, processors,
   hardware, Radeon, Instinct, MI250X, EPYC, Ryzen, Threadripper, Opteron,
