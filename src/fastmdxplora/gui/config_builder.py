@@ -561,6 +561,29 @@ def _lists_as_lists(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def phases_it_runs(data: dict[str, Any], *, in_the_form: bool = False) -> list[str]:
+    """The phases a config runs, as `fastmdx explore` plans them: its
+    `include_phase`, else all but its `exclude_phase`, else all. The form,
+    which asks a config naming a trajectory to analyse one, leaves setup and
+    simulation out of it (`in_the_form`); a study's own resolved config
+    names its trajectory too, and runs all four."""
+    ordered = [str(p) for p in PHASE_SCHEMAS]
+    include = data.get("include_phase")
+    exclude = data.get("exclude_phase")
+    if isinstance(include, list) and include:
+        running = [p for p in ordered if p in {str(x) for x in include}]
+    elif isinstance(exclude, list) and exclude:
+        running = [p for p in ordered if p not in {str(x) for x in exclude}]
+    else:
+        running = ordered
+    analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
+    if in_the_form and analysis.get("trajectory"):
+        # A config that names a trajectory was written to analyse one;
+        # setup and simulation have nothing to do there even if unstated.
+        running = [p for p in running if p not in ("setup", "simulation")]
+    return running
+
+
 def check_config(data: dict[str, Any]) -> dict[str, Any]:
     """The same verdict, for a config that is not on disk.
 
@@ -579,9 +602,9 @@ def check_config(data: dict[str, Any]) -> dict[str, Any]:
     except ConfigError as exc:
         return {"ok": False, "error": str(exc)}
 
-    phases = data.get("include_phase")
-    if not isinstance(phases, list) or not phases:
-        phases = [name for name in PHASE_SCHEMAS if isinstance(data.get(name), dict)]
+    # The phases it runs, as the form ticks them: "simulation" alone was
+    # said of a config that runs all four, its blocks read for its phases.
+    phases = phases_it_runs(data)
     systems = data.get("systems") or []
     # What the form says under Worth knowing, said for a file too: a 10 fs
     # timestep checked here as "Runs." and ran, to fail in NVT.
@@ -590,7 +613,10 @@ def check_config(data: dict[str, Any]) -> dict[str, Any]:
     settings = {**(data.get("setup") if isinstance(data.get("setup"), dict) else {}),
                 **(data.get("simulation") if isinstance(data.get("simulation"), dict) else {})}
     try:
-        knowing = [a.summary for a in advise({}, settings)]
+        # Each with what to do about it: a summary alone said what was
+        # wrong and not what would run.
+        knowing = [" ".join(str(part).strip() for part in (a.summary, a.remedy) if part)
+                   for a in advise({}, settings)]
     except Exception:  # noqa: BLE001 - advice, never a verdict
         knowing = []
     return {
@@ -707,19 +733,7 @@ def state_from_config(
     # is the same shape as npt_steps deciding both how long to equilibrate
     # and whether there was a barostat. A config the validator accepts and
     # `fastmdx explore` runs then arrived in the form unrunnable.
-    ordered = [str(p) for p in PHASE_SCHEMAS]
-    include = data.get("include_phase")
-    exclude = data.get("exclude_phase")
-    if isinstance(include, list) and include:
-        running = [p for p in ordered if p in {str(x) for x in include}]
-    elif isinstance(exclude, list) and exclude:
-        running = [p for p in ordered if p not in {str(x) for x in exclude}]
-    else:
-        running = ordered
-    if state["start"] == "trajectory":
-        # A config that names a trajectory was written to analyse one;
-        # setup and simulation have nothing to do there even if unstated.
-        running = [p for p in running if p not in ("setup", "simulation")]
+    running = phases_it_runs(data, in_the_form=True)
 
     for phase in running:
         block = data.get(phase)

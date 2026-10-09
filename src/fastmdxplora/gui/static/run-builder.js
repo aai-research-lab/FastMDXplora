@@ -3463,11 +3463,17 @@
     });
     const verdict = await response.json();
     const knowing = (verdict.ok && verdict.worth_knowing) || [];
+    // "Runs." in green beside a timestep its run fails on said it would
+    // run well: with something worth knowing it is said as the form says
+    // it, checks passing, in the colour of advice.
     text(note, verdict.ok
-      ? `Runs. ${verdict.phases.join(" → ")}, ${verdict.systems} system(s), ${verdict.settings_named} setting(s) named.`
+      ? `${knowing.length ? "Checks pass" : "Runs"}. ${verdict.phases.join(" → ")}, `
+        + `${verdict.systems} system(s), ${verdict.settings_named} setting(s) named.`
         + (knowing.length ? ` Worth knowing: ${knowing.join(" ")}` : "")
       : verdict.error);
-    note.dataset.ok = String(Boolean(verdict.ok));
+    // A setting named in the advice in code, as the form says it.
+    if (verdict.ok && knowing.length) withCodeIn(note);
+    note.dataset.ok = verdict.ok && knowing.length ? "advice" : String(Boolean(verdict.ok));
     state.configVerdict = verdict;
     // Opening and running are only offered once the file is known to be sound.
     ["run-open-config", "run-as-is", "run-as-is-elsewhere"].forEach((id) => {

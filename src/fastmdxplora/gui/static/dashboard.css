@@ -2486,6 +2486,7 @@ body.state-ready .loading-screen {
 
 #run-config-verdict[data-ok="true"] { color: var(--accent-green, var(--accent-cyan)); }
 #run-config-verdict[data-ok="false"] { color: var(--accent-orange); }
+#run-config-verdict[data-ok="advice"] { color: var(--status-stale); }
 
 /* The picker's button sits with its field rather than in a row of its own,
    so a path and the way to find one read as a single control. */

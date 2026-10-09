@@ -108,11 +108,26 @@ def test_a_config_file_checked_says_it_too():
     said = check_config({"systems": [{"system": "1L2Y"}],
                          "simulation": {"timestep_fs": 10, "duration_ns": 0.01}})
     assert said["ok"] and any("10 fs" in line for line in said["worth_knowing"])
+    # With what to do, not only what is wrong; and not "Runs." in green.
+    from fastmdxplora.advisories import advise
+
+    [advice] = [a for a in advise({}, {"timestep_fs": 10}) if "10 fs" in a.summary]
+    assert any(advice.remedy in line for line in said["worth_knowing"])
     assert check_config({"systems": [{"system": "1L2Y"}],
                          "simulation": {"duration_ns": 0.01}})["worth_knowing"] == []
+    # The phases it runs, not the blocks it names: "simulation" alone was
+    # said of a config that runs all four.
+    assert said["phases"] == ["setup", "simulation", "analysis", "report"]
+    # A study's own resolved config names its trajectory, and runs all four
+    # phases: it was said as "analysis → report".
+    resolved = check_config({"systems": [{"system": "1L2Y"}],
+                             "analysis": {"trajectory": "simulation/production.dcd"}})
+    assert resolved["phases"] == ["setup", "simulation", "analysis", "report"]
     script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
               / "run-builder.js").read_text(encoding="utf-8")
     assert 'setStatus("ok", checksPass());' in script
+    assert '${knowing.length ? "Checks pass" : "Runs"}' in script
+    assert 'knowing.length ? "advice"' in script
     assert "Worth knowing: ${knowing.join" in script
 
 
@@ -137,3 +152,42 @@ def test_the_note_after_a_failed_run_says_why_it_failed(tmp_path):
     said = runtime._process_failure_message()
     assert said.startswith("UnstableRun: The simulation became unstable during NVT")
     assert "Manifest:" not in said
+
+
+def test_the_config_file_s_advice_names_its_setting_in_code(tmp_path):
+    """The advice beside a checked config file showed its remedy's
+    backticks ("(`setup.hydrogen_mass_amu: 4`)"), which the form renders."""
+    pytest.importorskip("playwright.sync_api")
+    import yaml
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    config = workspace / "study.yml"
+    config.write_text(yaml.safe_dump({
+        "systems": [{"system": "1L2Y"}], "output": str(workspace / "out"),
+        "simulation": {"timestep_fs": 10, "duration_ns": 0.01}}), encoding="utf-8")
+    session = start_dashboard_session(output=str(workspace), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#run", wait_until="domcontentloaded")
+            page.wait_for_function("() => window.FastMDXRun && window.FastMDXRun.setStart")
+            page.evaluate("path => { window.FastMDXRun.setStart('config'); "
+                          "const box = document.getElementById('run-config-path'); "
+                          "box.value = path; box.dispatchEvent(new Event('change')); }",
+                          str(config))
+            page.wait_for_function(
+                "() => document.getElementById('run-config-verdict').dataset.ok === 'advice'")
+            said = page.text_content("#run-config-verdict")
+            code = page.eval_on_selector_all("#run-config-verdict code",
+                                             "els => els.map(e => e.textContent)")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert said.startswith("Checks pass") and "`" not in said, said
+    assert any("hydrogen_mass_amu" in words for words in code), code
