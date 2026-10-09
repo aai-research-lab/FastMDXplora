@@ -147,6 +147,9 @@ def load_machine(name: str) -> Machine:
         ) from exc
     try:
         machine = Machine.from_record(record)
+        # Read as the listings read it, so a field of the wrong kind is
+        # found here rather than in every listing.
+        readiness(machine, CodeIdentity("0"))
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         raise UnknownMachine(
             f"The record for {name!r} at {target} is not a machine's record. "

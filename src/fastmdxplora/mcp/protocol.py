@@ -195,16 +195,17 @@ class Call:
         # An empty object is form mode, for clients written before modes.
         return not asked or isinstance(asked.get("form"), dict)
 
-    def answers_a_question(self, about: str = "") -> bool:
-        """Whether this call carries an answer to a question this server put
-        for this method, about what starts with ``about`` (a tool's own
-        questions): a state it signed, unexpired and not yet used. Read
-        without using the state up."""
+    def answers_a_question(self, about: str = "", key: str = "") -> bool:
+        """Whether this call carries an answer, under ``key`` where given, to
+        a question this server put for this method, about what starts with
+        ``about`` (a tool's own questions): a state it signed, unexpired and
+        not yet used. Read without using the state up."""
         if self.era != "modern":
             return False
         state = self.params.get("requestState")
         answers = self.params.get("inputResponses")
         return (isinstance(state, str) and isinstance(answers, dict)
+                and (not key or isinstance(answers.get(key), dict))
                 and self._server.gave_out(state, self.method, about))
 
     def can_sample(self) -> bool:

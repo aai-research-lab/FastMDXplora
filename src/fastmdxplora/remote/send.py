@@ -112,8 +112,13 @@ _SAID_LINES, _SAID_CHARS = 12, 300
 #: its results. Their paths on the machine are recorded.
 TRAJECTORY_PATTERNS = ("*.dcd", "*.xtc", "*.trr", "*.nc", "*.chk")
 
+#: States in which a cluster's job waits for its turn: whatever an earlier
+#: run of it left in its folder says nothing of this one.
+_SLURM_WAITING = frozenset({"PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD",
+                            "REQUEUE_FED", "RESV_DEL_HOLD", "SPECIAL_EXIT"})
+
 _SLURM_STATES = {
-    "PENDING": READY, "CONFIGURING": READY, "REQUEUED": READY,
+    **{state: READY for state in _SLURM_WAITING},
     "RUNNING": RUNNING, "COMPLETING": RUNNING, "SUSPENDED": RUNNING,
     "COMPLETED": DONE, "CANCELLED": ABANDONED, "FAILED": FAILED,
     "TIMEOUT": FAILED, "OUT_OF_MEMORY": FAILED, "NODE_FAIL": FAILED,
@@ -182,14 +187,17 @@ def job_script(*, remote_dir: str, job_name: str, env: Environment,
     if scheduler == "slurm":
         lines += [f"#SBATCH --job-name={job_name}",
                   f"#SBATCH --output={remote_dir}/job.log",
-                  "#SBATCH --gres=gpu:1"]
+                  "#SBATCH --gres=gpu:1",
+                  # Run again after a preemption it would find its own run
+                  # folder and stop: it ends instead, and is resumed.
+                  "#SBATCH --no-requeue"]
         if partition:
             lines.append(f"#SBATCH --partition={partition}")
         if time_limit:
             lines.append(f"#SBATCH --time={time_limit}")
     lines.append(f"cd {shlex.quote(remote_dir)} || exit 1")
     if scheduler == "slurm":
-        # A job the cluster runs again (requeued) starts with no exit code.
+        # A job started again by hand there begins with no exit code.
         lines.append("rm -f exit_code")
     if path_line:
         lines.append(path_line)
@@ -453,8 +461,14 @@ def _send_held(sending: Sending, link: Transport, local_runner,
 
     if sending.scheduler == "slurm":
         started = link.run(["sh", "-c",
-                            f"cd {shlex.quote(where)} && rm -f exit_code && "
-                            "sbatch --parsable job.sh"])
+                            # The last run's exit code is set aside, and put
+                            # back where the cluster does not take the job.
+                            f"cd {shlex.quote(where)} || exit 1; "
+                            "mv -f exit_code .exit_code.before 2>/dev/null; "
+                            "if out=$(sbatch --parsable job.sh); then "
+                            "rm -f .exit_code.before; echo \"$out\"; else said=$?; "
+                            "mv -f .exit_code.before exit_code 2>/dev/null; "
+                            "exit \"$said\"; fi"])
         handle = started.stdout.strip().split(";")[0]
     else:
         started = link.run(["sh", "-c", (
@@ -627,9 +641,19 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
     slurm = (found.get("slurm") or [""])[0].strip().split(" ")[0].rstrip("+")
     if not re.fullmatch(r"[A-Z_]{1,40}", slurm):
         slurm = ""
-    if ended_with:
+    if job.scheduler == "slurm" and slurm in _SLURM_WAITING:
+        # Waiting again (requeued): an exit code there is the last run's.
+        job.state, job.detail = READY, slurm.lower()
+    elif ended_with:
         job.state = DONE if ended_with == "0" else FAILED
         job.detail = "" if ended_with == "0" else f"exit code {ended_with}"
+    elif (job.scheduler == "slurm" and slurm and "slurm_gone" in found
+          and _SLURM_STATES.get(slurm, RUNNING) in (READY, RUNNING)):
+        # The queue does not know it, so accounting that says it is going
+        # is a record left behind (a runaway job), not the job.
+        job.state = FAILED
+        job.detail = ("no longer in the cluster's queue, though its accounting "
+                      f"still says {slurm.lower()}; its log says more")
     elif job.scheduler == "slurm" and slurm:
         job.state = _SLURM_STATES.get(slurm, RUNNING)
         job.detail = slurm.lower()
@@ -649,7 +673,9 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
         job.state = FAILED
         job.detail = "ended without recording an exit code (killed, or the machine restarted)"
     live = (found.get("live") or [""])[0]
-    if job.state in (RUNNING, READY) and live:
+    # Progress only of a run going: one waiting, or suspended, has a live
+    # record only from an earlier run.
+    if job.state == RUNNING and live and slurm not in ("SUSPENDED",):
         job.detail = (_progress(live) or job.detail)[:_SAID_CHARS]
     job.extra["log_tail"] = [line[:_SAID_CHARS] for line in
                              _telling(found.get("log", []))[-_SAID_LINES:]]
@@ -1171,7 +1197,17 @@ def _cancel(name: str, transport: Transport | None) -> Job:
                                       and job.extra.get("queue_silent")):
         return job
     if job.scheduler == "slurm":
-        link.run(["scancel", job.handle])
+        stopped = link.run(["scancel", job.handle])
+        if stopped.returncode != 0:
+            # Not stopped as far as anyone knows: its record keeps saying
+            # what was last known, and it is asked about again.
+            said = (stopped.stderr or stopped.stdout).strip()[-_SAID_CHARS:]
+            raise StudyError(
+                f"The cluster did not take the cancel of {job.name}"
+                + (f": {said}" if said else "") + f". It may still be {job.state}; "
+                f"cancel it again, or with `scancel {job.handle}` there.",
+                code="environment.service.machine_unreachable",
+                machine=job.machine, reason="scancel failed")
     else:
         link.run(["sh", "-c", f"kill -TERM -{job.handle} 2>/dev/null || "
                               f"kill -TERM {job.handle} 2>/dev/null; true"])

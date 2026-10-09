@@ -242,7 +242,7 @@ def _nobody_to_ask(ctx: Context) -> bool:
         return True
     # An answer counts only where it comes back on a state this server gave
     # out: a made-up one would have the machine asked on every call.
-    return not call.answers_a_question("start_study:") and not call.can_ask()
+    return not call.answers_a_question("start_study:", "send") and not call.can_ask()
 
 
 def _send_unconfirmed(ctx: Context, file: Path, machine: str, where: Path) -> NoReturn:

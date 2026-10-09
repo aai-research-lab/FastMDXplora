@@ -46,7 +46,11 @@ running (`environment.path.exists`); cancel it first. `--partition` and
 `--time` take letters, digits and `_ . , : + -` only, at most 64. A
 cluster's job whose queue does not answer keeps its state, where it was read
 as failed; one the queue no longer knows, with no accounting to say how it
-ended, reads as failed.
+ended, reads as failed; the queue's warnings are not read as a state, and a
+job waiting again in the queue is read as waiting. A cluster job asks not to
+be requeued, and keeps the last run's exit code until the cluster takes a
+job sent again. A cancel the cluster does not take is refused, and a job
+that has ended keeps how it ended.
 
 **Changed:** a fetch copies into a folder of its own inside the results
 folder, takes out links, named pipes and set-id bits, and moves the results

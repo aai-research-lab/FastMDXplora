@@ -251,7 +251,7 @@ job.sh:
   #!/bin/sh
   cd /home/me/fastmdxplora-jobs/lysozyme || exit 1
   export PATH=/home/me/.conda/envs/fastmdx-gpu/bin:"$PATH"
-  /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run
+  /home/me/.conda/envs/fastmdx-gpu/bin/fastmdx explore -c study.yml --output run --no-defaults
   echo $? > exit_code
 ```
 
@@ -262,10 +262,13 @@ in home, and the run is written to `run/` inside it.
 
 **On a workstation** the job runs as a detached process in its own process
 group, so it outlives the connection and can be stopped whole. **On a
-cluster** it is an `sbatch` job asking for one GPU; `--partition` and `--time`
-are passed to it, and without `--time` the partition's default applies. Either
-way the job writes its exit code beside itself when it ends, so a finished run
-and a killed one are told apart.
+cluster** it is an `sbatch` job asking for one GPU and not to be requeued (run
+again after a preemption, it would find its own run folder and stop: it ends
+instead, read as failed, `preempted`); `--partition` and `--time` are passed
+to it, and without `--time` the partition's default applies. Either way the
+job writes its exit code beside itself when it ends, so a finished run and a
+killed one are told apart; a job sent again keeps the last one's until the
+cluster takes the new one.
 
 `--force-overwrite` replaces a job of the same name, here and on the machine,
 once it has ended; one still waiting or running there is refused, on a
@@ -341,7 +344,9 @@ fastmdx remote cancel lysozyme
 ```
 
 stops the job, `scancel` on a cluster or the whole process group on a
-workstation. Its folder on the machine is left as it is.
+workstation. Its folder on the machine is left as it is. A job the machine says
+has ended is not signalled and keeps how it ended; a cancel the cluster does not
+take is refused, and the job is asked about as before.
 
 ---
 
