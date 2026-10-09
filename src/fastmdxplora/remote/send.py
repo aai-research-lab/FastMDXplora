@@ -507,7 +507,15 @@ def _still_its_own(sending: Sending) -> None:
 def _status_script(job: Job) -> str:
     where = shlex.quote(job.remote_dir)
     if job.scheduler == "slurm":
-        alive = (f'state=$(squeue -h -j {job.handle} -o %T 2>/dev/null | head -n 1)\n'
+        # A queue that answers without the job, or says it knows no such
+        # job, has let it go; one that does not answer (a busy controller
+        # times out) says nothing of it.
+        alive = (f'asked=$(squeue -h -j {job.handle} -o %T 2>&1); answered=$?\n'
+                 'state=""\n'
+                 '[ "$answered" -eq 0 ] && state=$(printf \'%s\\n\' "$asked" | head -n 1)\n'
+                 'case "$asked" in *"Invalid job id"*) echo fmdx:slurm_gone=1 ;; '
+                 '*) [ "$answered" -eq 0 ] && [ -z "$state" ] && echo fmdx:slurm_gone=1 ;; '
+                 'esac\n'
                  f'[ -z "$state" ] && state=$(sacct -n -X -j {job.handle} '
                  f'-o State%30 2>/dev/null | head -n 1 | awk \'{{print $1}}\')\n'
                  'echo "fmdx:slurm=$state"\n')
@@ -618,6 +626,11 @@ def _status(name: str, transport: Transport | None, max_age_s: float) -> Job:
         job.detail = slurm.lower()
     elif job.scheduler == "process" and "alive" in found:
         job.state, job.detail = RUNNING, ""
+    elif job.scheduler == "slurm" and "slurm_gone" in found:
+        job.state = FAILED
+        job.detail = ("no longer in the cluster's queue, and the cluster keeps no "
+                      "record of how it ended (a time limit, or cancelled there); "
+                      "its log says more")
     elif job.scheduler == "slurm":
         # Neither the queue nor its accounting answered (a busy controller
         # times out): that says nothing of the job, so its state stays.

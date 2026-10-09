@@ -1662,3 +1662,66 @@ class TestEighthReview:
         path.write_text(json.dumps(record))
         with pytest.raises(ValueError):
             load_machine("box")
+
+
+# ---------------------------------------------------------------------------
+# The eleventh review's cases (the queue, the case of letters)
+# ---------------------------------------------------------------------------
+class TestEleventhReview:
+    @staticmethod
+    def _queued(machine, squeue: str, sacct: str):
+        from fastmdxplora.remote.jobs import Job, save_job
+
+        tools = machine.home / "slurm-bin"
+        travels._tool(tools / "squeue", squeue)
+        travels._tool(tools / "sacct", sacct)
+        machine.env["PATH"] = f"{tools}:{machine.env['PATH']}"
+        where = machine.home / "fastmdxplora-jobs" / "queued"
+        (where / "run").mkdir(parents=True)
+        (where / "job.log").write_text(
+            "slurmstepd: error: *** JOB 4242 CANCELLED DUE TO TIME LIMIT ***\n")
+        save_job(Job(name="queued", machine="box", remote_dir=str(where),
+                     scheduler="slurm", handle="4242",
+                     submitted_at="2026-10-08T00:00:00Z", code={},
+                     local_output=str(machine.back), state="running"))
+
+    NO_ACCOUNTING = 'echo "sacct: error: accounting storage is disabled" >&2; exit 1'
+
+    def test_a_job_the_queue_no_longer_knows_has_ended(self, machine):
+        self._queued(machine,
+                     'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                     self.NO_ACCOUNTING)
+        job = status("queued", transport=machine.transport())
+        assert job.state == "failed"
+        assert job.detail.startswith("no longer in the cluster's queue")
+
+    def test_a_queue_that_answers_without_the_job_has_let_it_go(self, machine):
+        self._queued(machine, "exit 0", self.NO_ACCOUNTING)
+        assert status("queued", transport=machine.transport()).state == "failed"
+
+    def test_a_queue_that_times_out_still_says_nothing_of_the_job(self, machine):
+        self._queued(machine,
+                     'echo "slurm_load_jobs error: Socket timed out on send/recv" >&2; '
+                     "exit 1", self.NO_ACCOUNTING)
+        job = status("queued", transport=machine.transport())
+        assert job.state == "running" and "did not answer" in job.detail
+
+    def test_accounting_still_says_how_a_job_gone_from_the_queue_ended(self, machine):
+        self._queued(machine,
+                     'echo "slurm_load_jobs error: Invalid job id specified" >&2; exit 1',
+                     'echo "TIMEOUT"')
+        job = status("queued", transport=machine.transport())
+        assert job.state == "failed" and job.detail == "timeout"
+
+    def test_settings_named_in_another_case_are_kept_where_the_disk_ignores_case(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote import inputs
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "Settings"))
+        monkeypatch.setattr(inputs.sys, "platform", "darwin")
+        kept = inputs._settings_kept()
+        assert inputs._private(tmp_path / "settings" / "Model.json", kept)
+        assert inputs._private(tmp_path / "SETTINGS" / "machines" / "x.json", kept)
+        assert not inputs._private(tmp_path / "settings" / "study.yml", kept)
+        monkeypatch.setattr(inputs.sys, "platform", "linux")
+        assert not inputs._private(tmp_path / "settings" / "Model.json", kept)

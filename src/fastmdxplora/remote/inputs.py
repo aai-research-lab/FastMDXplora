@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -181,8 +182,16 @@ def _private(path: Path, kept: tuple[str, ...] = ()) -> bool:
             pair in _PRIVATE_PAIRS for pair in zip(parts, parts[1:])):
         return True
     # By the path's text: a folder's parents are slow to walk 20,000 times.
-    text = str(path)
-    return any(text == place or text.startswith(place + os.sep) for place in kept)
+    # Where the disk ignores the case of letters, so does this.
+    text = _as_the_disk_reads(str(path))
+    return any(text == place or text.startswith(place + os.sep)
+               for place in map(_as_the_disk_reads, kept))
+
+
+def _as_the_disk_reads(text: str) -> str:
+    """``text`` as this platform's usual disk compares names: macOS and
+    Windows ignore the case of letters."""
+    return text.casefold() if sys.platform in ("darwin", "win32") else text
 
 
 def private_in(path: Path) -> Path | None:

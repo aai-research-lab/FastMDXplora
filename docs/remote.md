@@ -293,7 +293,10 @@ fastmdx remote status lysozyme   # one job
 asks the machine there and then and prints the state, with progress from the run's own live
 status while it runs, and the last lines of its log. The states are the
 queue's: `ready` (waiting for a GPU), `running`, `done`, `failed` with the exit
-code or the reason, and `abandoned`. An AI app and the Python API are
+code or the reason, and `abandoned`. A cluster's queue that does not answer
+leaves a job's state as it was; one that no longer knows the job, where the
+cluster keeps no accounting to say how it ended, reads it as `failed`, its
+log saying more. An AI app and the Python API are
 answered from the last answer while it is under 30 s old, so asking in a loop
 does not reach the machine each time.
 

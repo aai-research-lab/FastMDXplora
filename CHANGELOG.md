@@ -45,7 +45,8 @@ stopped. `--force-overwrite` no longer replaces a job still waiting or
 running (`environment.path.exists`); cancel it first. `--partition` and
 `--time` take letters, digits and `_ . , : + -` only, at most 64. A
 cluster's job whose queue does not answer keeps its state, where it was read
-as failed.
+as failed; one the queue no longer knows, with no accounting to say how it
+ended, reads as failed.
 
 **Changed:** a fetch copies into a folder of its own inside the results
 folder, takes out links, named pipes and set-id bits, and moves the results
