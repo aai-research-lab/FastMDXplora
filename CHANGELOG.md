@@ -7,6 +7,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study carried on and stopped again before its first checkpoint
+
+**Fixed:** a study stopped in production, carried on, and stopped again
+before the new piece wrote its first checkpoint was run again from its
+start, over the production frames of every piece. The piece with no
+checkpoint is set aside (unless it is still running), and the study is
+carried on from the last checkpoint there is, for the length that piece
+was asked to run, also when the study was moved since. A study carried on
+in pieces with no checkpoint left in any is refused with the reason, each
+time it is asked; one stopped before its first piece's checkpoint is still
+run again from its start, as it says.
+
 ### The Agent evaluated
 
 **Added:** `python -m fastmdxplora.validation.agent_eval`, one versioned set

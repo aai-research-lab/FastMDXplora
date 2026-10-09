@@ -618,8 +618,8 @@ fastmdx resume runs/study
 |---|---|
 | Every phase of its plan recorded as done | Nothing |
 | All of production, and not its analyses or report | The analyses and the report, over the whole trajectory |
-| Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does |
-| No production yet | The whole study again: setup and equilibration leave nothing a run can continue from |
+| Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does; a segment that stopped before its first checkpoint is set aside (`segment-001-stopped-before-its-checkpoint`, its frames kept) and run again from the piece before it |
+| No production yet, or none as far as its first checkpoint | The whole study again: nothing it wrote can be continued from |
 
 **A study of several runs is carried on run by run.** A sweep, several systems
 or an umbrella study's windows: each run that started is carried on as above,
@@ -635,10 +635,11 @@ running. A study that stopped with a
 refusal is not run again, since that was its answer; one the refusal registry
 marks as worth retrying, such as a GPU that went away, counts as an
 interruption. Production that is written and cannot be continued, a checkpoint
-off the frame grid for instance, is not thrown away by starting again: the
-reason is said instead. Running `fastmdx resume` twice does the work once, so a
-service can run it every time a job restarts; `--json` prints the outcome as
-one line for a program to read.
+off the frame grid for instance, or an extended study with no checkpoint left
+to carry it on, is not thrown away by starting again: the reason is said
+instead. Running `fastmdx resume` twice does the work once, so a service can
+run it every time a job restarts; `--json` prints the outcome as one line for
+a program to read.
 
 **By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase
