@@ -655,7 +655,7 @@ def _longer(code: str, why: str, where: str, root: Path) -> Remedy | None:
     return Remedy(
         code=code, where=where, why=why,
         fix=f"Extend the study in place by {_ns(ask.more_ns)}, which should give "
-            f"{', '.join(ask.analyses)} enough independent samples.",
+            f"{ask.said()} enough independent samples.",
         settings=("simulation.extra_ns",), config=ask.config(root),
         price=Price(production_ns=ask.more_ns, seconds=ask.seconds,
                     platform=ask.platform, lower_bound=ask.lower_bound))

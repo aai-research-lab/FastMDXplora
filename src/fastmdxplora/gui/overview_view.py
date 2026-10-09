@@ -244,6 +244,7 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
     volumes = [v for v in (_number(row.get("volume")) for row in averaged) if v is not None]
     held = len(volumes) > 1 and max(volumes) - min(volumes) <= 1e-9 * max(abs(max(volumes)), 1e-30)
     means: dict[str, Any] = {}
+    interval = _spacing_ns(averaged)
     for key, _label, unit in THERMODYNAMICS:
         entry = recorded.get(key)
         if isinstance(entry, dict) and ("mean" in entry or "not_a_measurement" in entry):
@@ -254,7 +255,7 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
             means[key] = _said({"value": sum(values) / len(values),
                                 "not_a_measurement": HELD_DENSITY}, unit, len(values))
             continue
-        means[key] = _mean_of(values, unit)
+        means[key] = _mean_of(values, unit, interval)
     target = _number(status.get("target_temperature_K"))
     return {"production_start_ns": start, "target_temperature_K": target,
             "npt_from_ns": _npt_from_ns(times, start),
@@ -334,18 +335,38 @@ def _production_start_ns(rows: list[dict[str, Any]], times: dict[str, Any]) -> f
     return None
 
 
-def _mean_of(values: list[float], unit: str) -> dict[str, Any] | None:
-    """A quantity's mean over the production, as an analysis records one."""
+def _mean_of(values: list[float], unit: str,
+             interval_ns: float | None = None) -> dict[str, Any] | None:
+    """A quantity's mean over the production, as an analysis records one,
+    with how much longer a withheld one needs where the samples' spacing is
+    known (a study analysed without its thermodynamics recorded none, and
+    "what they need" left these means out)."""
     if len(values) < 2:
         return None
     import numpy as np
 
     from fastmdxplora.statistics import mean_record
 
-    record = mean_record(np.asarray(values, dtype=float))
+    record = mean_record(np.asarray(values, dtype=float), frame_interval_ns=interval_ns)
     if _number(record.get("mean")) is None:
         record["value"] = float(np.mean(values))
-    return _said(record, unit, len(values))
+    said = _said(record, unit, len(values))
+    if said is not None and isinstance(record.get("shortfall"), dict):
+        said["shortfall"] = record["shortfall"]
+    return said
+
+
+def _spacing_ns(rows: list[dict[str, Any]]) -> float | None:
+    """The samples' spacing on the simulation's clock, where every one has
+    its time and they are evenly spaced."""
+    times = [_number(row.get("simulation_time_ns")) for row in rows]
+    if len(times) < 3 or any(t is None for t in times):
+        return None
+    steps = [b - a for a, b in zip(times, times[1:])]
+    first = steps[0]
+    if first <= 0 or any(abs(step - first) > 1e-6 * max(first, 1e-12) for step in steps):
+        return None
+    return float(first)
 
 
 def _said(record: dict[str, Any], unit: str, of: int | None) -> dict[str, Any] | None:

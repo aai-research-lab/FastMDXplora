@@ -74,6 +74,19 @@ could not be told apart; the Files page's columns shifted; units read
 `nm^3` and `e+04`; a trajectory analysed opened an empty narration panel.
 Selections half written are said in a sentence, never applied in part.
 
+**Fixed:** a selection property given no value was dropped from the
+sentence; Analyze again and Write it again on a study that ran only part of
+its plan analysed phases it never ran, and Compare two studies listed the
+phases and analyses one study never reached as differences. A mean withheld
+for want of a longer run, the trajectory's or a thermodynamic one, says how
+much longer it needs from the count it was withheld on, and under one
+independent sample is said as such, not 0. Lengths under a nanosecond are
+given in picoseconds. A config file with something worth knowing reads as
+its checks passing, with what to do. The run's speed beside its fix is the
+speed production ran at, as the fix is priced; a lone sample is plotted
+where it was taken, the NVT/NPT line only where a run reached NPT, and a
+speed of 0 is not plotted.
+
 ### The Agent beside the page, and a run's notice, as the page changes
 
 **Fixed:** Ctrl+J (⌘J) pressed just as the Agent page opened went back

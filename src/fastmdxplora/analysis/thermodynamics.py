@@ -55,6 +55,18 @@ COLUMNS: dict[str, tuple[str, str]] = {
 VOLUME_VARIES_ABOVE = 1e-6
 
 
+def _interval_ns(table: dict[str, np.ndarray]) -> float | None:
+    """The spacing of the state record's rows in nanoseconds, from its own
+    time column, or None where it has none."""
+    for name, values in table.items():
+        if "time" in name.lower() and "(ps)" in name.lower() and values.size > 1:
+            steps = np.diff(values[np.isfinite(values)])
+            steps = steps[steps > 0]
+            if steps.size:
+                return float(np.median(steps)) / 1000.0
+    return None
+
+
 def read_state_table(path: str | Path) -> dict[str, np.ndarray]:
     """The state record, by column, with the units left in the header.
 
@@ -166,6 +178,7 @@ class Thermodynamics(Analysis):
             < VOLUME_VARIES_ABOVE
         )
 
+        interval_ns = _interval_ns(table)
         rows: list[tuple[float, float, float, float]] = []
         labels: list[str] = []
         record: dict[str, Any] = {
@@ -223,6 +236,14 @@ class Thermodynamics(Analysis):
                 ))
             if reason is not None:
                 entry["not_a_measurement"] = reason
+                # And how much longer, as every other analysis's mean says
+                # it: "what they need" named the trajectory's analyses and
+                # left out the energy, temperature and density withheld.
+                from fastmdxplora.statistics import mean_record
+
+                shortfall = mean_record(values, frame_interval_ns=interval_ns).get("shortfall")
+                if shortfall:
+                    entry["shortfall"] = shortfall
             record[key] = entry
 
         self.findings["thermodynamics"] = record

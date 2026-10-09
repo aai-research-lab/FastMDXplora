@@ -71,7 +71,7 @@ def test_long_enough_with_a_figure_and_the_command(tmp_path, monkeypatch):
         "should give it 10 independent samples.", "fastmdx explore --simulate-resume-from /s --simulate-extra-ns 2"))
     said = answer_from_the_records(study, "long_enough")
     assert "Not for all of its means. " + THIN in said
-    assert "What they need: Radius of gyration withheld its mean" in said
+    assert "What they need, every mean withheld counted: Radius of gyration withheld its mean" in said
     assert "`fastmdx explore --simulate-resume-from /s --simulate-extra-ns 2`" in said
     assert said.endswith(TRAPPED)
 
@@ -91,6 +91,24 @@ def test_not_long_enough_with_no_figure_says_why_there_is_none(tmp_path, monkeyp
     said = answer_from_the_records(_study(tmp_path / "study"), "long_enough")
     assert "Not by its records. " + THIN in said
     assert records_answer.NO_FIGURE in said
+
+
+def test_a_study_never_analysed_is_told_so_and_a_stopped_one_to_carry_on(tmp_path, monkeypatch):
+    """A run stopped in production, never analysed, was told its analyses
+    recorded no figure, to analyse it again, and to see a report it had
+    not written."""
+    import shutil
+
+    from fastmdxplora.gui import telemetry
+
+    study = _study(tmp_path / "study")
+    shutil.rmtree(study / "analysis", ignore_errors=True)
+    monkeypatch.setattr(records_answer, "_supports", lambda base: THIN)
+    monkeypatch.setattr(telemetry, "status_as_it_stands", lambda base: {"status": "stopped"})
+    said = answer_from_the_records(study, "long_enough")
+    assert "it has not been analysed" in said and "What would fix it, on the Overview, says what to do first" in said
+    assert records_answer.NO_FIGURE not in said and "Convergence" not in said
+    assert said.endswith(TRAPPED)
 
 
 def test_what_would_strengthen_it(tmp_path, monkeypatch):
@@ -205,7 +223,7 @@ def test_from_real_records_with_the_command_that_extends_it():
 
     study = _withheld_with_a_figure(_extendable())
     said = answer_from_the_records(study, "long_enough")
-    assert "What they need: Radius of gyration withheld its mean for want of sampling: 2 ns" in said
+    assert "What they need, every mean withheld counted: Radius of gyration withheld its mean for want of sampling: 2 ns" in said
     assert (f"`fastmdx explore --simulate-resume-from {study.resolve()} "
             "--simulate-extra-ns 2`") in said
     said = answer_from_the_records(study, "strengthen")
@@ -215,7 +233,7 @@ def test_from_real_records_with_the_command_that_extends_it():
 def test_from_real_records_that_cannot_be_extended(tmp_path):
     study = _withheld_with_a_figure(tmp_path / "study")
     said = answer_from_the_records(study, "long_enough")
-    assert "What they need: Radius of gyration withheld its mean" in said
+    assert "What they need, every mean withheld counted: Radius of gyration withheld its mean" in said
     assert "fastmdx explore" not in said
 
 

@@ -150,7 +150,7 @@ class TestTheStudyAsks:
         # 2.6 ns at 2 fs is 1.3 million steps, at 0.02 s a step.
         assert ask.seconds == pytest.approx(1.3e6 * 0.02)
         assert ask.as_text() == (
-            "Radius of gyration and Hydrogen bonds withheld their means for want of "
+            "Radius of gyration and hydrogen bonds withheld their means for want of "
             "sampling: 2.6 ns more "
             "production should give each 10 independent samples; at this run's own "
             "speed on CPU, about 7 h 13 min.")
@@ -162,7 +162,7 @@ class TestTheStudyAsks:
             "rg": {"more_frames": 257, "more_ns": 2.57},
             "hbonds": {"more_frames": 40, "more_ns": 0.4, "lower_bound": True}}))
         assert ask.lower_bound and ask.seconds is None
-        assert ask.as_text().startswith("Radius of gyration and Hydrogen bonds withheld their "
+        assert ask.as_text().startswith("Radius of gyration and hydrogen bonds withheld their "
                                         "means for want of "
                                         "sampling: at least 2.6 ns more production")
         assert "estimate again" in ask.as_text()
@@ -243,3 +243,119 @@ class TestItIsSaid:
         assert ("**What would support it.** Radius of gyration withheld its mean for want "
                 "of sampling: 2.6 ns more production") in section
         assert "extra_ns: 2.6" in section
+
+
+def test_the_thermodynamic_means_withheld_say_how_much_longer_too(tmp_path):
+    """"What they need" offered 0.0004 ns more for RMSD and left out the
+    potential energy, temperature and density withheld beside it, which
+    needed about ten times more."""
+    from fastmdxplora.analysis.thermodynamics import Thermodynamics
+    from fastmdxplora.simulation.sampling_ask import sampling_asked_for
+
+    state = tmp_path / "energy.csv"
+    rows = ['#"Step","Time (ps)","Potential Energy (kJ/mole)","Temperature (K)"']
+    energy, temperature = _ar(60, 0.9, 1) * 50 - 45000, _ar(60, 0.9, 2) * 3 + 300
+    for k in range(60):
+        rows.append(f"{(k + 1) * 500},{(k + 1) * 1.0},{energy[k]},{temperature[k]}")
+    state.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    analysis = Thermodynamics(state_csv=str(state))
+    analysis.compute(None)
+    record = analysis.findings["thermodynamics"]
+    withheld = [key for key in ("potential_energy", "temperature")
+                if record[key].get("not_a_measurement")]
+    assert withheld
+    for key in withheld:
+        assert record[key]["shortfall"]["more_ns"] > 0
+    folder = tmp_path / "study" / "analysis" / "thermodynamics"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text(json.dumps(
+        {"analysis": "thermodynamics", "findings": analysis.findings}, default=float),
+        encoding="utf-8")
+    asked = sampling_asked_for(tmp_path / "study")
+    assert asked is not None and set(withheld) <= set(asked.analyses)
+    assert "potential energy" in asked.as_text() or "temperature" in asked.as_text()
+
+
+def test_every_mean_an_analysis_withheld_is_asked_for_and_named(tmp_path):
+    """Helix fraction and polar SASA withheld beside SASA's mean were left
+    out of "what they need", which asked less than helix fraction's own
+    figure; the fix named the quantities by their keys; and an unresolved
+    correlation's ask said 10 independent samples where it targets 25."""
+    from fastmdxplora.remedies import _longer
+    from fastmdxplora.simulation.sampling_ask import sampling_asked_for
+
+    def short(more_ns, target=10.0, floor=False):
+        record = {"target_independent": target, "more_ns": more_ns, "more_frames": 5}
+        if floor:
+            record["lower_bound"] = True
+        return {"mean": 1.0, "not_a_measurement": "withheld", "shortfall": record}
+
+    study = tmp_path / "study"
+    for name, findings in (
+            ("sasa", {"mean": short(0.087), "polar_sasa": short(0.089),
+                      "hydrophobic_sasa": {"mean": 2.0, "standard_error": 0.1}}),
+            ("ss", {"helix_fraction": short(0.095, target=25.0, floor=True)}),
+            ("thermodynamics", {"thermodynamics": {"samples": 60,
+                                                   "potential_energy": short(0.01)}})):
+        folder = study / "analysis" / name
+        folder.mkdir(parents=True)
+        (folder / "options.json").write_text(json.dumps(
+            {"analysis": name, "findings": findings}), encoding="utf-8")
+    asked = sampling_asked_for(study)
+    assert asked.analyses == ("helix_fraction", "polar_sasa", "sasa", "potential_energy")
+    assert asked.more_ns == 0.095 and asked.lower_bound
+    text = asked.as_text()
+    assert text.startswith("Helix fraction, polar SASA, ")
+    assert "potential energy" in text
+    # They asked for 10 and 25: "each 25" was untrue of the ones asking 10.
+    assert "25 independent samples" not in text and "the independent samples it asked for" in text
+    from dataclasses import replace
+
+    assert "should give it 25 independent samples" in replace(
+        asked, analyses=("helix_fraction",), target=25.0).as_text()
+    # Named in the sentence's case: a heading beside a quantity's key.
+    named = replace(asked, analyses=("sasa", "polar_sasa", "rmsd")).said()
+    assert named == "solvent accessible surface area, polar SASA and RMSD", named
+    from fastmdxplora.gui.report_dashboard import ANALYSIS_SECTION_BY_FOLDER
+
+    for folder, heading in ANALYSIS_SECTION_BY_FOLDER.items():
+        mid = replace(asked, analyses=("rmsd", folder)).said().split(" and ", 1)[1]
+        first = heading.split(" ", 1)[0]
+        if first[:1].isupper() and first[1:2].islower():
+            assert mid[:1].islower(), (folder, mid)
+    fix = _longer("analysis.sampling.too_few_independent", "", "", study).fix
+    assert "potential_energy" not in fix and "polar SASA" in fix
+
+
+def test_a_length_is_said_in_the_unit_it_reads_in():
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    assert length_said(0.0114) == "11.4 ps"
+    assert length_said(2e-5) == "0.02 ps"
+    assert length_said(0.99996) == "1 ns"
+    assert length_said(2.6) == "2.6 ns"
+    assert length_said(12000) == "12000 ns" and length_said(10000) == "10000 ns"
+    assert length_said(99999) == "100000 ns" and length_said(1.23456) == "1.235 ns"
+
+
+def test_the_overview_s_thermodynamic_means_ask_too_without_their_analysis(tmp_path):
+    """Analysed without its thermodynamics, a study's potential energy,
+    temperature and density were withheld on the Overview and left out of
+    "what they need", whose figure fell below the potential energy's own."""
+    from fastmdxplora.simulation.sampling_ask import sampling_asked_for
+
+    study = tmp_path / "study"
+    (study / "simulation").mkdir(parents=True)
+    rows = ['#"Step","Time (ps)","Potential Energy (kJ/mole)","Temperature (K)"']
+    energy, temperature = _ar(60, 0.9, 1) * 50 - 45000, _ar(60, 0.9, 2) * 3 + 300
+    for k in range(60):
+        rows.append(f"{(k + 1) * 500},{(k + 1) * 1.0},{energy[k]},{temperature[k]}")
+    (study / "simulation" / "energy.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    folder = study / "analysis" / "rg"
+    folder.mkdir(parents=True)
+    (folder / "options.json").write_text(json.dumps(
+        {"analysis": "rg", "findings": {"mean": {"mean": 1.0, "standard_error": 0.01}}}),
+        encoding="utf-8")
+    asked = sampling_asked_for(study)
+    assert asked is not None and "potential_energy" in asked.analyses, asked
+    assert "potential energy" in asked.as_text()

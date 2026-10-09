@@ -200,8 +200,9 @@ def _found(base: Path) -> str:
 #: production they need.
 NO_FIGURE = ("Its analyses recorded no figure for how much more production they need: "
              "a study analysed before that figure was recorded has none, and one with no "
-             "record of its frames' spacing cannot have one. Analysing it again with this "
-             "release records it where it can.")
+             "record of its frames' spacing (a trajectory analysed without its run's "
+             "records) cannot have one. Analysing it again with this release records it "
+             "where it can.")
 
 
 #: Where a mean was withheld because it still drifts: no figure says how
@@ -231,15 +232,40 @@ def _determined(supports: str) -> bool:
     return supports.startswith("All ") and "too few" not in supports
 
 
+def _not_analysed(base: Path) -> str:
+    """For a study with no analysis: that nothing has judged it yet, and a
+    run that ended short is carried on first. It was told its analyses
+    "recorded no figure" and to analyse again, and sent to a report it did
+    not have."""
+    said = ("Its records do not say yet: it has not been analysed, so no analysis "
+            "has judged whether its series equilibrated.")
+    try:
+        from fastmdxplora.gui.telemetry import status_as_it_stands
+
+        status = str(status_as_it_stands(base).get("status") or "").lower()
+    except Exception:  # noqa: BLE001 - the plainer answer stands
+        status = ""
+    if status in ("stopped", "failed", "interrupted"):
+        # What to do is the fix card's: carried on where a checkpoint was
+        # written, run again or changed where none was or the run failed.
+        said += (" It ended before it finished: What would fix it, on the Overview, "
+                 "says what to do first.")
+    return said
+
+
 def _long_enough(base: Path) -> str:
     parts: list[str] = []
+    if not (base / "analysis").is_dir():
+        return "\n\n".join([_not_analysed(base), TRAPPED])
     supports = _supports(base)
     asked = _ask(base)
     if asked is not None:
         text, command = asked
         parts.append(" ".join(piece for piece in ("Not for all of its means.", supports)
                               if piece))
-        parts.append("What they need: " + text)
+        # Every mean withheld, the quantities beside the report's
+        # observables among them: the line above counts the observables.
+        parts.append("What they need, every mean withheld counted: " + text)
         if command:
             parts.append(f"To run it, extending the study in place:\n\n`{command}`")
     elif _determined(supports):
