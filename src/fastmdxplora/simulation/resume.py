@@ -736,8 +736,6 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     """
     import yaml
 
-    from fastmdxplora.analysis.joining import survey_segments
-
     root = Path(study).expanduser().resolve()
     plan = extension_of(root, total_ns=total_ns, more_ns=more_ns)
     if not plan.possible:
@@ -757,27 +755,9 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     # recorded step, no recorded interval -- the join is refused rather
     # than guessed at, because a guess here puts an overlap in a
     # trajectory and calls it whole.
-    keep_frames: dict[int, int] = {}
-    uncountable: list[int] = []
-    folders: dict[int, Path] = {}
-    for piece in survey_segments(root):
-        if piece.finished:
-            continue
-        folders[piece.index] = piece.directory
-        keep = frames_before_checkpoint(piece.directory)
-        if keep is None:
-            uncountable.append(piece.index)
-        else:
-            keep_frames[piece.index] = keep
-    if uncountable:
-        where = ", ".join(("the study's own run" if i == 0 else folders[i].name)
-                          for i in uncountable)
-        return {"ok": False, "stage": "planning", "unsealed": uncountable,
-                "error": f"{where} did not finish cleanly, and how much of its "
-                         "trajectory precedes its last checkpoint cannot be worked "
-                         "out: the step or the frame interval is not recorded. "
-                         "Joining it would leave frames the resume runs again in "
-                         "the middle of the trajectory."}
+    keep_frames, refusal = _frames_to_keep(root)
+    if refusal is not None:
+        return {"ok": False, "stage": "planning", **refusal}
     if keep_frames:
         # The resume starts from a checkpoint the run did not seal, which
         # the runner refuses unless it is told. OpenMM still refuses one it
@@ -814,6 +794,51 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
 
     return _join_and_analyse(root, plan.config, segment=segment,
                              keep_frames=keep_frames or None, analyse=analyse)
+
+
+def _frames_to_keep(root: Path, *, last_too: bool = True
+                    ) -> tuple[dict[int, int], dict[str, Any] | None]:
+    """How many frames of each piece that did not finish go into the join.
+
+    A piece that was killed holds frames written after its last checkpoint,
+    the frames the next piece ran again; the join keeps those before it.
+    Read the same way wherever a study's pieces are joined, so a study
+    stopped again after its pieces were joined (in its analysis, say) is
+    joined as before when it is carried on. Where the frames to keep
+    cannot be counted, the second item says why the join is refused.
+
+    ``last_too`` False leaves the last piece alone: nothing ran after it,
+    so its frames past its checkpoint overlap nothing, and a last piece
+    that did not finish is said by the join as one that did not, never
+    cut back to its checkpoint and called whole.
+    """
+    from fastmdxplora.analysis.joining import survey_segments
+
+    keep_frames: dict[int, int] = {}
+    uncountable: list[int] = []
+    folders: dict[int, Path] = {}
+    pieces = survey_segments(root)
+    last = max((piece.index for piece in pieces), default=-1)
+    for piece in pieces:
+        if piece.finished or (not last_too and piece.index == last):
+            continue
+        folders[piece.index] = piece.directory
+        keep = frames_before_checkpoint(piece.directory)
+        if keep is None:
+            uncountable.append(piece.index)
+        else:
+            keep_frames[piece.index] = keep
+    if not uncountable:
+        return keep_frames, None
+    where = ", ".join(("the study's own run" if i == 0 else folders[i].name)
+                      for i in uncountable)
+    return keep_frames, {
+        "unsealed": uncountable,
+        "error": f"{where} did not finish cleanly, and how much of its "
+                 "trajectory precedes its last checkpoint cannot be worked "
+                 "out: the step or the frame interval is not recorded. "
+                 "Joining it would leave frames the resume runs again in "
+                 "the middle of the trajectory."}
 
 
 def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | None,
@@ -1272,7 +1297,16 @@ def resume_study(study: str | Path, *,
         # Production is whole; what stopped was the analyses or the report.
         pieces = survey_segments(root)
         if len(pieces) > 1:
-            answer = _join_and_analyse(root, config, segment=None, keep_frames=None)
+            keep_frames, refusal = _frames_to_keep(root, last_too=False)
+            if refusal is not None:
+                from fastmdxplora.refusals import MissingResultError, refusal_of
+
+                said = refusal_of(MissingResultError(
+                    refusal["error"], code="simulation.resume.unsealed", path=str(root)))
+                return {**base, "ok": False, "did": RESUMED_ANALYSIS,
+                        "stage": "joining", **refusal, "refusal": said.as_dict()}
+            answer = _join_and_analyse(root, config, segment=None,
+                                       keep_frames=keep_frames or None)
             return {**base, **answer, "did": RESUMED_ANALYSIS}
         whole = dict(config)
         whole["output"] = str(root)

@@ -7,6 +7,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A study stopped twice, carried on
+
+**Fixed:** a study stopped in production is carried on and its pieces
+joined with the first piece's frames past its checkpoint left out. Stopped
+again before its analysis, it could not be carried on: the join was made
+again with no frames left out, and the first piece was refused as one that
+did not finish. It is joined as before and analysed. Frames that cannot be
+counted are refused before the join (`simulation.resume.unsealed`), and an
+extension stopped short of the length asked for is not cut back and called
+finished.
+
 ### Studies started here share the GPUs, and the GUI reaches your machines
 
 **Changed:** a study started on this computer (the GUI's **Run**, **Run a
