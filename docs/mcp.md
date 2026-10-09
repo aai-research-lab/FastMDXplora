@@ -203,7 +203,8 @@ does:
 - **Only where its GPUs have room.** A workstation's GPUs are shared; the
   question says what else sent from this computer is running there, each GPU's
   free memory, and the one the study goes to (a config that names its own GPUs
-  keeps them). A study that does not fit on its GPU now is refused before you
+  keeps them), or why they are not checked. A study that does not fit on its
+  GPU now is refused before you
   are asked (`remote.machine.no_room`). A cluster's scheduler gives each job its
   GPU.
 

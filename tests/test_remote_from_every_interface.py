@@ -85,7 +85,8 @@ mkdir -p "$out/simulation"
 echo '{{"version": "1.0"}}' > "$out/manifest.json"
 echo "$CUDA_VISIBLE_DEVICES" > "$HOME/given_gpu"
 echo "$CUDA_VISIBLE_DEVICES, $$, {megabytes}" >> "$HOME/apps.csv"
-echo '{{"particles": {particles}, "steps": 10, "seconds": 1}}' > "$out/simulation/cost.json"
+echo '{{"particles": {particles}, "steps": 10, "seconds": 1, "platform": "CUDA"}}' \
+  > "$out/simulation/cost.json"
 sleep "$FAKE_SLEEP"
 exit "$FAKE_EXIT"''')
 
@@ -186,8 +187,11 @@ class TestGpusShared:
 
         _gpus(machine, (0, UUID_0, 16000, 16000))
         learn("box", job="before", particles=2000, peak_mb=20000, gpu="Stand-in GPU")
-        assert "more than GPU 0 on box (Stand-in GPU) has at all (16,000 MB)" in _second(
-            machine, tmp_path).no_room
+        said = _second(machine, tmp_path).no_room
+        assert "more than GPU 0 on box (Stand-in GPU) has at all (16,000 MB)" in said
+        # Where what it needs comes from, to be put right where it does not
+        # stand for this study.
+        assert str(tmp_path / "settings" / "gpu_memory" / "box.json") in said
 
     def test_a_study_from_here_still_starting_keeps_its_room(self, machine, tmp_path):
         from fastmdxplora.remote.gpu_room import learn
@@ -198,7 +202,7 @@ class TestGpusShared:
         first = _send(machine)                      # holds nothing on the GPU yet
         try:
             second = _second(machine, tmp_path)
-            assert "6,900 MB kept back for 1 run from here not yet holding" in "\n".join(
+            assert "6,900 MB kept back for 1 study from here not yet holding" in "\n".join(
                 second.gpu.lines)
             assert "has 3,100 MB free for it now" in second.no_room
         finally:
@@ -292,7 +296,7 @@ class TestGpusShared:
             "include_phase: [analysis]\n", ""))
         sending = _second(machine, tmp_path)
         assert sending.gpu is None and sending.no_room == ""
-        assert any("no GPU that nvidia-smi reads" in note for note in sending.notes)
+        assert any("no GPU that nvidia-smi reads" in note for note in sending.room_notes)
 
     def test_a_damaged_gpu_record_is_read_as_none(self, machine, tmp_path):
         from fastmdxplora.remote.jobs import load_job, save_job
@@ -2810,7 +2814,7 @@ class TestNinthReviewWhichGpu:
         sending = _plan(machine, tmp_path)
         assert "CUDA_VISIBLE_DEVICES" not in sending.script and sending.gpu is None
         assert any("a continuation runs on the GPU its study's record names" in note
-                   for note in sending.notes)
+                   for note in sending.room_notes)
 
     def test_gpus_of_different_kinds_named_by_number_are_not_checked(
             self, machine, tmp_path):
@@ -2824,7 +2828,7 @@ class TestNinthReviewWhichGpu:
                                  + "simulation:\n  device_index: '1'\n")
         sending = _plan(machine, tmp_path)
         assert sending.gpu is None and sending.no_room == ""
-        assert any("which card each number means is CUDA's" in n for n in sending.notes)
+        assert any("which card each number means is CUDA's" in n for n in sending.room_notes)
 
     def test_a_named_gpu_the_machine_lacks_is_not_sent(self, machine, tmp_path):
         _gpus(machine, (0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 20000))
@@ -2867,7 +2871,9 @@ class TestNinthReviewRunsAtOnce:
         sending = _plan(machine, tmp_path)
         # As many at once as the machine has cores, up to the three runs.
         side = min(3, sending.machine.inspection.cpus or 3)
-        assert side > 1 and sending.gpu.at_once == {UUID_0: side}
+        if side < 2:
+            pytest.skip("one core here: the runs go one at a time")
+        assert sending.gpu.at_once == {UUID_0: side}
         assert f"needs about {6900 * side:,} MB" in sending.no_room
         assert f"{side} runs side by side" in sending.no_room
 
@@ -3067,7 +3073,7 @@ class TestNinthReviewAnAIApp:
             first, _ = _start(app)
             asked = first["inputRequests"]["send"]["params"]["message"]
             assert "1 other study sent from here" in asked
-            assert "kept back for 1 run from here" in asked
+            assert "kept back for 1 study from here" in asked
             assert other.name not in asked
         finally:
             cancel(other.name, transport=app.machine.transport())
@@ -3190,7 +3196,9 @@ class TestTenthReviewWhereRunsGo:
             _started(first)
             _systems(machine, "top.pdb")
             lines = _plan(machine, tmp_path).gpu.lines
-            assert "13,800 MB kept back" in lines[0] and "6,900 MB kept back" in lines[1]
+            # One study, two of its runs on GPU 0.
+            assert "13,800 MB kept back for 1 study from here" in lines[0]
+            assert "6,900 MB kept back for 1 study from here" in lines[1]
         finally:
             cancel(first.name, transport=machine.transport())
 
@@ -3232,7 +3240,7 @@ class TestTenthReviewWhatIsSaid:
             line = _plan(machine, tmp_path).gpu.lines[0]
             assert "of it" not in line
             assert line.endswith("3,000 MB free of 24,000 MB, 7% busy; 6,900 MB kept "
-                                 "back for 1 run from here not yet holding what it needs")
+                                 "back for 1 study from here not yet holding what it needs")
         finally:
             cancel(first.name, transport=machine.transport())
 
@@ -3328,3 +3336,180 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
             os.killpg(started.pid, signal.SIGKILL)
             pytest.fail("the sampler outlived its job")
         time.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# The eleventh review's cases
+# ---------------------------------------------------------------------------
+UMBRELLA = """
+systems:
+  - id: complex
+    system: ./3PTB.pdb
+simulation:
+  duration_ns: 10
+  steered:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    site_selection: "resid 189 to 195 and name CA"
+    to: 2.0
+    steps: 5000000
+    force_constant: 5000.0
+  umbrella:
+    collective_variable: ligand_distance
+    ligand_name: BEN
+    site_selection: "resid 189 to 195 and name CA"
+    force_constant: 3000.0
+    from: 0.4
+    to: 2.0
+    n_windows: 4
+execution:
+  workers: 2
+  devices: [1]
+"""
+
+
+class TestEleventhReviewWhereRunsGo:
+    def test_rounds_run_until_determined_are_counted_as_the_explorer_places_them(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        config = yaml.safe_load(
+            "systems:\n  - system: a.pdb\nsweep:\n  simulation.random_seed: [1, 2, 3]\n"
+            "simulation:\n  duration_ns: 5\n  stop_when:\n    measures:\n"
+            "      - {analysis: rmsd, standard_error: 0.01}\n    max_duration_ns: 50\n"
+            "execution:\n  workers: 2\n  devices: [0, 0, 1]\n")
+        # Placed by use, runs 0 and 1 go to GPUs 0 and 1; each later round
+        # puts run i on the i-th device listed, so runs 0 and 1 meet on GPU 0.
+        assert _runs_of(config, 8).named == {0: 2, 1: 1}
+
+    def test_the_pull_that_seeds_umbrella_windows_is_counted_on_its_own_gpu(self):
+        import yaml
+
+        from fastmdxplora.remote.send import _runs_of
+
+        runs = _runs_of(yaml.safe_load(UMBRELLA), 8)
+        # The windows on the GPU listed; the pull, run by the explorer itself,
+        # on CUDA's first.
+        assert runs.named == {1: 2, 0: 1}
+        named = yaml.safe_load(UMBRELLA)
+        named["simulation"]["device_index"] = "1"
+        assert _runs_of(named, 8).named == {1: 2}
+
+    def test_a_gpu_the_account_s_environment_leaves_out_is_not_chosen(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 10000), (1, UUID_1, 24000, 20000))
+        _measured(machine)
+        machine.env["CUDA_VISIBLE_DEVICES"] = "0"
+        sending = _plan(machine, tmp_path)
+        assert f"export CUDA_VISIBLE_DEVICES={UUID_0}" in sending.script
+        assert [line.split(" (")[0] for line in sending.gpu.lines] == ["GPU 0"]
+        machine.env["CUDA_VISIBLE_DEVICES"] = UUID_1[:12]
+        assert _plan(machine, tmp_path).gpu.gpu.uuid == UUID_1
+
+    def test_an_account_s_gpus_not_read_here_are_said_and_not_checked(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 1000))
+        _measured(machine)
+        machine.env["CUDA_VISIBLE_DEVICES"] = "-1"
+        sending = _plan(machine, tmp_path)
+        assert sending.gpu is None and sending.no_room == ""
+        assert "CUDA_VISIBLE_DEVICES=" not in sending.script
+        assert any("CUDA_VISIBLE_DEVICES on box is -1" in n for n in sending.room_notes)
+
+    def test_gpus_named_by_number_under_the_account_s_own_numbering_are_not_checked(
+            self, machine, tmp_path):
+        _gpus(machine, (0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 100))
+        _measured(machine)
+        machine.env["CUDA_VISIBLE_DEVICES"] = "1,0"
+        machine.study.write_text(machine.study.read_text()
+                                 + "simulation:\n  device_index: '1'\n")
+        sending = _plan(machine, tmp_path)
+        # CUDA's 1 is the account's second, GPU 0 here.
+        assert sending.gpu is None and sending.no_room == ""
+        assert any("numbers them its own way" in n for n in sending.room_notes)
+
+
+class TestEleventhReviewWhatIsSaid:
+    def test_an_ai_app_s_question_says_the_gpus_are_not_checked(self, app):
+        first, _ = _start(app)
+        asked = first["inputRequests"]["send"]["params"]["message"]
+        assert "box has no GPU that nvidia-smi reads, so no GPU memory is checked." in asked
+
+    def test_the_plan_says_the_gpus_unchecked_once_with_the_machine(
+            self, machine, tmp_path):
+        machine.study.write_text(machine.study.read_text().replace(
+            "include_phase: [analysis]\n", ""))
+        said = describe_sending(_plan(machine, tmp_path))
+        where = [i for i, line in enumerate(said) if "no GPU that nvidia-smi reads" in line]
+        assert len(where) == 1 and where[0] < said.index("job.sh:")
+
+    def test_a_plan_refused_on_the_config_s_own_gpus_does_not_say_it_runs_there(
+            self, machine, tmp_path):
+        from fastmdxplora.remote.send import room_said
+
+        _gpus(machine, (0, UUID_0, 24000, 23000), (1, UUID_1, 24000, 1000))
+        _measured(machine)
+        machine.study.write_text(machine.study.read_text()
+                                 + "simulation:\n  device_index: '1'\n")
+        sending = _plan(machine, tmp_path)
+        said = "\n".join(room_said(sending))
+        assert sending.no_room and "Runs on the GPUs the config names" not in said
+        assert "The GPUs the config names cannot take it now." in said
+
+
+class TestEleventhReviewWhatIsLearned:
+    def _job(self, **gpu):
+        from fastmdxplora.remote.jobs import DONE, Job
+
+        return Job(name="j", machine="box", remote_dir="/x", scheduler="process",
+                   handle="1", submitted_at="2026-10-09T00:00:00Z", code={},
+                   local_output="/y", state=DONE,
+                   extra={"gpu_peak_mb": 1500,
+                          "gpu": {"uuids": [UUID_0], "need_mb": None, "learn": True,
+                                  "name": "g", "precision": "mixed", **gpu}})
+
+    def test_a_cpu_run_s_particles_are_not_learned_with_a_gpu_run_s_peak(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote.gpu_room import measured
+        from fastmdxplora.remote.send import _gpu_said
+
+        monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+        job = self._job()
+        _gpu_said(job, {"cost": [
+            '{"particles": 90000, "platform": "CPU", "precision": "double"}',
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed"}']}, "0")
+        assert [(r["particles"], r["peak_mb"]) for r in measured("box")] == [(2000, 1500)]
+
+    def test_a_record_of_gpu_memory_that_cannot_be_written_does_not_stop_status(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.remote import send as sending_module
+
+        def refused(*args, **kwargs):
+            raise PermissionError("read-only")
+
+        monkeypatch.setattr(sending_module, "learn", refused)
+        job = self._job()
+        sending_module._gpu_said(job, {"cost": [
+            '{"particles": 2000, "platform": "CUDA", "precision": "mixed"}']}, "0")
+        assert "learned" not in job.extra["gpu"]
+
+    def test_a_run_is_learned_from_whatever_this_computer_s_clock_says(
+            self, machine, tmp_path, monkeypatch):
+        import os
+        from pathlib import Path
+
+        from fastmdxplora.remote import gpu_room
+
+        monkeypatch.setattr(gpu_room, "SAMPLE_EVERY_S", 0.2)
+        machine.env["FAKE_SLEEP"] = "1.5"
+        _gpus(machine, (0, UUID_0, 24000, 23000))
+        _holding(machine, 1500, particles=2000)
+        job = _go(machine, _plan(machine, tmp_path))
+        # The script as it came, stamped by a clock an hour ahead of the
+        # machine's.
+        ahead = time.time() + 3600
+        os.utime(Path(job.remote_dir) / "job.sh", (ahead, ahead))
+        travels._until_finished(machine, job.name)
+        assert [(r["particles"], r["peak_mb"]) for r in gpu_room.measured("box")] == [
+            (2000, 1500)]

@@ -48,6 +48,7 @@ that was killed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shlex
@@ -98,6 +99,8 @@ from fastmdxplora.remote.machines import (
 )
 from fastmdxplora.remote.probe import PROBE_SCRIPT, Environment, parse_inspection
 from fastmdxplora.remote.transport import Transport, run_here
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "FetchSizes", "Sending",
            "cancel", "describe_sending", "fetch", "fetch_sizes", "job_line",
@@ -165,6 +168,9 @@ class Sending:
     running: list[str] = field(default_factory=list)
     #: Where it runs on the workstation's GPUs, where they were asked.
     gpu: Choice | None = None
+    #: What is said of the workstation's GPUs where they are not checked:
+    #: their room, and why.
+    room_notes: list[str] = field(default_factory=list)
 
     @property
     def no_room(self) -> str:
@@ -374,10 +380,10 @@ def prepare(config_path: str | Path, machine_name: str, *,
                       remote_dir=remote_dir, local_output=local_output,
                       scheduler=scheduler, config_text=config_text,
                       script=script, inputs=inputs, force=force,
-                      running=[job.name for job in running], gpu=gpu)
+                      running=[job.name for job in running], gpu=gpu,
+                      room_notes=room_notes)
     if defaults_note:
         sending.notes.append(defaults_note)
-    sending.notes += room_notes
     if sending.no_room:
         sending.notes.append(sending.no_room)
     sending.name_from_time = not output and not raw.get("output")
@@ -526,19 +532,38 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
         if not listed or not all(index.fullmatch(d) for d in listed):
             runs.unread = "the config's `execution.devices` is not read here"
             return runs
+        pull = _pull_device(simulation)
+        if pull is None:
+            runs.unread = "the config's `device_index` is not read here"
+            return runs
         if not parallel:
             # One at a time, each on the first device listed.
             runs.named = Counter({int(listed[0]): 1})
-            return runs
-        # As the explorer places them: each run on the listed device least
-        # used for its slots (a device listed twice has two), the first
-        # listed on a tie; the first runs at once are the most any holds.
-        slots = Counter(int(d) for d in listed)
-        placed: Counter = Counter()
-        for _ in range(runs.at_once):
-            device = min(slots, key=lambda d: placed[d] / slots[d])
-            placed[device] += 1
-        runs.named = placed
+        else:
+            # As the explorer places them: each run on the listed device
+            # least used for its slots (a device listed twice has two), the
+            # first listed on a tie; the first runs at once are the most any
+            # holds.
+            slots = Counter(int(d) for d in listed)
+            placed: Counter = Counter()
+            for _ in range(runs.at_once):
+                device = min(slots, key=lambda d: placed[d] / slots[d])
+                placed[device] += 1
+            if any(each.get("stop_when") for _, _, each in runs.each):
+                # Each round of a study run until it is determined puts run
+                # i on device i of the list, round and round, as many at
+                # once as the first round.
+                by_place = Counter(int(listed[i % len(listed)]) for i in range(count))
+                for device, there in by_place.items():
+                    placed[device] = max(placed[device], min(runs.at_once, there))
+            runs.named = placed
+        if (isinstance(simulation, dict) and simulation.get("steered")
+                and simulation.get("umbrella") and not runs.named[pull]):
+            # The pull that seeds an umbrella's windows runs in the
+            # explorer, before them, on the device the study's own
+            # simulation block names (CUDA's first where none), never on
+            # one listed.
+            runs.named[pull] = 1
         return runs
     named: Counter = Counter()
     unnamed = 0
@@ -560,6 +585,17 @@ def _runs_of(config: dict, cpus: int | None) -> _Runs:
     return runs
 
 
+def _pull_device(simulation: object) -> int | None:
+    """The device a steered pull run by the explorer itself uses: the first
+    the study's simulation block names, else 0; ``None`` where that is not
+    read here."""
+    given = simulation.get("device_index") if isinstance(simulation, dict) else None
+    if given in (None, ""):
+        return 0
+    first = str(given).split(",")[0].strip()
+    return int(first) if re.fullmatch(r"[0-9]{1,3}", first) else None
+
+
 def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
              running: list[Job]) -> tuple[Choice | None, list[str]]:
     """Where the study runs on the workstation's GPUs, and what is said of
@@ -575,6 +611,10 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
     if room is None:
         return None, [f"{name} has no GPU that nvidia-smi reads, so no GPU memory is "
                       "checked."]
+    if not room.gpus:
+        return None, [f"The account's CUDA_VISIBLE_DEVICES on {name} is {room.visible}, "
+                      "which is not read here as GPUs nvidia-smi lists, so no GPU is "
+                      "chosen and no GPU memory is checked."]
     held = _held(running)
     if runs.unread:
         free_lines = choose(name, room, Need(None, ""), held).lines
@@ -588,6 +628,11 @@ def _gpu_for(machine: Machine, link: Transport, raw: object, folder: Path,
     unknown = [n for n in needs if n.mb is None]
     need = unknown[0] if unknown else max(needs, key=lambda n: n.mb)
     if runs.named is not None:
+        if room.visible is not None:
+            free_lines = choose(name, room, Need(None, ""), held).lines
+            return None, [*free_lines, "The config names its GPUs by number, and the "
+                          f"account's CUDA_VISIBLE_DEVICES on {name} ({room.visible}) "
+                          "numbers them its own way, so their memory is not checked."]
         if len({gpu.name for gpu in room.gpus}) > 1:
             free_lines = choose(name, room, Need(None, ""), held).lines
             return None, [*free_lines, "The config names its GPUs by number, and the GPUs "
@@ -750,7 +795,9 @@ def _send_held(sending: Sending, link: Transport, local_runner,
     else:
         started = link.run(["sh", "-c", (
             f"cd {shlex.quote(where)} || exit 1; "
-            "rm -f exit_code no_room gpu_peak gpu_peak.part; "
+            # The machine's own time it was sent, which only this send's
+            # runs are newer than, whatever this computer's clock says.
+            "rm -f exit_code no_room gpu_peak gpu_peak.part; touch .fmdx-sent; "
             "if command -v setsid >/dev/null 2>&1; then "
             "setsid nohup sh job.sh > job.log 2>&1 < /dev/null & "
             "else nohup sh job.sh > job.log 2>&1 < /dev/null & fi; echo $!")])
@@ -870,8 +917,8 @@ def _status_script(job: Job) -> str:
         alive += ("[ -f no_room ] && echo \"fmdx:no_room=$(head -c 200 no_room)\"\n"
                   "[ -f gpu_peak ] && echo \"fmdx:gpu_peak=$(head -c 20 gpu_peak)\"\n"
                   # Only this send's runs: a folder sent to again keeps others.
-                  "[ -f exit_code ] && [ -d run ] && find run -name cost.json -type f "
-                  "-newer job.sh 2>/dev/null | head -n 50 | while IFS= read -r f; do "
+                  "[ -f exit_code ] && [ -d run ] && [ -f .fmdx-sent ] && "
+                  "find run -name cost.json -type f -newer .fmdx-sent 2>/dev/null | head -n 50 | while IFS= read -r f; do "
                   "printf 'fmdx:cost=%s\\n' \"$(head -c 2000 \"$f\" | tr -d '\\n')\"; "
                   "done\n")
     return (f"cd {where} 2>/dev/null || {{ echo fmdx:gone=1; exit 0; }}\n"
@@ -1055,17 +1102,25 @@ def _gpu_said(job: Job, found: dict[str, list[str]], ended_with: str) -> None:
             record = json.loads(text)
         except ValueError:
             continue
+        # A run on the CPU holds no GPU memory: its particles say nothing
+        # of what the GPU held.
         if (isinstance(record, dict) and isinstance(record.get("particles"), int)
-                and 0 < record["particles"] < 100_000_000):
+                and 0 < record["particles"] < 100_000_000
+                and record.get("platform") in ("CUDA", "OpenCL")):
             particles.append(record["particles"])
             precisions.add(str(record.get("precision") or gpu.get("precision") or "mixed"))
     held_mb = job.extra.get("gpu_peak_mb")
     # Learned only where every run says one precision: a peak is one size's.
     if particles and isinstance(held_mb, int) and len(precisions) == 1:
-        # Once per job sent: a name sent again is another run.
-        learn(job.machine, job=f"{job.name}@{job.submitted_at}",
-              particles=max(particles), peak_mb=held_mb,
-              gpu=str(gpu.get("name") or ""), precision=precisions.pop()[:20])
+        # Once per job sent: a name sent again is another run. A record here
+        # that cannot be written leaves the job's state to be said.
+        try:
+            learn(job.machine, job=f"{job.name}@{job.submitted_at}",
+                  particles=max(particles), peak_mb=held_mb,
+                  gpu=str(gpu.get("name") or ""), precision=precisions.pop()[:20])
+        except OSError as exc:
+            logger.warning("What %s held on its GPU was not recorded: %s", job.name, exc)
+            return
         gpu["learned"] = True
 
 
@@ -1652,7 +1707,7 @@ def room_said(sending: Sending, *, running: str = "") -> list[str]:
             "shares the machine, and each runs slower than alone.")
     gpu = sending.gpu
     if gpu is None:
-        return lines
+        return lines + sending.room_notes
     lines += gpu.lines
     if gpu.gpu is not None and gpu.refused:
         where = f"Fits on no GPU now; GPU {gpu.gpu.index} has the most room"
@@ -1660,6 +1715,8 @@ def room_said(sending: Sending, *, running: str = "") -> list[str]:
         where = f"Runs on GPU {gpu.gpu.index}" + (
             ", where it fits with the fewest studies from here, then the most free "
             "memory" if len(gpu.lines) > 1 else "")
+    elif gpu.refused:
+        where = "The GPUs the config names cannot take it now"
     else:
         where = "Runs on the GPUs the config names"
     side = max(gpu.at_once.values(), default=1)

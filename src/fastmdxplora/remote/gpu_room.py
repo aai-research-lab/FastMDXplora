@@ -53,9 +53,12 @@ _KEPT = 20
 #: A GPU's UUID as ``nvidia-smi`` gives it, the only form put in a job script.
 _UUID = re.compile(r"GPU-[0-9A-Fa-f-]{8,64}")
 
-#: Each GPU, and each process using one with the process group it is in.
+#: Each GPU, each process using one with the process group it is in, and
+#: the GPUs the account's own environment gives it, where it names them.
 GPU_SCRIPT = (
     "command -v nvidia-smi >/dev/null 2>&1 || { echo fmdx:gpus=none; exit 0; }\n"
+    "[ -n \"${CUDA_VISIBLE_DEVICES+x}\" ] "
+    "&& printf 'fmdx:visible=%s\\n' \"$CUDA_VISIBLE_DEVICES\"\n"
     "nvidia-smi --query-gpu=index,uuid,name,memory.total,memory.used,memory.free,"
     "utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -n 50 "
     "| sed 's/^/fmdx:gpu=/'\n"
@@ -97,6 +100,9 @@ class Room:
 
     gpus: tuple[Gpu, ...]
     apps: tuple[App, ...] = ()
+    #: The account's own ``CUDA_VISIBLE_DEVICES`` there, as shown, where it
+    #: is set; ``gpus`` are then only those it gives.
+    visible: str | None = None
 
     def used_by(self, group: str, uuid: str) -> int:
         return sum(app.used_mb for app in self.apps
@@ -110,7 +116,9 @@ def _number(text: str) -> int | None:
 
 def room_from(found: dict[str, list[str]]) -> Room | None:
     """The GPUs in a machine's answer to :data:`GPU_SCRIPT`, or ``None``
-    where it has no ``nvidia-smi`` or no GPU could be read."""
+    where it has no ``nvidia-smi`` or no GPU could be read. Where the
+    account's ``CUDA_VISIBLE_DEVICES`` is set, only the GPUs it gives, none
+    where it names one that is not read here."""
     if "gpus" in found:
         return None
     gpus = []
@@ -135,7 +143,31 @@ def room_from(found: dict[str, list[str]]) -> Room | None:
             continue
         group = parts[3] if len(parts) > 3 and _number(parts[3]) is not None else ""
         apps.append(App(uuid=parts[0], used_mb=used, group=group))
-    return Room(gpus=tuple(gpus), apps=tuple(apps)) if gpus else None
+    if not gpus:
+        return None
+    if "visible" not in found:
+        return Room(gpus=tuple(gpus), apps=tuple(apps))
+    given = found["visible"][0]
+    shown = re.sub(r"[^A-Za-z0-9,._-]", "?", given)[:120]
+    return Room(gpus=_visible(gpus, given), apps=tuple(apps), visible=shown or '""')
+
+
+def _visible(gpus: list[Gpu], given: str) -> tuple[Gpu, ...]:
+    """The GPUs ``CUDA_VISIBLE_DEVICES`` gives, each by its number or its
+    UUID (or the start of one), in its order; none where any of it is not
+    one of those (CUDA takes none past an entry it cannot read)."""
+    kept: list[Gpu] = []
+    for entry in (part.strip() for part in given.split(",")):
+        if re.fullmatch(r"[0-9]{1,3}", entry):
+            found = [gpu for gpu in gpus if gpu.index == int(entry)]
+        elif re.fullmatch(r"GPU-[0-9A-Fa-f-]{1,64}", entry):
+            found = [gpu for gpu in gpus if gpu.uuid.lower().startswith(entry.lower())]
+        else:
+            return ()
+        if len(found) != 1 or found[0] in kept:
+            return ()
+        kept.append(found[0])
+    return tuple(kept)
 
 
 # ---------------------------------------------------------------------------
@@ -357,8 +389,9 @@ def _said(gpu: Gpu, kept: int, count: int) -> str:
     if gpu.busy_pct is not None:
         line += f", {gpu.busy_pct}% busy"
     if kept:
-        line += (f"; {kept:,} MB kept back for {count} run{'s' if count != 1 else ''} "
-                 "from here not yet holding what it needs")
+        line += (f"; {kept:,} MB kept back for {count} "
+                 f"{'studies' if count != 1 else 'study'} from here not yet holding "
+                 f"what {'they need' if count != 1 else 'it needs'}")
     return line
 
 
@@ -441,7 +474,9 @@ def _no_room(machine: str, gpu: Gpu, wanted: int, free: int, need: Need,
     said = f"This study needs about {wanted:,} MB of GPU memory ({need.how}{side})"
     if wanted > gpu.total_mb:
         return (f"{said}, more than GPU {gpu.index} on {machine} ({gpu.name}) has at all "
-                f"({gpu.total_mb:,} MB).")
+                f"({gpu.total_mb:,} MB). The runs that is worked out from are kept in "
+                f"{_store(machine)}; one that does not stand for this study can be "
+                "taken out of it.")
     where = (f"GPU {gpu.index} on {machine} ({gpu.name}), chosen when the send was "
              "planned, has" if chosen else
              f"GPU {gpu.index} on {machine} ({gpu.name}) has")
