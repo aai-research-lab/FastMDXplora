@@ -51,6 +51,26 @@ mean determined here, with a verdict the numbers allow. A paper free to read
 but not licensed for programs is not fetched (`environment.paper.not_open`).
 Needs `pypdf`. See `docs/papers.md`.
 
+A study runs as plain MD without asking you only where its method's details
+give no sign of another method. The AI model's word for the method decides
+first. The details are then read, with hyphens at a line's end joined, for
+the names of the methods this software does not run (replica exchange,
+alchemical free energy, QM/MM, accelerated MD, coarse-grained models,
+implicit solvent, milestoning and weighted ensemble): a name with nothing
+that qualifies it in its sentence makes the study that method. These put the
+study to you, its words shown: a name beside words that may deny it or place
+it elsewhere, a word that may or may not name such a method, another method
+this software does not run, a name found only where a hyphen at a line's end
+is kept ("PROPER-" before "TIES") or a soft hyphen at a line's end is
+joined, and a name glued to a word or a number. The reason is listed in
+`paper.needs`, and the study does not run until you confirm it is not that
+method. In a method's details, letters that only look Latin are read as the
+ones they look like. A bilayer of one lipid this software builds is built at
+once only where every other word and number of its description is explained:
+a second lipid it recognises, a ratio such as "70:30" or the word "mixture"
+refuses; any other share, a lipid it does not know, counts that do not
+agree, unequal leaflets or any other word needs you.
+
 ### The Agent page, as the Agent
 
 **Changed:** the Agent page and `fastmdx agent` speak as the Agent: its AI
