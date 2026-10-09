@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### A mean judged by an earlier version's rules
+
+**Changed:** each mean is recorded with the rules that judged it. A study
+analysed by an earlier version, whose rules could call a mean still
+drifting determined, is said so on the Overview, on the Analysis page and in
+the Agent's answer from the records, naming the analyses, with **Analyze
+again** to judge them by this version's rules.
+
 ### A study stopped twice, carried on
 
 **Fixed:** a study stopped in production is carried on and its pieces

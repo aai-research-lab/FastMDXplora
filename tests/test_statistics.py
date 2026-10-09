@@ -270,7 +270,7 @@ class TestARunTooShortToMeasureItsOwnCorrelation:
         equilibrated, _ = summarise(_correlated(0.5, 20000, seed=8))
         assert set(equilibrated.as_record()) == {
             "discard", "statistical_inefficiency", "effective_samples",
-            "mean", "standard_error", "standard_deviation", "degrees_of_freedom"}
+            "mean", "standard_error", "standard_deviation", "degrees_of_freedom", "rules"}
 
     def test_the_threshold_is_a_judgement_a_study_can_make(self) -> None:
         rng = np.random.RandomState(0)

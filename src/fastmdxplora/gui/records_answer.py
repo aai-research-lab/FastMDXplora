@@ -110,6 +110,11 @@ def _means(base: Path) -> list[str]:
                 said += f", {samples:.0f} independent samples"
             if isinstance(discard, int) and isinstance(frames, int) and discard > 0:
                 said += f", after the first {discard} of {frames} frames"
+            if quantity.get("judged_earlier"):
+                # Determined by an earlier version's rules, which may not
+                # have withheld a mean still drifting; the report may differ.
+                said += (", determined by an earlier version's rules (Analyze again "
+                         "to judge it by this version's)")
             lines.append(f"{label}: {said}.")
     if not any(row.get("analysis") == "thermodynamics" for row in rows):
         lines += _thermodynamic_means(base)

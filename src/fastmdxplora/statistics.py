@@ -54,6 +54,8 @@ __all__ = [
     "sampling_shortfall",
     # The old name, kept importable so nothing outside has to move at once.
     "Settled",
+    "MEAN_RULES",
+    "judged_by_earlier_rules",
     "statistical_inefficiency",
     "correlation_is_resolved",
     "detect_equilibration",
@@ -98,6 +100,15 @@ DRIFT_IN_SPREAD = 2.0
 #: The fewest frames averaged that can be split into thirds with two in
 #: each, the least that says anything about a trend.
 DRIFT_FRAMES = 6
+
+#: The rules a mean is judged by, written into every mean recorded as
+#: determined or not (``rules``), so what reads a record made by an
+#: earlier version can say its verdict may not be this version's. 2: a
+#: mean whose averaged frames still move one way is withheld
+#: (``analysis.sampling.still_drifting``). A record without the key was
+#: written by an earlier version, most of which did not withhold such a
+#: mean, so it may call one determined.
+MEAN_RULES = 2
 
 #: The error of a mean after a discard is taken from the whole run, scaled to
 #: the frames kept, unless discarding gained at least this many times the
@@ -149,6 +160,7 @@ class Equilibrated:
             "standard_error": self.standard_error,
             "standard_deviation": self.standard_deviation,
             "degrees_of_freedom": self.degrees_of_freedom,
+            "rules": MEAN_RULES,
         }
 
 
@@ -829,6 +841,21 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     if start_at_least:
         record["start_shared_with_replicas"] = int(start_at_least)
     return record
+
+
+def judged_by_earlier_rules(record: Any) -> bool:
+    """Whether a mean recorded as determined was judged before this
+    version's rules (:data:`MEAN_RULES`), so its verdict may not be the one
+    analysing again would give. Only a mean called determined is asked: the
+    rules since have withheld more, never less."""
+    if not isinstance(record, dict) or record.get("not_a_measurement"):
+        return False
+    error = record.get("standard_error")
+    if not isinstance(error, (int, float)) or not math.isfinite(float(error)):
+        return False
+    rules = record.get("rules")
+    return not isinstance(rules, int) or isinstance(rules, bool) or rules < MEAN_RULES
+
 
 @dataclass(frozen=True)
 class Pooled:

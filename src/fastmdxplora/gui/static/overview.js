@@ -84,6 +84,17 @@
           data.determined + " of " + data.means + " mean" + (data.means === 1 ? "" : "s") +
           " determined" + (data.more ? ", " + data.more + " more not shown" : "") + " · "));
       }
+      if (data.judged_earlier && data.judged_earlier.length) {
+        // Verdicts an earlier version gave, by rules that did not yet
+        // withhold a mean still drifting; the report written since may
+        // differ until the study is analysed again.
+        var earlier = make("span", "overview-judged-earlier",
+          "Analysed by an earlier version (" + data.judged_earlier.join(", ") +
+          "): Analyze again on the Analysis page to judge these means by this " +
+          "version's rules · ");
+        earlier.dataset.analyses = data.judged_earlier.join(", ");
+        said.appendChild(earlier);
+      }
       var all = make("a", "overview-all-link",
         "All " + data.analyses + " analys" + (data.analyses === 1 ? "is" : "es") +
         " on the Analysis page →");

@@ -91,7 +91,10 @@ while a real relaxation gains far more than twice. And each error records its
 **degrees of freedom** (`degrees_of_freedom`, about the frames over the lags
 summed): an error resting on eight of them holds the truth within itself 65%
 of the time rather than 68%, and the stopping rule widens it by Student's t
-to judge it.
+to judge it. Each mean also records the **rules** that judged it (`rules`):
+where a mean called determined has none, it was analysed by an earlier
+version, whose rules may not have withheld a mean still drifting, and the
+Overview, the Analysis page and the Agent say so until it is analysed again.
 
 **A number, with a statement of what it does not support.** A finding carrying
 `not_a_measurement` is still reported, because the value is often the best

@@ -138,7 +138,8 @@ def _tiles(root: Path) -> dict[str, Any]:
     try:
         overview = overview_of(root)
     except Exception:  # noqa: BLE001 - a panel must never break the page
-        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "analyses": 0}
+        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "analyses": 0,
+                "judged_earlier": []}
     rows = overview.get("rows") or []
     tiles: list[dict[str, Any]] = []
     means = determined = 0
@@ -175,7 +176,8 @@ def _tiles(root: Path) -> dict[str, Any]:
     more = sum(1 for tile in tiles[MOST_TILES:] if tile.get("kind") == "mean")
     return {"tiles": shown, "more": more, "means": means,
             "determined": determined, "analyses": len(rows),
-            "biased": bool(overview.get("biased"))}
+            "biased": bool(overview.get("biased")),
+            "judged_earlier": list(overview.get("judged_earlier") or [])}
 
 
 def _rmsf(root: Path) -> dict[str, Any] | None:

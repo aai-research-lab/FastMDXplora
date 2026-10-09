@@ -57,7 +57,10 @@ def overview_of(root: str | Path) -> dict[str, Any]:
     (the mean to the place its error allows, with its unit),
     ``determined``, ``why`` (where it is not), ``samples`` (independent
     samples, rounded), ``from_frame``, ``of_frames``, ``from_ns`` and
-    ``reweighted``; and ``data``, its data files with their addresses.
+    ``reweighted`` and ``judged_earlier`` (determined by an earlier
+    version's rules); and ``data``, its data files with their addresses.
+    ``judged_earlier`` beside the rows names the analyses holding such a
+    mean.
     """
     root = Path(root)
     folder = root / "analysis"
@@ -86,7 +89,15 @@ def overview_of(root: str | Path) -> dict[str, Any]:
             for name in names]
     order = {title: index for index, title in enumerate(SECTION_ORDER)}
     rows.sort(key=lambda row: (order.get(row["title"], len(order)), row["analysis"]))
-    return {"ok": True, "rows": rows, "biased": biased is not None, "complete": complete}
+    # The analyses a mean of which an earlier version called determined: a
+    # study analysed before this version's rules reads its old verdicts
+    # until it is analysed again, and the report written since says
+    # otherwise of the same mean.
+    earlier = list(dict.fromkeys(
+        row["title"] for row in rows
+        if any(q.get("judged_earlier") for q in row["quantities"])))
+    return {"ok": True, "rows": rows, "biased": biased is not None, "complete": complete,
+            "judged_earlier": earlier}
 
 
 def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
@@ -196,7 +207,12 @@ def _is_a_mean_record(value: Any) -> bool:
 
 def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
               timed: bool = True) -> dict[str, Any]:
-    from fastmdxplora.statistics import RESOLVED_SAMPLES, four_figures, with_its_error
+    from fastmdxplora.statistics import (
+        RESOLVED_SAMPLES,
+        four_figures,
+        judged_by_earlier_rules,
+        with_its_error,
+    )
 
     unit = unit_of(name, found)
     value = _finite(found.get("mean"))
@@ -251,6 +267,9 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         "samples": int(round(samples)) if samples is not None else None,
         "from_frame": discard, "of_frames": n, "from_ns": from_ns,
         "reweighted": False,
+        # Determined by the rules of the version that analysed it, which
+        # may have called a mean still drifting determined.
+        "judged_earlier": determined and judged_by_earlier_rules(found),
     }
 
 
@@ -276,6 +295,7 @@ def _reweighted(name: str, item: dict[str, Any], found: dict[str, Any] | None) -
         "determined": determined, "why": why,
         "samples": int(round(samples)) if samples is not None else None,
         "from_frame": None, "of_frames": None, "from_ns": None, "reweighted": True,
+        "judged_earlier": False,
     }
 
 

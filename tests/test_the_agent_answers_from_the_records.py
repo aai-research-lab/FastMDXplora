@@ -21,6 +21,7 @@ import pytest
 
 from fastmdxplora.gui import records_answer
 from fastmdxplora.gui.records_answer import MARK, TRAPPED, answer_from_the_records
+from fastmdxplora.statistics import MEAN_RULES
 
 
 def _findings(root: Path, name: str, found: dict) -> None:
@@ -31,8 +32,10 @@ def _findings(root: Path, name: str, found: dict) -> None:
 
 
 def _study(root: Path) -> Path:
+    # Judged by this version's rules: a record written before them is said so.
     _findings(root, "rmsd", {"mean": 0.1123, "standard_error": 0.0021, "unit": "nm",
-                             "effective_samples": 21.2, "discard": 62, "n_frames": 100})
+                             "effective_samples": 21.2, "discard": 62, "n_frames": 100,
+                             "rules": MEAN_RULES})
     _findings(root, "rg", {"mean": 0.3281, "unit": "nm", "effective_samples": 4.0,
                            "not_a_measurement": "This run is not long against its own "
                                                 "correlation time: taking half the frames "

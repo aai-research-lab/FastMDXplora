@@ -266,6 +266,18 @@
       }).join("");
   }
 
+  /* Means an earlier version called determined, by rules that may not
+   * have withheld a mean still drifting: said until the study is analysed
+   * again, since the report written since may say otherwise of them. */
+  function judgedEarlier(names) {
+    if (!Array.isArray(names) || !names.length) return "";
+    var listed = names.length === 1 ? names[0]
+      : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    return " The study was analysed by an earlier version, whose rules may have" +
+      " called a mean still drifting determined: Analyze again to judge the means of " +
+      listed + " by this version's rules.";
+  }
+
   function renderOverview(data) {
     var host = byId("analysis-results");
     var table = byId("analysis-results-table");
@@ -300,7 +312,8 @@
     if (summary) {
       summary.textContent = said.join(", ") + (data.biased
         ? ". The run was biased: means are the reweighted equilibrium values where they were recovered."
-        : ". A mean is determined where the frames hold enough independent samples for its error.");
+        : ". A mean is determined where the frames hold enough independent samples for its error.") +
+        judgedEarlier(data.judged_earlier);
     }
     host.hidden = false;
     linkData(rows);
