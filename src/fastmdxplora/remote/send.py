@@ -1046,9 +1046,13 @@ def _send_held(sending: Sending, link: Transport, local_runner,
             "rm -f exit_code no_room gpu_peak gpu_peak.part; touch .fmdx-sent; "
             # The run and every process it starts carry this send's id: what
             # it leaves going is found by it, and nothing of another send.
+            # Its own process group, stopped and asked about whole: with
+            # setsid, else with the shell's job control (macOS has no setsid,
+            # and its sh, bash, gives a job started so a group of its own).
             "if command -v setsid >/dev/null 2>&1; then "
             f"setsid nohup sh job.sh {send_id} > job.log 2>&1 < /dev/null & "
-            f"else nohup sh job.sh {send_id} > job.log 2>&1 < /dev/null & fi; echo $!")])
+            f"else set -m 2>/dev/null; nohup sh job.sh {send_id} > job.log 2>&1 "
+            "< /dev/null & fi; echo $!")])
         handle = started.stdout.strip().splitlines()[-1] if started.stdout.strip() else ""
     if started.returncode != 0 or not usable_handle(handle):
         raise StudyError(

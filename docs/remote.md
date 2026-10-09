@@ -310,8 +310,10 @@ cancel whose answer was lost is not sent again, and one that never reached the
 machine is sent as the first. This is read from the machine's `/proc`, and a
 send whose check is not answered to the end is refused; where the machine has
 no `/proc`, a forced send after a cancel from here is refused while the job's
-process group is there, up to an hour after the cancel, and a machine without
-`setsid` gives a job no process group of its own, so there it is not found.
+process group is there, up to an hour after the cancel. On a machine without
+`setsid` (a Mac) the job is given a group of its own by its shell's job
+control, which a Mac's `sh` has; where neither is there, it has none, and a run
+going on after its script is not found.
 
 **Studies share a workstation's GPUs, where they fit.** A send asks the
 workstation's GPUs (`nvidia-smi`) how much memory each has free, and the study

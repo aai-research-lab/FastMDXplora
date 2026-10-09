@@ -832,3 +832,45 @@ class TestAnAIAppIsToldToTryAgain:
         said = str(caught.value)
         assert "Cancel it there (`scancel 4300`). Set `output` in the config" in said
         assert "--output" not in said
+
+
+# ---------------------------------------------------------------------------
+# A machine without setsid (stock macOS)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def like_a_mac(machine, tmp_path):
+    """The stand-in machine as a Mac is: no ``setsid``, and ``sh`` is bash."""
+    if not shutil.which("bash"):
+        pytest.skip("needs bash, as a Mac's sh is")
+    shims = tmp_path / "mac-bin"
+    shims.mkdir()
+    for folder in machine.env["PATH"].split(os.pathsep):
+        for tool in Path(folder).iterdir():
+            target = shims / tool.name
+            if tool.name not in ("setsid", "sh") and not target.exists():
+                target.symlink_to(tool.resolve() if tool.is_symlink() else tool)
+    (shims / "sh").symlink_to(shutil.which("bash"))
+    machine.env["PATH"] = str(shims)
+    return machine
+
+
+class TestAMachineWithoutSetsid:
+    def test_a_job_is_a_group_of_its_own_and_stopped_whole(self, like_a_mac):
+        """Without setsid a job ran in its starter's group: its GPU reader,
+        which knows the job's processes by its group, read nothing, nothing
+        was learned there, and a run going on after its script was not
+        found (CI's macOS leg)."""
+        like_a_mac.env["FAKE_SLEEP"] = "30"
+        job = _send(like_a_mac)
+        try:
+            group = subprocess.run(["ps", "-o", "pgid=", "-p", job.handle],
+                                   capture_output=True, text=True).stdout.strip()
+            assert group == job.handle
+            assert status(job.name, transport=like_a_mac.transport()).state == "running"
+            assert cancel(job.name, transport=like_a_mac.transport()).state == "abandoned"
+            deadline = time.monotonic() + 10
+            while travels._alive(job.handle):
+                assert time.monotonic() < deadline, "the job was not stopped"
+                time.sleep(0.05)
+        finally:
+            every._group_killed(job.handle)
