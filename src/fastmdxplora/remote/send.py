@@ -47,6 +47,7 @@ that was killed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -79,7 +80,14 @@ from fastmdxplora.remote.gpu_room import (
     room_from,
 )
 from fastmdxplora.remote.identity import CodeIdentity, same_code, this_code
-from fastmdxplora.remote.inputs import Inputs, gather_inputs, link_out_of, private_in, size_of
+from fastmdxplora.remote.inputs import (
+    Inputs,
+    fingerprint_of,
+    gather_inputs,
+    link_out_of,
+    private_in,
+    size_of,
+)
 from fastmdxplora.remote.jobs import (
     ABANDONED,
     DONE,
@@ -108,7 +116,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["STATUS_KEPT_S", "TRAJECTORY_PATTERNS", "FetchSizes", "Sending",
            "cancel", "describe_sending", "fetch", "fetch_sizes", "job_line",
-           "job_script", "prepare", "room_said", "send", "status"]
+           "job_script", "prepare", "room_said", "send", "sent_digest", "status",
+           "travelling"]
 
 #: How long an answer about a job is kept for a caller that asks for it.
 STATUS_KEPT_S = 30.0
@@ -1328,7 +1337,8 @@ def _status_script(job: Job) -> str:
                   "| tr -d '\\n')\"\n"
                   # Only this send's runs: a folder sent to again keeps others.
                   "[ -f exit_code ] && [ -d run ] && [ -f .fmdx-sent ] && "
-                  "find run -name cost.json -type f -newer .fmdx-sent 2>/dev/null | head -n 50 | while IFS= read -r f; do "
+                  "find run -name cost.json -type f -newer .fmdx-sent 2>/dev/null "
+                  "| head -n 50 | while IFS= read -r f; do "
                   "printf 'fmdx:cost=%s\\n' \"$(head -c 2000 \"$f\" | tr -d '\\n')\"; "
                   "done\n")
     # Whether it is going is asked before its exit code is read: a job that
@@ -2213,6 +2223,24 @@ def describe_sending(sending: Sending) -> list[str]:
     lines += ["", "job.sh:"] + [f"  {line}" for line in sending.script.splitlines()]
     lines += [f"  {note}" for note in sending.notes]
     return lines
+
+
+def travelling(sending: Sending) -> dict[str, tuple[int, str]]:
+    """Each input that travels, by its name there: the bytes it sends and
+    its fingerprint (:func:`~fastmdxplora.remote.inputs.fingerprint_of`),
+    read once so the sizes shown are those the send is bound to."""
+    return {name: fingerprint_of(source) for name, source in sending.inputs.files.items()}
+
+
+def sent_digest(sending: Sending, prints: dict[str, tuple[int, str]] | None = None) -> str:
+    """What a person's yes to a send is bound to: where it runs, the config
+    and the script that travel, and each input by its place here and its
+    contents. ``prints`` are :func:`travelling`'s, read already."""
+    prints = travelling(sending) if prints is None else prints
+    return hashlib.sha256("\n".join([
+        sending.installation.path, sending.remote_dir, sending.config_text, sending.script,
+        *(f"{name}={source}={prints.get(name, (0, ''))[1]}"
+          for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
 
 
 def room_said(sending: Sending, *, running: str = "") -> list[str]:

@@ -202,7 +202,9 @@ does:
   runs it there, and every file sent with its size. Where the AI app cannot put
   that question to you, nothing is sent: its own approval of the call is not
   enough to send a study off this computer (`remote.send.unconfirmed`), and you
-  are given the `fastmdx remote send` command instead.
+  are given the `fastmdx remote send` command instead. Your yes is to those
+  files as they were when you were asked: one changed while you were asked,
+  even at the same size, is not sent.
 - **Only the files in the config's own folder travel**, never one elsewhere in
   the workspace or outside it (`remote.input.outside`). A prepared study named
   by `setup_from` or `resume_from` may sit beside it.

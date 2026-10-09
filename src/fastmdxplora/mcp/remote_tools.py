@@ -19,7 +19,6 @@ given one folder never reads or stops a job sent for another.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from pathlib import Path
 from typing import Any, NoReturn
@@ -204,7 +203,7 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
                         f"workspace ({ctx.workspace.root}); nothing outside it is sent from "
                         "here. Copy it into the config's folder and name it there.",
                         code="remote.input.outside")
-    from fastmdxplora.remote.send import room_said
+    from fastmdxplora.remote.send import room_said, sent_digest, travelling
 
     if sending.no_room:
         raise ToolError(sending.no_room, code="remote.machine.no_room")
@@ -217,8 +216,9 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
                         code="environment.path.exists")
 
     shown = ctx.workspace.shown(where)
-    travels = [f"  {ctx.workspace.shown(source)} ({_size(_bytes(source))})"
-               for source in sending.inputs.files.values()]
+    prints = travelling(sending)
+    travels = [f"  {ctx.workspace.shown(source)} ({_size(prints[name][0])})"
+               for name, source in sending.inputs.files.items()]
     message = "\n".join([
         f"Send the study in {ctx.workspace.shown(file)} to {machine} and run it there?",
         *_plan_lines(config),
@@ -230,12 +230,9 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
         *room_said(sending, running=_running_said(ctx, sending.running)),
         f"Results come back to {shown} when fetched.",
     ])
-    # The answer is to this send: what travels, each size, where it runs.
-    sent = hashlib.sha256("\n".join([
-        sending.installation.path, sending.remote_dir, sending.config_text,
-        sending.script,
-        *(f"{name}={source}={_bytes(source)}"
-          for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
+    # The answer is to this send: what travels, each file's contents, where
+    # it runs.
+    sent = sent_digest(sending, prints)
     agreed = _went_ahead(ctx, "send", message,
                          f"start_study:{file}:{plan_id}:{machine}:{where}:{sent}")
     if agreed is None:
@@ -247,6 +244,10 @@ def start_on_machine(ctx: Context, file: Path, config: dict[str, Any], plan_id: 
     if plan_id_of(file) != plan_id:
         raise ToolError(f"{ctx.workspace.shown(file)} changed while the person was "
                         "asked. check_study it again and show the person that plan.")
+    if sent_digest(sending) != sent:
+        raise ToolError("A file that travels with the study changed while the person was "
+                        "asked, so it is not what they agreed to. Nothing was sent; ask "
+                        "them again.", code="remote.send.unconfirmed")
     _unused(ctx, where)
     try:
         job = api.send_planned(sending)
@@ -290,12 +291,6 @@ def _running_said(ctx: Context, running: list[str]) -> str:
     if others:
         named.append(f"{others} other stud{'y' if others == 1 else 'ies'}")
     return ", ".join(named)
-
-
-def _bytes(path: Path) -> int:
-    from fastmdxplora.remote.inputs import size_of
-
-    return size_of(path)
 
 
 def _fetch_study(ctx: Context, args: dict[str, Any]) -> str:

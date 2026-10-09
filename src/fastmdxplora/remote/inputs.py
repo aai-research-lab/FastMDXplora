@@ -33,6 +33,7 @@ that travels is refused if one is anywhere in it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -43,8 +44,8 @@ from typing import Any
 
 from fastmdxplora.refusals import StudyError
 
-__all__ = ["Inputs", "gather_inputs", "link_out_of", "outside_said", "private_in",
-           "size_of"]
+__all__ = ["Inputs", "fingerprint_of", "gather_inputs", "link_out_of", "outside_said",
+           "private_in", "size_of"]
 
 #: Settings that name where results go rather than something to read.
 _NOT_INPUTS = frozenset({"output"})
@@ -244,6 +245,52 @@ def size_of(path: Path) -> int:
                    if real is not None and real.is_file())
     except OSError:
         return 0
+
+
+#: Files up to this size are read whole for a send's fingerprint; a larger
+#: one is known by its size and the time it was last written.
+READ_WHOLE_BYTES = 256 * 1024 * 1024
+
+
+def _file_print(real: Path) -> tuple[int, str]:
+    """A file's size, and what tells it from the same file changed."""
+    found = real.stat()
+    if found.st_size > READ_WHOLE_BYTES:
+        return found.st_size, f"{found.st_size}:{found.st_mtime_ns}"
+    digest = hashlib.sha256()
+    with real.open("rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return found.st_size, f"{found.st_size}:{digest.hexdigest()}"
+
+
+def fingerprint_of(path: Path) -> tuple[int, str]:
+    """The bytes a copy that follows links sends of ``path`` (as
+    :func:`size_of`), and a digest that changes when anything it sends
+    does: a file's contents (or, past :data:`READ_WHOLE_BYTES`, its size and
+    the time it was written), and in a folder each file's place in it."""
+    digest = hashlib.sha256()
+    total = 0
+    try:
+        if not path.is_dir():
+            total, said = _file_print(path.resolve(strict=True))
+            digest.update(said.encode())
+            return total, digest.hexdigest()
+        lines = []
+        for here, real in _walked(path):
+            place = here.relative_to(path).as_posix()
+            if real is None:
+                said = "unread"
+            elif real.is_file():
+                size, said = _file_print(real)
+                total += size
+            else:
+                said = "folder"
+            lines.append(f"{place}\0{said}\n")
+        digest.update("".join(sorted(lines)).encode())
+    except (OSError, RuntimeError, ValueError):
+        digest.update(b"unread")
+    return total, digest.hexdigest()
 
 
 def _study_folder(path: Path) -> Path | None:

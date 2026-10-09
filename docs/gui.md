@@ -678,8 +678,8 @@ a movie's frames at 64 MB.
 | `POST /api/run-config` | Start a run from a Config file, unmodified |
 | `POST /api/explore/stop` | Terminate the running workflow |
 | `POST /api/remote/plan` | What sending a Config in the workspace (`config`) to one of your machines (`machine`) would do, sending nothing: what travels with each size, where it runs, the GPUs' room, the job script; with a token (`plan`) kept ten minutes. Only files in the Config's folder, inside the workspace, travel; loopback only, and not in a hosted GUI |
-| `POST /api/remote/send` | Send the plan shown (`{"plan"}`), once, and only while what would travel is what was shown; loopback only |
-| `POST /api/remote/fetch` | Bring an ended job's results (`job`, `with_trajectory`), only at the size shown (`bringing`, in bytes); loopback only |
+| `POST /api/remote/send` | Send the plan shown (`{"plan"}`), once, and only while what would travel is what was shown, each file's contents included; loopback only |
+| `POST /api/remote/fetch` | Bring an ended job's results (`job`, `with_trajectory`), only while the machine, asked again, says the size shown (`bringing`, in bytes); loopback only |
 | `POST /api/remote/cancel` | Stop a job, as `fastmdx remote cancel` does; loopback only |
 | `POST /api/report/write` | Write the report of the study open again, as `fastmdx report --output <study> --rerun` does; loopback only |
 | `GET /api/again` | What can be run again on the study open and why not, the analyses it ran last and those this release has; loopback only |

@@ -10,8 +10,8 @@ every interface keeps (`docs/remote.md`):
   GUI's workspace, and only the files in the config's folder travel;
 - nothing sent until the person agrees to the plan the page showed: a plan
   is kept here under a token for ten minutes and used once, and the send
-  goes ahead only where what would travel now is what was shown (its digest,
-  as an AI app's yes is bound to it);
+  goes ahead only where what would travel now is what was shown, each file's
+  contents included (its digest, as an AI app's yes is bound to it);
 - a fetch only of the size the person was shown;
 - refused in a hosted GUI, whose runs are its service's.
 
@@ -21,7 +21,6 @@ only, ``Host`` and ``Origin`` checked.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 import threading
 import time
@@ -49,23 +48,16 @@ class _Plan:
     made_at: float
 
 
-def _bytes(path: Path) -> int:
-    from fastmdxplora.remote.inputs import size_of
-
-    return size_of(path)
-
-
-def digest_of(sending: Any) -> str:
-    """What a send is bound to: where it runs, the config and the script that
-    travel, and each input with its size."""
-    return hashlib.sha256("\n".join([
-        sending.installation.path, sending.remote_dir, sending.config_text, sending.script,
-        *(f"{name}={source}={_bytes(source)}"
-          for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
-
-
 def _refused(error: str, code: str = "", **more: Any) -> dict[str, Any]:
     return {"ok": False, "error": error, **({"code": code} if code else {}), **more}
+
+
+#: The routes, so another path under ``/api/remote/`` is not found.
+_GETS = frozenset({"/api/remote/machines", "/api/remote/job", "/api/remote/fetch-sizes"})
+_POSTS = frozenset({"/api/remote/plan", "/api/remote/send", "/api/remote/fetch",
+                    "/api/remote/cancel"})
+
+_HOSTED = _refused("Not available in a hosted GUI: its studies run on its service.")
 
 
 def _said(exc: BaseException) -> dict[str, Any]:
@@ -99,11 +91,10 @@ class RemoteDesk:
     def get(self, path: str, query: dict[str, list[str]]) -> dict[str, Any] | None:
         """The answer to a GET of ``path``, or None where it is not one of
         these routes."""
-        if not path.startswith("/api/remote/"):
+        if path not in _GETS:
             return None
         if self.hosted:
-            return _refused("Not available in a hosted GUI: its studies run on its "
-                            "service.")
+            return dict(_HOSTED)
         name = (query.get("job") or [""])[0]
         if path == "/api/remote/machines":
             return self.machines()
@@ -116,11 +107,10 @@ class RemoteDesk:
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any] | None:
         """The answer to a POST of ``path``, or None where it is not one of
         these routes."""
-        if not path.startswith("/api/remote/"):
+        if path not in _POSTS:
             return None
         if self.hosted:
-            return _refused("Not available in a hosted GUI: its studies run on its "
-                            "service.")
+            return dict(_HOSTED)
         if path == "/api/remote/plan":
             return self.plan(body.get("config"), body.get("machine"))
         if path == "/api/remote/send":
@@ -218,7 +208,7 @@ class RemoteDesk:
                 f"{config!r} is not a config file in the workspace ({self.root}).")
         try:
             raw = yaml.safe_load(file.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as exc:
+        except (OSError, ValueError, yaml.YAMLError) as exc:
             return None, None, _refused(f"{self.shown(file)} could not be read: {exc}")
         requested = str((raw or {}).get("output") or file.with_suffix("")) if isinstance(
             raw, dict) else str(file.with_suffix(""))
@@ -231,7 +221,7 @@ class RemoteDesk:
     def plan(self, config: Any, machine: Any) -> dict[str, Any]:
         """What a send of ``config`` to ``machine`` would do, as the page
         shows it before the person agrees; with a token the send is made by."""
-        from fastmdxplora.remote.send import room_said
+        from fastmdxplora.remote.send import room_said, sent_digest, travelling
 
         file, output, refused = self._what(config)
         if refused is not None:
@@ -243,12 +233,14 @@ class RemoteDesk:
             return _said(exc)
         if refused is not None:
             return refused
+        prints = travelling(sending)
         token = secrets.token_hex(16)
         with self._lock:
             self._forget_old()
             while len(self._plans) >= _MOST_PLANS:
                 self._plans.pop(min(self._plans, key=lambda t: self._plans[t].made_at))
-            self._plans[token] = _Plan(file, name, output, digest_of(sending), time.time())
+            self._plans[token] = _Plan(file, name, output, sent_digest(sending, prints),
+                                        time.time())
         return {
             "ok": True, "plan": token, "kept_s": PLAN_KEPT_S,
             "config": self.shown(file), "machine": name, "job": sending.job_name,
@@ -256,7 +248,7 @@ class RemoteDesk:
             "scheduler": "SLURM" if sending.scheduler == "slurm" else "a detached process",
             "folder": sending.remote_dir, "results": self.shown(output),
             "travels": [{"name": f"inputs/{travelled}", "from": self.shown(source),
-                         "bytes": _bytes(source)}
+                         "bytes": prints[travelled][0]}
                         for travelled, source in sending.inputs.files.items()],
             "fetched_there": list(sending.inputs.fetched),
             "room": room_said(sending), "notes": list(sending.notes),
@@ -272,6 +264,7 @@ class RemoteDesk:
         """Send the plan the person agreed to, once, where what would travel
         now is what they were shown."""
         from fastmdxplora.remote import api
+        from fastmdxplora.remote.send import sent_digest
 
         with self._lock:
             self._forget_old()
@@ -286,7 +279,7 @@ class RemoteDesk:
             return _said(exc)
         if refused is not None:
             return refused
-        if digest_of(sending) != plan.digest:
+        if sent_digest(sending) != plan.digest:
             return _refused("What would be sent changed after the plan was shown (the "
                             "config, a file that travels, or the machine). Plan the send "
                             "again and look at it.", "remote.send.unconfirmed")
@@ -320,8 +313,9 @@ class RemoteDesk:
                 "bringing": {"without": sizes.bringing(False), "with": sizes.bringing(True)}}
 
     def fetch(self, name: Any, with_trajectory: bool, bringing: Any) -> dict[str, Any]:
-        """Fetch a job's results, where what it would bring is still what
-        the person was shown (``bringing``, in bytes)."""
+        """Fetch a job's results, where what it would bring, asked of the
+        machine now, is still what the person was shown (``bringing``, in
+        bytes). The copy then brings no file larger than that, and a margin."""
         from fastmdxplora.remote import api
 
         job = self._job_here(name)
@@ -329,7 +323,7 @@ class RemoteDesk:
             return _refused(f"No job called {name!r} sends its results into this "
                             "workspace.", "remote.job.unknown")
         try:
-            sizes = api.fetch_sizes(job.name, max_age_s=api.STATUS_KEPT_S)
+            sizes = api.fetch_sizes(job.name)
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one
             return _said(exc)
         now = sizes.bringing(with_trajectory)
