@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Compare and Clear beside the studies chosen
+
+**Changed:** on All studies, **Compare** and **Clear** were at the top of
+the page, above the cards: a second study chosen far down was compared only
+after scrolling back up. They now come beside the pointer that chose the
+second (beside its box, chosen from the keyboard), only while two are
+chosen, and stay clear of the comparison, of tags being changed and of the
+Agent drawn over the page.
+
 ### A reply's tokens, when asked
 
 **Changed:** the tokens each of the Agent's replies took ("60,049 tokens in

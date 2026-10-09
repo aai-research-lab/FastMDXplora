@@ -639,7 +639,9 @@
                     title="Every study"><!--icon:close:line-icon--></button>
           </div>
           <datalist id="studies-tags-used"></datalist>
-          <div class="studies-compare-bar" id="studies-compare-bar" hidden>
+          <span class="sr-only" id="studies-chosen-heard" role="status" aria-live="polite"></span>
+          <div class="studies-compare-bar" id="studies-compare-bar" role="group"
+               aria-label="Compare or clear the studies chosen" hidden>
             <span class="muted small" id="studies-chosen-said"></span>
             <button type="button" class="line-btn" id="studies-compare" disabled aria-label="Compare"
                     title="Compare"><!--icon:compare:line-icon--></button>

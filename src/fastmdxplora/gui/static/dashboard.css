@@ -5064,7 +5064,15 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .study-actions { display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin-top: 4px; }
 .study-actions .study-pick { margin-left: 6px; }
 .study-pick { display: inline-flex; align-items: center; gap: 4px; color: var(--text-secondary); cursor: pointer; }
-.studies-compare-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
+/* Compare and Clear, beside the pointer that chose the second study
+   (studies.js `place`), above the cards and the page's sticky bars, below
+   the Agent beside the page, the sidebar's peek and every dialog. */
+.studies-compare-bar { display: flex; align-items: center; gap: 10px;
+    position: fixed; z-index: 15; padding: 6px 8px 6px 12px; width: max-content;
+    background: var(--background-elevated); border: 1px solid var(--border-strong);
+    border-radius: 10px; box-shadow: var(--shadow-modal); color: var(--text-primary); }
+/* Put aside while every place for it would cover what is being read. */
+.studies-compare-bar.is-aside { visibility: hidden; }
 .studies-compare-bar[hidden], .studies-compared[hidden], .studies-empty[hidden] { display: none; }
 .studies-compared { padding: 16px 18px; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
 .studies-compared .card-header { padding: 0; display: flex; justify-content: space-between; align-items: center; }

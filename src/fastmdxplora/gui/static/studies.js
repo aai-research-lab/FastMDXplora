@@ -418,7 +418,8 @@
     var box = make("input");
     box.type = "checkbox";
     box.checked = chosen.indexOf(study.path) >= 0;
-    box.addEventListener("change", function () { choose(study.path, box.checked); });
+    box.dataset.path = study.path;
+    box.addEventListener("change", function () { choose(study.path, box.checked, box); });
     pick.append(box, document.createTextNode(" Compare"));
     actions.append(open, tagButton(study), pick);
     body.appendChild(actions);
@@ -553,8 +554,7 @@
       box.setAttribute("aria-label", "Compare " + study.name);
       box.dataset.path = study.path;
       box.addEventListener("change", function () {
-        choose(study.path, box.checked);
-        refocus("#studies-table tbody input[type=checkbox]", "path", study.path);
+        choose(study.path, box.checked, box);
       });
       pick.appendChild(box);
       var name = make("td", "studies-name");
@@ -665,28 +665,252 @@
     sayChosen();
   }
 
-  function choose(path, on) {
+  /* Compare and Clear come beside the pointer the moment a second study is
+   * chosen, wherever on the page it was (user, 10-09: "should pop up beside
+   * the cursor only when 2 studies are selected ... not that the user has
+   * to scroll all the way back to the top of the page"). Chosen from the
+   * keyboard, beside the box chosen. Hidden while fewer than two are. */
+  var pointer = null;
+  var offeredAt = null;
+  var fresh = false;
+  var saidAside = false;
+  // Whether the bar was reached from the study chosen, where Tab goes on
+  // from: reached down the page, the page's own order holds.
+  var fromTheBox = false;
+
+  function choose(path, on, box) {
     chosen = chosen.filter(function (p) { return p !== path; });
     if (on) chosen.push(path);
     // Two at a time: a third chosen replaces the first.
     if (chosen.length > 2) chosen.shift();
+    var by = byPointer(box);
+    offeredAt = chosen.length === 2 ? (by || cornerOf(box)) : null;
+    saidAside = false;
+    // Only this drawing keeps the point it was chosen at: any later one
+    // (search, a tag edited, the view switched) has moved the cards.
+    fresh = true;
     draw();
+    fresh = false;
+    // The cards or rows are drawn again: the box chosen keeps the focus
+    // (Tab from it reaches Compare; a choice does not move it).
+    var again = boxOf(path);
+    if (again) again.focus({ preventScroll: true });
+  }
+
+  /* The pointer that chose it: pressed on this box or its label, just now.
+   * A press elsewhere (another card, a moment before a key) is not. */
+  function byPointer(box) {
+    if (!pointer || Date.now() - pointer.at > 1500 || !box) return null;
+    var holder = box.closest("label, td") || box;
+    return holder.contains(pointer.target) ? { x: pointer.x, y: pointer.y } : null;
+  }
+
+  function cornerOf(box) {
+    if (!box || !box.getBoundingClientRect) return null;
+    var r = box.getBoundingClientRect();
+    return r.width || r.height ? { x: r.right, y: r.bottom, top: r.top } : null;
+  }
+
+  function nameOf(path) {
+    var study = studies.find(function (s) { return s.path === path; });
+    return study ? study.name : "";
   }
 
   function sayChosen() {
     var bar = el("studies-compare-bar");
     if (!bar) return;
-    bar.hidden = !chosen.length;
-    el("studies-compare").disabled = chosen.length !== 2;
-    el("studies-chosen-said").textContent = chosen.length === 2
-      ? "Two chosen." : "Choose one more to compare.";
+    var two = chosen.length === 2;
+    bar.hidden = !two;
+    el("studies-compare").disabled = !two;
+    el("studies-chosen-said").textContent = two ? "Two chosen." : "";
+    if (!fresh) offeredAt = null;
+    if (two) place(bar);
+    else sayHeard();
   }
 
-  function compare() {
+  /* What a screen reader hears of the studies chosen: the pair by name, so
+   * a third choice that drops the first is heard, and where Compare and
+   * Clear are. */
+  function sayHeard() {
+    var heard = el("studies-chosen-heard");
+    var bar = el("studies-compare-bar");
+    if (!heard || !bar) return;
+    var names = chosen.map(nameOf);
+    var pair = names.every(Boolean) ? names.join(" and ") + " chosen." : "Two chosen.";
+    var said = chosen.length === 2 ? pair + (bar.classList.contains("is-aside")
+        ? " Compare and Clear come back as the page is scrolled."
+        : " Compare and Clear are next in the Tab order.")
+      : chosen.length === 1 && names[0] ? names[0] + " chosen. Choose one more to compare." : "";
+    if (heard.textContent !== said) heard.textContent = said;
+  }
+
+  /* The page column the cards are in, as much of it as the window shows:
+   * the bar stays inside it, off the sidebar and the Agent beside it. */
+  function bounds() {
+    var main = document.querySelector(".main");
+    var r = main ? main.getBoundingClientRect() : { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    var top = Math.max(0, r.top);
+    // Below what stays at the top as the page scrolls: on a phone the bar
+    // of links, and the page's own header under it.
+    [document.querySelector(".sidebar"),
+     document.querySelector('.page[data-page="studies"] .page-header')].forEach(function (bar) {
+      if (!bar) return;
+      var at = getComputedStyle(bar).position;
+      var b = bar.getBoundingClientRect();
+      if ((at === "sticky" || at === "fixed") && b.top <= top + 1 && b.bottom > top &&
+          b.width > (r.right - r.left) * 0.6) top = b.bottom;
+    });
+    var right = Math.min(window.innerWidth, r.right);
+    // The Agent drawn over the page, where the window is too narrow to
+    // set it beside: the column ends where it begins.
+    var drawer = document.querySelector(".agent-drawer");
+    if (drawer && !drawer.hidden && drawer.getClientRects().length) {
+      var d = drawer.getBoundingClientRect();
+      if (d.left < right && d.right > r.left) right = Math.max(r.left, d.left);
+    }
+    return { left: Math.max(0, r.left), top: top,
+             right: right, bottom: Math.min(window.innerHeight, r.bottom) };
+  }
+
+  /* Whether a box is cut by the column or by a list scrolled under it (the
+   * table on a phone scrolls sideways): one cut is no place to point at. */
+  function clipped(box, b) {
+    var r = box.getBoundingClientRect();
+    if (!r.width && !r.height) return true;
+    if (r.left < b.left || r.right > b.right || r.top < b.top || r.bottom > b.bottom) return true;
+    for (var n = box.parentElement; n && n !== document.body; n = n.parentElement) {
+      var flow = getComputedStyle(n);
+      if (flow.overflowX === "visible" && flow.overflowY === "visible") continue;
+      var c = n.getBoundingClientRect();
+      if (r.left < c.left - 1 || r.right > c.right + 1 || r.top < c.top - 1 ||
+          r.bottom > c.bottom + 1) return true;
+    }
+    return false;
+  }
+
+  /* What the bar must not cover: the comparison and a study's tags being
+   * changed, as much of each as the window shows. */
+  function inTheWay() {
+    var nodes = [el("studies-compared")].concat(Array.prototype.slice.call(
+      document.querySelectorAll(".studies-editing, .study-tag-editor")));
+    return nodes.filter(function (n) {
+      return n && !n.hidden && n.getClientRects().length;
+    }).map(function (n) { return n.getBoundingClientRect(); }).filter(function (r) {
+      return r.bottom > 0 && r.top < window.innerHeight && r.width > 0;
+    });
+  }
+
+  function covers(left, top, w, h, r) {
+    return left < r.right && left + w > r.left && top < r.bottom && top + h > r.top;
+  }
+
+
+  /* Beside the point the second was chosen at; once the page has moved,
+   * beside the second study's box where it shows, else at the column's
+   * foot, so it is never back at the top of the page. To the right and
+   * below, or to the left or above where there is no room or it would
+   * cover the comparison or tags being changed. Where every place would,
+   * it is put aside until the page moves. */
+  function place(bar) {
+    // Not drawn (the page is another): placed when it shows again.
+    if (!bar.getClientRects().length) return;
+    var gap = 12;
+    var margin = 8;
+    bar.classList.remove("is-aside");
+    bar.style.left = "0px";
+    bar.style.top = "0px";
+    var w = bar.offsetWidth;
+    var h = bar.offsetHeight;
+    var b = bounds();
+    var at = offeredAt;
+    if (!at) {
+      var box = boxOf(chosen[chosen.length - 1]);
+      if (box && !clipped(box, b)) at = cornerOf(box);
+    }
+    var tries = [];
+    if (at) {
+      var left = at.x + gap + w <= b.right - margin ? at.x + gap : at.x - gap - w;
+      if (at.y + gap + h <= b.bottom - margin) tries.push([left, at.y + gap]);
+      // Above, clear of the box itself.
+      tries.push([left, (at.top != null ? at.top : at.y) - gap - h]);
+    }
+    // The column's corners, foot first, before it is put aside.
+    tries.push([b.right - w - 24, b.bottom - h - 24], [b.left + 24, b.bottom - h - 24],
+               [b.right - w - 24, b.top + 24], [b.left + 24, b.top + 24]);
+    var away = inTheWay();
+    var spots = tries.map(function (t) {
+      return [Math.max(b.left + margin, Math.min(t[0], b.right - w - margin)),
+              Math.max(b.top + margin, Math.min(t[1], b.bottom - h - margin))];
+    });
+    var spot = spots.find(function (s) {
+      return !away.some(function (r) { return covers(s[0], s[1], w, h, r); });
+    });
+    if (!spot) {
+      spot = spots[0];
+      bar.classList.add("is-aside");
+      // Its buttons are hidden: the focus goes on to the comparison it
+      // would cover, else back to the study chosen.
+      var host = el("studies-compared");
+      if (bar.contains(document.activeElement)) {
+        var back = host && !host.hidden ? host : boxOf(chosen[chosen.length - 1]);
+        if (back === host) host.tabIndex = -1;
+        if (back) back.focus({ preventScroll: true });
+      }
+    }
+    bar.style.left = spot[0] + "px";
+    bar.style.top = spot[1] + "px";
+    // Put aside is said once for the pair, not each time a scroll puts it
+    // aside again.
+    var aside = bar.classList.contains("is-aside");
+    if (!aside || !saidAside) sayHeard();
+    if (aside) saidAside = true;
+  }
+
+  function boxOf(path) {
+    var selector = view === "table" ? "#studies-table tbody input[type=checkbox]"
+      : ".study-card .study-pick input";
+    return Array.prototype.find.call(document.querySelectorAll(selector), function (n) {
+      return n.dataset.path === path;
+    }) || null;
+  }
+
+  /* The page moved under the bar: it follows the second study chosen. */
+  var placing = 0;
+  function moved() {
+    var bar = el("studies-compare-bar");
+    // Hidden, or on a page not shown: nothing to place.
+    if (!bar || bar.hidden || placing || !bar.getClientRects().length) return;
+    placing = requestAnimationFrame(function () {
+      placing = 0;
+      offeredAt = null;
+      if (!bar.hidden) place(bar);
+    });
+  }
+
+  /* Every element that scrolls the comparison, to its top, where the
+   * comparison is: below the page's own sticky bars, not under them. */
+  function toTheTop(node) {
+    for (var n = node.parentElement; n; n = n.parentElement) {
+      var flow = getComputedStyle(n).overflowY;
+      if (n.scrollTop > 0 && (flow === "auto" || flow === "scroll")) {
+        n.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+    if ((document.scrollingElement || document.documentElement).scrollTop > 0) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function compare(event) {
     var host = el("studies-compared");
     if (chosen.length !== 2 || !host) return;
     host.hidden = false;
     host.replaceChildren(make("p", "muted", "Comparing…"));
+    // From the keyboard, the comparison is where reading goes on.
+    host.tabIndex = -1;
+    if (event && event.detail === 0) host.focus({ preventScroll: true });
+    // The comparison is at the page's top: brought to the reader.
+    toTheTop(host);
     fetch("/api/studies-compared?" + new URLSearchParams({ a: chosen[0], b: chosen[1] }))
       .then(function (r) { return r.json(); })
       .then(drawComparison)
@@ -696,6 +920,8 @@
   function drawComparison(data) {
     var host = el("studies-compared");
     host.replaceChildren();
+    // The cards move down under it: the bar follows them.
+    requestAnimationFrame(moved);
     if (!data || !data.ok) {
       host.appendChild(make("p", "muted", (data && data.reason) || "They could not be compared."));
       return;
@@ -707,7 +933,14 @@
     close.title = "Close";
     close.setAttribute("aria-label", "Close");
     close.innerHTML = CLOSE_ICON;
-    close.addEventListener("click", function () { host.hidden = true; });
+    close.addEventListener("click", function (event) {
+      var within = host.contains(document.activeElement);
+      host.hidden = true;
+      moved();
+      // Closed from within: back to the study chosen, else to Compare.
+      var box = boxOf(chosen[chosen.length - 1]);
+      if (within) (box || el("studies-compare")).focus({ preventScroll: event.detail !== 0 });
+    });
     head.appendChild(close);
     host.appendChild(head);
 
@@ -878,10 +1111,74 @@
     });
     el("studies-tag-filter-clear").addEventListener("click", function () { narrowTo(null); });
     el("studies-compare").addEventListener("click", compare);
-    el("studies-clear").addEventListener("click", function () {
+    el("studies-clear").addEventListener("click", function (event) {
+      var last = chosen[chosen.length - 1];
+      var other = chosen[0];
+      var fromKeys = event.detail === 0;
       chosen = [];
+      offeredAt = null;
       el("studies-compared").hidden = true;
       draw();
+      // Back to the study last chosen, else the other, else the search
+      // (both narrowed away): brought into view from the keyboard.
+      var box = boxOf(last) || boxOf(other) || el("studies-search");
+      if (box) {
+        box.focus({ preventScroll: true });
+        if (fromKeys) box.scrollIntoView({ block: "nearest" });
+      }
+      var heard = el("studies-chosen-heard");
+      if (heard) heard.textContent = "Cleared.";
+    });
+    // Where a click was, and on what, for Compare and Clear to come beside.
+    // A click from the keyboard (detail 0) is none.
+    document.addEventListener("click", function (event) {
+      if (event.detail > 0) {
+        pointer = { x: event.clientX, y: event.clientY, at: Date.now(), target: event.target };
+      }
+    }, true);
+    document.addEventListener("scroll", moved, true);
+    window.addEventListener("resize", moved);
+    // The column narrowed or widened without the window (the Agent opened
+    // beside the page, the sidebar folded), or the cards, the table or the
+    // comparison grew or shrank above the study chosen, or the Agent was
+    // drawn over the page.
+    if (window.ResizeObserver) {
+      var watch = new ResizeObserver(moved);
+      [document.querySelector(".main"), el("studies-grid"), el("studies-table"),
+       el("studies-compared"), el("agent-drawer")].forEach(function (n) { if (n) watch.observe(n); });
+    }
+    // Tab from the study chosen reaches Compare and Clear; Escape from them
+    // goes back to it, and Tab on from Clear goes on from it, not from where
+    // the bar sits in the page.
+    var bar = el("studies-compare-bar");
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Tab" || event.shiftKey || chosen.length !== 2) return;
+      if (event.target !== boxOf(chosen[1]) || bar.hidden ||
+          bar.classList.contains("is-aside") || !bar.getClientRects().length) return;
+      event.preventDefault();
+      fromTheBox = true;
+      el("studies-compare").focus();
+    });
+    bar.addEventListener("focusin", function (event) {
+      if (event.relatedTarget && !bar.contains(event.relatedTarget)) {
+        fromTheBox = event.relatedTarget === boxOf(chosen[chosen.length - 1]);
+      }
+    });
+    bar.addEventListener("focusout", function (event) {
+      if (!event.relatedTarget || !bar.contains(event.relatedTarget)) fromTheBox = false;
+    });
+    bar.addEventListener("keydown", function (event) {
+      var box = boxOf(chosen[chosen.length - 1]);
+      if (!box) return;
+      if (event.key === "Escape" || (event.key === "Tab" && fromTheBox && event.shiftKey &&
+                                     event.target === el("studies-compare"))) {
+        event.preventDefault();
+        box.focus();
+      } else if (event.key === "Tab" && fromTheBox && !event.shiftKey &&
+                 event.target === el("studies-clear")) {
+        // The browser's own Tab goes on, from the box.
+        box.focus();
+      }
     });
     var path = el("studies-path");
     el("studies-look-in").addEventListener("click", function () {

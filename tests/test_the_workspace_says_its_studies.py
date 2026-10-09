@@ -313,7 +313,8 @@ def test_the_page(workspace) -> None:
             searched = page.locator(".study-card").count()
             page.fill("#studies-search", "")
             page.check('.study-card[data-path$="/ubiquitin"] .study-pick input')
-            waiting = page.text_content("#studies-chosen-said")
+            # One chosen offers nothing yet: Compare and Clear come with the second.
+            waiting = page.is_hidden("#studies-compare-bar")
             page.check('.study-card[data-path$="ubiquitin_longer"] .study-pick input')
             page.click("#studies-compare")
             page.wait_for_selector(".studies-means")
@@ -339,7 +340,7 @@ def test_the_page(workspace) -> None:
     assert cards == 4 and first == "ubiquitin_longer"
     assert "RMSD0.1234 ± 0.0056 nm" in means
     assert searched == 1
-    assert waiting == "Choose one more to compare."
+    assert waiting
     assert "simulation.duration_ns" in setting and "10" in setting and "20" in setting
     assert "0.0266 ± 0.0069 nm, resolved" in rmsd and "is-resolved" in (resolved or "")
     assert switched == [{"folder": str(workspace / "stopped")}]
