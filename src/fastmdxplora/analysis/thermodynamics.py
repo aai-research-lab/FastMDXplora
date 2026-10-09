@@ -98,6 +98,165 @@ def read_state_table(path: str | Path) -> dict[str, np.ndarray]:
     return table
 
 
+def _rows_of(path: Path) -> tuple[list[str], list[list[float | None]]]:
+    """The state record's header and its rows, a cell that is not a number
+    None, so a row stays a row; a NaN written as such is kept, as
+    :func:`read_state_table` keeps it."""
+    rows: list[list[str]] = []
+    # A damaged byte makes its cell unreadable, not the record.
+    with Path(path).open(encoding="utf-8", errors="replace", newline="") as handle:
+        for row in csv.reader(handle):
+            if row:
+                rows.append(row)
+    if not rows:
+        return [], []
+    header = [cell.lstrip("#").strip().strip('"') for cell in rows[0]]
+    values: list[list[float | None]] = []
+    for row in rows[1:]:
+        parsed: list[float | None] = []
+        for index in range(len(header)):
+            try:
+                parsed.append(float(row[index]))
+            except (IndexError, ValueError):
+                parsed.append(None)
+        values.append(parsed)
+    return header, values
+
+
+def _column_named(header: list[str], word: str) -> int | None:
+    for index, name in enumerate(header):
+        if name.lower().split(" (")[0] == word:
+            return index
+    return None
+
+
+def state_record_pieces(root: str | Path) -> list[dict[str, Any]] | None:
+    """The state record of a study carried on in pieces, piece by piece, as
+    its joined trajectory holds them; None for a study of one run.
+
+    An extended study is analysed over its joined trajectory, and its
+    thermodynamics read only the first piece's `energy.csv`: the means of a
+    run of two pieces were the first piece's, beside every other analysis's
+    over both. Each piece keeps its rows up to the checkpoint the next one
+    went on from (a stopped piece's later rows were run again), and each
+    piece's own clock, which starts again at production, is carried on from
+    where the piece before it ended.
+
+    Each entry gives the file (``path``), the last step it keeps
+    (``last_step``, None for all), and the steps and picoseconds before it
+    (``steps_before``, ``ps_before``).
+    """
+    import json
+
+    from fastmdxplora.analysis.analyze import study_trajectory
+    from fastmdxplora.analysis.joining import survey_segments
+    from fastmdxplora.simulation.runner import chose_its_own_step, read_checkpoint_sidecar
+
+    base = Path(root)
+    joined, _topology = study_trajectory(base)
+    if joined is None:
+        return None
+    try:
+        record = json.loads((base / "joined" / "joined.json").read_text(encoding="utf-8"))
+        segments = [int(index) for index in record.get("segments") or []]
+        folders = {piece.index: piece.directory for piece in survey_segments(base)}
+    except (OSError, ValueError, TypeError, AttributeError, StudyError):
+        return None
+    if len(segments) < 2:
+        return None
+    trimmed = {str(key) for key in (record.get("trimmed") or {})}
+
+    pieces: list[dict[str, Any]] = []
+    steps_before = 0.0
+    ps_before = 0.0
+    for place, index in enumerate(segments):
+        folder = folders.get(index)
+        name = "the study's own run" if index == 0 else f"segment {index}"
+        path = (folder / "simulation" / "energy.csv") if folder is not None else None
+        if path is None or not path.is_file():
+            raise MissingResultError(
+                f"The study was carried on in {len(segments)} pieces and {name} has no "
+                "state record (`simulation/energy.csv`), so its energy, temperature "
+                "and density over the whole run cannot be read: the pieces that "
+                "have one would be averaged as if they were all of it.",
+                code="analysis.data.absent")
+        side = read_checkpoint_sidecar(folder / "simulation" / "checkpoint.chk") or {}
+        last = side.get("step")
+        last_step = (float(last) if isinstance(last, (int, float)) and last >= 0
+                     else None)
+        goes_on = place < len(segments) - 1
+        if last_step is None and str(index) in trimmed:
+            raise MissingResultError(
+                f"{name.capitalize()} was stopped and its checkpoint records no step, "
+                "so the state rows the next piece ran again cannot be told from the "
+                "ones it did not.",
+                code="analysis.data.absent")
+        keeps = last_step if (goes_on or str(index) in trimmed) else None
+        pieces.append({"path": path, "last_step": keeps,
+                       "steps_before": steps_before, "ps_before": ps_before})
+        if not goes_on:
+            break
+        # Where the next piece's clock starts: the checkpoint it went on
+        # from, in this piece's steps and time; its rows read only where the
+        # sidecar does not say it.
+        timestep = side.get("timestep_fs")
+        fixed_step = (isinstance(timestep, (int, float)) and timestep > 0
+                      and not chose_its_own_step(folder / "simulation"))
+        if keeps is not None and fixed_step:
+            steps_before += float(keeps)
+            ps_before += float(keeps) * float(timestep) / 1000.0
+            continue
+        header, rows = _rows_of(path)
+        step_at = _column_named(header, "step")
+        time_at = _column_named(header, "time")
+        kept = [row for row in rows if step_at is None or keeps is None
+                or row[step_at] is None or row[step_at] <= keeps]
+        end_step = keeps if keeps is not None else (
+            (kept[-1][step_at] or 0.0) if kept and step_at is not None else 0.0)
+        # An integrator that chose its own step took no fixed time a step
+        # (`chose_its_own_step`): the time is the last row kept's own.
+        if fixed_step:
+            end_ps = end_step * float(timestep) / 1000.0
+        else:
+            end_ps = (kept[-1][time_at] or 0.0) if kept and time_at is not None else 0.0
+        steps_before += float(end_step)
+        ps_before += float(end_ps)
+    return pieces
+
+
+def read_pieces_state_table(pieces: list[dict[str, Any]]) -> dict[str, np.ndarray]:
+    """One state table of a study's pieces (:func:`state_record_pieces`),
+    each piece's rows to its last step, its step and time carried on."""
+    header0: list[str] = []
+    columns: dict[str, list[float | None]] = {}
+    for piece in pieces:
+        header, rows = _rows_of(piece["path"])
+        if not header0:
+            header0 = header
+            columns = {name: [] for name in header}
+        step_at = _column_named(header, "step")
+        time_at = _column_named(header, "time")
+        for row in rows:
+            if (piece["last_step"] is not None and step_at is not None
+                    and row[step_at] is not None and row[step_at] > piece["last_step"]):
+                continue
+            for index, name in enumerate(header):
+                if name not in columns:
+                    continue
+                value = row[index]
+                if value is not None and index == step_at:
+                    value += piece["steps_before"]
+                elif value is not None and index == time_at:
+                    value += piece["ps_before"]
+                columns[name].append(value)
+    table: dict[str, np.ndarray] = {}
+    for name, values in columns.items():
+        kept = [value for value in values if value is not None]
+        if kept:
+            table[name] = np.asarray(kept, dtype=float)
+    return table
+
+
 class Thermodynamics(Analysis):
     """Ensemble observables from the simulation's own state record.
 
@@ -157,7 +316,13 @@ class Thermodynamics(Analysis):
                 "coordinates and not its thermodynamics."
             , code="analysis.data.absent")
 
-        table = read_state_table(path)
+        # A study carried on in pieces is analysed over all of them, its
+        # state record too.
+        pieces = None
+        if (not self.state_csv and path.name == "energy.csv"
+                and path.parent.name == "simulation"):
+            pieces = state_record_pieces(path.parent.parent)
+        table = read_pieces_state_table(pieces) if pieces else read_state_table(path)
         if not table:
             raise StudyError(
                 f"{path} holds no rows, so the run recorded no state. A run "
@@ -183,6 +348,7 @@ class Thermodynamics(Analysis):
         labels: list[str] = []
         record: dict[str, Any] = {
             "source": str(path),
+            **({"pieces": [str(piece["path"]) for piece in pieces]} if pieces else {}),
             "samples": int(len(next(iter(found.values())))) if found else 0,
             "ensemble": ("constant volume" if constant_volume
                          else "constant pressure"),

@@ -814,8 +814,30 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
 
     series: dict[str, Any] = {}
 
+    from fastmdxplora.analysis.thermodynamics import (
+        read_pieces_state_table, state_record_pieces)
+
+    # A study carried on in pieces is judged over all of them, as its
+    # trajectory and its thermodynamics are: the first piece's energy alone
+    # was fitted for drift across the whole run's length.
+    try:
+        pieces = state_record_pieces(project_root)
+        unreadable = False
+    except Exception:  # noqa: BLE001 - the thermodynamics says why
+        pieces, unreadable = None, True
     energy_csv = project_root / "simulation" / "energy.csv"
-    if energy_csv.is_file():
+    if pieces:
+        try:
+            table = read_pieces_state_table(pieces)
+        except (OSError, ValueError):
+            table, pieces = {}, None
+        for column, name in (("Potential Energy (kJ/mole)", "potential_energy"),
+                             ("Temperature (K)", "temperature"),
+                             ("Density (g/mL)", "density")):
+            values = table.get(column)
+            if values is not None and values.size:
+                series[name] = [float(value) for value in values]
+    elif energy_csv.is_file() and not unreadable:
         wanted = {
             "Potential Energy (kJ/mole)": "potential_energy",
             "Temperature (K)": "temperature",
@@ -869,10 +891,18 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     setup = _setup_record(project_root)
     sim = _load_json_safely(
         project_root / "simulation" / "simulation_parameters.json") or {}
+    duration_ns = sim.get("duration_ns_actual")
+    if pieces:
+        # The length of the series read: its clock runs on through the
+        # pieces from production's start. Summed over the segments on disk,
+        # a piece not joined (an extension stopped or still going) counted.
+        times = table.get("Time (ps)")
+        if times is not None and times.size:
+            duration_ns = float(times[-1]) / 1000.0
     return assess_run(
         series,
         records=records,
-        duration_ns=sim.get("duration_ns_actual"),
+        duration_ns=duration_ns,
         n_atoms=setup.get("n_atoms_solvated"),
         target_temperature_K=(sim.get("parameters") or {}).get("temperature_K"),
     )

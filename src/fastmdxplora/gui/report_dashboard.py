@@ -718,6 +718,21 @@ def _format_metric_value(value: float) -> str:
 
 
 def _average_temperature(path: Path) -> float | None:
+    # A study carried on in pieces: the mean over every piece, not the
+    # first one's.
+    from fastmdxplora.analysis.thermodynamics import (
+        read_pieces_state_table, state_record_pieces)
+
+    try:
+        pieces = state_record_pieces(path.parent.parent)
+    except Exception:  # noqa: BLE001 - a piece without its record: no mean
+        return None
+    if pieces:
+        try:
+            joined = read_pieces_state_table(pieces).get("Temperature (K)")
+        except (OSError, ValueError):
+            return None
+        return float(joined.mean()) if joined is not None and joined.size else None
     if not path.is_file():
         return None
     values: list[float] = []

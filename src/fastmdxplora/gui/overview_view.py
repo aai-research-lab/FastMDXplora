@@ -240,7 +240,11 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
     # thermodynamics analysis and the report's convergence table average,
     # so a mean the analysis did not record is the report's, not one taken
     # from the live record's coarser samples, which gave another number.
-    averaged = _production_energies(root) or production
+    energies = _production_energies(root)
+    # A study carried on in pieces with a piece's record missing has no
+    # means of its energy (the thermodynamics analysis refuses it), not the
+    # live record's.
+    averaged = [] if energies is None else (energies or production)
     volumes = [v for v in (_number(row.get("volume")) for row in averaged) if v is not None]
     held = len(volumes) > 1 and max(volumes) - min(volumes) <= 1e-9 * max(abs(max(volumes)), 1e-30)
     means: dict[str, Any] = {}
@@ -280,15 +284,41 @@ def _metric_rows(root: Path) -> list[dict[str, Any]]:
         return []
 
 
-def _production_energies(root: Path) -> list[dict[str, Any]]:
+def _production_energies(root: Path) -> list[dict[str, Any]] | None:
     """The production's samples from OpenMM's ``energy.csv``, by the live
-    record's names (`telemetry._read_energy_rows`)."""
+    record's names (`telemetry._read_energy_rows`); None where a study
+    carried on in pieces lacks a piece's record."""
+    from fastmdxplora.analysis.thermodynamics import state_record_pieces
     from fastmdxplora.gui.telemetry import _read_energy_rows
+    from fastmdxplora.refusals import MissingResultError
 
     try:
-        return _read_energy_rows(root / "simulation" / "energy.csv")
-    except Exception:  # noqa: BLE001 - the live record stands in
-        return []
+        pieces = state_record_pieces(root)
+    except MissingResultError:
+        return None
+    except Exception:  # noqa: BLE001 - an unreadable piece: no means
+        return None
+    try:
+        if not pieces:
+            return _read_energy_rows(root / "simulation" / "energy.csv")
+        # A study carried on in pieces: every piece, as the thermodynamics
+        # analysis reads them, not the first piece alone.
+        rows: list[dict[str, Any]] = []
+        for piece in pieces:
+            for row in _read_energy_rows(piece["path"]):
+                step = _number(row.get("step"))
+                if (piece["last_step"] is not None and step is not None
+                        and step > piece["last_step"]):
+                    continue
+                if step is not None:
+                    row["step"] = str(step + piece["steps_before"])
+                time_ns = _number(row.get("simulation_time_ns"))
+                if time_ns is not None:
+                    row["simulation_time_ns"] = str(time_ns + piece["ps_before"] / 1000.0)
+                rows.append(row)
+        return rows
+    except Exception:  # noqa: BLE001 - the live record stands in for one run
+        return None if pieces else []
 
 
 #: Why a density is given no mean where the box's volume was held, as the
