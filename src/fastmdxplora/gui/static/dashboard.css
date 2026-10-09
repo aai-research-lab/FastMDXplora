@@ -5606,7 +5606,11 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 #chart-stack.chart-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 760px) { #chart-stack.chart-stack { grid-template-columns: minmax(0, 1fr); } }
 #chart-stack > .chart-row { display: flex; flex-direction: column; height: 210px; }
-#chart-stack > .chart-row-slim { grid-column: 1 / -1; height: 130px; }
+#chart-stack > .chart-row-slim { grid-column: 1 / -1; height: auto; }
+/* Its plot keeps its height whatever its note takes, wrapped at a phone's
+   width too: under a fixed row the note squeezed it to 43 px. */
+#chart-stack > .chart-row-slim .chart-canvas { flex: none; height: 96px; }
+#chart-stack > .chart-row-slim .chart-note:empty { display: none; }
 #chart-stack > .chart-row[hidden] { display: none; }
 .chart-note { flex: none; padding: 0 10px 5px; font-size: var(--text-2xs); color: var(--text-muted); min-height: 1.1em; }
 .chart-key { margin-top: 8px; }

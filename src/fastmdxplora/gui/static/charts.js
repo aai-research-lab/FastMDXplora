@@ -67,6 +67,17 @@
         }
         return;
       }
+      // Once ended, the speed every price is read at, as the platform's
+      // row gives it: the newest sample is the live record's average from
+      // the run's start, setup and minimisation in it.
+      if (over && config.key === "speed" && clock.speed > 0) {
+        target.textContent = formatValue(clock.speed);
+        if (note) {
+          note.textContent = "the speed a fix is priced at; the line, the average from the run's start";
+          note.title = "";
+        }
+        return;
+      }
       // An empty cell is a gap, not a zero: Number("") is 0 and finite, so
       // a metric the run has not sampled would have read 0.0000.
       const cell = latest ? latest[config.key] : null;
@@ -99,7 +110,8 @@
    * clock (ns), so every plot reads time from it, equilibration before 0;
    * the production means and the temperature asked for. From
    * /api/overview, by way of overview.js. */
-  const clock = {startNs: null, means: {}, target: null, nptFrom: null, timed: false};
+  const clock = {startNs: null, means: {}, target: null, nptFrom: null, timed: false,
+                 speed: null};
   /* The moment every plot marks, on the production's clock (ns), or the
    * sample pointed at where there is no clock. */
   let crosshair = null;
@@ -137,6 +149,8 @@
       clock.target = thermo && Number.isFinite(thermo.target_temperature_K)
         ? thermo.target_temperature_K : null;
       clock.nptFrom = thermo && Number.isFinite(thermo.npt_from_ns) ? thermo.npt_from_ns : null;
+      const speed = event.detail && Number(event.detail.speed_ns_per_day);
+      clock.speed = Number.isFinite(speed) && speed > 0 ? speed : null;
       update(lastMetrics);
     });
     window.addEventListener("fmx:crosshair", (event) => {
@@ -288,7 +302,11 @@
       ctx.fillStyle = color("axis");
       ctx.font = `12px ${monoFont()}`;
       ctx.textAlign = "center";
-      ctx.fillText("no data yet", rect.width / 2, rect.height / 2);
+      // A run that has ended will sample nothing more.
+      const ended = window.FastMDXOverview && window.FastMDXOverview.ended();
+      const said = ended ? "none recorded" : "no data yet";
+      ctx.fillText(said, rect.width / 2, rect.height / 2);
+      entry.bounds = {said};
       entry.needsDraw = false;
       return;
     }

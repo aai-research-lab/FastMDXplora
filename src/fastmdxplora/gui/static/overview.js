@@ -270,7 +270,14 @@
       }
     }
     var platform = (byId("sidebar-platform") || {}).textContent || "";
-    var speed = (document.querySelector('[data-chart-value="speed"]') || {}).textContent || "";
+    // Production's own speed, as the fix card prices from; else the chart's.
+    // Written as the speed chart writes its number, so the two read alike.
+    // Once the run has ended, as the speed chart says it then; while it
+    // runs, the chart's newest sample, the same number beside it.
+    var speed = ended() && data && data.speed_ns_per_day > 0
+      ? (function (v) { return v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(3) : v.toFixed(4); })(
+        Number(data.speed_ns_per_day))
+      : (document.querySelector('[data-chart-value="speed"]') || {}).textContent || "";
     var prow = byId("overview-platform-row");
     var known = platform && platform !== "—";
     if (prow) prow.hidden = !known;
@@ -337,6 +344,7 @@
     data = found;
     renderTiles();
     renderPhases();
+    renderFacts(null);
     window.dispatchEvent(new CustomEvent("fmx:overview", { detail: data }));
   }
 

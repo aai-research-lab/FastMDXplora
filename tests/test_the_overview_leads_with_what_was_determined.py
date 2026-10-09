@@ -462,12 +462,27 @@ class TestTheEquilibrationOnTheClock:
         (one / "simulation" / "live_metrics.csv").write_text(
             "\n".join([rows[0], next(r for r in rows if ",NVT equilibration," in r)]) + "\n",
             encoding="utf-8")
+        # Its speed none recorded: a 0 was plotted at the foot of an axis.
+        head = rows[0].split(",").index("speed")
+        lone = (one / "simulation" / "live_metrics.csv").read_text(encoding="utf-8").splitlines()
+        cells = lone[1].split(",")
+        cells[head] = "0"
+        (one / "simulation" / "live_metrics.csv").write_text(
+            "\n".join([lone[0], ",".join(cells)]) + "\n", encoding="utf-8")
 
         def check(page):
             page.wait_for_function(
                 "() => { const d = window.FastMDXCharts.drawn('temperature'); "
                 "return d && d.ticks && d.ticks.length; }")
-            return page.evaluate("() => window.FastMDXCharts.drawn('temperature')")
+            try:
+                page.wait_for_function(
+                    "() => (window.FastMDXCharts.drawn('speed') || {}).said === 'none recorded'",
+                    timeout=20000)
+            except Exception:  # noqa: BLE001 - said below, with what was drawn
+                pass
+            speed = page.evaluate("() => window.FastMDXCharts.drawn('speed')")
+            return {**page.evaluate("() => window.FastMDXCharts.drawn('temperature')"),
+                    "speed": speed}
 
         drawn, errors = _open(whole, check)
         assert not errors, errors
@@ -481,6 +496,8 @@ class TestTheEquilibrationOnTheClock:
         # and no NVT/NPT line in a run that failed in NVT.
         assert drawn["placed"] == [pytest.approx(0.0, abs=0.01)]
         assert drawn["npt"] is None
+        # No speed plotted, and its empty chart not said as waiting for data.
+        assert drawn["speed"] == {"said": "none recorded"}, drawn["speed"]
 
 
 def test_a_mean_is_whole_on_a_card_narrowed_by_the_agent(tmp_path) -> None:
@@ -538,7 +555,55 @@ def test_a_speed_of_nothing_is_no_speed(tmp_path) -> None:
 
     said, errors = _open(root, check)
     assert not errors, errors
-    assert said == "\u2014"
+    assert said != "0.0000"
+    # Once ended, the number is production's own speed where its rows give
+    # one (as the platform's row and the fix's price), else none.
+    from fastmdxplora.gui.overview_view import overview_payload
+
+    production = overview_payload(root)["speed_ns_per_day"]
+    if production:
+        assert float(said) == pytest.approx(production, rel=1e-3), said
+    else:
+        assert said == "\u2014"
+
+
+def test_a_running_run_s_speed_is_one_number(tmp_path) -> None:
+    """While a run is going the platform row said production's rate (8.616)
+    beside the speed chart's newest sample (6.141)."""
+    pytest.importorskip("playwright.sync_api")
+    root = _browser_study(tmp_path / "study", "running")
+    record = root / "simulation" / "live_status.json"
+    record.write_text(json.dumps({**json.loads(record.read_text(encoding="utf-8")),
+                                  "platform": "CPU"}), encoding="utf-8")
+    # Production a second a sample, its rate other than the samples' own.
+    path = root / "simulation" / "live_metrics.csv"
+    rows = path.read_text(encoding="utf-8").splitlines()
+    head = rows[0].split(",")
+    kept, second = [rows[0]], 0
+    for row in rows[1:]:
+        cells = row.split(",")
+        if cells[head.index("stage")].lower().startswith("production"):
+            second += 1
+            cells[head.index("timestamp")] = f"2026-10-05T12:{second // 60:02d}:{second % 60:02d}+00:00"
+        cells[head.index("speed")] = "60.5"
+        kept.append(",".join(cells))
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    from fastmdxplora.gui.overview_view import overview_payload
+
+    assert abs(overview_payload(root)["speed_ns_per_day"] - 60.5) > 1
+
+    def check(page):
+        page.wait_for_function(
+            "() => / ns\\/day$/.test(document.getElementById('overview-platform-cell')"
+            ".textContent) && document.querySelector('[data-chart-value=\"speed\"]')"
+            ".textContent !== '\\u2014'")
+        page.wait_for_timeout(500)
+        return (page.text_content("#overview-platform-cell"),
+                page.text_content('[data-chart-value="speed"]'))
+
+    (cell, value), errors = _open(root, check)
+    assert not errors, errors
+    assert value in cell, (value, cell)
 
 
 def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
@@ -564,3 +629,74 @@ def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
     note, errors = _open(root, check)
     assert not errors, errors
     assert note.startswith("under 1 independent sample"), note
+
+
+def test_the_run_s_speed_is_production_s_as_the_fix_card_prices_it(tmp_path) -> None:
+    """A stopped run showed "CPU · 2.694 ns/day", the live record's average
+    from its start, beside a fix priced at 5.0 ns/day from production."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.overview_view import overview_payload
+    from fastmdxplora.remedies import _speed_it_recorded
+
+    root = _browser_study(tmp_path / "study", "completed")
+    record = root / "simulation" / "live_status.json"
+    record.write_text(json.dumps({**json.loads(record.read_text(encoding="utf-8")),
+                                  "platform": "CPU"}), encoding="utf-8")
+    # Production a second a sample; the live record's own speed, an
+    # average from the run's start, below what production ran at.
+    path = root / "simulation" / "live_metrics.csv"
+    rows = path.read_text(encoding="utf-8").splitlines()
+    head = rows[0].split(",")
+    kept, second = [rows[0]], 0
+    for row in rows[1:]:
+        cells = row.split(",")
+        if cells[head.index("stage")].lower().startswith("production"):
+            second += 1
+            cells[head.index("timestamp")] = f"2026-10-05T12:{second // 60:02d}:{second % 60:02d}+00:00"
+        cells[head.index("speed")] = "60.5"
+        kept.append(",".join(cells))
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    seconds, _ = _speed_it_recorded(root)
+    said = overview_payload(root)["speed_ns_per_day"]
+    assert said == pytest.approx(86400.0 / seconds, rel=1e-3)
+
+    def check(page):
+        page.wait_for_function(
+            "() => / ns\\/day$/.test(document.getElementById('overview-platform-cell')"
+            ".textContent)")
+        # The speed chart's number beside it, once the run has ended: it
+        # gave the newest sample, the same average from the start.
+        page.wait_for_function(
+            "said => Math.abs(Number(document.querySelector('[data-chart-value=\"speed\"]')"
+            ".textContent) - said) < said * 1e-3", arg=said)
+        shown = (page.text_content("#overview-platform-cell"),
+                 page.text_content('[data-chart-value="speed"]'),
+                 page.text_content('[data-chart-note="speed"]'))
+        # At a phone's width the note wraps; the plot kept 43 px of 80.
+        page.set_viewport_size({"width": 390, "height": 900})
+        page.wait_for_timeout(400)
+        tall = page.evaluate("() => document.querySelector('canvas[data-chart=\"speed\"]')"
+                             ".getBoundingClientRect().height")
+        return shown + (tall,)
+
+    (cell, value, note, tall), errors = _open(root, check)
+    assert tall >= 80, tall
+    assert not errors, errors
+    assert f"{said:.4g}" in cell and "60.5" not in cell, cell
+    assert float(value) == pytest.approx(said, rel=1e-3), value
+    # One number, written alike in both places, and said for what it is
+    # beside a line that is the average from the start.
+    assert value in cell, (value, cell)
+    assert note.startswith("the speed a fix is priced at"), note
+    # A run that wrote its cost record is priced from it: the row says that
+    # speed too, not one 22% apart.
+    from fastmdxplora.gui import overview_view
+    from fastmdxplora.remedies import _speed
+
+    (root / "simulation" / "cost.json").write_text(json.dumps(
+        {"steps": 50000, "seconds": 600.0, "timestep_fs": 2.0, "platform": "CPU"}),
+        encoding="utf-8")
+    overview_view._CACHE.clear()
+    priced, _ = _speed(root, root)
+    assert priced == pytest.approx(600.0 / 0.1)
+    assert overview_payload(root)["speed_ns_per_day"] == pytest.approx(86400.0 / priced, rel=1e-3)

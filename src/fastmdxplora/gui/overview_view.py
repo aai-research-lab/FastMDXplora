@@ -79,11 +79,30 @@ def overview_payload(root: str | Path) -> dict[str, Any]:
         payload["phases"] = _phases(root)
     except Exception:  # noqa: BLE001
         payload["phases"] = []
+    try:
+        payload["speed_ns_per_day"] = _production_speed(root)
+    except Exception:  # noqa: BLE001
+        payload["speed_ns_per_day"] = None
     with _LOCK:
         if len(_CACHE) > 32:
             _CACHE.clear()
         _CACHE[str(root)] = (key, payload)
     return payload
+
+
+def _production_speed(root: Path) -> float | None:
+    """The speed production ran at, from its own steps and times, as the
+    fix card prices a carry-on: the line beside it gave the live record's
+    average from the run's start, setup and minimisation in it, half the
+    price's."""
+    from fastmdxplora.remedies import _speed
+
+    pieces = sorted(root.glob("segment-*/simulation/live_status.json"))
+    folder = pieces[-1].parent.parent if pieces else root
+    # The one speed every price is read at: the run's cost record where it
+    # wrote one, else its production's own steps and times.
+    seconds, _platform = _speed(folder, root)
+    return round(86400.0 / seconds, 4) if seconds and seconds > 0 else None
 
 
 def _stamp(root: Path) -> tuple:
