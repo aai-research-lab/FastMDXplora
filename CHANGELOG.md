@@ -7,6 +7,42 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Studies started here share the GPUs, and the GUI reaches your machines
+
+**Changed:** a study started on this computer (the GUI's **Run**, **Run a
+config file**, an AI app's `start_study`, the Agent) that simulates on a GPU
+starts beside the studies already running where it fits on one: the GPU with
+the fewest studies from here and then the most free memory, read with
+`nvidia-smi`, given to the run by its UUID. One that does not fit is refused
+with the memory it needs and what is free (`environment.workspace.no_room`).
+The memory one run needs is learned from the studies here that completed with
+their runs one at a time on the GPU chosen, kept apart from the machines'
+(`gpu_memory_here.json`). Work on the CPU, a study whose GPU is not chosen
+here (a continuation), and every study on a computer whose GPUs `nvidia-smi`
+does not read, each still waits for the other such work. A window still follows
+one run.
+
+**Fixed:** no two runs write one folder. A study started into, inside or
+around a folder a run is writing, a continuation of a study still running
+(from any page, **Run a config file** included), and an analysis run again
+on a study still running are refused (`environment.workspace.run_going`).
+The GUI holds the workspace's starting lock from its check that the folder
+is free to the start, so two windows, or a window and an AI app, cannot both
+find it free. A start refused takes back the folders it made.
+
+**Added:** the GUI's routes to your machines, `/api/remote/*`: the machines
+and jobs, a plan of a send (what travels, each size, where it runs, the GPUs'
+room, the job script) under a token kept ten minutes, the send of that plan
+once, a job's state, a fetch at the size shown, and a cancel. Loopback only,
+behind the server's checks, and not in a hosted GUI.
+
+**Fixed:** a send to another machine is bound to the contents of what
+travels, not only the sizes: a file rewritten at the same size after the plan
+was shown, or while the person was asked in an AI app, is not sent
+(`remote.send.unconfirmed`). Files are read for this up to 2 GB a send;
+beyond, a file is known by its size, the file it is and when it was written
+and changed. A pipe named as an input is never opened.
+
 ### Compare and Clear beside the studies chosen
 
 **Changed:** on All studies, **Compare** and **Clear** were at the top of
