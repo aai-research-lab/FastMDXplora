@@ -2244,7 +2244,7 @@ def sent_digest(sending: Sending, prints: dict[str, tuple[int, str]] | None = No
     return hashlib.sha256("\n".join([
         sending.installation.path, sending.remote_dir, sending.config_text, sending.script,
         *(f"{name}={source}={prints.get(name, (0, ''))[1]}"
-          for name, source in sending.inputs.files.items())]).encode()).hexdigest()[:16]
+          for name, source in sending.inputs.files.items())]).encode()).hexdigest()
 
 
 def room_said(sending: Sending, *, running: str = "") -> list[str]:

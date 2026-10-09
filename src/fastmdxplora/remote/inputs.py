@@ -260,18 +260,22 @@ READ_IN_ALL_BYTES = 2 * 1024 * 1024 * 1024
 def _file_print(real: Path, left: list[int]) -> tuple[int, str]:
     """A file's size, and what tells it from the same file changed;
     ``left`` is what may still be read for this send, and is spent."""
-    found = real.stat()
-    if not stat.S_ISREG(found.st_mode):
-        # A pipe or a device is never opened: it could wait forever, and a
-        # copy does not send one.
-        return 0, f"special:{stat.S_IFMT(found.st_mode)}"
-    if found.st_size > READ_WHOLE_BYTES or found.st_size > left[0]:
-        return found.st_size, (f"{found.st_size}:{found.st_dev}:{found.st_ino}:"
-                               f"{found.st_mtime_ns}:{found.st_ctime_ns}")
-    left[0] -= found.st_size
-    digest = hashlib.sha256()
-    with real.open("rb") as handle:
-        while chunk := handle.read(1 << 20):
+    # Opened without waiting, and what was opened is what is judged: a file
+    # put in place of a pipe between a look and an open never holds the
+    # reader, and a pipe or a device, which a copy does not send, is never
+    # read.
+    handle = os.open(real, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+                     | getattr(os, "O_BINARY", 0))
+    with os.fdopen(handle, "rb") as opened:
+        found = os.fstat(opened.fileno())
+        if not stat.S_ISREG(found.st_mode):
+            return 0, f"special:{stat.S_IFMT(found.st_mode)}"
+        if found.st_size > READ_WHOLE_BYTES or found.st_size > left[0]:
+            return found.st_size, (f"{found.st_size}:{found.st_dev}:{found.st_ino}:"
+                                   f"{found.st_mtime_ns}:{found.st_ctime_ns}")
+        left[0] -= found.st_size
+        digest = hashlib.sha256()
+        while chunk := opened.read(1 << 20):
             digest.update(chunk)
     return found.st_size, f"{found.st_size}:{digest.hexdigest()}"
 
@@ -295,7 +299,10 @@ def fingerprint_of(path: Path, left: list[int] | None = None) -> tuple[int, str]
         return total, digest.hexdigest()
     lines = []
     try:
-        walked = list(_walked(path))
+        # In one order whatever order the folder lists them in, so the
+        # files read whole, before what may be read is spent, are the same
+        # at the plan and at the send.
+        walked = sorted(_walked(path), key=lambda entry: entry[0].as_posix())
     except (OSError, RuntimeError, ValueError):
         walked = [(path, None)]
     for here, real in walked:

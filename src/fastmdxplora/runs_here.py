@@ -354,7 +354,10 @@ def _continued(config: dict[str, Any] | None, folder: Path | None) -> list[Path]
     study = Path(str(named)).expanduser()
     if not study.is_absolute() and folder is not None:
         study = Path(folder) / study
-    return [study] if study.is_dir() else []
+    try:
+        return [study] if study.is_dir() else []
+    except (OSError, ValueError):  # a name no folder can have
+        return []
 
 
 def _shared(roots: list[Path], runs: list[dict[str, Any]]) -> list[str]:

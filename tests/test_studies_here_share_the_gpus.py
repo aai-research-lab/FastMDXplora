@@ -414,6 +414,15 @@ class TestNoTwoRunsWriteOneFolder:
         assert refused["ok"] is False and refused["code"] == "environment.workspace.run_going"
         assert len(held) == 1
 
+    def test_a_continuation_named_by_no_possible_folder_is_not_a_crash(
+            self, workspace, gpus, started):
+        from fastmdxplora.runs_here import may_start
+
+        gpus((0, UUID_0, 24000, 23000))
+        config = {"systems": [{"system": str(workspace / "top.pdb")}],
+                  "simulation": {"resume_from": "x" * 5000}}
+        assert may_start([workspace], config, workspace).refused is None
+
     def test_a_refused_launch_takes_back_the_folders_it_made(self, workspace, gpus, started):
         gpus((0, UUID_0, 24000, 1000))
         _needs(2000)

@@ -119,6 +119,34 @@ class TestAFingerprint:
         after = fingerprint_of(file)
         assert before[0] == after[0] == 10 and before[1] != after[1]
 
+    def test_the_files_read_whole_do_not_hang_on_the_order_listed(
+            self, tmp_path, monkeypatch):
+        """Third review: where what may be read ran out partway through a
+        folder, which files were read whole followed the order the folder
+        listed them in, and a plan and its send could disagree."""
+        from fastmdxplora.remote import inputs
+
+        folder = tmp_path / "prepared"
+        folder.mkdir()
+        for name in ("a.xml", "b.xml", "c.xml"):
+            (folder / name).write_text(name[0] * 3)
+        monkeypatch.setattr(inputs, "READ_IN_ALL_BYTES", 4)
+        listed = list(inputs._walked(folder))
+        monkeypatch.setattr(inputs, "_walked", lambda path: iter(listed))
+        first = fingerprint_of(folder)
+        monkeypatch.setattr(inputs, "_walked", lambda path: iter(reversed(listed)))
+        assert fingerprint_of(folder) == first
+
+    def test_a_send_is_bound_to_the_whole_digest(self, tmp_path):
+        from types import SimpleNamespace
+
+        from fastmdxplora.remote.send import sent_digest
+
+        sending = SimpleNamespace(installation=SimpleNamespace(path="/opt/fmdx"),
+                                  remote_dir="~/fmdx/a", config_text="output: a\n",
+                                  script="run\n", inputs=SimpleNamespace(files={}))
+        assert len(sent_digest(sending, {})) == 64
+
 
 class TestTheGui:
     def test_a_file_rewritten_at_the_same_size_is_not_sent(self, served):
