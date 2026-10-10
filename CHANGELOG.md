@@ -7,6 +7,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent evaluated
+
+**Added:** `python -m fastmdxplora.validation.agent_eval`, one versioned set
+of what a person asks the Agent, registered before any reply was seen
+(`preregistration/agent-eval.md`), by which every change to the Agent and
+every AI model behind it is judged. Each case is asked as the Agent page
+asks it, with the software's tools, and judged in code: studies written
+from one message, changed over several, and repaired after a refusal, each
+read as the runs it makes; no structure invented where none is named; a
+refused value not changed to get past the check; nothing done unasked,
+including where an attached file says to run; an action asked for done;
+questions about the software answered from its docs; a finished study's
+mean quoted from its record. Every exchange is recorded (`--out`) and
+replays with no AI model and no network (`--replay`); `--docs-only`
+measures the docs search alone, and `--marks` reads the Useful and Wrong
+marks people gave. See `docs/validation.md`, The Agent's evaluation.
+
 ### Plan, send, follow and fetch a study on your machines from the GUI
 
 **Added:** **Plan the send** in New study, beside **Run on this machine**

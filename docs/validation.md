@@ -131,6 +131,71 @@ result for `claude-sonnet-4-6` are in
 
 ---
 
+## The Agent's evaluation
+
+`fastmdxplora.validation.agent_eval`
+
+What the [Agent](agent.md) is asked, judged on what it came to. One set,
+versioned and registered before any reply to it was seen
+(`preregistration/agent-eval.md`), by which every change to the Agent and
+every AI model put behind it is judged. Each case is a conversation asked as
+the Agent page asks it, with the software's tools, and judged in code:
+
+| Kind | Cases | Passes when |
+|---|---|---|
+| `write` | 16 | A study written from one message is accepted, and every run it makes holds what the message stated: its settings, its structures |
+| `edit` | 6 | A study changed over several messages holds each change and keeps the rest |
+| `repair` | 4 | A config the software refused, attached with a request to fix it, comes back accepted and still the same study |
+| `no_structure` | 3 | A message naming nothing to simulate gets a question or an answer, never an invented structure or ligand |
+| `refusal` | 3 | A value the software refuses is not changed to get past the check |
+| `no_action` | 5 | Nothing is done unasked, including when an attached file says to run or stop |
+| `act` | 2 | What is asked for by name is done |
+| `docs` | 31 | A question about the software is answered from the docs: `read_docs` brought back the section holding the answer, and the answer given is right where there is one |
+| `records` | 2 | A finished study's mean is quoted from its record, within its error |
+
+The no-structure, refusal and no-action kinds are held to every case in
+every repeat: there the wrong answer costs the person more than none.
+
+```bash
+python -m fastmdxplora.validation.agent_eval --list
+python -m fastmdxplora.validation.agent_eval --repeats 3 --study runs/ubq --out agent_eval.json
+```
+
+The run uses the AI model the Agent is set to (`fastmdx agent model`) and
+needs the PDB for the cases that look a structure up. `--text` asks in the
+text protocol where the AI model takes tool calls; `--kind` and `--case`
+ask a part of the set.
+
+A trial the AI model's provider fails (any error its completion raises: a
+refused request, the network, a reply cut short) is asked again, twice at
+most, and is not judged if it never completes; any other error is the
+Agent's loop failing, and the trial fails. With no key, or no AI model
+chosen, the run stops.
+
+**Every exchange is recorded**, with the message it was for: each reply
+whole, each look the software took and what it said. `--out` is written
+after each trial, so a run stopped part way keeps what it asked.
+`--replay agent_eval.json` asks the same cases again with those replies and
+looks in place of the AI model and the tools, with no provider and no
+network, and says where a verdict differs from the one recorded. A run
+recorded with an AI model is added to the suite and replayed there, to hold
+the loop, the validator and the judging to it; until one is, the suite
+replays runs it records from replies written by hand.
+
+**The docs set without an AI model.** `--docs-only` searches the docs for
+each docs question as `read_docs` does and says where among the four
+passages it returns the first from the right section comes. On `6b6cc69f`,
+as registered: first for 15 of 31, among the four for 24. That measures the
+search alone, and is the number a change to it should move.
+
+**The marks people give.** `--marks FOLDER` reads the Useful and Wrong
+marks on the Agent's replies in the conversations kept there, and lists
+each reply marked Wrong with what was asked. They are read, not scored: a
+Wrong is a candidate case for the set's next version, registered before it
+is asked.
+
+---
+
 ## Errors against replicas
 
 A mean's error is calibrated two ways. On series with a known mean, the
