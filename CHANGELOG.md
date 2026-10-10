@@ -7,6 +7,30 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Plan, send, follow and fetch a study on your machines from the GUI
+
+**Added:** **Plan the send** in New study, beside **Run on this machine**
+(or, with **A config I have**, under the config file's own run), offering
+the machines inspected at a terminal. The plan asks the machine and shows
+what a send would do, sending nothing: where it runs, its folder there, the
+config, where the results come back to, every file that travels with its
+size, the GPUs' room and the job script. **Send to** the machine sends that
+plan once, within ten minutes, and only while the form and what travels are
+as shown. A study built in the form is saved as `<results>.yml` first, and
+taken back when its plan is refused or let go. **Remote jobs** on All
+studies lists the jobs whose results come back into the workspace: **Ask how
+it is doing**, **Fetch the results** at the size said, **Stop it** once
+asked. `POST /api/remote/plan` takes the builder's `state`; `POST
+/api/remote/forget` lets a plan go.
+
+**Fixed:** a send no longer waits on a pipe it reads, reads what travels in
+one order, and is bound to the whole digest of what travels. A `system` that
+setup reads as a PDB ID or a sequence, and a phase, an analysis or another
+setting whose values are words, no longer travel as a file or folder of that
+name beside the Config (`fastmdx remote send` too). A study built in the form
+that names a file by a relative path is refused (`remote.input.outside`)
+where **Run on this machine** would read another file, or none.
+
 ### The Agent remembers you
 
 **Added:** the Agent keeps a short memory of the person, lines such as "You
