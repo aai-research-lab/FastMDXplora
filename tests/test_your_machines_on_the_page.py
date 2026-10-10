@@ -222,3 +222,143 @@ def test_the_study_built_is_what_is_planned(session) -> None:
     assert waits
     assert asked == [{"state": built, "machine": "box"}]
     assert errors == []
+
+
+def test_a_plan_is_taken_away_once_the_study_changes(session) -> None:
+    """First review: a plan stayed beside a form changed after it, and
+    Send sent the study as it had been."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        focused = page.evaluate("() => document.activeElement.className")
+        page.fill("#run-config-path", str(machine.study) + " ")
+        gone = page.is_hidden("#run-remote-planned")
+        said = page.text_content("#run-remote-note")
+        browser.close()
+    assert focused == "remote-plan-title"
+    assert gone and said.startswith("The study changed after the plan was shown.")
+    assert not any(c.startswith("mkdir") for c in machine.commands)
+    assert errors == []
+
+
+def test_what_a_send_answers_is_said_though_the_page_was_drawn_again(session) -> None:
+    """First review: the page drawn again while a send was out lost what
+    it answered, a refusal included."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        held = []
+        page.route("**/api/remote/send", lambda route: held.append(route))
+        page.click("#run-remote-planned .primary-btn")
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent.startsWith('Sending')")
+        page.evaluate("() => window.FastMDXDashboard.navigate('run')")
+        page.wait_for_timeout(800)
+        while not held:
+            page.wait_for_timeout(100)
+        held[0].fulfill(status=200, content_type="application/json",
+                        body=json.dumps({"ok": False, "error": "Refused there."}))
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent === 'Refused there.'")
+        browser.close()
+    assert errors == []
+
+
+def test_machines_that_cannot_be_read_are_said(session, monkeypatch) -> None:
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.remote import api
+
+    served, machine = session
+
+    def unreadable():
+        raise OSError("the jobs record is not readable")
+
+    monkeypatch.setattr(api, "jobs", lambda under=None: unreadable())
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        said = page.text_content("#run-remote")
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        page.wait_for_selector("#remote-jobs:not([hidden])")
+        listed = page.text_content("#remote-jobs")
+        browser.close()
+    assert said.startswith("Your machines could not be read:")
+    assert "They could not be read:" in listed
+    assert errors == []
+
+
+def test_a_fetch_out_holds_its_row_and_says_its_answer(session) -> None:
+    """Second review: asking about a job while it was being fetched, or
+    leaving the page and coming back, lost what the fetch answered, and
+    the page threw."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.click("#run-remote-planned .primary-btn")
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent.startsWith('Sent')")
+        travels._until_finished(machine, "study")
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        page.click(".remote-job .ghost-btn >> text=Fetch the results")
+        page.wait_for_selector(".remote-job-said .primary-btn")
+        held = []
+        page.route("**/api/remote/fetch", lambda route: held.append(route))
+        page.click(".remote-job-said .primary-btn")
+        while not held:
+            page.wait_for_timeout(100)
+        asking = page.is_disabled(".remote-job .ghost-btn >> text=Ask how it is doing")
+        page.evaluate("() => window.FastMDXDashboard.navigate('run')")
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        page.wait_for_timeout(500)
+        meanwhile = page.text_content(".remote-job-said")
+        held[0].continue_()
+        page.wait_for_function("() => [...document.querySelectorAll('.remote-job-said')]"
+                               ".some(n => n.textContent.startsWith('Fetched into'))")
+        fetched = page.text_content(".remote-job")
+        browser.close()
+    assert asking
+    assert meanwhile.startswith("Fetching ")
+    assert "(fetched)" in fetched
+    assert errors == []
+
+
+def test_a_config_file_is_sent_from_beside_it(session) -> None:
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        beside_run = page.evaluate(
+            "() => document.getElementById('run-actions-card').contains("
+            "document.getElementById('run-remote'))")
+        _config_checked(page, machine.study)
+        page.wait_for_function(
+            "() => document.getElementById('run-config-field').contains("
+            "document.getElementById('run-remote'))")
+        label = page.text_content("#run-remote-label")
+        browser.close()
+    assert beside_run
+    assert label == "Or send this config file to one of your machines"
+    assert errors == []

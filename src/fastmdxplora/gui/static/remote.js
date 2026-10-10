@@ -52,11 +52,26 @@
 
   var machines = [];
   var jobs = [];
+  // Why the machines could not be read, where they could not (a hosted
+  // GUI, which reaches none, says nothing).
+  var unread = "";
+  // Requests still out, by section: a section is not drawn again under
+  // them, so what they answer is said where it was asked.
+  var busy = { run: 0, studies: 0 };
 
   function machinesKnown() {
     return ask("GET", "/api/remote/machines").then(function (said) {
       machines = said.ok ? (said.machines || []) : [];
       jobs = said.ok ? (said.jobs || []) : [];
+      unread = !said.ok && !said.hosted ? (said.error || "They could not be read.") : "";
+      return said;
+    });
+  }
+
+  function whileAsking(section, promise) {
+    busy[section] += 1;
+    return promise.then(function (said) {
+      busy[section] -= 1;
       return said;
     });
   }
@@ -83,15 +98,48 @@
     return { state: run && run.currentState ? run.currentState() : {} };
   }
 
+  function fromAFile() {
+    var run = window.FastMDXRun;
+    return Boolean(run && run.state && run.state.start === "config");
+  }
+
+  /* Beside what it sends: under the config file's own Run in "A config I
+   * have", else under Run on this machine. */
+  function place() {
+    var host = byId("run-remote");
+    var field = byId("run-config-field");
+    var card = byId("run-actions-card");
+    if (!host || !field || !card) return;
+    var wanted = fromAFile() ? field : card;
+    var after = fromAFile() ? field.querySelector(".builder-actions-row")
+      : byId("run-stop-ask");
+    if (host.parentNode !== wanted && after) {
+      after.parentNode.insertBefore(host, after.nextSibling);
+    }
+    var label = byId("run-remote-label");
+    if (label) {
+      label.textContent = fromAFile() ? "Or send this config file to one of your machines"
+        : "Or on one of your machines";
+    }
+  }
+
+  var sayKnownNow = null;
+
   function renderRunOn() {
     var host = byId("run-remote");
     if (!host) return;
     host.innerHTML = "";
+    clearPlan();
     var usable = machines.filter(function (m) { return m && m.name; });
-    host.hidden = usable.length === 0;
-    if (!usable.length) return;
+    host.hidden = usable.length === 0 && !unread;
+    if (!usable.length) {
+      if (unread) host.appendChild(el("div", "muted small", "Your machines could not be read: "
+        + unread));
+      return;
+    }
     var row = el("div", "remote-run-row");
     var label = el("label", "small muted", "Or on one of your machines");
+    label.id = "run-remote-label";
     var pick = el("select", "remote-run-machine");
     pick.id = "run-remote-machine";
     label.htmlFor = pick.id;
@@ -110,6 +158,10 @@
       known.textContent = m.summary ? "As last inspected: " + m.summary : "";
     }
     sayKnown();
+    sayKnownNow = function () {
+      usable = machines.filter(function (m) { return m && m.name; });
+      sayKnown();
+    };
     pick.addEventListener("change", sayKnown);
     var go = button("ghost-btn remote-run-plan", "Plan the send");
     go.id = "run-remote-plan";
@@ -127,6 +179,7 @@
     host.appendChild(plan);
     host.appendChild(note);
     function sync() {
+      place();
       go.disabled = !builderReady();
       go.title = builderReady() ? ""
         : "Make the study ready to run first, as for Run on this machine.";
@@ -139,6 +192,10 @@
   }
 
   var readyWatched = null;
+  var syncNow = null;
+  var builderWatched = false;
+  var quiet = false;
+  var expiry = null;
 
   function watchReady(sync) {
     if (readyWatched) readyWatched.disconnect();
@@ -147,26 +204,76 @@
       var node = byId(id);
       if (node) readyWatched.observe(node, { attributes: true, attributeFilter: ["disabled"] });
     });
-    var path = byId("run-config-path");
-    if (path) path.addEventListener("input", sync);
+    syncNow = sync;
+    if (builderWatched) return;
+    builderWatched = true;
+    var builder = document.querySelector('section.page[data-page="run"]');
+    if (!builder) return;
+    // A plan is of the study as it was planned: changed since, it is taken
+    // away, so Send never sends what the form no longer says.
+    // A start chosen (a tile pressed) moves the panel beside what it sends.
+    builder.addEventListener("click", function () { setTimeout(place, 0); }, true);
+    ["input", "change"].forEach(function (kind) {
+      builder.addEventListener(kind, function (event) {
+        if (syncNow) syncNow();
+        var host = byId("run-remote");
+        if (quiet || !host || host.contains(event.target)) return;
+        if (clearPlan()) {
+          var note = byId("run-remote-note");
+          if (note) {
+            note.dataset.ok = "";
+            note.textContent = "The study changed after the plan was shown. Plan the send "
+              + "again to see what would go.";
+          }
+        }
+      }, true);
+    });
+  }
+
+  /* Take a plan off the page; whether there was one. */
+  function clearPlan() {
+    if (expiry) { clearTimeout(expiry); expiry = null; }
+    var card = byId("run-remote-planned");
+    if (!card || card.hidden) return false;
+    card.innerHTML = "";
+    card.hidden = true;
+    return true;
+  }
+
+  /* The results folder a plan named, written in the form where it was left
+   * empty, so the study planned again is the same file, not another. */
+  function keepResultsName(results) {
+    var run = window.FastMDXRun;
+    var box = byId("run-output");
+    if (!box || box.value.trim() || !results || (run && run.state
+        && run.state.start === "config")) return;
+    quiet = true;
+    try {
+      box.value = results;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    } finally {
+      quiet = false;
+    }
   }
 
   function planSend(machine, host, note, go) {
     go.disabled = true;
-    host.hidden = true;
-    host.innerHTML = "";
+    clearPlan();
     note.dataset.ok = "";
     note.textContent = "Asking " + machine + " what a send would do…";
     var body = whatIsPlanned();
     body.machine = machine;
-    ask("POST", "/api/remote/plan", body).then(function (said) {
+    whileAsking("run", ask("POST", "/api/remote/plan", body)).then(function (said) {
       go.disabled = !builderReady();
       if (!said.ok) {
         note.textContent = said.error || "It could not be planned.";
         note.dataset.ok = "false";
         return;
       }
-      note.textContent = "";
+      if (body.state) keepResultsName(said.results);
+      note.textContent = "Planned: what a send to " + said.machine
+        + " would do is below. Nothing has been sent.";
       showPlan(said, host, note, go);
     });
   }
@@ -178,7 +285,9 @@
   function showPlan(plan, host, note, go) {
     host.innerHTML = "";
     host.hidden = false;
-    host.appendChild(el("div", "remote-plan-title", "Send to " + plan.machine + "?"));
+    var title = el("div", "remote-plan-title", "Send to " + plan.machine + "?");
+    title.tabIndex = -1;
+    host.appendChild(title);
     var facts = el("dl", "remote-plan-facts");
     [["Runs in", plan.runs_in + " on " + plan.machine + " (" + plan.scheduler + ")"],
      ["Its folder there", plan.folder],
@@ -201,6 +310,7 @@
     }
     var room = (plan.room || []).concat(plan.notes || []);
     if (room.length) {
+      host.appendChild(el("div", "remote-plan-k", "On " + plan.machine));
       var said = el("ul", "remote-plan-list remote-plan-room");
       room.forEach(function (text) { line(said, text); });
       host.appendChild(said);
@@ -218,24 +328,26 @@
     var kept = el("div", "muted small", "This plan is kept for "
       + Math.round((plan.kept_s || 600) / 60) + " minutes and sends once.");
     host.appendChild(kept);
-    var expiry = setTimeout(function () {
+    expiry = setTimeout(function () {
       send.disabled = true;
       kept.textContent = "This plan is no longer kept. Plan the send again.";
     }, (plan.kept_s || 600) * 1000);
     not.addEventListener("click", function () {
-      clearTimeout(expiry);
-      host.innerHTML = "";
-      host.hidden = true;
+      clearPlan();
+      note.textContent = "Not sent.";
+      go.focus();
     });
     send.addEventListener("click", function () {
-      clearTimeout(expiry);
+      if (expiry) { clearTimeout(expiry); expiry = null; }
       send.disabled = true;
       not.disabled = true;
       note.dataset.ok = "";
       note.textContent = "Sending to " + plan.machine + "…";
-      ask("POST", "/api/remote/send", { plan: plan.plan }).then(function (sent) {
+      whileAsking("run", ask("POST", "/api/remote/send", { plan: plan.plan })).then(function (sent) {
         host.innerHTML = "";
         host.hidden = true;
+        note.tabIndex = -1;
+        note.focus();
         if (!sent.ok) {
           note.textContent = sent.error || "It was not sent.";
           note.dataset.ok = "false";
@@ -251,10 +363,10 @@
           }
         });
         note.appendChild(open);
-        machinesKnown().then(renderJobs);
+        machinesKnown().then(function () { if (sayKnownNow) sayKnownNow(); });
       });
     });
-    go.focus();
+    title.focus();
   }
 
   // ------------------------------------------------------------ Remote jobs
@@ -269,8 +381,8 @@
     var host = byId("remote-jobs");
     if (!host) return;
     host.innerHTML = "";
-    host.hidden = jobs.length === 0;
-    if (!jobs.length) return;
+    host.hidden = jobs.length === 0 && !unread;
+    if (!jobs.length && !unread) return;
     var head = el("div", "remote-jobs-head");
     var title = el("h2", "card-title", "Remote jobs");
     title.id = "remote-jobs-title";
@@ -278,6 +390,10 @@
     head.appendChild(el("span", "muted small",
       "Studies sent from this workspace to your machines."));
     host.appendChild(head);
+    if (!jobs.length) {
+      host.appendChild(el("div", "small", "They could not be read: " + unread));
+      return;
+    }
     var list = el("ul", "remote-jobs-list");
     jobs.slice().sort(function (a, b) {
       return String(b.submitted_at || "").localeCompare(String(a.submitted_at || ""));
@@ -285,9 +401,66 @@
     host.appendChild(list);
   }
 
+  /* What each job's row is doing, kept apart from the row itself, which
+   * is drawn again whenever its job is asked about: a question out (with
+   * what the row says meanwhile), or what the last one answered. */
+  var doing = {};
+
+  function rowOf(name) {
+    var rows = document.querySelectorAll("#remote-jobs .remote-job");
+    for (var i = 0; i < rows.length; i += 1) {
+      if (rows[i].dataset.job === name) return rows[i];
+    }
+    return null;
+  }
+
+  /* Said aloud, once, wherever the row stands by then. */
+  var heard = null;
+  function say(text) {
+    if (!heard) {
+      heard = el("span", "sr-only");
+      heard.setAttribute("role", "status");
+      heard.setAttribute("aria-live", "polite");
+      document.body.appendChild(heard);
+    }
+    heard.textContent = "";
+    setTimeout(function () { heard.textContent = text; }, 50);
+  }
+
+  /* The job's row drawn again from what is known of it, the button named
+   * ``focus`` given focus. */
+  function redraw(job, focus) {
+    if (job) jobs = jobs.map(function (j) { return j.name === job.name ? job : j; });
+    var known = jobs.filter(function (j) { return j.name === (job && job.name); })[0];
+    var row = known && rowOf(known.name);
+    if (!row) return null;
+    var fresh = jobRow(known);
+    row.parentNode.replaceChild(fresh, row);
+    if (focus) {
+      var target = fresh.querySelector('[data-act="' + focus + '"]');
+      if (target && !target.disabled) target.focus();
+    }
+    return fresh;
+  }
+
+  /* A question to the machine about ``job``, its row saying ``meanwhile``
+   * and every action held until the answer, which ``then`` makes words of
+   * (and may give the job as it is now). */
+  function asking(job, meanwhile, request, then, focus) {
+    doing[job.name] = { busy: true, said: meanwhile };
+    redraw(job);
+    whileAsking("studies", request).then(function (got) {
+      var answer = then(got) || {};
+      doing[job.name] = { busy: false, said: answer.said || "" };
+      redraw(answer.job || job, focus);
+      if (answer.said) say(answer.said);
+    });
+  }
+
   function jobRow(job) {
     var row = el("li", "remote-job");
     row.dataset.job = job.name;
+    var now = doing[job.name] || {};
     var top = el("div", "remote-job-top");
     top.appendChild(el("span", "remote-job-name mono", job.name));
     var state = el("span", "remote-job-state", STATES[job.state] || job.state);
@@ -297,108 +470,116 @@
       + (job.submitted_at ? ", sent " + String(job.submitted_at).replace("T", " ").slice(0, 16)
         : "")));
     row.appendChild(top);
-    var where = el("div", "muted small mono", "Results: " + job.results
-      + (job.fetched_at ? " (fetched)" : ""));
-    row.appendChild(where);
+    row.appendChild(el("div", "muted small mono", "Results: " + job.results
+      + (job.fetched_at ? " (fetched)" : "")));
     if (job.detail) row.appendChild(el("div", "small", job.detail));
     var actions = el("div", "remote-job-actions");
     var check = button("ghost-btn", "Ask how it is doing");
+    check.dataset.act = "ask";
     actions.appendChild(check);
     var fetchIt = null;
     var cancel = null;
     if (!GOING[job.state]) {
       fetchIt = button("ghost-btn", job.fetched_at ? "Fetch again" : "Fetch the results");
+      fetchIt.dataset.act = "fetch";
       actions.appendChild(fetchIt);
     } else {
       cancel = button("ghost-btn", "Stop it");
+      cancel.dataset.act = "stop";
       actions.appendChild(cancel);
     }
     row.appendChild(actions);
     var said = el("div", "remote-job-said small");
-    said.setAttribute("role", "status");
+    if (now.said) said.textContent = now.said;
     row.appendChild(said);
+    [check, fetchIt, cancel].forEach(function (b) { if (b) b.disabled = Boolean(now.busy); });
     check.addEventListener("click", function () {
-      check.disabled = true;
-      said.textContent = "Asking " + job.machine + "…";
-      ask("GET", "/api/remote/job?job=" + encodeURIComponent(job.name)).then(function (got) {
-        check.disabled = false;
-        if (!got.ok) { said.textContent = got.error || "It could not be asked."; return; }
-        replace(row, got.job);
-      });
+      asking(job, "Asking " + job.machine + "…",
+        ask("GET", "/api/remote/job?job=" + encodeURIComponent(job.name)), function (got) {
+          if (!got.ok) return { said: got.error || "It could not be asked." };
+          var at = new Date().toLocaleTimeString();
+          return { job: got.job, said: "Asked at " + at + ". A machine is asked at most "
+            + "every 30 s, so this may be the answer it gave then." };
+        }, "ask");
     });
-    if (fetchIt) fetchIt.addEventListener("click", function () { askToFetch(job, said, fetchIt); });
+    if (fetchIt) fetchIt.addEventListener("click", function () { askToFetch(job, said); });
     if (cancel) cancel.addEventListener("click", function () { askToStop(job, said, cancel); });
     return row;
   }
 
-  function replace(row, job) {
-    jobs = jobs.map(function (j) { return j.name === job.name ? job : j; });
-    var fresh = jobRow(job);
-    row.parentNode.replaceChild(fresh, row);
-    return fresh;
+  /* A message written for the command line, said for this page. */
+  function forThePage(text) {
+    return String(text).replace("fetch again with --with-trajectory to bring them",
+      "fetch again with the trajectory ticked to bring them");
   }
 
-  function askToFetch(job, said, start) {
-    start.disabled = true;
+  function askToFetch(job, said) {
+    asking(job, "Asking " + job.machine + " what a fetch would bring…",
+      ask("GET", "/api/remote/fetch-sizes?job=" + encodeURIComponent(job.name)),
+      function (sizes) {
+        if (!sizes.ok) return { said: sizes.error || "It could not be asked." };
+        // Drawn once the row is drawn again, below.
+        setTimeout(function () { offerFetch(job, sizes); }, 0);
+        return { said: "" };
+      });
+  }
+
+  function offerFetch(job, sizes) {
+    var row = rowOf(job.name);
+    if (!row) return;
+    var said = row.querySelector(".remote-job-said");
     said.innerHTML = "";
-    said.textContent = "Asking " + job.machine + " what a fetch would bring…";
-    ask("GET", "/api/remote/fetch-sizes?job=" + encodeURIComponent(job.name)).then(function (sizes) {
-      start.disabled = false;
-      said.innerHTML = "";
-      if (!sizes.ok) { said.textContent = sizes.error || "It could not be asked."; return; }
-      if (!sizes.run_written) {
-        said.appendChild(el("div", null, "The job ended before its run wrote anything; "
-          + "its folder holds only the job's log, which says why."));
-      }
-      var withTrajectory = el("input");
-      withTrajectory.type = "checkbox";
-      var choice = el("label", "small");
-      choice.appendChild(withTrajectory);
-      choice.appendChild(document.createTextNode(" With the trajectory ("
-        + size(sizes.trajectory_bytes) + " in " + sizes.trajectory_files + " file"
-        + (sizes.trajectory_files === 1 ? "" : "s") + ")"));
-      var bringing = el("div", null);
-      function sayBringing() {
-        var n = withTrajectory.checked ? sizes.bringing["with"] : sizes.bringing.without;
-        bringing.textContent = "Bring " + size(n) + " into " + job.results + "?";
-        return n;
-      }
-      sayBringing();
-      withTrajectory.addEventListener("change", sayBringing);
-      said.appendChild(bringing);
-      if (sizes.trajectory_files) said.appendChild(choice);
-      var answers = el("div", "remote-plan-answers");
-      var yes = button("primary-btn", "Fetch");
-      var no = button("ghost-btn", "Not now");
-      answers.appendChild(yes);
-      answers.appendChild(no);
-      said.appendChild(answers);
-      no.addEventListener("click", function () { said.innerHTML = ""; });
-      yes.addEventListener("click", function () {
-        yes.disabled = true;
-        no.disabled = true;
-        var n = sayBringing();
-        var body = { job: job.name, with_trajectory: withTrajectory.checked, bringing: n };
-        said.innerHTML = "";
-        said.textContent = "Fetching " + size(n) + "…";
-        ask("POST", "/api/remote/fetch", body).then(function (got) {
+    if (!sizes.run_written) {
+      said.appendChild(el("div", null, "The job ended before its run wrote anything; "
+        + "its folder holds only the job's log, which says why."));
+    }
+    var withTrajectory = el("input");
+    withTrajectory.type = "checkbox";
+    var choice = el("label", "small");
+    choice.appendChild(withTrajectory);
+    choice.appendChild(document.createTextNode(" With the trajectory ("
+      + size(sizes.trajectory_bytes) + " in " + sizes.trajectory_files + " file"
+      + (sizes.trajectory_files === 1 ? "" : "s") + ")"));
+    var bringing = el("div", null);
+    function sayBringing() {
+      var n = withTrajectory.checked ? sizes.bringing["with"] : sizes.bringing.without;
+      bringing.textContent = "Bring " + size(n) + " into " + job.results + "?";
+      return n;
+    }
+    sayBringing();
+    withTrajectory.addEventListener("change", sayBringing);
+    said.appendChild(bringing);
+    if (sizes.trajectory_files) said.appendChild(choice);
+    var answers = el("div", "remote-plan-answers");
+    var yes = button("primary-btn", "Fetch");
+    var no = button("ghost-btn", "Not now");
+    answers.appendChild(yes);
+    answers.appendChild(no);
+    said.appendChild(answers);
+    yes.focus();
+    no.addEventListener("click", function () {
+      doing[job.name] = {};
+      redraw(job, "fetch");
+    });
+    yes.addEventListener("click", function () {
+      var n = sayBringing();
+      var body = { job: job.name, with_trajectory: withTrajectory.checked, bringing: n };
+      asking(job, "Fetching " + size(n) + "…", ask("POST", "/api/remote/fetch", body),
+        function (got) {
           if (!got.ok) {
-            said.textContent = (got.error || "It was not fetched.")
-              + (got.bringing !== undefined ? " It would bring " + size(got.bringing) + " now." : "");
-            return;
+            return { said: (got.error || "It was not fetched.")
+              + (got.bringing !== undefined ? " It would bring " + size(got.bringing)
+                + " now." : "") };
           }
-          var row = said.closest(".remote-job");
-          var fresh = replace(row, got.job);
-          var done = fresh.querySelector(".remote-job-said");
-          done.textContent = "Fetched into " + got.job.results + "."
-            + ((got.warnings || []).length ? " " + got.warnings.join(" ") : "");
           // The study it brought is one of the workspace's now.
           var where = byId("studies-path");
           if (window.FastMDXStudies && window.FastMDXStudies.load) {
             window.FastMDXStudies.load(where && where.value ? where.value : undefined);
           }
-        });
-      });
+          return { job: got.job, said: "Fetched into " + got.job.results + "."
+            + ((got.warnings || []).length ? " " + got.warnings.map(forThePage).join(" ")
+              : "") };
+        }, "fetch");
     });
   }
 
@@ -413,30 +594,38 @@
     answers.appendChild(no);
     said.appendChild(answers);
     start.disabled = true;
-    no.addEventListener("click", function () { said.innerHTML = ""; start.disabled = false; });
+    no.focus();
+    no.addEventListener("click", function () {
+      doing[job.name] = {};
+      redraw(job, "stop");
+    });
     yes.addEventListener("click", function () {
-      yes.disabled = true;
-      no.disabled = true;
-      said.innerHTML = "";
-      said.textContent = "Asking " + job.machine + " to stop it…";
-      ask("POST", "/api/remote/cancel", { job: job.name }).then(function (got) {
-        start.disabled = false;
-        if (!got.ok) { said.textContent = got.error || "It could not be stopped."; return; }
-        var row = said.closest(".remote-job");
-        var fresh = replace(row, got.job);
-        fresh.querySelector(".remote-job-said").textContent = got.stopped
-          ? "Asked to stop: it is stopping." : "Asked to stop; it may take a moment.";
-      });
+      asking(job, "Asking " + job.machine + " to stop it…",
+        ask("POST", "/api/remote/cancel", { job: job.name }), function (got) {
+          if (!got.ok) return { said: got.error || "It could not be stopped." };
+          return { job: got.job, said: got.stopped ? "Asked to stop: it has stopped."
+            : "Asked to stop; it may take a moment. Ask how it is doing to see." };
+        }, "ask");
     });
   }
 
   // ------------------------------------------------------------ wiring
 
+  /* Whether a question is open in a section (a plan shown, a fetch or a
+   * stop asked): it is not drawn again from under the person. */
+  function askedIn(selector) {
+    return Boolean(document.querySelector(selector));
+  }
+
   function refresh(page) {
     if (page !== "run" && page !== "studies") return;
     machinesKnown().then(function () {
-      if (page === "run") renderRunOn();
-      if (page === "studies") renderJobs();
+      if (page === "run" && !busy.run && !askedIn("#run-remote-planned:not([hidden])")) {
+        renderRunOn();
+      }
+      if (page === "studies" && !busy.studies && !askedIn(".remote-job-said button")) {
+        renderJobs();
+      }
     });
   }
 

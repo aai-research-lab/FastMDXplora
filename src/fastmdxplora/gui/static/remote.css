@@ -3,7 +3,7 @@
 .remote-run { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
     padding-top: 10px; border-top: 1px solid var(--border-subtle); }
 .remote-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.remote-run-machine { min-width: 10rem; max-width: 100%; }
+.remote-run-machine { width: auto; min-width: 10rem; max-width: 100%; }
 .remote-plan { display: flex; flex-direction: column; gap: 8px; padding: 12px;
     border: 1px solid var(--border-primary); border-radius: 10px; }
 .remote-plan-title { font-weight: 600; }

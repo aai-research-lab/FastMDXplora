@@ -303,6 +303,54 @@ class TestTheConfigBuilder:
         assert desk.inside(str(machine.study)) == machine.study.resolve()
         # A relative name is the opened folder's, as a page gives it.
         assert desk.inside("study.yml") == opened.resolve() / "study.yml"
-        saved, refused = desk._saved(STATE)
+        saved, refused, _ = desk._saved(STATE)
         assert refused is None and saved == root.resolve() / "ub-run.yml"
         assert desk.inside(str(tmp_path.parent)) is None
+
+    def test_a_machine_never_inspected_leaves_no_config_behind(self, served):
+        """First review: a plan refused for its machine still saved a
+        config, a new one each time the results folder was left blank."""
+        address, machine = served
+        root = machine.study.parent
+        status, said = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "output": ""}, "machine": "gpu-box"})
+        assert said["ok"] is False and "gpu-box" in said["error"]
+        assert list(root.glob("*.yml")) == [machine.study]
+
+    def test_a_config_saved_for_a_plan_refused_is_taken_back(self, served):
+        address, machine = served
+        root = machine.study.parent
+        (root / "ub-run").mkdir()
+        (root / "ub-run" / "kept.txt").write_text("x")
+        status, said = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        assert said["ok"] is False and said["code"] == "environment.path.exists"
+        assert not (root / "ub-run.yml").exists()
+        assert (root / "ub-run" / "kept.txt").read_text() == "x"
+
+    def test_a_link_in_the_config_s_place_is_passed_over_unread(self, served, tmp_path):
+        address, machine = served
+        root = machine.study.parent
+        outside = tmp_path / "outside.yml"
+        outside.write_text("output: mine\n")
+        (root / "ub-run.yml").symlink_to(outside)
+        (root / "ub-run-2.yml").write_bytes(b"\xff\xfe")
+        status, plan = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        assert plan["ok"], plan
+        assert plan["config"] == "ub-run-3.yml"
+        assert outside.read_text() == "output: mine\n"
+        assert (root / "ub-run-2.yml").read_bytes() == b"\xff\xfe"
+
+    def test_a_results_folder_in_the_home_folder_is_refused_before_saving(
+            self, machine, tmp_path, monkeypatch):
+        home = machine.study.parent
+        monkeypatch.setenv("HOME", str(home))
+        desk = RemoteDesk(DashboardRuntime(workspace_root=home, exploration_root=home))
+        saved, refused, _ = desk._saved(STATE)
+        assert saved is None and "home folder" in refused["error"]
+        assert not (home / "ub-run.yml").exists()
+
+    def test_a_name_no_folder_can_have_is_refused(self, machine):
+        root = machine.study.parent
+        desk = RemoteDesk(DashboardRuntime(workspace_root=root, exploration_root=root))
+        saved, refused, _ = desk._saved({**STATE, "output": str(root / "a\0b")})
+        assert saved is None and refused["ok"] is False

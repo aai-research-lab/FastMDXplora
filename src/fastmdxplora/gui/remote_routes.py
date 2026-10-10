@@ -57,7 +57,8 @@ _GETS = frozenset({"/api/remote/machines", "/api/remote/job", "/api/remote/fetch
 _POSTS = frozenset({"/api/remote/plan", "/api/remote/send", "/api/remote/fetch",
                     "/api/remote/cancel"})
 
-_HOSTED = _refused("Not available in a hosted GUI: its studies run on its service.")
+_HOSTED = _refused("Not available in a hosted GUI: its studies run on its service.",
+                   hosted=True)
 
 
 def _said(exc: BaseException) -> dict[str, Any]:
@@ -97,14 +98,15 @@ class RemoteDesk:
         return None
 
     def shown(self, path: Any) -> str:
+        """A path as the page says it: relative to the folder relative names
+        are read from, else in full, so what is shown names what it says if
+        it is given back."""
         from fastmdxplora.mcp.workspace import Workspace
 
-        for root in self.roots:
-            try:
-                Path(str(path)).resolve().relative_to(root)
-            except (ValueError, OSError, RuntimeError):
-                continue
-            return Workspace(root).shown(path)
+        try:
+            Path(str(path)).resolve().relative_to(self.root)
+        except (ValueError, OSError, RuntimeError):
+            return str(path)
         return Workspace(self.root).shown(path)
 
     def _jobs(self) -> list[Any]:
@@ -247,11 +249,16 @@ class RemoteDesk:
                                         "workspace.")
         return file, output, None
 
-    def _saved(self, state: dict[str, Any]) -> tuple[Path | None, dict[str, Any] | None]:
+    def _saved(self, state: dict[str, Any]
+               ) -> tuple[Path | None, dict[str, Any] | None, bool]:
         """The Config Builder's study saved as a config file beside the
-        results folder it names, where **Run on this machine** would write
-        them: ``<results>.yml``, or ``-2``, ``-3`` and so on beside an
-        earlier one; the same text planned again is the same file."""
+        results folder it names (where **Run on this machine** writes them,
+        given the window's runtime; else in the folder opened):
+        ``<results>.yml``, or ``-2``, ``-3`` and so on beside an earlier one;
+        the same text planned again is the same file. A link, or a file that
+        is not the same text, is passed over and never read or written.
+        Also whether the file was written now (and so is taken back where
+        the plan is refused)."""
         from fastmdxplora.gui.config_builder import config_yaml
         from fastmdxplora.naming import default_output_name, system_of
 
@@ -259,28 +266,44 @@ class RemoteDesk:
         requested = str(source.get("output") or "").strip()
         if not requested:
             requested = default_output_name(system_of(source))
-        if self.runtime is not None:
-            output = self.runtime._output_folder(requested)
-        else:
-            output = self.inside(requested)
+        try:
+            output = (self.runtime._output_folder(requested) if self.runtime is not None
+                      else self.inside(requested))
+        except (OSError, ValueError, RuntimeError):
+            output = None
         if output is None or self.inside(str(output)) is None or output in self.roots:
             return None, _refused(f"The results folder {requested} must be a new folder "
-                                  "inside the workspace.")
+                                  "inside the workspace."), False
+        home = Path.home().resolve()
+        if output.parent == home or output.parent in home.parents:
+            # Nothing in the home folder itself travels, and a config is not
+            # left there to say so.
+            return None, _refused(f"The results folder {self.shown(output)} would sit in "
+                                  "your home folder, which nothing is sent from. Name a "
+                                  "results folder inside a folder of its own."), False
         source["output"] = str(output)
         try:
             built = config_yaml(source, full=bool(source.get("full")))
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one
-            return None, _said(exc)
+            return None, _said(exc), False
         if not built.get("ok"):
             return None, _refused(str(built.get("error") or "The study could not be "
-                                      "written as a config."), str(built.get("code") or ""))
+                                      "written as a config."), str(built.get("code") or "")), False
         text = str(built["yaml"])
         for n in range(1, 1000):
             target = output.parent / (f"{output.name}.yml" if n == 1
                                       else f"{output.name}-{n}.yml")
             try:
-                if target.is_file() and target.read_text(encoding="utf-8") == text:
-                    return target, None
+                if target.is_symlink() or (target.exists() and (
+                        self.inside(str(target)) is None or not target.is_file())):
+                    continue  # never read, nor written through
+                if target.is_file():
+                    try:
+                        if target.read_text(encoding="utf-8") == text:
+                            return target, None, False
+                    except ValueError:  # not text: another file, kept as it is
+                        pass
+                    continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("x", encoding="utf-8") as out:
                     out.write(text)
@@ -288,22 +311,41 @@ class RemoteDesk:
                 continue
             except (OSError, ValueError) as exc:
                 return None, _refused(f"The config could not be saved beside "
-                                      f"{self.shown(output)}: {exc}")
-            return target, None
-        return None, _refused("Too many configs of that name; give another results folder.")
+                                      f"{self.shown(output)}: {exc}"), False
+            return target, None, True
+        return None, _refused("Too many configs of that name; give another results "
+                              "folder."), False
 
     def plan(self, config: Any, machine: Any, *, state: Any = None) -> dict[str, Any]:
         """What a send of ``config`` to ``machine`` would do, as the page
         shows it before the person agrees; with a token the send is made by.
         Given the Config Builder's ``state`` in place of a file, the study is
         saved as one first (:meth:`_saved`)."""
-        from fastmdxplora.remote.send import room_said, sent_digest, travelling
-
         if not config and isinstance(state, dict):
-            saved, refused = self._saved(state)
+            from fastmdxplora.remote.machines import load_machine
+
+            # A machine never inspected is said before anything is saved.
+            try:
+                load_machine(str(machine or ""))
+            except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+                return _said(exc)
+            saved, refused, made = self._saved(state)
             if refused is not None:
                 return refused
-            config = str(saved)
+            said = self._plan(str(saved), machine)
+            if not said.get("ok") and made:
+                # Refused, its config is taken back: planned again, it is
+                # written again, and a blank results folder leaves none.
+                try:
+                    saved.unlink()
+                except OSError:
+                    pass
+            return said
+        return self._plan(config, machine)
+
+    def _plan(self, config: Any, machine: Any) -> dict[str, Any]:
+        from fastmdxplora.remote.send import room_said, sent_digest, travelling
+
         file, output, refused = self._what(config)
         if refused is not None:
             return refused
