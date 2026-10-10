@@ -259,7 +259,8 @@ FastMDXplora/
 │       │   ├── environments.py    # One study run in several places, compared field by field
 │       │   ├── replica_calibration.py   # Whether one run's stated error agrees with replicas
 │       │   ├── stopping_calibration.py  # Whether a study stopped by `stop_when` states an honest error
-│       │   └── agent_looks.py, agent_looks_v2.py  # Whether the Agent's looking helps, on a real AI model
+│       │   ├── agent_looks.py, agent_looks_v2.py  # Whether the Agent's looking helps, on a real AI model
+│       │   └── agent_eval.py      # The Agent's evaluation: a registered set of what a person asks, judged in code
 │       └── utils/
 │           ├── logging.py         # Structured logging
 │           ├── presenter.py       # Terminal presentation layer (banner, phase output)
