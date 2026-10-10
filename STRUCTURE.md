@@ -63,6 +63,7 @@ FastMDXplora/
 │       │   ├── receipt.py         # What the AI model was sent for one reply, kept bounded
 │       │   ├── tools.py           # What the Agent looks at with the software's own tools
 │       │   ├── models.py          # A stored provider choice, as the function the Agent calls
+│       │   ├── memory.py          # What the Agent remembers of the person, as they see and change it
 │       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks
 │       │   ├── queue.py           # A waiting line for one card, and a budget it keeps to
 │       │   ├── worker.py          # One process taking work off the line, one job at a time

@@ -363,6 +363,15 @@ CODES: tuple[Code, ...] = (
          "The page asked the Agent about a study that is no longer the one open: "
          "another was opened, or it was reloaded.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
+    Code("agent.memory.refused",
+         "A line or a change the Agent's memory of the person does not keep or "
+         "cannot make: a secret, a line past the checks, a value for every study, "
+         "a line too long, one past the most it holds, or a change undone already.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
+    Code("agent.memory.store_unusable",
+         "The store a hosted GUI was told to keep each person's memory in is not "
+         "installed, could not be started, or is not a memory store.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("mcp.tool.refused",
          "A tool an AI app called declined what it was asked: a path outside "
          "the workspace, a config that is not a file, a study already running, or "
