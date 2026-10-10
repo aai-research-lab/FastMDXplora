@@ -1000,11 +1000,17 @@
     var openOut = el("open-output");
     if (openOut) {
       openOut.addEventListener("click", function () {
+        openOut._fmxCopied = null;
         var path = (el("sidebar-output-folder") || {}).textContent || "";
         if (!path || path === "\u2014") return;
         // The menu closes on the click: the card that opened it ticks.
-        window.FastMDXIcons.copy(el("study-card"), path.trim(), "Path copied",
-                                 "Could not copy the path");
+        // Copied here, in the click, where a page with no clipboard can
+        // still copy; the folder's answer comes later, and says this.
+        openOut._fmxCopied = {
+          path: path.trim(),
+          done: window.FastMDXIcons.copy(el("study-card"), path.trim(), "Path copied",
+                                         "Could not copy the path"),
+        };
       }, true);
     }
 

@@ -223,6 +223,14 @@
         foot.parentElement.style.setProperty("--sidebar-foot-height", `${foot.offsetHeight}px`);
       }).observe(foot, {box: "border-box"});
     }
+    /* The path frame.js copied as the button was clicked, where it is this
+     * one; copied again only where it was not. A copy made after the
+     * folder's answer may come too late for a page with no clipboard. */
+    const copiedOnClick = (path) => {
+      const made = byId("open-output")?._fmxCopied;
+      if (made && made.path === String(path || "").trim()) return made.done;
+      return window.FastMDXIcons.copyText(path);
+    };
     byId("open-output")?.addEventListener("click", async () => {
       try {
         const payload = await fetchJSON("/api/open-output");
@@ -233,12 +241,12 @@
         } else {
           // Said copied only where it was: a page over plain http may not.
           const path = payload.path || state.outputDir || "";
-          const copied = await window.FastMDXIcons.copyText(path);
+          const copied = await copiedOnClick(path);
           showToast(copied ? "Could not open the folder automatically; its path was copied."
             : `Could not open the folder automatically. Its path: ${path}`, "warning");
         }
       } catch (error) {
-        const copied = await window.FastMDXIcons.copyText(state.outputDir);
+        const copied = await copiedOnClick(state.outputDir);
         showToast(copied ? "Could not open the output folder; its path was copied."
           : "Could not open the output folder.", "warning");
       }

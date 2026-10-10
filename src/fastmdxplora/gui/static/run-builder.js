@@ -3290,6 +3290,8 @@
       return;
     }
     // The button ticks and the notice says so; with none, the line does.
+    // A note left from an earlier try is not left beside the tick.
+    if (button) say("");
     const refused = body ? "Clipboard unavailable here" : "Clipboard unavailable here; the command is shown above.";
     if (await window.FastMDXIcons.copy(button, built.command, "Command copied", refused)) {
       if (!button) say("Command copied.");

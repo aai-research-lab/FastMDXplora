@@ -27,6 +27,10 @@
 
   /* ---- Saying things ------------------------------------------------ */
   function toast(message, kind) {
+    // In the GUI, its notice, whose timer a later notice restarts: this
+    // one's own hid "SHA-256 copied" as soon as it was said.
+    var page = window.FastMDXDashboard;
+    if (page && page.toast) { page.toast(message, kind); return; }
     var note = byId("dashboard-toast");
     if (!note) {
       note = document.createElement("div");
@@ -54,6 +58,7 @@
       area.style.opacity = "0";
       document.body.appendChild(area);
       area.select();
+      area.setSelectionRange(0, area.value.length);
       var ok = false;
       try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
       area.remove();

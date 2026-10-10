@@ -65,6 +65,7 @@
       for (var i = 0; i < made.children.length; i++) {
         if (made.children[i].tagName.toLowerCase() === "svg") was.own = made.children[i];
       }
+      if (was.own) was.style = was.own.getAttribute("style");
       made._fmxTick = was;
     }
     var holder = document.createElement("span");
@@ -80,7 +81,8 @@
     made.setAttribute("aria-label", said);
     was.timer = setTimeout(function () {
       was.tick.remove();
-      if (was.own) was.own.style.display = "";
+      if (was.own && was.style === null) was.own.removeAttribute("style");
+      else if (was.own) was.own.setAttribute("style", was.style);
       made.classList.remove("is-ticked");
       if (was.name === null) made.removeAttribute("aria-label");
       else made.setAttribute("aria-label", was.name);
@@ -122,19 +124,44 @@
     if (!text) return Promise.resolve(false);
     function selected() {
       var focused = document.activeElement;
+      // What the person had selected, put back after: the box's text is
+      // selected to be copied.
+      var chosen = window.getSelection ? window.getSelection() : null;
+      var kept = [];
+      for (var i = 0; chosen && i < chosen.rangeCount; i++) kept.push(chosen.getRangeAt(i));
+      // A field keeps its own selection, which the page's ranges do not hold.
+      var field = focused && /^(INPUT|TEXTAREA)$/.test(focused.tagName) ? focused : null;
+      var marks = null;
+      try {
+        if (field && field.selectionStart != null) {
+          marks = [field.selectionStart, field.selectionEnd, field.selectionDirection || "none"];
+        }
+      } catch (e) { marks = null; }
       var area = document.createElement("textarea");
       area.value = text;
       area.setAttribute("readonly", "");
       area.style.position = "fixed";
       area.style.top = "0";
       area.style.opacity = "0";
+      // Large enough that iOS does not zoom to it.
+      area.style.fontSize = "12pt";
       document.body.appendChild(area);
       area.select();
+      // iOS selects nothing in a read-only box by select() alone.
+      area.setSelectionRange(0, area.value.length);
       var ok = false;
       try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
       area.remove();
       // Back where the keyboard was, where the tick is shown.
       if (focused && focused.focus) focused.focus({ preventScroll: true });
+      if (field) {
+        if (marks) {
+          try { field.setSelectionRange(marks[0], marks[1], marks[2]); } catch (e) { /* not a text field */ }
+        }
+      } else if (chosen) {
+        chosen.removeAllRanges();
+        kept.forEach(function (range) { chosen.addRange(range); });
+      }
       return ok;
     }
     try {

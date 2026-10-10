@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Copy, once
+
+**Fixed:** Open the folder copied the path twice, the second time after the
+server's answer, where a page with no clipboard may no longer copy. A Copy
+made where the page has no clipboard emptied what was selected, in the page
+or in a field, and left the study card's style behind; the SHA-256 copied
+was said only for a moment; and the Config Builder's Copy command left the
+note of a refusal before it in place. Each is put right.
+
 ### Saved, as the Config Builder saves
 
 **Changed:** the Config Builder's "Draft saved in this browser" says Saved,

@@ -95,18 +95,23 @@ def _open(browser, session, clipboard=None, where="#overview"):
 
 
 def _said(page, selector, said):
-    """The button named as its copy went, and what it shows meanwhile."""
-    page.wait_for_function("([s, said]) => { const b = document.querySelector(s); "
-                           "return b && b.getAttribute('aria-label') === said; }", arg=[selector, said])
-    return page.evaluate("""(s) => {
+    """The button named as its copy went, and what it shows meanwhile, read
+    in the same look: on a busy machine a second look can come after the
+    tick has gone. ``fits`` is whether the folder's name fits its line."""
+    return page.wait_for_function("""([s, said]) => {
         const b = document.querySelector(s);
+        if (!b || b.getAttribute('aria-label') !== said) return false;
         const tick = b.querySelector(':scope > svg.copy-tick') || b.querySelector(':scope > svg');
         const path = tick && tick.querySelector('path');
+        const name = document.getElementById('study-folder-name');
+        const chevron = b.querySelector('.study-card-chevron');
         return {words: b.textContent.trim(), first: b.firstElementChild === tick,
                 tick: !!b.querySelector(':scope > svg.copy-tick'),
                 shape: path ? path.getAttribute('d') : '',
-                next: tick && tick.nextElementSibling ? tick.nextElementSibling.getAttribute('class') : ''};
-    }""", selector)
+                next: tick && tick.nextElementSibling ? tick.nextElementSibling.getAttribute('class') : '',
+                chevron: chevron ? getComputedStyle(chevron).display : '',
+                fits: !!name && name.scrollWidth <= name.clientWidth + 1};
+    }""", arg=[selector, said]).json_value()
 
 
 def _back(page, selector, name):
@@ -132,32 +137,61 @@ def test_the_folder_s_name_keeps_its_words_and_ticks(browser, session) -> None:
     page.click("#study-folder")
     shown = _said(page, "#study-folder", "Path copied")
     copied = _clipboard(page)
-    # Fitted into what the tick leaves of the line, and again after.
-    fits = page.evaluate("() => { const n = document.getElementById('study-folder-name'); "
-                         "return n.scrollWidth <= n.clientWidth + 1; }")
     _back(page, "#study-folder", None)
     after = page.text_content("#study-folder-name")
     page.context.close()
     assert shown["tick"] and shown["first"] and shown["shape"] == _shape("check"), shown
     assert "…" in name and shown["words"] and "copied" not in shown["words"], shown
-    assert fits and after == name
+    # Fitted into what the tick leaves of the line, and again after.
+    assert shown["fits"] and after == name
     assert copied.rstrip("/").endswith(FOLDER)
     assert page.errors == []
 
 
 def test_open_the_folder_ticks_the_card_that_opened_its_menu(browser, session) -> None:
     page = _open(browser, session)
+    chevron = "() => document.querySelector('#study-card .study-card-chevron').getAttribute('style')"
+    before = page.evaluate(chevron)
     _menu_open_the_folder(page, session, opened=True)
     shown = _said(page, "#study-card", "Path copied")
-    hidden = page.evaluate("() => getComputedStyle(document.querySelector('#study-card .study-card-chevron')).display")
     copied = _clipboard(page)
     _back(page, "#study-card", None)
     shown_again = page.evaluate("() => getComputedStyle(document.querySelector('#study-card .study-card-chevron')).display")
+    # Put back as it was, not with a style it did not have.
+    after = page.evaluate(chevron)
     page.context.close()
     # Where its chevron is, the card's words left as they are.
     assert shown["tick"] and "study-card-chevron" in shown["next"], shown
-    assert hidden == "none" and shown_again != "none"
+    assert shown["chevron"] == "none" and shown_again != "none"
+    assert after == before
     assert copied.rstrip("/").endswith(FOLDER)
+
+
+def test_the_sha_256_copied_is_said_for_as_long_as_any_notice(browser, session) -> None:
+    """The Files page's "Computing its SHA-256" kept its own timer, which
+    hid "SHA-256 copied" as soon as it was said where the answer took
+    a few seconds."""
+    import time
+
+    page = _open(browser, session)
+    page.evaluate("() => window.FastMDXDashboard.navigate('files')")
+    row = '.files-row[data-path="simulation/production.dcd"]'
+    page.wait_for_selector(row)
+    page.route("**/api/files/sha256*", lambda route: (time.sleep(2.5), route.continue_()))
+    page.evaluate("""() => new MutationObserver(() => {
+        const note = document.getElementById('dashboard-toast');
+        if (!window.__computing && /Computing its SHA-256/.test(note.textContent))
+            window.__computing = performance.now(); }).observe(document.body,
+        {subtree: true, childList: true, characterData: true})""")
+    page.click(f"{row} [data-menu]")
+    page.click(".files-menu [data-do=sha]")
+    page.wait_for_function("() => /SHA-256 copied/.test(document.getElementById('dashboard-toast').textContent)")
+    # Past when the first notice's own timer ended.
+    page.wait_for_function("() => window.__computing && performance.now() - window.__computing > 3700")
+    shown = page.evaluate("() => { const note = document.getElementById('dashboard-toast'); "
+                          "return [note.classList.contains('show'), note.textContent]; }")
+    page.context.close()
+    assert shown[0] and "SHA-256 copied" in shown[1], shown
 
 
 def test_the_files_page_ticks_its_opener_and_its_code(browser, session) -> None:
@@ -189,12 +223,17 @@ def test_cite_and_the_builder_s_command_tick(browser, session) -> None:
     page.click("#run-start [data-start='structure']")
     page.fill("#run-system", str(session.peptide))
     page.wait_for_selector("#run-copy-command:not([disabled])")
+    # A note from an earlier try is not left beside the tick.
+    page.evaluate("() => { document.getElementById('run-note').textContent = "
+                  "'This study cannot be said as one command; use the config file.'; }")
     page.click("#run-copy-command")
     command = _said(page, "#run-copy-command", "Command copied")
     copied = _clipboard(page)
+    note = page.text_content("#run-note")
     page.context.close()
     assert cite["shape"] == _shape("check") and reference[0] == reference[1] != ""
     assert command["shape"] == _shape("check") and copied.startswith("fastmdx")
+    assert note == ""
 
 
 def test_a_refused_copy_crosses_and_is_not_said_copied(browser, session) -> None:
@@ -219,8 +258,14 @@ def test_without_a_clipboard_the_text_is_copied_still(browser, session) -> None:
     Cite said it could not copy, and Open the folder copied nothing."""
     page = _open(browser, session, clipboard=NONE)
     page.evaluate("() => window.FastMDXDialog.open('cite-dialog')")
+    # What the person had selected is selected still after.
+    chosen = page.evaluate("""() => { const range = document.createRange();
+        range.selectNodeContents(document.getElementById('cite-reference'));
+        getSelection().removeAllRanges(); getSelection().addRange(range);
+        return getSelection().toString(); }""")
     page.click("[data-copy-from=cite-reference]")
     cite = _said(page, "[data-copy-from=cite-reference]", "Copied")
+    kept = page.evaluate("() => getSelection().toString()")
     # The keyboard is back on the button, where the tick is.
     focused = page.evaluate("() => document.activeElement.getAttribute('data-copy-from')")
     reference = page.text_content("#cite-reference").strip()
@@ -230,8 +275,42 @@ def test_without_a_clipboard_the_text_is_copied_still(browser, session) -> None:
     boxed = page.evaluate("() => window.__boxed")
     page.context.close()
     assert cite["shape"] == _shape("check") and focused == "cite-reference"
+    assert chosen and kept == chosen
     assert card["tick"]
     assert boxed[0] == reference and boxed[-1].rstrip("/").endswith(FOLDER), boxed
+
+
+def test_without_a_clipboard_a_field_keeps_its_selection(browser, session) -> None:
+    """The page's ranges were put back after the hidden box was copied from,
+    and putting them back emptied the selection inside a field."""
+    page = _open(browser, session, clipboard=NONE)
+    page.evaluate("""() => { const field = document.createElement('textarea');
+        field.id = 'kept-field'; field.value = 'a note being written';
+        document.body.appendChild(field); field.focus(); field.setSelectionRange(2, 6); }""")
+    copied = page.evaluate("() => window.FastMDXIcons.copyText('the path')")
+    kept = page.evaluate("""() => { const field = document.getElementById('kept-field');
+        return [document.activeElement === field, field.selectionStart, field.selectionEnd]; }""")
+    boxed = page.evaluate("() => window.__boxed")
+    page.context.close()
+    assert copied and boxed == ["the path"], boxed
+    assert kept == [True, 2, 6], kept
+
+
+def test_open_the_folder_copies_once_in_the_click(browser, session) -> None:
+    """The folder not opened: the path was copied again after the server's
+    answer, where a page with no clipboard may no longer copy, and the
+    notice could say not copied beside the card's "Path copied"."""
+    page = _open(browser, session, clipboard=NONE)
+    _menu_open_the_folder(page, session, opened=False)
+    card = _said(page, "#study-card", "Path copied")
+    page.wait_for_function("() => /Could not open the folder/.test("
+                           "document.getElementById('dashboard-toast').textContent)")
+    toast = page.text_content("#dashboard-toast")
+    boxed = page.evaluate("() => window.__boxed")
+    page.context.close()
+    assert card["tick"] and card["shape"] == _shape("check"), card
+    assert len(boxed) == 1 and boxed[0].rstrip("/").endswith(FOLDER), boxed
+    assert "its path was copied" in toast, toast
 
 
 def test_no_copy_goes_round_the_one_copy() -> None:
@@ -243,4 +322,7 @@ def test_no_copy_goes_round_the_one_copy() -> None:
     found = {path.name for path in STATIC.glob("*.js") if writes.search(path.read_text(encoding="utf-8"))}
     assert found - {"agent-panel.js"} == {"icons.js", "files-page.js"}
     files = (STATIC / "files-page.js").read_text(encoding="utf-8")
-    assert files.index("icons.copy(") < files.index("clipboard.writeText")
+    own = files[files.index("function copy("):]
+    own = own[:own.index("\n  }\n") + 4]
+    assert len(writes.findall(files)) == len(writes.findall(own))
+    assert own.index("icons.copy(") < own.index("clipboard.writeText")
