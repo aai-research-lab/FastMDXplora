@@ -44,9 +44,16 @@ asked. `POST /api/remote/plan` takes the builder's `state`; `POST
 one order, and is bound to the whole digest of what travels. A `system` that
 setup reads as a PDB ID or a sequence, and a phase, an analysis or another
 setting whose values are words, no longer travel as a file or folder of that
-name beside the Config (`fastmdx remote send` too). A study built in the form
-that names a file by a relative path is refused (`remote.input.outside`)
-where **Run on this machine** would read another file, or none.
+name beside the Config (`fastmdx remote send` too), nor do chains, ligand
+names and poses, selections or the reasons a Config records. A study built
+in the form is saved, and the files it names by a relative path read, in
+the folder new studies go in, as **Run on this machine** reads them; where
+that folder is the home folder, one above it or a disk's top, the page says
+so beside **Plan the send** before anything is asked, naming a folder to
+open the GUI on instead, and the routes reach only the folder opened. A
+config file named by a relative path is refused where the GUI's check would
+read another file. A form changed while a send is out no longer takes its
+plan away, and a plan kept past its ten minutes says it was not sent.
 
 ### The Agent remembers you
 
