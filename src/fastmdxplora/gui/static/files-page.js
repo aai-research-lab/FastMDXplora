@@ -42,7 +42,11 @@
     toast.timer = setTimeout(function () { note.classList.remove("show"); }, 3500);
   }
 
-  function copy(text) {
+  /* Through the GUI's Copy (icons.js), which ticks the button; the
+   * standalone dashboard carries this script without it, and copies here. */
+  function copy(text, button, copied) {
+    var icons = window.FastMDXIcons;
+    if (icons && icons.copy) return icons.copy(button, text, copied, "Could not copy it.");
     function fallback() {
       var area = document.createElement("textarea");
       area.value = text;
@@ -60,6 +64,9 @@
     }
     return fallback();
   }
+
+  // The GUI's Copy says itself, by the button and the notice.
+  function ticks() { return !!(window.FastMDXIcons && window.FastMDXIcons.copy); }
 
   function human(bytes) {
     if (!isFinite(bytes)) return "";
@@ -294,21 +301,24 @@
       if (!item) return;
       var what = item.getAttribute("data-do");
       if (what === "copy") {
-        copy(where).then(function (ok) {
-          toast(ok ? "Path copied." : "Could not copy the path.", ok ? "ok" : "warning");
+        var opener = menu._opener;
+        copy(where, opener, "Path copied").then(function (ok) {
+          if (!ticks()) toast(ok ? "Path copied." : "Could not copy the path.", ok ? "ok" : "warning");
         });
       } else if (what === "reveal") {
         post("/api/files/reveal", { path: path }).then(function (said) {
           if (!said || !said.ok) toast((said && said.error) || "Could not show it.", "warning");
         });
       } else if (what === "sha") {
+        var shaOpener = menu._opener;
         toast("Computing its SHA-256…", "ok");
         fetch("/api/files/sha256?path=" + encodeURIComponent(path), { cache: "no-store" })
           .then(function (r) { return r.json(); })
           .then(function (said) {
             if (!said || !said.ok) { toast((said && said.error) || "Could not compute it.", "warning"); return; }
-            copy(said.sha256).then(function (ok) {
-              toast(ok ? "SHA-256 copied: " + said.sha256.slice(0, 16) + "…" : "Could not copy it.", ok ? "ok" : "warning");
+            var copied = "SHA-256 copied: " + said.sha256.slice(0, 16) + "…";
+            copy(said.sha256, shaOpener, copied).then(function (ok) {
+              if (!ticks()) toast(ok ? copied : "Could not copy it.", ok ? "ok" : "warning");
             });
           }).catch(function () { toast("The server did not answer.", "warning"); });
       }
@@ -393,8 +403,8 @@
       }
       var copier = target.closest("[data-copy]");
       if (copier) {
-        copy(copier.getAttribute("data-copy")).then(function (ok) {
-          toast(ok ? "Copied." : "Could not copy it.", ok ? "ok" : "warning");
+        copy(copier.getAttribute("data-copy"), copier).then(function (ok) {
+          if (!ticks()) toast(ok ? "Copied." : "Could not copy it.", ok ? "ok" : "warning");
         });
         return;
       }

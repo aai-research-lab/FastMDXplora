@@ -12,7 +12,15 @@
  *                                  its name saying so and the page's notice
  *                                  too (seen, and read out), then put back.
  *                                  Its hover text is left alone: tooltips.js
- *                                  holds it while the pointer is on it. */
+ *                                  holds it while the pointer is on it. A
+ *                                  button in words keeps them: the tick
+ *                                  stands in for its icon, or before them;
+ * FastMDXIcons.copyText(text)      the text copied however the browser
+ *                                  allows, to a promise of whether it was;
+ * FastMDXIcons.copy(button, text, copied, refused)  copied, and the button
+ *                                  ticked ("Copied") or crossed (the reason);
+ *                                  with no button, only copied. Every Copy
+ *                                  on the page goes through it. */
 (function () {
   "use strict";
 
@@ -45,7 +53,49 @@
     return name(made, icon, label);
   }
 
+  /* A button in words keeps them; the tick goes where its icon is (the
+   * study card's chevron), or before them. */
+  function flashWords(made, ok, said) {
+    var was = made._fmxTick;
+    if (was) {
+      clearTimeout(was.timer);
+      was.tick.remove();
+    } else {
+      was = { name: made.getAttribute("aria-label"), own: null };
+      for (var i = 0; i < made.children.length; i++) {
+        if (made.children[i].tagName.toLowerCase() === "svg") was.own = made.children[i];
+      }
+      made._fmxTick = was;
+    }
+    var holder = document.createElement("span");
+    holder.innerHTML = svg(ok ? "check" : "close", "line-icon copy-tick");
+    was.tick = holder.firstChild;
+    if (was.own) {
+      was.own.style.display = "none";
+      made.insertBefore(was.tick, was.own);
+    } else {
+      made.insertBefore(was.tick, made.firstChild);
+    }
+    made.classList.add("is-ticked");
+    made.setAttribute("aria-label", said);
+    was.timer = setTimeout(function () {
+      was.tick.remove();
+      if (was.own) was.own.style.display = "";
+      made.classList.remove("is-ticked");
+      if (was.name === null) made.removeAttribute("aria-label");
+      else made.setAttribute("aria-label", was.name);
+      delete made._fmxTick;
+    }, 1800);
+  }
+
   function flash(made, ok, said) {
+    if (!made) return;
+    if (made._fmxTick || (!made.dataset.label && made.textContent.trim())) {
+      flashWords(made, ok, said);
+      var notice = window.FastMDXDashboard;
+      if (notice && notice.toast) notice.toast(said, ok ? "ok" : "warning");
+      return;
+    }
     // Its own name and drawing, not those a flash still showing gave it.
     var flashing = !!made.dataset.label;
     var label = flashing ? made.dataset.label : made.getAttribute("aria-label") || "";
@@ -64,5 +114,47 @@
     }, 1800);
   }
 
-  window.FastMDXIcons = { svg: svg, button: button, name: name, flash: flash };
+  /* Copied however the browser allows: the clipboard is offered only on a
+   * secure page, and a GUI reached over plain http from another machine is
+   * not one, so there the text is selected in a hidden box and copied. */
+  function copyText(text) {
+    text = text == null ? "" : String(text);
+    if (!text) return Promise.resolve(false);
+    function selected() {
+      var focused = document.activeElement;
+      var area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "0";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      area.remove();
+      // Back where the keyboard was, where the tick is shown.
+      if (focused && focused.focus) focused.focus({ preventScroll: true });
+      return ok;
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(function () { return true; }, selected);
+      }
+    } catch (e) {
+      // Refused outright: the hidden box, as where there is no clipboard.
+    }
+    return Promise.resolve(selected());
+  }
+
+  function copy(made, text, copied, refused) {
+    return copyText(text).then(function (ok) {
+      if (made) flash(made, ok, ok ? copied || "Copied" : refused || "Select the text to copy it.");
+      return ok;
+    });
+  }
+
+  window.FastMDXIcons = {
+    svg: svg, button: button, name: name, flash: flash, copyText: copyText, copy: copy,
+  };
 })();

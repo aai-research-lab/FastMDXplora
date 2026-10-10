@@ -105,10 +105,7 @@
     // The methods are there to be pasted into a manuscript.
     const methodsCopy = document.getElementById("overview-methods-copy");
     if (methodsCopy) {
-      methodsCopy.addEventListener("click", async () => {
-        const copied = await copyText(methodsPlain);
-        window.FastMDXIcons.flash(methodsCopy, copied, copied ? "Copied" : "Select the text to copy it.");
-      });
+      methodsCopy.addEventListener("click", () => window.FastMDXIcons.copy(methodsCopy, methodsPlain));
     }
     $$('[data-view-link]').forEach((element) => {
       element.addEventListener("click", (event) => {
@@ -234,12 +231,16 @@
         } else if (payload.opened) {
           showToast(`Opened output folder: ${payload.path}`);
         } else {
-          await copyText(payload.path || state.outputDir || "");
-          showToast("Could not open the folder automatically; its path was copied.", "warning");
+          // Said copied only where it was: a page over plain http may not.
+          const path = payload.path || state.outputDir || "";
+          const copied = await window.FastMDXIcons.copyText(path);
+          showToast(copied ? "Could not open the folder automatically; its path was copied."
+            : `Could not open the folder automatically. Its path: ${path}`, "warning");
         }
       } catch (error) {
-        if (state.outputDir) await copyText(state.outputDir);
-        showToast("Could not open the output folder; its path was copied.", "warning");
+        const copied = await window.FastMDXIcons.copyText(state.outputDir);
+        showToast(copied ? "Could not open the output folder; its path was copied."
+          : "Could not open the output folder.", "warning");
       }
     });
   }
@@ -603,15 +604,15 @@
     fitInTheMiddle(shown, folder.dataset.name || "", room);
   }
 
-  /* Copied however the browser allows: the clipboard is offered only on
-   * a secure page, and a GUI served to another machine over http is not.
-   * Said either way. */
+  /* Ticked before the name, which is fitted again into what the tick
+   * leaves of the line, and again once it has gone. */
   async function copyTheFolder() {
-    const shown = byId("study-folder-name");
-    if (!state.outputDir || !shown) return;
-    const copied = await copyText(state.outputDir);
-    shown.textContent = copied ? "Path copied" : "Could not copy; the path is in the tooltip";
-    setTimeout(fitTheFolderName, copied ? 1400 : 2600);
+    const folder = byId("study-folder");
+    if (!state.outputDir || !folder) return;
+    await window.FastMDXIcons.copy(folder, state.outputDir, "Path copied",
+                                   "Could not copy; the path is in the tooltip");
+    fitTheFolderName();
+    setTimeout(fitTheFolderName, 1900);
   }
 
   function resetRunDependentState() {
@@ -1543,8 +1544,7 @@
       } else if (copy) {
         const said = copy.parentElement.querySelector(".figure-provenance-command");
         if (!said) return;
-        navigator.clipboard?.writeText(said.textContent).then(
-          () => showToast("Copied."), () => showToast("Select the text to copy it."));
+        window.FastMDXIcons.copy(copy, said.textContent);
       }
     });
   }
@@ -2091,27 +2091,6 @@
     return String(value || "")
       .replace(/[_-]+/g, " ")
       .replace(/\b\w/g, (character) => character.toUpperCase());
-  }
-
-  async function copyText(text) {
-    if (!text) return false;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      const ok = document.execCommand("copy");
-      textarea.remove();
-      return ok;
-    } catch (error) {
-      return false;
-    }
   }
 
   function showToast(message, kind) {

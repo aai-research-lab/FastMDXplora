@@ -2759,14 +2759,7 @@
     said.className = "measure-command";
     said.textContent = answer.command || answer.config || "";
     const copy = window.FastMDXIcons.button("copy", "Copy the command", "measure-copy");
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(said.textContent);
-        window.FastMDXIcons.flash(copy, true, "Copied");
-      } catch (error) {
-        window.FastMDXIcons.flash(copy, false, "Select the text to copy it.");
-      }
-    });
+    copy.addEventListener("click", () => window.FastMDXIcons.copy(copy, said.textContent));
     host.append(said, copy);
   }
 
@@ -2811,14 +2804,7 @@
       code.textContent = found.selection;
       const copy = window.FastMDXIcons.button("copy", `Copy the ${label.toLowerCase()} selection`);
       copy.title = `Copy the selection: ${found.atoms} atom${found.atoms === 1 ? "" : "s"} in ${answer.against}`;
-      copy.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(found.selection);
-          window.FastMDXIcons.flash(copy, true, "Copied");
-        } catch (error) {
-          window.FastMDXIcons.flash(copy, false, "Select the text to copy it.");
-        }
-      });
+      copy.addEventListener("click", () => window.FastMDXIcons.copy(copy, found.selection));
       row.append(name, code, copy);
       host.appendChild(row);
     });

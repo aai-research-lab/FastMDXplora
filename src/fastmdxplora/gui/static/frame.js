@@ -1002,12 +1002,9 @@
       openOut.addEventListener("click", function () {
         var path = (el("sidebar-output-folder") || {}).textContent || "";
         if (!path || path === "\u2014") return;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(path.trim()).then(function () {
-            openOut.textContent = "Path copied";
-            setTimeout(function () { openOut.textContent = "Open the folder"; }, 1400);
-          });
-        }
+        // The menu closes on the click: the card that opened it ticks.
+        window.FastMDXIcons.copy(el("study-card"), path.trim(), "Path copied",
+                                 "Could not copy the path");
       }, true);
     }
 

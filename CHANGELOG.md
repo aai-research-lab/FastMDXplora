@@ -7,6 +7,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Every Copy ticks
+
+**Fixed:** some Copy buttons said they had copied only in a notice, some
+swapped their words for "Path copied", and the Cite dialog's and the
+Viewer's failed where the page has no clipboard (a GUI reached over plain
+http from another machine). Every Copy now ticks its button for a moment,
+or crosses it with the reason, and copies however the browser allows. Open
+the folder says the path was copied only where it was.
+
 ### The Overview as a run ends
 
 **Fixed:** after Analyze again, the Overview still said what the old

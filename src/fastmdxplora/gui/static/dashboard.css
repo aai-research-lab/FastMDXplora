@@ -5303,6 +5303,10 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .study-folder:hover { color: var(--text-secondary); }
 .study-folder:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .study-folder-name { display: block; overflow: hidden; white-space: nowrap; }
+/* A Copy in words ticks before them, or where its icon is (icons.js). */
+.copy-tick { flex: none; margin-right: 4px; vertical-align: -3px; }
+.study-folder.is-ticked { display: flex; align-items: center; }
+.study-folder.is-ticked > .study-folder-name { flex: 1; min-width: 0; }
 .sidebar .sidebar-pages { padding-top: 4px; }
 
 /* The mark over the strip, FastMDXplora's or a service's own, where the

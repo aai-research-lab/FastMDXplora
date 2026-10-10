@@ -587,7 +587,7 @@ class TestElevenThingsFromUsingIt(unittest.TestCase):
         page = _page()
         self.assertEqual(page.count('id="open-output"'), 1)
         self.assertNotIn('id="copy-output-path"', page)
-        self.assertIn('openOut.textContent = "Path copied";', _script())
+        self.assertIn('window.FastMDXIcons.copy(el("study-card"), path.trim(), "Path copied"', _script())
 
     def test_light_leaves_no_token_dark(self):
         import re

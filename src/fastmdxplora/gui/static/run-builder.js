@@ -3253,7 +3253,7 @@
 
   /* The same study in its other two languages, derived on the server from
    * the same schema the form was built from. */
-  async function copyCommand(body, say = sayOnTheForm) {
+  async function copyCommand(body, say = sayOnTheForm, button = null) {
     const built = await fetchConfig(body);
     if (!built.ok) {
       say(built.error);
@@ -3263,19 +3263,20 @@
       say("This study cannot be said as one command; use the config file.");
       return;
     }
-    try {
-      await navigator.clipboard.writeText(built.command);
-      say("Command copied.");
-    } catch (refused) {
-      // A page served over plain HTTP -- an SSH tunnel, commonly -- has no
-      // clipboard access. The command is shown instead, still selectable.
-      if (!body) {
-        showCodeTab("command");
-        text(el("run-command-preview"), built.command);
-        say("Clipboard unavailable here; the command is shown above.");
-      } else {
-        say("Clipboard unavailable here: " + built.command);
-      }
+    // The button ticks and the notice says so; with none, the line does.
+    const refused = body ? "Clipboard unavailable here" : "Clipboard unavailable here; the command is shown above.";
+    if (await window.FastMDXIcons.copy(button, built.command, "Command copied", refused)) {
+      if (!button) say("Command copied.");
+      return;
+    }
+    // A page served over plain HTTP -- an SSH tunnel, commonly -- may have
+    // no clipboard. The command is shown instead, still selectable.
+    if (!body) {
+      showCodeTab("command");
+      text(el("run-command-preview"), built.command);
+      if (!button) say(refused);
+    } else {
+      say(refused + ": " + built.command);
     }
   }
 
@@ -3371,7 +3372,8 @@
     return {
       fetchConfig: () => fetchConfig(body(), false),
       download: () => download(body(), say),
-      copyCommand: () => copyCommand(body(), say),
+      // The Agent card's button, to tick, when it is given.
+      copyCommand: (button) => copyCommand(body(), say, button || null),
       downloadScript: () => downloadScript(body(), say),
       previewCost: () => previewCost(body()),
     };
@@ -3710,7 +3712,7 @@
     wire("run-as-is-elsewhere", runAsItStandsElsewhere);
     wire("run-elsewhere", runElsewhere);
     wire("run-download", () => download());
-    wire("run-copy-command", () => copyCommand());
+    wire("run-copy-command", () => copyCommand(undefined, sayOnTheForm, el("run-copy-command")));
     wire("run-download-script", () => downloadScript());
     wire("run-start-button", start);
     wire("run-phone-start", start);

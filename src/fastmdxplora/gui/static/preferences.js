@@ -117,24 +117,12 @@
   window.FastMDXDialog = { open: openDialog, close: function (id) { closeDialog(el(id)); } };
 
   /* ---- Copy --------------------------------------------------------- */
-  async function copyText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (err) {
-      // The clipboard needs a secure context, which http://127.0.0.1 is
-      // and a remote http:// host is not. Say so rather than pretend.
-      return false;
-    }
-  }
   document.addEventListener("click", function (e) {
     var button = e.target.closest && e.target.closest("[data-copy-from]");
     if (!button) return;
     var source = el(button.getAttribute("data-copy-from"));
     if (!source) return;
-    copyText(source.textContent.trim()).then(function (done) {
-      window.FastMDXIcons.flash(button, done, done ? "Copied" : "Select the text to copy it.");
-    });
+    window.FastMDXIcons.copy(button, source.textContent.trim());
   });
 
   /* ---- Preferences -------------------------------------------------- */
