@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Overview as a run ends
+
+**Fixed:** after Analyze again, the Overview still said what the old
+records said for up to 20 s ("Analysed by an earlier version", for means
+just judged by this version's rules). A run of the open study that ends,
+from the Analysis page, the Agent or a fix, has its records read at once,
+and a read asked for while another is on its way is made once more after it.
+
 ### A study carried on and stopped again before its first checkpoint
 
 **Fixed:** a study stopped in production, carried on, and stopped again

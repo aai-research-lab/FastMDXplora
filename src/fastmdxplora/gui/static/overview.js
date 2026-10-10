@@ -29,6 +29,11 @@
   var loading = null;
   var loadedFor = "";
   var lastLoad = 0;
+  // A forced read asked for while another was on its way: read once more.
+  var readAgain = false;
+  // The run last seen ended, as the open study and the run's start; "" once
+  // a run was seen going and none yet seen ended.
+  var seenEnded = null;
   var AGAIN_MS = 20000;
   var series = {};
   var sparks = [];
@@ -368,24 +373,46 @@
     }
     var stale = Date.now() - lastLoad > AGAIN_MS;
     if (!force && folder === loadedFor && !stale) return Promise.resolve(data);
-    if (loading) return loading;
+    if (loading) {
+      // What is on its way may have been read before what changed.
+      if (force) readAgain = true;
+      return loading;
+    }
     lastLoad = Date.now();
+    readAgain = false;
     loading = fetch("/api/overview")
       .then(function (r) { return r.json(); })
       .then(function (found) {
         loading = null;
         loadedFor = folder;
         use(found && found.ok ? found : null);
-        return data;
+        return readAgain ? load(true) : data;
       })
       .catch(function () {
         // Nothing kept from another study, or from before.
         loading = null;
         loadedFor = "";
         use(null);
-        return null;
+        return readAgain ? load(true) : null;
       });
     return loading;
+  }
+
+  /* A run of the open study that ended, however it was started (Analyze
+   * again, the Agent, a fix, the command line) and however it ended, has
+   * written its records, or moved them aside: read again at once, not at
+   * the next 20 s. */
+  function runEnded(app) {
+    app = app || {};
+    if (app.process_running) {
+      if (seenEnded === null) seenEnded = "";
+      return;
+    }
+    var key = (app.active_run || "") + "\n" + (app.started_at || "");
+    if (seenEnded === null) { seenEnded = key; return; }
+    if (key === seenEnded) return;
+    seenEnded = key;
+    if (app.started_at) load(true);
   }
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -405,6 +432,9 @@
       use(null);
       load(true);
     });
+    // A run ended: what the old records said (an earlier version's verdicts
+    // among it) was left on the Overview until the next 20 s.
+    window.addEventListener("dashboard:app-state", function (event) { runEnded(event.detail); });
     window.addEventListener("dashboard:live-page-opened", function () {
       requestAnimationFrame(drawSparks);
     });
