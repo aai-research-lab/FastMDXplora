@@ -17,6 +17,7 @@
 .remote-plan-script pre { max-height: 16rem; overflow: auto; white-space: pre-wrap;
     overflow-wrap: anywhere; }
 .remote-plan-answers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.remote-run-why, .remote-run-known, .remote-run-note { min-width: 0; overflow-wrap: anywhere; }
 .remote-run-note[data-ok="false"] { color: var(--status-error); }
 .remote-run-note[data-ok="true"] { color: var(--status-completed); }
 .remote-jobs { margin-bottom: 14px; }

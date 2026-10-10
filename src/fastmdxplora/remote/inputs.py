@@ -76,15 +76,30 @@ class Inputs:
 STRUCTURE_SUFFIXES = frozenset({".pdb", ".cif", ".pdbx"})
 
 
+#: The settings whose values are words, names or selections and never a
+#: file, though the schema gives them no list of choices: chains, a
+#: mutation, a residue or a water model's name, a selection, a title, a
+#: decision's reasons, a system's name.
+_WORDS_WITHOUT_CHOICES = frozenset({
+    "include_phase", "exclude_phase", "agent_model", "mutations", "mutation_chain",
+    "chains", "water_model", "ligand_name", "ligand_resname", "ligand_pose",
+    "ion_positive", "ion_negative", "constraints", "device_index", "devices",
+    "save_selection", "dashboard_ligand_resname", "restrain", "select_atoms",
+    "selection", "title", "author", "region_highlights", "id", "why", "source",
+    "alternatives", "selection_a", "selection_b", "select_atoms_a", "select_atoms_b",
+    "bilayer_selection", "site_selection", "axis_selection"})
+
+
 def word_keys() -> frozenset[str]:
     """The settings whose values are words the software knows, never a file:
     each with a list of choices in the schema (the analyses, a force field's
-    name, a box's shape), and the phases a study runs."""
+    name, a box's shape), the phases a study runs, and the names and
+    selections of ``_WORDS_WITHOUT_CHOICES``."""
     from fastmdxplora.config.schema import all_schemas
 
-    return frozenset({"include_phase", "exclude_phase"} | {
+    return _WORDS_WITHOUT_CHOICES | frozenset(
         field.name for schema in all_schemas().values() for field in schema.fields
-        if field.choices})
+        if field.choices)
 
 
 def read_as_a_name(system: str) -> bool:
@@ -247,12 +262,18 @@ def private_in(path: Path) -> Path | None:
 def _home_or_above(folder: Path) -> bool:
     """Whether ``folder`` is the top of the file system, the home folder or
     a folder holding it, also where the disk ignores the case of letters."""
+    return home_or_above(folder)
+
+
+def home_or_above(folder: Path, *, home_unknown: bool = False) -> bool:
+    """As :func:`_home_or_above`; ``home_unknown`` is the answer where the
+    home folder cannot be found (no ``HOME`` and no account entry)."""
     if folder == Path(folder.anchor):
         return True
     try:
         home = Path.home().resolve()
     except (RuntimeError, OSError):
-        return False
+        return home_unknown
     for candidate in (home, *home.parents):
         if folder == candidate:
             return True

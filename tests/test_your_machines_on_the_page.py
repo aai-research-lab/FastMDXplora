@@ -63,6 +63,16 @@ def _shot(page, name):
         page.screenshot(path=os.path.join(SHOTS, name), full_page=False)
 
 
+def _as_if_ready(page):
+    """The builder's Run on this machine held enabled, as the builder says
+    once the study could run here: held, since the builder still loading
+    sets it again, and Plan the send follows it."""
+    page.evaluate("""() => { const b = document.getElementById('run-start-button');
+      b.disabled = false;
+      Object.defineProperty(b, 'disabled', {configurable: true,
+        get() { return false; }, set() {}}); }""")
+
+
 def _config_checked(page, path):
     page.evaluate("() => window.FastMDXRun.setStart('config')")
     page.fill("#run-config-path", str(path))
@@ -212,7 +222,7 @@ def test_the_study_built_is_what_is_planned(session) -> None:
 
         page.route("**/api/remote/plan", planned)
         # As the builder says once the study could run here.
-        page.evaluate("() => document.getElementById('run-start-button').disabled = false")
+        _as_if_ready(page)
         page.wait_for_selector("#run-remote-plan:not([disabled])")
         page.click("#run-remote-plan")
         page.wait_for_function("() => document.getElementById('run-remote-note')"
@@ -513,7 +523,7 @@ def test_a_plan_let_go_empties_the_name_it_wrote_and_is_let_go_first(session) ->
 
         page.route("**/api/remote/plan", planned)
         page.route("**/api/remote/forget", forgotten)
-        page.evaluate("() => document.getElementById('run-start-button').disabled = false")
+        _as_if_ready(page)
         blank = page.input_value("#run-output")
         page.wait_for_selector("#run-remote-plan:not([disabled])")
         page.click("#run-remote-plan")
@@ -522,7 +532,7 @@ def test_a_plan_let_go_empties_the_name_it_wrote_and_is_let_go_first(session) ->
         page.click("#run-remote-planned .ghost-btn")
         emptied = page.input_value("#run-output")
         # The form changed, and the builder asks again whether it could run.
-        page.evaluate("() => document.getElementById('run-start-button').disabled = false")
+        _as_if_ready(page)
         page.wait_for_selector("#run-remote-plan:not([disabled])")
         page.click("#run-remote-plan")
         page.wait_for_timeout(500)
@@ -614,7 +624,7 @@ def test_a_send_refused_empties_the_name_its_plan_wrote(session) -> None:
         page.route("**/api/remote/send", lambda route: route.fulfill(
             status=200, content_type="application/json", body=json.dumps(
                 {"ok": False, "error": "Refused there.", "sent_nothing": True})))
-        page.evaluate("() => document.getElementById('run-start-button').disabled = false")
+        _as_if_ready(page)
         page.wait_for_selector("#run-remote-plan:not([disabled])")
         page.click("#run-remote-plan")
         page.wait_for_selector(".remote-plan-title")
@@ -625,4 +635,226 @@ def test_a_send_refused_empties_the_name_its_plan_wrote(session) -> None:
         emptied = page.input_value("#run-output")
         browser.close()
     assert named == "auto" and emptied == ""
+    assert errors == []
+
+
+def test_a_form_edited_while_a_send_is_out_takes_nothing_away(session) -> None:
+    """Round 3 of 1796-1799: typing while a send was out said the study had
+    changed and took the card away, though the send went on; the answer
+    then took the focus from the field being typed in."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        held = []
+        page.route("**/api/remote/send", lambda route: held.append(route))
+        page.click("#run-remote-planned .primary-btn")
+        while not held:
+            page.wait_for_timeout(100)
+        page.click("#run-config-path")
+        page.keyboard.press("End")
+        page.keyboard.type("x")
+        page.wait_for_timeout(1200)
+        during = page.text_content("#run-remote-note")
+        card = page.is_visible("#run-remote-planned")
+        held[0].fulfill(status=200, content_type="application/json",
+                        body=json.dumps({"ok": False, "error": "Refused there."}))
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent === 'Refused there.'")
+        typing = page.evaluate("() => document.activeElement.id")
+        browser.close()
+    assert during.startswith("Sending to box") and card
+    assert typing == "run-config-path"
+    assert errors == []
+
+
+def test_a_quiet_change_gives_the_focus_back_and_the_label_is_left_alone(session) -> None:
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.evaluate("""() => { window.__rewritten = 0;
+          new MutationObserver(() => { window.__rewritten += 1; }).observe(
+            document.getElementById('run-remote-label'),
+            {childList: true, characterData: true, subtree: true}); }""")
+        page.wait_for_timeout(1500)
+        rewritten = page.evaluate("() => window.__rewritten")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.focus("#run-remote-planned .primary-btn")
+        page.evaluate("() => { document.getElementById('run-config-path').value = '/x.yml'; }")
+        page.wait_for_selector("#run-remote-planned", state="hidden", timeout=5000)
+        focused = page.evaluate("() => document.activeElement.id")
+        browser.close()
+    assert rewritten == 0
+    assert focused == "run-remote-plan"
+    assert errors == []
+
+
+def test_a_plan_kept_past_its_time_is_let_go(session) -> None:
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        forgotten = []
+        page.route("**/api/remote/plan", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body=json.dumps({**_PLANNED, "kept_s": 1})))
+        page.route("**/api/remote/forget", lambda route: (
+            forgotten.append(route.request.post_data),
+            route.fulfill(status=200, content_type="application/json", body='{"ok": true}')))
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        named = page.input_value("#run-output")
+        page.wait_for_function("() => document.querySelector('#run-remote-planned')"
+                               ".textContent.includes('no longer kept')")
+        page.wait_for_timeout(1000)
+        emptied = page.input_value("#run-output")
+        said = page.text_content("#run-remote-note")
+        browser.close()
+    assert named == "auto" and emptied == ""
+    assert len(forgotten) == 1 and '"t1"' in forgotten[0]
+    assert not said.startswith("The study changed")
+    assert errors == []
+
+
+def test_a_plan_no_longer_kept_says_so_once_and_an_edit_after_says_nothing(session) -> None:
+    """Round 1 of the next round: past its ten minutes the note under the
+    card still said the plan was below, and an edit then said the study had
+    changed after a plan already let go."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        page.route("**/api/remote/plan", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body=json.dumps({**_PLANNED, "kept_s": 1})))
+        page.route("**/api/remote/forget", lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"ok": true}'))
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.wait_for_function("() => document.querySelector('#run-remote-planned')"
+                               ".textContent.includes('no longer kept')")
+        expired = page.text_content("#run-remote-note")
+        closed = page.text_content("#run-remote-planned .ghost-btn")
+        page.evaluate("""() => { const box = document.getElementById('run-output');
+          box.value = 'edited';
+          box.dispatchEvent(new Event('input', {bubbles: true})); }""")
+        page.wait_for_timeout(700)
+        after = page.text_content("#run-remote-note")
+        browser.close()
+    assert expired == after == "Not sent: the plan is no longer kept. Plan the send again."
+    assert closed == "Close"
+    assert errors == []
+
+
+def test_a_quiet_change_leaving_the_study_not_ready_holds_plan_the_send(session) -> None:
+    """Round 1 of the next round: the plan taken away by a quiet change gave
+    the focus to Plan the send, left enabled for a study the builder said
+    could not run."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.focus("#run-remote-planned .primary-btn")
+        page.evaluate("() => { document.getElementById('run-config-path').value = ''; }")
+        page.wait_for_selector("#run-remote-planned", state="hidden", timeout=5000)
+        held = page.is_disabled("#run-remote-plan")
+        focused = page.evaluate("() => document.activeElement.id")
+        said = page.text_content("#run-remote-note")
+        browser.close()
+    assert held
+    assert focused == "run-remote-note"
+    assert said.startswith("The study changed")
+    assert errors == []
+
+
+def test_a_window_whose_studies_go_in_home_says_why_before_the_click(session) -> None:
+    """Round 1 of the next round: Plan the send was offered for a study
+    built in the form, and only once pressed said nothing could be sent."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    why = ("Studies built here would be saved in /h, your home folder. For example "
+           "`fastmdx gui --output /home/adekunle_aina_lab_workstation_account/"
+           "molecular_dynamics/first`.")
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run", width=390, height=844)
+        page.wait_for_selector("#run-remote:not([hidden])")
+
+        def machines(route):
+            answer = route.fetch()
+            route.fulfill(response=answer, json={**answer.json(), "not_built_here": why})
+
+        page.route("**/api/remote/machines", machines)
+        page.evaluate("() => window.FastMDXRemote.refresh('run')")
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-why:not([hidden])")
+        built = (page.is_disabled("#run-remote-plan"), page.text_content("#run-remote-why"),
+                 page.get_attribute("#run-remote-plan", "title") or "",
+                 page.get_attribute("#run-remote-plan", "aria-describedby"),
+                 page.text_content("#run-remote-why code"))
+        wide = page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        from_a_file = page.is_hidden("#run-remote-why")
+        browser.close()
+    assert built == (True, why.replace("`", ""), "", "run-remote-why",
+                     "fastmdx gui --output /home/adekunle_aina_lab_workstation_account/"
+                     "molecular_dynamics/first")
+    assert not wide
+    assert from_a_file
+    assert errors == []
+
+
+def test_the_results_name_written_in_the_form_is_the_bare_name(session) -> None:
+    """Round 1 of the next round: the empty Results box was filled with the
+    results folder's full path."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        page.route("**/api/remote/plan", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body=json.dumps({**_PLANNED, "results": "/w/auto", "results_name": "auto"})))
+        page.route("**/api/remote/forget", lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"ok": true}'))
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        named = page.input_value("#run-output")
+        browser.close()
+    assert named == "auto"
     assert errors == []

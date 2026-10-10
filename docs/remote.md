@@ -489,33 +489,54 @@ its service's compute).
 **Run on this machine**, or, with **A config I have**, under the config
 file's own **Run on this machine as it is** ("Or send this config file to
 one of your machines"), with your machines to choose from and what each was
-found to be when last inspected. Once the study could run here, the plan
-asks the machine and shows what a send would do, sending nothing: where it
-runs, its folder there, the config, where the results come back to, every
-file that travels with its size, the GPUs' room, and the job script.
-**Send to** the machine sends that plan and nothing else: the plan is kept ten minutes, is
-sent once, and is refused (`remote.send.unconfirmed`) if anything that
-travels has changed since it was shown, a file rewritten at the same size
-included, and if the form has changed since: the plan is taken away and
-asked for again. A study built in the form is saved first as a config named
-after its results folder (`<results>.yml`, or `-2` and so on beside an
-earlier one), in the folder the GUI was opened on; the plan says where its
-results come back to, by their full path. A plan let go (**Not now**, taken
-away as the form changed, a send refused, or kept past its ten minutes)
-takes back the config saved for it, and on the page empties a results name
-it wrote in the form, unless the config has been changed since, another plan
-is of it or a send has begun with it. A file the
-study names by a relative path is refused (`remote.input.outside`) where
-**Run on this machine**, which starts in the folder above, would read
-another file of that name or none: give its full path (**Browse** beside
-the field gives one), so what travels is what a run here would read. A PDB
-ID or a sequence is read the same wherever it runs, and is never taken for
-a file; nor is a phase or an analysis, so a GUI opened on a study's own
-folder (its `setup` and `analysis` folders beside the config) plans as any
-other. With **A config I have**, the file checked is the one planned. A results folder
-left blank is given the name the plan chose, in the form, so the study
-planned again is saved to the same file. One plan or send is out at a time,
-and what it answers is said on the page, left and come back to or not.
+found to be when last inspected.
+
+- **Plan and send.** Once the study could run here, the plan asks the
+  machine and shows what a send would do, sending nothing: where it runs,
+  its folder there, the config, where the results come back to, every file
+  that travels with its size, the GPUs' room, and the job script. **Send
+  to** the machine sends that plan and nothing else. The plan is kept ten
+  minutes and is sent once. It is refused (`remote.send.unconfirmed`) if
+  anything that travels has changed since it was shown, a file rewritten at
+  the same size included; if the form has changed since, the plan is taken
+  away and asked for again. A plan kept past its ten minutes says it was
+  not sent.
+- **A study built in the form** is saved first as a config named after its
+  results folder (`<results>.yml`, or `-2` and so on beside an earlier
+  one), in the folder new studies go in, beside its results, as **Run on
+  this machine** writes them: the folder above the one the GUI was opened
+  on. A file it names by a relative path is read from there too, as a run
+  here reads it, and the plan says where its results come back to, by
+  their full path. A results folder left blank is given the name the plan
+  chose, in the form, while the plan stands (a bare name, as **Run on this
+  machine** reads it), so the study planned again is saved to the same
+  file.
+- **Where new studies would go in your home folder,** the top of a disk or
+  a folder above your home folder (a GUI opened on a folder directly in
+  your home folder, on the home folder itself, or on a folder at the top
+  of a disk), nothing built in the form is sent: the GUI's routes reach
+  only the folder it was opened on, and beside **Plan the send** it says so
+  before anything is asked, naming a folder to open it on instead
+  (`fastmdx gui --output ~/md/first` in place of `~/md`). A config file can
+  still be sent with **A config I have**.
+- **A plan let go** (**Not now**, taken away as the form changed, a send
+  refused, or kept past its ten minutes) takes back the config saved for
+  it, unless the config has been changed since, another plan is of it or a
+  send has begun with it, and on the page empties a results name it wrote
+  in the form.
+- **Words are not files.** A PDB ID or a sequence is read the same wherever
+  it runs and is never taken for a file; nor is a phase, an analysis, a
+  chain, a selection or another word a setting holds, so a GUI opened on a
+  study's own folder (its `setup` and `analysis` folders beside the config)
+  plans as any other.
+- **With A config I have,** the file checked is the one planned, sent with
+  the files beside it as `fastmdx remote send -c` sends them. A config
+  named by a relative path is read from the folder the GUI was started in,
+  as its check reads it, and refused where the plan would read another
+  file, or none: give its full path.
+- **One at a time.** One plan or send is out at a time, and what it answers
+  is said on the page, left and come back to or not; the form changed while
+  a send is out takes nothing away.
 
 **All studies** lists under **Remote jobs** the jobs whose results come back
 into the workspace. **Ask how it is doing** asks the machine (at most every

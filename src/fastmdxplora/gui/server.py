@@ -456,7 +456,7 @@ def make_handler(
     # Your machines (`/api/remote/...`): see `gui/remote_routes.py`.
     from fastmdxplora.gui.remote_routes import RemoteDesk
 
-    remote_desk = RemoteDesk(app_runtime.workspace_root, hosted=hosting is not None)
+    remote_desk = RemoteDesk(app_runtime, hosted=hosting is not None)
     html = template_html if template_html is not None else _load_template()
     from fastmdxplora.gui.sidebar_icons import with_icons
 

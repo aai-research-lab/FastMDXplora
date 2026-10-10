@@ -246,3 +246,34 @@ def test_a_phase_beside_its_folder_is_a_word(tmp_path) -> None:
               "analysis": {"include": ["rmsd"]}}
     found = gather_inputs(config, study)
     assert found.files == {} and found.config == config
+
+
+def test_a_chain_or_a_pose_word_is_a_word(tmp_path) -> None:
+    """Round 3 of 1796-1799: words under settings with no list of choices
+    (a chain, the pose's source) travelled as the file of that name."""
+    from fastmdxplora.remote.inputs import gather_inputs
+
+    study = tmp_path / "study"
+    (study / "A").mkdir(parents=True)
+    (study / "file").write_text("x")
+    (study / "top.pdb").write_text("ATOM\n")
+    config = {"system": "top.pdb", "setup": {"chains": ["A"], "ligand_pose": "file"}}
+    found = gather_inputs(config, study)
+    assert set(found.files) == {"top.pdb"}
+    assert found.config["setup"] == {"chains": ["A"], "ligand_pose": "file"}
+
+
+def test_a_pair_s_selections_are_words(tmp_path) -> None:
+    """Round 2 of the next round: a pair distance's two selections, and a
+    bias's bilayer, site and axis, travelled as the folder of that name."""
+    from fastmdxplora.remote.inputs import gather_inputs
+
+    study = tmp_path / "study"
+    (study / "protein").mkdir(parents=True)
+    (study / "top.pdb").write_text("ATOM\n")
+    words = {"selection_a": "protein", "selection_b": "protein",
+             "bilayer_selection": "protein", "site_selection": "protein",
+             "axis_selection": "protein"}
+    found = gather_inputs({"system": "top.pdb", "analysis": {"pair": dict(words)}}, study)
+    assert set(found.files) == {"top.pdb"}
+    assert found.config["analysis"]["pair"] == words

@@ -58,10 +58,14 @@
   // Requests still out, by section: a section is not drawn again under
   // them, so what they answer is said where it was asked.
   var busy = { run: 0, studies: 0 };
+  // Why a study built in the form cannot be sent from this window (its
+  // studies go in the home folder), said before Plan the send is pressed.
+  var notBuiltHere = "";
 
   function machinesKnown() {
     return ask("GET", "/api/remote/machines").then(function (said) {
       machines = said.ok ? (said.machines || []) : [];
+      notBuiltHere = said.ok ? (said.not_built_here || "") : "";
       jobs = said.ok ? (said.jobs || []) : [];
       unread = !said.ok && !said.hosted ? (said.error || "They could not be read.") : "";
       return said;
@@ -117,10 +121,11 @@
       after.parentNode.insertBefore(host, after.nextSibling);
     }
     var label = byId("run-remote-label");
-    if (label) {
-      label.textContent = fromAFile() ? "Or send this config file to one of your machines"
-        : "Or on one of your machines";
-    }
+    var said = fromAFile() ? "Or send this config file to one of your machines"
+      : "Or on one of your machines";
+    // Written only where it changes: the watch below calls this twice a
+    // second, and a label rewritten under a screen reader is heard again.
+    if (label && label.textContent !== said) label.textContent = said;
   }
 
   var sayKnownNow = null;
@@ -153,6 +158,9 @@
     // What its record says of it, as inspected at a terminal; the plan asks
     // the machine itself and says what stands in the way, if anything.
     var known = el("div", "muted small remote-run-known");
+    var why = el("div", "muted small remote-run-why");
+    why.id = "run-remote-why";
+    why.hidden = true;
     function sayKnown() {
       var m = usable.filter(function (each) { return each.name === pick.value; })[0] || {};
       known.textContent = m.summary ? "As last inspected: " + m.summary : "";
@@ -176,16 +184,29 @@
     row.appendChild(go);
     host.appendChild(row);
     host.appendChild(known);
+    host.appendChild(why);
     host.appendChild(plan);
     host.appendChild(note);
     drawSent(note);
     function sync() {
       place();
+      var stopped = fromAFile() ? "" : notBuiltHere;
       // Not while a plan or a send is out: one at a time, so a second plan
       // of a study being sent is never made.
-      go.disabled = !builderReady() || busy.run > 0;
-      go.title = builderReady() ? ""
-        : "Make the study ready to run first, as for Run on this machine.";
+      go.disabled = !builderReady() || busy.run > 0 || Boolean(stopped);
+      // Held back for a reason said beside it: described by that, not
+      // also by a title read before it.
+      var title = stopped ? "" : (builderReady() ? ""
+        : "Make the study ready to run first, as for Run on this machine.");
+      // Written only where they change: this runs twice a second.
+      if (go.title !== title) go.title = title;
+      if (why.dataset.said !== stopped) {
+        why.dataset.said = stopped;
+        withCode(why, stopped);
+      }
+      if (why.hidden !== !stopped) why.hidden = !stopped;
+      if (stopped) go.setAttribute("aria-describedby", why.id);
+      else go.removeAttribute("aria-describedby");
     }
     sync();
     watchReady(sync);
@@ -229,7 +250,8 @@
         if (syncNow) syncNow();
         var host = byId("run-remote");
         if (quiet || !host || host.contains(event.target)) return;
-        if (clearPlan()) sayChanged();
+        // A send out is past changing: its answer says what went.
+        if (!sending && clearPlan()) sayChanged();
       }, true);
     });
   }
@@ -246,9 +268,12 @@
     }
     var card = byId("run-remote-planned");
     if (!card || card.hidden) return false;
+    // A plan no longer kept is gone already: taken off without a word.
+    var live = !card.dataset.expired;
+    delete card.dataset.expired;
     card.innerHTML = "";
     card.hidden = true;
-    return true;
+    return live;
   }
 
   /* A plan let go here is let go there, and the next plan asked only once
@@ -305,6 +330,9 @@
 
   /* What the last send answered, said again whenever the panel is drawn. */
   var lastSent = null;
+  // A send out, from Send pressed to its answer: the form changed meanwhile
+  // takes nothing away, since what went is what was shown.
+  var sending = false;
   // The plan on the page, as the server keeps it.
   var planToken = null;
 
@@ -322,6 +350,7 @@
     note.appendChild(open);
   }
 
+  var EXPIRED = "Not sent: the plan is no longer kept. Plan the send again.";
   var CHANGED = "The study changed after the plan was made. Plan the send again to see "
     + "what would go.";
 
@@ -363,7 +392,7 @@
         focusBack();
         return;
       }
-      if (body.state) keepResultsName(said.results);
+      if (body.state) keepResultsName(said.results_name || said.results);
       plannedAs = asItIsNow();
       planToken = said.plan;
       note.textContent = "Planned: what a send to " + said.machine
@@ -375,9 +404,26 @@
   /* A plan shown of a study the form no longer holds is taken away, and
    * said; whether it was. */
   function staleTakenAway() {
-    if (plannedAs === null || asItIsNow() === plannedAs) return false;
+    if (sending || plannedAs === null || asItIsNow() === plannedAs) return false;
+    // Focus within the plan taken away goes back to Plan the send, not to
+    // the page's top.
+    var card = byId("run-remote-planned");
+    var held = Boolean(card && card.contains(document.activeElement));
     if (!clearPlan()) return false;
+    var go = byId("run-remote-plan");
+    var note = byId("run-remote-note");
+    if (held && !(go && !go.disabled) && note) {
+      // Plan the send held back (the study not ready now): the note says
+      // why the plan went, and takes the focus once, not also as a status.
+      note.removeAttribute("role");
+      sayChanged();
+      note.tabIndex = -1;
+      note.focus();
+      setTimeout(function () { note.setAttribute("role", "status"); }, 0);
+      return true;
+    }
     sayChanged();
+    if (held && go) go.focus();
     return true;
   }
 
@@ -435,8 +481,17 @@
     expiry = setTimeout(function () {
       var focused = document.activeElement === send;
       send.disabled = true;
-      kept.textContent = "This plan is no longer kept. Plan the send again.";
-      say(kept.textContent);
+      host.dataset.expired = "true";
+      kept.textContent = "This plan is no longer kept.";
+      not.textContent = "Close";
+      // Said once: by the note where it is shown, else by the live region.
+      note.dataset.ok = "";
+      note.textContent = EXPIRED;
+      if (!note.offsetParent) say(EXPIRED);
+      // Let go as Not now lets it go, the card kept to say why.
+      if (planToken) { letGo(planToken); planToken = null; }
+      plannedAs = null;
+      releaseResultsName();
       if (focused) go.focus();
     }, (plan.kept_s || 600) * 1000);
     not.addEventListener("click", function () {
@@ -457,6 +512,8 @@
       // The name of the job sent, unless the answer says nothing went.
       var named = namedForPlan;
       namedForPlan = null;
+      sending = true;
+      plannedAs = null;
       send.disabled = true;
       not.disabled = true;
       note.dataset.ok = "";
@@ -464,6 +521,11 @@
       var out = whileAsking("run", ask("POST", "/api/remote/send", { plan: plan.plan }));
       if (syncNow) syncNow();
       out.then(function (sent) {
+        sending = false;
+        // Where the person was when it answered: still on the plan's card
+        // (taken away now), or gone on to something else, left there.
+        var lost = !document.activeElement || document.activeElement === document.body
+          || host.contains(document.activeElement);
         host.innerHTML = "";
         host.hidden = true;
         // Kept, so the page left and come back to says it still.
@@ -479,13 +541,13 @@
         // Said once: on the page, by the note taking the focus the answers
         // had (not also as a status); elsewhere, by the live region.
         var shown = Boolean(now.offsetParent);
-        if (shown) now.removeAttribute("role");
+        if (shown && lost) now.removeAttribute("role");
         drawSent(now);
-        if (shown) {
+        if (shown && lost) {
           now.tabIndex = -1;
           now.focus();
           setTimeout(function () { now.setAttribute("role", "status"); }, 0);
-        } else {
+        } else if (!shown) {
           say(lastSent.text);
         }
         if (syncNow) syncNow();
@@ -647,8 +709,18 @@
   }
 
   /* A message written for the command line, said for this page. */
+  /* Text with its commands, between backticks, set as code. */
+  function withCode(node, text) {
+    node.textContent = "";
+    String(text).split("`").forEach(function (part, i) {
+      if (!part) return;
+      node.appendChild(i % 2 ? el("code", null, part) : document.createTextNode(part));
+    });
+  }
+
   function forThePage(text) {
     return String(text)
+      .replace(/`/g, "")
       .replace("fetch again with --with-trajectory to bring them",
         "fetch again with the trajectory ticked to bring them")
       .replace("works from this terminal", "works from a terminal on this computer");
@@ -780,7 +852,9 @@
     setInterval(function () {
       var builder = document.querySelector('section.page[data-page="run"]');
       if (!builder || builder.hidden || quiet) return;
-      place();
+      // Plan the send kept to what the builder says now, before a plan
+      // taken away hands it the focus.
+      if (syncNow) syncNow(); else place();
       if (plannedAs !== null) staleTakenAway();
     }, 500);
   }

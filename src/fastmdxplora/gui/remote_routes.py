@@ -172,13 +172,21 @@ def _said(exc: BaseException) -> dict[str, Any]:
 class RemoteDesk:
     """The remote routes of one GUI server, held to its workspace: the
     folder the window was opened on and, given the window's runtime, the
-    folder it puts new studies in."""
+    folder it puts new studies in, unless that is the home folder or one
+    above it, which nothing is sent from."""
 
     def __init__(self, where: Any, *, hosted: bool = False) -> None:
         self.runtime = where if hasattr(where, "workspace_root") else None
         given = ([where.workspace_root, where.exploration_root] if self.runtime is not None
                  else [where])
-        self.roots = list(dict.fromkeys(Path(root).expanduser().resolve() for root in given))
+        from fastmdxplora.remote.inputs import home_or_above
+
+        found = [Path(root).expanduser().resolve() for root in given]
+        # Left out as `gather_inputs` reads it (a disk's top, a name the
+        # disk reads as home's, home not found), not by the path's text.
+        self.roots = list(dict.fromkeys(
+            found[:1] + [root for root in found[1:]
+                         if not home_or_above(root, home_unknown=True)]))
         self.root = self.roots[0]
         self.hosted = hosted
         self._plans: dict[str, _Plan] = {}
@@ -206,6 +214,48 @@ class RemoteDesk:
                 return found
         return None
 
+    def _new_studies_folder(self) -> Path:
+        """Where the Config Builder's studies go: the window's folder for
+        them, else the folder opened."""
+        return (Path(self.runtime.exploration_root).expanduser().resolve()
+                if self.runtime is not None else self.root)
+
+    def _not_built_here(self) -> str | None:
+        """Why a study built in the form cannot be sent from this window,
+        or None: its config would be saved in the home folder or one above
+        it, which nothing is sent from. Said with the folder to open."""
+        import os
+
+        from fastmdxplora.remote.inputs import home_or_above
+
+        base = self._new_studies_folder()
+        if not home_or_above(base, home_unknown=True):
+            return None
+        still = " A config file can still be sent with A config I have."
+        try:
+            home = Path.home().resolve()
+        except (RuntimeError, OSError):
+            return (f"Studies built here would be saved in {base}, and with no home folder "
+                    "to be found here nothing built in the form is sent from this window."
+                    + still)
+        try:
+            is_home = os.path.samefile(base, home)
+        except OSError:
+            is_home = base == home
+        where = ("your home folder" if is_home
+                 else "the top of the disk" if base == Path(base.anchor)
+                 else "a folder above your home folder")
+        opened = self.root
+        # The GUI puts new studies in the folder above the one it opened.
+        if not home_or_above(opened, home_unknown=True):
+            instead = ("To send one, start the GUI one folder deeper, for example "
+                       f"`fastmdx gui --output {opened / 'first'}`.")
+        else:
+            instead = ("To send one, start the GUI on a folder of its own inside your home "
+                       f"folder, for example `fastmdx gui --output {home / 'md' / 'first'}`.")
+        return (f"Studies built here would be saved in {base}, {where}, and nothing is "
+                f"sent from there. {instead}{still}")
+
     def shown(self, path: Any) -> str:
         """A path as the page says it: relative to the folder relative names
         are read from, else in full, so what is shown names what it says if
@@ -217,6 +267,17 @@ class RemoteDesk:
         except (ValueError, OSError, RuntimeError):
             return str(path)
         return Workspace(self.root).shown(path)
+
+    def _results_name(self, output: Path) -> str:
+        """A results folder as the form's Results box would name it: a bare
+        name where Run on this machine reads one as that folder, else in
+        full."""
+        if self.runtime is not None and output.parent == self._new_studies_folder():
+            from fastmdxplora.gui.exploration import _slug
+
+            if _slug(output.name) == output.name:
+                return output.name
+        return self.shown(output)
 
     def _jobs(self) -> list[Any]:
         """The jobs whose results come back into the workspace, each once."""
@@ -280,7 +341,8 @@ class RemoteDesk:
             jobs = [self._job_view(job) for job in self._jobs()]
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one
             return _said(exc)
-        return {"ok": True, "machines": targets, "jobs": jobs}
+        return {"ok": True, "machines": targets, "jobs": jobs,
+                "not_built_here": self._not_built_here()}
 
     def _job_here(self, given: Any):
         name = str(given or "")
@@ -380,6 +442,12 @@ class RemoteDesk:
         from fastmdxplora.gui.config_builder import config_yaml
         from fastmdxplora.naming import default_output_name, system_of
 
+        base = self._new_studies_folder()
+        why = self._not_built_here()
+        if why is not None:
+            # Nothing in the home folder itself travels, and a config is not
+            # left there to say so.
+            return None, _refused(why), False
         source = dict(state)
         requested = str(source.get("output") or "").strip()
         if not requested:
@@ -392,15 +460,6 @@ class RemoteDesk:
         if output is None or self.inside(str(output)) is None or output in self.roots:
             return None, _refused(f"The results folder {requested} must be a new folder "
                                   "inside the workspace."), False
-        base = (Path(self.runtime.exploration_root).expanduser().resolve()
-                if self.runtime is not None else self.root)
-        home = Path.home().resolve()
-        if base == home or base in home.parents:
-            # Nothing in the home folder itself travels, and a config is not
-            # left there to say so.
-            return None, _refused(f"Its config would be saved in {base}, your home folder, "
-                                  "which nothing is sent from. Open the GUI on a folder of "
-                                  "its own to send a study built here."), False
         source["output"] = str(output)
         try:
             built = config_yaml(source, full=bool(source.get("full")))
@@ -481,7 +540,48 @@ class RemoteDesk:
                 # written again, and a blank results folder leaves none.
                 self._release(saved)
             return said
-        return self._plan(config, machine)
+        refused = self._read_elsewhere_here(config)
+        if refused is not None:
+            return refused
+        # A config the person has may be one the form wrote: held while it
+        # is planned, as the form's own plan holds it.
+        named = self.inside(config) if config else None
+        if named is None:
+            return self._plan(config, machine)
+        with self._lock:
+            self._reading[named] = self._reading.get(named, 0) + 1
+        try:
+            said = self._plan(config, machine)
+        finally:
+            self._done_reading(named)
+        if not said.get("ok"):
+            # A form's config let go while this plan held it is taken back
+            # now, as it would have been then.
+            self._release(named)
+        return said
+
+    def _read_elsewhere_here(self, config: Any) -> dict[str, Any] | None:
+        """A config file named by a relative path is refused where the
+        window checks and runs another, or none: **A config I have** reads
+        such a name from the folder the GUI was started in, and a plan of
+        it from the folder it was opened on, so what is planned is always
+        the file checked."""
+        if self.runtime is None or not config:
+            return None
+        text = str(config).strip()
+        try:
+            given = Path(text)
+            if text.startswith("~") or given.is_absolute():
+                return None
+            checked = (Path.cwd() / given).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
+        planned = self.inside(text)
+        if planned is not None and checked == planned:
+            return None
+        return _refused(f"{text} is checked from {checked.parent}, the folder the GUI was "
+                        f"started in, but a plan would read {self.root / given}. Give its "
+                        "full path, so the file planned is the one checked.")
 
     def _plan(self, config: Any, machine: Any) -> dict[str, Any]:
         from fastmdxplora.remote.send import room_said, sent_digest, travelling
@@ -513,7 +613,7 @@ class RemoteDesk:
             "runs_in": sending.installation.path,
             "scheduler": "SLURM" if sending.scheduler == "slurm" else "a detached process",
             "folder": sending.remote_dir, "results": self.shown(output),
-            "results_path": str(output),
+            "results_path": str(output), "results_name": self._results_name(output),
             "travels": [{"name": f"inputs/{travelled}", "from": self.shown(source),
                          "bytes": prints[travelled][0]}
                         for travelled, source in sending.inputs.files.items()],

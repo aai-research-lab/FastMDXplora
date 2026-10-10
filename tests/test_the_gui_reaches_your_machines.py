@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -44,6 +45,9 @@ def served(machine, monkeypatch):
     monkeypatch.setattr(sending, "run_here", lambda command, runner=None, **more:
                         real(command, runner=machine.local, **more))
     root = machine.study.parent
+    # Started in the folder it opens, as `fastmdx gui` is: a relative config
+    # name is the same file to the check and to the plan.
+    monkeypatch.chdir(root)
     with _serving(DashboardRuntime(workspace_root=root, exploration_root=root)) as address:
         yield address, machine
 
@@ -349,6 +353,140 @@ class TestTheConfigBuilder:
         assert saved is None and "home folder" in refused["error"]
         assert not (home / "ub-run.yml").exists()
 
+    def test_a_window_on_a_folder_in_home_reaches_only_that_folder(
+            self, served, machine, tmp_path, monkeypatch):
+        """Round 1 of the next round: a GUI opened on a folder directly in
+        home puts new studies in home, and its routes reached every folder
+        in home with them, a config and the files beside it included."""
+        home = tmp_path / "h"
+        opened = home / "proj"
+        opened.mkdir(parents=True)
+        notes = home / "Documents" / "notes"
+        notes.mkdir(parents=True)
+        (notes / "private.pdb").write_text("ATOM secret\n")
+        (notes / "c.yml").write_text(machine.study.read_text())
+        monkeypatch.setenv("HOME", str(home))
+        desk = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=home))
+        assert desk.roots == [opened.resolve()]
+        assert desk.inside(str(notes / "c.yml")) is None
+        said = desk.plan(str(notes / "c.yml"), "box")
+        assert said["ok"] is False
+        saved, refused, _ = desk._saved(STATE)
+        assert saved is None and "home folder" in refused["error"]
+        assert not (home / "ub-run.yml").exists()
+        assert not _sent(machine)
+
+    def test_a_window_whose_studies_go_in_home_says_so_before_any_plan(
+            self, served, tmp_path, monkeypatch):
+        """Round 1 of the next round: Plan the send was offered, and only
+        once pressed said to open the GUI on a folder of its own, which it
+        already was; it now says which folder to open, before anything."""
+        home = tmp_path / "h"
+        opened = home / "study"
+        opened.mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(home))
+        desk = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=home))
+        why = desk.machines()["not_built_here"]
+        assert "your home folder" in why and "A config I have" in why
+        assert f"`fastmdx gui --output {opened.resolve() / 'first'}`" in why
+        saved, refused, _ = desk._saved(STATE)
+        assert refused["error"] == why
+        # Opened on the home folder itself: the folder above is not called
+        # the home folder, and a folder two deeper is named.
+        top = RemoteDesk(DashboardRuntime(workspace_root=home, exploration_root=home.parent))
+        said = top.machines()["not_built_here"]
+        assert "a folder above your home folder" in said and "deeper" not in said
+        assert str(home.resolve() / "md" / "first") in said
+        # Round 2: opened on a folder outside home whose parent is above it,
+        # the folder to open is one inside it, not one moved into home.
+        scratch = tmp_path / "scratch"
+        scratch.mkdir()
+        outside = RemoteDesk(DashboardRuntime(workspace_root=scratch,
+                                              exploration_root=Path("/")))
+        assert str(scratch.resolve() / "first") in outside.machines()["not_built_here"]
+        assert RemoteDesk(DashboardRuntime(workspace_root=opened / "first",
+                                           exploration_root=opened)
+                          ).machines()["not_built_here"] is None
+
+    def test_a_relative_config_name_checked_elsewhere_is_refused(
+            self, served, tmp_path, monkeypatch):
+        """Round 1 of the next round: A config I have checks a relative
+        name in the folder the GUI was started in, and the plan read it in
+        the folder opened, so another file was planned than was checked."""
+        address, machine = served
+        started = tmp_path / "typed-here"
+        started.mkdir()
+        (started / "study.yml").write_text(machine.study.read_text())
+        monkeypatch.chdir(started)
+        status, said = _ask(address, "/api/remote/plan", {"config": "study.yml",
+                                                          "machine": "box"})
+        assert said["ok"] is False and "full path" in said["error"]
+        assert str(started.resolve()) in said["error"]
+        status, full = _ask(address, "/api/remote/plan", {"config": str(machine.study),
+                                                          "machine": "box"})
+        assert full["ok"], full
+        assert not _sent(machine)
+
+    def test_a_results_name_written_in_the_form_is_a_bare_name(self, machine, tmp_path):
+        """Round 1 of the next round: the empty Results box was filled with
+        the results folder's full path, where Run on this machine reads a
+        bare name as the same folder."""
+        root = machine.study.parent
+        opened = root / "opened"
+        opened.mkdir()
+        desk = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=root))
+        output = root.resolve() / "fastmdxplora_1UBQ_20261010"
+        assert desk._results_name(output) == "fastmdxplora_1UBQ_20261010"
+        assert desk._results_name(root.resolve() / "deep" / "x") == str(
+            root.resolve() / "deep" / "x")
+
+    def test_a_window_with_no_home_found_still_opens_and_sends_no_form_study(
+            self, machine, tmp_path, monkeypatch):
+        """Round 2 of the next round: with no home folder to be found (no
+        HOME, no account entry) the remote routes raised, and the GUI built
+        with them did not open."""
+        root = machine.study.parent
+        opened = root / "opened"
+        opened.mkdir()
+
+        def nowhere(cls=None):
+            raise RuntimeError("Could not determine home directory.")
+
+        monkeypatch.setattr(Path, "home", classmethod(nowhere))
+        runtime = DashboardRuntime(workspace_root=opened, exploration_root=root)
+        with _serving(runtime) as address:
+            status, said = _ask(address, "/api/remote/machines")
+        assert status == 200 and said["ok"], said
+        assert "no home folder to be found" in said["not_built_here"]
+        desk = RemoteDesk(runtime)
+        assert desk.roots == [opened.resolve()]
+        saved, refused, _ = desk._saved(STATE)
+        assert saved is None and refused["error"] == said["not_built_here"]
+
+    def test_a_folder_the_disk_reads_as_home_or_a_disk_s_top_is_left_out(
+            self, machine, monkeypatch):
+        """Round 2 of the next round: home was told by its path's text, so a
+        name the disk reads as the home folder (letters in another case, a
+        mount of it) and a disk's top were reached as the new-studies
+        folder."""
+        import os
+
+        from fastmdxplora.remote import inputs
+
+        root = machine.study.parent
+        opened = root / "opened"
+        opened.mkdir()
+        real = os.path.samefile
+        monkeypatch.setattr(inputs.os.path, "samefile", lambda a, b: (
+            True if (str(a), str(b)) == (str(root.resolve()), str(inputs.Path.home().resolve()))
+            else real(a, b)))
+        desk = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=root))
+        assert desk.roots == [opened.resolve()]
+        assert desk.machines()["not_built_here"]
+        top = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=Path("/")))
+        assert top.roots == [opened.resolve()]
+        assert "the top of the disk" in top.machines()["not_built_here"]
+
     def test_a_name_no_folder_can_have_is_refused(self, machine):
         root = machine.study.parent
         desk = RemoteDesk(DashboardRuntime(workspace_root=root, exploration_root=root))
@@ -358,49 +496,50 @@ class TestTheConfigBuilder:
     def test_the_config_is_saved_where_its_files_are_read_from(self, served):
         """Second review: a results folder named in a subfolder put the
         config there, and a file the study named by a relative path was
-        no longer beside it."""
+        no longer beside it. The window's results name is Run on this
+        machine's: a folder beside the others it made."""
         address, machine = served
         root = machine.study.parent
         status, plan = _ask(address, "/api/remote/plan", {
             "state": {**STATE, "output": "newdir/deep"}, "machine": "box"})
         assert plan["ok"], plan
-        assert plan["config"] == "deep.yml" and plan["results"] == "newdir/deep"
-        assert (root / "deep.yml").is_file() and not (root / "newdir").exists()
+        assert plan["config"] == "newdir_deep.yml" and plan["results"] == "newdir_deep"
+        assert (root / "newdir_deep.yml").is_file() and not (root / "newdir").exists()
 
     def test_a_file_named_relatively_is_sent_only_as_a_run_here_reads_it(
             self, machine, monkeypatch):
         """Third review: a GUI opened on a folder starts Run on this machine
         in the folder above it, so a study naming mine.pdb would have read
-        that folder's mine.pdb here and sent the opened folder's."""
+        that folder's mine.pdb here and sent the opened folder's. The
+        window's routes read it where Run on this machine does; a desk
+        given a folder alone refuses the name."""
         from fastmdxplora.gui.server import start_dashboard_session
         from fastmdxplora.remote import api
+        from fastmdxplora.remote import send as sending
 
         parent = machine.study.parent
         opened = parent / "opened"
         opened.mkdir()
         (parent / "mine.pdb").write_text("ATOM  parent\n")
         (opened / "mine.pdb").write_text("ATOM\n")
-        from fastmdxplora.remote import send as sending
-
         monkeypatch.setattr(api, "_link", lambda name, transport: machine.transport())
         monkeypatch.setattr(api, "this_code", lambda: RELEASE)
         monkeypatch.setattr(sending, "this_code", lambda: RELEASE)
+        state = {"system": "mine.pdb", "include_phase": ["setup"], "output": "where"}
         session = start_dashboard_session(output=str(opened), host="127.0.0.1", port=0)
         try:
             address = session.url.split("//", 1)[1].rstrip("/")
-            state = {"system": "mine.pdb", "include_phase": ["setup"], "output": "where"}
-            status, said = _ask(address, "/api/remote/plan", {"state": state,
-                                                              "machine": "box"})
-            assert said["ok"] is False and said["code"] == "remote.input.outside"
-            assert "would read 'mine.pdb' from" in said["error"]
-            assert not list(opened.glob("where*.yml"))
-            whole = {**state, "system": str(opened / "mine.pdb")}
-            status, plan = _ask(address, "/api/remote/plan", {"state": whole,
+            status, plan = _ask(address, "/api/remote/plan", {"state": state,
                                                               "machine": "box"})
             assert plan["ok"], plan
-            assert [t["from"] for t in plan["travels"]] == ["mine.pdb"]
+            assert [t["from"] for t in plan["travels"]] == [str(parent / "mine.pdb")]
+            assert (parent / "where.yml").is_file() and not list(opened.glob("where*.yml"))
+            _ask(address, "/api/remote/forget", {"plan": plan["plan"]})
         finally:
             session.server.shutdown()
+        saved, said, _ = RemoteDesk(opened)._saved(state)
+        assert saved is None and said["code"] == "remote.input.outside"
+        assert said["error"].startswith("Run on this machine would read 'mine.pdb' from")
         assert not any(c.startswith("mkdir") for c in machine.commands)
 
     def test_a_plan_let_go_takes_back_the_config_written_for_it(self, served):
@@ -482,12 +621,10 @@ class TestTheConfigBuilder:
                 "machine": "box"})
             assert plan["ok"], plan
             assert plan["fetched_there"] == ["1ubq"]
-            status, said = _ask(address, "/api/remote/plan", {"state": {
-                "system": "mine.pdb", "include_phase": ["setup"], "output": "there"},
-                "machine": "box"})
-            assert said["code"] == "remote.input.outside"
-            assert said["error"].startswith(
-                f"Run on this machine would read 'mine.pdb' from {parent.resolve()} but")
+            # The study's results, and its config, beside the folder opened,
+            # where Run on this machine puts a new study; never inside it.
+            assert plan["results_path"] == str((parent / "where").resolve())
+            assert not list(opened.iterdir())
         finally:
             session.server.shutdown()
         assert not _sent(machine)
@@ -620,3 +757,44 @@ class TestTabsAtOnce:
             "analysis": {"include": ["rmsd"]}})
         assert said["ok"], said
         assert said["travels"] == []
+
+    def test_a_config_file_plan_refused_takes_back_a_config_let_go_meanwhile(
+            self, desk, machine):
+        """Round 1 of the next round: the form's plan let go while its
+        config was planned as a config file, and that plan then refused,
+        left the config behind."""
+        desk, root = desk
+        first = desk.plan(None, "box", state=STATE)
+        asked, through, undo = self._held(desk, "_plan")
+        said = {}
+        planning = threading.Thread(target=lambda: said.update(
+            desk.plan(str(root / "ub-run.yml"), "gpu-box")))
+        planning.start()
+        assert asked.wait(30)
+        undo()
+        desk.forget(first["plan"])
+        assert (root / "ub-run.yml").is_file()
+        through.set()
+        planning.join(60)
+        assert said["ok"] is False
+        assert not (root / "ub-run.yml").exists()
+
+    def test_a_config_file_planned_holds_the_file_the_form_wrote(self, desk, machine):
+        """Round 3 of 1796-1799: the form's config planned as a config file
+        was taken back by the form's Not now while that plan was made."""
+        desk, root = desk
+        first = desk.plan(None, "box", state=STATE)
+        asked, through, undo = self._held(desk, "_planned")
+        said = {}
+        planning = threading.Thread(target=lambda: said.update(
+            desk.plan(str(root / "ub-run.yml"), "box")))
+        planning.start()
+        assert asked.wait(30)
+        undo()
+        desk.forget(first["plan"])
+        assert (root / "ub-run.yml").is_file()
+        through.set()
+        planning.join(60)
+        assert said["ok"], said
+        desk.forget(said["plan"])
+        assert not (root / "ub-run.yml").exists()
