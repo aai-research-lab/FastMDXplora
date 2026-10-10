@@ -402,3 +402,35 @@ class TestTheConfigBuilder:
         finally:
             session.server.shutdown()
         assert not any(c.startswith("mkdir") for c in machine.commands)
+
+    def test_a_plan_let_go_takes_back_the_config_written_for_it(self, served):
+        """Third review: Not now, or a plan taken away as the study changed,
+        left its config behind, one more for each blank results name."""
+        address, machine = served
+        root = machine.study.parent
+        status, plan = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        assert plan["results_path"] == str((root / "ub-run").resolve())
+        status, again = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        # Kept while another plan is of it, and taken back with the last.
+        assert _ask(address, "/api/remote/forget", {"plan": plan["plan"]})[1]["ok"]
+        assert (root / "ub-run.yml").is_file()
+        _ask(address, "/api/remote/forget", {"plan": again["plan"]})
+        assert not (root / "ub-run.yml").exists()
+        status, other = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "output": "other"}, "machine": "box"})
+        _ask(address, "/api/remote/forget", {"plan": other["plan"]})
+        assert not (root / "other.yml").exists()
+        status, sent = _ask(address, "/api/remote/send", {"plan": other["plan"]})
+        assert sent["ok"] is False and not _sent(machine)
+
+    def test_a_config_changed_by_hand_or_not_written_for_it_is_kept(self, served):
+        address, machine = served
+        root = machine.study.parent
+        status, plan = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        (root / "ub-run.yml").write_text((root / "ub-run.yml").read_text() + "# mine\n")
+        _ask(address, "/api/remote/forget", {"plan": plan["plan"]})
+        assert (root / "ub-run.yml").read_text().endswith("# mine\n")
+        planned = _planned(address)
+        _ask(address, "/api/remote/forget", {"plan": planned["plan"]})
+        assert machine.study.is_file()
+        assert _ask(address, "/api/remote/forget", {"plan": "nothing"})[1] == {"ok": True}

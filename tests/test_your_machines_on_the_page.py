@@ -242,7 +242,7 @@ def test_a_plan_is_taken_away_once_the_study_changes(session) -> None:
         said = page.text_content("#run-remote-note")
         browser.close()
     assert focused == "remote-plan-title"
-    assert gone and said.startswith("The study changed after the plan was shown.")
+    assert gone and said.startswith("The study changed after the plan was made.")
     assert not any(c.startswith("mkdir") for c in machine.commands)
     assert errors == []
 
@@ -440,4 +440,42 @@ def test_a_send_s_answer_is_kept_for_the_page_come_back_to(session) -> None:
         browser.close()
     assert planning
     assert said == "Refused there." and again
+    assert errors == []
+
+
+def test_a_plan_let_go_is_let_go_there_and_a_change_is_said_on_return(session) -> None:
+    """Third review: a plan taken away while the person was on another page
+    vanished unsaid, Not now left its config behind, and the results folder
+    was named only as the page knew it."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        forgotten = []
+        page.on("request", lambda r: forgotten.append(r.post_data)
+                if r.url.endswith("/api/remote/forget") else None)
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        results = page.text_content("#run-remote-planned .remote-plan-facts")
+        page.click("#run-remote-planned .ghost-btn")
+        not_now = page.text_content("#run-remote-note")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.evaluate("() => { document.getElementById('run-config-path').value = '/elsewhere.yml'; }")
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        page.wait_for_timeout(300)
+        page.evaluate("() => window.FastMDXDashboard.navigate('run')")
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent.startsWith('The study changed')")
+        shown = page.is_visible("#run-remote-planned")
+        page.wait_for_timeout(300)
+        browser.close()
+    assert str((machine.study.parent / "study").resolve()) in results
+    assert not_now == "Not sent."
+    assert len(forgotten) == 2 and all('"plan"' in body for body in forgotten)
+    assert not shown
+    assert not any(c.startswith("mkdir") for c in machine.commands)
     assert errors == []

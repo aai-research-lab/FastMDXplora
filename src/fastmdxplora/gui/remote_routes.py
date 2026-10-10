@@ -24,7 +24,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,19 @@ class _Plan:
     output: Path
     digest: str
     made_at: float
+    #: The sha256 of its config where the config was written for it (from
+    #: the Config Builder), so a plan let go takes it back unless changed.
+    made: str = ""
+
+
+def _sha_of(path: Path) -> str:
+    """The sha256 of a file's bytes, or "" where it cannot be read."""
+    import hashlib
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
 
 
 def _refused(error: str, code: str = "", **more: Any) -> dict[str, Any]:
@@ -54,7 +67,8 @@ def _refused(error: str, code: str = "", **more: Any) -> dict[str, Any]:
 
 #: The routes, so another path under ``/api/remote/`` is not found.
 _GETS = frozenset({"/api/remote/machines", "/api/remote/job", "/api/remote/fetch-sizes"})
-_POSTS = frozenset({"/api/remote/plan", "/api/remote/send", "/api/remote/fetch",
+_POSTS = frozenset({"/api/remote/plan", "/api/remote/send", "/api/remote/forget",
+                    "/api/remote/fetch",
                     "/api/remote/cancel"})
 
 _HOSTED = _refused("Not available in a hosted GUI: its studies run on its service.",
@@ -181,6 +195,8 @@ class RemoteDesk:
                              state=body.get("state"))
         if path == "/api/remote/send":
             return self.send(body.get("plan"))
+        if path == "/api/remote/forget":
+            return self.forget(body.get("plan"))
         if path == "/api/remote/fetch":
             return self.fetch(body.get("job"), bool(body.get("with_trajectory")),
                               body.get("bringing"))
@@ -381,7 +397,7 @@ class RemoteDesk:
             saved, refused, made = self._saved(state)
             if refused is not None:
                 return refused
-            said = self._plan(str(saved), machine)
+            said = self._plan(str(saved), machine, made=made)
             if not said.get("ok") and made:
                 # Refused, its config is taken back: planned again, it is
                 # written again, and a blank results folder leaves none.
@@ -392,7 +408,7 @@ class RemoteDesk:
             return said
         return self._plan(config, machine)
 
-    def _plan(self, config: Any, machine: Any) -> dict[str, Any]:
+    def _plan(self, config: Any, machine: Any, *, made: bool = False) -> dict[str, Any]:
         from fastmdxplora.remote.send import room_said, sent_digest, travelling
 
         file, output, refused = self._what(config)
@@ -412,13 +428,14 @@ class RemoteDesk:
             while len(self._plans) >= _MOST_PLANS:
                 self._plans.pop(min(self._plans, key=lambda t: self._plans[t].made_at))
             self._plans[token] = _Plan(file, name, output, sent_digest(sending, prints),
-                                        time.monotonic())
+                                        time.monotonic(), _sha_of(file) if made else "")
         return {
             "ok": True, "plan": token, "kept_s": PLAN_KEPT_S,
             "config": self.shown(file), "machine": name, "job": sending.job_name,
             "runs_in": sending.installation.path,
             "scheduler": "SLURM" if sending.scheduler == "slurm" else "a detached process",
             "folder": sending.remote_dir, "results": self.shown(output),
+            "results_path": str(output),
             "travels": [{"name": f"inputs/{travelled}", "from": self.shown(source),
                          "bytes": prints[travelled][0]}
                         for travelled, source in sending.inputs.files.items()],
@@ -426,6 +443,25 @@ class RemoteDesk:
             "room": room_said(sending), "notes": list(sending.notes),
             "script": sending.script,
         }
+
+    def forget(self, token: Any) -> dict[str, Any]:
+        """A plan the page let go (Not now, or the study changed): never
+        sent, and the config written for it taken back, where it is as
+        written and no other plan kept here is of that file."""
+        with self._lock:
+            plan = self._plans.pop(str(token or ""), None)
+            same = [t for t, p in self._plans.items()
+                    if plan is not None and p.config == plan.config]
+            if plan is not None and plan.made and same:
+                # Another plan of it is kept: that one takes it back.
+                self._plans[same[0]] = replace(self._plans[same[0]], made=plan.made)
+        if plan is not None and plan.made and not same:
+            try:
+                if not plan.config.is_symlink() and _sha_of(plan.config) == plan.made:
+                    plan.config.unlink()
+            except OSError:
+                pass
+        return {"ok": True}
 
     def _forget_old(self) -> None:
         now = time.monotonic()

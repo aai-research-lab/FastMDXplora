@@ -496,7 +496,9 @@ included, and if the form has changed since: the plan is taken away and
 asked for again. A study built in the form is saved first as a config named
 after its results folder (`<results>.yml`, or `-2` and so on beside an
 earlier one), in the folder the GUI was opened on; the plan says where its
-results come back to. A file the study names by a relative path is refused
+results come back to, by their full path. A plan let go (**Not now**, or
+taken away as the form changed) takes back the config saved for it, unless
+it has been changed since or another plan is of it. A file the study names by a relative path is refused
 (`remote.input.outside`) where **Run on this machine**, which starts in the
 folder above, would read another file of that name: give its full path (the
 file picker beside the field does), so what travels is what a run here

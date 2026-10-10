@@ -229,14 +229,7 @@
         if (syncNow) syncNow();
         var host = byId("run-remote");
         if (quiet || !host || host.contains(event.target)) return;
-        if (clearPlan()) {
-          var note = byId("run-remote-note");
-          if (note) {
-            note.dataset.ok = "";
-            note.textContent = "The study changed after the plan was shown. Plan the send "
-              + "again to see what would go.";
-          }
-        }
+        if (clearPlan()) sayChanged();
       }, true);
     });
   }
@@ -245,6 +238,12 @@
   function clearPlan() {
     if (expiry) { clearTimeout(expiry); expiry = null; }
     plannedAs = null;
+    // Let go here, it is let go there: its config, written for it, is
+    // taken back.
+    if (planToken) {
+      ask("POST", "/api/remote/forget", { plan: planToken });
+      planToken = null;
+    }
     var card = byId("run-remote-planned");
     if (!card || card.hidden) return false;
     card.innerHTML = "";
@@ -280,12 +279,14 @@
 
   /* What the last send answered, said again whenever the panel is drawn. */
   var lastSent = null;
+  // The plan on the page, as the server keeps it.
+  var planToken = null;
 
   function drawSent(note) {
     if (!note || !lastSent) return;
-    note.dataset.ok = lastSent.ok ? "true" : "false";
+    note.dataset.ok = lastSent.ok === null ? "" : (lastSent.ok ? "true" : "false");
     note.textContent = lastSent.text;
-    if (!lastSent.ok) return;
+    if (lastSent.ok !== true) return;
     var open = button("builder-linkish", "Follow it under Remote jobs");
     open.addEventListener("click", function () {
       if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
@@ -297,6 +298,12 @@
 
   var CHANGED = "The study changed after the plan was made. Plan the send again to see "
     + "what would go.";
+
+  /* Said, and kept to be said again if the panel is drawn anew. */
+  function sayChanged() {
+    lastSent = { ok: null, text: CHANGED };
+    drawSent(byId("run-remote-note"));
+  }
 
   function planSend(machine, host, note, go) {
     lastSent = null;
@@ -315,11 +322,13 @@
         return;
       }
       if (asItIsNow() !== asked) {
-        note.textContent = CHANGED;
+        ask("POST", "/api/remote/forget", { plan: said.plan });
+        sayChanged();
         return;
       }
       if (body.state) keepResultsName(said.results);
       plannedAs = asItIsNow();
+      planToken = said.plan;
       note.textContent = "Planned: what a send to " + said.machine
         + " would do is below. Nothing has been sent.";
       showPlan(said, host, note, go);
@@ -331,11 +340,7 @@
   function staleTakenAway() {
     if (plannedAs === null || asItIsNow() === plannedAs) return false;
     if (!clearPlan()) return false;
-    var note = byId("run-remote-note");
-    if (note) {
-      note.dataset.ok = "";
-      note.textContent = CHANGED;
-    }
+    sayChanged();
     return true;
   }
 
@@ -353,7 +358,8 @@
     [["Runs in", plan.runs_in + " on " + plan.machine + " (" + plan.scheduler + ")"],
      ["Its folder there", plan.folder],
      ["Config", plan.config],
-     ["Results come back to", plan.results + " when fetched"]].forEach(function (pair) {
+     ["Results come back to", (plan.results_path || plan.results) + " when fetched"]]
+      .forEach(function (pair) {
       facts.appendChild(el("dt", null, pair[0]));
       facts.appendChild(el("dd", "mono", pair[1]));
     });
@@ -409,6 +415,7 @@
         return;
       }
       if (expiry) { clearTimeout(expiry); expiry = null; }
+      planToken = null;  // sent, not let go
       send.disabled = true;
       not.disabled = true;
       note.dataset.ok = "";
