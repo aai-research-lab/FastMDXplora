@@ -1,7 +1,7 @@
 """A paper's MD studies for the Agent and for an AI app.
 
-The Agent's ``studies_in_paper`` reads a paper with the person's AI model,
-as the command line and the Config Builder do, and says its studies, and
+The Agent's ``studies_in_paper`` reads a paper as the command line and the
+Config Builder do, and says its studies, and
 one study's config when asked. An AI app reads the paper itself: its
 ``read_paper`` gives the paper's text a page at a time with what to read
 and how to answer, and its ``check_paper_studies`` takes the AI app's
@@ -109,7 +109,7 @@ def checked_said(paper: PaperText, reading_json: str, *, model: str = "",
     if not isinstance(raw, dict) or not isinstance(raw.get("studies"), list):
         raise PaperRefused("The reading is a JSON object with `studies`, as read_paper "
                            "says.", code="config.option.wrong_type")
-    reading = check_reading(paper, raw, model=model)
+    reading = check_reading(paper, raw, model=model or "an AI app")
     plans = plans_for(reading, until_determined=until_determined)
     lines = [studies_said(plans, reading), ""]
     for study, plan in zip(reading["studies"], plans):

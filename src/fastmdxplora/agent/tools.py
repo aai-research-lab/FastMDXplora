@@ -806,8 +806,8 @@ def _find_structure(box: Toolbox, asked: dict[str, Any]) -> str:
 
 
 def _studies_in_paper(box: Toolbox, asked: dict[str, Any]) -> str:
-    """A paper's MD studies, read with the person's AI model and every value
-    checked against the paper's words (:mod:`fastmdxplora.paper`); with
+    """A paper's MD studies, read by FastMDXplora and every value checked
+    against the paper's words (:mod:`fastmdxplora.paper`); with
     `study`, that study's config."""
     from fastmdxplora.paper.studies import plans_for, studies_in
     from fastmdxplora.paper.tools import studies_said, study_config_said
@@ -907,8 +907,8 @@ _TOOLS: dict[str, tuple[str, str, Callable[[Toolbox, dict[str, Any]], str]]] = {
         "optionally `si` (its supporting information's file), `study` (one study's id, "
         "for its config) and `until_determined` (true to run until the paper's "
         "results are determined).",
-        "the MD studies a paper reports, read with the person's AI model, every value "
-        "checked against the paper's own words: each study's state (ready, runs with "
+        "the MD studies a paper reports, read by FastMDXplora, every value checked "
+        "against the paper's own words: each study's state (ready, runs with "
         "differences, needs the person, cannot run here) and why; with `study`, its "
         "config, each setting's reason the paper's words. Look here when the person "
         "asks to reproduce a paper; never write a paper's settings from memory.",

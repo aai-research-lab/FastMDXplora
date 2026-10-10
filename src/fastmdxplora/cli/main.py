@@ -1543,9 +1543,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=("Write configs that reproduce a paper's MD studies: a PDF, the "
               "paper's JATS XML, a Word or text file, or the DOI, PMCID or arXiv "
-              "identifier of an open-access paper. The AI model chosen with "
-              "`fastmdx agent model` lists its studies, and each value it reads "
-              "is checked against the paper's own words. Without "
+              "identifier of an open-access paper. FastMDXplora lists its "
+              "studies, with the AI model chosen with `fastmdx agent model`, and "
+              "checks each value it reads against the paper's own words. Without "
               "--paper-studies, the studies are listed and nothing is written."),
     )
     cf.add_argument(

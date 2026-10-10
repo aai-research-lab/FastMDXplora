@@ -78,7 +78,7 @@ def test_each_setting_s_reason_is_the_paper_s_words(paper_file):
     assert "at 300 K" in why and "Methods: Molecular dynamics simulations" in why
     assert config["decisions"]["simulation.temperature_K"]["source"] == f"doi:{DOI}"
     assert config["paper"]["doi"] == DOI and config["paper"]["study"] == "S1"
-    assert config["paper"]["read_by"] == "test/model"
+    assert config["paper"]["read_by"] == "FastMDXplora with test/model"
     assert [claim["analysis"] for claim in config["paper"]["claims"]] == ["rmsd", "rg"]
 
 
@@ -211,7 +211,7 @@ def test_a_reading_is_kept_and_not_asked_again(paper_file):
 
 def test_a_reply_that_is_not_json_is_refused(paper_file):
     paper = read_paper(paper_file)
-    with pytest.raises(PaperRefused, match="not the JSON"):
+    with pytest.raises(PaperRefused, match="not in the form it reads"):
         read_studies(paper, lambda prompt: "I could not find any.", model="x", use_kept=False)
 
 

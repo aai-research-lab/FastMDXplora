@@ -38,9 +38,9 @@ file, or an open-access paper by its DOI, PMCID or arXiv id) and lists the
 molecular dynamics studies it reports; `--paper-studies` writes one, several
 or all as configs, `--paper-si` reads its supporting information too, and
 `--paper-until-determined` runs each until its measures are determined
-rather than for the paper's length. The AI model chosen with `fastmdx agent
-model` reads the paper, and each value it gives is used only where the
-paper's own words, quoted, hold it; each setting says whether it is as
+rather than for the paper's length. FastMDXplora reads the paper, with the
+AI model chosen with `fastmdx agent model`, and each value read is used only
+where the paper's own words, quoted, hold it; each setting says whether it is as
 stated, not stated (this software's value), differs (and why) or needs you.
 A study this software cannot run (a method, force field or water model
 OpenMM does not have) is said with why and not written. The config's new
@@ -52,7 +52,7 @@ but not licensed for programs is not fetched (`environment.paper.not_open`).
 Needs `pypdf`. See `docs/papers.md`.
 
 A study runs as plain MD without asking you only where its method's details
-give no sign of another method. The AI model's word for the method decides
+give no sign of another method. The method the reading names decides
 first. The details are then read, with hyphens at a line's end joined, for
 the names of the methods this software does not run (replica exchange,
 alchemical free energy, QM/MM, accelerated MD, coarse-grained models,

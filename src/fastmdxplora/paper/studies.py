@@ -1,7 +1,7 @@
 """From a paper to configs: what the command line, the GUI, the Agent and
 an AI app share.
 
-:func:`studies_in` reads a paper and the studies an AI model finds in it;
+:func:`studies_in` reads a paper and the studies FastMDXplora finds in it;
 :func:`plans_for` writes each as a plan with its config; :func:`write_configs`
 puts the chosen ones on disk, each checked by the validator that checks any
 config. A study that cannot run is never written; one that needs something
@@ -44,7 +44,7 @@ def studies_in(source: str, si: list[str] | tuple[str, ...] = (), *,
                complete: Callable[[str], str] | None = None, model: str = "",
                said: Callable[[str], None] | None = None,
                use_kept: bool = True) -> tuple[PaperText, dict[str, Any]]:
-    """The paper ``source`` names and its MD studies as an AI model reads
+    """The paper ``source`` names and its MD studies as FastMDXplora reads
     them, checked (:func:`fastmdxplora.paper.extract.read_studies`). Without
     ``complete``, the AI model chosen with `fastmdx agent model`."""
     from fastmdxplora.paper.extract import read_studies
@@ -56,7 +56,7 @@ def studies_in(source: str, si: list[str] | tuple[str, ...] = (), *,
     reading = read_studies(paper, complete, model=model, said=said, use_kept=use_kept)
     if not reading.get("studies"):
         raise PaperRefused(
-            f"The AI model found no MD study in {paper.title or source}. If it has one, "
+            f"FastMDXplora found no MD study in {paper.title or source}. If it has one, "
             "its methods may be in a supporting information not given: add it with "
             "--paper-si FILE.", code="environment.paper.unreadable")
     return paper, reading

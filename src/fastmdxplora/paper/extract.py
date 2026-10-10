@@ -1,22 +1,22 @@
-"""The MD studies in a paper, as an AI model reads them and as checked here.
+"""The MD studies in a paper, as FastMDXplora reads them and checks them.
 
-Three kinds of question are put to the AI model, each shown the paper's
-text with its parts labelled: which MD studies the paper reports (one
+FastMDXplora reads three things, with the AI model chosen with `fastmdx
+agent model`, each time showing it the paper's text with its parts labelled: which MD studies the paper reports (one
 system under one protocol each, with what tells them apart), each
 protocol's settings, and the results each study reports. Long answers come
-in pages. The AI model answers in JSON, every value with the paper's words
-it was read from.
+in rounds. Each answer is JSON, every value with the paper's words it was
+read from.
 
 What comes back is not used as it is. Each value's words are looked for in
 the paper (:class:`~fastmdxplora.paper.quotes.QuoteIndex`) and the value is
 read from them here (:mod:`fastmdxplora.paper.values`); a value whose words
-are not the paper's, or which its words do not hold, is kept as what the AI
-model said and marked so, and never used. A study's settings are its own
+are not the paper's, or which its words do not hold, is kept as it was read
+and marked so, and never used. A study's settings are its own
 where it states them, else its protocol's.
 
-A reading is kept under the paper's digest, the AI model and the version
-of the questions, so asking again for other studies of the same paper asks
-nothing of the AI model.
+A reading is kept under the paper's digest, the AI model it was read with
+and the version of the questions, so choosing other studies of the same
+paper reads nothing again.
 """
 
 from __future__ import annotations
@@ -233,9 +233,10 @@ def _json_from(reply: str, wanted: str) -> dict[str, Any]:
             return value
         start = text.find("{", start + 1)
     raise PaperRefused(
-        "The AI model's reply was not the JSON asked for, or was cut off, so "
-        "nothing was read from it. Ask again; a different AI model may answer "
-        "better.", code="environment.service.unusable_response")
+        "FastMDXplora could not read the paper: its reading came back cut off, or "
+        "not in the form it reads, so nothing was taken from it. Try again, or "
+        "choose another AI model with `fastmdx agent model`.",
+        code="environment.service.unusable_response")
 
 
 def _ask(complete: Complete, prompt: str, said: Callable[[str], None], what: str,
@@ -263,7 +264,7 @@ def _protocol_settings(complete: Complete, text: str, protocol: dict[str, Any],
     leave settings out, and each left out would read as one the paper does
     not state."""
     pid = protocol.get("id")
-    said(f"Asking for the settings of protocol {pid}...")
+    said(f"Reading the settings of protocol {pid}...")
     try:
         answer = _json_from(complete(_protocol_prompt(text, protocol, users)), "fields")
     except PaperRefused:
@@ -271,8 +272,8 @@ def _protocol_settings(complete: Complete, text: str, protocol: dict[str, Any],
         fields: dict[str, Any] = {}
         for number, part in enumerate((PROTOCOL_FIELDS[:half], PROTOCOL_FIELDS[half:]), 1):
             got = _ask(complete, _protocol_prompt(text, protocol, users, part), said,
-                       f"The settings of protocol {pid} did not come whole in one answer: "
-                       f"asking for them in two parts ({number} of 2)...", "fields",
+                       f"The settings of protocol {pid} did not come whole at once: "
+                       f"reading them in two parts ({number} of 2)...", "fields",
                        paged=False).get("fields")
             if isinstance(got, dict):
                 fields.update({name: value for name, value in got.items() if name in part})
@@ -310,8 +311,8 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
     title = ""
     for page in range(MOST_PAGES):
         answer = _ask(complete, _studies_prompt(text, [str(s.get("id")) for s in studies]),
-                      tell, "Asking the AI model which MD studies the paper reports"
-                      + (f" (page {page + 1})" if page else "") + "...", "studies")
+                      tell, "Reading which MD studies the paper reports"
+                      + (f" (round {page + 1})" if page else "") + "...", "studies")
         title = title or str(answer.get("title") or "")
         known = {str(s.get("id")) for s in studies}
         new = [s for s in answer.get("studies") or []
@@ -321,12 +322,12 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
             if isinstance(protocol, dict) and protocol.get("id"):
                 protocols.setdefault(str(protocol["id"]), protocol)
         if answer.get("more") and not new:
-            tell("The AI model said there were more studies and gave none new; "
-                 f"stopped at {len(studies)}.")
+            tell(f"Stopped at {len(studies)} stud{'y' if len(studies) == 1 else 'ies'}: "
+                 "more were said to follow, but no new ones came.")
         if not answer.get("more") or not new:
             break
     else:
-        tell(f"Stopped asking for studies after {MOST_PAGES} answers; the paper may have "
+        tell(f"Stopped after {MOST_PAGES} rounds of listing studies; the paper may have "
              f"more than the {len(studies)} listed.")
     for study in studies:
         pid = str(study.get("protocol") or "P1")
@@ -343,8 +344,8 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
     if studies:
         for page in range(MOST_PAGES):
             answer = _ask(complete, _claims_prompt(text, studies, len(claims)), tell,
-                          "Asking for the results each study reports"
-                          + (f" (page {page + 1})" if page else "") + "...", "claims")
+                          "Reading the results each study reports"
+                          + (f" (round {page + 1})" if page else "") + "...", "claims")
             seen = {_claim_key(c) for c in claims}
             new = [c for c in answer.get("claims") or []
                    if isinstance(c, dict) and _claim_key(c) not in seen]
@@ -352,7 +353,7 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
             if not answer.get("more") or not new:
                 break
         else:
-            tell(f"Stopped asking for results after {MOST_PAGES} answers; the paper may "
+            tell(f"Stopped after {MOST_PAGES} rounds of listing results; the paper may "
                  "report more.")
 
     raw = {"title": title, "studies": studies, "protocols": list(protocols.values()),
@@ -369,6 +370,18 @@ def read_studies(paper: PaperText, complete: Complete, *, model: str = "",
     return reading
 
 
+def read_by_fastmdxplora(model: str) -> str:
+    """Who read a paper, as its record says it: FastMDXplora, with the AI
+    model or the AI app it read with where one is named."""
+    return f"FastMDXplora with {model}" if model else "FastMDXplora"
+
+
+def who_read(reading: dict[str, Any]) -> str:
+    """Who read ``reading``: as it says, or, for one kept from before it
+    said, FastMDXplora with the AI model it was read with."""
+    return str(reading.get("read_by") or read_by_fastmdxplora(str(reading.get("model") or "")))
+
+
 # ---------------------------------------------------------------------------
 # Checking what the AI model said
 # ---------------------------------------------------------------------------
@@ -379,7 +392,10 @@ def check_reading(paper: PaperText, raw: dict[str, Any], *, model: str = "",
     study's settings as :func:`check_field` finds them, its protocol's
     where it states none of its own, and its results as
     :func:`check_claim` finds them. Also what an AI app hands
-    :mod:`fastmdxplora.mcp`, which is checked the same way."""
+    :mod:`fastmdxplora.mcp`, which is checked the same way.
+
+    ``model`` is what FastMDXplora read with: the AI model, or the AI app
+    that gave the reading; the record says FastMDXplora with it."""
     index = QuoteIndex(paper)
     protocol_fields = raw.get("protocol_fields") if isinstance(raw.get("protocol_fields"), dict) else {}
     checked_protocols = {
@@ -428,6 +444,7 @@ def check_reading(paper: PaperText, raw: dict[str, Any], *, model: str = "",
         "licence": paper.licence,
         "paper_sha256": paper.sha256(),
         "model": model,
+        "read_by": read_by_fastmdxplora(model),
         "made": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "left_out": list(left_out or []),
         "protocols": [{"id": str(p.get("id")), "label": str(p.get("label") or "")[:200]}

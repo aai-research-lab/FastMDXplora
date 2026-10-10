@@ -502,7 +502,7 @@ fastmdx config --paper 10.1371/journal.pone.0247841 --paper-studies all
 
 | Flag | What it does |
 |---|---|
-| `--paper SOURCE` | Reads a paper (a PDF, JATS XML, Word or text file, or the DOI, PMCID or arXiv identifier of an open-access paper) with the AI model chosen by `fastmdx agent model`, and lists its MD studies, each value checked against the paper's own words. Writes nothing on its own |
+| `--paper SOURCE` | Reads a paper (a PDF, JATS XML, Word or text file, or the DOI, PMCID or arXiv identifier of an open-access paper), with the AI model chosen by `fastmdx agent model`, and lists its MD studies, each value checked against the paper's own words. Writes nothing on its own |
 | `--paper-si FILE` | The paper's supporting information; repeat for several files |
 | `--paper-studies IDS` | Writes the studies named (`S1,S3`, or `all`): one to `-f FILE`, several beside it, named from its stem and suffix (`-f sod1.yml` writes `sod1-s1.yml` and so on). A study that cannot run here is not written |
 | `--paper-until-determined` | Runs each study until the results the paper reports with an error are determined to that error, at most the paper's length |

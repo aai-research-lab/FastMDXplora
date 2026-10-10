@@ -35,33 +35,33 @@ open-access archive serves section by section and table by table, from a
 Word file or plain text whole. Each part keeps where it is (`Methods`,
 `Table 2`, `p. 4`, `SI p. 3`), so a value can be said with its place.
 
-An AI model, the one chosen with `fastmdx agent model`, is then asked three
-things, each with the paper's text before it: which MD studies the paper
-reports, the settings of each protocol they share, and the results each
-study reports. A study is one starting system (its structure, mutations,
-ligands, membrane) under one force field and water model, at one temperature,
-by one method. Independent repeats of it are one study with a number of
+FastMDXplora then reads three things from that text, with the AI model
+chosen with `fastmdx agent model`: which MD studies the paper reports, the
+settings of each protocol they share, and the results each study reports.
+A study is one starting system (its structure, mutations, ligands,
+membrane) under one force field and water model, at one temperature, by
+one method. Independent repeats of it are one study with a number of
 replicas.
 
-**Nothing the AI model says is used as it says it.** Every value comes with
-the words of the paper it was read from, and those words are looked for in
-the paper, letter for letter once spacing, case, accents, hyphenation and line
+**Nothing read is used on the reading alone.** Every value comes with the
+words of the paper it was read from, and those words are looked for in the
+paper, letter for letter once spacing, case, accents, hyphenation and line
 breaks are set aside (a PDF writes `Å` as `A˚` and breaks words over lines).
 The number is then read from those words here, in this software's unit: a
 temperature in kelvin, a length of simulated time in nanoseconds, a distance
 in nanometres. A value is used only where its words are the paper's **and**
 hold it:
 
-| What the AI model gave | What happens |
+| What the reading gave | What happens |
 |---|---|
 | Words in the paper that hold the value | Used, with the words as its reason |
-| Words not in the paper | Not used (`not_found`): the AI model wrote them |
+| Words not in the paper | Not used (`not_found`): they are not the paper's |
 | The paper's words, without the value in them | Not used (`unread`): a total divided by the replicas, a unit misread, a number from elsewhere |
 | Words that send the reader to another paper | Not used (`by_reference`), and said |
 | Words that put it in the supporting information | Not used (`in_si`): give the supporting information |
 
 A force field, a water model, a thermostat or a box is held only where every
-one the AI model names is named by the words too, however each spells it
+one the reading names is named by the words too, however each spells it
 (`ff14SB`, `AMBER ff14SB`, `Amber14SB`). A number is held only whole: words
 that begin or end inside one ("5 µs" in "1.5 µs") are not the paper's. A
 count of replicas is held only beside what it counts ("three independent
@@ -69,16 +69,16 @@ runs", "in triplicate", "3 x 100 ns"), and whether the system was neutralised
 only where the words say so or say it was not. A result's error is taken as
 an error of the mean, and over how many runs, only where the paper says so
 beside it; otherwise it is compared as a spread. A description (what the
-system is, how it was minimised) is kept as the AI model's and never set as a
+system is, how it was minimised) is kept as read and never set as a
 value.
 
-A reply from the AI model cut off part way, or not the JSON asked for, is
-asked for again, and then refused: nothing is read from it. A protocol's
-settings that do not come whole in one answer are asked for in two halves,
+A reading that comes back cut off part way, or not in the form FastMDXplora
+reads, is tried once more, and then refused: nothing is taken from it. A
+protocol's settings that do not come whole at once are read in two halves,
 each whole, so none is left out and read as not stated.
 
-A reading is kept under the paper's digest and the AI model's name, so asking
-again for other studies of the same paper asks the AI model nothing.
+A reading is kept under the paper's digest and the AI model it was read
+with, so choosing other studies of the same paper reads nothing again.
 
 ---
 
@@ -157,8 +157,8 @@ contain, or by reference to another paper), the study needs you.
   milestoning and weighted ensemble cannot run here; a kind of replica
   exchange is named as the paper names it (simulated tempering, solute
   tempering) where it names one kind alone; constant-pH replica exchange
-  (pH-REMD) is replica exchange. The AI model's word for the method
-  decides first. The study's details are then read for these methods'
+  (pH-REMD) is replica exchange. The method the reading names decides
+  first. The study's details are then read for these methods'
   names with line-end hyphens joined: a name with nothing in its sentence
   that qualifies it makes the study that method, and so does a name read
   as written before a hyphen and one of a fixed list of words (based,
@@ -275,8 +275,8 @@ contain, or by reference to another paper), the study needs you.
   used, said so.
 
 The config carries `decisions` (each setting's reason, the paper's words with
-where they are) and `paper` (the paper's DOI and title, which study, the AI
-model that read it, each setting's word, and the results the paper reports for
+where they are) and `paper` (the paper's DOI and title, which study, who
+read it, each setting's word, and the results the paper reports for
 the study). A study that needs you lists what in `paper.needs`, and the
 validator refuses it while anything is listed: supply each, then delete
 `paper.needs`. In the Config Builder, **I have supplied what it needs** does
@@ -351,9 +351,9 @@ paper not open for programs), were each read by two readers working apart.
 What both state with one value is a truth a reading is counted against,
 field by field: the value used is the truth's, another value, none where the
 truth states one, or one where the paper gives none. What is claimed from
-the counts was fixed in `preregistration/paper-reading.md` before any AI
-model's reading of these papers was seen. To count a reading with the AI
-model you have chosen:
+the counts was fixed in `preregistration/paper-reading.md` before any
+reading of these papers by FastMDXplora was seen. To count FastMDXplora's
+reading, with the AI model chosen with `fastmdx agent model`:
 
 ```
 python -m fastmdxplora.validation.paper_reading --out paper_reading.json \

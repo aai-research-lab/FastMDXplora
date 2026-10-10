@@ -248,7 +248,7 @@ def test_paging_that_stops_with_more_to_come_is_said(tmp_path, monkeypatch):
 
     said = []
     read_studies(paper, renumbered, model="test/model", said=said.append)
-    assert any("gave none new" in line for line in said)
+    assert any("no new ones came" in line for line in said)
 
 
 # -- the config --------------------------------------------------------------

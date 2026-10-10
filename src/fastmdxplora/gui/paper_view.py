@@ -2,8 +2,9 @@
 listed with how each setting came from it, and the chosen ones opened in
 the builder or downloaded as configs (:mod:`fastmdxplora.paper`).
 
-On the person's own computer only: reading asks their AI model and may
-fetch the paper, and a hosted GUI does neither for a visitor."""
+On the person's own computer only: FastMDXplora reads the paper there,
+with the AI model the person chose, and may fetch it; a hosted GUI does
+neither for a visitor."""
 
 from __future__ import annotations
 
@@ -16,14 +17,15 @@ __all__ = ["read_paper_studies", "configs_download"]
 
 def read_paper_studies(payload: dict[str, Any], *, hosted: bool = False) -> dict[str, Any]:
     """``{source, si, until_determined}`` read: the paper's title, DOI and
-    the AI model that read it, and each study as a plan (its state, its
-    choices with the paper's words, its config)."""
+    who read it, and each study as a plan (its state, its choices with the
+    paper's words, its config)."""
+    from fastmdxplora.paper.extract import who_read
     from fastmdxplora.paper.studies import length_said, plans_for, studies_in
     from fastmdxplora.refusals import CodedError
 
     if hosted:
-        return {"ok": False, "error": "A paper is read only in a GUI on your own computer, "
-                "with your own AI model: fastmdx gui, or fastmdx config --paper."}
+        return {"ok": False, "error": "A paper is read only in a GUI on your own computer: "
+                "fastmdx gui, or fastmdx config --paper."}
     source = str(payload.get("source") or "").strip()
     if not source:
         return {"ok": False, "error": "Give the paper: a PDF on this computer, or the DOI of "
@@ -45,7 +47,7 @@ def read_paper_studies(payload: dict[str, Any], *, hosted: bool = False) -> dict
         "title": reading.get("title") or paper.title or source,
         "doi": reading.get("doi") or "",
         "route": reading.get("route") or "",
-        "model": reading.get("model") or "",
+        "read_by": who_read(reading),
         "left_out": reading.get("left_out") or [],
         "said": said,
         "plans": plans,

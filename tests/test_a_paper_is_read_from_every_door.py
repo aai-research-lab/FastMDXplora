@@ -1,7 +1,7 @@
 """A paper's MD studies from the GUI, the Agent and an AI app.
 
-The Config Builder's From a paper asks the server to read a paper with the
-person's AI model, and to give the chosen configs as a file or a zip; a
+The Config Builder's From a paper asks the server to read a paper, and to
+give the chosen configs as a file or a zip; a
 hosted GUI reads none. The Agent reads one with its tool
 ``studies_in_paper``, and gives one study's config when asked. An AI app
 reads the paper itself (``read_paper``) and hands its reading to
@@ -62,7 +62,7 @@ def test_the_gui_reads_a_paper_and_gives_its_configs(tmp_path, paper_file):
         assert read["ok"], read
         assert [plan["id"] for plan in read["plans"]] == ["S1", "S2"]
         assert read["plans"][0]["length"] == "3 x 100 ns"
-        assert read["model"] == "test/model"
+        assert read["read_by"] == "FastMDXplora with test/model" and "model" not in read
         one, headers = _post(session, "/api/paper/download", {"configs": [
             {"id": "S1", "label": "x", "state": "ready", "config": read["plans"][0]["config"]}]})
         assert 'filename="paper-s1.yml"' in headers["Content-Disposition"]
@@ -132,7 +132,7 @@ def test_an_ai_app_reads_the_paper_and_its_reading_is_checked(tmp_path):
                                                      "reading": json.dumps(reading)})
     assert "S1  Ubiquitin, wild type" in checked
     assert "temperature (not found)" in checked
-    assert "```yaml" in checked and "read_by: Test App" in checked
+    assert "```yaml" in checked and "read_by: FastMDXplora with Test App" in checked
 
 
 def test_an_ai_app_reads_nothing_outside_the_workspace(tmp_path, paper_file):

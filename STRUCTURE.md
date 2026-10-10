@@ -46,9 +46,9 @@ FastMDXplora/
 │       │   ├── text.py            # A paper's words as parts: PDF pages, JATS sections and tables, Word
 │       │   ├── fetch.py           # An open-access paper by DOI, PMCID or arXiv id (Europe PMC, bioRxiv, arXiv)
 │       │   ├── fields.py          # What is read of a study: each setting, a result's quantities
-│       │   ├── quotes.py          # Whether an AI model's quote is the paper's own words, and where
+│       │   ├── quotes.py          # Whether a quote read from a paper is its own words, and where
 │       │   ├── values.py          # A number and its unit read from those words, in this software's unit
-│       │   ├── extract.py         # The questions to the AI model, and its answers checked
+│       │   ├── extract.py         # FastMDXplora's reading of a paper, with the AI model chosen, checked
 │       │   ├── mapping.py         # A study as a config: each setting as stated, not stated, differs, needs you
 │       │   ├── studies.py         # Read, plan, choose, write: what every entry point shares
 │       │   ├── command.py         # `fastmdx config --paper`

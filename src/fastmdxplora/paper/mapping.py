@@ -31,6 +31,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from fastmdxplora.paper.extract import who_read
 from fastmdxplora.paper.quotes import squash
 
 __all__ = ["LABELS", "plan_study", "method_said_by", "ensemble_said_by",
@@ -844,9 +845,9 @@ def _short(text: str, most: int = 220) -> str:
 
 #: What each way a setting was not read says, where it is said.
 _UNCHECKED = {
-    "not_found": "The AI model gave words for it the paper does not contain, so it "
-                 "is not used:",
-    "unread": "The paper's words the AI model gave do not hold the value it gave, so it "
+    "not_found": "The words it was read from are not the paper's, so it is not "
+                 "used:",
+    "unread": "The paper's words it was read from do not hold the value read, so it "
               "is not used:",
     "by_reference": "The paper gives it by reference to another paper:",
     "in_si": "The paper gives it in its supporting information, which was not read "
@@ -1660,7 +1661,7 @@ def _config(plan: _Plan, study: dict[str, Any], reading: dict[str, Any], method:
         "title": title,
         "study": study.get("id"),
         "label": study.get("label"),
-        "read_by": reading.get("model") or None,
+        "read_by": who_read(reading),
         "read": reading.get("made") or None,
         "paper_sha256": reading.get("paper_sha256") or None,
         "choices": [choice.as_record() for choice in plan.choices],

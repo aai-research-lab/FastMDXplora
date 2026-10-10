@@ -34,8 +34,7 @@ def config_from_paper(args: argparse.Namespace) -> int:
     plans = plans_for(reading, until_determined=bool(args.paper_until_determined))
     title = reading.get("title") or paper.title or args.paper
     print(f"{title}" + (f" (doi:{reading['doi']})" if reading.get("doi") else ""))
-    print(f"Read by {reading.get('model') or 'the AI model'}; every value checked against "
-          "the paper's own words.")
+    print("Read by FastMDXplora; every value checked against the paper's own words.")
     if reading.get("left_out"):
         print("Too long to read whole; left out: " + ", ".join(reading["left_out"][:8]) + ".")
     print("")

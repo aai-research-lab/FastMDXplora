@@ -1,6 +1,6 @@
 """The Config Builder's From a paper, driven in a browser.
 
-A paper read by the person's AI model lists its MD studies, each with its
+A paper FastMDXplora read lists its MD studies, each with its
 state and how each setting came from the paper's words. One opens in the
 builder with every setting the paper states; one that needs the person
 opens too, and the builder says it will not run until what it needs is

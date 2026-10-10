@@ -1,5 +1,5 @@
 /* The Config Builder's From a paper (fastmdxplora.paper, gui/paper_view.py):
- * a paper read by the person's AI model, its MD studies listed with how
+ * a paper FastMDXplora read, its MD studies listed with how
  * each setting came from the paper's own words, one opened in the builder
  * or the chosen ones downloaded as configs. */
 (function () {
@@ -143,7 +143,7 @@
     const si = el("run-paper-si").value.trim();
     const go = el("run-paper-read");
     go.disabled = true;
-    say("Reading the paper. Your AI model is asked a few times, which can take a minute or two.");
+    say("Reading the paper, which can take a minute or two.");
     try {
       const response = await fetch("/api/paper/read", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -161,7 +161,7 @@
       title.appendChild(node("strong", null, paperTitle));
       if (answer.doi) title.appendChild(node("span", "muted small mono", ` doi:${answer.doi}`));
       title.appendChild(node("span", "muted small",
-        ` · read by ${answer.model || "your AI model"}${answer.left_out && answer.left_out.length ? `; too long to read whole, left out ${answer.left_out.slice(0, 4).join(", ")}` : ""}`));
+        ` · read by FastMDXplora${answer.left_out && answer.left_out.length ? `; too long to read whole, left out ${answer.left_out.slice(0, 4).join(", ")}` : ""}`));
       say(`${plans.length} MD stud${plans.length === 1 ? "y" : "ies"} found. Choose one to open in the builder, or several to download.`);
       render();
     } catch (error) {

@@ -384,7 +384,7 @@ def completion_for(choice: ModelChoice | None = None, *,
         raise StudyError(
             "No AI model has been chosen. Run `fastmdx agent model` to pick one. "
             "Nothing in FastMDXplora needs an AI model unless you ask for the "
-            "agent, so this only comes up when you do.",
+            "Agent or have it read a paper, so this only comes up when you do.",
             code="environment.model.unset",
         )
 
