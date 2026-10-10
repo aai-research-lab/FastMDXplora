@@ -914,6 +914,110 @@ see it. Asked afterwards why the study ran as long as it did, the Agent
 answers from the record of each round. See
 [Running until it is determined](production.md#running-until-it-is-determined).
 
+## What the Agent remembers of you
+
+A conversation ends and its words go with it. What you say about yourself
+need not: the Agent keeps a short memory of you, lines such as "You are new
+to molecular dynamics." or "You study GPCRs in membranes.", and is told them
+with every message, so a beginner gets the teaching answer and an expert the
+short one without saying so each time.
+
+- **It is yours, and you see all of it.** In the Agent's Settings each
+  line says where it came from, written by you or from a chat, and the day
+  it last changed, under the `###` groups you gave it in the file. Every
+  line can be changed or removed, the last change undone, and the whole
+  memory cleared (asked first, in place). With *Use this memory* off the
+  lines stay, greyed, and none is told.
+- **It grows from your chats, where you let it.** After a reply, the AI
+  model you set reads what you typed (your message only: never its reply,
+  a file you attached or a request read from a file) and says what to add,
+  change or forget; "remember ..." and "forget ..." work the same way. It
+  is asked to keep only what you say of yourself, and to read anything you
+  quote or paste as data, and never to keep a password, a login, an
+  address on a network or a file's path (a line you write yourself may
+  hold a path). Each change is checked as one you write, and said
+  under the reply ("Remembered: ...") with Undo for as long as the page
+  stays open; after that the line is changed or forgotten in Settings. One message
+  changes at most five lines of each kind. A message of a few words
+  (*yes*, *run it*) is not read. It costs one short call to your AI model
+  per message read, not counted in the reply's *Used*; turn it off and the
+  memory changes only when you change it.
+- **It shapes answers; it sets no value.** A setting you want in every
+  study (310 K, TIP3P water) belongs in your
+  [`fastmdx-defaults.yml`](config.md), where it fills every study and is
+  recorded in each one's `decisions`; a line setting one for every study
+  ("Use 310 K in every study.") is refused, pointing you there. The Agent is told the lines describe you
+  and are never instructions to it.
+- **It keeps no secret and no shortcut.** A line holding a key, a password
+  or a token is refused, as is one that reads as telling the Agent to skip
+  a check or a confirmation, to take itself as confirmed or to obey it. Such
+  wording varies, so a line may get through; the Agent is told that no line
+  loosens its rules, and every Config is still checked and every run and
+  stop still asked, whatever the memory says. A line about how you work
+  ("You never run without checking the equilibration.") is kept, and so is
+  a wish for more care ("You want to be asked before a trajectory is
+  deleted."), which the Agent keeps to.
+- **It is a file you can open.** `agent_memory.md` in your settings folder
+  (`~/.config/fastmdxplora/`, or `FASTMDXPLORA_CONFIG_DIR`), readable by
+  you alone: the two switches, then one line to a bullet under
+  *Remembered*, each with a note after it saying where it came from. The
+  Agent is told the bullets under *Remembered* and nothing else. Change it
+  in any editor: a line you write needs no note, a `###` heading groups the
+  lines below it, a comment of your own after a line stays with it, and
+  words on the line just under a bullet, with no blank line between, are
+  part of it. Everything else you write there (a paragraph, a comment, a
+  fenced block, a todo list above *Remembered*, a section of your own, your
+  own title) is yours and never told; in a file with no *Remembered*
+  heading nothing is told, and the next line added begins one. Headings
+  may be written with `##` or underlined. **The software never writes the
+  file whole:** a change touches only its own lines (a switch's first word;
+  one line added, reworded or removed, and its Undo), and every other byte
+  stays as you left it: each line's own ending (`\n`, `\r\n`), a last line
+  without one, the encoding (UTF-8 with or without its mark, UTF-16,
+  Windows' cp1252), and a link to the file kept elsewhere. A line the memory does not keep (a key, an instruction past the
+  checks, a value for every study, a line written twice, one past the 60 it holds, a switch written
+  under *Remembered*) stays where it is, not told, and Settings and
+  `fastmdx agent memory` say why. A switch is read by its first word, yes
+  or no, standing alone; one not read as yes or no is off until you say
+  which, and setting it puts the word in front of yours. A file that is not
+  text is kept aside beside it at the next change, and a new one begun.
+  Beside the file are its log of changes and a lock file
+  (`agent_memory.md.lock`) that keeps two writers from meeting.
+- **Forgetting is undone from a log.** The changes that can be undone, a
+  forgotten line's words with them, are in `agent_memory_changes.json`
+  beside it, the newest 80, with what the file was around where it was (as
+  hashes, no words of it), so Undo puts it back in its place however the
+  file has changed since (a line you wrote twice may come back beside its
+  twin). Undo of a rewording puts the line back as it was, note and all;
+  Undo of a line added takes out what went in with it. Clearing removes every bullet
+  under *Remembered*, told or not, and empties the log; your other words
+  stay. A memory, or its log,
+  that cannot be read just then (a disk away for a moment) is left as it
+  is, and nothing is changed until it can be.
+- **It stays with you.** Never in a Config, a shared study or a deposit.
+  The AI model is told it with each message, as it is told your defaults,
+  so the receipt of what a reply was sent, kept with the study's
+  conversation in its `agent/` folder, holds it too; a shared study and the
+  study's zip leave `agent/` out, a copy of the folder by hand does not.
+
+Two switches: use the memory at all, and let it grow from chats; both start
+on. From a terminal, `fastmdx agent memory` lists it, and `--add TEXT`,
+`--change N TEXT`, `--forget N`, `--undo` (the last change), `--clear`
+(asks first; `--yes` from a script; your own notes stay), `--on`, `--off`
+and `--learn-from-chats on|off` change it;
+`fastmdx agent "..."` is told it and, once the reply is said, learns from
+what you typed as the GUI's Agent does, saying each change. From Python,
+`fastmdxplora.agent.memory` (`load_memory`, `remember`, `change`, `forget`,
+`forget_all`, `set_switches`, `undo`); the GUI reads and changes it at
+`/api/agent/memory`, on your own computer only, or through the service that
+serves it.
+
+**Served by a service** (`fastmdx gui --hosted`), the GUI serves one person,
+and their memory is kept where the service says, a folder or its own
+database ([Serving the GUI to other people](hosting.md#the-agents-memory-of-each-person)).
+There the Agent learns from your chats only once you turn that on. A
+service that keeps none gives the Agent none.
+
 ## What the Agent will not do
 
 - **It does not invent a structure.** A request that names none gets a

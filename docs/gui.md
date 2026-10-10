@@ -552,6 +552,7 @@ somebody decides otherwise. Among the routes refused off loopback:
 | `/api/files/sha256`, `/api/files/zip` | They read files through, as large as a trajectory, on the server's time |
 | `/api/agent/model`, `/api/agent/propose` | One stores an API key, the other spends it |
 | `/api/agent/conversation`, `/api/agent/conversations`, read as well as written | They hold what was asked of the agent and the content of files attached to it |
+| `/api/agent/memory`, read as well as written | It holds what the person told the Agent of themselves, and changes it; where hosted, it is the host's store for the one person served |
 
 Files are served off loopback only from the run being watched, and only when
 that folder is one FastMDXplora wrote; `--output` naming any other folder, a
@@ -687,6 +688,7 @@ a movie's frames at 64 MB.
 | `POST /api/again` | Run the study open's analysis or report again (`phases`, `analyses`), by the phase command with `--rerun`; loopback only |
 | `POST /api/agent/model` | Read or set the [Agent](agent.md)'s AI model choice. Never returns the key |
 | `POST /api/agent/propose` | A sentence to a validated Config |
+| `GET /api/agent/memory`, `POST /api/agent/memory` | What the [Agent remembers of you](agent.md#what-the-agent-remembers-of-you), and a change to it (`op`: `add`, `change`, `forget`, `undo`, `clear` or `switches`); `GET` with `reply` says what one reply changed, and whether it is still being read; loopback only, or the host's store where hosted |
 | `POST /api/agent/run-summary` | What a run the Agent started found once it has ended (`{"study"}`), from the study's records; `ended` false while it runs; loopback only |
 | `POST /api/movies`, `/api/movies/<id>/frame`, `/api/movies/<id>/finish`, `/api/movies/<id>/cancel` | A movie: started with `{"name", "fps", "width", "height", "about"}`, given its frames as PNGs of its size, one a request, and finished into `movies/` or cancelled with nothing left; one not given a frame for five minutes is given up |
 

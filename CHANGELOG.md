@@ -7,6 +7,26 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### The Agent remembers you
+
+**Added:** the Agent keeps a short memory of the person, lines such as "You
+are new to molecular dynamics." or "You study GPCRs in membranes.", and is
+told it with each message, so its answers suit them without being told
+again. It is a Markdown file of the person's own, `agent_memory.md` in the
+settings folder, changed line by line: every other word in it stays, with
+its line endings and encoding. It is shown and changed in the Agent's
+Settings (each line with where it came from, the last change undone, all of
+it forgotten, two switches) and by `fastmdx agent memory`. After a reply the
+AI model reads what the person wrote for something to keep, add, change or
+forget, said under the reply with Undo. A key, a password, an instruction to
+go past a check or a confirmation, and a value meant for every study (which
+goes in `fastmdx-defaults.yml`) are refused (`agent.memory.refused`); every
+Config is still checked and every run and stop still asked, whatever a line
+says. Served by a service (`--hosted`), each person's memory is kept where
+the service says, `--memory-dir` or a store an installed package offers
+(`--memory-store`, `agent.memory.store_unusable` where it cannot be had),
+and learning from chats starts off there.
+
 ### A mean judged by an earlier version's rules
 
 **Changed:** each mean is recorded with the rules that judged it. A study
