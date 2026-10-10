@@ -70,6 +70,15 @@ HOME_MARK = "~"
 #: The header naming the person, set by the proxy on every request.
 ACCOUNT_HEADER = "X-FastMDX-Account-Name"
 
+#: Where a host keeps the person's Agent memory, where its command line
+#: does not say (`--memory-dir`, `--memory-store`): a folder, or the name
+#: of a store an installed package offers.
+MEMORY_DIR_ENV = "FASTMDX_MEMORY_DIR"
+MEMORY_STORE_ENV = "FASTMDX_MEMORY_STORE"
+#: What the person is told of where their memory is kept: never a path on
+#: the server.
+MEMORY_SHOWN = "Kept for you by this service"
+
 #: The longest product name, tagline and person's name shown; the sidebar
 #: is narrow.
 LONGEST_PRODUCT_NAME = 40
@@ -190,17 +199,25 @@ class Hosting:
     #: avatar where nobody is signed in, in place of the lab's; empty keeps
     #: the lab's.
     product_logo: str = ""
+    #: Where the Agent's memory of the person is kept
+    #: (:class:`fastmdxplora.agent.memory.MemoryStore`), or None for no
+    #: memory. One hosted GUI serves one person, so it is theirs.
+    memory: Any = None
 
     @classmethod
     def from_environment(cls, workspace: str | Path,
                          allowed_hosts: list[str] | tuple[str, ...],
                          account_url: str = "", runs_url: str = "",
                          product_name: str = "", product_tagline: str = "",
-                         product_logo: str = "") -> Hosting:
+                         product_logo: str = "", memory_dir: str = "",
+                         memory_store: str = "") -> Hosting:
         """Hosted mode as the command line starts it.
 
         Refuses to start rather than start open: without a secret the proxy
         is not the only caller, and without a name no browser page can post.
+        The Agent's memory of the person is kept where ``memory_dir`` or
+        ``memory_store`` says (or :data:`MEMORY_DIR_ENV`,
+        :data:`MEMORY_STORE_ENV`), and nowhere without one.
         """
         secret = os.environ.pop(SECRET_ENV, "")
         if len(secret) < SHORTEST_SECRET:
@@ -232,7 +249,8 @@ class Hosting:
                                     LONGEST_PRODUCT_TAGLINE)
         return cls(workspace=root, allowed_hosts=names, secret=secret,
                    account_url=account_url, runs_url=runs_url, product_name=product_name,
-                   product_tagline=product_tagline, product_logo=_logo(product_logo))
+                   product_tagline=product_tagline, product_logo=_logo(product_logo),
+                   memory=memory_kept(memory_dir, memory_store, workspace=root))
 
     # ---- who is shown ----
     @staticmethod
@@ -330,6 +348,48 @@ class Hosting:
                      os.path.abspath(self.workspace)}
         # Longest first, so a spelling that contains another is replaced whole.
         return tuple(sorted(spellings, key=len, reverse=True))
+
+
+def memory_kept(memory_dir: str = "", memory_store: str = "", *,
+                workspace: Path | None = None) -> Any:
+    """Where a hosted GUI keeps the Agent's memory of its person: a folder
+    (``memory_dir``), a store an installed package offers (``memory_store``),
+    each read from the environment where not given, or None for no memory.
+
+    The person's memory there learns from their chats only once they turn
+    that on: a service reading what its people write for a memory is the
+    person's to choose. Refuses to start with both, with a folder that
+    cannot be made, or with a store that is not there.
+    """
+    from fastmdxplora.agent.memory import FileStore, MemoryRefused, store_named
+
+    folder = str(memory_dir or os.environ.get(MEMORY_DIR_ENV, "")).strip()
+    named = str(memory_store or os.environ.get(MEMORY_STORE_ENV, "")).strip()
+    if folder and named:
+        raise HostingError(
+            "Give --memory-dir or --memory-store, not both: one person's memory is kept "
+            "in one place.", code="config.option.not_permitted", setting="--memory-store")
+    if named:
+        try:
+            return store_named(named, workspace=workspace)
+        except MemoryRefused as exc:
+            raise HostingError(str(exc), code=exc.code, setting="--memory-store") from exc
+    if not folder:
+        return None
+    root = Path(folder).expanduser().resolve()
+    if root == Path(root.anchor):
+        raise HostingError("--memory-dir cannot be the top of the file system; give the "
+                           "folder this person's memory is kept in.",
+                           code="config.option.not_permitted", setting="--memory-dir")
+    try:
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError as exc:
+        raise HostingError(f"--memory-dir {root} cannot be made: {exc}.",
+                           code="environment.path.not_found", path=str(root)) from exc
+    if not root.is_dir():
+        raise HostingError(f"--memory-dir {root} is not a folder.",
+                           code="environment.path.not_found", path=str(root))
+    return FileStore(root, learns_at_first=False, shown=MEMORY_SHOWN)
 
 
 def initials(name: str) -> str:

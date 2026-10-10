@@ -436,6 +436,16 @@ def make_handler(
         # The proxy's secret and the listed names are the trust; the bind
         # address is not, since the proxy reaches it over a network.
         allow_control = True
+
+    def _memory_kept() -> dict[str, Any]:
+        # Where the Agent's memory of the person is kept: their settings
+        # folder here, its host's store when hosted (None for no memory).
+        from fastmdxplora.gui.agent_panel import OWN_MEMORY
+
+        if hosting is None:
+            return {"store": OWN_MEMORY, "hosted": False}
+        return {"store": hosting.memory, "hosted": True}
+
     root = Path(project_root).resolve()
     app_runtime = runtime or DashboardRuntime(
         workspace_root=root,
@@ -685,6 +695,15 @@ def make_handler(
                     answer["html"], answer["rendered"] = render_markdown(answer["text"])
                 # A file's contents are shown as they are on disk.
                 self._send_json(answer, verbatim=("text", "html"))
+                return
+            if path == "/api/agent/memory":
+                # What the Agent remembers of the person: theirs, so on
+                # loopback only (unlisted), or hosted in its host's store.
+                from fastmdxplora.gui.agent_panel import memory_endpoint
+
+                self._send_json(memory_endpoint(
+                    {"reply": (parse_qs(parsed.query).get("reply") or [""])[0]},
+                    **_memory_kept()))
                 return
             if path == "/api/agent/conversations":
                 from fastmdxplora.gui.agent_panel import list_conversations
@@ -1475,6 +1494,13 @@ def make_handler(
 
                 self._send_json(model_endpoint(payload or {}))
                 return
+            if path == "/api/agent/memory":
+                # Changing what the Agent remembers of the person, from
+                # Settings: loopback only, or hosted in its host's store.
+                from fastmdxplora.gui.agent_panel import memory_endpoint
+
+                self._send_json(memory_endpoint(payload or {}, **_memory_kept()))
+                return
             if path == "/api/agent/run":
                 # Starting a study, so it needs the machine's trust -- which
                 # it has only on loopback, like every route not listed open.
@@ -1501,7 +1527,8 @@ def make_handler(
 
                 self._send_json(propose_endpoint(
                     payload or {}, app_runtime,
-                    path_for=hosting.inside if hosting is not None else None))
+                    path_for=hosting.inside if hosting is not None else None,
+                    memory_store=_memory_kept()["store"]))
                 return
             if path == "/api/agent/propose-stream":
                 # The same, sent on as the AI model writes it, and stopped when
@@ -2023,7 +2050,8 @@ def make_handler(
             try:
                 answer = propose_endpoint(
                     payload, app_runtime,
-                    path_for=hosting.inside if hosting is not None else None, emit=emit)
+                    path_for=hosting.inside if hosting is not None else None, emit=emit,
+                    memory_store=_memory_kept()["store"])
                 emit({"type": "done", "answer": answer})
             except (BrokenPipeError, ConnectionResetError):
                 logger.debug("the page stopped reading the Agent's reply")

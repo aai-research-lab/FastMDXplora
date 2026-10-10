@@ -26,6 +26,11 @@ from typing import Any
 __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
 
 
+#: The memory of the person at this computer: their settings folder, where
+#: the GUI is not hosted (a hosted GUI passes its host's store, or None).
+OWN_MEMORY = "own"
+
+
 def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
     """Read or set which AI model to ask.
 
@@ -119,7 +124,8 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
 def propose_endpoint(payload: dict[str, Any],
                      runtime: Any = None, *,
                      path_for: Any = None,
-                     emit: Any = None) -> dict[str, Any]:
+                     emit: Any = None,
+                     memory_store: Any = OWN_MEMORY) -> dict[str, Any]:
     """A sentence in, a config out, or the refusal that stopped it.
 
     The attempts come back whole rather than as a count. They are the only
@@ -207,6 +213,11 @@ def propose_endpoint(payload: dict[str, Any],
             path_for=path_for,
         ),),
     )
+    # What the Agent remembers of the person: in their settings folder on
+    # their own computer, where its host keeps it in a hosted GUI, or none.
+    store = _memory_store(memory_store, path_for)
+    memory = _the_memory(store) if store is not None else None
+    plain = complete
     if emit is not None:
         complete = _written_as_it_goes(complete, emit)
         _say_each_look(tools, emit)
@@ -216,7 +227,7 @@ def propose_endpoint(payload: dict[str, Any],
             max_cycles=int(payload.get("attempts") or DEFAULT_ATTEMPTS),
             history=history or None, current_config=current,
             run_status=_run_status(runtime), attachments=attachments or None,
-            tools=tools, defaults=defaults)
+            tools=tools, defaults=defaults, memory=memory)
     except StudyError as exc:
         found = refusal_of(exc)
         return {"ok": False, "error": found.message, "code": found.code,
@@ -236,6 +247,169 @@ def propose_endpoint(payload: dict[str, Any],
     answer = _proposal_answer(proposal, payload, runtime, request, mode)
     answer["looks"] = [look.as_record() for look in proposal.looks]
     answer["context_receipt"] = receipt
+    if _grows_from(memory, request):
+        # Read for the memory once the reply is given, never before it: the
+        # page asks `/api/agent/memory` for what changed (`reply`).
+        reply_key = str(payload.get("reply_key") or "")[:80] or None
+        conversation = str(payload.get("conversation") or "")[:80] or None
+        answer["memory"] = "reading"
+        _grow_memory(request, plain, conversation=conversation, reply=reply_key, store=store)
+    return answer
+
+
+#: Whether what the person wrote is read for the memory after the reply,
+#: in a thread of its own (False in tests, which read it in turn).
+GROW_IN_BACKGROUND = True
+
+
+def _memory_store(given: Any, path_for: Any) -> Any:
+    """The store a request's memory is kept in, or None for no memory."""
+    if isinstance(given, str) and given == OWN_MEMORY:
+        if path_for is not None:
+            # Hosted without a store given: the server's settings folder is
+            # its operator's, not the person's.
+            return None
+        from fastmdxplora.agent.memory import default_store
+
+        return default_store()
+    return given
+
+
+def _the_memory(store: Any) -> Any:
+    """The memory as kept, or None where it cannot be read at all."""
+    from fastmdxplora.agent.memory import load_memory
+
+    try:
+        return load_memory(store)
+    except Exception:  # noqa: BLE001 - the memory never fails a reply
+        return None
+
+
+def _grows_from(memory: Any, request: str) -> bool:
+    from fastmdxplora.agent.memory import worth_reading
+
+    return (memory is not None and memory.use and memory.from_chats
+            and not memory.unreadable and worth_reading(request))
+
+
+#: Whether the memory is still being read for a reply, by the reply's key:
+#: the page asks until it is not, however long the AI model takes. The
+#: newest few hundred are kept; an older key reads as done.
+_READING: dict[str, bool] = {}
+_READING_LOCK = threading.Lock()
+_READING_KEPT = 400
+
+
+def _reading(reply: str | None, now: bool) -> None:
+    if not reply:
+        return
+    with _READING_LOCK:
+        _READING[reply] = now
+        while len(_READING) > _READING_KEPT:
+            _READING.pop(next(iter(_READING)))
+
+
+def _grow_memory(request: str, complete: Any, *, conversation: str | None,
+                 reply: str | None, store: Any) -> None:
+    from fastmdxplora.agent.memory import from_a_chat
+
+    _reading(reply, True)
+
+    def read() -> None:
+        try:
+            from_a_chat(request, complete, conversation=conversation, reply=reply,
+                        store=store)
+        except Exception:  # noqa: BLE001 - the memory never fails a reply given
+            pass
+        finally:
+            _reading(reply, False)
+
+    if GROW_IN_BACKGROUND:
+        threading.Thread(target=read, name="fastmdx-memory", daemon=True).start()
+    else:
+        read()
+
+
+def memory_endpoint(payload: dict[str, Any] | None = None, *,
+                    store: Any = OWN_MEMORY, hosted: bool = False) -> dict[str, Any]:
+    """Read or change what the Agent remembers of the person.
+
+    With no ``op``, the memory as Settings shows it (each line and where it
+    came from, the two switches, the recent changes; ``reply`` narrows the
+    changes to those made after one reply). With one: ``add`` (``text``),
+    ``change`` (``id``, ``text``), ``forget`` (``id``), ``clear``,
+    ``switches`` (``use``, ``from_chats``) or ``undo`` (``change``). A
+    hosted GUI keeps the memory in its host's ``store``, and none where its
+    host gives none: its settings folder is its operator's."""
+    from fastmdxplora.agent import memory as kept
+
+    store = _memory_store(store, "hosted" if hosted else None)
+    if store is None:
+        return {"ok": False, "available": False,
+                "error": "This GUI keeps no memory of you: the service serving it keeps "
+                "none, and its settings are its operator's."}
+    payload = payload or {}
+    op = payload.get("op")
+    try:
+        if op in (None, ""):
+            pass
+        elif op == "add":
+            done = kept.remember(payload.get("text"), store=store)
+        elif op == "change":
+            done = kept.change(str(payload.get("id") or ""), payload.get("text"), store=store)
+        elif op == "forget":
+            done = kept.forget(str(payload.get("id") or ""), store=store)
+        elif op == "undo":
+            done = kept.undo(str(payload.get("change") or ""), store=store)
+        elif op == "clear":
+            kept.forget_all(store=store)
+        elif op == "switches":
+            switches = {key: payload[key] for key in ("use", "from_chats")
+                        if isinstance(payload.get(key), bool)}
+            if not switches:
+                return {"ok": False, "error": "Say `use` or `from_chats`, true or false."}
+            kept.set_switches(**switches, store=store)
+        else:
+            return {"ok": False, "error": f"The memory has no {str(op)[:40]!r}: add, change, "
+                    "forget, clear, switches or undo."}
+    except kept.MemoryRefused as exc:
+        refused: dict[str, Any] = {"ok": False, "error": str(exc)}
+        if exc.refusal.details.get("undone_already"):
+            # Undone elsewhere since (Settings, the command): the page says
+            # it is undone rather than that it failed.
+            refused["undone_already"] = True
+        return refused
+    except Exception as exc:  # noqa: BLE001 - a store's own failure, said
+        if hosted:
+            # The detail names the server's folders: the operator's log has
+            # it, the person a sentence.
+            import logging
+
+            logging.getLogger(__name__).warning("the Agent's memory could not be "
+                                                "written: %s", exc)
+            return {"ok": False, "error": "The memory could not be written just now; the "
+                    "service has been told. Try again in a moment."}
+        return {"ok": False, "error": f"The memory could not be written: {exc}"}
+    answer = {"ok": True, **kept.load_memory(store).as_record()}
+    if hosted and answer.get("unreadable"):
+        import logging
+
+        logging.getLogger(__name__).warning("the Agent's memory could not be read: %s",
+                                            answer["unreadable"])
+        answer["unreadable"] = (
+            "It is not text: at the next change it is kept aside, and a new one begun."
+            if str(answer["unreadable"]).startswith("It is not text") else
+            "It could not be read just now; the service has been told, and nothing is "
+            "changed until it can be.")
+    reply = payload.get("reply")
+    if isinstance(reply, str) and reply:
+        answer["changes"] = [c for c in answer["changes"] if c.get("reply") == reply]
+        # Whether it is still being read for that reply: the page asks again
+        # until it is not.
+        with _READING_LOCK:
+            answer["reading"] = _READING.get(reply, False)
+    if op in ("add", "change", "forget", "undo"):
+        answer["done"] = done.as_record() | {"said": done.said()}
     return answer
 
 
