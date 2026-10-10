@@ -193,7 +193,9 @@ def _europepmc(kind: str, identifier: str, with_si: bool,
     """The paper from Europe PMC, its files to keep, and whether its
     supporting information was ``read``, ``not_asked`` or ``failed``."""
     base = _base("europepmc")
-    query = f'PMCID:"{identifier}"' if kind == "pmcid" else f'DOI:"{identifier}"'
+    # Europe PMC finds nothing for a PMCID in quotes, so it goes bare (it is
+    # only PMC and digits, from identify); a DOI goes in quotes for its "/".
+    query = f"PMCID:{identifier}" if kind == "pmcid" else f'DOI:"{identifier}"'
     url = (f"{base}/europepmc/webservices/rest/search?"
            + urllib.parse.urlencode({"query": query, "format": "json", "resultType": "core"}))
     tell(f"Looking for {identifier} in Europe PMC...")

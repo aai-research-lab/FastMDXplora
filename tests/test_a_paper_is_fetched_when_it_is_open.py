@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +28,24 @@ OPEN_DOI = DOI
 CLOSED_DOI = "10.9999/closed.0002"
 PREPRINT = "10.1101/2024.01.01.000001"
 ARXIV = "2407.14794"
+
+
+_EUROPE_PMC = (
+    {"pmcid": "PMC1234567", "doi": OPEN_DOI, "title": TITLE + ".", "isOpenAccess": "Y",
+     "license": "cc by"},
+    {"pmcid": "PMC7654321", "doi": CLOSED_DOI, "title": "A closed paper", "isOpenAccess": "N"},
+)
+
+
+def _finds(query: str, entry: dict) -> bool:
+    """Whether Europe PMC's search finds ``entry`` for ``query``, as it
+    answers (checked 10-10 on PMC7906464): a DOI in quotes or bare, a PMCID
+    only bare; ``PMCID:"PMC7906464"`` finds nothing."""
+    doi = re.fullmatch(r'DOI:"([^"]+)"|DOI:(\S+)', query)
+    if doi:
+        return (doi.group(1) or doi.group(2)).lower() == entry["doi"].lower()
+    pmcid = re.fullmatch(r"PMCID:(PMC\d+)", query)
+    return bool(pmcid) and pmcid.group(1) == entry["pmcid"]
 
 
 class _Archive(BaseHTTPRequestHandler):
@@ -47,13 +66,7 @@ class _Archive(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path == "/europepmc/webservices/rest/search":
             query = parse_qs(url.query)["query"][0]
-            results = []
-            if OPEN_DOI in query or "PMC1234567" in query:
-                results = [{"pmcid": "PMC1234567", "doi": OPEN_DOI, "title": TITLE + ".",
-                            "isOpenAccess": "Y", "license": "cc by"}]
-            elif CLOSED_DOI in query:
-                results = [{"pmcid": "PMC7654321", "doi": CLOSED_DOI, "title": "A closed paper",
-                            "isOpenAccess": "N"}]
+            results = [entry for entry in _EUROPE_PMC if _finds(query, entry)]
             self._send(json.dumps({"resultList": {"result": results}}).encode())
         elif url.path == "/europepmc/webservices/rest/PMC1234567/fullTextXML":
             self._send(jats(), "application/xml")
@@ -123,6 +136,26 @@ def test_a_paper_not_open_for_programs_is_not_fetched(archive):
     with pytest.raises(PaperRefused, match="Download its PDF") as refused:
         fetch_paper(CLOSED_DOI)
     assert refused.value.code == "environment.paper.not_open"
+    assert not any("PMC7654321/fullTextXML" in path for path in archive.asked)
+
+
+def test_an_open_paper_is_fetched_by_its_pmcid(archive):
+    # Check 5 (10-10): every registered paper is given by its PMCID, and
+    # Europe PMC found none of them while the PMCID was sent in quotes.
+    paper = fetch_paper("PMC1234567")
+    assert paper.title == TITLE and paper.route == "Europe PMC PMC1234567"
+    searched = [parse_qs(urlparse(path).query)["query"][0] for path in archive.asked
+                if urlparse(path).path.endswith("/rest/search")]
+    assert searched == ["PMCID:PMC1234567"]
+
+
+def test_a_paper_not_open_for_programs_is_refused_as_such_by_its_pmcid(archive):
+    with pytest.raises(PaperRefused) as refused:
+        fetch_paper("pmcid: pmc7654321")
+    said = str(refused.value)
+    assert refused.value.code == "environment.paper.not_open"
+    assert "not in Europe PMC's open-access collection" in said
+    assert "free to read in PubMed Central" in said and "does not have" not in said
     assert not any("PMC7654321/fullTextXML" in path for path in archive.asked)
 
 
