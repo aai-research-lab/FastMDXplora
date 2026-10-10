@@ -24,7 +24,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -46,19 +46,59 @@ class _Plan:
     output: Path
     digest: str
     made_at: float
-    #: The sha256 of its config where the config was written for it (from
-    #: the Config Builder), so a plan let go takes it back unless changed.
-    made: str = ""
+
+
+def _read_whole(path: Path) -> tuple[str, int, int] | None:
+    """The sha256 of a regular file's bytes, with its device and inode, read
+    through one handle that follows no link and waits on no pipe; None
+    where it is no such file or cannot be read."""
+    import hashlib
+    import os
+    import stat
+
+    flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+             | getattr(os, "O_BINARY", 0))
+    try:
+        handle = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        found = os.fstat(handle)
+        if not stat.S_ISREG(found.st_mode):
+            return None
+        digest = hashlib.sha256()
+        while True:
+            block = os.read(handle, 1 << 20)
+            if not block:
+                break
+            digest.update(block)
+        return digest.hexdigest(), found.st_dev, found.st_ino
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
 
 
 def _sha_of(path: Path) -> str:
-    """The sha256 of a file's bytes, or "" where it cannot be read."""
-    import hashlib
+    """The sha256 of a regular file's bytes, or "" where it cannot be read."""
+    read = _read_whole(path)
+    return read[0] if read else ""
 
+
+def _taken_back(path: Path, sha: str) -> None:
+    """Delete ``path`` only while it is the regular file of that sha256 it
+    was written as: never a link, a file changed or put in its place."""
+    import os
+
+    read = _read_whole(path)
+    if not sha or read is None or read[0] != sha:
+        return
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        now = os.lstat(path)
+        if (now.st_dev, now.st_ino) == read[1:]:
+            path.unlink()
     except OSError:
-        return ""
+        pass
 
 
 def _refused(error: str, code: str = "", **more: Any) -> dict[str, Any]:
@@ -75,36 +115,52 @@ _HOSTED = _refused("Not available in a hosted GUI: its studies run on its servic
                    hosted=True)
 
 
-def _named_relatively(text: str, folders: list[Path]) -> list[str]:
+def _read_otherwise(text: str, sent_from: Path, run_from: Path) -> list[str]:
     """Each value in a config's text that names, by a relative path, a file
-    or folder in one of ``folders``: the results folder aside."""
+    or folder a send would carry from ``sent_from`` and a run here read from
+    ``run_from`` as another or not at all, or a path (a name with a folder or
+    a suffix) a run here would read and a send would not carry: the results
+    folder aside, and a ``system`` that setup reads as a PDB ID or a
+    sequence, and a setting whose values are words (a phase, an analysis).
+    Any other word is left as a word."""
     import yaml
 
-    from fastmdxplora.remote.inputs import _existing
+    from fastmdxplora.remote.inputs import _existing, read_as_a_name, word_keys
 
     try:
         config = yaml.safe_load(text)
     except yaml.YAMLError:
         return []
     found: list[str] = []
+    words = word_keys()
 
-    def walk(value: Any, top: bool) -> None:
+    def walk(value: Any, key: str, top: bool) -> None:
+        if key in words:
+            return
         if isinstance(value, dict):
-            for key, item in value.items():
-                if not (top and key == "output"):
-                    walk(item, False)
+            for name, item in value.items():
+                if not (top and name == "output"):
+                    walk(item, str(name), False)
         elif isinstance(value, list):
             for item in value:
-                walk(item, False)
+                walk(item, key, False)
         elif isinstance(value, str):
+            if key in ("system", "systems") and read_as_a_name(value):
+                return
             try:
                 relative = not Path(value).expanduser().is_absolute()
             except (RuntimeError, ValueError):
                 return
-            if relative and any(_existing(value, folder) is not None for folder in folders):
+            if not relative:
+                return
+            sent, run = _existing(value, sent_from), _existing(value, run_from)
+            # What a send would carry, read otherwise here; or a path that a
+            # run here reads and a send would not carry at all.
+            if sent != run and (sent is not None or "/" in value or "\\" in value
+                                or Path(value).suffix):
                 found.append(value)
 
-    walk(config, True)
+    walk(config, "", True)
     return found
 
 
@@ -127,6 +183,12 @@ class RemoteDesk:
         self.hosted = hosted
         self._plans: dict[str, _Plan] = {}
         self._lock = threading.Lock()
+        # The configs written here from the Config Builder's form, each with
+        # the sha256 it was written as; those a send has begun with, kept
+        # for good; and how many plans or sends are reading each now.
+        self._made: dict[Path, str] = {}
+        self._sent: set[Path] = set()
+        self._reading: dict[Path, int] = {}
 
     # -- paths --------------------------------------------------------------
     def inside(self, given: Any) -> Path | None:
@@ -305,10 +367,12 @@ class RemoteDesk:
         on beside an earlier one), in the workspace's folder: the folder new
         studies go in, given the window's runtime, else the folder opened.
         A file the study names by a relative path is refused where **Run on
-        this machine** would read it from another folder (it starts the run
-        in the folder new studies go in, the one above the folder opened as
+        this machine** would read another, or none (it starts the run in the
+        folder new studies go in, the one above the folder opened as
         ``fastmdx gui`` sets it), so what travels is never a different file
-        under the same name; its full path names it either way. The same
+        under the same name; its full path names it either way. A config
+        file the person has is sent as ``fastmdx remote send -c`` sends it,
+        with the files beside it, each shown in the plan. The same
         text planned again is the same file; a link, or a file that is not
         the same text, is passed over and never read or written. Also
         whether the file was written now (and so is taken back where the
@@ -349,13 +413,17 @@ class RemoteDesk:
         run_reads = (Path(self.runtime.exploration_root).expanduser().resolve()
                      if self.runtime is not None else self.root.parent)
         if run_reads != base:
-            named = _named_relatively(text, [base, run_reads])
+            named = _read_otherwise(text, base, run_reads)
             if named:
+                from fastmdxplora.remote.inputs import _existing
+
+                none_here = ", where there is none," if _existing(
+                    named[0], run_reads) is None else ""
                 return None, _refused(
-                    f"The study names {named[0]!r} by a relative path, which Run on "
-                    f"this machine reads from {run_reads} and a send from {base}: give "
-                    "its full path (the file picker beside the field does), so the "
-                    "file that travels is the one a run here would read.",
+                    f"Run on this machine would read {named[0]!r} from {run_reads}"
+                    f"{none_here} but a send reads it from {base}. Give its full path "
+                    "in the form (Browse beside the field gives one), so the file that "
+                    "travels is the one a run here would read.",
                     "remote.input.outside"), False
         for n in range(1, 1000):
             target = base / (f"{output.name}.yml" if n == 1 else f"{output.name}-{n}.yml")
@@ -394,21 +462,28 @@ class RemoteDesk:
                 load_machine(str(machine or ""))
             except Exception as exc:  # noqa: BLE001 - a refusal, said as one
                 return _said(exc)
-            saved, refused, made = self._saved(state)
+            with self._lock:
+                # Saved and counted as read at once, so a plan let go in
+                # another tab never takes back the file this one found.
+                saved, refused, made = self._saved(state)
+                if refused is None:
+                    if made:
+                        self._made[saved] = _sha_of(saved)
+                    self._reading[saved] = self._reading.get(saved, 0) + 1
             if refused is not None:
                 return refused
-            said = self._plan(str(saved), machine, made=made)
-            if not said.get("ok") and made:
-                # Refused, its config is taken back: planned again, it is
+            try:
+                said = self._plan(str(saved), machine)
+            finally:
+                self._done_reading(saved)
+            if not said.get("ok"):
+                # Refused: its config is taken back, so planned again it is
                 # written again, and a blank results folder leaves none.
-                try:
-                    saved.unlink()
-                except OSError:
-                    pass
+                self._release(saved)
             return said
         return self._plan(config, machine)
 
-    def _plan(self, config: Any, machine: Any, *, made: bool = False) -> dict[str, Any]:
+    def _plan(self, config: Any, machine: Any) -> dict[str, Any]:
         from fastmdxplora.remote.send import room_said, sent_digest, travelling
 
         file, output, refused = self._what(config)
@@ -424,11 +499,14 @@ class RemoteDesk:
         prints = travelling(sending)
         token = secrets.token_hex(16)
         with self._lock:
-            self._forget_old()
+            dropped = self._forget_old()
             while len(self._plans) >= _MOST_PLANS:
-                self._plans.pop(min(self._plans, key=lambda t: self._plans[t].made_at))
+                dropped.append(self._plans.pop(
+                    min(self._plans, key=lambda t: self._plans[t].made_at)).config)
             self._plans[token] = _Plan(file, name, output, sent_digest(sending, prints),
-                                        time.monotonic(), _sha_of(file) if made else "")
+                                        time.monotonic())
+        for gone in dropped:
+            self._release(gone)
         return {
             "ok": True, "plan": token, "kept_s": PLAN_KEPT_S,
             "config": self.shown(file), "machine": name, "job": sending.job_name,
@@ -446,27 +524,38 @@ class RemoteDesk:
 
     def forget(self, token: Any) -> dict[str, Any]:
         """A plan the page let go (Not now, or the study changed): never
-        sent, and the config written for it taken back, where it is as
-        written and no other plan kept here is of that file."""
+        sent, and the config written for it taken back (:meth:`_release`)."""
         with self._lock:
             plan = self._plans.pop(str(token or ""), None)
-            same = [t for t, p in self._plans.items()
-                    if plan is not None and p.config == plan.config]
-            if plan is not None and plan.made and same:
-                # Another plan of it is kept: that one takes it back.
-                self._plans[same[0]] = replace(self._plans[same[0]], made=plan.made)
-        if plan is not None and plan.made and not same:
-            try:
-                if not plan.config.is_symlink() and _sha_of(plan.config) == plan.made:
-                    plan.config.unlink()
-            except OSError:
-                pass
+        if plan is not None:
+            self._release(plan.config)
         return {"ok": True}
 
-    def _forget_old(self) -> None:
+    def _done_reading(self, config: Path) -> None:
+        with self._lock:
+            left = self._reading.get(config, 0) - 1
+            if left > 0:
+                self._reading[config] = left
+            else:
+                self._reading.pop(config, None)
+
+    def _release(self, config: Path) -> None:
+        """A config written here from the form, taken back once nothing
+        holds it: no plan of it kept, none being made or sent, no send ever
+        begun with it, and the file as it was written."""
+        with self._lock:
+            if (config not in self._made or config in self._sent
+                    or self._reading.get(config, 0)
+                    or any(p.config == config for p in self._plans.values())):
+                return
+            _taken_back(config, self._made.pop(config))
+
+    def _forget_old(self) -> list[Path]:
+        """Plans kept past their ten minutes dropped (under the lock); their
+        configs, for :meth:`_release` once the lock is let go."""
         now = time.monotonic()
-        for token in [t for t, p in self._plans.items() if now - p.made_at > PLAN_KEPT_S]:
-            self._plans.pop(token, None)
+        return [self._plans.pop(token).config for token in
+                [t for t, p in self._plans.items() if now - p.made_at > PLAN_KEPT_S]]
 
     def send(self, token: Any) -> dict[str, Any]:
         """Send the plan the person agreed to, once, where what would travel
@@ -475,8 +564,12 @@ class RemoteDesk:
         from fastmdxplora.remote.send import sent_digest
 
         with self._lock:
-            self._forget_old()
+            dropped = self._forget_old()
             plan = self._plans.pop(str(token or ""), None)
+            if plan is not None:
+                self._reading[plan.config] = self._reading.get(plan.config, 0) + 1
+        for gone in dropped:
+            self._release(gone)
         if plan is None:
             return _refused("That plan is not one this page was shown in the last ten "
                             "minutes, or it was sent already. Plan the send again.",
@@ -484,13 +577,20 @@ class RemoteDesk:
         try:
             sending, refused = self._planned(plan.config, plan.machine, plan.output)
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one
-            return _said(exc)
+            sending, refused = None, _said(exc)
+        if refused is None and sent_digest(sending) != plan.digest:
+            refused = _refused("What would be sent changed after the plan was shown (the "
+                               "config, a file that travels, or the machine). Plan the "
+                               "send again and look at it.", "remote.send.unconfirmed")
+        with self._lock:
+            if refused is None:
+                # From here the config is a sent job's, or may be: kept.
+                self._sent.add(plan.config)
+        self._done_reading(plan.config)
         if refused is not None:
-            return refused
-        if sent_digest(sending) != plan.digest:
-            return _refused("What would be sent changed after the plan was shown (the "
-                            "config, a file that travels, or the machine). Plan the send "
-                            "again and look at it.", "remote.send.unconfirmed")
+            # Nothing went: the plan is let go as Not now lets it go.
+            self._release(plan.config)
+            return {**refused, "sent_nothing": True}
         try:
             job = api.send_planned(sending)
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one

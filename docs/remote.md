@@ -206,7 +206,11 @@ folder that exists, relative to the Config's own folder, is copied under
 `inputs/` and the copy of the Config names it there: the structure, a ligand's
 SDF, force field XMLs, a trajectory, a prepared study to continue from. A
 structure given by PDB ID is fetched by the machine, which is refused where the
-machine has no internet.
+machine has no internet. A `system` that setup reads as a PDB ID or a sequence
+(four letters and digits, or letters alone, with no `.pdb`, `.cif` or
+`.pdbx`), and a setting whose values are words (a phase
+under `include_phase`, an analysis, a force field's name), never travel as a
+file or folder of that name beside the Config.
 
 **Only files in the study's own folder travel,** the folder holding the
 Config. A file named outside it is refused (`remote.input.outside`) and nothing
@@ -496,13 +500,19 @@ included, and if the form has changed since: the plan is taken away and
 asked for again. A study built in the form is saved first as a config named
 after its results folder (`<results>.yml`, or `-2` and so on beside an
 earlier one), in the folder the GUI was opened on; the plan says where its
-results come back to, by their full path. A plan let go (**Not now**, or
-taken away as the form changed) takes back the config saved for it, unless
-it has been changed since or another plan is of it. A file the study names by a relative path is refused
-(`remote.input.outside`) where **Run on this machine**, which starts in the
-folder above, would read another file of that name: give its full path (the
-file picker beside the field does), so what travels is what a run here
-would read. With **A config I have**, the file checked is the one planned. A results folder
+results come back to, by their full path. A plan let go (**Not now**, taken
+away as the form changed, a send refused, or kept past its ten minutes)
+takes back the config saved for it, and on the page empties a results name
+it wrote in the form, unless the config has been changed since, another plan
+is of it or a send has begun with it. A file the
+study names by a relative path is refused (`remote.input.outside`) where
+**Run on this machine**, which starts in the folder above, would read
+another file of that name or none: give its full path (**Browse** beside
+the field gives one), so what travels is what a run here would read. A PDB
+ID or a sequence is read the same wherever it runs, and is never taken for
+a file; nor is a phase or an analysis, so a GUI opened on a study's own
+folder (its `setup` and `analysis` folders beside the config) plans as any
+other. With **A config I have**, the file checked is the one planned. A results folder
 left blank is given the name the plan chose, in the form, so the study
 planned again is saved to the same file. One plan or send is out at a time,
 and what it answers is said on the page, left and come back to or not.

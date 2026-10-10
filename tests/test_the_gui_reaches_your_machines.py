@@ -392,7 +392,7 @@ class TestTheConfigBuilder:
             status, said = _ask(address, "/api/remote/plan", {"state": state,
                                                               "machine": "box"})
             assert said["ok"] is False and said["code"] == "remote.input.outside"
-            assert "'mine.pdb' by a relative path" in said["error"]
+            assert "would read 'mine.pdb' from" in said["error"]
             assert not list(opened.glob("where*.yml"))
             whole = {**state, "system": str(opened / "mine.pdb")}
             status, plan = _ask(address, "/api/remote/plan", {"state": whole,
@@ -434,3 +434,189 @@ class TestTheConfigBuilder:
         _ask(address, "/api/remote/forget", {"plan": planned["plan"]})
         assert machine.study.is_file()
         assert _ask(address, "/api/remote/forget", {"plan": "nothing"})[1] == {"ok": True}
+
+    def test_a_config_another_plan_sent_is_kept_when_this_one_is_let_go(self, served):
+        """First review of 1796-1797: two tabs planned one study, the second
+        sent it, and Not now in the first deleted the config it was sent as."""
+        address, machine = served
+        root = machine.study.parent
+        status, first = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        status, second = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        status, sent = _ask(address, "/api/remote/send", {"plan": second["plan"]})
+        assert sent["ok"], sent
+        _ask(address, "/api/remote/forget", {"plan": first["plan"]})
+        assert (root / "ub-run.yml").is_file()
+        travels._until_finished(machine, "ub-run")
+
+    def test_a_send_refused_takes_back_the_config_written_for_it(self, served):
+        address, machine = served
+        root = machine.study.parent
+        (root / "mine.pdb").write_text("ATOM  1\n")
+        status, plan = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "system": str(root / "mine.pdb")}, "machine": "box"})
+        assert plan["ok"], plan
+        (root / "mine.pdb").write_text("ATOM  2\n")  # the same size, not the same file
+        status, sent = _ask(address, "/api/remote/send", {"plan": plan["plan"]})
+        assert sent["code"] == "remote.send.unconfirmed"
+        assert not (root / "ub-run.yml").exists() and not _sent(machine)
+
+    def test_a_pdb_id_or_a_word_like_a_folder_is_not_a_file(self, machine, monkeypatch):
+        """First review of 1796-1797: a GUI opened on a folder named after
+        its protein refused the protein's PDB ID as a file named relatively."""
+        from fastmdxplora.gui.server import start_dashboard_session
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote import send as sending
+
+        parent = machine.study.parent
+        opened = parent / "1ubq"
+        opened.mkdir()
+        (parent / "mine.pdb").write_text("ATOM\n")
+        monkeypatch.setattr(api, "_link", lambda name, transport: machine.transport())
+        monkeypatch.setattr(api, "this_code", lambda: RELEASE)
+        monkeypatch.setattr(sending, "this_code", lambda: RELEASE)
+        session = start_dashboard_session(output=str(opened), host="127.0.0.1", port=0)
+        try:
+            address = session.url.split("//", 1)[1].rstrip("/")
+            status, plan = _ask(address, "/api/remote/plan", {"state": {
+                "system": "1ubq", "include_phase": ["setup"], "output": "where"},
+                "machine": "box"})
+            assert plan["ok"], plan
+            assert plan["fetched_there"] == ["1ubq"]
+            status, said = _ask(address, "/api/remote/plan", {"state": {
+                "system": "mine.pdb", "include_phase": ["setup"], "output": "there"},
+                "machine": "box"})
+            assert said["code"] == "remote.input.outside"
+            assert said["error"].startswith(
+                f"Run on this machine would read 'mine.pdb' from {parent.resolve()} but")
+        finally:
+            session.server.shutdown()
+        assert not _sent(machine)
+
+
+class TestTakingBack:
+    def test_only_the_file_written_is_taken_back(self, tmp_path):
+        import os
+
+        from fastmdxplora.gui.remote_routes import _sha_of, _taken_back
+
+        written = tmp_path / "a.yml"
+        written.write_text("x: 1\n")
+        sha = _sha_of(written)
+        # Put in its place with the same words: another file, kept.
+        other = tmp_path / "b.yml"
+        other.write_text("x: 1\n")
+        os.replace(other, written)
+        _taken_back(written, "0" * 64)
+        assert written.is_file()
+        sha = _sha_of(written)
+        _taken_back(written, sha)
+        assert not written.exists()
+
+    def test_a_pipe_in_its_place_is_never_waited_on(self, tmp_path):
+        import os
+
+        from fastmdxplora.gui.remote_routes import _sha_of, _taken_back
+
+        pipe = tmp_path / "a.yml"
+        os.mkfifo(pipe)
+        assert _sha_of(pipe) == ""
+        _taken_back(pipe, "0" * 64)
+        assert pipe.exists()
+
+
+class TestTabsAtOnce:
+    """Second review of 1796-1798: a plan let go or refused in one tab while
+    another tab's send of the same study was still asking its machine took
+    back the config that send was sending."""
+
+    @pytest.fixture
+    def desk(self, machine, monkeypatch):
+        from fastmdxplora.remote import api
+        from fastmdxplora.remote import send as sending
+
+        monkeypatch.setattr(api, "_link", lambda name, transport: machine.transport())
+        monkeypatch.setattr(api, "this_code", lambda: RELEASE)
+        monkeypatch.setattr(sending, "this_code", lambda: RELEASE)
+        real = sending.run_here
+        monkeypatch.setattr(sending, "run_here", lambda command, runner=None, **more:
+                            real(command, runner=machine.local, **more))
+        root = machine.study.parent
+        return RemoteDesk(DashboardRuntime(workspace_root=root, exploration_root=root)), root
+
+    @staticmethod
+    def _held(desk, name):
+        """``desk.<name>`` made to wait, once, until let through."""
+        asked, through = threading.Event(), threading.Event()
+        real = getattr(desk, name)
+
+        def waiting(*args, **kwargs):
+            asked.set()
+            through.wait(30)
+            return real(*args, **kwargs)
+
+        setattr(desk, name, waiting)
+        return asked, through, lambda: setattr(desk, name, real)
+
+    def test_a_plan_let_go_while_another_is_sent_leaves_its_config(self, desk, machine):
+        desk, root = desk
+        first = desk.plan(None, "box", state=STATE)
+        second = desk.plan(None, "box", state=STATE)
+        asked, through, undo = self._held(desk, "_planned")
+        said = {}
+        sending = threading.Thread(target=lambda: said.update(desk.send(second["plan"])))
+        sending.start()
+        assert asked.wait(30)
+        undo()
+        desk.forget(first["plan"])
+        through.set()
+        sending.join(60)
+        assert said["ok"], said
+        assert (root / "ub-run.yml").is_file()
+        travels._until_finished(machine, "ub-run")
+
+    def test_a_plan_refused_while_another_of_it_is_kept_leaves_its_config(
+            self, desk, machine):
+        desk, root = desk
+        (root / "ub-run").mkdir()  # in use: the first plan is refused
+        (root / "ub-run" / "kept.txt").write_text("x")
+        asked, through, undo = self._held(desk, "_plan")
+        said = {}
+        planning = threading.Thread(
+            target=lambda: said.update(desk.plan(None, "box", state=STATE)))
+        planning.start()
+        assert asked.wait(30)
+        undo()
+        (root / "ub-run" / "kept.txt").rename(root / "kept.txt")
+        kept = desk.plan(None, "box", state=STATE)
+        assert kept["ok"], kept
+        (root / "kept.txt").rename(root / "ub-run" / "kept.txt")
+        through.set()
+        planning.join(60)
+        assert said["ok"] is False
+        assert (root / "ub-run.yml").is_file()
+        desk.forget(kept["plan"])
+        assert not (root / "ub-run.yml").exists()
+        assert not _sent(machine)
+
+    def test_a_plan_dropped_by_age_takes_back_its_config(self, desk, monkeypatch):
+        from fastmdxplora.gui import remote_routes
+
+        desk, root = desk
+        old = desk.plan(None, "box", state=STATE)
+        assert old["ok"] and (root / "ub-run.yml").is_file()
+        monkeypatch.setattr(remote_routes, "PLAN_KEPT_S", -1)
+        said = desk.send("not-a-plan")
+        assert said["code"] == "remote.send.unconfirmed"
+        assert not (root / "ub-run.yml").exists()
+
+    def test_a_phase_or_an_analysis_is_a_word_in_a_study_s_folder(self, desk):
+        """Second review of 1796-1798: a GUI opened on a finished study's
+        folder refused every plan, its `setup` folder read for the phase."""
+        desk, root = desk
+        (root / "setup").mkdir()
+        (root / "rmsd").mkdir()
+        said = desk.plan(None, "box", state={
+            **STATE, "include_phase": ["setup", "simulation", "analysis"],
+            "analysis": {"include": ["rmsd"]}})
+        assert said["ok"], said
+        assert said["travels"] == []

@@ -241,7 +241,7 @@
     // Let go here, it is let go there: its config, written for it, is
     // taken back.
     if (planToken) {
-      ask("POST", "/api/remote/forget", { plan: planToken });
+      letGo(planToken);
       planToken = null;
     }
     var card = byId("run-remote-planned");
@@ -251,21 +251,47 @@
     return true;
   }
 
+  /* A plan let go here is let go there, and the next plan asked only once
+   * the server has: a plan asked at once could find the config about to be
+   * taken back and be left without it. */
+  var lettingGo = Promise.resolve();
+
+  function letGo(token) {
+    lettingGo = ask("POST", "/api/remote/forget", { plan: token });
+  }
+
   /* The results folder a plan named, written in the form where it was left
-   * empty, so the study planned again is the same file, not another. */
-  function keepResultsName(results) {
-    var run = window.FastMDXRun;
+   * empty, so the study planned again is the same file, not another; and
+   * emptied again with the plan it was written for, where nobody has
+   * changed it since. */
+  var namedForPlan = null;
+
+  function setResultsBox(value) {
     var box = byId("run-output");
-    if (!box || box.value.trim() || !results || (run && run.state
-        && run.state.start === "config")) return;
+    if (!box) return;
     quiet = true;
     try {
-      box.value = results;
+      box.value = value;
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.dispatchEvent(new Event("change", { bubbles: true }));
     } finally {
       quiet = false;
     }
+  }
+
+  function keepResultsName(results) {
+    var run = window.FastMDXRun;
+    var box = byId("run-output");
+    if (!box || box.value.trim() || !results || (run && run.state
+        && run.state.start === "config")) return;
+    setResultsBox(results);
+    namedForPlan = results;
+  }
+
+  function releaseResultsName() {
+    var box = byId("run-output");
+    if (box && namedForPlan !== null && box.value === namedForPlan) setResultsBox("");
+    namedForPlan = null;
   }
 
   /* The study as the form holds it now, to tell a plan of it from one of
@@ -301,12 +327,16 @@
 
   /* Said, and kept to be said again if the panel is drawn anew. */
   function sayChanged() {
+    releaseResultsName();
     lastSent = { ok: null, text: CHANGED };
     drawSent(byId("run-remote-note"));
   }
 
   function planSend(machine, host, note, go) {
     lastSent = null;
+    // The button is held while asking, which takes the focus off it: it is
+    // given back where the answer leaves nothing else to go to.
+    var focused = document.activeElement === go;
     go.disabled = true;
     clearPlan();
     note.dataset.ok = "";
@@ -314,16 +344,23 @@
     var body = whatIsPlanned();
     var asked = JSON.stringify(body);
     body.machine = machine;
-    whileAsking("run", ask("POST", "/api/remote/plan", body)).then(function (said) {
+    function focusBack() {
+      var lost = document.activeElement === document.body || document.activeElement === null;
+      if (focused && lost && !go.disabled && go.offsetParent) go.focus();
+    }
+    var planned = lettingGo.then(function () { return ask("POST", "/api/remote/plan", body); });
+    whileAsking("run", planned).then(function (said) {
       if (syncNow) syncNow();
       if (!said.ok) {
         note.textContent = forThePage(said.error || "It could not be planned.");
         note.dataset.ok = "false";
+        focusBack();
         return;
       }
       if (asItIsNow() !== asked) {
-        ask("POST", "/api/remote/forget", { plan: said.plan });
+        letGo(said.plan);
         sayChanged();
+        focusBack();
         return;
       }
       if (body.state) keepResultsName(said.results);
@@ -404,6 +441,7 @@
     }, (plan.kept_s || 600) * 1000);
     not.addEventListener("click", function () {
       clearPlan();
+      releaseResultsName();
       note.textContent = "Not sent.";
       go.focus();
     });
@@ -416,6 +454,9 @@
       }
       if (expiry) { clearTimeout(expiry); expiry = null; }
       planToken = null;  // sent, not let go
+      // The name of the job sent, unless the answer says nothing went.
+      var named = namedForPlan;
+      namedForPlan = null;
       send.disabled = true;
       not.disabled = true;
       note.dataset.ok = "";
@@ -426,15 +467,27 @@
         host.innerHTML = "";
         host.hidden = true;
         // Kept, so the page left and come back to says it still.
+        if (!sent.ok && sent.sent_nothing) {
+          namedForPlan = named;
+          releaseResultsName();
+        }
         lastSent = sent.ok
           ? { ok: true, text: "Sent to " + plan.machine + " as job " + sent.job.name
               + ". It runs there on its own, whether or not this page stays open. " }
           : { ok: false, text: forThePage(sent.error || "It was not sent.") };
         var now = byId("run-remote-note") || note;
+        // Said once: on the page, by the note taking the focus the answers
+        // had (not also as a status); elsewhere, by the live region.
+        var shown = Boolean(now.offsetParent);
+        if (shown) now.removeAttribute("role");
         drawSent(now);
-        now.tabIndex = -1;
-        if (now.offsetParent) now.focus();
-        say(lastSent.text);
+        if (shown) {
+          now.tabIndex = -1;
+          now.focus();
+          setTimeout(function () { now.setAttribute("role", "status"); }, 0);
+        } else {
+          say(lastSent.text);
+        }
         if (syncNow) syncNow();
         machinesKnown().then(function () {
           if (sayKnownNow) sayKnownNow();
@@ -718,7 +771,22 @@
     });
   }
 
+  /* A form filled after a fetch (a draft opened, a starter, the Agent's
+   * version loaded) changes with no event to hear and after the click that
+   * asked for it: looked at twice a second while the builder is shown, so
+   * the panel stays beside what it sends and a plan of a study the form no
+   * longer holds is taken away, and said, at once. */
+  function watchQuietChanges() {
+    setInterval(function () {
+      var builder = document.querySelector('section.page[data-page="run"]');
+      if (!builder || builder.hidden || quiet) return;
+      place();
+      if (plannedAs !== null) staleTakenAway();
+    }, 500);
+  }
+
   function attach() {
+    watchQuietChanges();
     if (window.FastMDXDashboard && window.FastMDXDashboard.on) {
       window.FastMDXDashboard.on("navigate", function (detail) {
         refresh(detail && detail.page);

@@ -71,6 +71,34 @@ class Inputs:
     held_to: dict[str, Path] = field(default_factory=dict)
 
 
+#: The suffixes setup reads a ``system`` by as a structure file
+#: (``setup.pipeline``).
+STRUCTURE_SUFFIXES = frozenset({".pdb", ".cif", ".pdbx"})
+
+
+def word_keys() -> frozenset[str]:
+    """The settings whose values are words the software knows, never a file:
+    each with a list of choices in the schema (the analyses, a force field's
+    name, a box's shape), and the phases a study runs."""
+    from fastmdxplora.config.schema import all_schemas
+
+    return frozenset({"include_phase", "exclude_phase"} | {
+        field.name for schema in all_schemas().values() for field in schema.fields
+        if field.choices})
+
+
+def read_as_a_name(system: str) -> bool:
+    """Whether setup reads ``system`` as a PDB ID or a sequence, as
+    ``setup.pipeline`` classifies it (no structure suffix; four letters and
+    digits, or letters alone), wherever it runs: never a file."""
+    try:
+        if Path(system).suffix.lower() in STRUCTURE_SUFFIXES:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return (len(system) == 4 and system.isalnum()) or system.isalpha()
+
+
 def _existing(value: str, base: Path) -> Path | None:
     if not value or "\n" in value or len(value) > 4096:
         return None
@@ -412,7 +440,13 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
                 folder=str(refused_in))
         return held_to
 
+    words = word_keys()
+
     def walk(value: Any, key: str = "", where: str = "") -> Any:
+        if key in words:
+            # "setup", "rmsd": a phase or an analysis, though a folder of
+            # that name sits beside the config (a study's own folder).
+            return value
         if isinstance(value, dict):
             return {k: (v if k in _NOT_INPUTS and not where
                         else walk(v, k, f"{where}.{k}" if where else str(k)))
@@ -420,11 +454,15 @@ def gather_inputs(config: Any, base: Path) -> Inputs:
         if isinstance(value, list):
             return [walk(item, key, f"{where}[{i}]") for i, item in enumerate(value)]
         if isinstance(value, str):
+            if key in ("system", "systems") and read_as_a_name(value):
+                # A PDB ID or a sequence to setup, wherever it runs: never a
+                # file or folder of that name beside the config.
+                if _PDB_ID.match(value):
+                    found.fetched.append(value)
+                return value
             path = _existing(value, folder)
             if path is not None:
                 return f"inputs/{travel(path, allowed(path, key, where, value))}"
-            if key in ("system", "systems") and _PDB_ID.match(value):
-                found.fetched.append(value)
         return value
 
     found.config = walk(config)

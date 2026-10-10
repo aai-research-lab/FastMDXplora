@@ -217,3 +217,32 @@ class TestAnAIApp:
         said = every._text(first)
         assert "changed while the person was asked" in said
         assert not every._sent(app)
+
+
+def test_a_pdb_id_never_travels_as_the_folder_of_its_name(tmp_path) -> None:
+    """Second review of 1796-1798: ``system: 1ubq`` beside a folder ``1ubq``
+    sent the folder as the system, which setup there cannot read, where a run
+    here fetches 1UBQ."""
+    from fastmdxplora.remote.inputs import gather_inputs
+
+    study = tmp_path / "study"
+    (study / "1ubq").mkdir(parents=True)
+    (study / "1ubq" / "notes.txt").write_text("x")
+    (study / "MKV").write_text("x")
+    found = gather_inputs({"system": "1ubq", "systems": [{"system": "MKV"}]}, study)
+    assert found.files == {} and found.fetched == ["1ubq"]
+    assert found.config == {"system": "1ubq", "systems": [{"system": "MKV"}]}
+    (study / "top.PDB").write_text("ATOM\n")
+    assert set(gather_inputs({"system": "top.PDB"}, study).files) == {"top.PDB"}
+
+
+def test_a_phase_beside_its_folder_is_a_word(tmp_path) -> None:
+    from fastmdxplora.remote.inputs import gather_inputs
+
+    study = tmp_path / "study"
+    for name in ("setup", "simulation", "rmsd"):
+        (study / name).mkdir(parents=True)
+    config = {"include_phase": ["setup", "simulation"], "exclude_phase": "setup",
+              "analysis": {"include": ["rmsd"]}}
+    found = gather_inputs(config, study)
+    assert found.files == {} and found.config == config
