@@ -110,6 +110,52 @@ with `config` and `output` in its query, as the person sees them
 nothing, and the person confirms there. The same rule as `--account-url`
 applies to the path.
 
+## The Agent's memory of each person
+
+On a person's own computer the Agent keeps a short memory of them in their
+settings folder ([What the Agent remembers of you](agent.md#what-the-agent-remembers-of-you)).
+A hosted GUI's settings folder is its operator's, so it keeps none there.
+One hosted GUI serves one person's workspace, and the service says where
+that person's memory is kept, with one of:
+
+```bash
+fastmdx gui --hosted ... --memory-dir /srv/memories/person-7
+fastmdx gui --hosted ... --memory-store example-db
+```
+
+- `--memory-dir DIR` (or `FASTMDX_MEMORY_DIR`): a folder for this person,
+  made if it is not there, holding `agent_memory.md` and the changes beside
+  it, as on a person's own computer. Inside the workspace, the person also
+  sees the file there.
+- `--memory-store NAME` (or `FASTMDX_MEMORY_STORE`): a store an installed
+  package offers, such as the service's own database. The package names it
+  as an entry point in the group `fastmdxplora.memory_stores`; the entry
+  point is a store, or a function given `workspace=` (the one folder this
+  GUI serves) that returns one. A store has `where` (what the person is told
+  of where it is kept), `learns_at_first` (False for a service), `read()`
+  and `write(text)` for the memory as Markdown, `read_changes()` and
+  `write_changes(text)` for the changes as JSON, `held()` (a lock while one
+  is read and written back, across threads and processes alike: the
+  Agent learns from a chat in a thread of its own beside the person's
+  Settings) and `set_aside()` (for a memory that is not text, so it is not
+  written over, returning what the person is told of where it went);
+  `read` and `read_changes` give None where there is none yet, as for a
+  person new to the service. A read that fails for a moment raises, and no
+  change is made while it does; `set_aside()` is called only for a memory
+  that is not text. The factory is not told who the person is: one GUI
+  serves one person, so a store knows them as the service started that GUI
+  (its workspace, or the store's own settings). The protocol is
+  `fastmdxplora.agent.memory.MemoryStore`.
+
+With neither, the Agent keeps no memory and Settings says so; with both,
+the GUI does not start. In a hosted GUI the Agent learns from a person's
+chats only once they turn that on in Settings: a service reading what its
+people write for a memory is each person's to choose. The person is told
+it is kept by the service, never a path on the server: a memory that cannot
+be read or written is said in a sentence, and the detail goes to the
+server's log. The service can read it as it can the person's studies, and
+should say so to its people, and removes it when it removes the person.
+
 ## One folder is the whole world
 
 Every path a request names is read inside the workspace: the file picker,

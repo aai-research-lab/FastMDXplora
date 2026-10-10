@@ -1237,6 +1237,16 @@ def _build_parser() -> argparse.ArgumentParser:
                              "site, such as /runs. The builder then offers "
                              "Run on a GPU, which saves the config in the "
                              "workspace and opens that page with it.")
+    hosted.add_argument("--memory-dir", default="", metavar="DIR",
+                        help="With --hosted: the folder the Agent's memory of "
+                             "this GUI's person is kept in (or "
+                             "FASTMDX_MEMORY_DIR). Learning from chats starts "
+                             "off there, until the person turns it on. Without "
+                             "this or --memory-store, the Agent keeps no memory.")
+    hosted.add_argument("--memory-store", default="", metavar="NAME",
+                        help="With --hosted: a memory store an installed package "
+                             "offers (entry points in fastmdxplora.memory_stores), "
+                             "in place of --memory-dir (or FASTMDX_MEMORY_STORE).")
 
 
     resume = sub.add_parser(
@@ -1305,10 +1315,37 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="REQUEST",
         help=(
             "What the study should do, in plain language. The word `model` "
-            "shows the AI model in use and chooses one instead. With neither, "
+            "shows the AI model in use and chooses one instead; the word "
+            "`memory` lists what the Agent remembers of you. With none, "
             "opens the agent panel."
         ),
     )
+    remembered = ag.add_argument_group(
+        "what the Agent remembers of you (`fastmdx agent memory`)",
+        "Short lines about you and how you work, told to the Agent with each "
+        "message, kept in agent_memory.md in your settings folder. Open that "
+        "file in any editor, or use these. See docs/agent.md.")
+    remembered.add_argument("--add", dest="memory_add", metavar="TEXT", default=None,
+                            help="Add a line, such as \"You are new to molecular dynamics.\"")
+    remembered.add_argument("--forget", dest="memory_forget", metavar="N", default=None,
+                            help="Remove line N, as the list numbers it.")
+    remembered.add_argument("--change", dest="memory_change", nargs=2, metavar=("N", "TEXT"),
+                            default=None, help="Put new words in line N.")
+    remembered.add_argument("--undo", dest="memory_undo", action="store_true",
+                            help="Undo the last change not undone yet.")
+    remembered.add_argument("--clear", dest="memory_clear", action="store_true",
+                            help="Remove every line, told or not, asked first; your own "
+                                 "notes in the file stay.")
+    remembered.add_argument("--yes", dest="memory_yes", action="store_true",
+                            help="With --clear: do not ask (for a script).")
+    switch = remembered.add_mutually_exclusive_group()
+    switch.add_argument("--on", dest="memory_use", action="store_const", const=True,
+                        default=None, help="Tell the Agent the memory (the default).")
+    switch.add_argument("--off", dest="memory_use", action="store_const", const=False,
+                        help="Tell the Agent nothing of it; the lines stay.")
+    remembered.add_argument("--learn-from-chats", dest="memory_learn", choices=("on", "off"),
+                            default=None,
+                            help="Whether the Agent adds to it from what you write to it.")
     ag.add_argument(
         "-f", "-file", "--file",
         dest="request_file",
@@ -3002,7 +3039,9 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
                 args.workspace or Path.cwd(), args.allowed_host,
                 getattr(args, "account_url", ""), getattr(args, "runs_url", ""),
                 getattr(args, "product_name", ""), getattr(args, "product_tagline", ""),
-                getattr(args, "product_logo", ""))
+                getattr(args, "product_logo", ""),
+                memory_dir=getattr(args, "memory_dir", ""),
+                memory_store=getattr(args, "memory_store", ""))
         except HostingError as exc:
             print(f"fastmdx gui: {exc}", file=sys.stderr)
             return 2
@@ -3014,9 +3053,11 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     elif (getattr(args, "workspace", None) or getattr(args, "allowed_host", None)
           or getattr(args, "account_url", None) or getattr(args, "runs_url", None)
           or getattr(args, "product_name", None) or getattr(args, "product_tagline", None)
-          or getattr(args, "product_logo", None)):
+          or getattr(args, "product_logo", None) or getattr(args, "memory_dir", None)
+          or getattr(args, "memory_store", None)):
         print("fastmdx gui: --workspace, --allowed-host, --account-url, --product-name, "
-              "--product-tagline, --product-logo and --runs-url apply only with --hosted.",
+              "--product-tagline, --product-logo, --memory-dir, --memory-store and "
+              "--runs-url apply only with --hosted.",
               file=sys.stderr)
         return 2
     config = DashboardConfig(
@@ -3151,6 +3192,115 @@ def _cmd_dashboard_home() -> int:
     return 0
 
 
+def _learn_from(request: str, complete: Any, memory: Any) -> None:
+    """After a reply: the request read for the memory, where the person lets
+    it learn from chats, and each change said."""
+    from fastmdxplora.agent.memory import from_a_chat, worth_reading
+
+    if memory is None or not (memory.use and memory.from_chats) or memory.unreadable \
+            or not worth_reading(request):
+        return
+    try:
+        made = from_a_chat(request, complete)
+    except Exception:  # noqa: BLE001 - the memory never fails a reply given
+        return
+    for done in made:
+        print(f"  {done.said()} (`fastmdx agent memory` to see or change it)")
+
+
+def _agent_memory(args: Any) -> int:
+    """`fastmdx agent memory`: what the Agent remembers of the person, and
+    changing it."""
+    from fastmdxplora.agent import memory as kept
+
+    if args.memory_clear and not args.memory_yes and not sys.stdin.isatty():
+        # Checked before anything changes, so a command is done whole or not
+        # at all.
+        print("--clear asks first, in a terminal; from a script, add --yes.")
+        return 2
+    lines = kept.load_memory().lines
+
+    def numbered(given: Any) -> str | None:
+        # The number as the list showed it, checked before anything changes.
+        text = str(given).strip()
+        at = int(text) if text.isdigit() else 0
+        if not 1 <= at <= len(lines):
+            print(f"Give a line's number as `fastmdx agent memory` lists it: 1 to "
+                  f"{len(lines)}." if lines else "The memory holds no line to change.")
+            return None
+        return lines[at - 1].id
+
+    forgetting = changing = None
+    if args.memory_forget is not None:
+        forgetting = numbered(args.memory_forget)
+        if forgetting is None:
+            return 2
+    if args.memory_change is not None:
+        changing = numbered(args.memory_change[0])
+        if changing is None:
+            return 2
+    try:
+        if args.memory_undo:
+            last = next((c for c in reversed(kept.load_memory().changes) if not c.undone), None)
+            if last is None:
+                print("There is no change to undo.")
+                return 2
+            done = kept.undo(last.id)
+            print(f"Undone: {done.said()}")
+        if args.memory_add is not None:
+            print(kept.remember(args.memory_add).said())
+        if changing is not None:
+            print(kept.change(changing, args.memory_change[1]).said())
+        if forgetting is not None:
+            print(kept.forget(forgetting).said())
+        if args.memory_clear:
+            memory = kept.load_memory()
+            count = len(memory.lines) + len(memory.not_told)
+            if not count:
+                print("The memory holds nothing to clear.")
+            elif not args.memory_yes and input(
+                    f"Forget all {count} lines, told or not? [y/N] ").strip().lower() \
+                    not in ("y", "yes"):
+                print("Nothing forgotten.")
+                return 1
+            else:
+                print(f"Forgot {kept.forget_all()} lines.")
+        if args.memory_use is not None or args.memory_learn is not None:
+            kept.set_switches(
+                use=args.memory_use,
+                from_chats=None if args.memory_learn is None else args.memory_learn == "on")
+    except kept.MemoryRefused as exc:
+        print(str(exc))
+        return 2
+    except OSError as exc:
+        print(f"The memory could not be written: {exc}")
+        return 1
+    memory = kept.load_memory()
+    print(f"What the Agent remembers of you ({memory.where}):")
+    if memory.unreadable:
+        print(f"  It could not be read ({memory.unreadable}); nothing is changed until it "
+              "can be.")
+    heading = ""
+    for n, line in enumerate(memory.lines, 1):
+        if line.heading != heading:
+            heading = line.heading
+            if heading:
+                print(f"  {heading}")
+        came = "from a chat" if line.source == "chat" else "yours"
+        when = line.updated or line.added
+        print(f"  {n}. {line.text} ({came}{', ' + when[:10] if when else ''})")
+    if not memory.lines:
+        print("  Nothing yet.")
+    for item in memory.not_told:
+        print(f"  Not told: {kept.masked(item.text)} ({item.why})")
+    learns = "yes" if memory.use and memory.from_chats else \
+        "no (the memory is off)" if memory.from_chats else "no"
+    print(f"Told to the Agent: {'yes' if memory.use else 'no'}. Learns from chats: {learns}.")
+    if memory.changes and not memory.unreadable:
+        print("`fastmdx agent memory --undo` undoes the last change.")
+    return 0
+
+
 def _run_agent(args: Any) -> int:
     """`fastmdx agent` -- choose an AI model, or write a study from a sentence."""
     from pathlib import Path as _Path
@@ -3164,6 +3314,24 @@ def _run_agent(args: Any) -> int:
 
     if request == "model":
         return _choose_model()
+    for name, default in (("memory_add", None), ("memory_forget", None),
+                          ("memory_change", None), ("memory_undo", False),
+                          ("memory_clear", False), ("memory_yes", False),
+                          ("memory_use", None), ("memory_learn", None)):
+        # Arguments built by hand (a caller of `_run_agent`) carry none.
+        if not hasattr(args, name):
+            setattr(args, name, default)
+    memory_flags = [flag for flag, given in (
+        ("--add", args.memory_add is not None), ("--forget", args.memory_forget is not None),
+        ("--change", args.memory_change is not None), ("--undo", args.memory_undo),
+        ("--clear", args.memory_clear), ("--yes", args.memory_yes),
+        ("--on/--off", args.memory_use is not None),
+        ("--learn-from-chats", args.memory_learn is not None)) if given]
+    if request == "memory":
+        return _agent_memory(args)
+    if memory_flags:
+        print(f"{', '.join(memory_flags)} go with `fastmdx agent memory`.")
+        return 2
     if request == "set":
         # The old name chose an AI model too. It stops rather than writes a
         # study from the word "set", and says where the choosing went.
@@ -3235,6 +3403,13 @@ def _run_agent(args: Any) -> int:
     except ConfigError as exc:
         print(str(exc))
         return 1
+    # What the Agent remembers of the person, as the GUI's Agent is told it.
+    from fastmdxplora.agent.memory import load_memory
+
+    try:
+        memory = load_memory()
+    except Exception:  # noqa: BLE001 - the memory never stops a request
+        memory = None
     # Not "Writing a config": the reply may be an answer, a question or an
     # action, and which is known only once it comes.
     # Said as the Agent: its AI model is named only by `fastmdx agent model`.
@@ -3245,10 +3420,22 @@ def _run_agent(args: Any) -> int:
             phases=[p.strip() for p in args.phases.split(",") if p.strip()],
             max_cycles=(DEFAULT_ATTEMPTS if args.attempts is None
                         else int(args.attempts)),
-            tools=Toolbox(workspace=folder_of_studies(_Path.cwd())), defaults=defaults)
+            tools=Toolbox(workspace=folder_of_studies(_Path.cwd())), defaults=defaults,
+            memory=memory)
     except StudyError as exc:
         print(refusal_of(exc).message)
         return 1
+    code = _said_reply(args, proposal)
+    # After the reply is said, and only from words typed: a request read
+    # from a file is a file, which the memory never reads.
+    if not args.request_file:
+        _learn_from(request, complete, memory)
+    return code
+
+
+def _said_reply(args: Any, proposal: Any) -> int:
+    """The Agent's reply, said; the command's exit code."""
+    from pathlib import Path as _Path
 
     # What it looked at with the software's own tools, in the page's words,
     # and what each found.
