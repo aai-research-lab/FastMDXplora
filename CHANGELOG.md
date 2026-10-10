@@ -96,10 +96,15 @@ in the form is saved, and the files it names by a relative path read, in
 the folder new studies go in, as **Run on this machine** reads them; where
 that folder is the home folder, one above it or a disk's top, the page says
 so beside **Plan the send** before anything is asked, naming a folder to
-open the GUI on instead, and the routes reach only the folder opened. A
-config file named by a relative path is refused where the GUI's check would
-read another file. A form changed while a send is out no longer takes its
-plan away, and a plan kept past its ten minutes says it was not sent.
+open the GUI on instead, and the routes reach only the folder opened. Your
+home folder is both the one your account names and the one `HOME` names
+(`fastmdx remote send` too), so a wrong or empty `HOME` lets neither in. A
+config file named by a relative path is refused
+(`remote.config.read_elsewhere`) where the GUI's check would read another
+file or none, or the folder the GUI was started in is gone, and the refusal
+says where each reads it. Refusals name both folders the routes reach. A
+form changed while a send is out no longer takes its plan away, and a plan
+kept past its ten minutes says it was not sent, also once closed.
 
 ### The Agent remembers you
 
