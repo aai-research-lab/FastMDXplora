@@ -354,3 +354,15 @@ class TestTheConfigBuilder:
         desk = RemoteDesk(DashboardRuntime(workspace_root=root, exploration_root=root))
         saved, refused, _ = desk._saved({**STATE, "output": str(root / "a\0b")})
         assert saved is None and refused["ok"] is False
+
+    def test_the_config_is_saved_where_its_files_are_read_from(self, served):
+        """Second review: a results folder named in a subfolder put the
+        config there, and a file the study named by a relative path was
+        no longer beside it."""
+        address, machine = served
+        root = machine.study.parent
+        status, plan = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "output": "newdir/deep"}, "machine": "box"})
+        assert plan["ok"], plan
+        assert plan["config"] == "deep.yml" and plan["results"] == "newdir/deep"
+        assert (root / "deep.yml").is_file() and not (root / "newdir").exists()

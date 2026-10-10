@@ -482,18 +482,25 @@ computer only (the GUI on loopback; never a hosted one, whose studies run on
 its service's compute).
 
 **New study** (the [Config](config.md) builder) has **Plan the send** beside
-**Run on this machine**, with your machines to choose from and what each
-was found to be when last inspected. Once the study could run here, the plan
+**Run on this machine**, or, with **A config I have**, under the config
+file's own **Run on this machine as it is** ("Or send this config file to
+one of your machines"), with your machines to choose from and what each was
+found to be when last inspected. Once the study could run here, the plan
 asks the machine and shows what a send would do, sending nothing: where it
 runs, its folder there, the config, where the results come back to, every
 file that travels with its size, the GPUs' room, and the job script.
-**Send** sends that plan and nothing else: the plan is kept ten minutes, is
+**Send to** the machine sends that plan and nothing else: the plan is kept ten minutes, is
 sent once, and is refused (`remote.send.unconfirmed`) if anything that
 travels has changed since it was shown, a file rewritten at the same size
-included. A study built in the form is saved first as a config beside its
-results folder (`<results>.yml`, or `-2` and so on beside an earlier one),
-where **Run on this machine** would write it; with **A config I have**, the
-file checked is the one planned.
+included, and if the form has changed since: the plan is taken away and
+asked for again. A study built in the form is saved first as a config named
+after its results folder (`<results>.yml`, or `-2` and so on beside an
+earlier one), in the folder new studies go in, where the files it names by a
+relative path are read from, as **Run on this machine** reads them; with
+**A config I have**, the file checked is the one planned. A results folder
+left blank is given the name the plan chose, in the form, so the study
+planned again is saved to the same file. One plan or send is out at a time,
+and what it answers is said on the page, left and come back to or not.
 
 **All studies** lists under **Remote jobs** the jobs whose results come back
 into the workspace. **Ask how it is doing** asks the machine (at most every

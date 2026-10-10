@@ -362,3 +362,82 @@ def test_a_config_file_is_sent_from_beside_it(session) -> None:
     assert beside_run
     assert label == "Or send this config file to one of your machines"
     assert errors == []
+
+
+def test_a_study_changed_without_a_sound_sends_nothing(session) -> None:
+    """Second review: a system removed, Reset, or a draft loaded changes the
+    form without an event to hear, and Send sent the study as planned."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.evaluate("() => { document.getElementById('run-config-path').value = '/elsewhere.yml'; }")
+        page.click("#run-remote-planned .primary-btn")
+        said = page.text_content("#run-remote-note")
+        gone = page.is_hidden("#run-remote-planned")
+        browser.close()
+    assert gone and said.startswith("The study changed after the plan was made.")
+    assert not any(c.startswith("mkdir") for c in machine.commands)
+    assert errors == []
+
+
+def test_a_plan_of_a_study_changed_while_it_was_made_is_not_shown(session) -> None:
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        held = []
+        page.route("**/api/remote/plan", lambda route: held.append(route))
+        page.click("#run-remote-plan")
+        while not held:
+            page.wait_for_timeout(100)
+        page.evaluate("() => { document.getElementById('run-config-path').value = '/elsewhere.yml'; }")
+        held[0].continue_()
+        page.wait_for_function("() => document.getElementById('run-remote-note')"
+                               ".textContent.startsWith('The study changed')")
+        shown = page.is_visible("#run-remote-planned")
+        browser.close()
+    assert not shown
+    assert errors == []
+
+
+def test_a_send_s_answer_is_kept_for_the_page_come_back_to(session) -> None:
+    """Second review: a send answered while the person was on another page
+    was said nowhere, and Plan the send could be pressed while it was out."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        _config_checked(page, machine.study)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        held = []
+        page.route("**/api/remote/send", lambda route: held.append(route))
+        page.click("#run-remote-planned .primary-btn")
+        while not held:
+            page.wait_for_timeout(100)
+        planning = page.is_disabled("#run-remote-plan")
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        held[0].fulfill(status=200, content_type="application/json",
+                        body=json.dumps({"ok": False, "error": "Refused there."}))
+        page.wait_for_timeout(500)
+        page.evaluate("() => window.FastMDXDashboard.navigate('run')")
+        page.wait_for_timeout(800)
+        said = page.text_content("#run-remote-note")
+        again = page.is_enabled("#run-remote-plan")
+        browser.close()
+    assert planning
+    assert said == "Refused there." and again
+    assert errors == []

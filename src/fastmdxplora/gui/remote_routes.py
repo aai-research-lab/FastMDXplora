@@ -251,12 +251,15 @@ class RemoteDesk:
 
     def _saved(self, state: dict[str, Any]
                ) -> tuple[Path | None, dict[str, Any] | None, bool]:
-        """The Config Builder's study saved as a config file beside the
-        results folder it names (where **Run on this machine** writes them,
-        given the window's runtime; else in the folder opened):
-        ``<results>.yml``, or ``-2``, ``-3`` and so on beside an earlier one;
-        the same text planned again is the same file. A link, or a file that
-        is not the same text, is passed over and never read or written.
+        """The Config Builder's study saved as a config file, named after the
+        results folder it names (``<results>.yml``, or ``-2``, ``-3`` and so
+        on beside an earlier one), in the folder the files it names by a
+        relative path are read from, as **Run on this machine** reads them:
+        the folder new studies go in, given the window's runtime, else the
+        folder opened. Saved beside a results folder elsewhere, a study
+        naming ``top.pdb`` named a file that was not there, and nothing said
+        so. The same text planned again is the same file; a link, or a file
+        that is not the same text, is passed over and never read or written.
         Also whether the file was written now (and so is taken back where
         the plan is refused)."""
         from fastmdxplora.gui.config_builder import config_yaml
@@ -274,13 +277,15 @@ class RemoteDesk:
         if output is None or self.inside(str(output)) is None or output in self.roots:
             return None, _refused(f"The results folder {requested} must be a new folder "
                                   "inside the workspace."), False
+        base = (Path(self.runtime.exploration_root).expanduser().resolve()
+                if self.runtime is not None else self.root)
         home = Path.home().resolve()
-        if output.parent == home or output.parent in home.parents:
+        if base == home or base in home.parents:
             # Nothing in the home folder itself travels, and a config is not
             # left there to say so.
-            return None, _refused(f"The results folder {self.shown(output)} would sit in "
-                                  "your home folder, which nothing is sent from. Name a "
-                                  "results folder inside a folder of its own."), False
+            return None, _refused(f"Its config would be saved in {base}, your home folder, "
+                                  "which nothing is sent from. Open the GUI on a folder of "
+                                  "its own to send a study built here."), False
         source["output"] = str(output)
         try:
             built = config_yaml(source, full=bool(source.get("full")))
@@ -291,8 +296,7 @@ class RemoteDesk:
                                       "written as a config."), str(built.get("code") or "")), False
         text = str(built["yaml"])
         for n in range(1, 1000):
-            target = output.parent / (f"{output.name}.yml" if n == 1
-                                      else f"{output.name}-{n}.yml")
+            target = base / (f"{output.name}.yml" if n == 1 else f"{output.name}-{n}.yml")
             try:
                 if target.is_symlink() or (target.exists() and (
                         self.inside(str(target)) is None or not target.is_file())):
@@ -304,14 +308,13 @@ class RemoteDesk:
                     except ValueError:  # not text: another file, kept as it is
                         pass
                     continue
-                target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("x", encoding="utf-8") as out:
                     out.write(text)
             except FileExistsError:
                 continue
             except (OSError, ValueError) as exc:
-                return None, _refused(f"The config could not be saved beside "
-                                      f"{self.shown(output)}: {exc}"), False
+                return None, _refused(f"The config could not be saved in "
+                                      f"{self.shown(base)}: {exc}"), False
             return target, None, True
         return None, _refused("Too many configs of that name; give another results "
                               "folder."), False

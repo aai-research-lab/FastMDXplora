@@ -178,9 +178,12 @@
     host.appendChild(known);
     host.appendChild(plan);
     host.appendChild(note);
+    drawSent(note);
     function sync() {
       place();
-      go.disabled = !builderReady();
+      // Not while a plan or a send is out: one at a time, so a second plan
+      // of a study being sent is never made.
+      go.disabled = !builderReady() || busy.run > 0;
       go.title = builderReady() ? ""
         : "Make the study ready to run first, as for Run on this machine.";
     }
@@ -212,7 +215,15 @@
     // A plan is of the study as it was planned: changed since, it is taken
     // away, so Send never sends what the form no longer says.
     // A start chosen (a tile pressed) moves the panel beside what it sends.
-    builder.addEventListener("click", function () { setTimeout(place, 0); }, true);
+    // So does a plan of a study a button changed (a system removed, Reset):
+    // it is taken away once the form has taken the change.
+    builder.addEventListener("click", function (event) {
+      var host = byId("run-remote");
+      setTimeout(function () {
+        place();
+        if (!quiet && host && !host.contains(event.target)) staleTakenAway();
+      }, 0);
+    }, true);
     ["input", "change"].forEach(function (kind) {
       builder.addEventListener(kind, function (event) {
         if (syncNow) syncNow();
@@ -233,6 +244,7 @@
   /* Take a plan off the page; whether there was one. */
   function clearPlan() {
     if (expiry) { clearTimeout(expiry); expiry = null; }
+    plannedAs = null;
     var card = byId("run-remote-planned");
     if (!card || card.hidden) return false;
     card.innerHTML = "";
@@ -257,25 +269,74 @@
     }
   }
 
+  /* The study as the form holds it now, to tell a plan of it from one of
+   * the study as it was: a button that removes a system or a draft loaded
+   * changes the form without any event to hear. */
+  var plannedAs = null;
+
+  function asItIsNow() {
+    return JSON.stringify(whatIsPlanned());
+  }
+
+  /* What the last send answered, said again whenever the panel is drawn. */
+  var lastSent = null;
+
+  function drawSent(note) {
+    if (!note || !lastSent) return;
+    note.dataset.ok = lastSent.ok ? "true" : "false";
+    note.textContent = lastSent.text;
+    if (!lastSent.ok) return;
+    var open = button("builder-linkish", "Follow it under Remote jobs");
+    open.addEventListener("click", function () {
+      if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
+        window.FastMDXDashboard.navigate("studies");
+      }
+    });
+    note.appendChild(open);
+  }
+
+  var CHANGED = "The study changed after the plan was made. Plan the send again to see "
+    + "what would go.";
+
   function planSend(machine, host, note, go) {
+    lastSent = null;
     go.disabled = true;
     clearPlan();
     note.dataset.ok = "";
     note.textContent = "Asking " + machine + " what a send would do…";
     var body = whatIsPlanned();
+    var asked = JSON.stringify(body);
     body.machine = machine;
     whileAsking("run", ask("POST", "/api/remote/plan", body)).then(function (said) {
-      go.disabled = !builderReady();
+      if (syncNow) syncNow();
       if (!said.ok) {
-        note.textContent = said.error || "It could not be planned.";
+        note.textContent = forThePage(said.error || "It could not be planned.");
         note.dataset.ok = "false";
         return;
       }
+      if (asItIsNow() !== asked) {
+        note.textContent = CHANGED;
+        return;
+      }
       if (body.state) keepResultsName(said.results);
+      plannedAs = asItIsNow();
       note.textContent = "Planned: what a send to " + said.machine
         + " would do is below. Nothing has been sent.";
       showPlan(said, host, note, go);
     });
+  }
+
+  /* A plan shown of a study the form no longer holds is taken away, and
+   * said; whether it was. */
+  function staleTakenAway() {
+    if (plannedAs === null || asItIsNow() === plannedAs) return false;
+    if (!clearPlan()) return false;
+    var note = byId("run-remote-note");
+    if (note) {
+      note.dataset.ok = "";
+      note.textContent = CHANGED;
+    }
+    return true;
   }
 
   function line(list, text) {
@@ -329,8 +390,11 @@
       + Math.round((plan.kept_s || 600) / 60) + " minutes and sends once.");
     host.appendChild(kept);
     expiry = setTimeout(function () {
+      var focused = document.activeElement === send;
       send.disabled = true;
       kept.textContent = "This plan is no longer kept. Plan the send again.";
+      say(kept.textContent);
+      if (focused) go.focus();
     }, (plan.kept_s || 600) * 1000);
     not.addEventListener("click", function () {
       clearPlan();
@@ -338,32 +402,40 @@
       go.focus();
     });
     send.addEventListener("click", function () {
+      // What is sent is what was shown: a form changed since, by any door,
+      // sends nothing.
+      if (staleTakenAway()) {
+        go.focus();
+        return;
+      }
       if (expiry) { clearTimeout(expiry); expiry = null; }
       send.disabled = true;
       not.disabled = true;
       note.dataset.ok = "";
       note.textContent = "Sending to " + plan.machine + "…";
-      whileAsking("run", ask("POST", "/api/remote/send", { plan: plan.plan })).then(function (sent) {
+      var out = whileAsking("run", ask("POST", "/api/remote/send", { plan: plan.plan }));
+      if (syncNow) syncNow();
+      out.then(function (sent) {
         host.innerHTML = "";
         host.hidden = true;
-        note.tabIndex = -1;
-        note.focus();
-        if (!sent.ok) {
-          note.textContent = sent.error || "It was not sent.";
-          note.dataset.ok = "false";
-          return;
-        }
-        note.dataset.ok = "true";
-        note.textContent = "Sent to " + plan.machine + " as job " + sent.job.name
-          + ". It runs there on its own, whether or not this page stays open. ";
-        var open = button("builder-linkish", "Follow it under Remote jobs");
-        open.addEventListener("click", function () {
-          if (window.FastMDXDashboard && window.FastMDXDashboard.navigate) {
-            window.FastMDXDashboard.navigate("studies");
+        // Kept, so the page left and come back to says it still.
+        lastSent = sent.ok
+          ? { ok: true, text: "Sent to " + plan.machine + " as job " + sent.job.name
+              + ". It runs there on its own, whether or not this page stays open. " }
+          : { ok: false, text: forThePage(sent.error || "It was not sent.") };
+        var now = byId("run-remote-note") || note;
+        drawSent(now);
+        now.tabIndex = -1;
+        if (now.offsetParent) now.focus();
+        say(lastSent.text);
+        if (syncNow) syncNow();
+        machinesKnown().then(function () {
+          if (sayKnownNow) sayKnownNow();
+          var studies = document.querySelector('section.page[data-page="studies"]');
+          if (studies && !studies.hidden && !busy.studies && !askedIn(".remote-job-said button")) {
+            renderJobs();
           }
         });
-        note.appendChild(open);
-        machinesKnown().then(function () { if (sayKnownNow) sayKnownNow(); });
       });
     });
     title.focus();
@@ -467,8 +539,7 @@
     state.dataset.state = job.state;
     top.appendChild(state);
     top.appendChild(el("span", "muted small", "on " + job.machine
-      + (job.submitted_at ? ", sent " + String(job.submitted_at).replace("T", " ").slice(0, 16)
-        : "")));
+      + (job.submitted_at ? ", sent " + localTime(job.submitted_at) : "")));
     row.appendChild(top);
     row.appendChild(el("div", "muted small mono", "Results: " + job.results
       + (job.fetched_at ? " (fetched)" : "")));
@@ -496,10 +567,10 @@
     check.addEventListener("click", function () {
       asking(job, "Asking " + job.machine + "…",
         ask("GET", "/api/remote/job?job=" + encodeURIComponent(job.name)), function (got) {
-          if (!got.ok) return { said: got.error || "It could not be asked." };
+          if (!got.ok) return { said: forThePage(got.error || "It could not be asked.") };
           var at = new Date().toLocaleTimeString();
           return { job: got.job, said: "Asked at " + at + ". A machine is asked at most "
-            + "every 30 s, so this may be the answer it gave then." };
+            + "every 30 s, so this answer may be up to 30 s old." };
         }, "ask");
     });
     if (fetchIt) fetchIt.addEventListener("click", function () { askToFetch(job, said); });
@@ -507,17 +578,27 @@
     return row;
   }
 
+  /* A moment recorded in UTC, as this computer's clock says it. */
+  function localTime(iso) {
+    var when = new Date(String(iso));
+    if (isNaN(when.getTime())) return String(iso);
+    return when.toLocaleString([], { year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit" });
+  }
+
   /* A message written for the command line, said for this page. */
   function forThePage(text) {
-    return String(text).replace("fetch again with --with-trajectory to bring them",
-      "fetch again with the trajectory ticked to bring them");
+    return String(text)
+      .replace("fetch again with --with-trajectory to bring them",
+        "fetch again with the trajectory ticked to bring them")
+      .replace("works from this terminal", "works from a terminal on this computer");
   }
 
   function askToFetch(job, said) {
     asking(job, "Asking " + job.machine + " what a fetch would bring…",
       ask("GET", "/api/remote/fetch-sizes?job=" + encodeURIComponent(job.name)),
       function (sizes) {
-        if (!sizes.ok) return { said: sizes.error || "It could not be asked." };
+        if (!sizes.ok) return { said: forThePage(sizes.error || "It could not be asked.") };
         // Drawn once the row is drawn again, below.
         setTimeout(function () { offerFetch(job, sizes); }, 0);
         return { said: "" };
@@ -567,7 +648,7 @@
       asking(job, "Fetching " + size(n) + "…", ask("POST", "/api/remote/fetch", body),
         function (got) {
           if (!got.ok) {
-            return { said: (got.error || "It was not fetched.")
+            return { said: forThePage(got.error || "It was not fetched.")
               + (got.bringing !== undefined ? " It would bring " + size(got.bringing)
                 + " now." : "") };
           }
@@ -602,7 +683,7 @@
     yes.addEventListener("click", function () {
       asking(job, "Asking " + job.machine + " to stop it…",
         ask("POST", "/api/remote/cancel", { job: job.name }), function (got) {
-          if (!got.ok) return { said: got.error || "It could not be stopped." };
+          if (!got.ok) return { said: forThePage(got.error || "It could not be stopped.") };
           return { job: got.job, said: got.stopped ? "Asked to stop: it has stopped."
             : "Asked to stop; it may take a moment. Ask how it is doing to see." };
         }, "ask");
@@ -620,6 +701,7 @@
   function refresh(page) {
     if (page !== "run" && page !== "studies") return;
     machinesKnown().then(function () {
+      if (page === "run") staleTakenAway();
       if (page === "run" && !busy.run && !askedIn("#run-remote-planned:not([hidden])")) {
         renderRunOn();
       }
