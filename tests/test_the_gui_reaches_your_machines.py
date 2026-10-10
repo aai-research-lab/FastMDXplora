@@ -366,3 +366,39 @@ class TestTheConfigBuilder:
         assert plan["ok"], plan
         assert plan["config"] == "deep.yml" and plan["results"] == "newdir/deep"
         assert (root / "deep.yml").is_file() and not (root / "newdir").exists()
+
+    def test_a_file_named_relatively_is_sent_only_as_a_run_here_reads_it(
+            self, machine, monkeypatch):
+        """Third review: a GUI opened on a folder starts Run on this machine
+        in the folder above it, so a study naming mine.pdb would have read
+        that folder's mine.pdb here and sent the opened folder's."""
+        from fastmdxplora.gui.server import start_dashboard_session
+        from fastmdxplora.remote import api
+
+        parent = machine.study.parent
+        opened = parent / "opened"
+        opened.mkdir()
+        (parent / "mine.pdb").write_text("ATOM  parent\n")
+        (opened / "mine.pdb").write_text("ATOM\n")
+        from fastmdxplora.remote import send as sending
+
+        monkeypatch.setattr(api, "_link", lambda name, transport: machine.transport())
+        monkeypatch.setattr(api, "this_code", lambda: RELEASE)
+        monkeypatch.setattr(sending, "this_code", lambda: RELEASE)
+        session = start_dashboard_session(output=str(opened), host="127.0.0.1", port=0)
+        try:
+            address = session.url.split("//", 1)[1].rstrip("/")
+            state = {"system": "mine.pdb", "include_phase": ["setup"], "output": "where"}
+            status, said = _ask(address, "/api/remote/plan", {"state": state,
+                                                              "machine": "box"})
+            assert said["ok"] is False and said["code"] == "remote.input.outside"
+            assert "'mine.pdb' by a relative path" in said["error"]
+            assert not list(opened.glob("where*.yml"))
+            whole = {**state, "system": str(opened / "mine.pdb")}
+            status, plan = _ask(address, "/api/remote/plan", {"state": whole,
+                                                              "machine": "box"})
+            assert plan["ok"], plan
+            assert [t["from"] for t in plan["travels"]] == ["mine.pdb"]
+        finally:
+            session.server.shutdown()
+        assert not any(c.startswith("mkdir") for c in machine.commands)

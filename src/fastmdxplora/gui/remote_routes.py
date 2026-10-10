@@ -61,6 +61,39 @@ _HOSTED = _refused("Not available in a hosted GUI: its studies run on its servic
                    hosted=True)
 
 
+def _named_relatively(text: str, folders: list[Path]) -> list[str]:
+    """Each value in a config's text that names, by a relative path, a file
+    or folder in one of ``folders``: the results folder aside."""
+    import yaml
+
+    from fastmdxplora.remote.inputs import _existing
+
+    try:
+        config = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return []
+    found: list[str] = []
+
+    def walk(value: Any, top: bool) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if not (top and key == "output"):
+                    walk(item, False)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, False)
+        elif isinstance(value, str):
+            try:
+                relative = not Path(value).expanduser().is_absolute()
+            except (RuntimeError, ValueError):
+                return
+            if relative and any(_existing(value, folder) is not None for folder in folders):
+                found.append(value)
+
+    walk(config, True)
+    return found
+
+
 def _said(exc: BaseException) -> dict[str, Any]:
     found = refusal_of(exc)
     return _refused(found.message, found.code)
@@ -253,15 +286,17 @@ class RemoteDesk:
                ) -> tuple[Path | None, dict[str, Any] | None, bool]:
         """The Config Builder's study saved as a config file, named after the
         results folder it names (``<results>.yml``, or ``-2``, ``-3`` and so
-        on beside an earlier one), in the folder the files it names by a
-        relative path are read from, as **Run on this machine** reads them:
-        the folder new studies go in, given the window's runtime, else the
-        folder opened. Saved beside a results folder elsewhere, a study
-        naming ``top.pdb`` named a file that was not there, and nothing said
-        so. The same text planned again is the same file; a link, or a file
-        that is not the same text, is passed over and never read or written.
-        Also whether the file was written now (and so is taken back where
-        the plan is refused)."""
+        on beside an earlier one), in the workspace's folder: the folder new
+        studies go in, given the window's runtime, else the folder opened.
+        A file the study names by a relative path is refused where **Run on
+        this machine** would read it from another folder (it starts the run
+        in the folder new studies go in, the one above the folder opened as
+        ``fastmdx gui`` sets it), so what travels is never a different file
+        under the same name; its full path names it either way. The same
+        text planned again is the same file; a link, or a file that is not
+        the same text, is passed over and never read or written. Also
+        whether the file was written now (and so is taken back where the
+        plan is refused)."""
         from fastmdxplora.gui.config_builder import config_yaml
         from fastmdxplora.naming import default_output_name, system_of
 
@@ -295,6 +330,17 @@ class RemoteDesk:
             return None, _refused(str(built.get("error") or "The study could not be "
                                       "written as a config."), str(built.get("code") or "")), False
         text = str(built["yaml"])
+        run_reads = (Path(self.runtime.exploration_root).expanduser().resolve()
+                     if self.runtime is not None else self.root.parent)
+        if run_reads != base:
+            named = _named_relatively(text, [base, run_reads])
+            if named:
+                return None, _refused(
+                    f"The study names {named[0]!r} by a relative path, which Run on "
+                    f"this machine reads from {run_reads} and a send from {base}: give "
+                    "its full path (the file picker beside the field does), so the "
+                    "file that travels is the one a run here would read.",
+                    "remote.input.outside"), False
         for n in range(1, 1000):
             target = base / (f"{output.name}.yml" if n == 1 else f"{output.name}-{n}.yml")
             try:

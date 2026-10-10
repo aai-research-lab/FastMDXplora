@@ -495,9 +495,12 @@ travels has changed since it was shown, a file rewritten at the same size
 included, and if the form has changed since: the plan is taken away and
 asked for again. A study built in the form is saved first as a config named
 after its results folder (`<results>.yml`, or `-2` and so on beside an
-earlier one), in the folder new studies go in, where the files it names by a
-relative path are read from, as **Run on this machine** reads them; with
-**A config I have**, the file checked is the one planned. A results folder
+earlier one), in the folder the GUI was opened on; the plan says where its
+results come back to. A file the study names by a relative path is refused
+(`remote.input.outside`) where **Run on this machine**, which starts in the
+folder above, would read another file of that name: give its full path (the
+file picker beside the field does), so what travels is what a run here
+would read. With **A config I have**, the file checked is the one planned. A results folder
 left blank is given the name the plan chose, in the form, so the study
 planned again is saved to the same file. One plan or send is out at a time,
 and what it answers is said on the page, left and come back to or not.
