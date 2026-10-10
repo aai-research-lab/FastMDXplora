@@ -2855,8 +2855,10 @@ button.settings-item:hover { background: var(--background-secondary); color: var
     min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right;
 }
 @media (max-width: 800px) {
-    /* On a phone, a dialog is the screen. */
-    .agent-dialog { padding: 0; }
+    /* On a phone, a dialog is the screen. Its one row is the screen's
+       height, so the panel's 100% is that and its body scrolls, rather
+       than the row growing with what the dialog holds. */
+    .agent-dialog { padding: 0; grid-template-rows: minmax(0, 1fr); }
     .agent-dialog-panel,
     .agent-dialog-panel.dialog-narrow {
         width: 100%;
@@ -3509,6 +3511,53 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
 .agent-feedback[data-feedback="wrong"][aria-pressed="true"] { color: var(--status-error);
     border-color: var(--status-error); }
 .agent-usage { font-variant-numeric: tabular-nums; }
+/* What the Agent remembers of the person (agent-panel.js renderMemory), in
+   its Settings, and the note under a reply when a chat changed it. */
+.agent-memory { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-primary);
+    display: flex; flex-direction: column; gap: 8px; }
+.agent-memory-switches { display: flex; flex-direction: column; gap: 6px; }
+.agent-memory-switch { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.agent-memory-switch input { margin-top: 3px; }
+.agent-memory-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+    gap: 2px; max-height: 280px; overflow-y: auto; }
+.agent-memory-line { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; }
+.agent-memory-line:hover { background: var(--panel-glass); }
+.agent-memory-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.agent-memory-meta { color: var(--text-muted); font-size: var(--text-xs); flex: 0 0 auto; }
+.agent-memory-held .agent-memory-meta { flex: 0 1 45%; }
+.agent-memory-line input, .agent-memory-add input { flex: 1 1 auto; min-width: 0; min-height: 34px;
+    padding: 6px 10px; color: var(--text-primary); border: 1px solid var(--border-primary);
+    border-radius: 8px; background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
+    font: inherit; }
+.agent-memory-line input:focus, .agent-memory-add input:focus { outline: none;
+    border-color: color-mix(in srgb, var(--accent-cyan) 62%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-cyan) 8%, transparent); }
+.agent-memory-add, .agent-memory-foot { display: flex; align-items: center; gap: 8px; }
+.agent-memory-foot { justify-content: flex-end; }
+.agent-memory-foot .agent-memory-meta { flex: 1 1 auto; }
+.agent-memory-empty { color: var(--text-muted); padding: 4px 6px; }
+.agent-memory-problem { color: var(--status-error); }
+.agent-memory-note { margin-top: 8px; padding: 6px 10px; border-left: 2px solid var(--accent-cyan);
+    color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
+.agent-memory-note-row { display: flex; align-items: center; gap: 6px; }
+.agent-memory-off { opacity: 0.55; }
+.agent-memory-group { color: var(--text-muted); font-size: var(--text-xs); font-weight: 600;
+    padding: 6px 6px 0; }
+/* Never display: none, even empty: a live region taken out of the page is
+   not heard when it comes back. */
+.agent-memory-status:empty { margin: 0; }
+.agent-memory .builder-card-note { overflow-wrap: anywhere; }
+.agent-memory-asking { flex-wrap: wrap; }
+.agent-memory-clear { color: var(--status-error); }
+/* On a phone the dialog is the screen and scrolls as one: the lists are not
+   a second scrolling box inside it, and a line not told to me has its
+   reason under it. */
+@media (max-width: 500px) {
+    .agent-memory-lines { max-height: none; overflow: visible; }
+    .agent-memory-line { flex-wrap: wrap; }
+    .agent-memory-held .agent-memory-meta { flex: 1 1 100%; }
+    .agent-memory-asking .agent-memory-meta { flex: 1 1 100%; }
+}
 /* A question's candidates, as buttons: the identifier, then what it is. */
 .agent-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 8px; max-width: 760px; }

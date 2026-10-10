@@ -725,6 +725,425 @@
   function openSettings() {
     if (window.FastMDXDialog) window.FastMDXDialog.open("agent-settings");
     else el("agent-settings").hidden = false;
+    loadMemory();
+  }
+
+  /* What the Agent remembers of the person (agent/memory.py): shown and
+   * changed in its Settings, every line with where it came from, and said
+   * under a reply when a chat changed it, with Undo. The file is theirs
+   * too (agent_memory.md); this reads and changes it through
+   * /api/agent/memory, the same as `fastmdx agent memory`. */
+  var memoryState = null;
+
+  function memoryBox() {
+    var box = el("agent-memory");
+    if (box) return box;
+    var body = document.querySelector("#agent-settings .agent-dialog-body");
+    if (!body) return null;
+    box = document.createElement("section");
+    box.id = "agent-memory";
+    box.className = "agent-memory";
+    box.setAttribute("aria-label", "What the Agent remembers of you");
+    body.appendChild(box);
+    /* Made once, beside the section rather than in it, so a screen reader
+     * hears each change to it: a live region drawn anew is not heard. */
+    var status = memoryNode("p", "builder-card-note agent-memory-status");
+    status.id = "agent-memory-status";
+    status.setAttribute("role", "status");
+    body.appendChild(status);
+    return box;
+  }
+
+  function memoryStatus(said) {
+    var status = el("agent-memory-status");
+    if (!status) return;
+    status.textContent = "";
+    if (said) setTimeout(function () { status.textContent = said; }, 60);
+  }
+
+  /* Asked of the server, then the section drawn again with focus where
+   * the person was (`focus`: "add", "switch-use", "switch-from_chats",
+   * "line-N", "foot") and, where it was refused, what they typed kept. */
+  function memoryAsk(payload, focus, typed, done) {
+    return post("/api/agent/memory", payload).then(function (data) {
+      if (data && data.lines) memoryState = data;
+      // A refusal (a key, a line too long) is said where it was asked.
+      var refused = data && data.ok === false;
+      // A refusal is said in the status line too, so it is heard.
+      renderMemory(refused ? data : null, refused ? typed : "",
+                   refused ? (data.error || "") : done);
+      memoryFocus(refused && typed ? "add" : focus);
+      return data;
+    }).catch(function () {
+      var unreached = "The memory could not be reached; nothing was changed.";
+      renderMemory({ error: unreached }, typed, unreached);
+      memoryFocus(focus);
+      return null;
+    });
+  }
+
+  function memoryFocus(where) {
+    var box = el("agent-memory");
+    if (!box || !where) return;
+    var target = null;
+    if (where === "add") target = box.querySelector(".agent-memory-add input");
+    else if (where.indexOf("switch-") === 0) {
+      target = box.querySelector('[data-switch="' + where.slice(7) + '"]');
+    } else if (where.indexOf("line-") === 0) {
+      var rows = box.querySelectorAll(".agent-memory-lines:not(.agent-memory-held) " +
+                                      ".agent-memory-line");
+      var row = rows[Math.min(parseInt(where.slice(5), 10), rows.length - 1)];
+      target = row ? row.querySelector("button") : null;
+    } else if (where === "foot") target = box.querySelector(".agent-memory-foot button");
+    else if (where === "clear") {
+      target = box.querySelector('.agent-memory-foot button[aria-label="Forget everything"]');
+    }
+    (target || box.querySelector(".agent-memory-add input")).focus();
+  }
+
+  function loadMemory() {
+    var box = memoryBox();
+    if (!box) return Promise.resolve(null);
+    return fetch("/api/agent/memory").then(function (r) { return r.json(); })
+      .then(function (data) {
+        memoryState = data && data.lines ? data : null;
+        renderMemory(memoryState ? null : data);
+        return data;
+      }).catch(function () {
+        memoryState = null;
+        renderMemory({ error: "What the Agent remembers could not be read." });
+      });
+  }
+
+  function memoryNode(tag, cls, text) {
+    var made = document.createElement(tag);
+    if (cls) made.className = cls;
+    if (text !== undefined) made.textContent = text;
+    return made;
+  }
+
+  function memoryWhen(line) {
+    var when = (line.updated || line.added || "").slice(0, 10);
+    var from = line.source === "chat" ? "from a chat" : "yours";
+    return when ? from + ", " + when : from;
+  }
+
+  /* `done`: what the person just did, said in the section's status line
+   * for a screen reader as well as on the page. */
+  function renderMemory(problem, typed, done) {
+    var box = memoryBox();
+    if (!box) return;
+    box.innerHTML = "";
+    box.appendChild(memoryNode("div", "builder-label", "What I remember of you"));
+    var data = memoryState;
+    if (!data) {
+      box.appendChild(memoryNode("p", "builder-card-note",
+        (problem && problem.error) || "This GUI keeps no memory of you."));
+      return;
+    }
+    box.appendChild(memoryNode("p", "builder-card-note",
+      "Told to me with each message, so my answers suit you; never a setting's " +
+      "value (those go in your fastmdx-defaults.yml)."));
+    if (data.unreadable) {
+      box.appendChild(memoryNode("p", "builder-card-note agent-memory-problem",
+        "It could not be read: " + data.unreadable));
+    }
+    if (problem && problem.error) {
+      var said = memoryNode("p", "builder-card-note agent-memory-problem", problem.error);
+      said.id = "agent-memory-problem";
+      box.appendChild(said);
+    }
+    var switches = memoryNode("div", "agent-memory-switches");
+    [["use", "Use this memory"],
+     ["from_chats", "Learn from what you write to me (each message I read for it " +
+      "costs one more short call to your provider)"]].forEach(function (pair) {
+      var label = memoryNode("label", "agent-memory-switch");
+      var tick = document.createElement("input");
+      tick.type = "checkbox";
+      tick.checked = !!data[pair[0]];
+      tick.setAttribute("data-switch", pair[0]);
+      // Nothing is learnt for a memory that is not used.
+      if (pair[0] === "from_chats" && !data.use) {
+        tick.disabled = true;
+        label.classList.add("agent-memory-off");
+      }
+      tick.addEventListener("change", function () {
+        var ask = { op: "switches" };
+        ask[pair[0]] = tick.checked;
+        memoryAsk(ask, "switch-" + pair[0], "",
+                  pair[1].replace(/ \(.*$/, "") + (tick.checked ? ": on." : ": off."));
+      });
+      label.appendChild(tick);
+      label.appendChild(memoryNode("span", null, pair[1]));
+      switches.appendChild(label);
+    });
+    box.appendChild(switches);
+    box.appendChild(memoryNode("p", "builder-card-note",
+      data.use ? "Each change here is kept at once, in " + data.where + "."
+               : "Off: nothing here is told to me, and nothing is learnt from what you " +
+                 "write. What is here stays, in " + data.where + ", for when you turn it on."));
+
+    var list = memoryNode("ul", "agent-memory-lines");
+    if (!data.use) list.classList.add("agent-memory-off");
+    if (!data.lines.length) {
+      list.appendChild(memoryNode("li", "agent-memory-empty", "Nothing yet."));
+    }
+    var group = "";
+    data.lines.forEach(function (line, index) {
+      // The person's own groups in the file (### Systems), as they made them.
+      if ((line.heading || "") !== group) {
+        group = line.heading || "";
+        if (group) {
+          list.appendChild(memoryNode("li", "agent-memory-group",
+                                      group.replace(/^#+\s*/, "")));
+        }
+      }
+      var row = memoryNode("li", "agent-memory-line");
+      var words = memoryNode("span", "agent-memory-text", line.text);
+      var meta = memoryNode("span", "agent-memory-meta", memoryWhen(line));
+      var edit = window.FastMDXIcons.button("edit", "Change: " + line.text);
+      var bin = window.FastMDXIcons.button("bin", "Forget: " + line.text);
+      edit.addEventListener("click", function () { memoryEdit(row, line); });
+      bin.addEventListener("click", function () {
+        memoryAsk({ op: "forget", id: line.id }, "line-" + index, "",
+                  "Forgot: " + line.text);
+      });
+      row.appendChild(words);
+      row.appendChild(meta);
+      row.appendChild(edit);
+      row.appendChild(bin);
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    var add = memoryNode("div", "agent-memory-add");
+    var input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = data.most_line || 300;
+    input.placeholder = "Something for me to remember, such as \"You are new to MD.\"";
+    input.setAttribute("aria-label", "A line to remember");
+    if (typed) input.value = typed;
+    if (typed && problem && problem.error) {
+      // What was typed is refused: the reason is the box's description.
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("aria-describedby", "agent-memory-problem");
+    }
+    var keep = window.FastMDXIcons.button("new", "Remember this");
+    function remembered() {
+      var text = input.value.trim();
+      if (!text) return;
+      memoryAsk({ op: "add", text: text }, "add", text, "Remembered: " + text);
+    }
+    keep.addEventListener("click", remembered);
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); remembered(); }
+    });
+    add.appendChild(input);
+    add.appendChild(keep);
+    box.appendChild(add);
+
+    if (data.not_told && data.not_told.length) {
+      box.appendChild(memoryNode("div", "builder-label", "In your file, not told to me"));
+      box.appendChild(memoryNode("p", "builder-card-note",
+        "Lines I found in the file and do not tell myself, with why. To keep one, " +
+        "write it again above (a value for every study goes in your " +
+        "fastmdx-defaults.yml instead); to take one out, change the file itself, in " +
+        data.where + "."));
+      var held = memoryNode("ul", "agent-memory-lines agent-memory-held");
+      data.not_told.forEach(function (item) {
+        var row = memoryNode("li", "agent-memory-line");
+        row.appendChild(memoryNode("span", "agent-memory-text", item.text));
+        row.appendChild(memoryNode("span", "agent-memory-meta", item.why));
+        held.appendChild(row);
+      });
+      box.appendChild(held);
+    }
+
+    var foot = memoryNode("div", "agent-memory-foot");
+    var last = (data.changes || []).filter(function (c) { return !c.undone; }).pop();
+    if (last) {
+      foot.appendChild(memoryNode("span", "agent-memory-meta", "The last change. " +
+        memorySaid(last)));
+      var back = window.FastMDXIcons.button("undo", "Undo this. " + memorySaid(last));
+      back.addEventListener("click", function () {
+        memoryAsk({ op: "undo", change: last.id }, "foot", "", memoryUndone(last));
+      });
+      foot.appendChild(back);
+    }
+    if (data.lines.length || (data.not_told && data.not_told.length)) {
+      var clear = window.FastMDXIcons.button("erase", "Forget everything");
+      clear.addEventListener("click", function () { memoryClearAsked(foot); });
+      foot.appendChild(clear);
+    }
+    box.appendChild(foot);
+    memoryStatus(done || "");
+  }
+
+  /* Forget everything is asked in place, in the foot: a sentence saying
+   * what goes and what stays, then the two answers, the safe one first. */
+  function memoryClearAsked(foot) {
+    foot.innerHTML = "";
+    foot.classList.add("agent-memory-asking");
+    var ask = memoryNode("span", "agent-memory-meta",
+      "Forget every line I remember of you? Your own notes in the file stay, " +
+      "and this cannot be undone.");
+    ask.id = "agent-memory-clear-ask";
+    var keep = memoryNode("button", "ctl-btn", "Keep them");
+    var go = memoryNode("button", "ctl-btn agent-memory-clear", "Forget everything");
+    keep.type = go.type = "button";
+    go.setAttribute("aria-describedby", ask.id);
+    function kept() {
+      window.removeEventListener("keydown", escaped, true);
+      renderMemory(null);
+      memoryFocus("clear");
+    }
+    /* Escape answers the question as Keep them, and leaves the dialog open:
+     * caught on the window, before the dialog's own handler. */
+    function escaped(e) {
+      if (e.key === "Escape" && foot.contains(e.target)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        kept();
+      }
+    }
+    window.addEventListener("keydown", escaped, true);
+    keep.addEventListener("click", kept);
+    go.addEventListener("click", function () {
+      window.removeEventListener("keydown", escaped, true);
+      memoryAsk({ op: "clear" }, "add", "", "Forgot everything I remembered of you.");
+    });
+    foot.appendChild(ask);
+    foot.appendChild(keep);
+    foot.appendChild(go);
+    keep.focus();
+  }
+
+  function memorySaid(change) {
+    if (change.what === "added") return "Remembered: " + change.text;
+    if (change.what === "changed") return "Changed what I remember: " + change.text;
+    return "Forgot: " + change.text;
+  }
+
+  /* What an undo did, said from the person's side of it. */
+  function memoryUndone(change) {
+    if (change.what === "added") return "Undone: I no longer remember " + change.text;
+    if (change.what === "changed") return "Undone: the line has its earlier words again.";
+    return "Undone: I remember again " + change.text;
+  }
+
+  function memoryEdit(row, line) {
+    row.innerHTML = "";
+    var input = document.createElement("input");
+    input.type = "text";
+    input.value = line.text;
+    input.maxLength = (memoryState && memoryState.most_line) || 300;
+    input.setAttribute("aria-label", "New words for this line");
+    var save = window.FastMDXIcons.button("check", "Keep these words");
+    var cancel = window.FastMDXIcons.button("close", "Leave it as it was");
+    var at = Array.prototype.indexOf.call(row.parentNode.children, row);
+    function left() {
+      window.removeEventListener("keydown", escaped, true);
+      renderMemory(null);
+      memoryFocus("line-" + at);
+    }
+    function kept() {
+      var text = input.value.trim();
+      if (!text || text === line.text) { left(); return; }
+      window.removeEventListener("keydown", escaped, true);
+      memoryAsk({ op: "change", id: line.id, text: text }, "line-" + at, "",
+                "Changed what I remember: " + text);
+    }
+    /* Escape in the edit box leaves the edit, not the dialog: caught on
+     * the window, before the dialog's own handler on the document. */
+    function escaped(e) {
+      if (e.key === "Escape" && e.target === input) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        left();
+      }
+    }
+    window.addEventListener("keydown", escaped, true);
+    save.addEventListener("click", kept);
+    cancel.addEventListener("click", left);
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); kept(); }
+    });
+    row.appendChild(input);
+    row.appendChild(save);
+    row.appendChild(cancel);
+    input.focus();
+  }
+
+  /* After a reply the server reads what the person wrote for the memory,
+   * in its own time (`memory: "reading"`): asked for a while what that one
+   * reply changed, and each change said under the reply, with Undo. */
+  function memoryUnder(node, replyKey) {
+    /* Asked until the server says the reading is done, however long the
+     * AI model takes (a local one may take minutes), and through a failed
+     * ask or two; given up after ten minutes. */
+    var began = Date.now();
+    var wait = 1500;
+    function again() {
+      if (Date.now() - began > 600000) return;
+      setTimeout(look, wait);
+      wait = Math.min(wait * 1.5, 15000);
+    }
+    function look() {
+      fetch("/api/agent/memory?reply=" + encodeURIComponent(replyKey))
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data && data.reading) { again(); return; }
+          var made = (data && data.changes) || [];
+          if (made.length) memoryNoted(node, made);
+        }).catch(again);
+    }
+    again();
+  }
+
+  function memoryNoted(node, made) {
+    var body = node.querySelector('[data-role="body"]') || node;
+    var note = memoryNode("div", "agent-memory-note");
+    note.setAttribute("role", "status");
+    note.tabIndex = -1;
+    made.forEach(function (change) {
+      var row = memoryNode("div", "agent-memory-note-row");
+      var said = memoryNode("span", null, memorySaid(change));
+      row.appendChild(said);
+      if (!change.undone) {
+        var back = window.FastMDXIcons.button("undo", "Undo: " + memorySaid(change));
+        back.addEventListener("click", function () {
+          post("/api/agent/memory", { op: "undo", change: change.id }).then(function (a) {
+            if (a && (a.ok || a.undone_already)) {
+              // Undone here, or in Settings or by the command since: said,
+              // not an error.
+              said.textContent = memoryUndone(change);
+            } else {
+              // Why not, after what it was about, so the line is still said.
+              said.textContent = memorySaid(change) + ". " +
+                ((a && a.error) || "It could not be undone.");
+            }
+            // The button goes; the focus stays in the note, not lost.
+            if (document.activeElement === back) note.focus();
+            back.remove();
+            // Settings, if it is open, shows the memory as it now is; only
+            // with the memory sent back, so nothing open there is lost.
+            if (a && a.lines) {
+              memoryState = a;
+              if (el("agent-memory")) renderMemory(null);
+            }
+          }).catch(function () {
+            said.textContent = memorySaid(change) + ". The memory could not be reached, " +
+              "so it is not undone yet.";
+          });
+        });
+        row.appendChild(back);
+      }
+      note.appendChild(row);
+    });
+    var edit = window.FastMDXIcons.button("gear", "What I remember, in Settings");
+    edit.addEventListener("click", openSettings);
+    note.lastChild.appendChild(edit);
+    body.appendChild(note);
   }
   function closeSettings() {
     if (window.FastMDXDialog) window.FastMDXDialog.close("agent-settings");
@@ -1445,8 +1864,14 @@
       return !leaving && saidHere.indexOf(said) >= 0;
     }
     answering = said;
+    /* This reply's key: what the memory learns from the message is asked
+     * for by it, and said under this reply. */
+    var replyKey = "r-" + Date.now().toString(36) + "-" +
+      Math.random().toString(36).slice(2, 8);
     propose({
       request: request,
+      reply_key: replyKey,
+      conversation: mine && mine.id ? String(mine.id) : null,
       records_question: asked,
       agent: el("agent-mode").value,
       history: history.slice(0, -1),
@@ -1457,6 +1882,7 @@
     }, box).then(function (data) {
       if (!stands() || elsewhere()) return;
       box.innerHTML = "";
+      if (data.memory === "reading") memoryUnder(r.node, replyKey);
       looked(box, data.looks);
       refusals(box, data.attempts, !!data.ok);
       sent(box, data.context_receipt);
