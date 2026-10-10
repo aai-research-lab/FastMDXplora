@@ -475,6 +475,37 @@ above all, which ends only by hand.
 
 ---
 
+## From the GUI
+
+A machine inspected at a terminal is offered in the GUI too, on your own
+computer only (the GUI on loopback; never a hosted one, whose studies run on
+its service's compute).
+
+**New study** (the [Config](config.md) builder) has **Plan the send** beside
+**Run on this machine**, with your machines to choose from and what each
+was found to be when last inspected. Once the study could run here, the plan
+asks the machine and shows what a send would do, sending nothing: where it
+runs, its folder there, the config, where the results come back to, every
+file that travels with its size, the GPUs' room, and the job script.
+**Send** sends that plan and nothing else: the plan is kept ten minutes, is
+sent once, and is refused (`remote.send.unconfirmed`) if anything that
+travels has changed since it was shown, a file rewritten at the same size
+included. A study built in the form is saved first as a config beside its
+results folder (`<results>.yml`, or `-2` and so on beside an earlier one),
+where **Run on this machine** would write it; with **A config I have**, the
+file checked is the one planned.
+
+**All studies** lists under **Remote jobs** the jobs whose results come back
+into the workspace. **Ask how it is doing** asks the machine (at most every
+30 s, as `fastmdx remote status` does). **Fetch the results** first asks
+what a fetch would bring and says it, the trajectory as a choice of its
+own, and brings only that much (`remote.fetch.unconfirmed` where the
+machine now says otherwise); the study fetched joins the others on the
+page. **Stop it**, on a job still going, asks once more, then stops it as
+`fastmdx remote cancel` does: what it wrote stays there and can be fetched.
+
+---
+
 ## Machines you have inspected
 
 ```bash

@@ -217,6 +217,8 @@ FastMDXplora/
 │       │   │                      #   palette.js (go to anything, Cmd+K), stop-run.js (Stop the
 │       │   │                      #   run, asked first, wherever it is offered), run-notice.js
 │       │   │                      #   (progress in the tab's title, a notice at the end);
+│       │   │                      #   remote.js and remote.css (Run on one of your machines,
+│       │   │                      #   and Remote jobs on All studies);
 │       │   │                      #   chats.js (the study's conversations and Chats in the sidebar);
 │       │   │                      #   scene-view.js
 │       │   │                      #   (a scene on a page of its own)

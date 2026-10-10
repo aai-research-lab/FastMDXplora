@@ -249,3 +249,60 @@ class TestTheGate:
         assert desk.get("/api/status", {}) is None
         assert desk.post("/api/run", {}) is None
         assert desk.get("/api/remote/nothing", {}) is None
+
+
+STATE = {"system": "1UBQ", "include_phase": ["setup", "simulation"], "output": "ub-run"}
+
+
+class TestTheConfigBuilder:
+    """Run on a machine from the Config Builder: the study is saved as a
+    config beside its results folder, as Run on this machine saves it, and
+    that file is what is planned and sent."""
+
+    def test_the_study_is_saved_beside_its_results_and_planned(self, served):
+        address, machine = served
+        root = machine.study.parent
+        status, plan = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        assert plan["ok"], plan
+        assert plan["config"] == "ub-run.yml" and plan["results"] == "ub-run"
+        assert plan["fetched_there"] == ["1UBQ"]
+        saved = (root / "ub-run.yml").read_text()
+        assert "1UBQ" in saved
+        assert not _sent(machine)
+        # Planned again as it stands: the same file, not another beside it.
+        status, again = _ask(address, "/api/remote/plan", {"state": STATE, "machine": "box"})
+        assert again["config"] == "ub-run.yml"
+        assert sorted(p.name for p in root.glob("ub-run*.yml")) == ["ub-run.yml"]
+        # Changed: a file of its own, the first left as it was.
+        status, other = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "include_phase": ["setup"]}, "machine": "box"})
+        assert other["config"] == "ub-run-2.yml"
+        assert (root / "ub-run.yml").read_text() == saved
+        status, sent = _ask(address, "/api/remote/send", {"plan": plan["plan"]})
+        assert sent["ok"] and sent["job"]["name"] == "ub-run", sent
+        travels._until_finished(machine, "ub-run")
+
+    def test_a_results_folder_outside_the_workspace_is_refused(self, served, tmp_path):
+        address, machine = served
+        status, said = _ask(address, "/api/remote/plan", {
+            "state": {**STATE, "output": str(tmp_path / "elsewhere" / "run")},
+            "machine": "box"})
+        assert said["ok"] is False and "inside the workspace" in said["error"]
+        assert not (tmp_path / "elsewhere").exists()
+        assert machine.commands == []
+
+    def test_a_window_reaches_the_folder_it_puts_new_studies_in(self, machine, tmp_path):
+        """Given the window's runtime, the routes reach the folder it puts
+        new studies in as well as the one it opened, and a bare results
+        name is where Run on this machine would write it."""
+        root = machine.study.parent
+        opened = root / "opened"
+        opened.mkdir()
+        desk = RemoteDesk(DashboardRuntime(workspace_root=opened, exploration_root=root))
+        assert desk.roots == [opened.resolve(), root.resolve()]
+        assert desk.inside(str(machine.study)) == machine.study.resolve()
+        # A relative name is the opened folder's, as a page gives it.
+        assert desk.inside("study.yml") == opened.resolve() / "study.yml"
+        saved, refused = desk._saved(STATE)
+        assert refused is None and saved == root.resolve() / "ub-run.yml"
+        assert desk.inside(str(tmp_path.parent)) is None

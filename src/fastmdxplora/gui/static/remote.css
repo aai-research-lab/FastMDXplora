@@ -1,0 +1,41 @@
+/* Your machines on the page (remote.js): Run on a machine in the Config
+   Builder, and Remote jobs on All studies. */
+.remote-run { display: flex; flex-direction: column; gap: 8px; margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+.remote-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.remote-run-machine { min-width: 10rem; max-width: 100%; }
+.remote-plan { display: flex; flex-direction: column; gap: 8px; padding: 12px;
+    border: 1px solid var(--border-primary); border-radius: 10px; }
+.remote-plan-title { font-weight: 600; }
+.remote-plan-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px; margin: 0; font-size: var(--text-xs, 12px); }
+.remote-plan-facts dt { color: var(--text-muted); }
+.remote-plan-facts dd { margin: 0; overflow-wrap: anywhere; }
+.remote-plan-k { color: var(--text-muted); font-size: var(--text-xs, 12px); }
+.remote-plan-list { margin: 0; padding-left: 1.2em; font-size: var(--text-xs, 12px);
+    overflow-wrap: anywhere; }
+.remote-plan-script pre { max-height: 16rem; overflow: auto; white-space: pre-wrap;
+    overflow-wrap: anywhere; }
+.remote-plan-answers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.remote-run-note[data-ok="false"] { color: var(--status-error); }
+.remote-run-note[data-ok="true"] { color: var(--status-completed); }
+.remote-jobs { margin-bottom: 14px; }
+.remote-jobs-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+    margin-bottom: 8px; }
+.remote-jobs-list { list-style: none; margin: 0; padding: 0; display: flex;
+    flex-direction: column; gap: 10px; }
+.remote-job { display: flex; flex-direction: column; gap: 4px; padding: 10px 0;
+    border-top: 1px solid var(--border-subtle); min-width: 0; }
+.remote-job:first-child { border-top: 0; padding-top: 0; }
+.remote-job-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.remote-job-name { font-weight: 600; overflow-wrap: anywhere; }
+.remote-job-state { font-size: var(--text-xs, 12px); padding: 1px 8px; border-radius: 999px;
+    border: 1px solid var(--border-primary); }
+.remote-job-state[data-state="running"],
+.remote-job-state[data-state="ready"] { color: var(--status-live); border-color: currentColor; }
+.remote-job-state[data-state="done"] { color: var(--status-completed); border-color: currentColor; }
+.remote-job-state[data-state="failed"] { color: var(--status-error); border-color: currentColor; }
+.remote-job-state[data-state="abandoned"] { color: var(--status-stale); }
+.remote-job-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.remote-job-said:empty { display: none; }
+.remote-job-said { display: flex; flex-direction: column; gap: 6px; }

@@ -8,6 +8,7 @@
   <script src="/static/theme-first.js"></script>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="stylesheet" href="/static/remote.css">
   <!--__FASTMDX_LAB_ICON__-->
   <meta name="fastmdx-expansion" content="Fully Automated SysTem for Molecular Dynamics eXploration">
 </head>
@@ -649,6 +650,7 @@
                     title="Clear"><!--icon:erase:line-icon--></button>
           </div>
           <div class="card studies-compared" id="studies-compared" hidden></div>
+          <section class="card remote-jobs" id="remote-jobs" aria-labelledby="remote-jobs-title" hidden></section>
           <div class="studies-grid" id="studies-grid" role="list"></div>
           <!-- The same studies as rows, sorted by a column's head
                (studies.js). -->
@@ -828,6 +830,7 @@
                 <button type="button" class="primary-btn builder-run" id="run-start-button" disabled>Run on this machine</button>
                 <button type="button" class="danger-btn builder-run" id="run-stop" data-stop-run="run-stop-ask" hidden>Stop the run</button>
                 <div class="stop-run-ask" id="run-stop-ask" data-stop-ask role="status" hidden></div>
+                <div class="remote-run" id="run-remote" hidden></div>
                 <div class="builder-actions-row">
                   <button type="button" class="line-btn" id="run-download" disabled aria-label="Download config"
                           title="Download config"><!--icon:download:line-icon--></button>
@@ -2002,6 +2005,7 @@
   <script src="/static/fixes.js"></script>
   <script src="/static/stop-run.js"></script>
   <script src="/static/studies.js"></script>
+  <script src="/static/remote.js"></script>
   <script src="/static/molecule-viewer.js"></script>
   <script src="/static/viewer-rail.js"></script>
   <script src="/static/palette.js"></script>

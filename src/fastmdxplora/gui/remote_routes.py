@@ -66,26 +66,56 @@ def _said(exc: BaseException) -> dict[str, Any]:
 
 
 class RemoteDesk:
-    """The remote routes of one GUI server, held to its workspace."""
+    """The remote routes of one GUI server, held to its workspace: the
+    folder the window was opened on and, given the window's runtime, the
+    folder it puts new studies in."""
 
-    def __init__(self, workspace_root: str | Path, *, hosted: bool = False) -> None:
-        self.root = Path(workspace_root).expanduser().resolve()
+    def __init__(self, where: Any, *, hosted: bool = False) -> None:
+        self.runtime = where if hasattr(where, "workspace_root") else None
+        given = ([where.workspace_root, where.exploration_root] if self.runtime is not None
+                 else [where])
+        self.roots = list(dict.fromkeys(Path(root).expanduser().resolve() for root in given))
+        self.root = self.roots[0]
         self.hosted = hosted
         self._plans: dict[str, _Plan] = {}
         self._lock = threading.Lock()
 
     # -- paths --------------------------------------------------------------
     def inside(self, given: Any) -> Path | None:
-        """A path as named, read inside the workspace (relative paths are
-        the workspace's), or None."""
+        """A path as named, read inside the workspace, or None: a relative
+        path is the first folder's; an absolute one may be in either."""
         from fastmdxplora.mcp.workspace import Workspace
 
-        return Workspace(self.root).inside(given)
+        try:
+            absolute = Path(str(given)).expanduser().is_absolute()
+        except (TypeError, ValueError, RuntimeError):
+            return None
+        for root in self.roots if absolute else self.roots[:1]:
+            found = Workspace(root).inside(given)
+            if found is not None:
+                return found
+        return None
 
     def shown(self, path: Any) -> str:
         from fastmdxplora.mcp.workspace import Workspace
 
+        for root in self.roots:
+            try:
+                Path(str(path)).resolve().relative_to(root)
+            except (ValueError, OSError, RuntimeError):
+                continue
+            return Workspace(root).shown(path)
         return Workspace(self.root).shown(path)
+
+    def _jobs(self) -> list[Any]:
+        """The jobs whose results come back into the workspace, each once."""
+        from fastmdxplora.remote import api
+
+        found: dict[str, Any] = {}
+        for root in self.roots:
+            for job in api.jobs(under=root):
+                found.setdefault(job.name, job)
+        return list(found.values())
 
     # -- the routes -----------------------------------------------------------
     def get(self, path: str, query: dict[str, list[str]]) -> dict[str, Any] | None:
@@ -112,7 +142,8 @@ class RemoteDesk:
         if self.hosted:
             return dict(_HOSTED)
         if path == "/api/remote/plan":
-            return self.plan(body.get("config"), body.get("machine"))
+            return self.plan(body.get("config"), body.get("machine"),
+                             state=body.get("state"))
         if path == "/api/remote/send":
             return self.send(body.get("plan"))
         if path == "/api/remote/fetch":
@@ -133,16 +164,14 @@ class RemoteDesk:
                         "summary": t.summary, "gpus": list(t.gpus),
                         "inspected_at": t.inspected_at}
                        for t in api.machines()]
-            jobs = [self._job_view(job) for job in api.jobs(under=self.root)]
+            jobs = [self._job_view(job) for job in self._jobs()]
         except Exception as exc:  # noqa: BLE001 - a refusal, said as one
             return _said(exc)
         return {"ok": True, "machines": targets, "jobs": jobs}
 
     def _job_here(self, given: Any):
-        from fastmdxplora.remote import api
-
         name = str(given or "")
-        for job in api.jobs(under=self.root):
+        for job in self._jobs():
             if job.name == name:
                 return job
         return None
@@ -190,7 +219,7 @@ class RemoteDesk:
                 f"A job called {sending.job_name} was sent from this computer before, and "
                 "a job's name is its results folder's. Set `output` in the config to a "
                 "new folder name and plan it again.", "environment.path.exists")
-        if output == self.root or (output.exists() and (
+        if output in self.roots or (output.exists() and (
                 not output.is_dir() or any(output.iterdir()))):
             return None, _refused(
                 f"{self.shown(output)} is in use already, and results are never written "
@@ -218,11 +247,63 @@ class RemoteDesk:
                                         "workspace.")
         return file, output, None
 
-    def plan(self, config: Any, machine: Any) -> dict[str, Any]:
+    def _saved(self, state: dict[str, Any]) -> tuple[Path | None, dict[str, Any] | None]:
+        """The Config Builder's study saved as a config file beside the
+        results folder it names, where **Run on this machine** would write
+        them: ``<results>.yml``, or ``-2``, ``-3`` and so on beside an
+        earlier one; the same text planned again is the same file."""
+        from fastmdxplora.gui.config_builder import config_yaml
+        from fastmdxplora.naming import default_output_name, system_of
+
+        source = dict(state)
+        requested = str(source.get("output") or "").strip()
+        if not requested:
+            requested = default_output_name(system_of(source))
+        if self.runtime is not None:
+            output = self.runtime._output_folder(requested)
+        else:
+            output = self.inside(requested)
+        if output is None or self.inside(str(output)) is None or output in self.roots:
+            return None, _refused(f"The results folder {requested} must be a new folder "
+                                  "inside the workspace.")
+        source["output"] = str(output)
+        try:
+            built = config_yaml(source, full=bool(source.get("full")))
+        except Exception as exc:  # noqa: BLE001 - a refusal, said as one
+            return None, _said(exc)
+        if not built.get("ok"):
+            return None, _refused(str(built.get("error") or "The study could not be "
+                                      "written as a config."), str(built.get("code") or ""))
+        text = str(built["yaml"])
+        for n in range(1, 1000):
+            target = output.parent / (f"{output.name}.yml" if n == 1
+                                      else f"{output.name}-{n}.yml")
+            try:
+                if target.is_file() and target.read_text(encoding="utf-8") == text:
+                    return target, None
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open("x", encoding="utf-8") as out:
+                    out.write(text)
+            except FileExistsError:
+                continue
+            except (OSError, ValueError) as exc:
+                return None, _refused(f"The config could not be saved beside "
+                                      f"{self.shown(output)}: {exc}")
+            return target, None
+        return None, _refused("Too many configs of that name; give another results folder.")
+
+    def plan(self, config: Any, machine: Any, *, state: Any = None) -> dict[str, Any]:
         """What a send of ``config`` to ``machine`` would do, as the page
-        shows it before the person agrees; with a token the send is made by."""
+        shows it before the person agrees; with a token the send is made by.
+        Given the Config Builder's ``state`` in place of a file, the study is
+        saved as one first (:meth:`_saved`)."""
         from fastmdxplora.remote.send import room_said, sent_digest, travelling
 
+        if not config and isinstance(state, dict):
+            saved, refused = self._saved(state)
+            if refused is not None:
+                return refused
+            config = str(saved)
         file, output, refused = self._what(config)
         if refused is not None:
             return refused
