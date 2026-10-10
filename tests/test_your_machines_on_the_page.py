@@ -858,3 +858,114 @@ def test_the_results_name_written_in_the_form_is_the_bare_name(session) -> None:
         browser.close()
     assert named == "auto"
     assert errors == []
+
+
+def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
+    """Round 3 of the last round: Close on a plan no longer kept said only
+    "Not sent.", and where Plan the send was held back by then the note
+    asked to plan the send again beside a button that could not."""
+    import json
+
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run")
+        page.wait_for_selector("#run-remote:not([hidden])")
+        page.route("**/api/remote/plan", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body=json.dumps({**_PLANNED, "kept_s": 2})))
+        page.route("**/api/remote/forget", lambda route: route.fulfill(
+            status=200, content_type="application/json", body='{"ok": true}'))
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.wait_for_function("() => document.querySelector('#run-remote-planned')"
+                               ".textContent.includes('no longer kept')")
+        page.click("#run-remote-planned .ghost-btn")
+        closed = (page.is_hidden("#run-remote-planned"),
+                  page.text_content("#run-remote-note"),
+                  page.evaluate("() => document.activeElement.id"))
+        # Held back as the plan's time ends, the focus on Send.
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.focus("#run-remote-planned .primary-btn")
+        page.evaluate("""() => Object.defineProperty(
+          document.getElementById('run-start-button'), 'disabled',
+          {configurable: true, get() { return true; }, set() {}})""")
+        page.wait_for_selector("#run-remote-plan[disabled]")
+        page.wait_for_function("() => document.querySelector('#run-remote-planned')"
+                               ".textContent.includes('no longer kept')")
+        page.wait_for_timeout(100)
+        held = (page.text_content("#run-remote-note"),
+                page.evaluate("() => document.activeElement.id"),
+                page.get_attribute("#run-remote-note", "role"))
+        # Round 1: expired while Plan the send could plan again, held back
+        # only then, and closed.
+        page.click("#run-remote-planned .ghost-btn")
+        _as_if_ready(page)
+        page.wait_for_selector("#run-remote-plan:not([disabled])")
+        page.click("#run-remote-plan")
+        page.wait_for_selector(".remote-plan-title")
+        page.wait_for_function("() => document.querySelector('#run-remote-planned')"
+                               ".textContent.includes('no longer kept')")
+        page.evaluate("""() => Object.defineProperty(
+          document.getElementById('run-start-button'), 'disabled',
+          {configurable: true, get() { return true; }, set() {}})""")
+        page.wait_for_selector("#run-remote-plan[disabled]")
+        page.click("#run-remote-planned .ghost-btn")
+        page.wait_for_timeout(100)
+        later = (page.text_content("#run-remote-note"),
+                 page.evaluate("() => document.activeElement.id"))
+        browser.close()
+    assert closed == (True, "Not sent: the plan is no longer kept. Plan the send again.",
+                      "run-remote-plan")
+    assert held == ("Not sent: the plan is no longer kept.", "run-remote-note", "status")
+    assert later == ("Not sent: the plan is no longer kept.", "run-remote-note")
+    assert errors == []
+
+
+def test_a_command_in_the_note_is_never_broken_inside_its_flag(session) -> None:
+    """Round 3 of the last round: at a phone's width the command beside Plan
+    the send could break inside `--output`."""
+    from playwright.sync_api import sync_playwright
+
+    served, machine = session
+    why = ("Studies built here would be saved in /h, your home folder. For example "
+           "`fastmdx gui --output /home/someone/md/first`.")
+    with sync_playwright() as pw:
+        browser, page, errors = _page(pw, served.url + "#run", width=390, height=844)
+        page.wait_for_selector("#run-remote:not([hidden])")
+
+        def machines(route):
+            answer = route.fetch()
+            route.fulfill(response=answer, json={**answer.json(), "not_built_here": why})
+
+        page.route("**/api/remote/machines", machines)
+        page.evaluate("() => window.FastMDXRemote.refresh('run')")
+        page.wait_for_selector("#run-remote-why:not([hidden]) code")
+        # Every place the line may end before it: the words ahead lengthened
+        # a letter at a time.
+        broken = page.evaluate("""() => {
+          const why = document.getElementById('run-remote-why');
+          const lead = why.firstChild, said = lead.textContent, found = [];
+          for (let n = 0; n < 80; n += 1) {
+            lead.textContent = said + 'x'.repeat(n) + ' ';
+            const code = why.querySelector('code');
+            const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+            let node, at = -1;
+            while ((node = walker.nextNode())) {
+              at = node.textContent.indexOf('--output');
+              if (at >= 0) break;
+            }
+            const range = document.createRange();
+            range.setStart(node, at);
+            range.setEnd(node, at + 8);
+            const lines = new Set([...range.getClientRects()].map(r => Math.round(r.top)));
+            if (lines.size > 1) found.push(n);
+          }
+          return found; }""")
+        browser.close()
+    assert broken == []
+    assert errors == []

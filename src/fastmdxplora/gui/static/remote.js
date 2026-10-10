@@ -351,6 +351,8 @@
   }
 
   var EXPIRED = "Not sent: the plan is no longer kept. Plan the send again.";
+  // Said where Plan the send is held back, which "again" would not answer.
+  var EXPIRED_HELD = "Not sent: the plan is no longer kept.";
   var CHANGED = "The study changed after the plan was made. Plan the send again to see "
     + "what would go.";
 
@@ -427,6 +429,20 @@
     return true;
   }
 
+  /* The focus back to Plan the send, or, where it is held back, to the
+     note that says why: taken once, then a status again. */
+  function focusAfter(go, note) {
+    if (go && !go.disabled) {
+      go.focus();
+      return;
+    }
+    if (!note) return;
+    note.removeAttribute("role");
+    note.tabIndex = -1;
+    note.focus();
+    setTimeout(function () { note.setAttribute("role", "status"); }, 0);
+  }
+
   function line(list, text) {
     list.appendChild(el("li", null, text));
   }
@@ -480,25 +496,34 @@
     host.appendChild(kept);
     expiry = setTimeout(function () {
       var focused = document.activeElement === send;
+      var said = go.disabled ? EXPIRED_HELD : EXPIRED;
       send.disabled = true;
       host.dataset.expired = "true";
       kept.textContent = "This plan is no longer kept.";
       not.textContent = "Close";
       // Said once: by the note where it is shown, else by the live region.
       note.dataset.ok = "";
-      note.textContent = EXPIRED;
-      if (!note.offsetParent) say(EXPIRED);
+      // The note takes the focus where Plan the send is held back: said by
+      // that once, not also as a status.
+      if (focused && go.disabled) note.removeAttribute("role");
+      note.textContent = said;
+      if (!note.offsetParent) say(said);
       // Let go as Not now lets it go, the card kept to say why.
       if (planToken) { letGo(planToken); planToken = null; }
       plannedAs = null;
       releaseResultsName();
-      if (focused) go.focus();
+      if (focused) focusAfter(go, note);
     }, (plan.kept_s || 600) * 1000);
     not.addEventListener("click", function () {
+      var expired = host.dataset.expired === "true";
       clearPlan();
       releaseResultsName();
-      note.textContent = "Not sent.";
-      go.focus();
+      if (go.disabled) note.removeAttribute("role");
+      // Closed once expired, the note keeps saying why nothing was sent,
+      // without "again" where Plan the send is held back by now.
+      var closed = !expired ? "Not sent." : (go.disabled ? EXPIRED_HELD : EXPIRED);
+      if (note.textContent !== closed) note.textContent = closed;
+      focusAfter(go, note);
     });
     send.addEventListener("click", function () {
       // What is sent is what was shown: a form changed since, by any door,
@@ -708,16 +733,28 @@
       hour: "2-digit", minute: "2-digit" });
   }
 
-  /* A message written for the command line, said for this page. */
-  /* Text with its commands, between backticks, set as code. */
+  /* Text with its commands, between backticks, set as code: a command's
+     flags kept whole, so a narrow note breaks it between words, never
+     inside --output. */
   function withCode(node, text) {
     node.textContent = "";
     String(text).split("`").forEach(function (part, i) {
       if (!part) return;
-      node.appendChild(i % 2 ? el("code", null, part) : document.createTextNode(part));
+      if (!(i % 2)) {
+        node.appendChild(document.createTextNode(part));
+        return;
+      }
+      var code = el("code");
+      part.split(/(\s+)/).forEach(function (word) {
+        if (!word) return;
+        code.appendChild(/^-/.test(word) ? el("span", "remote-flag", word)
+          : document.createTextNode(word));
+      });
+      node.appendChild(code);
     });
   }
 
+  /* A message written for the command line, said for this page. */
   function forThePage(text) {
     return String(text)
       .replace(/`/g, "")

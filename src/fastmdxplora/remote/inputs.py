@@ -265,23 +265,46 @@ def _home_or_above(folder: Path) -> bool:
     return home_or_above(folder)
 
 
+def home_folders() -> list[Path]:
+    """The home folder as the account's own entry names it, then as
+    ``HOME`` names it, each resolved, or none where neither can be found:
+    a wrong or empty ``HOME`` does not hide the account's home, and a
+    ``HOME`` that is not a full path, or is a disk's top, names none."""
+    found: list[Path] = []
+    try:
+        import pwd
+
+        entry = pwd.getpwuid(os.getuid()).pw_dir
+        if entry and Path(entry).is_absolute():
+            found.append(Path(entry).resolve())
+    except (ImportError, AttributeError, KeyError, OSError, RuntimeError, ValueError):
+        pass
+    try:
+        named = Path.home()
+        if named.is_absolute():
+            found.append(named.resolve())
+    except (RuntimeError, OSError, KeyError, ValueError):
+        pass
+    return [home for home in dict.fromkeys(found) if home != Path(home.anchor)]
+
+
 def home_or_above(folder: Path, *, home_unknown: bool = False) -> bool:
     """As :func:`_home_or_above`; ``home_unknown`` is the answer where the
     home folder cannot be found (no ``HOME`` and no account entry)."""
     if folder == Path(folder.anchor):
         return True
-    try:
-        home = Path.home().resolve()
-    except (RuntimeError, OSError):
+    homes = home_folders()
+    if not homes:
         return home_unknown
-    for candidate in (home, *home.parents):
-        if folder == candidate:
-            return True
-        try:
-            if os.path.samefile(folder, candidate):
+    for home in homes:
+        for candidate in (home, *home.parents):
+            if folder == candidate:
                 return True
-        except OSError:
-            continue
+            try:
+                if os.path.samefile(folder, candidate):
+                    return True
+            except OSError:
+                continue
     return False
 
 

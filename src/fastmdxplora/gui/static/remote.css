@@ -18,6 +18,8 @@
     overflow-wrap: anywhere; }
 .remote-plan-answers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .remote-run-why, .remote-run-known, .remote-run-note { min-width: 0; overflow-wrap: anywhere; }
+/* A command's flag stays whole where a narrow note breaks its line. */
+.remote-flag { white-space: nowrap; }
 .remote-run-note[data-ok="false"] { color: var(--status-error); }
 .remote-run-note[data-ok="true"] { color: var(--status-completed); }
 .remote-jobs { margin-bottom: 14px; }

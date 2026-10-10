@@ -220,7 +220,8 @@ resolved first, so a link in the folder leading out of it is outside too, and a
 folder that travels is refused if a link in it, or in a folder one of its links
 leads to, leads out of it or back into itself, since the copy follows links.
 Copy the file into the study's folder and name it there. A Config in your home
-folder, or at the top of the file system, is refused, since its folder is what
+folder (the one your account names, or the one `HOME` names), or at the top of
+the file system, is refused, since its folder is what
 travels; and nothing in a place keys and credentials are kept (`.ssh`,
 `.gnupg`, `.aws`, `.kube` and the like, and FastMDXplora's own settings) is
 ever sent: a folder that travels is refused if one is anywhere in it, reached
@@ -491,6 +492,12 @@ file's own **Run on this machine as it is** ("Or send this config file to
 one of your machines"), with your machines to choose from and what each was
 found to be when last inspected.
 
+- **What the routes reach.** The folder the GUI was opened on and the
+  folder it puts new studies in (the one above it, as `fastmdx gui` sets
+  it, unless that is your home folder, a folder above it or the top of a
+  disk; see **Where new studies would go** below), and nothing outside
+  them: a config in either can be planned, and a file a study names
+  outside them is refused (`remote.input.outside`).
 - **Plan and send.** Once the study could run here, the plan asks the
   machine and shows what a send would do, sending nothing: where it runs,
   its folder there, the config, where the results come back to, every file
@@ -508,17 +515,20 @@ found to be when last inspected.
   on. A file it names by a relative path is read from there too, as a run
   here reads it, and the plan says where its results come back to, by
   their full path. A results folder left blank is given the name the plan
-  chose, in the form, while the plan stands (a bare name, as **Run on this
-  machine** reads it), so the study planned again is saved to the same
-  file.
+  chose, in the form (a bare name, as **Run on this machine** reads it),
+  kept while the plan stands and after a send that went, so the study
+  planned again is saved to the same file.
 - **Where new studies would go in your home folder,** the top of a disk or
   a folder above your home folder (a GUI opened on a folder directly in
   your home folder, on the home folder itself, or on a folder at the top
   of a disk), nothing built in the form is sent: the GUI's routes reach
   only the folder it was opened on, and beside **Plan the send** it says so
   before anything is asked, naming a folder to open it on instead
-  (`fastmdx gui --output ~/md/first` in place of `~/md`). A config file can
-  still be sent with **A config I have**.
+  (`fastmdx gui --output ~/md/first` in place of `~/md`). Your home folder
+  is taken to be both the one your account names and the one `HOME`
+  names; where neither is found, nothing built in the form is sent either,
+  and the note says to set `HOME`. A config file can still be sent with **A config
+  I have**.
 - **A plan let go** (**Not now**, taken away as the form changed, a send
   refused, or kept past its ten minutes) takes back the config saved for
   it, unless the config has been changed since, another plan is of it or a
@@ -532,8 +542,9 @@ found to be when last inspected.
 - **With A config I have,** the file checked is the one planned, sent with
   the files beside it as `fastmdx remote send -c` sends them. A config
   named by a relative path is read from the folder the GUI was started in,
-  as its check reads it, and refused where the plan would read another
-  file, or none: give its full path.
+  as its check reads it, and refused (`remote.config.read_elsewhere`)
+  where the plan would read another file, or none, or where that folder is
+  gone: give its full path.
 - **One at a time.** One plan or send is out at a time, and what it answers
   is said on the page, left and come back to or not; the form changed while
   a send is out takes nothing away.

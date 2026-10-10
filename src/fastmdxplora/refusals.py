@@ -875,6 +875,12 @@ CODES: tuple[Code, ...] = (
          "that cannot reach it.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("given", "machine")),
+    Code("remote.config.read_elsewhere",
+         "A config named by a relative path would not be planned as the file "
+         "it was checked as (another file, or none), or the folder it was "
+         "checked from is gone.",
+         Kind.STRUCTURAL, Disclosure.ACTION,
+         detail_keys=("given",)),
     Code("remote.input.outside",
          "A config sent to another machine names a file outside the "
          "study's folder, or a folder with a link leading out of it.",
