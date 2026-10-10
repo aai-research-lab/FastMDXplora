@@ -6108,11 +6108,17 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     color: var(--text-primary); background: var(--background-elevated);
     border: 1px solid var(--border-primary); border-radius: var(--radius-control);
 }
-.page[data-page="run"] .builder-draft { display: inline-flex; align-items: center; gap: 6px; }
+.page[data-page="run"] .builder-draft { display: inline-flex; align-items: center; gap: 6px; overflow: visible; }
 .page[data-page="run"] .builder-draft::before {
     content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--status-completed);
 }
 .page[data-page="run"] .builder-draft[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+    .page[data-page="run"] .builder-draft.just-saved { animation: builder-saved 900ms var(--ease); }
+    .page[data-page="run"] .builder-draft.just-saved::before { animation: builder-saved-dot 900ms var(--ease); }
+}
+@keyframes builder-saved { from { opacity: .35; } to { opacity: 1; } }
+@keyframes builder-saved-dot { 0% { transform: scale(.4); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
 
 .page[data-page="run"] .builder-layout {
     display: grid;

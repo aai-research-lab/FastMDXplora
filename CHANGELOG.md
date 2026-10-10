@@ -7,6 +7,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Saved, as the Config Builder saves
+
+**Changed:** the Config Builder's "Draft saved in this browser" says Saved,
+and plays for a moment each time a change is saved (still where less
+motion is asked for); a save that changes nothing, or a draft opened
+again, does not play. Reset writes the saved settings over rather than
+dropping them first.
+
 ### Every Copy ticks
 
 **Fixed:** some Copy buttons said they had copied only in a notice, some

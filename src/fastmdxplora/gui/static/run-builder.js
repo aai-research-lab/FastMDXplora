@@ -3137,6 +3137,7 @@
   const DRAFT_KEY = "fmx.builderDraft";
   let draftTimer = null;
   let draftReady = false;
+  let draftEndWired = false;
 
   function draftKey() {
     const where = (state.schema && state.schema.workspace) || "";
@@ -3159,11 +3160,36 @@
         configPath: (el("run-config-path") && el("run-config-path").value) || "",
       };
       try {
+        const written = JSON.stringify(draft);
+        const before = window.localStorage.getItem(draftKey());
         if (!draft.start) window.localStorage.removeItem(draftKey());
-        else window.localStorage.setItem(draftKey(), JSON.stringify(draft));
+        else window.localStorage.setItem(draftKey(), written);
         const said = el("run-draft");
-        if (said) said.hidden = !draft.start;
-      } catch (error) { /* no storage here: the form works without it */ }
+        if (said) {
+          said.hidden = !draft.start;
+          // Each save that changed the draft is said again: the class is
+          // taken off and put back so its animation plays once more, and
+          // taken off as it ends, so nothing shown again replays it.
+          if (!draftEndWired) {
+            draftEndWired = true;
+            said.addEventListener("animationend", (event) => {
+              if (event.animationName === "builder-saved") said.classList.remove("just-saved");
+            });
+          }
+          said.classList.remove("just-saved");
+          if (draft.start && written !== before) {
+            void said.offsetWidth;
+            said.classList.add("just-saved");
+          }
+        }
+      } catch (error) {
+        // No storage here: the form works without it, and says no save.
+        const said = el("run-draft");
+        if (said) {
+          said.hidden = true;
+          said.classList.remove("just-saved");
+        }
+      }
     }, 300);
   }
 
@@ -3614,9 +3640,10 @@
       : [];
     const output = el("run-output");
     if (output) output.value = "";
-    discardDraft();
     renderAll();
     text(el("run-note"), "Every setting is back to its default.");
+    // The draft written over, not discarded first: the note stays, and
+    // plays only where Reset changed what was saved.
     saveDraft();
   }
 

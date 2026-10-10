@@ -9,7 +9,9 @@ promise the rebuild makes:
 - Tab out of a changed setting goes to the next control, not the page (every
   change built the whole form again);
 - the form is saved in the browser, so a reload loses nothing, and Reset
-  puts every setting back, the starting point and the structure kept;
+  puts every setting back, the starting point and the structure kept; the
+  note says Saved and is seen saving, without moving where less motion is
+  asked for;
 - an Agent's reply prices itself without overwriting the form;
 - a setting is found by typing its name; a changed one says so, and its
   revert puts the default back;
@@ -157,6 +159,156 @@ class TestTheDraft:
         assert page.input_value('#run-settings [data-setting="ph"] input') == ""
         assert page.input_value("#run-system").endswith("peptide.pdb")
         context.close()
+
+    # Each write of the draft and each animation of its note, from the
+    # document's start, so a test waits on them rather than on time.
+    WATCH = """(() => {
+        // Once a document, however often the script is run in it.
+        if (window.__writes) return;
+        window.__writes = []; window.__saves = []; window.__failWrites = false;
+        const set = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key, value) {
+            if (String(key).startsWith('fmx.builderDraft')) {
+                if (window.__failWrites) throw new DOMException('full', 'QuotaExceededError');
+                window.__writes.push(String(value));
+            }
+            return set.call(this, key, value);
+        };
+        document.addEventListener('animationstart', (event) => {
+            if (event.target && event.target.id === 'run-draft') window.__saves.push(event.animationName);
+        }, true);
+    })();"""
+
+    def _watched(self, site, **options):
+        context = site["browser"].new_context(viewport={"width": 1440, "height": 900}, **options)
+        context.add_init_script(self.WATCH)
+        page = _open(site, context=context)
+        page.wait_for_selector("#run-draft:not([hidden])")
+        self._settled(page)
+        # What opening the form played (its structure chosen is a change).
+        self._frames(page)
+        page.evaluate("() => window.__saves.splice(0)")
+        return page
+
+    @staticmethod
+    def _settled(page):
+        """Once the form has stopped writing its draft (a save waits 300 ms
+        after the last change)."""
+        seen = -1
+        while True:
+            count = page.evaluate("() => window.__writes.length")
+            if count == seen:
+                return
+            seen = count
+            page.wait_for_timeout(700)
+
+    @staticmethod
+    def _frames(page):
+        page.evaluate("() => new Promise((done) => requestAnimationFrame("
+                      "() => requestAnimationFrame(() => done())))")
+
+    def _plays(self, page, value, *, changes=True):
+        """What the note played as ``value`` was given to pH and saved."""
+        written = page.evaluate("() => window.__writes.length")
+        page.fill('#run-settings [data-setting="ph"] input', value)
+        page.dispatch_event('#run-settings [data-setting="ph"] input', "change")
+        page.wait_for_function("""([n, value]) => window.__writes.length > n
+            && String(Object.values(JSON.parse(window.__writes[window.__writes.length - 1])
+                .values || {}).map((phase) => (phase || {}).ph).find((ph) => ph !== undefined))
+               === value""", arg=[written, value])
+        if changes:
+            page.wait_for_function("() => window.__saves.length >= 2")
+        self._frames(page)
+        return page.evaluate("() => window.__saves.splice(0)")
+
+    def test_the_draft_says_saved_and_is_seen_saving(self, site):
+        """The note says Saved (in this browser, to a screen reader), and
+        plays again at each save that changed the draft, not at one that
+        changed nothing; once played, it is ready to play again."""
+        page = self._watched(site)
+        said = page.evaluate("""() => { const note = document.getElementById('run-draft');
+            return [note.firstChild.textContent, note.querySelector('.sr-only').textContent]; }""")
+        first = self._plays(page, "6.5")
+        page.wait_for_function("() => !document.getElementById('run-draft')"
+                               ".classList.contains('just-saved')")
+        again = self._plays(page, "7.5")
+        unchanged = self._plays(page, "7.5", changes=False)
+        overflow = page.evaluate("() => getComputedStyle(document.getElementById('run-draft')).overflow")
+        assert said == ["Saved", " in this browser"]
+        assert sorted(first) == ["builder-saved", "builder-saved-dot"]
+        assert sorted(again) == ["builder-saved", "builder-saved-dot"]
+        assert unchanged == []
+        # The dot grows past its box as it plays: not clipped.
+        assert overflow == "visible"
+        assert page.errors == []
+        page.context.close()
+
+    def test_reset_plays_only_where_it_changed_the_draft(self, site):
+        """Reset writes the draft over rather than discarding it first: the
+        note stays, plays where the settings went back, and stays still on
+        a form already at its defaults."""
+        page = self._watched(site)
+        self._plays(page, "6.5")
+        page.evaluate("""() => { window.__hidden = [];
+            new MutationObserver(() => window.__hidden.push(
+                document.getElementById('run-draft').hidden)).observe(
+                document.getElementById('run-draft'), {attributes: true,
+                                                        attributeFilter: ['hidden']}); }""")
+        written = page.evaluate("() => window.__writes.length")
+        page.click("#run-reset")
+        page.wait_for_function("() => window.__saves.length >= 2")
+        back = page.evaluate("() => window.__saves.splice(0)")
+        last = page.evaluate("() => JSON.parse(window.__writes[window.__writes.length - 1])")
+        self._settled(page)
+        page.evaluate("() => window.__saves.splice(0)")
+        written = page.evaluate("() => window.__writes.length")
+        page.click("#run-reset")
+        page.wait_for_function("n => window.__writes.length > n", arg=written)
+        self._frames(page)
+        still = page.evaluate("() => window.__saves.splice(0)")
+        hidden = page.evaluate("() => window.__hidden.filter(Boolean).length")
+        assert sorted(back) == ["builder-saved", "builder-saved-dot"]
+        assert not any("ph" in (phase or {}) for phase in (last.get("values") or {}).values())
+        assert still == []
+        assert hidden == 0
+        assert page.errors == []
+        page.context.close()
+
+    def test_a_draft_opened_again_is_not_played(self, site):
+        page = self._watched(site)
+        self._plays(page, "6.5")
+        self._settled(page)
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_selector("#run-draft:not([hidden])")
+        self._settled(page)
+        self._frames(page)
+        played = page.evaluate("() => window.__saves")
+        restored = page.input_value('#run-settings [data-setting="ph"] input')
+        assert restored == "6.5"
+        assert played == []
+        page.context.close()
+
+    def test_a_save_that_fails_is_not_said(self, site):
+        page = self._watched(site)
+        page.evaluate("() => { window.__failWrites = true; }")
+        page.fill('#run-settings [data-setting="ph"] input', "6.5")
+        page.dispatch_event('#run-settings [data-setting="ph"] input', "change")
+        page.wait_for_selector("#run-draft", state="hidden")
+        assert page.errors == []
+        page.context.close()
+
+    def test_less_motion_asked_for_saves_without_moving(self, site):
+        page = self._watched(site, reduced_motion="reduce")
+        written = page.evaluate("() => window.__writes.length")
+        page.fill('#run-settings [data-setting="ph"] input', "6.5")
+        page.dispatch_event('#run-settings [data-setting="ph"] input', "change")
+        page.wait_for_function("n => window.__writes.length > n", arg=written)
+        self._frames(page)
+        moves = page.evaluate("""() => { const note = document.getElementById('run-draft');
+            return [note.classList.contains('just-saved'), getComputedStyle(note).animationName,
+                    getComputedStyle(note, '::before').animationName, window.__saves.length]; }""")
+        assert moves == [True, "none", "none", 0]
+        page.context.close()
 
     def test_an_agent_reply_does_not_overwrite_it(self, site):
         page = _open(site)
