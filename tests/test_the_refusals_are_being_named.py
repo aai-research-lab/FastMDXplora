@@ -38,6 +38,10 @@ NOT_REFUSALS = frozenset({
     # and the adopted-process handle raises the same so the runtime's
     # stop() can catch it by name whichever kind of process it holds.
     "TimeoutExpired",
+    # What `urlretrieve` raises for a transfer cut short, raised the same by
+    # the RCSB fetch that took its place so the retry reads it alike; the
+    # fetch's caller refuses it, coded, through `_not_fetched`.
+    "ContentTooShortError",
     # A phase with nothing to do saying so: the study is not refused, and
     # the phase is recorded as skipped with the reason it carries.
     "PhaseSkipped",

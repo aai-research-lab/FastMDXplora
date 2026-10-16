@@ -113,7 +113,9 @@ def test_a_movie_is_made_through_the_command_given(stand_in, tmp_path):
                         ("-color_range", "tv"), ("-r", "30"), ("-movflags", "+faststart"),
                         ("-f", "mp4")):
         assert given(flag, encoded) == value, flag
-    assert "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" in command
+    assert ("scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,"
+            "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"
+            in command)
     assert "title=made" in command
     assert any(arg.startswith("comment=Made with FastMDXplora ")
                and arg.endswith(": frames 0 to 2, 30 frames a second") for arg in command)

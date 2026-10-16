@@ -151,15 +151,43 @@ def _passes(exc: BaseException) -> bool:
     return isinstance(reason, (ConnectionError, TimeoutError, ssl.SSLEOFError))
 
 
+#: How long a fetch waits on RCSB to connect, or to send more once it has,
+#: in seconds. `urlretrieve` takes no timeout, so a connection that stalled
+#: rather than dropped held setup for as long as the socket stayed open,
+#: and the read timeout `_passes` tries again was never raised.
+_FETCH_TIMEOUT_S = 60.0
+
+
+def _download(url: str, dest: Path) -> None:
+    """Fetch ``url`` to ``dest`` once, as `urlretrieve` does, but with a
+    timeout: a connect that times out is raised as a `URLError`, a read
+    that does as a bare `TimeoutError`, and a body shorter than its
+    `Content-Length` as a `ContentTooShortError`."""
+    import urllib.error
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=_FETCH_TIMEOUT_S) as answer, \
+            open(dest, "wb") as out:  # noqa: S310 -- trusted URL
+        shutil.copyfileobj(answer, out)
+        written = out.tell()
+        said = answer.headers.get("Content-Length")
+    try:
+        expected = int(said) if said is not None else None
+    except ValueError:
+        expected = None
+    if expected is not None and written < expected:
+        raise urllib.error.ContentTooShortError(
+            f"retrieval incomplete: got only {written} out of {expected} bytes", None)
+
+
 def _retrieve(url: str, dest: Path) -> None:
     """Fetch ``url`` to ``dest``, tried again while the failure is one that
     passes; the last failure is raised, and nothing is left at ``dest``."""
     import http.client
-    import urllib.request
 
     for wait in (*_FETCH_WAITS_S, None):
         try:
-            urllib.request.urlretrieve(url, dest)  # noqa: S310 -- trusted URL
+            _download(url, dest)
             return
         except (OSError, http.client.HTTPException) as exc:
             try:

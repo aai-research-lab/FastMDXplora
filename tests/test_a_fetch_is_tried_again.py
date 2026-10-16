@@ -17,7 +17,6 @@ import http.client
 import socket
 import ssl
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -43,7 +42,7 @@ def server(monkeypatch):
     file; the waits between tries kept and not slept."""
     state = {"calls": [], "waits": [], "failures": []}
 
-    def urlretrieve(url, dest):
+    def download(url, dest):
         state["calls"].append(url)
         if state["failures"]:
             failure = state["failures"].pop(0)
@@ -54,7 +53,7 @@ def server(monkeypatch):
         pipeline.Path(dest).write_text("HEADER fetched\nEND\n")
         return str(dest), None
 
-    monkeypatch.setattr(urllib.request, "urlretrieve", urlretrieve)
+    monkeypatch.setattr(pipeline, "_download", download)
     monkeypatch.setattr(pipeline, "_sleep", state["waits"].append)
     return state
 
@@ -163,3 +162,51 @@ def test_an_mmcif_that_drops_each_time_names_it(server, tmp_path) -> None:
     assert "in 3 tries" in str(raised.value)
     assert f"curl -O {CIF}" in str(raised.value)
     assert not (tmp_path / "input.cif").exists()
+
+
+@pytest.fixture()
+def stalling(monkeypatch):
+    """A server on loopback that answers each request with ``said`` and then,
+    where ``hold`` is set, holds the connection open, sending nothing more;
+    else closes it."""
+    import threading
+
+    listener = socket.create_server(("127.0.0.1", 0))
+    state = {"said": b"", "hold": True, "stop": threading.Event()}
+
+    def serve() -> None:
+        while True:
+            try:
+                peer, _ = listener.accept()
+            except OSError:
+                return
+            with peer:
+                peer.recv(65536)
+                peer.sendall(state["said"])
+                if state["hold"]:
+                    state["stop"].wait(10)
+
+    threading.Thread(target=serve, daemon=True).start()
+    monkeypatch.setattr(pipeline, "_FETCH_TIMEOUT_S", 0.3)
+    state["url"] = f"http://127.0.0.1:{listener.getsockname()[1]}/6B73.pdb"
+    yield state
+    state["stop"].set()
+    listener.close()
+
+
+def test_a_server_that_goes_quiet_is_given_up_on_and_asked_again(stalling,
+                                                                  tmp_path) -> None:
+    # `urlretrieve` takes no timeout: this waited for as long as the
+    # connection stayed open, and the read timeout below was never raised.
+    stalling["said"] = b"HTTP/1.0 200 OK\r\nContent-Length: 100\r\n\r\nHEADER"
+    with pytest.raises(TimeoutError) as raised:
+        pipeline._download(stalling["url"], tmp_path / "input.pdb")
+    assert pipeline._passes(raised.value)
+
+
+def test_a_body_shorter_than_it_said_is_cut_short(stalling, tmp_path) -> None:
+    stalling["said"] = b"HTTP/1.0 200 OK\r\nContent-Length: 100\r\n\r\nHEADER"
+    stalling["hold"] = False  # the connection closes after the first bytes
+    with pytest.raises(urllib.error.ContentTooShortError) as raised:
+        pipeline._download(stalling["url"], tmp_path / "input.pdb")
+    assert pipeline._passes(raised.value)

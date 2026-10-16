@@ -26,7 +26,6 @@ class TestAFetchWithNoNetwork:
     def test_it_says_there_is_no_route_and_what_to_do(self, tmp_path, monkeypatch) -> None:
         # A machine with no route out: the refusal says so, and gives the
         # command to fetch the file from one that has.
-        import urllib.request
 
         import pytest
 
@@ -36,7 +35,7 @@ class TestAFetchWithNoNetwork:
         def no_route(url, dest):
             raise OSError("[Errno -3] Temporary failure in name resolution")
 
-        monkeypatch.setattr(urllib.request, "urlretrieve", no_route)
+        monkeypatch.setattr("fastmdxplora.setup.pipeline._download", no_route)
         with pytest.raises(StudyError) as raised:
             _fetch_pdb_from_rcsb("1UBQ", tmp_path / "1UBQ.pdb")
         said = str(raised.value)
@@ -46,7 +45,6 @@ class TestAFetchWithNoNetwork:
 
     def test_the_original_error_survives(self, tmp_path, monkeypatch) -> None:
         """Whatever OSError actually said is still the evidence."""
-        import urllib.request
 
         import pytest
 
@@ -58,7 +56,7 @@ class TestAFetchWithNoNetwork:
         def no_route(url, dest):
             raise original
 
-        monkeypatch.setattr(urllib.request, "urlretrieve", no_route)
+        monkeypatch.setattr("fastmdxplora.setup.pipeline._download", no_route)
         with pytest.raises(StudyError) as raised:
             _fetch_pdb_from_rcsb("1UBQ", tmp_path / "1UBQ.pdb")
         assert "No route to host" in str(raised.value)

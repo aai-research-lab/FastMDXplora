@@ -214,6 +214,10 @@ def _water_map(out: Path, index: dict[str, Any], ligand: str, cutoff: float) -> 
 
 
 _FRAMES_READ: dict[str, Any] = {}
+#: Its own lock, not `_LOCK`: a water map asks for frames holding that one,
+#: and the water sites ask holding none. Unheld, one request emptied the
+#: frames read while another read them, and that one failed on 'xyz'.
+_FRAMES_READ_LOCK = threading.Lock()
 
 
 def _frame_xyz(out: Path, k: int) -> Any:
@@ -224,13 +228,14 @@ def _frame_xyz(out: Path, k: int) -> Any:
 
     path = out / "simulation" / "frames.dcd"
     key = f"{path}:{path.stat().st_mtime_ns}"
-    if _FRAMES_READ.get("key") != key:
-        with suppress_native_output():
-            with md.formats.DCDTrajectoryFile(str(path)) as handle:
-                xyz, _, _ = handle.read()
-        _FRAMES_READ.clear()
-        _FRAMES_READ.update(key=key, xyz=xyz / 10.0)
-    return _FRAMES_READ["xyz"][k]
+    with _FRAMES_READ_LOCK:
+        if _FRAMES_READ.get("key") != key:
+            with suppress_native_output():
+                with md.formats.DCDTrajectoryFile(str(path)) as handle:
+                    xyz, _, _ = handle.read()
+            _FRAMES_READ.clear()
+            _FRAMES_READ.update(key=key, xyz=xyz / 10.0)
+        return _FRAMES_READ["xyz"][k]
 
 
 def _fit(points: Any, reference: Any) -> Any:

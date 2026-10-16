@@ -134,10 +134,10 @@ class TestResolveInput:
             _resolve_input("MKTAYIA", "sequence", out_dir)
 
     def test_pdb_id_uses_urllib(self, tmp_path: Path):
-        """RCSB fetch path goes through urllib.urlretrieve."""
+        """RCSB fetch path goes through the pipeline's download."""
         out_dir = tmp_path / "out"
         out_dir.mkdir()
-        with patch("urllib.request.urlretrieve") as m:
+        with patch("fastmdxplora.setup.pipeline._download") as m:
             # Make the mock create the file so the test can continue
             def fake_fetch(url, dest):
                 Path(dest).write_text("HEADER fetched\nEND\n")

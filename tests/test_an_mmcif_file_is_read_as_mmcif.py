@@ -111,7 +111,6 @@ def test_a_structure_the_pdb_format_cannot_hold_is_refused(tmp_path) -> None:
 
 def test_an_entry_kept_only_as_mmcif_is_fetched_as_mmcif(tmp_path, monkeypatch) -> None:
     import urllib.error
-    import urllib.request
 
     from fastmdxplora.setup.pipeline import _fetch_pdb_from_rcsb
 
@@ -125,7 +124,7 @@ def test_an_entry_kept_only_as_mmcif_is_fetched_as_mmcif(tmp_path, monkeypatch) 
         shutil.copy(source, destination)
         return str(destination), None
 
-    monkeypatch.setattr(urllib.request, "urlretrieve", rcsb)
+    monkeypatch.setattr("fastmdxplora.setup.pipeline._download", rcsb)
     placed = _fetch_pdb_from_rcsb("1hho", tmp_path / "setup" / "input.pdb")
     assert [u.rsplit(".", 1)[1] for u in asked] == ["pdb", "cif"]
     deposited = _unpacked("1HHO", "pdb", tmp_path / "dep").read_text().splitlines()
