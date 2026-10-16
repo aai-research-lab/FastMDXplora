@@ -1188,7 +1188,7 @@ class BatchExplorer:
 
         self.output_dir = (
             Path(resolved_output) if resolved_output
-            else Path(default_output_name(system_of(self.config)))
+            else Path(default_output_name(system_of(raw)))
         )
 
         # Expand the run matrix
