@@ -20,6 +20,7 @@
   var MARGIN = { top: 16, right: 28, bottom: 38, left: 64 };
   var cache = {};
   var playback = null;
+  var ranges = Object.create(null);
 
   function token(name, fallback) {
     var value = "";
@@ -103,7 +104,7 @@
     var parts = [data.label + ", " + data.y.length + " points"];
     var mean = data.mean;
     if (mean && mean.value != null) {
-      parts.push("mean " + withUnit(mean.value, data.unit)
+      parts.push("full-analysis mean " + withUnit(mean.value, data.unit)
         + (mean.error != null ? " plus or minus " + format(mean.error) : ""));
     }
     return parts.join("; ");
@@ -137,6 +138,10 @@
     var pad = (yHigh - yLow) * 0.06 || Math.abs(yHigh) * 0.1 || 1;
     yHigh += pad;
     if (yLow < 0) yLow -= pad;
+    if (data.y_bounds) {
+      yLow = data.y_bounds[0];
+      yHigh = data.y_bounds[1];
+    }
 
     function px(x) { return plot.left + (x - xLow) / (xHigh - xLow) * (plot.right - plot.left); }
     function py(y) { return plot.bottom - (y - yLow) / (yHigh - yLow) * (plot.bottom - plot.top); }
@@ -180,7 +185,7 @@
         x: px(v), y: plot.bottom + 15, fill: c.axis, "font-size": 10, "text-anchor": "middle",
       }, svg);
       label.textContent = data.kind === "residue"
-        ? (data.labels[Math.round(v) - 1] || "") : xText(v);
+        ? (data.labels[xs.indexOf(v)] || "") : xText(v);
     });
     el("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: c.axis }, svg);
     var xTitle = el("text", {
@@ -207,29 +212,48 @@
         el("circle", { cx: px(x), cy: py(ys[i]), r: 2.2, fill: c.line }, svg);
       });
     }
+    if (Array.isArray(data.reference)) {
+      data.reference.forEach(function (value, i) {
+        if (value == null || !isFinite(value)) return;
+        el("rect", { x: px(xs[i]) - 3, y: py(value) - 3, width: 6, height: 6,
+          fill: c.mean, class: "series-reference" }, svg);
+      });
+      var referenceLabel = el("text", { x: plot.right, y: plot.top + 12,
+        fill: c.mean, "font-size": 10, "text-anchor": "end" }, svg);
+      referenceLabel.textContent = data.reference.some(function (v) { return v != null; })
+        ? "Squares: measured S²" : "";
+    }
 
     // The mean over the frames kept, with its error where there is one.
     if (mean && mean.value != null) {
-      var from = px(mean.from_x != null ? mean.from_x : xLow);
-      if (mean.error != null) {
+      var from = px(Math.max(xLow, mean.from_x != null ? mean.from_x : xLow));
+      if (from <= plot.right && mean.error != null) {
         el("rect", {
           x: from, y: py(mean.value + mean.error), width: plot.right - from,
           height: Math.max(1, py(mean.value - mean.error) - py(mean.value + mean.error)),
           fill: c.mean, "fill-opacity": 0.16, class: "series-error",
         }, svg);
       }
-      el("line", {
-        x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
-        stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
-        "stroke-dasharray": "5 4", class: "series-mean",
-      }, svg);
+      if (from <= plot.right) {
+        el("line", {
+          x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
+          stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
+          "stroke-dasharray": "5 4", class: "series-mean",
+        }, svg);
+        var meanLabel = el("text", {
+          x: plot.right, y: plot.top + 12, fill: c.mean, "font-size": 10,
+          "text-anchor": "end", class: "series-mean-label",
+        }, svg);
+        meanLabel.textContent = "Full-analysis mean " + withUnit(mean.value, data.unit);
+      }
     }
 
     var cursor = el("line", {
       y1: plot.top, y2: plot.bottom, stroke: c.axis, "stroke-width": 1, visibility: "hidden",
+      "pointer-events": "none",
     }, svg);
     var dot = el("circle", { r: 4, fill: c.line, stroke: c.shade, "stroke-width": 1.5,
-                             visibility: "hidden" }, svg);
+                             visibility: "hidden", "pointer-events": "none" }, svg);
     var tip = document.createElement("div");
     tip.className = "series-tip";
     tip.hidden = true;
@@ -245,22 +269,32 @@
       cursor.setAttribute("visibility", "visible");
       dot.setAttribute("cx", x); dot.setAttribute("cy", y);
       dot.setAttribute("visibility", "visible");
-      var where = data.kind === "residue"
-        ? "residue " + data.labels[index]
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      var where = data.kind === "residue" || data.kind === "atom"
+        ? data.labels[index]
         : (data.x_label === "Frame" ? "frame " + data.frames[index]
           : format(xs[index]) + " ns · frame " + data.frames[index]);
-      var action = data.kind === "residue" ? "show it in the structure"
+      var action = (data.kind === "residue" || data.kind === "atom") && entity
+        ? "select it in the structure"
         : (data.linked ? "open this frame" : "");
       tip.innerHTML = "";
       var value = document.createElement("strong");
       value.textContent = withUnit(ys[index], data.unit);
       tip.appendChild(value);
       tip.appendChild(document.createTextNode(" · " + where));
+      if (data.reference && data.reference[index] != null) {
+        tip.appendChild(document.createTextNode(" · measured " + format(data.reference[index])));
+      }
       if (action) {
         var hint = document.createElement("span");
         hint.className = "series-tip-hint";
         hint.textContent = "Click to " + action;
         tip.appendChild(hint);
+      } else if ((data.kind === "residue" || data.kind === "atom") && !entity) {
+        var unavailable = document.createElement("span");
+        unavailable.className = "series-tip-hint";
+        unavailable.textContent = "Selection unavailable: this row has no unique topology match.";
+        tip.appendChild(unavailable);
       }
       tip.hidden = false;
       var left = Math.min(Math.max(x + 12, 4), width - tip.offsetWidth - 4);
@@ -277,10 +311,15 @@
     function indexAt(event) {
       var box = svg.getBoundingClientRect();
       var x = (event.clientX - box.left) * (width / box.width);
+      var y = (event.clientY - box.top) * (HEIGHT / box.height);
+      if (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom) return -1;
       var value = xLow + (x - plot.left) / (plot.right - plot.left) * (xHigh - xLow);
       return nearest(xs, value);
     }
-    svg.addEventListener("mousemove", function (event) { show(indexAt(event)); });
+    svg.addEventListener("mousemove", function (event) {
+      var index = indexAt(event);
+      if (index < 0) hide(); else show(index);
+    });
     svg.addEventListener("mouseleave", hide);
     svg.addEventListener("blur", hide);
     svg.addEventListener("focus", function () { show(at >= 0 ? at : 0); });
@@ -297,37 +336,25 @@
     });
   }
 
-  /* The frame of a point, as the viewer numbers what it plays: the viewer
-   * plays a subset of the trajectory's frames (at most a few hundred), so
-   * the nearest of those. */
-  function playedIndex(frame) {
-    var frames = playback && Array.isArray(playback.frame_indices) ? playback.frame_indices : [];
-    if (!frames.length) return null;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
-    return best;
-  }
-
   function open(data, index) {
     if (index < 0 || !window.FastMDXDashboard) return;
-    if (data.kind === "residue") {
-      window.FastMDXDashboard.navigate("viewer");
-      window.dispatchEvent(new CustomEvent("dashboard:residue-focus",
-        { detail: data.residues[index] }));
+    if (data.kind === "residue" || data.kind === "atom") {
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      if (!entity) return;
+      window.FastMDXDashboard.focusEntity(entity);
       return;
     }
     if (!data.linked) return;
     var frame = data.frames[index];
-    var go = function () {
-      var played = playedIndex(frame);
-      if (played == null) return;
+    var go = function (source) {
       window.FastMDXDashboard.navigate("viewer");
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: played, trajectoryFrame: frame } }));
+        { detail: { trajectoryFrame: frame, sourceSignature: source.source_signature } }));
     };
-    if (playback) { go(); return; }
+    if (playback && playback.playback_available && playback.source_kind === "production-dcd") {
+      go(playback);
+      return;
+    }
     fetch("/api/frames-info", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (payload) {
@@ -335,9 +362,150 @@
         // trajectory; during a run it plays snapshots, numbered otherwise.
         playback = payload && payload.playback_available
           && payload.source_kind === "production-dcd" ? payload : null;
-        if (playback) go(); else window.FastMDXDashboard.navigate("viewer");
+        if (playback) go(playback); else window.FastMDXDashboard.navigate("viewer");
       })
       .catch(function () { /* the viewer says why when opened */ });
+  }
+
+  function rangeBounds(data) {
+    var values = (data.x || []).filter(function (value) { return isFinite(value); });
+    return values.length ? [Math.min.apply(null, values), Math.max.apply(null, values)] : null;
+  }
+
+  function rangeOf(name, data) {
+    var bounds = rangeBounds(data);
+    return ranges[name] || (bounds ? { from: bounds[0], to: bounds[1] } : null);
+  }
+
+  /* Keep each selected point's source frame or residue identity attached.
+   * The chart gets a view of the arrays; the analysis data stays untouched. */
+  function withinRange(data, range) {
+    if (!range) return null;
+    var indices = [];
+    (data.x || []).forEach(function (value, index) {
+      if (isFinite(value) && value >= range.from && value <= range.to) indices.push(index);
+    });
+    if (!indices.length) return null;
+    var shown = Object.assign({}, data);
+    ["x", "y", "frames", "labels", "entities", "reference"].forEach(function (key) {
+      if (Array.isArray(data[key]) && data[key].length === data.x.length) {
+        shown[key] = indices.map(function (index) { return data[key][index]; });
+      }
+    });
+    return shown;
+  }
+
+  function rangeInput(form, field, labelText, bounds, value) {
+    var label = document.createElement("label");
+    label.className = "series-range-field";
+    var said = document.createElement("span");
+    said.textContent = labelText;
+    var input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.required = true;
+    input.min = String(bounds[0]);
+    input.max = String(bounds[1]);
+    input.value = String(value);
+    input.setAttribute("aria-label", labelText);
+    input.dataset.range = field;
+    label.append(said, input);
+    form.appendChild(label);
+    return input;
+  }
+
+  function rangeControls(chart, data, name) {
+    var bounds = rangeBounds(data);
+    if (!bounds) return null;
+    var form = document.createElement("form");
+    form.className = "series-range";
+    form.noValidate = true;
+    form.setAttribute("aria-label", "Limit " + data.label + " plot range");
+    var profile = data.kind === "residue" || data.kind === "atom";
+    var unit = data.x_label === "Time (ns)" ? "time (ns)"
+      : profile ? "profile position" : "frame";
+    var initial = rangeOf(name, data);
+    var from = rangeInput(form, "from", "From " + unit, bounds, initial.from);
+    var to = rangeInput(form, "to", "To " + unit, bounds, initial.to);
+    var apply = document.createElement("button");
+    apply.type = "submit";
+    apply.className = "line-btn";
+    apply.textContent = "Apply range";
+    form.appendChild(apply);
+    var reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "line-btn";
+    reset.textContent = "Reset";
+    reset.setAttribute("aria-label", "Reset plot range");
+    form.appendChild(reset);
+    var status = document.createElement("span");
+    status.className = "series-range-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    form.appendChild(status);
+
+    function render() {
+      var current = chart.__seriesData;
+      var shown = withinRange(current, rangeOf(name, current));
+      if (!shown) {
+        chart.__seriesPlot.replaceChildren();
+        var empty = document.createElement("p");
+        empty.className = "series-range-empty";
+        empty.textContent = "No points fall inside this range. Choose a wider range or reset it.";
+        chart.__seriesPlot.appendChild(empty);
+        return;
+      }
+      draw(chart.__seriesPlot, shown);
+    }
+
+    function mark(input, invalid, message) {
+      if (invalid) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+      status.textContent = message;
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var low = from.value.trim() === "" ? NaN : Number(from.value);
+      var high = to.value.trim() === "" ? NaN : Number(to.value);
+      if (!isFinite(low)) return mark(from, true, "Enter a numeric start value.");
+      if (!isFinite(high)) return mark(to, true, "Enter a numeric end value.");
+      if (low < bounds[0] || low > bounds[1]) {
+        return mark(from, true, "Start must be within the available range.");
+      }
+      if (high < bounds[0] || high > bounds[1]) {
+        return mark(to, true, "End must be within the available range.");
+      }
+      if (low > high) return mark(to, true, "End must be at or after start.");
+      ranges[name] = { from: low, to: high };
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+      status.textContent = withinRange(chart.__seriesData, ranges[name])
+        ? "Showing the selected range." : "No plotted points fall inside this range.";
+    });
+    reset.addEventListener("click", function () {
+      delete ranges[name];
+      from.value = String(bounds[0]);
+      to.value = String(bounds[1]);
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+    });
+    return {
+      form: form, from: from, to: to, render: render,
+      updateData: function (fresh) {
+        bounds = rangeBounds(fresh);
+        from.min = String(bounds[0]);
+        from.max = String(bounds[1]);
+        to.min = String(bounds[0]);
+        to.max = String(bounds[1]);
+        from.value = String(bounds[0]);
+        to.value = String(bounds[1]);
+        mark(from, false, "");
+        mark(to, false, "");
+      },
+    };
   }
 
   function load(name) {
@@ -357,13 +525,33 @@
       frame.setAttribute("data-series-ready", "pending");
       var name = frame.getAttribute("data-series");
       load(name).then(function (data) {
-        if (!data || !data.ok || !data.y || data.y.length < 2) {
+        if (!data || !data.ok || !data.y || data.y.length < 1) {
           frame.setAttribute("data-series-ready", "none");
           return;
         }
         var chart = document.createElement("div");
         chart.className = "series-chart";
         chart.setAttribute("data-analysis", name);
+        chart.__seriesData = data;
+        var controls = rangeControls(chart, data, name);
+        var plot = document.createElement("div");
+        plot.className = "series-plot";
+        chart.__seriesPlot = plot;
+        chart.__seriesRender = controls ? controls.render : function () { draw(plot, chart.__seriesData); };
+        if (controls) chart.appendChild(controls.form);
+        chart.appendChild(plot);
+        var notice = document.createElement("p");
+        notice.className = "series-notice";
+        notice.textContent = data.notice || "";
+        notice.hidden = !data.notice;
+        chart.appendChild(notice);
+        chart.__seriesSetData = function (fresh) {
+          chart.__seriesData = fresh;
+          notice.textContent = fresh.notice || "";
+          notice.hidden = !fresh.notice;
+          if (controls) controls.updateData(fresh);
+          chart.__seriesRender();
+        };
         frame.parentNode.insertBefore(chart, frame);
         var card = frame.closest(".analysis-card");
         var toggle = card && card.querySelector("[data-series-toggle]");
@@ -371,7 +559,7 @@
           chart.hidden = !chartShown;
           frame.hidden = chartShown;
           if (toggle) toggle.textContent = chartShown ? "Show the figure" : "Show the chart";
-          if (chartShown) draw(chart, data);
+          if (chartShown) chart.__seriesRender();
         }
         if (toggle) {
           toggle.hidden = false;
@@ -387,7 +575,7 @@
           new ResizeObserver(function () {
             if (!chart.hidden && Math.abs(chart.clientWidth - width) > 4) {
               width = chart.clientWidth;
-              draw(chart, data);
+              chart.__seriesRender();
             }
           }).observe(chart);
         }
@@ -400,11 +588,21 @@
     Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
       var name = chart.getAttribute("data-analysis");
       if (chart.hidden || !cache[name]) return;
-      cache[name].then(function (data) { if (data && data.ok) draw(chart, data); });
+      cache[name].then(function (data) { if (data && data.ok) chart.__seriesRender(); });
     });
   });
   /* A new run, or new results, may have new numbers. */
-  window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; });
+  window.addEventListener("dashboard:run-changed", function () {
+    cache = {};
+    playback = null;
+    ranges = Object.create(null);
+    Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
+      var name = chart.getAttribute("data-analysis");
+      load(name).then(function (data) {
+        if (data && data.ok && data.y && data.y.length) chart.__seriesSetData(data);
+      });
+    });
+  });
 
   window.FastMDXSeries = {
     hydrate: hydrate, ticks: ticks,

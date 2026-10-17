@@ -282,7 +282,8 @@ def test_a_server_that_turns_tools_away_is_asked_in_text_from_then_on(tmp_path):
         provider.close()
     assert proposal.answer == "Hello." and proposal.protocol == "text"
     stored = json.loads(where.read_text())
-    assert stored["tool_use"] is False and stored["api_key"] == "sk-local"
+    assert stored["tool_use"] is False and "api_key" not in stored
+    assert "sk-local" not in where.read_text()
     assert not hasattr(completion_for(path=where), "turn")
     assert "does not take tool calls" in describe_choice(where)
     # A new choice starts again from asking with tools.

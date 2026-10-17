@@ -156,7 +156,9 @@ def test_frames_written_while_a_run_goes(tmp_path):
                                                  encoding="utf-8")
     said = frames_info(root)
     assert said["source_kind"] == "live-history"
-    assert said["n_frames_browser"] == 4 and said["frame_indices"] == [0, 100, 200, 300]
+    assert said["n_frames_browser"] == 4 and said["frame_indices"] == [0, 1, 2, 3]
+    assert said["simulation_steps"] == [0, 100, 200, 300]
+    assert said["frame_times_ns"] == pytest.approx([0.0, 0.01, 0.02, 0.03])
     sent = md.load_dcd(str(simulation / "frames.dcd"), top=str(simulation / "frames_topology.pdb"))
     assert np.allclose(sent.xyz[:, 0, 0], [0.0, 0.01, 0.02, 0.03], atol=1e-6)
 

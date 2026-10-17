@@ -124,10 +124,12 @@ def _records(text: str) -> dict[str, set]:
 # What a scene holds
 # --------------------------------------------------------------------------
 
-def test_a_frame_s_scene_holds_its_atoms_cartoon_and_camera(helical):
+@pytest.mark.parametrize("source_frame", [False, True])
+def test_a_frame_s_scene_holds_its_atoms_cartoon_and_camera(helical, source_frame):
     from fastmdxplora.gui.by_residue import secondary_structure
 
-    view = {"camera": CAMERA, "frame": 4, "representation": "cartoon", "colour": "chain"}
+    view = {"camera": CAMERA, "frame": 4, "frame_source": source_frame,
+            "representation": "cartoon", "colour": "chain"}
     scene = build_scene(helical, view)
     assert scene["ok"] and scene["of"] == "frames" and scene["frame"] == 4
     _validated(scene["state"])

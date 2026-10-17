@@ -96,16 +96,6 @@
     return index != null && index >= 0 && index < frames.length ? frames[index] : null;
   }
 
-  function playedIndex(frame) {
-    var frames = state.playback ? state.playback.frame_indices : [];
-    if (!frames.length) return null;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
-    return best;
-  }
-
   /* The analysed point nearest a trajectory frame, over frames ascending. */
   function nearestPoint(frame) {
     var frames = state.data.frames;
@@ -219,10 +209,10 @@
       var box = svg.getBoundingClientRect();
       var x = (event.clientX - box.left) * (width / box.width);
       var value = xLow + (x - plot.left) / (plot.right - plot.left) * (xHigh - xLow);
-      var played = playedIndex(frameOfX(value));
-      if (played == null || played === state.index) return;
+      var frame = Math.round(frameOfX(value));
+      if (frame === trajectoryFrame(state.index)) return;
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: played, trajectoryFrame: trajectoryFrame(played) } }));
+        { detail: { trajectoryFrame: frame } }));
     }
     svg.addEventListener("pointerdown", function (event) {
       dragging = true;

@@ -34,9 +34,7 @@
    * because this is where somebody needs it; a GUI that tells you to run
    * a command is a GUI that has given up. */
   var KEY_HELP = {
-    anthropic: "Get one at platform.claude.com, under Settings \u2192 API " +
-               "keys. A developer account: a chat subscription is " +
-               "not the same thing.",
+    anthropic: "Create an Anthropic Console API key at platform.claude.com.",
     openai: "Get one at platform.openai.com, under API keys.",
     compatible: "A local server usually needs none; leave this blank."
   };
@@ -48,7 +46,7 @@
     "environment.model.unset":
       "I am not set up yet. Open Settings to set me up.",
     "environment.credentials.absent":
-      "API key required. Open Settings and paste one."
+      "Authentication required. Open Settings to connect or enter a key."
   };
 
   function el(id) { return document.getElementById(id); }
@@ -618,14 +616,131 @@
     return line;
   }
 
-  /* Ready or not, and nothing else. The AI model is recorded on the study --
-   * `agent_model` in the config and the manifest -- which is where a
-   * reader needs it. It does not belong in the chrome. */
-  function describeEngine(current) {
-    /* Inside the settings dialog, where somebody is choosing. It was on
-     * the page itself, as "Ready. Drafting with <model>." -- a status line
-     * about an engine, on a page about a study. */
-    return current ? current.model : "Nothing set yet.";
+  function providerSpec(id) {
+    return providers.filter(function (p) { return p.id === id; })[0] || null;
+  }
+
+  function authMethodLabel(provider, id) {
+    var spec = providerSpec(provider);
+    var method = spec && (spec.auth_methods || []).filter(function (m) {
+      return m.id === id;
+    })[0];
+    return method ? method.label : (id === "anthropic_console" ? "Anthropic Console OAuth"
+      : id === "chatgpt_plan" ? "ChatGPT plan sign-in" : "API key");
+  }
+
+  function engineLabel(choice) {
+    var spec = providerSpec(choice.provider);
+    var label = spec ? spec.label : choice.provider;
+    var location = choice.base_url ? " at " + choice.base_url : "";
+    return label + " · " + (choice.model || "no model") + location +
+      " · " + authMethodLabel(choice.provider, choice.auth_method || "api_key");
+  }
+
+  var savedEngineChoice = null;
+
+  function updateEngineSummary() {
+    var saved = savedEngineChoice;
+    var selected = { provider: el("agent-provider").value,
+      model: chosenModel(), base_url: el("agent-base-url").value.trim(),
+      auth_method: el("agent-auth-method").value || "api_key" };
+    var line = saved ? "Saved for Agent requests: " + engineLabel(saved)
+      : "No provider or model saved yet.";
+    var same = saved && saved.provider === selected.provider && saved.model === selected.model &&
+      (saved.base_url || "") === selected.base_url &&
+      (saved.auth_method || "api_key") === selected.auth_method;
+    if (!same && (selected.model || selected.provider)) {
+      line += "\nCurrent selection (unsaved): " + engineLabel(selected);
+    }
+    el("agent-model-current").textContent = line;
+  }
+
+  var authRequest = 0;
+  var authPollTimer = null;
+  var authPollCount = 0;
+
+  function setAuthStatus(status) {
+    var target = el("agent-auth-status");
+    target.textContent = status && status.message ? status.message : "No authentication status is available.";
+    target.classList.toggle("is-connected", !!status && status.connected === true);
+    target.classList.toggle("is-disconnected", !!status && status.connected === false);
+    target.classList.toggle("is-unverified", !status || status.connected == null);
+    var pending = !!(status && status.pending);
+    el("agent-auth-test").disabled = pending;
+    el("agent-auth-disconnect").disabled = false;
+    el("agent-auth-disconnect").textContent = pending ? "Cancel sign-in" : "Disconnect";
+    var method = providerSpec(el("agent-provider").value);
+    var selected = method && (method.auth_methods || []).filter(function (item) {
+      return item.id === el("agent-auth-method").value;
+    })[0];
+    el("agent-auth-connect").disabled = pending || !selected || !selected.available;
+    el("agent-auth-add-account").disabled = pending;
+    el("agent-auth-activate").disabled = pending;
+    updateAccountChoices(status || {});
+  }
+
+  function updateAccountChoices(status) {
+    var field = el("agent-auth-account-field");
+    var select = el("agent-auth-account");
+    var isChatGPT = el("agent-auth-method").value === "chatgpt_plan";
+    var previous = select.value;
+    var accounts = status.accounts || [];
+    select.replaceChildren();
+    accounts.forEach(function (account) {
+      var option = document.createElement("option");
+      option.value = account.client_id;
+      var label = account.email || ("ChatGPT account ···" + account.subject_hint);
+      option.textContent = label + (account.active ? " (active)" : "");
+      select.appendChild(option);
+    });
+    field.hidden = !isChatGPT || !accounts.length;
+    if (status.active_client_id) {
+      select.value = status.active_client_id;
+    } else if (previous && accounts.some(function (account) { return account.client_id === previous; })) {
+      select.value = previous;
+    }
+    el("agent-auth-add-account").hidden = !isChatGPT || !accounts.length;
+    el("agent-auth-activate").hidden = !isChatGPT || !select.value ||
+      !!(accounts.filter(function (account) {
+        return account.client_id === select.value && account.active;
+      })[0]);
+  }
+
+  function applyModelOptions(options) {
+    if (!Array.isArray(options) || !options.length) return;
+    var spec = providerSpec(el("agent-provider").value);
+    if (!spec) return;
+    spec.model_options = options;
+    spec.models = options.map(function (item) { return item.id; });
+    var selected = chosenModel();
+    fillModels(spec, selected);
+    updateEngineSummary();
+  }
+
+  function refreshAuthStatus(action, details) {
+    // Every action shares this ordering guard, including its polling result.
+    var request = ++authRequest;
+    if (["connect", "activate", "disconnect"].indexOf(action) !== -1) {
+      ["agent-auth-connect", "agent-auth-test", "agent-auth-disconnect",
+        "agent-auth-add-account", "agent-auth-activate"].forEach(function (id) {
+        el(id).disabled = true;
+      });
+    }
+    return post("/api/agent/auth", Object.assign({
+      action: action || "status", provider: el("agent-provider").value,
+      auth_method: el("agent-auth-method").value || "api_key",
+      model: chosenModel(), base_url: el("agent-base-url").value.trim()
+    }, details || {})).then(function (data) {
+      if (request !== authRequest) return null;
+      setAuthStatus(data.status || {connected: false, message: data.error});
+      applyModelOptions(data.model_options || (data.status && data.status.model_options));
+      return data;
+    }).catch(function () {
+      if (request === authRequest) {
+        setAuthStatus({connected: false, message: "The local authentication status could not be reached."});
+      }
+      return null;
+    });
   }
 
   var OTHER = "__other__";
@@ -638,10 +753,13 @@
   function fillModels(spec, chosen) {
     var select = el("agent-model");
     select.innerHTML = "";
-    (spec.models || []).forEach(function (name) {
+    var modelOptions = spec.model_options || (spec.models || []).map(function (name) {
+      return {id: name, label: name};
+    });
+    modelOptions.forEach(function (item) {
       var option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
+      option.value = item.id;
+      option.textContent = item.label || item.id;
       select.appendChild(option);
     });
     var other = document.createElement("option");
@@ -671,9 +789,81 @@
       : el("agent-model").value;
   }
 
-  function showProvider(id, chosen) {
+  function showAuthMethods(spec, preferred) {
+    var select = el("agent-auth-method");
+    select.innerHTML = "";
+    (spec.auth_methods || [{id: "api_key", label: "API key", available: true,
+      requires_api_key: true}]).forEach(function (method) {
+      var option = document.createElement("option");
+      option.value = method.id;
+      option.textContent = method.label + (method.available ? "" : " (unavailable)");
+      option.disabled = !method.available;
+      option.dataset.requiresKey = method.requires_api_key ? "true" : "false";
+      option.dataset.reason = method.reason || "";
+      select.appendChild(option);
+    });
+    var hasPreferred = (spec.auth_methods || []).some(function (method) {
+      return method.id === preferred;
+    });
+    select.value = hasPreferred ? preferred : "api_key";
+    updateAuthControls(spec);
+  }
+
+  function updateAuthControls(spec) {
+    if (authPollTimer) window.clearTimeout(authPollTimer);
+    authPollTimer = null;
+    var method = (spec.auth_methods || []).filter(function (item) {
+      return item.id === el("agent-auth-method").value;
+    })[0] || {id: "api_key", requires_api_key: true};
+    var usesKey = !!method.requires_api_key;
+    el("agent-key").closest("label").hidden = !usesKey;
+    if (!usesKey) el("agent-key").value = "";
+    el("agent-key-help").textContent = usesKey
+      ? (KEY_HELP[spec.id] || "") + " A new key is saved only in the OS credential vault; " +
+        "you may instead set " + (spec.environment_variable || "the provider's key variable") +
+        " in the environment. It is never sent back to the page or written to settings files."
+      : "";
+    var isConsole = method.id === "anthropic_console";
+    var isChatGPT = method.id === "chatgpt_plan";
+    var usesOAuth = isConsole || isChatGPT;
+    el("agent-auth-connect").hidden = !usesOAuth || !method.available;
+    el("agent-auth-connect").disabled = !method.available;
+    el("agent-auth-connect").textContent = isChatGPT
+      ? "Continue with ChatGPT" : "Continue with Anthropic Console";
+    el("agent-auth-account-field").hidden = !isChatGPT;
+    el("agent-auth-add-account").hidden = true;
+    el("agent-auth-activate").hidden = true;
+    el("agent-auth-test").hidden = false;
+    el("agent-auth-disconnect").hidden = false;
+    var help = method.reason || (isConsole
+      ? "Signs into the Anthropic Console API through an app-isolated ant CLI profile."
+      : isChatGPT
+      ? "OpenAI's documented Sign in with ChatGPT supports this local open-source Agent " +
+        "through the public Responses API. Approve ChatGPT plan usage in the system browser. " +
+        "Tokens stay in the OS credential vault."
+      : usesKey ? "API-key authentication uses the provider's documented API endpoint. " +
+        "Environment keys take precedence over a key saved in the OS vault."
+      : "This authentication method is unavailable.");
+    var unavailable = (spec.auth_methods || []).filter(function (item) {
+      return item.id !== method.id && !item.available;
+    });
+    if (unavailable.length) {
+      help += " " + unavailable.map(function (item) {
+        return item.label + " unavailable: " + (item.reason || "not supported here");
+      }).join(" ");
+    }
+    el("agent-auth-help").textContent = help;
+    setAuthStatus({connected: null,
+      message: "Checking " + authMethodLabel(spec.id, method.id) + "…"});
+    refreshAuthStatus("status");
+  }
+
+  function showProvider(id, chosen, authMethod) {
     var spec = providers.filter(function (p) { return p.id === id; })[0];
     if (!spec) return;
+    /* A pasted key belongs to the provider that was selected when it was
+     * entered. Never carry it across a provider or auth-method switch. */
+    el("agent-key").value = "";
     el("agent-url-field").hidden = !spec.needs_url;
     /* Only Anthropic is told how long to keep its cache. */
     el("agent-cache-field").hidden = id !== "anthropic";
@@ -682,16 +872,18 @@
      * in place -- OpenAI selected and claude-sonnet-4-6 still showing. */
     fillModels(spec, chosen || spec.default_model || "");
     el("agent-key-help").textContent =
-      (KEY_HELP[id] || "") + " Stored in a file of its own, readable only " +
-      "by you, and never written into a config, a manifest or a log.";
+      KEY_HELP[id] || "";
     el("agent-url-examples").textContent =
       (spec.examples || []).map(function (e) {
         return e.label + ": " + e.url;
       }).join("  \u00b7  ");
+    showAuthMethods(spec, authMethod);
+    updateEngineSummary();
   }
 
   function engineIsSet(current) {
-    el("agent-model-current").textContent = describeEngine(current);
+    savedEngineChoice = current ? Object.assign({}, current) : null;
+    updateEngineSummary();
     engineChosen = !!current;
     syncStart();
   }
@@ -1167,25 +1359,29 @@
         el("agent-base-url").value = data.current.base_url || "";
       }
       el("agent-cache").value = data.cache_for || "auto";
-      showProvider(select.value, data.current && data.current.model);
+      showProvider(select.value, data.current && data.current.model,
+                   data.current && data.current.auth_method);
       engineIsSet(data.current);
+      if (data.current && data.auth_status) setAuthStatus(data.auth_status);
     });
   }
 
-  function saveEngine() {
+  function saveEngine(keepOpen) {
     var button = el("agent-save-model");
     button.disabled = true;
-    post("/api/agent/model", {
+    var authMethod = el("agent-auth-method").value || "api_key";
+    return post("/api/agent/model", {
       provider: el("agent-provider").value,
       model: chosenModel(),
       base_url: el("agent-base-url").value,
-      api_key: el("agent-key").value,
+      auth_method: el("agent-auth-method").value || "api_key",
+      api_key: authMethod === "api_key" ? el("agent-key").value : "",
       cache_for: el("agent-cache").value
     }).then(function (data) {
       button.disabled = false;
       if (!data.ok) {
         el("agent-model-current").textContent = data.error;
-        return;
+        return false;
       }
       /* Cleared rather than left in the field: a key sitting in an input
        * survives a screenshot and a shoulder. */
@@ -1196,11 +1392,78 @@
         var spec = providers.filter(function (p) {
           return p.id === el("agent-provider").value;
         })[0];
-        if (spec) spec.models = data.models;
+        if (spec) {
+          spec.models = data.models;
+          spec.model_options = data.model_options || data.models.map(function (model) {
+            return {id: model, label: model};
+          });
+          fillModels(spec, data.current.model);
+        }
       }
       engineIsSet(data.current);
-      closeSettings();
+      refreshAuthStatus("status");
+      if (!keepOpen) closeSettings();
+      return true;
+    }).catch(function () {
+      button.disabled = false;
+      el("agent-model-current").textContent = "The provider settings could not be saved.";
+      return false;
     });
+  }
+
+  function connectAuth(addAccount) {
+    var details = {};
+    if (el("agent-auth-method").value === "chatgpt_plan") {
+      details.add_account = addAccount === true;
+      details.client_id = details.add_account ? "" : el("agent-auth-account").value;
+    }
+    refreshAuthStatus("connect", details).then(function (data) {
+      if (data && data.status && data.status.pending) startAuthPolling();
+    });
+  }
+
+  function startAuthPolling() {
+    if (authPollTimer) window.clearTimeout(authPollTimer);
+    authPollCount = 0;
+    function poll() {
+      if (authPollCount++ >= 150) {
+        setAuthStatus({connected: false,
+          message: "Sign-in timed out. Return to Agent Settings and start again."});
+        authPollTimer = null;
+        return;
+      }
+      authPollTimer = window.setTimeout(function () {
+        refreshAuthStatus("status").then(function (data) {
+          var status = data && data.status;
+          if (status && status.pending) poll();
+          else {
+            authPollTimer = null;
+            if (status && status.connected === true &&
+                ["chatgpt_plan", "anthropic_console"].indexOf(
+                  el("agent-auth-method").value) !== -1) {
+              refreshAuthStatus("test");
+            }
+          }
+        });
+      }, 2000);
+    }
+    poll();
+  }
+
+  function activateAuthAccount() {
+    refreshAuthStatus("activate", {client_id: el("agent-auth-account").value});
+  }
+
+  function testAuth() {
+    el("agent-auth-test").disabled = true;
+    refreshAuthStatus("test");
+  }
+
+  function disconnectAuth() {
+    if (authPollTimer) window.clearTimeout(authPollTimer);
+    authPollTimer = null;
+    refreshAuthStatus("disconnect", {client_id: el("agent-auth-account").value})
+      .then(function (data) { if (data) el("agent-key").value = ""; });
   }
 
   /* ---- The conversation ---------------------------------------------- */
@@ -2200,11 +2463,7 @@
     sendReady();
   }
 
-  /* Send is in the accent once there is something to send (user, 10-15:
-   * "enter/send button accent should not come up until the user start
-   * typing in the composer"). With nothing written, or only spaces, it is
-   * a quiet control: still reached by the keyboard, and saying why it
-   * does nothing. Stop, while a reply is written, is always ready. */
+  /* Send stays quiet until the composer contains a nonblank message. */
   function sendReady() {
     var button = el("agent-propose");
     var area = el("agent-request");
@@ -2213,7 +2472,6 @@
     var blank = !on && !area.value.trim();
     button.classList.toggle("is-blank", blank);
     button.setAttribute("aria-disabled", String(blank));
-    // Named Send either way; aria-disabled and the title say why it waits.
     button.setAttribute("aria-label", on ? "Stop" : "Send");
     button.title = on ? "Stop the reply being written"
       : blank ? "Write a message to send it"
@@ -2738,9 +2996,8 @@
   /* The message box's words follow the situation (user, 10-07: "This
    * default should be adaptive"). */
   var studyState = "none";
-  /* What the box asks for, by where the conversation stands: on the Agent
-   * page, and in the narrower column beside a page (340 to 440 pixels),
-   * where each wording is short enough for the box's one line. */
+  /* On the Agent page the full prompt fits; beside a page it is shortened
+   * for the narrower drawer. Keep each pair in sync with the two layouts. */
   var PROMPTS = {
     writing: ["I am working on it; you can write your next message", "Write your next message"],
     answer: ["Answer above, or type yes or no", "Answer above: yes or no"],
@@ -2781,9 +3038,6 @@
     }
     var beside = document.body.classList.contains("agent-beside");
     area.placeholder = PROMPTS[said][beside ? 1 : 0];
-    // A wording that runs to a second line has the box's room for it; a box
-    // not shown (the Agent page's, as the Agent beside closes) is sized as
-    // it is shown again.
     if (!area.value && area.offsetParent !== null) autosize(area);
   }
 
@@ -3863,8 +4117,27 @@
     el("agent-provider").addEventListener("change", function () {
       showProvider(this.value);
     });
-    el("agent-model").addEventListener("change", modelChanged);
-    el("agent-save-model").addEventListener("click", saveEngine);
+    el("agent-model").addEventListener("change", function () {
+      modelChanged();
+      updateEngineSummary();
+    });
+    el("agent-model-other").addEventListener("input", updateEngineSummary);
+    el("agent-base-url").addEventListener("input", updateEngineSummary);
+    el("agent-auth-method").addEventListener("change", function () {
+      updateAuthControls(providerSpec(el("agent-provider").value) || {id: el("agent-provider").value});
+      updateEngineSummary();
+    });
+    el("agent-save-model").addEventListener("click", function () { saveEngine(false); });
+    el("agent-auth-connect").addEventListener("click", connectAuth);
+    el("agent-auth-add-account").addEventListener("click", function () { connectAuth(true); });
+    el("agent-auth-account").addEventListener("change", function () {
+      updateAccountChoices({accounts: Array.prototype.map.call(this.options, function (option) {
+        return {client_id: option.value, active: option.textContent.indexOf("(active)") !== -1};
+      })});
+    });
+    el("agent-auth-activate").addEventListener("click", activateAuthAccount);
+    el("agent-auth-test").addEventListener("click", testAuth);
+    el("agent-auth-disconnect").addEventListener("click", disconnectAuth);
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
     el("agent-propose").addEventListener("click", function () {
@@ -3897,9 +4170,6 @@
     var area = el("agent-request");
     area.addEventListener("input", function () { autosize(area); renderMentions(); });
     area.addEventListener("input", sendReady);
-    // Beside a page or on the Agent page, the box asks in that column's words.
-    // Moved beside a page or back to the Agent page, the box is sized for
-    // the prompt it asks, or for what was written in it, in its new column.
     function sizedWhereItIs() {
       placeholder();
       if (area.value && area.offsetParent !== null) autosize(area);
@@ -3909,15 +4179,15 @@
       if (!event.detail || event.detail.page !== "agent") return;
       requestAnimationFrame(sizedWhereItIs);
     });
-    /* Text put in the box by the page (a starter, an edit, a reply asked
-     * again) readies Send as typing does: the box's own value setter,
-     * then this. */
-    var own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
-    Object.defineProperty(area, "value", {
-      configurable: true,
-      get: function () { return own.get.call(this); },
-      set: function (text) { own.set.call(this, text); sendReady(); },
-    });
+    // Values supplied by page controls also update Send's ready state.
+    var nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+    if (nativeValue && nativeValue.get && nativeValue.set) {
+      Object.defineProperty(area, "value", {
+        configurable: true,
+        get: function () { return nativeValue.get.call(this); },
+        set: function (value) { nativeValue.set.call(this, value); sendReady(); },
+      });
+    }
     sendReady();
     area.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

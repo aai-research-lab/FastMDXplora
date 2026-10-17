@@ -87,7 +87,7 @@ $ fastmdx agent model
   > sk-ant-...
 
   ✓ Saved to ~/.config/fastmdxplora/model.json
-  ✓ Key stored there, readable only by you. It is never written into a study.
+  ✓ Key stored in the OS credential vault. It is never written into a study.
 ```
 
 | Provider | AI model offered first | Environment variable |
@@ -108,16 +108,52 @@ a list of vendors goes stale and a protocol does not. It takes a base URL —
 `https://api.deepseek.com`, `http://localhost:11434/v1`,
 `http://localhost:8000/v1`.
 
-**Nothing extra has to be installed.** `fastmdxplora.agent` ships with the
-package; `pip install "fastmdxplora[agent]"` installs no additional
-dependencies. The Agent talks to an AI model over the standard library, with no
-vendor client library anywhere in it.
+The Agent ships with FastMDXplora and sends requests using Python's standard
+library. Saving credentials uses the system keyring installed with the package.
+Anthropic Console sign-in additionally requires Anthropic's official `ant` CLI.
+With Go 1.25 or later, install it using `go install github.com/anthropics/anthropic-cli/cmd/ant@latest`
+and put the Go `bin` directory on `PATH`, as described in the
+[official CLI quickstart](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/quickstart).
+Restart an already running dashboard after installing the CLI, then choose
+Anthropic → Anthropic Console OAuth in Agent Settings. Start sign-in there so
+the CLI uses FastMDXplora's own profile; complete organization/workspace
+selection in the official browser flow.
+
+### Account sign-in in Agent Settings
+
+OpenAI offers **Continue with ChatGPT** for eligible local, open-source apps.
+The user completes registration and consent in the system browser. The Agent
+uses the selected account's model catalog and public Responses API route, as
+documented in [OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+and [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
+
+Anthropic offers API keys and **Anthropic Console OAuth** through the official
+`ant` CLI's [local authentication](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/authentication)
+and [HTTP scripting flow](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/scripting).
+FastMDXplora uses its own isolated CLI profile. The Console option explains
+missing CLI or terminal requirements and stays disabled until they are available.
+
+Settings shows the saved provider, model and authentication method separately
+from unsaved edits. **Test connection** checks the selected route's model access.
+**Disconnect** stops this app's use of its saved credential; an API key supplied through
+the environment remains active until the environment variable is unset.
+
+For ChatGPT, disconnect immediately stops local use and attempts to revoke the
+renewable session, retrying temporary failures. If remote revocation cannot be
+confirmed, the dashboard says so; disconnect the app in ChatGPT Settings too.
+The account registration remains available for a later sign-in, following
+[OpenAI's accounts and sessions guidance](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions).
 
 ### Where the key lives
 
-In one file outside any study, readable only by its owner — or in the
-environment, **which is checked first**. That is how a cluster job or a CI run
-supplies one without anybody storing it.
+API keys and ChatGPT tokens are stored in the OS credential vault. An API key
+in the environment is checked first, so a cluster job or CI run can supply one
+without saving it. If no supported vault is available, use the provider's
+environment variable. Existing sessions from other tools and browsers are
+never imported.
+
+The following settings file stores provider/model choices and cache preferences,
+with no API keys or OAuth tokens:
 
 | | |
 |---|---|
@@ -125,7 +161,12 @@ supplies one without anybody storing it.
 | `$XDG_CONFIG_HOME/fastmdxplora/model.json` | otherwise, defaulting to `~/.config/` |
 | `%APPDATA%\fastmdxplora\model.json` | on Windows |
 
-Written with mode `0600`.
+Settings are replaced atomically. Anthropic Console credentials remain managed by
+the official CLI in this app's isolated `anthropic-console` profile directory.
+Disconnect retires that profile and saves a fresh profile identifier before
+asking the CLI to log out. An already-open terminal can finish only in the
+retired profile; its late result cannot reconnect the Agent. Close any sign-in
+terminal that is still open after canceling.
 
 **The key never enters a Config, a Manifest, a log line or an error message.**
 Those files get shared, pasted into issues and committed; a key in one is a key

@@ -231,6 +231,18 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: Check provider callback coordination
+        # Check real subprocess/loopback coordination before the longer suite.
+        shell: bash
+        run: pytest tests/test_chatgpt_authentication_races.py -rfEs
+
+      - name: Check exact-frame chart interactions
+        # These browser regressions must also work with coverage tracing,
+        # before committing the runner to the longer full-suite step.
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        shell: bash
+        run: pytest tests/test_a_graph_opens_exact_source_frame.py -rfEs --cov=fastmdxplora --cov-report=
+
       - name: Run tests
         # Coverage is measured where it is uploaded and nowhere else. The
         # tracer taxes every line of every test, and fourteen of the fifteen

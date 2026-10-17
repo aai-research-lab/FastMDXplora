@@ -11,6 +11,7 @@ hour on the page, five minutes from the command line), `1h` or `5m`.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -42,8 +43,10 @@ def test_auto_is_an_hour_on_the_page_and_five_minutes_elsewhere(tmp_path):
     save_cache_for("1h", path)
     assert cache_for("command line", path) == "1h"
     record = json.loads(path.read_text())
-    assert record["api_key"] == "sk-mine" and record["cache_for"] == "1h"
-    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    assert "api_key" not in record and record["cache_for"] == "1h"
+    assert "sk-mine" not in path.read_text()
+    if os.name != "nt":
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
     from fastmdxplora.refusals import StudyError
 
     with pytest.raises(StudyError):

@@ -47,6 +47,9 @@ requirements:
     # Upper bound matches requires-python in pyproject.toml; the chemistry
     # stack has no 3.14 builds yet either.
     - python >=${{ python_min }},<3.14
+    # Agent credentials use the OS vault; ChatGPT uses native Windows TLS.
+    - keyring >=25
+    - truststore >=0.10
     - numpy >=2.0
     - pyyaml >=6.0
     - mdtraj >=1.9.7

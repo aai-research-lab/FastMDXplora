@@ -125,7 +125,12 @@ def _command(ffmpeg: str, encoder: Encoder, fps: int, width: int, height: int,
     command = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
                "-f", "image2pipe", "-framerate", str(fps), "-c:v", "png", "-i", "-",
                # RGB as BT.709 YUV at video range, and the movie tagged so.
-               "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
+               # FFmpeg 8 negotiates colour properties per frame. Tag the
+               # converted frames too, or it drops primaries/transfer from
+               # the encoded stream despite the output options below.
+               "-vf", ("scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,"
+                       "setparams=range=tv:color_primaries=bt709:"
+                       "color_trc=bt709:colorspace=bt709"),
                *encoder.options(width, height, fps),
                "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
                "-color_range", "tv", "-r", str(fps), "-g", str(2 * fps)]

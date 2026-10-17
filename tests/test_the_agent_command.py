@@ -52,6 +52,8 @@ class TestWhereTheKeyLives(unittest.TestCase):
         record = load_choice(self.path).as_record()
         self.assertNotIn("api_key", record)
         self.assertNotIn("sk-secret", json.dumps(record))
+        self.assertNotIn("api_key", json.loads(self.path.read_text()))
+        self.assertNotIn("sk-secret", self.path.read_text())
 
     @unittest.skipIf(os.name == "nt",
                      "POSIX permission bits do not govern access on Windows")
@@ -115,7 +117,7 @@ class TestWhereTheKeyLives(unittest.TestCase):
             refusal = refusal_of(caught.exception)
             self.assertEqual(refusal.code, "environment.credentials.absent")
             self.assertIn("OPENAI_API_KEY", refusal.message)
-            self.assertIn("fastmdx agent model", refusal.message)
+            self.assertIn("Agent Settings", refusal.message)
         finally:
             if before is not None:
                 os.environ["OPENAI_API_KEY"] = before

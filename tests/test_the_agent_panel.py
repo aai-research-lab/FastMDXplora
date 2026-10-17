@@ -781,9 +781,7 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
         help_text = script[script.index("KEY_HELP"):script.index("IN_THE_GUI")]
         self.assertIn("platform.claude.com", help_text)
         self.assertIn("platform.openai.com", help_text)
-        # And that a subscription is not an API account, which is the thing
-        # people get wrong.
-        self.assertIn("not the same thing", help_text)
+        self.assertIn("Create an Anthropic Console API key", help_text)
 
     def test_the_actions_are_the_ones_asked_for(self):
         # The builder's own set, under the Agent: there is no need to go
@@ -1072,7 +1070,7 @@ class TestTheModelsComeFromTheProvider(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn("API key required. Open Settings and paste one.",
+        self.assertIn("Authentication required. Open Settings to connect or enter a key.",
                       script)
 
 

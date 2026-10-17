@@ -37,9 +37,11 @@
     bindingPocketCutoff: 5,
     playbackAvailable: false,
     playbackFrames: 0,
-    playbackTotalFrames: 0,
     playbackFrameTimes: [],
+    playbackSimulationSteps: [],
     playbackSignature: null,
+    playbackData: null,
+    exactFrame: null,
     metrics: [],
     status: {},
     health: {},
@@ -549,10 +551,13 @@
       "/api/events", "/api/results",
       "/api/structure-info", "/api/frames-info",
     ];
-    const settled = await Promise.allSettled(urls.map(fetchJSON));
+    const responses = urls.map((url) => fetchJSON(url).then(
+      (value) => ({status: "fulfilled", value}),
+      (reason) => ({status: "rejected", reason})
+    ));
     let successes = 0;
 
-    settled.forEach((result, index) => {
+    function applyResponse(result, index) {
       const name = names[index];
       if (result.status === "rejected") {
         state.apiErrors[name] = String(result.reason || "request failed");
@@ -569,7 +574,14 @@
       if (name === "results") safeApply(name, () => applyResults(payload));
       if (name === "structure") safeApply(name, () => applyStructure(payload));
       if (name === "playback") safeApply(name, () => applyPlayback(payload));
-    });
+    }
+
+    // Establish the study before its panels, but do not hold results behind
+    // an unrelated trajectory/topology request that is still being read.
+    applyResponse(await responses[0], 0);
+    await Promise.all(responses.slice(1).map(async (response, index) => {
+      applyResponse(await response, index + 1);
+    }));
 
     if (successes) {
       state.lastUpdateMs = Date.now();
@@ -722,9 +734,20 @@
     state.phases = [];
     state.playbackAvailable = false;
     state.playbackFrames = 0;
-    state.playbackTotalFrames = 0;
     state.playbackFrameTimes = [];
+    state.playbackSimulationSteps = [];
     state.playbackSignature = null;
+    state.playbackData = null;
+    state.exactFrame = null;
+    const slider = byId("traj-slider");
+    if (slider) {
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+    }
+    const row = byId("trajectory-row");
+    if (row) row.hidden = true;
+    setPlaybackPosition(0, 0, null, null);
     if (window.FastMDXCharts) window.FastMDXCharts.update([]);
     renderLiveProgress({});
     renderStructureTab({valid: false, reason: "missing"});
@@ -2042,41 +2065,103 @@
 
   function applyPlayback(payload) {
     const previousSignature = state.playbackSignature;
+    const previousPayload = state.playbackData;
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const previousFrame = parseInt(byId("traj-slider")?.value || "0", 10) || 0;
+    const sourceChanged = previousSignature !== null && previousSignature !== signature;
+
+    if (previousSignature && signature !== previousSignature) state.exactFrame = null;
+    state.playbackData = payload || null;
+    if (state.exactFrame && state.exactFrame.signature === signature
+        && payload?.playback_available && Array.isArray(payload.frame_indices)) {
+      const entries = payload.frame_indices.map((frame, index) => ({
+        frame,
+        time: payload.frame_times_ns?.[index] ?? null,
+        step: payload.simulation_steps?.[index] ?? null,
+      }));
+      if (!entries.some((entry) => entry.frame === state.exactFrame.frame)) {
+        entries.push({frame: state.exactFrame.frame, time: state.exactFrame.time, step: null});
+      }
+      entries.sort((a, b) => a.frame - b.frame);
+      payload = Object.assign({}, payload, {
+        n_frames_browser: entries.length,
+        frame_indices: entries.map((entry) => entry.frame),
+        frame_times_ns: entries.map((entry) => entry.time),
+        simulation_steps: entries.map((entry) => entry.step),
+      });
+    }
 
     state.playbackAvailable = !!payload?.playback_available;
     state.playbackFrames = Number(payload?.n_frames_browser || 0);
-    state.playbackTotalFrames = Number(payload?.n_frames_total || 0);
-    state.playbackFrameTimes = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
+    // The range and counter describe only frames the browser can play. A
+    // live-history payload may grow while the viewer intentionally keeps its
+    // already-loaded snapshot until the user reloads it.
+    const viewer = window.FastMDXMoleculeViewer?.STATE;
+    const viewerKeepsGrowingHistory = !sourceChanged
+      && previousPayload?.source_kind === "live-history"
+      && payload?.source_kind === "live-history"
+      && viewer?.playbackLoaded;
+    const viewerShowsPlayback = !!viewer?.playbackLoaded
+      && (viewer.playbackSignature === signature || viewerKeepsGrowingHistory);
+    if (viewerKeepsGrowingHistory) {
+      state.playbackFrames = Math.min(state.playbackFrames, Number(viewer.playbackFrames || 0));
+    }
+    state.playbackFrameTimes = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameTimes : (Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : []);
+    state.playbackSimulationSteps = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameSteps : (Array.isArray(payload?.simulation_steps)
+        ? payload.simulation_steps : []);
     state.playbackSignature = signature;
 
     const slider = byId("traj-slider");
     const row = byId("trajectory-row");
     if (!slider || !row) return;
-    if (!state.playbackAvailable) {
+    if (!state.playbackAvailable || state.playbackFrames < 1) {
+      state.playbackAvailable = false;
+      state.playbackFrames = 0;
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+      setPlaybackPosition(0, 0, null, null);
       row.hidden = true;
       emit("playback-ready", payload || {});
       return;
     }
 
     const maxFrame = Math.max(0, state.playbackFrames - 1);
-    const frame = Math.min(previousFrame, maxFrame);
+    let frame = sourceChanged ? 0 : Math.min(previousFrame, maxFrame);
+    if (viewerShowsPlayback) {
+      const displayed = viewer.playbackEngineIndices.indexOf(viewer.engine.frame());
+      if (displayed >= 0) frame = displayed;
+    }
     slider.min = "0";
     slider.max = String(maxFrame);
-    // Do not reset the user's scrubber on every three-second API poll.
+    // A different trajectory starts at its first loaded frame; a periodic
+    // update to the same source preserves the position.
     slider.value = String(frame);
-    setText("traj-current", String(frame));
-    setText("traj-total", String(state.playbackFrames));
-    setText(
-      "traj-simtime",
-      state.playbackFrameTimes[frame] != null
-        ? formatNumber(state.playbackFrameTimes[frame], 3) : "—"
-    );
+    setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
+      viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
+      viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null);
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
-      source_changed: previousSignature !== null && previousSignature !== signature,
+      source_changed: sourceChanged,
     }));
+  }
+
+  function setPlaybackPosition(index, total, time, step) {
+    const frameCount = Number(total);
+    if (!Number.isInteger(frameCount) || frameCount < 0) return false;
+    const hasCurrentFrame = frameCount > 0 && index != null;
+    const frameIndex = hasCurrentFrame ? Number(index) : null;
+    if (hasCurrentFrame && (!Number.isInteger(frameIndex)
+        || frameIndex < 0 || frameIndex >= frameCount)) return false;
+    setText("traj-current", frameIndex == null ? (frameCount ? "—" : "0") : String(frameIndex + 1));
+    setText("traj-total", String(frameCount));
+    setText("traj-step", step == null || !Number.isFinite(Number(step))
+      ? "—" : `step ${Number(step).toLocaleString()}`);
+    setText("traj-simtime", time == null || !Number.isFinite(Number(time))
+      ? "—" : `time ${formatNumber(time, 3)} ns`);
+    return true;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2500,15 +2585,39 @@
     window.dispatchEvent(new CustomEvent(`dashboard:${name}`, {detail}));
   }
 
+  function focusEntity(entity) {
+    if (!entity) return;
+    navigate("viewer");
+    emit("residue-focus", entity);
+  }
+
+  function setExactFrame(frame, time, signature) {
+    if (state.playbackSignature !== signature || !Number.isInteger(frame) || frame < 0) return false;
+    state.exactFrame = {frame, time: Number.isFinite(time) ? time : null, signature};
+    applyPlayback(state.playbackData);
+    return true;
+  }
+
+  function clearExactFrame(signature) {
+    if (signature && state.exactFrame?.signature !== signature) return false;
+    state.exactFrame = null;
+    applyPlayback(state.playbackData);
+    return true;
+  }
+
   window.FastMDXDashboard = {
     get state() { return JSON.parse(JSON.stringify(state)); },
     navigate,
     showAnalysis,
+    focusEntity,
     applyStatus,
     applyAppState,
     applyMetrics,
     applyStructure,
     applyPlayback,
+    setPlaybackPosition,
+    setExactFrame,
+    clearExactFrame,
     applyResults,
     on(eventName, handler) {
       window.addEventListener(`dashboard:${eventName}`, (event) => handler(event.detail));

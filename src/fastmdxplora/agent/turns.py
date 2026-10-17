@@ -231,6 +231,52 @@ def _chat_body(model: str, system: str, messages: list[dict[str, Any]],
     return body
 
 
+def _responses_body(model: str, system: str, messages: list[dict[str, Any]],
+                    tools: list[ToolSpec]) -> dict[str, Any]:
+    """Build the public Responses API shape used by ChatGPT plan OAuth.
+
+    This path deliberately sends the complete local conversation on every
+    request: Sign in with ChatGPT requires ``store=false`` and does not use
+    server-side response continuation.
+    """
+    items: list[dict[str, Any]] = []
+    for message in _alternating(messages):
+        role = message["role"]
+        if role == "user":
+            items.append({"role": "user", "content": message["text"]})
+        elif role == "assistant":
+            text = str(message.get("text") or "")
+            if text:
+                items.append({"role": "assistant", "content": text})
+            for call in message.get("calls") or ():
+                items.append({"type": "function_call", "call_id": call.id,
+                              "name": call.name,
+                              "arguments": json.dumps(call.arguments)})
+        else:
+            for result in message["results"]:
+                items.append({"type": "function_call_output", "call_id": result["id"],
+                              "output": str(result["content"])})
+    body: dict[str, Any] = {
+        "model": model,
+        "instructions": system,
+        "input": items,
+        "store": False,
+        "stream": True,
+    }
+    if tools:
+        # ChatGPT plan OAuth has a narrower Responses contract than API-key
+        # access: local functions belong in an `additional_tools` input item,
+        # not the top-level `tools` field. Put the item before the conversation
+        # so every historical and current function call has the same tool set.
+        body["input"].insert(0, {
+            "type": "additional_tools", "role": "developer",
+            "tools": [{"type": "function", "name": tool.name,
+                       "description": tool.description,
+                       "parameters": tool.parameters} for tool in tools],
+        })
+    return body
+
+
 def _alternating(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Two user turns in a row joined into one (a history that ends with the
     person's last message, then this message), so every provider reads the
@@ -325,8 +371,12 @@ def _events(response: Any):
 
 def _stream_error(event: dict[str, Any]) -> str:
     error = event.get("error") if isinstance(event.get("error"), dict) else {}
-    return redacted("I could not finish: the provider said: "
-                    f"{str(error.get('message') or error)[:400]}")
+    response = event.get("response") if isinstance(event.get("response"), dict) else {}
+    if not error and isinstance(response.get("error"), dict):
+        error = response["error"]
+    code = str(error.get("code") or "")
+    detail = str(error.get("message") or code or error or "Unknown provider error")[:400]
+    return redacted("I could not finish: the provider said: " + detail)
 
 
 def _blocks_streamed(response: Any, on_text: Callable[[str], None] | None,
@@ -414,6 +464,85 @@ def _chat_streamed(response: Any, on_text: Callable[[str], None] | None,
     return Turn("".join(text), found, _chat_usage(usage), stop)
 
 
+def _responses_streamed(response: Any, on_text: Callable[[str], None] | None,
+                        on_call: Callable[[str], None] | None, url: str,
+                        secrets: Any = ()) -> Turn:
+    """Read a Responses stream through its terminal success or failure event."""
+    text: list[str] = []
+    calls: dict[str, dict[str, Any]] = {}
+    usage: dict[str, Any] = {}
+    completed = False
+    stop = ""
+
+    def remember(item: dict[str, Any], item_id: str = "") -> None:
+        if item.get("type") != "function_call":
+            return
+        key = str(item_id or item.get("id") or item.get("call_id") or len(calls))
+        held = calls.setdefault(key, {"id": "", "name": "", "arguments": ""})
+        call_id = item.get("call_id") or item.get("id")
+        if call_id:
+            held["id"] = str(call_id)
+        if item.get("name"):
+            name = str(item["name"])
+            if not held["name"] and on_call is not None:
+                on_call(name)
+            held["name"] = name
+        if isinstance(item.get("arguments"), str):
+            held["arguments"] = item["arguments"]
+
+    for event in _events(response):
+        kind = str(event.get("type") or "")
+        if kind in ("error", "response.failed"):
+            detail = _stream_error(event)
+            raise StudyError(redacted(detail, secrets),
+                             code="environment.service.unusable_response", url=url)
+        if kind == "response.incomplete":
+            response_data = event.get("response") or {}
+            reason = (response_data.get("incomplete_details") or {}).get("reason")
+            detail = (
+                "The ChatGPT response was incomplete" + (f" ({reason})" if reason else "") + "."
+            )
+            raise StudyError(redacted(detail, secrets),
+                             code="environment.service.unusable_response", url=url)
+        if kind == "response.output_text.delta":
+            piece = str(event.get("delta") or "")
+            text.append(piece)
+            if on_text is not None:
+                on_text(piece)
+        elif kind == "response.output_item.added":
+            item = event.get("item") or {}
+            remember(item, str(item.get("id") or ""))
+        elif kind == "response.output_item.done":
+            item = event.get("item") or {}
+            remember(item, str(item.get("id") or ""))
+        elif kind == "response.function_call_arguments.delta":
+            key = str(event.get("item_id") or event.get("output_index") or len(calls))
+            held = calls.setdefault(key, {"id": "", "name": "", "arguments": ""})
+            held["arguments"] += str(event.get("delta") or "")
+        elif kind == "response.completed":
+            response_data = event.get("response") or {}
+            usage = response_data.get("usage") or {}
+            stop = str(response_data.get("status") or "completed")
+            for item in response_data.get("output") or []:
+                if isinstance(item, dict):
+                    remember(item, str(item.get("id") or ""))
+            completed = True
+
+    if not completed:
+        raise StudyError("The ChatGPT response stream ended without response.completed.",
+                         code="environment.service.unusable_response", url=url)
+    found = tuple(
+        ToolCall(_id_of(call["id"], index), call["name"], _arguments(call["arguments"]))
+        for index, call in enumerate(calls.values()) if call["name"]
+    )
+    cached = int(((usage.get("input_tokens_details") or {}).get("cached_tokens")) or 0)
+    reported_input = int(usage.get("input_tokens") or 0)
+    cost = Usage(calls=1, input_tokens=max(0, reported_input - cached),
+                 cache_read_tokens=cached,
+                 output_tokens=int(usage.get("output_tokens") or 0))
+    return Turn("".join(text), found, cost, stop)
+
+
 # ---------------------------------------------------------------------------
 # Asking
 # ---------------------------------------------------------------------------
@@ -467,13 +596,15 @@ def take_turn(*, url: str, headers: dict[str, str], shape: str, model: str,
               on_text: Callable[[str], None] | None = None,
               on_call: Callable[[str], None] | None = None,
               usage_in_stream: bool = False, cache_for: str = "5m") -> Turn:
-    """Ask once, in ``shape`` (``"blocks"`` or ``"chat"``), retrying what the
+    """Ask once, in ``shape`` (``"blocks"``, ``"chat"`` or ``"responses"``), retrying what the
     provider says to retry. The key is in ``headers`` and never in what is
     raised: an error message is the easiest place for a secret to escape
     into a log."""
-    streamed = on_text is not None or on_call is not None
+    streamed = shape == "responses" or on_text is not None or on_call is not None
     if shape == "blocks":
         body = _blocks_body(model, system, messages, tools, max_tokens, cache_for)
+    elif shape == "responses":
+        body = _responses_body(model, system, messages, tools)
     else:
         body = _chat_body(model, system, messages, tools,
                           usage_in_stream=streamed and usage_in_stream)
@@ -483,11 +614,18 @@ def take_turn(*, url: str, headers: dict[str, str], shape: str, model: str,
     sent = dict(headers, **{"content-type": "application/json"})
     secrets = [value for name, value in headers.items()
                if name.lower() in ("authorization", "x-api-key", "api-key")]
+    open_request = urllib.request.urlopen
+    if shape == "responses":
+        from fastmdxplora.agent.openai_chatgpt import _open_https
+
+        open_request = _open_https
     for attempt in range(MOST_TRIES):
         request = urllib.request.Request(url, method="POST", data=data, headers=sent)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with open_request(request, timeout=timeout) as response:
                 if streamed:
+                    if shape == "responses":
+                        return _responses_streamed(response, on_text, on_call, url, secrets)
                     reader = _blocks_streamed if shape == "blocks" else _chat_streamed
                     return reader(response, on_text, on_call, url)
                 answer = json.loads(response.read())

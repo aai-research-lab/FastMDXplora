@@ -122,7 +122,9 @@ def test_a_stored_key_is_never_sent_to_another_provider(monkeypatch, tmp_path):
                 key="sk-ds", path=path)
     with pytest.raises(StudyError):
         _key_for(ModelChoice("compatible", "x", "https://openrouter.ai/api/v1"), path)
-    assert json.loads(path.read_text())["api_key"] == "sk-ds"
+    assert "api_key" not in json.loads(path.read_text())
+    assert "sk-ds" not in path.read_text()
+    assert _key_for(ModelChoice("compatible", "x", "https://api.deepseek.com"), path) == "sk-ds"
 
 
 def test_the_command_suggests_the_newest(monkeypatch, tmp_path, capsys):

@@ -401,7 +401,7 @@ def _residue_hint(row: Any) -> dict[str, Any]:
     if not isinstance(row, dict):
         raise _Refused("A selected residue must be a mapping.")
     kept: dict[str, Any] = {}
-    for key, most in (("chain", 32), ("icode", 1), ("resn", 8)):
+    for key, most in (("chain", 32), ("icode", 1), ("resn", 8), ("atom", 8)):
         if isinstance(row.get(key), str) and len(row[key]) <= most:
             kept[key] = row[key]
     resi = row.get("resi")

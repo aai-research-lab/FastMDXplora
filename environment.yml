@@ -34,6 +34,10 @@ channels:
 dependencies:
   - python>=3.10,<3.14
   - pip
+  # Agent credentials use an OS vault; the Windows sign-in route also uses
+  # native certificate verification. Keep this install route complete.
+  - keyring>=25
+  - truststore>=0.10
   # Core (analysis + report)
   # See the note in pyproject.toml: np.trapezoid needs 2.0.
   - numpy>=2.0

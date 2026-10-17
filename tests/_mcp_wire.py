@@ -10,7 +10,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
-import select
+import queue
 import threading
 from typing import Any, Callable
 
@@ -29,10 +29,9 @@ class Wire:
         r_in, w_in = os.pipe()
         r_out, w_out = os.pipe()
         self._to = os.fdopen(w_in, "wb", buffering=0)
-        # Read by hand, not through a buffered file: a buffer holding two
-        # lines would leave select() saying nothing is waiting.
-        self._from = r_out
-        self._buffer = b""
+        self._from = os.fdopen(r_out, "rb")
+        self._lines: queue.Queue[bytes] = queue.Queue()
+        self._eof = False
         reader, writer = os.fdopen(r_in, "rb"), os.fdopen(w_out, "wb", buffering=0)
 
         def run() -> None:
@@ -44,6 +43,16 @@ class Wire:
 
         self.thread = threading.Thread(target=run, daemon=True)
         self.thread.start()
+
+        def receive() -> None:
+            # A reader thread supports pipe timeouts on Windows too, where
+            # select() accepts sockets only. Buffered extra lines stay queued.
+            for line in self._from:
+                self._lines.put(line)
+            self._lines.put(b"")
+
+        self._receiver = threading.Thread(target=receive, daemon=True)
+        self._receiver.start()
         self.seen: list[dict[str, Any]] = []
         self._ids = itertools.count(1)
 
@@ -52,15 +61,15 @@ class Wire:
         self._to.write(raw.rstrip(b"\n") + b"\n")
 
     def read(self, timeout: float = 30.0) -> dict[str, Any] | None:
-        while b"\n" not in self._buffer:
-            ready, _, _ = select.select([self._from], [], [], timeout)
-            if not ready:
-                return None
-            more = os.read(self._from, 65536)
-            if not more:
-                return None
-            self._buffer += more
-        line, self._buffer = self._buffer.split(b"\n", 1)
+        if self._eof:
+            return None
+        try:
+            line = self._lines.get(timeout=timeout)
+        except queue.Empty:
+            return None
+        if not line:
+            self._eof = True
+            return None
         return json.loads(line)
 
     def request(self, method: str, params: dict[str, Any] | None = None, *,
@@ -94,7 +103,8 @@ class Wire:
     def close(self) -> None:
         self._to.close()
         self.thread.join(timeout=10)
-        os.close(self._from)
+        self._receiver.join(timeout=10)
+        self._from.close()
 
 
 def text_of(response: dict[str, Any]) -> str:

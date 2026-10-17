@@ -74,12 +74,42 @@
                    placeholder="http://localhost:11434/v1">
             <p class="builder-card-note" id="agent-url-examples"></p>
           </label>
+          <label class="builder-field builder-field-wide" id="agent-auth-method-field">
+            <span class="builder-label">Authentication</span>
+            <select id="agent-auth-method" aria-describedby="agent-auth-help"></select>
+            <p class="builder-card-note" id="agent-auth-help"></p>
+          </label>
           <label class="builder-field builder-field-wide">
             <span class="builder-label">API key</span>
             <input id="agent-key" type="password"
                    placeholder="paste your key">
             <p class="builder-card-note" id="agent-key-help"></p>
           </label>
+          <div class="builder-field builder-field-wide agent-auth-tools"
+               id="agent-auth-tools" aria-live="polite">
+            <div class="agent-auth-status" id="agent-auth-status">Checking credentials…</div>
+            <div class="agent-auth-buttons">
+              <button type="button" class="line-btn" id="agent-auth-connect" hidden>
+                Continue with provider
+              </button>
+              <label class="agent-auth-account" id="agent-auth-account-field" hidden>
+                <span class="builder-label">ChatGPT account</span>
+                <select id="agent-auth-account" aria-label="Saved ChatGPT account"></select>
+              </label>
+              <button type="button" class="line-btn" id="agent-auth-add-account" hidden>
+                Add another ChatGPT account
+              </button>
+              <button type="button" class="line-btn" id="agent-auth-activate" hidden>
+                Use selected ChatGPT account
+              </button>
+              <button type="button" class="line-btn" id="agent-auth-test">
+                Test connection
+              </button>
+              <button type="button" class="line-btn" id="agent-auth-disconnect">
+                Disconnect
+              </button>
+            </div>
+          </div>
           <label class="builder-field builder-field-wide" id="agent-cache-field" hidden>
             <span class="builder-label">Keep the instructions cached</span>
             <select id="agent-cache">
@@ -1130,6 +1160,7 @@
                   <span class="overlay-tag" id="overlay-tag">offline</span>
                   <span class="overlay-detail mono" id="overlay-stage">&mdash;</span>
                   <span class="overlay-detail mono" id="overlay-frame">frame &mdash;</span>
+                    <span class="overlay-detail mono" id="overlay-step">&mdash;</span>
                   <span class="overlay-detail mono" id="overlay-age">age &mdash;</span>
                   <span class="overlay-detail mono" id="overlay-simtime">sim time &mdash;</span>
                 </div>
@@ -1154,7 +1185,7 @@
                     <button class="icon-btn" type="button" data-traj="reverse" aria-label="Play backwards" aria-pressed="false" title="Play backwards, or forwards again"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg></button>
                   </div>
                   <input type="range" class="traj-slider" id="traj-slider" min="0" max="0" value="0" aria-label="Frame">
-                  <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-simtime">—</span> ns</span>
+                  <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-step">—</span> · <span id="traj-simtime">—</span></span>
                   <span class="traj-loaded muted small" id="traj-loaded" role="status" hidden></span>
                   <label class="chip-toggle micro" title="Playback speed">Speed
                     <select id="traj-speed">
@@ -1576,6 +1607,9 @@
                       <label class="chip-toggle" title="The simulated time of each frame, in the lower right corner"><input type="checkbox" id="movie-time" checked>Time</label>
                       <label class="chip-toggle" title="The camera turned once about the screen's vertical over the movie"><input type="checkbox" id="movie-turn">One turn</label>
                     </div>
+                    <label class="select-field">Caption (optional)
+                      <input type="text" id="movie-caption" maxlength="240" aria-label="Movie caption, optional" placeholder="Add a caption">
+                    </label>
                     <div class="sel-naming">
                       <input type="text" id="movie-name" maxlength="60" aria-label="Name of the movie" value="movie">
                       <button type="submit" class="chip-btn" id="movie-make" title="Render the frames as the Viewer shows them and encode them as a movie with the study (movies/), then download it">Make the movie</button>

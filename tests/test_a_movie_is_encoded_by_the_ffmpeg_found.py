@@ -13,6 +13,7 @@ chosen, the command ffmpeg is given, and what is said when it fails.
 from __future__ import annotations
 
 import sys
+import os
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,19 @@ def stand_in(tmp_path, monkeypatch):
     monkeypatch.setenv("FASTMDXPLORA_FFMPEG", str(program))
     monkeypatch.setenv("STAND_IN_LOG", str(tmp_path / "command.txt"))
     monkeypatch.setattr(movies, "_CHOSEN", {})
+    if os.name == "nt":
+        # Windows does not execute a POSIX shebang. Adapt only the launch
+        # of this external stand-in; the real child still consumes the pipe
+        # and writes the movie/failure that the production pipeline handles.
+        run, popen = movies.subprocess.run, movies.subprocess.Popen
+
+        def argv(command):
+            return [sys.executable, *command] if command[0] == str(program) else command
+
+        monkeypatch.setattr(movies.subprocess, "run",
+                            lambda command, *a, **kw: run(argv(command), *a, **kw))
+        monkeypatch.setattr(movies.subprocess, "Popen",
+                            lambda command, *a, **kw: popen(argv(command), *a, **kw))
     yield program
     for key in list(movies._MOVIES):
         cancel_movie(key)
@@ -113,7 +127,10 @@ def test_a_movie_is_made_through_the_command_given(stand_in, tmp_path):
                         ("-color_range", "tv"), ("-r", "30"), ("-movflags", "+faststart"),
                         ("-f", "mp4")):
         assert given(flag, encoded) == value, flag
-    assert "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p" in command
+    assert given("-vf").split(",") == [
+        "scale=out_color_matrix=bt709:out_range=tv", "format=yuv420p",
+        "setparams=range=tv:color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+    ]
     assert "title=made" in command
     assert any(arg.startswith("comment=Made with FastMDXplora ")
                and arg.endswith(": frames 0 to 2, 30 frames a second") for arg in command)

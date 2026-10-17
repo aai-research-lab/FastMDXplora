@@ -3593,7 +3593,7 @@ def _choose_model() -> int:
     from fastmdxplora.agent import (
         PROVIDERS, ModelChoice, describe_choice, load_choice, save_choice,
     )
-    from fastmdxplora.agent.models import default_model, list_models, save_cache_for
+    from fastmdxplora.agent.models import default_model, list_models
 
     # What is in use first, so a look at the choice is not a change to it:
     # nothing is saved unless an AI model is picked below.
@@ -3650,11 +3650,10 @@ def _choose_model() -> int:
             print(f"{cache!r} is not auto, 1h or 5m.")
             return 1
 
-    where = save_choice(ModelChoice(picked, model, base_url), key=key)
-    save_cache_for(cache)
+    where = save_choice(ModelChoice(picked, model, base_url), key=key, cache=cache)
     print(f"\n  ✓ Saved to {where}")
     if key:
-        print("  ✓ Key stored there, readable only by you. It is never "
+        print("  ✓ Key stored in the OS credential vault. It is never "
               "written into a study.")
     else:
         print(f"  ✓ No key stored; {env_name} will be read at call time.")

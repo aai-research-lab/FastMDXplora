@@ -64,6 +64,8 @@ FastMDXplora/
 │       │   ├── receipt.py         # What the AI model was sent for one reply, kept bounded
 │       │   ├── tools.py           # What the Agent looks at with the software's own tools
 │       │   ├── models.py          # A stored provider choice, as the function the Agent calls
+│       │   ├── openai_chatgpt.py  # App-owned ChatGPT OAuth, verified identity and vault sessions
+│       │   ├── anthropic_cli.py   # An isolated official Console CLI profile for API access
 │       │   ├── memory.py          # What the Agent remembers of the person, as they see and change it
 │       │   ├── evaluate.py        # How well an AI model writes a study, counted on a set of asks
 │       │   ├── queue.py           # A waiting line for one card, and a budget it keeps to

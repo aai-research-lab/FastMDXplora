@@ -124,6 +124,8 @@ def _checked(view: Any) -> dict[str, Any] | None:
     frame = view.get("frame")
     if isinstance(frame, int) and not isinstance(frame, bool) and 0 <= frame < 10_000_000:
         clean["frame"] = frame
+        if view.get("frame_source") is True:
+            clean["frame_source"] = True
     for key, word in (("representation", _WORD), ("colour", _COLOURING)):
         if isinstance(view.get(key), str) and word.match(view[key]):
             clean[key] = view[key]
