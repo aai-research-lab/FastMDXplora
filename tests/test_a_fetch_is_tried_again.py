@@ -210,3 +210,14 @@ def test_a_body_shorter_than_it_said_is_cut_short(stalling, tmp_path) -> None:
     with pytest.raises(urllib.error.ContentTooShortError) as raised:
         pipeline._download(stalling["url"], tmp_path / "input.pdb")
     assert pipeline._passes(raised.value)
+
+
+def test_a_length_that_is_not_a_number_is_not_held_against_the_body(
+        stalling, tmp_path) -> None:
+    # A `Content-Length` that does not parse says nothing of the size, so
+    # the body is kept as it came rather than refused as cut short.
+    stalling["said"] = (b"HTTP/1.0 200 OK\r\nContent-Length: lots\r\n\r\n"
+                        b"ATOM      1  N   ASN A   1\n")
+    stalling["hold"] = False
+    pipeline._download(stalling["url"], tmp_path / "input.pdb")
+    assert (tmp_path / "input.pdb").read_bytes().startswith(b"ATOM")
