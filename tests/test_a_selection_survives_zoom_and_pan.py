@@ -330,3 +330,149 @@ def test_the_other_charts_keep_their_place_through_zoom(tmp_path, kind):
     for said in expect:
         assert said in chosen, chosen
         assert said in kept, kept
+
+
+def test_a_view_with_no_point_in_it_chooses_nothing_and_enter_opens_nothing(tmp_path):
+    """Points with a gap between them, viewed inside the gap: no point is
+    shown, so none is chosen, Home and End choose none, and Enter opens no
+    frame; the chosen point comes back as the view does."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    _, session = _session(tmp_path)
+    positions = [0, 1, 2, 3, 4, 15, 16, 17, 18, 19]
+    data = {"ok": True, "kind": "labels", "title": "Conformational clustering (kmeans)",
+            "x": positions, "x_label": "Frame", "frames": [FRAMES[k] for k in positions],
+            "linked": True, "labels": [k % 3 for k in positions], "clusters": [0, 1, 2],
+            "y_label": "Cluster"}
+    redraw = """view => { const host = document.getElementById('kept-selection');
+        host._view = view; window.FastMDXFigures.plot(host, window.__keptData); }"""
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _browser(pw, session)
+            page.evaluate("data => { window.__keptData = data; }", data)
+            page.evaluate("""() => {
+                const host = document.createElement('div');
+                host.id = 'kept-selection';
+                host.className = 'figure-chart';
+                host.style.width = '720px';
+                document.querySelector('.page[data-page="analysis"]').appendChild(host);
+                window.FastMDXFigures.plot(host, window.__keptData);
+            }""")
+            page.locator("#kept-selection svg").scroll_into_view_if_needed()
+            _press(page, "Home")
+            _press(page, "ArrowRight", times=3)
+            chosen = _tip(page)
+            # Inside the gap: positions 6 to 13 hold no point.
+            page.evaluate(redraw, {"x": [6, 13]})
+            requests: list[str] = []
+            page.on("request", lambda r: requests.append(r.url) if "exact-frame" in r.url else None)
+            page.locator("#kept-selection svg").focus()
+            empty_tip = page.is_hidden("#kept-selection .series-tip")
+            for key in ("Home", "End", "Enter"):
+                page.keyboard.press(key)
+            page.wait_for_timeout(600)
+            still_hidden = page.is_hidden("#kept-selection .series-tip")
+            where = page.evaluate("() => document.documentElement.dataset.page")
+            # The whole run again: the point chosen before is chosen again.
+            page.evaluate(redraw, None)
+            page.locator("#kept-selection svg").focus()
+            back = _tip(page)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert f"frame {FRAMES[3]}" in chosen, chosen
+    assert empty_tip and still_hidden
+    assert requests == [] and where == "analysis"
+    # Nothing was chosen in the empty view, so the place falls back to the
+    # point nearest the one chosen before it: position 3 itself.
+    assert f"frame {FRAMES[3]}" in back, back
+
+
+def test_a_matrix_column_moved_out_of_view_gives_way_and_its_row_stays(tmp_path):
+    """The matrix's range is the page's time range on both axes. Moved along
+    until the chosen column is out of view, the shown column nearest it is
+    chosen; the row, still shown, is kept; Shift+Enter and Enter open those
+    frames in the Viewer."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.figure_data import figure_payload
+
+    root, session = _session(tmp_path)
+    folder = root / "analysis" / "cluster"
+    folder.mkdir(parents=True)
+    np.savez(folder / "cluster_rmsd_matrix.npz", rmsd_nm=np.zeros((20, 20)),
+             frames=np.array(FRAMES), time_ns=np.arange(20) * 0.001)
+    payload = figure_payload(root, "analysis/cluster/cluster_rmsd_matrix.png")
+    payload["linked"] = True
+    low, high = payload["extent"]
+    centres = [low + (k + 0.5) * (high - low) / 20 for k in range(20)]
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _browser(pw, session)
+            _plot(page, payload)
+            _press(page, "Home")
+            _press(page, "ArrowRight", times=8)
+            _press(page, "ArrowDown", times=14)
+            _press(page, "+")
+            page.wait_for_function("() => document.querySelector('#kept-selection').dataset.view")
+            zoomed = _view(page)
+            # Moved right until column 8 has left the view.
+            _press(page, "]", times=4)
+            page.wait_for_function("c => window.FastMDXPlotTools.range().from > c",
+                                   arg=centres[8])
+            off = _view(page)
+            page.locator("#kept-selection svg").focus()
+            said = _tip(page)
+            page.keyboard.press("Shift+Enter")
+            nearest = min(k for k in range(20) if centres[k] >= off[0] - 1e-9)
+            column = _viewer_at(page, FRAMES[nearest])
+            _back(page)
+            page.keyboard.press("Enter")
+            row = _viewer_at(page, FRAMES[14])
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert zoomed[0] <= centres[8] <= zoomed[1] and zoomed[0] <= centres[14] <= zoomed[1]
+    assert centres[8] < off[0] <= centres[14] <= off[1]
+    assert f"column frame {FRAMES[nearest]}" in said and f"row frame {FRAMES[14]}" in said, said
+    assert column == pytest.approx(float(FRAMES[nearest]), abs=0.02)
+    assert row == pytest.approx(float(FRAMES[14]), abs=0.02)
+
+
+def test_a_series_point_moved_out_of_view_gives_way_to_the_nearest_shown(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    _, session = _session(tmp_path)
+    rmsd = '.series-chart[data-analysis="rmsd"]'
+    svg = rmsd + " svg"
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _browser(pw, session)
+            page.wait_for_selector(rmsd + " .plot-tools")
+            page.locator(svg).scroll_into_view_if_needed()
+            _press(page, "Home", selector=svg)
+            _press(page, "ArrowRight", selector=svg, times=3)
+            data = page.evaluate(f"() => document.querySelector('{rmsd}').__seriesData")
+            _press(page, "+", selector=svg)
+            page.wait_for_function(f"() => document.querySelector('{rmsd}').dataset.view")
+            # Moved right until the chosen point (index 3) has left the view.
+            _press(page, "]", selector=svg, times=4)
+            page.wait_for_function("x => window.FastMDXPlotTools.range().from > x", arg=data["x"][3])
+            off = _view(page, rmsd)
+            page.locator(svg).focus()
+            said = _tip(page, rmsd)
+            _press(page, "Enter", selector=svg)
+            nearest = min(k for k in range(len(data["x"])) if data["x"][k] >= off[0] - 1e-9)
+            opened = _viewer_at(page, data["frames"][nearest])
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert data["x"][3] < off[0]
+    assert f"frame {data['frames'][nearest]}" in said, (off, said)
+    assert opened == pytest.approx(float(data["frames"][nearest]), abs=0.02)

@@ -474,9 +474,14 @@
     function usable(i) {
       return i >= 0 && i < count && (!selectable || selectable(i)) && (!visible || visible(i));
     }
+    // The point chosen in this drawing: the one remembered where it is
+    // shown, else the shown point nearest it (which becomes the one
+    // remembered), else none, the one remembered kept for a later drawing
+    // that shows it again.
+    var current = -1;
     function set(i, display) {
-      if (i < 0 || i >= count) return place.index;
-      place.index = i;
+      if (i < 0 || i >= count) return current;
+      current = place.index = i;
       if (display !== false) show(i);
       return i;
     }
@@ -494,28 +499,31 @@
       }
       return -1;
     }
-    if (place.index >= 0 && !usable(place.index)) place.index = nearest(place.index);
+    if (place.index >= 0) {
+      current = usable(place.index) ? place.index : nearest(place.index);
+      if (current >= 0) place.index = current;
+    }
     svg.addEventListener("focus", function () {
-      if (place.index < 0) set(seek(0, 1));
-      else show(place.index);
+      if (current < 0) set(seek(0, 1));
+      else show(current);
     });
     svg.addEventListener("keydown", function (event) {
       // Zoomed in, the arrows move the view (plot-tools.js); Home, End and
       // Enter still go along the points shown.
       if (f.view && /^Arrow/.test(event.key)) return;
-      var base = place.index < 0 ? 0 : place.index;
+      var base = current < 0 ? 0 : current;
       if (event.key === "Home") set(seek(0, 1));
       else if (event.key === "End") set(seek(count - 1, -1));
       else if ((!vertical && event.key === "ArrowRight") || (vertical && event.key === "ArrowDown")) {
         set(seek(Math.min(count - 1, base + 1), 1));
       } else if ((!vertical && event.key === "ArrowLeft") || (vertical && event.key === "ArrowUp")) {
         set(seek(Math.max(0, base - 1), -1));
-      } else if ((event.key === "Enter" || event.key === " ") && usable(place.index)) {
-        activate(place.index, event);
+      } else if ((event.key === "Enter" || event.key === " ") && usable(current)) {
+        activate(current, event);
       } else return;
       event.preventDefault();
     });
-    return { set: set, current: function () { return place.index; } };
+    return { set: set, current: function () { return current; } };
   }
 
   /* The keys across a grid's cells: a column and a row, each kept through
@@ -544,29 +552,32 @@
       for (var i = from; i >= 0 && i < n; i += direction) if (seen(i)) return i;
       return -1;
     }
+    // The cell chosen in this drawing, as keyboard() chooses its point:
+    // the remembered column and row where shown, else the shown ones
+    // nearest them, else none, the remembered ones kept.
+    var column = -1, row = 0;
     if (place.column >= 0) {
-      if (!seenColumn(place.column)) place.column = nearestOf(seenColumn, place.column, columns);
-      if (!seenRow(place.row)) place.row = nearestOf(seenRow, place.row, rows);
-      if (place.row < 0) place.column = -1;
-      if (place.column < 0) place.row = Math.max(0, firstOf(seenRow, rows, 0, 1));
+      var c = seenColumn(place.column) ? place.column : nearestOf(seenColumn, place.column, columns);
+      var r = seenRow(place.row) ? place.row : nearestOf(seenRow, place.row, rows);
+      if (c >= 0 && r >= 0) { column = place.column = c; row = place.row = r; }
     }
     function set(i, j, display) {
-      place.column = Math.max(0, Math.min(columns - 1, i));
-      place.row = Math.max(0, Math.min(rows - 1, j));
-      if (display !== false) show(place.column, place.row);
+      column = place.column = Math.max(0, Math.min(columns - 1, i));
+      row = place.row = Math.max(0, Math.min(rows - 1, j));
+      if (display !== false) show(column, row);
     }
-    function selected() { return place.column >= 0 && seenColumn(place.column) && seenRow(place.row); }
+    function selected() { return column >= 0 && seenColumn(column) && seenRow(row); }
     svg.addEventListener("focus", function () {
-      if (place.column < 0) {
+      if (column < 0) {
         var i = firstOf(seenColumn, columns, 0, 1), j = firstOf(seenRow, rows, 0, 1);
         if (i >= 0 && j >= 0) set(i, j);
       } else {
-        show(place.column, place.row);
+        show(column, row);
       }
     });
     svg.addEventListener("keydown", function (event) {
       if (f.view && /^Arrow/.test(event.key)) return;
-      var column = place.column < 0 ? 0 : place.column, row = place.row;
+      var at = column < 0 ? 0 : column;
       var first;
       if (event.key === "Home") {
         first = firstOf(seenColumn, columns, 0, 1);
@@ -574,12 +585,12 @@
       } else if (event.key === "End") {
         first = firstOf(seenColumn, columns, columns - 1, -1);
         if (first >= 0 && seenRow(row)) set(first, row);
-      } else if (event.key === "ArrowLeft") set(column - 1, row);
-      else if (event.key === "ArrowRight") set(column + 1, row);
-      else if (event.key === "ArrowUp") set(column, row - 1);
-      else if (event.key === "ArrowDown") set(column, row + 1);
+      } else if (event.key === "ArrowLeft") set(at - 1, row);
+      else if (event.key === "ArrowRight") set(at + 1, row);
+      else if (event.key === "ArrowUp") set(at, row - 1);
+      else if (event.key === "ArrowDown") set(at, row + 1);
       else if ((event.key === "Enter" || event.key === " ") && selected()) {
-        activate(place.column, place.row, event);
+        activate(column, row, event);
       } else return;
       event.preventDefault();
     });
