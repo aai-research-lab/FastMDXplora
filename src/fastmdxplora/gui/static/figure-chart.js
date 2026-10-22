@@ -1203,6 +1203,14 @@
     var how = PLOTS[data.kind];
     if (!how) return;
     var f = how(host, data);
+    if (data.not_read && data.kind !== "hbars") {
+      // A record not read (the structure that names its residues) is said
+      // under the plot, as the bars say it in their note.
+      var unread = document.createElement("p");
+      unread.className = "muted small figure-note";
+      unread.textContent = data.not_read;
+      host.appendChild(unread);
+    }
     if (f) host.dataset.view = f.view ? (f.view === host._view ? "zoomed" : "range") : "";
     var tools = window.FastMDXPlotTools;
     if (!f || !tools) return;

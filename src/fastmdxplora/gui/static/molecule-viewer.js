@@ -2201,12 +2201,15 @@
     }
   }
 
-  async function ensurePlaybackPayload() {
+  /* The frames to play, or null; why not is said to ``refused`` where a
+   * person asked for a frame, a record not read first. */
+  async function ensurePlaybackPayload(refused) {
     if (STATE.playbackPayload?.playback_available) return STATE.playbackPayload;
     const payload = await requestPlaybackPayload(false);
     if (!payload?.playback_available) {
-      const reason = String(payload?.reason || "not enough frames yet");
-      announce(`Trajectory playback is not ready: ${reason} Live molecular updates remain active.`);
+      const reason = String(payload?.not_read || payload?.reason || "not enough frames yet");
+      if (refused) refused(reason);
+      else announce(`Trajectory playback is not ready: ${reason} Live molecular updates remain active.`);
       return null;
     }
     return payload;
@@ -2994,7 +2997,7 @@
   async function seekTrajectoryFrame(frame, sourceSignature) {
     const target = Number(frame);
     if (!Number.isInteger(target) || target < 0) {
-      announce("The selected source frame is not a non-negative integer.");
+      refuse("The selected source frame is not a non-negative integer.");
       return false;
     }
     const generation = STATE.viewerGeneration;
@@ -3007,16 +3010,18 @@
       && asked === STATE.trajectorySeekAsked;
     stopFollowing();
     pausePlayback();
-    const payload = await ensurePlaybackPayload();
+    const payload = await ensurePlaybackPayload((reason) => {
+      if (current()) refuse(`Frame ${target} is unavailable: ${reason}`);
+    });
     if (!current() || !payload) return false;
     const signature = payload.source_signature || payload.compiled_at || "";
     if (sourceSignature && !sameSource(signature, sourceSignature)) {
-      announce(`Frame ${target} was named in a trajectory that has since changed`
+      refuse(`Frame ${target} was named in a trajectory that has since changed`
         + " (extended, joined or written again), so it is not shown.");
       return false;
     }
     if (payload.source_kind !== "production-dcd") {
-      announce("This chart is not linked to the production trajectory currently shown.");
+      refuse("This chart is not linked to the production trajectory currently shown.");
       return false;
     }
     if (!(await loadPlayback(payload)) || !current()) return false;
@@ -3067,11 +3072,15 @@
         {cache: "no-store", signal: abort.signal});
       info = await response.json();
       if (!response.ok || !info?.ok) {
-        announce(`Frame ${target} is unavailable: ${info?.reason || `HTTP ${response.status}`}`);
+        // A record not read is why first: "unavailable" alone hid a link out.
+        if (current()) {
+          refuse(`Frame ${target} is unavailable: `
+            + `${info?.not_read || info?.reason || `HTTP ${response.status}`}`);
+        }
         return false;
       }
     } catch (error) {
-      if (current()) announce(`Frame ${target} could not be requested. Try selecting it again.`);
+      if (current()) refuse(`Frame ${target} could not be requested. Try selecting it again.`);
       return false;
     }
     if (!current()) return false;
@@ -3119,7 +3128,7 @@
       }
       return shown && current();
     } catch (error) {
-      if (current()) announce(`Frame ${target} could not be shown: ${error.message || error}`);
+      if (current()) refuse(`Frame ${target} could not be shown: ${error.message || error}`);
       return false;
     }
   }
@@ -4018,6 +4027,13 @@
     const live = document.getElementById("sr-live");
     if (live) live.textContent = message;
     console.info(message);
+  }
+
+  /* A frame asked for and refused: said where it is seen, in the page's
+   * notice, as well as read out. */
+  function refuse(message) {
+    announce(message);
+    window.FastMDXDashboard?.toast?.(message, "warning");
   }
 
   function setText(id, value) {

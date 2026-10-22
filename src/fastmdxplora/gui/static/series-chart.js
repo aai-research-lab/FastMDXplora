@@ -398,7 +398,11 @@
       } else if ((data.kind === "residue" || data.kind === "atom") && !entity) {
         var unavailable = document.createElement("span");
         unavailable.className = "series-tip-hint";
-        unavailable.textContent = "Selection unavailable: this row has no unique topology match.";
+        // A structure not read is why, where it was not: not that it has
+        // no row like this one.
+        unavailable.textContent = data.not_read
+          ? "Selection unavailable: " + data.not_read
+          : "Selection unavailable: this row has no unique topology match.";
         tip.appendChild(unavailable);
       }
       tip.hidden = false;
@@ -513,7 +517,13 @@
         // trajectory; during a run it plays snapshots, numbered otherwise.
         playback = payload && payload.playback_available
           && payload.source_kind === "production-dcd" ? payload : null;
-        if (playback) go(playback); else window.FastMDXDashboard.navigate("viewer");
+        if (playback) { go(playback); return; }
+        window.FastMDXDashboard.navigate("viewer");
+        // No frames to play: said where it is seen, a record not read first.
+        var why = payload && !payload.playback_available && (payload.not_read || payload.reason);
+        if (why && window.FastMDXDashboard.toast) {
+          window.FastMDXDashboard.toast("Frame " + frame + " is unavailable: " + why, "warning");
+        }
       })
       .catch(function () { /* the viewer says why when opened */ });
   }
