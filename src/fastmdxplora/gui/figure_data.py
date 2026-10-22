@@ -815,12 +815,15 @@ def _interactions(root: Path) -> dict[str, Any] | None:
 
 def _residue_entities(root: Path, labels: list[str]) -> list[dict[str, Any] | None]:
     """Resolve saved residue labels only when the analyzed topology makes
-    each label unique. An ambiguous or unavailable label remains value-only."""
+    each label unique. An ambiguous or unavailable label remains value-only.
+    The structure is found as a series chart's is (`series.topology_held`):
+    in a read held to the study, one linked out of it or named outside it
+    is refused and named, never opened where it leads."""
     if not labels:
         return []
-    from fastmdxplora.gui.selection import topology_the_analyses_read
+    from fastmdxplora.gui.series import topology_held
 
-    path = topology_the_analyses_read(root)
+    path = topology_held(root)
     if path is None:
         return [None] * len(labels)
     try:

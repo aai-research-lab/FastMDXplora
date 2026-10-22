@@ -2,9 +2,12 @@
 
 An RMSF or order-parameter chart names each point's residue by its chain,
 number and name, read from the profile's table and the structure the
-analyses selected atoms in. Read for a page, each is held to the study: a
-structure or a table linked out of it is not opened where it leads, on this
-computer or on a public bind, and the points are left value-only.
+analyses selected atoms in, as do the bars of a ligand's contacts and
+interactions and the rows of the secondary-structure map. Read for a page,
+each is held to the study: a structure or a table linked out of it, or a
+structure the manifest names outside it, is not opened where it leads, on
+this computer or on a public bind; the points are left value-only and the
+answer says the structure was not read.
 """
 
 from __future__ import annotations
@@ -89,6 +92,7 @@ def test_a_structure_linked_out_of_the_study_names_no_residue(tmp_path, public):
     assert opened == []
     assert data["entities"] == [None, None, None]
     assert data["y"] == [0.11, 0.12, 0.13]
+    assert "simulation/trajectory_topology.pdb was not read" in data["not_read"]
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
@@ -109,3 +113,100 @@ def test_a_structure_the_manifest_names_outside_the_study_is_not_read(tmp_path, 
         _WATCHED.clear()
     assert opened == []
     assert data["entities"] == [None, None, None]
+    assert "was not read" in data["not_read"]
+    assert str(tmp_path) not in json.dumps(data)
+
+
+#: Each figure that names residues, with what it is read from: the name of
+#: residue A:1 in each, as the analysis writes it.
+FIGURES = {
+    "pl_contacts": ("analysis/pl_contacts/pl_contacts_per_residue.csv",
+                    "residue,contact_frequency\nALA1,0.5\nALA2,0.25\n"),
+    "pl_interactions": ("analysis/pl_interactions/pl_interactions.dat",
+                        "kind,residue,occupancy\nhbond,ALA1,0.5\nhbond,ALA2,0.25\n"),
+    "ss": ("analysis/ss/ss.dat", "frame,ALA1,ALA2,ALA3\n0,H,H,C\n1,H,E,C\n"),
+}
+
+
+def _residues_of(answer: dict) -> list:
+    """The residue each bar or row of a figure names, None where it names none."""
+    return ([bar["entity"] for bar in answer["bars"]] if "bars" in answer
+            else answer["entities"])
+
+
+def _figure(root: Path, tmp_path: Path, name: str, *, public: bool) -> dict:
+    status, body = _ask(root, tmp_path, f"/api/figure-data?figure=analysis/{name}/{name}.png",
+                        public=public)
+    assert status == 200
+    return json.loads(body)
+
+
+def _with_figure(tmp_path: Path, name: str) -> Path:
+    root = _study(tmp_path)
+    _write(root, *FIGURES[name])
+    return root
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("name", sorted(FIGURES))
+def test_a_figure_s_residues_are_named_from_the_study_s_structure(tmp_path, name, public):
+    data = _figure(_with_figure(tmp_path, name), tmp_path, name, public=public)
+    assert data["ok"] is True, data
+    assert _residues_of(data)[0] == {"kind": "residue", "chain": "A", "resi": 1, "icode": "",
+                                     "resn": "ALA"}
+    assert "not_read" not in data
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("name", sorted(FIGURES))
+def test_a_figure_s_structure_linked_out_of_the_study_is_not_read(tmp_path, name, public):
+    root = _with_figure(tmp_path, name)
+    outside = _moved_out(root, tmp_path, "simulation/trajectory_topology.pdb")
+    _watch(outside)
+    try:
+        data = _figure(root, tmp_path, name, public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    assert data["ok"] is True, data
+    assert set(map(str, _residues_of(data))) == {"None"}
+    assert "simulation/trajectory_topology.pdb was not read" in data["not_read"]
+    assert data["not_read"] in data["note"]
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("name", sorted(FIGURES))
+def test_a_figure_s_structure_the_manifest_names_outside_is_not_read(tmp_path, name, public):
+    root = _with_figure(tmp_path, name)
+    elsewhere = tmp_path / "outside" / "topology.pdb"
+    elsewhere.parent.mkdir(parents=True)
+    (root / "simulation" / "trajectory_topology.pdb").rename(elsewhere)
+    manifest = root / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["resolved"] = {"topology": str(elsewhere)}
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    _watch(elsewhere.parent)
+    try:
+        data = _figure(root, tmp_path, name, public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    assert set(map(str, _residues_of(data))) == {"None"}
+    assert "was not read" in data["not_read"]
+    assert str(tmp_path) not in json.dumps(data)
+
+
+def test_a_structure_the_manifest_names_that_is_nowhere_is_passed_over(tmp_path):
+    """A study moved since it was analysed: the manifest's structure is
+    nowhere, so the one written beside the trajectory names the residues,
+    and nothing is said not read."""
+    root = _study(tmp_path)
+    manifest = root / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["resolved"] = {"topology": str(tmp_path / "moved" / "topology.pdb")}
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    data = _series(root, tmp_path, public=True)
+    assert [entity and entity["resi"] for entity in data["entities"]] == [1, 2, 3]
+    assert "not_read" not in data

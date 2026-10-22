@@ -19,6 +19,7 @@ import csv
 import io
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -299,7 +300,7 @@ def _profile_entities(root: Path, path: Path, record: dict[str, Any],
     uniquely. In particular, residue numbers alone never choose between
     chains or insertion codes, and atom serials must resolve to one atom.
     """
-    topology_path = _profile_topology(Path(root))
+    topology_path = topology_held(Path(root))
     if topology_path is None:
         return [None] * len(rows)
     try:
@@ -371,22 +372,35 @@ def _profile_entities(root: Path, path: Path, record: dict[str, Any],
         return [None] * len(rows)
 
 
-def _profile_topology(root: Path) -> Path | None:
+def topology_held(root: Path) -> Path | None:
     """The structure the analyses selected atoms in, as
     `selection.topology_the_analyses_read` finds it, each record read
     through `record_access`: in a read held to the study, a manifest or a
-    structure linked out of it is refused and named, never opened where it
-    leads (the structure is then read by MDTraj, by its name)."""
+    structure linked out of it, or a structure the manifest names outside
+    it, is refused and named, never opened where it leads, and no other
+    structure is read in its place (the one found is then read by MDTraj,
+    by its name). A structure the manifest names that is nowhere (a study
+    moved since) is passed over, as `selection` passes it over."""
     manifest = _json(root / "analysis" / "analysis_manifest.json")
     resolved = manifest.get("resolved") if isinstance(manifest.get("resolved"), dict) else {}
     for candidate in (resolved.get("topology"), manifest.get("topology_input")):
-        if isinstance(candidate, str) and candidate and _records.can_read(Path(candidate)) \
-                and _records.is_file(Path(candidate)):
-            return Path(candidate)
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        named = Path(candidate)
+        if _records.can_read(named):
+            if _records.is_file(named):
+                return named
+        elif os.path.lexists(named):
+            _records.is_file(named)     # refused, and so named as not read
+            return None
     for candidate in (root / "simulation" / "trajectory_topology.pdb",
                       root / "setup" / "topology.pdb"):
-        if _records.is_file(candidate):
+        with _records.refusals_noted() as refused:
+            found = _records.is_file(candidate)
+        if found:
             return candidate
+        if refused:
+            return None
     return None
 
 

@@ -1319,6 +1319,8 @@ def make_handler(
                 # figure saying which of its records were not read.
                 answer = _confined(root, lambda inside: figure_payload(inside, wanted))
                 said = _refusals_said(answer)
+                if said:
+                    answer["not_read"] = said
                 if said and answer.get("ok"):
                     answer["note"] = " ".join(filter(None, [answer.get("note"), said]))
                 elif said:
@@ -1447,10 +1449,12 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 name = (query.get("analysis") or [""])[0]
                 run = (query.get("run") or [""])[0]
-                # Read from the study's own results only (`_confined`).
+                # Read from the study's own results only (`_confined`), a
+                # record not read said so (`_said_not_read`): a chart whose
+                # structure was not read says that, not that it found none.
                 if not name and not run:
                     # Which series there are, for the Viewer's.
-                    self._send_json(_confined(root, series_over_time))
+                    self._send_json(_said_not_read(_confined(root, series_over_time)))
                     return
                 if run:
                     # One run of a study of several, named by its id: only
@@ -1462,9 +1466,10 @@ def make_handler(
                         return (series_payload(folder, name) if folder is not None
                                 else {"ok": False, "reason": "no such run in this study"})
 
-                    self._send_json(_confined(root, of_the_run))
+                    self._send_json(_said_not_read(_confined(root, of_the_run)))
                     return
-                self._send_json(_confined(root, lambda inside: series_payload(inside, name)))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: series_payload(inside, name))))
                 return
             if path == "/api/analysis-overview":
                 # What every analysis recorded, read together, from the
