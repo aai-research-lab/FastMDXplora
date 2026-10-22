@@ -400,6 +400,15 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
     return answer
 
 
+def _bytes_confined(root: Path, read: Callable[[Path], tuple[bytes | None, dict[str, Any]]]
+                    ) -> tuple[bytes | None, dict[str, Any]]:
+    """``read(study)``, which gives bytes and what it says of them, held to
+    the study's own records as `_confined` holds a page's reads: no bytes
+    where the study's folder could not be opened to hold it."""
+    answer = _confined(root, read)
+    return answer if isinstance(answer, tuple) else (None, answer)
+
+
 def _as_opened(value: Any, inside: str, opened: str) -> Any:
     """``value`` with the study's resolved folder ``inside`` said as it was
     opened, ``opened``, in every string."""
@@ -1595,11 +1604,13 @@ def make_handler(
                                      "code": "config.option.wrong_type"})
                     return
                 one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
-                self._send_json(exact_frame_info(
-                    root, frame, most_frames=cfg.max_browser_frames,
+                # Read from the study's own records only (`_confined`): a
+                # trajectory or topology linked out of it is said not read.
+                self._send_json(_said_not_read(_confined(root, lambda inside: exact_frame_info(
+                    inside, frame, most_frames=cfg.max_browser_frames,
                     source_signature=one("signature") or None,
                     on=one("on") or "none", ligand=one("ligand") or None,
-                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))))
                 return
             if path == "/api/open-output":
                 if hosting is not None:
@@ -1648,11 +1659,12 @@ def make_handler(
                     self.send_error(400, "A source frame and its trajectory signature are required")
                     return
                 one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
-                data, details = exact_frame_xtc(
-                    root, frame, most_frames=cfg.max_browser_frames,
+                # Read from the study's own records only (`_confined`).
+                data, details = _bytes_confined(root, lambda inside: exact_frame_xtc(
+                    inside, frame, most_frames=cfg.max_browser_frames,
                     source_signature=one("signature") or None,
                     on=one("on") or "none", ligand=one("ligand") or None,
-                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first")
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))
                 if data is None:
                     # A fixed reason: the details are said by /api/exact-frame,
                     # where a hosted page has them scrubbed of paths.
@@ -3125,11 +3137,12 @@ def make_handler(
                     self.send_error(400, "A source frame and its trajectory signature are required")
                     return
                 one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
-                data, details = exact_frames_dcd(
-                    root, frame, most_frames=cfg.max_browser_frames,
+                # Read from the study's own records only (`_confined`).
+                data, details = _bytes_confined(root, lambda inside: exact_frames_dcd(
+                    inside, frame, most_frames=cfg.max_browser_frames,
                     source_signature=signature, on=one("on") or "none",
                     ligand=one("ligand") or None, cutoff_angstrom=one("cutoff") or 5.0,
-                    to=one("to") or "first")
+                    to=one("to") or "first"))
                 if data is None:
                     # A fixed reason: the details are said by /api/exact-frame,
                     # where a hosted page has them scrubbed of paths.

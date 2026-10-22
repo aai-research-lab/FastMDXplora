@@ -220,6 +220,18 @@ class _Preparing:
 
 
 _BUSY = ("Other frames are being prepared; try again in a moment.", "environment.service.busy")
+_NOT_SENT = ("The frames sent to the browser are not this study's own records.",
+             "analysis.data.absent")
+
+
+def _sent_here(simulation: Path, *names: str) -> bool:
+    """Whether the files written beside the trajectory for the browser are
+    the study's own: through `record_access`, so in a read held to the
+    study one linked out of it is refused and named, never opened where it
+    leads (MDTraj then reads each by its name)."""
+    from fastmdxplora import record_access
+
+    return all(record_access.is_file(simulation / name) for name in names)
 
 
 def exact_frame(output_dir: str | Path, frame: int, *, most_frames: int = MOST_FRAMES,
@@ -236,6 +248,8 @@ def exact_frame(output_dir: str | Path, frame: int, *, most_frames: int = MOST_F
     with _Preparing() as held:
         if not held:
             return None, _refused(*_BUSY)
+        if on != "none" and not _sent_here(out / "simulation", FRAMES_FILE, FRAMES_TOPOLOGY):
+            return None, _refused(*_NOT_SENT)
         try:
             exact = _source_frame(out, _source(out), frame)
             if on != "none":
@@ -290,6 +304,8 @@ def exact_frames_dcd(output_dir: str | Path, frame: int, *, most_frames: int = M
     with _Preparing() as held:
         if not held:
             return None, _refused(*_BUSY)
+        if not _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY):
+            return None, _refused(*_NOT_SENT)
         try:
             base_path = simulation / FRAMES_FILE
             if on != "none":
@@ -301,6 +317,8 @@ def exact_frames_dcd(output_dir: str | Path, frame: int, *, most_frames: int = M
                                               "The frames could not be superposed."),
                                           "config.option.not_permitted")
                 base_path = simulation / str(fitted["file"])
+                if not _sent_here(simulation, str(fitted["file"])):
+                    return None, _refused(*_NOT_SENT)
             from fastmdxplora.utils.native_output import suppress_native_output
 
             with suppress_native_output():
@@ -1194,8 +1212,11 @@ def _atom_lines(text: str) -> list[str]:
 
 
 def _read(path: Path) -> str:
+    # Through `record_access`: held to its study where the read is.
+    from fastmdxplora import record_access
+
     try:
-        return path.read_text(encoding="utf-8", errors="replace")
+        return record_access.read_text(path, encoding="utf-8", errors="replace")
     except OSError:
         return ""
 

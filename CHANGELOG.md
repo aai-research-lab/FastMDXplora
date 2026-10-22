@@ -1484,6 +1484,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Security
 
+- An exact frame opened from a chart is read from the study's own
+  trajectory, topology and browser frames alone: one of them linked out of
+  the study is not opened where it leads, on this computer or on a public
+  bind; `/api/exact-frame` says it was not read, and the binary routes
+  give a fixed reason.
+
 - A chart's residues are named from the study's own records: the profile's
   table, the analyses' manifest and the structure it names are read held
   to the study, so a structure linked out of it, or named outside it, is
