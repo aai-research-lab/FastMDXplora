@@ -1036,7 +1036,10 @@ def make_handler(
                     self._send_run_frames(root, parse_qs(parsed.query)["run"][0],
                                           path.endswith(".pdb"))
                     return
-                root = run_shown(root) or root
+                # Chosen in a read held to the study (`_confined`): a run
+                # folder linked out of it is passed over, never played.
+                shown = _confined(root, run_shown)
+                root = shown if isinstance(shown, Path) else root
             if path in {"/", "/index", "/results", "/live"}:
                 self._send_html(page_for(self.headers.get(ACCOUNT_HEADER)))
                 return
@@ -2046,7 +2049,8 @@ def make_handler(
                 # A study of several runs: the run the Viewer plays, alone.
                 from fastmdxplora.gui.runs_together import run_shown
 
-                played = run_shown(study)
+                played = _confined(study, run_shown)
+                played = played if isinstance(played, Path) else None
                 said = write_scene(
                     study, payload.get("name"), payload.get("view"),
                     selections=selections or None,
