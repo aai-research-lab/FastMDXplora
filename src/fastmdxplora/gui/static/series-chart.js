@@ -182,6 +182,12 @@
     var ys = data.y;
     var xLow = view ? view[0] * clock.factor : xs[0];
     var xHigh = view ? view[1] * clock.factor : xs[xs.length - 1];
+    if (data.kind === "residue") {
+      // Half a residue beyond each end, so its point and its measured
+      // square are drawn whole, not cut by the axes.
+      xLow -= 0.5;
+      xHigh += 0.5;
+    }
     if (xHigh === xLow) xHigh = xLow + 1;
     // The values in view set the height, so a range zoomed into is read.
     var seen = ys.filter(function (y, i) { return xs[i] >= xLow && xs[i] <= xHigh; });
@@ -270,8 +276,13 @@
     }, svg);
     yTitle.textContent = data.label + (data.unit ? " (" + data.unit + ")" : "");
 
+    // A profile's line goes along each chain, not from one chain's last
+    // residue to the next one's first.
+    var residues = data.kind === "residue" && Array.isArray(data.residues) ? data.residues : null;
     var path = xs.map(function (x, i) {
-      return (i ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+      var joined = i > 0 && !(residues && residues[i] && residues[i - 1]
+        && residues[i].chain !== residues[i - 1].chain);
+      return (joined ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
     }).join("");
     el("path", {
       d: path, fill: "none", stroke: c.line, "stroke-width": 1.5,
@@ -552,7 +563,7 @@
     });
     if (!indices.length) return null;
     var shown = Object.assign({}, data);
-    ["x", "y", "frames", "labels", "entities", "reference"].forEach(function (key) {
+    ["x", "y", "frames", "labels", "entities", "reference", "residues"].forEach(function (key) {
       if (Array.isArray(data[key]) && data[key].length === data.x.length) {
         shown[key] = indices.map(function (index) { return data[key][index]; });
       }
