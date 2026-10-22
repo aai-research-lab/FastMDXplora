@@ -159,7 +159,7 @@ def test_the_viewer_plots_it_and_renders_the_pocket(study):
                           "'dashboard:trajectory-seek', {detail: {frame: 6}}))")
             page.wait_for_function(f"() => {pocket}.state.shownFrame === 6")
             page.wait_for_function("() => document.getElementById('pocket-now')"
-                                   ".textContent.startsWith('Frame 6:')")
+                                   ".textContent.startsWith('Trajectory frame 6:')")
             now = page.text_content("#pocket-now")
             note = page.text_content("#pocket-note")
             # A click on the plot shows that frame.
@@ -176,5 +176,5 @@ def test_the_viewer_plots_it_and_renders_the_pocket(study):
         session.server.shutdown()
     assert errors == []
     assert superposed == "pocket"
-    assert now.startswith("Frame 6:") and now.endswith(" Å³.")
+    assert now.startswith("Trajectory frame 6:") and now.endswith(" Å³.")
     assert note.startswith("The room the protein leaves in BEN's pocket")

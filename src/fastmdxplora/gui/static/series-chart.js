@@ -110,6 +110,18 @@
     return value.toPrecision(3);
   }
 
+  /* A time (ns) on a chart's clock (ps where what is shown is under a
+   * nanosecond), to as many places as tell a frame of the trajectory from
+   * the next, by the Viewer's own rule (dashboard.js `timeDigitsOf`). */
+  function timeText(value, times, frames, clock) {
+    var k = clock && clock.factor ? clock.factor : 1;
+    var unit = clock && clock.unit ? clock.unit : "ns";
+    var board = window.FastMDXDashboard;
+    var digits = board && board.timeDigitsOf ? board.timeDigitsOf(times, frames, k) : null;
+    var v = value == null ? value : Number(value) * k;
+    return (digits == null || v == null || !isFinite(v) ? format(v) : v.toFixed(digits)) + " " + unit;
+  }
+
   function withUnit(value, unit) {
     return format(value) + (unit ? " " + unit : "");
   }
@@ -337,7 +349,8 @@
       var where = data.kind === "residue" || data.kind === "atom"
         ? data.labels[index]
         : (data.x_label === "Frame" ? "frame " + data.frames[index]
-          : format(xs[index]) + " " + (clock.unit || "ns") + " · frame " + data.frames[index]);
+          : timeText(data.x[index], data.x, data.frames, clock.unit ? clock : null)
+            + " \u00b7 frame " + data.frames[index]);
       var action = (data.kind === "residue" || data.kind === "atom") && entity
         ? "select it in the structure"
         : (data.linked ? "open this frame" : "");

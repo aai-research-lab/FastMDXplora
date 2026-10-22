@@ -23,6 +23,14 @@
 
   function viewer() { return window.FastMDXMoleculeViewer; }
 
+  /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
+  function shownName(fallback) {
+    if (state.name) return state.name;
+    var v = window.FastMDXMoleculeViewer;
+    var named = v && v.movie && v.movie.shownFrameName ? v.movie.shownFrameName() : "";
+    return named || "frame " + fallback;
+  }
+
   function say(text) {
     var note = byId("rama-note");
     if (note) note.textContent = text || "";
@@ -214,7 +222,7 @@
     }
     var residue = d.residues[state.chosen];
     if (frame == null) return;
-    say(here ? nameOf(residue) + " in frame " + frame + ": φ " + here.phi.toFixed(1)
+    say(here ? nameOf(residue) + " in " + shownName(frame) + ": φ " + here.phi.toFixed(1)
       + "°, ψ " + here.psi.toFixed(1) + "°." : nameOf(residue) + " has no φ or ψ (a chain's end).");
   }
 
@@ -354,6 +362,7 @@
       // no value here (null): never a neighbour's.
       state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
         : played;
+      state.name = event.detail && event.detail.name || "";
       if (state.data && section.open) draw();
     });
     window.addEventListener("dashboard:selection-changed", followTheSelection);

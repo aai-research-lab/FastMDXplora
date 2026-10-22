@@ -115,9 +115,18 @@
     context.lineTo(xOf(canvas, frame), canvas.height - m.bottom);
     context.stroke();
     var time = state.data.times && state.data.times[frame];
-    byId("pocket-now").textContent = "Frame " + frame
+    var named = shownName(frame);
+    byId("pocket-now").textContent = named.charAt(0).toUpperCase() + named.slice(1)
       + (time != null ? " (" + Number(time).toFixed(3) + " ns)" : "") + ": "
       + Math.round(volumes[frame]).toLocaleString() + " Å³.";
+  }
+
+  /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
+  function shownName(fallback) {
+    if (state.name) return state.name;
+    var v = window.FastMDXMoleculeViewer;
+    var named = v && v.movie && v.movie.shownFrameName ? v.movie.shownFrameName() : "";
+    return named || "frame " + fallback;
   }
 
   function load() {
@@ -234,6 +243,7 @@
       // no value here (null): never a neighbour's.
       state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
         : played;
+      state.name = event.detail && event.detail.name || "";
       if (state.data) draw();
       if (byId("pocket-shown").checked && state.frame != null) render(state.frame);
     });

@@ -377,3 +377,136 @@ def test_switching_studies_reconciles_playback_counts_and_position(tmp_path):
             browser.close()
     finally:
         session.server.shutdown()
+
+
+def test_a_finished_run_s_frame_is_named_in_its_trajectory_and_time(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study")
+    # Frames written every 100 steps of 2 fs: 0.2 ps apart, so three
+    # decimals of a nanosecond would give two frames one time.
+    parameters = root / "simulation" / "simulation_parameters.json"
+    record = json.loads(parameters.read_text(encoding="utf-8"))
+    record["resolved"]["trajectory_interval_steps"] = 100
+    parameters.write_text(json.dumps(record), encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                      config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.locator("#viewer-timeline").wait_for(state="visible")
+            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                          "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.playbackLoaded")
+            page.locator("#traj-slider").evaluate(
+                "e => { e.value = '1'; e.dispatchEvent(new Event('input')); }")
+            page.wait_for_function(
+                "() => document.getElementById('traj-current').textContent === '2'")
+            said = page.evaluate("""() => Object.fromEntries(
+                ['traj-step', 'traj-simtime', 'overlay-step', 'overlay-simtime']
+                    .map((id) => [id, document.getElementById(id).textContent]))""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # The second frame played is frame 5 of the trajectory, written after
+    # six intervals of 0.2 ps.
+    assert said == {"traj-step": "trajectory frame 5", "traj-simtime": "time 1.2 ps",
+                    "overlay-step": "trajectory frame 5", "overlay-simtime": "sim time 1.2 ps"}
+
+
+def test_a_panel_names_the_frame_shown_as_the_viewer_does(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _two_chains
+
+    root = tmp_path / "study"
+    played = _two_chains(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                      config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.wait_for_function("() => window.FastMDXMoleculeViewer?.STATE.playbackPayload")
+            assert page.evaluate("async () => !!(await window.FastMDXMoleculeViewer.movie.frames())")
+            page.wait_for_function("() => window.FastMDXChainContacts.state.data")
+            page.evaluate("() => window.FastMDXMoleculeViewer.movie.showFrame(2)")
+            page.wait_for_function(
+                "() => document.getElementById('traj-current').textContent === '3'")
+            page.wait_for_function("() => document.getElementById('chain-contacts-now')"
+                                   ".textContent.includes('trajectory frame')")
+            named = page.evaluate("""() => ({
+                overlay: document.getElementById('overlay-step').textContent,
+                toolbar: document.getElementById('traj-step').textContent,
+                panel: document.getElementById('chain-contacts-now').textContent})""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    shown = f"trajectory frame {played[2]}"
+    assert named["overlay"] == named["toolbar"] == shown, named
+    assert named["panel"].endswith(f"present in {shown}"), named
+
+
+@pytest.mark.parametrize("width", [390, 900])
+def test_the_frame_shown_is_said_on_one_line_on_a_narrow_page(tmp_path, width):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study", frame_count=2000)
+    # A frame every step of 2 fs: six decimals of a nanosecond to tell them.
+    parameters = root / "simulation" / "simulation_parameters.json"
+    record = json.loads(parameters.read_text(encoding="utf-8"))
+    record["resolved"]["trajectory_interval_steps"] = 1
+    parameters.write_text(json.dumps(record), encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.locator("#viewer-timeline").wait_for(state="visible")
+            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                          "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.playbackLoaded")
+            page.evaluate("() => window.FastMDXMoleculeViewer.movie.showFrame(1)")
+            page.wait_for_function(
+                "() => document.getElementById('traj-current').textContent === '2'")
+            found = page.evaluate("""() => {
+                const lines = (e) => { const r = document.createRange();
+                    r.selectNodeContents(e);
+                    return new Set([...r.getClientRects()].map((q) => Math.round(q.top))).size; };
+                const overlay = document.getElementById('viewer-overlay').getBoundingClientRect();
+                const canvas = document.getElementById('viewer-canvas-frame')
+                    .getBoundingClientRect();
+                const line = document.getElementById('traj-current').closest('.traj-time');
+                return {
+                    details: [...document.querySelectorAll('#viewer-overlay .overlay-detail')]
+                        .filter((e) => e.textContent).map((e) => [e.textContent, lines(e)]),
+                    inside: overlay.left >= canvas.left && overlay.right <= canvas.right + 1,
+                    toolbarLines: line.getClientRects().length && lines(line),
+                    toolbarFits: line.getBoundingClientRect().height <= 24,
+                    title: line.title,
+                };
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # Each part of the frame's label on one line, the label on the canvas.
+    assert all(count == 1 for _, count in found["details"]), found
+    assert found["inside"], found
+    assert found["toolbarFits"], found
+    # What is cut at the end of the line under the slider is in its title.
+    assert "trajectory frame 1" in found["title"] and "0.004 ps" in found["title"], found

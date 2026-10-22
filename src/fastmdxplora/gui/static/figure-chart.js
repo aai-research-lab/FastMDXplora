@@ -86,6 +86,18 @@
     return value.toPrecision(3);
   }
 
+  /* A time (ns) on a chart's clock (ps where what is shown is under a
+   * nanosecond), to as many places as tell a frame of the trajectory from
+   * the next, by the Viewer's own rule (dashboard.js `timeDigitsOf`). */
+  function timeText(value, times, frames, clock) {
+    var k = clock && clock.factor ? clock.factor : 1;
+    var unit = clock && clock.unit ? clock.unit : "ns";
+    var board = window.FastMDXDashboard;
+    var digits = board && board.timeDigitsOf ? board.timeDigitsOf(times, frames, k) : null;
+    var v = value == null ? value : Number(value) * k;
+    return (digits == null || v == null || !isFinite(v) ? format(v) : v.toFixed(digits)) + " " + unit;
+  }
+
   function category(k) {
     return k < 0 ? "#BBBBBB" : CATEGORY[k % CATEGORY.length];
   }
@@ -390,7 +402,7 @@
     var label = data.x_label || data.t_label;
     var clock = f && f.clock ? f.clock : { factor: 1, unit: "ns" };
     return label === "Frame" ? "frame " + data.frames[i]
-      : format(t * clock.factor) + " " + clock.unit + " \u00b7 frame " + data.frames[i];
+      : timeText(t, data.x || data.t, data.frames, clock) + " \u00b7 frame " + data.frames[i];
   }
 
   /* A click opens its frame once it is not the first of a double click,
@@ -789,6 +801,13 @@
     var grouped = Array.isArray(data.frame_groups) && data.frame_groups.length === n;
     var hint = exact ? "Click opens the row frame; Shift-click opens the column frame. Use arrows, then Enter or Shift+Enter."
       : (grouped ? "Each cell averages frame groups; no single frame is selected." : "");
+    // Each row's time and frame, for the times said to tell one from the next.
+    var middles = [];
+    for (var m = 0; m < n; m += 1) middles.push((e[m] + e[m + 1]) / 2);
+    var rowFrames = Array.isArray(data.frames) && data.frames.length === n ? data.frames
+      : (grouped ? data.frame_groups.map(function (g) {
+      return g.first;
+    }) : null);
     function rowSaid(index) {
       if (exact) return "frame " + data.frames[index];
       var group = grouped ? data.frame_groups[index] : null;
@@ -800,10 +819,12 @@
       emptySaid: "\u2014",
       hint: hint,
       where: function (a, b, column, row, clock) {
-        var k = clock ? clock.factor : 1, unit = clock ? clock.unit : "ns";
-        var axis = timed ? format(a * k) + " " + unit + " and " + format(b * k) + " " + unit
-          : "axis frames " + Math.round(a) + " and " + Math.round(b);
-        return axis + "; row " + rowSaid(row) + "; column " + rowSaid(column);
+        // The row first and then the column, each with its time or frame.
+        function at(v) {
+          return timed ? timeText(v, middles, rowFrames, clock) : "axis frame " + Math.round(v);
+        }
+        return "row " + rowSaid(row) + " (" + at(b) + "); column " + rowSaid(column)
+          + " (" + at(a) + ")";
       },
       activate: exact ? function (column, row, event) {
         openFrame(data, data.frames[event.shiftKey ? column : row]);

@@ -960,12 +960,17 @@ button {
     top: 14px;
     right: 14px;
     display: flex;
+    /* Narrow, its parts go on a second line whole, not each over three. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 28px);
+    box-sizing: border-box;
     align-items: center;
-    gap: 10px;
+    gap: 2px 10px;
     /* Dark enough to read over a white viewer background as well. */
     background: rgba(5, 5, 5, 0.82);
     border: 1px solid var(--border-primary);
-    border-radius: 999px;
+    border-radius: 14px;
     padding: 6px 12px;
     color: var(--text-secondary);
     font-family: var(--font-mono);
@@ -973,6 +978,8 @@ button {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
 }
+.viewer-overlay .overlay-detail { white-space: nowrap; }
+.viewer-overlay .overlay-detail:empty { display: none; }
 .overlay-tag {
     color: var(--status-stale);
     font-weight: 700;
@@ -1201,7 +1208,12 @@ button {
     background: var(--background-elevated); border: 1px solid var(--border-primary);
     border-radius: 6px; padding: 4px 6px;
 }
-.traj-time { color: var(--text-secondary); font-size: var(--text-xs); }
+/* One line: what does not fit ends in an ellipsis, the whole kept in its title. */
+.traj-time {
+    color: var(--text-secondary); font-size: var(--text-xs);
+    min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ============================================================ */
 /* Info panel                            */

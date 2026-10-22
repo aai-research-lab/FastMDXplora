@@ -2594,16 +2594,58 @@
     // A different trajectory starts at its first loaded frame; a periodic
     // update to the same source preserves the position.
     slider.value = String(frame);
+    const production = payload?.source_kind === "production-dcd";
     setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
       viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
-      viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null);
+      viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null,
+      viewerShowsPlayback && production ? payload.frame_indices?.[frame] : null);
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
       source_changed: sourceChanged,
     }));
   }
 
-  function setPlaybackPosition(index, total, time, step, times) {
+  /* Where the frame shown is in the run: the integrator step a snapshot was
+   * written at, or the frame of the trajectory a played frame is. */
+  function placeInRun(step, sourceFrame) {
+    if (step != null && Number.isFinite(Number(step))) {
+      return `step ${Number(step).toLocaleString()}`;
+    }
+    if (Number.isInteger(sourceFrame)) return `trajectory frame ${sourceFrame.toLocaleString()}`;
+    return null;
+  }
+
+  /* The places, in a time's unit (``factor`` from ns: 1000 for ps), that
+   * tell a frame of the trajectory from the next, for times (ns) of the
+   * trajectory frames they were read at, the charts' included: at least
+   * three of a nanosecond. Null where the times do not say. */
+  function timeDigitsOf(times, frames, factor = 1) {
+    times = Array.isArray(times) ? times : [];
+    frames = Array.isArray(frames) ? frames : [];
+    const known = frames.map((frame, at) => [frame, times[at]]).filter(([frame, time]) =>
+      Number.isInteger(frame) && time != null && Number.isFinite(Number(time)));
+    if (known.length < 2) return null;
+    const [first, last] = [known[0], known[known.length - 1]];
+    const interval = (Number(last[1]) - Number(first[1])) / (last[0] - first[0]) * factor;
+    if (!(interval > 0)) return null;
+    const least = factor === 1 ? 3 : 0;
+    return Math.max(least, Math.min(6, Math.ceil(-Math.log10(interval) - 1e-9)));
+  }
+
+  /* A played frame's time in the ruler's unit (ps for a run under a
+   * nanosecond), to as many places as tell a frame of the trajectory from
+   * the next, an exact frame opened between two played ones too. */
+  function timeSaid(time, times) {
+    const series = window.FastMDXSeries;
+    const shown = times || state.playbackFrameTimes;
+    const scale = series?.timeScale ? series.timeScale(shown, "Time (ns)") : {factor: 1, unit: "ns"};
+    const payload = state.playbackData || {};
+    const digits = timeDigitsOf(payload.frame_times_ns, payload.frame_indices, scale.factor);
+    if (digits == null && series?.frameTimeSaid) return series.frameTimeSaid(Number(time), shown);
+    return `${(Number(time) * scale.factor).toFixed(digits ?? 3)} ${scale.unit}`;
+  }
+
+  function setPlaybackPosition(index, total, time, step, sourceFrame) {
     const frameCount = Number(total);
     if (!Number.isInteger(frameCount) || frameCount < 0) return false;
     const hasCurrentFrame = frameCount > 0 && index != null;
@@ -2612,14 +2654,12 @@
         || frameIndex < 0 || frameIndex >= frameCount)) return false;
     setText("traj-current", frameIndex == null ? (frameCount ? "\u2014" : "0") : String(frameIndex + 1));
     setText("traj-total", String(frameCount));
-    setText("traj-step", step == null || !Number.isFinite(Number(step))
-      ? "\u2014" : `step ${Number(step).toLocaleString()}`);
-    // In the ruler's unit: ps for a run under a nanosecond.
-    const timeSaid = window.FastMDXSeries?.frameTimeSaid
-      ? window.FastMDXSeries.frameTimeSaid(Number(time), times || state.playbackFrameTimes)
-      : `${formatNumber(time, 3)} ns`;
+    setText("traj-step", placeInRun(step, sourceFrame) ?? "\u2014");
     setText("traj-simtime", time == null || !Number.isFinite(Number(time))
-      ? "\u2014" : `time ${timeSaid}`);
+      ? "\u2014" : `time ${timeSaid(time)}`);
+    // Cut to one line where narrow: the whole is its title.
+    const line = byId("traj-current")?.closest(".traj-time");
+    if (line) line.title = line.textContent;
     return true;
   }
 
@@ -3112,6 +3152,9 @@
     applyStructure,
     applyPlayback,
     setPlaybackPosition,
+    placeInRun,
+    timeDigitsOf,
+    timeSaid,
     setExactFrame,
     clearExactFrame,
     applyResults,

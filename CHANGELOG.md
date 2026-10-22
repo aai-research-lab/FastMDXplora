@@ -587,6 +587,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- The Viewer names the frame of the trajectory it shows from a finished
+  run ("trajectory frame 1,234") beside the counter, in the overlay and in
+  the per-frame panels, and gives its time, there and in the charts' hover
+  boxes, to as many decimals as tell it from the next frame. On a narrow
+  page each part of the label stays on one line.
+
 - A chart's hover box fits its text: a long value or hint wraps inside
   the chart instead of running past the box.
 

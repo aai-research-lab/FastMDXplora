@@ -104,3 +104,60 @@ def test_requested_chart_tooltips_fit_long_text_and_stay_within_the_chart(tmp_pa
             browser.close()
     finally:
         session.server.shutdown()
+
+
+def test_a_hover_box_tells_one_frame_s_time_from_the_next(tmp_path):
+    """Frames 2 fs apart: the times said to six decimals of a nanosecond, as
+    the Viewer says them, and a matrix cell's row before its column."""
+    pytest.importorskip("playwright.sync_api")
+    np = pytest.importorskip("numpy")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.figure_data import figure_payload
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _series, _study
+
+    root = _study(tmp_path / "study", frame_count=20)
+    _series(root, rows=20)
+    manifest_path = root / "analysis" / "analysis_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["load_kwargs"]["saving_interval_ps"] = 0.002
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (root / "analysis" / "cluster").mkdir()
+    np.savez(root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+             rmsd_nm=np.zeros((4, 4)), frames=np.arange(4),
+             time_ns=(np.arange(4) + 1) * 0.000002)
+    matrix = figure_payload(root, "analysis/cluster/cluster_rmsd_matrix.png")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            svg = page.locator('.series-chart[data-analysis="rmsd"] svg')
+            svg.wait_for(state="visible", timeout=30000)
+            svg.focus()
+            tip = page.locator('.series-chart[data-analysis="rmsd"] .series-tip')
+            said = []
+            for _ in range(2):
+                page.keyboard.press("ArrowRight")
+                said.append(tip.text_content())
+            page.evaluate("""data => {
+              const host = document.createElement('div');
+              host.id = 'matrix-check';
+              document.querySelector('.page[data-page="analysis"]').appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", matrix)
+            cell = page.locator("#matrix-check svg")
+            cell.scroll_into_view_if_needed()
+            box = cell.bounding_box()
+            # The second column of the first row (rows run up from the bottom).
+            page.mouse.move(box["x"] + 62 + (box["width"] - 62 - 70) * 0.375,
+                            box["y"] + box["height"] - 50)
+            matrix_said = page.locator("#matrix-check .series-tip").text_content()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert "0.004 ps · frame 1" in said[0] and "0.006 ps · frame 2" in said[1], said
+    # The row, then the column, each with its own time.
+    assert "row frame 0 (0.002 ps); column frame 1 (0.004 ps)" in matrix_said, matrix_said

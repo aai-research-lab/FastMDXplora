@@ -2438,7 +2438,8 @@
         ? STATE.exactFrame.frame : null;
       said.hidden = baseLoaded >= pieces.total && exact == null;
       said.textContent = `${baseLoaded} of ${pieces.total} frames here`
-        + (exact != null ? `, and frame ${exact} read from the trajectory` : "");
+        + (exact != null
+          ? `, and trajectory frame ${exact.toLocaleString()} read from it` : "");
     }
   }
 
@@ -3163,13 +3164,18 @@
     }
     const time = STATE.playbackFrameTimes[index];
     const step = STATE.playbackFrameSteps[index];
+    const sourceFrame = STATE.playbackPayload?.source_kind === "production-dcd"
+      ? trajectoryFrame : null;
     window.FastMDXDashboard?.setPlaybackPosition?.(index, STATE.playbackFrames, time, step,
-      STATE.playbackFrameTimes);
+      sourceFrame);
     // In the ruler's unit: ps for a run under a nanosecond.
-    const said = window.FastMDXSeries?.frameTimeSaid && time != null
-      ? `sim time ${window.FastMDXSeries.frameTimeSaid(time, STATE.playbackFrameTimes)}` : null;
+    const board = window.FastMDXDashboard;
+    const said = time == null ? null : board?.timeSaid
+      ? `sim time ${board.timeSaid(time, STATE.playbackFrameTimes)}`
+      : window.FastMDXSeries?.frameTimeSaid
+        ? `sim time ${window.FastMDXSeries.frameTimeSaid(time, STATE.playbackFrameTimes)}` : null;
     setOverlay(false, {stage: "playback", frame: index + 1,
-      total: STATE.playbackFrames, step, simtime: time, simtimeSaid: said});
+      total: STATE.playbackFrames, step, sourceFrame, simtime: time, simtimeSaid: said});
     try {
       if (STATE.miniEngine && STATE.miniModel?.of === "frames") {
         const base = STATE.framesPieces?.baseIndices || STATE.playbackPayload?.frame_indices || [];
@@ -3188,10 +3194,21 @@
     // And the series under the transport follows it (frame-series.js).
     // `playedIndex` is the frame's place among the frames played, which the
     // per-frame panels are computed over; null for an inserted exact frame.
+    // `name` is the frame as the Viewer names it, for the panels to say too.
     window.dispatchEvent(new CustomEvent("dashboard:frame-shown",
-      {detail: {index, playedIndex: playedIndexAt(index), trajectoryFrame,
-        simulationStep: step, timeNs: time}}));
+      {detail: {index, playedIndex: playedIndexAt(index), name: frameName(index),
+        trajectoryFrame, simulationStep: step, timeNs: time}}));
     return true;
+  }
+
+  /** A loaded frame as the Viewer names it: a finished run's frame by its
+   * frame of the trajectory, else by its place among the frames loaded. */
+  function frameName(index) {
+    const source = STATE.playbackFrameIndices[index];
+    if (STATE.playbackPayload?.source_kind === "production-dcd" && Number.isInteger(source)) {
+      return `trajectory frame ${source.toLocaleString()}`;
+    }
+    return Number.isInteger(index) ? `frame ${(index + 1).toLocaleString()}` : "";
   }
 
   /** A loaded frame's place among the frames played; null where it was
@@ -3843,8 +3860,11 @@
       setText("overlay-stage", info?.stage ?? "");
       setText("overlay-frame", info?.frame != null
         ? `frame ${info.frame}${info.total != null ? ` / ${info.total}` : ""}` : "");
-      setText("overlay-step", info?.step != null && Number.isFinite(Number(info.step))
-        ? `step ${Number(info.step).toLocaleString()}` : "");
+      const dashboard = window.FastMDXDashboard;
+      const place = dashboard?.placeInRun ? dashboard.placeInRun(info?.step, info?.sourceFrame)
+        : (info?.step != null && Number.isFinite(Number(info.step))
+          ? `step ${Number(info.step).toLocaleString()}` : null);
+      setText("overlay-step", place ?? "");
       setText("overlay-age", info?.age != null && !ended ? `age ${info.age}` : "");
       // In ps under 1 ns, as every page says a length: the last frame of a
       // run of 2 ps read "0.002 ns" under a ruler in ps.
@@ -4100,6 +4120,7 @@
       shownFrame: () => Number(document.getElementById("traj-slider")?.value || 0),
       shownPlayedFrame: () => playedIndexAt(
         Number(document.getElementById("traj-slider")?.value || 0)),
+      shownFrameName: () => frameName(Number(document.getElementById("traj-slider")?.value || 0)),
       showFrame: setPlaybackFrame,
       hold: () => {
         pausePlayback();

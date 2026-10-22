@@ -157,7 +157,7 @@ def test_the_viewer_follows_a_residue_over_the_frames(study):
             page.mouse.click(*point)
             page.wait_for_function(f"() => {VIEWER}.movie.shownFrame() === 7")
             page.wait_for_function("() => document.getElementById('rama-note')"
-                                   ".textContent.includes('in frame 7')")
+                                   ".textContent.includes('in trajectory frame 7')")
             # A residue selected in the structure is followed.
             page.evaluate(f"""() => {{
                 const engine = {VIEWER}.STATE.engine;
@@ -206,6 +206,6 @@ def test_the_viewer_follows_a_residue_over_the_frames(study):
     assert listed[0] == "None chosen" and "A ILE 16" in listed and "A GLY 193" in listed
     assert path == FRAMES
     assert selected == [{"chain": "A", "resi": 55, "icode": "", "resn": "ALA"}]
-    assert note.startswith("A ALA 55 in frame 0: φ ")
+    assert note.startswith("A ALA 55 in trajectory frame 0: φ ")
     assert name == ["A", 193, "", "GLY"] and followed != ""
     assert apart[0] == pytest.approx(apart[1], abs=1e-6)

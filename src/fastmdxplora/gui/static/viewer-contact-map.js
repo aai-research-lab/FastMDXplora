@@ -28,6 +28,14 @@
     return v && v.STATE && v.STATE.framesRendered ? v.STATE.engine : null;
   }
 
+  /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
+  function shownName(fallback) {
+    if (state.name) return state.name;
+    var v = window.FastMDXMoleculeViewer;
+    var named = v && v.movie && v.movie.shownFrameName ? v.movie.shownFrameName() : "";
+    return named || "frame " + fallback;
+  }
+
   function say(text) {
     var note = byId("cmap-note");
     if (note) note.textContent = text || "";
@@ -270,7 +278,7 @@
       .catch(function () {});
     say(nameOf(d.a) + " and " + nameOf(d.b) + ": in contact in " + percent(d.share)
       + " of frames; their closest heavy atoms " + d.angstrom[frame].toFixed(1)
-      + " Å apart in frame " + frame + ".");
+      + " Å apart in " + shownName(frame) + ".");
   }
 
   async function follow(i, j) {
@@ -346,6 +354,7 @@
       // no value here (null): never a neighbour's.
       state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
         : played;
+      state.name = event.detail && event.detail.name || "";
       if (state.pairData) showPair();
     });
     window.addEventListener("dashboard:viewer-rendered", offer);

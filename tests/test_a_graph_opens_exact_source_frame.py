@@ -258,7 +258,7 @@ def test_a_chart_click_shows_exact_frame_coordinates_and_playback_order(tmp_path
             assert got["engine"] == [0, 1, 3, 2]
             assert got["x"] == pytest.approx(7.0, abs=0.02)
             # The counter's total is one more than the frames sent: said so.
-            assert "and frame 7 read from the trajectory" in page.text_content("#traj-loaded")
+            assert "and trajectory frame 7 read from it" in page.text_content("#traj-loaded")
             assert page.evaluate("() => window.FastMDXMoleculeViewer.viewNow().frame") == 7
             assert page.evaluate("() => window.FastMDXMoleculeViewer.currentViewHints().frame") == 7
             saved = page.evaluate("""async () => {

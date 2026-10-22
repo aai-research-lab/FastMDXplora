@@ -14,7 +14,17 @@
   // The ligand panel's colours for the same kinds (frame-interactions.js).
   var KIND_COLOURS = { hydrogen_bond: "#56B4E9", salt_bridge: "#D55E00" };
 
-  var state = { data: null, asked: false, index: null, unplayed: false, shownKey: "" };
+  var state = { data: null, asked: false, index: null, unplayed: false, name: "",
+                shownKey: "" };
+
+  /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
+  function shownName(fallback) {
+    if (state.name) return state.name;
+    var v = window.FastMDXMoleculeViewer;
+    var named = v && v.movie && v.movie.shownFrameName ? v.movie.shownFrameName() : "";
+    return named || "frame " + fallback;
+  }
+
 
   function byId(id) { return document.getElementById(id); }
 
@@ -64,7 +74,7 @@
         ? "The frame shown was opened from the trajectory and is not one of"
           + " the frames played; its contacts are not counted."
         : state.index == null ? ""
-        : now + " of " + d.total + " present in frame " + state.index;
+        : now + " of " + d.total + " present in " + shownName(state.index);
     }
     // At a frame not played the rows say nothing of it, rather than absent.
     var list = byId("chain-contacts-list");
@@ -155,6 +165,7 @@
       state.index = !detail ? null
         : (detail.playedIndex !== undefined ? detail.playedIndex : detail.index);
       state.unplayed = !!detail && detail.playedIndex === null;
+      state.name = detail && detail.name || "";
       load();
       mark();
     });
