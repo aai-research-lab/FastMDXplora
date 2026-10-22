@@ -587,6 +587,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- A chart's hover box fits its text: a long value or hint wraps inside
+  the chart instead of running past the box.
+
 - The Analysis page shows its charts as soon as the results arrive,
   without waiting for the trajectory and structure details the Viewer
   reads.
