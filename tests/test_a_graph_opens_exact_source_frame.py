@@ -540,7 +540,12 @@ def test_the_per_frame_panels_follow_the_frames_played_around_an_inserted_frame(
 
 
 def test_a_drag_along_the_series_follows_the_frames_and_reads_where_it_ends(tmp_path):
+    """While the drag goes on, each move names the nearest frame loaded and
+    asks for none; the viewer may draw only the newest of those it is given
+    (a seek supersedes the one before it), so what is checked is what it
+    was asked for, and that it ends on the frame the last move named."""
     pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import sync_playwright
 
     from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
@@ -556,7 +561,10 @@ def test_a_drag_along_the_series_follows_the_frames_and_reads_where_it_ends(tmp_
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1400, "height": 900})
             page.add_init_script(
-                "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+                "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}"
+                " window.__seeks = [];"
+                " window.addEventListener('dashboard:trajectory-seek',"
+                " (event) => window.__seeks.push(event.detail || {}));")
             page.set_default_timeout(60000)
             page.on("request", lambda r: asked.append(r.url) if "exact" in r.url else None)
             page.goto(session.url + "#viewer", wait_until="domcontentloaded")
@@ -567,23 +575,46 @@ def test_a_drag_along_the_series_follows_the_frames_and_reads_where_it_ends(tmp_
             played = page.evaluate(f"() => {viewer}.STATE.playbackFrameIndices.slice()")
             assert len(played) == 5
             page.wait_for_selector("#frame-series:not([hidden]) .frame-series-line")
-            svg = page.locator(".frame-series-svg")
-            svg.scroll_into_view_if_needed()
-            box = svg.bounding_box()
+            # The track is plotted again as the page's own first answers come
+            # in: dragged once a poll has found it as it is.
+            with page.expect_response("**/api/frames-info*"):
+                pass
+            box = None
+            for _ in range(10):
+                track = page.wait_for_selector("#frame-series:not([hidden]) .frame-series-svg")
+                try:
+                    track.scroll_into_view_if_needed(timeout=5000)
+                    box = track.bounding_box()
+                    break
+                except PlaywrightError:
+                    continue
+            assert box is not None
             y = box["y"] + box["height"] / 2
             shown = (f"() => {viewer}.STATE.playbackFrameIndices["
                      "Number(document.getElementById('traj-slider').value)]")
+            page.evaluate("() => { window.__seeks.length = 0; }")
             page.mouse.move(box["x"] + 60, y)
             page.mouse.down()
-            seen = set()
             # Across the track's plot, which ends 10 px before its right edge.
             for i in range(60):
                 page.mouse.move(box["x"] + 60 + i * (box["width"] - 72) / 59, y)
-                page.wait_for_timeout(15)
-                seen.add(page.evaluate(shown))
-            # The drag went on over every frame played, asking for none.
+            seeks = page.evaluate("() => window.__seeks.slice()")
+
+            def nearest(frame: int) -> int | None:
+                """The frame played nearest ``frame``, where one is nearest."""
+                gaps = sorted((abs(p - frame), p) for p in played)
+                return gaps[0][1] if gaps[0][0] < gaps[1][0] else None
+
+            # The drag named every frame played, each the nearest loaded,
+            # and asked for none.
+            assert seeks and all(seek.get("nearest") is True for seek in seeks), seeks
             assert asked == []
-            assert set(played) - {played[0]} <= seen
+            named = {nearest(seek["trajectoryFrame"]) for seek in seeks}
+            assert set(played) - {played[0]} <= named, (played, seeks)
+            # It ends on the frame the last move named, once that is drawn.
+            last = nearest(seeks[-1]["trajectoryFrame"])
+            assert last is not None
+            page.wait_for_function(f"(f) => ({shown})() === f", arg=last)
             page.mouse.up()
             page.wait_for_function(f"() => {viewer}.STATE.exactFrame !== null")
             final = page.evaluate(f"() => {viewer}.STATE.exactFrame.frame")
