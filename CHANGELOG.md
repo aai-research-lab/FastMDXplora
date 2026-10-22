@@ -1484,6 +1484,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Security
 
+- A chart's residues are named from the study's own records: the profile's
+  table, the analyses' manifest and the structure it names are read held
+  to the study, so a structure linked out of it, or named outside it, is
+  not opened for a page, and its points are left value-only.
+
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a
   study it carries on (`resume_from`, `setup_from` or `prepared_from`), is

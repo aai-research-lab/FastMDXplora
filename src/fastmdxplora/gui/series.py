@@ -299,9 +299,7 @@ def _profile_entities(root: Path, path: Path, record: dict[str, Any],
     uniquely. In particular, residue numbers alone never choose between
     chains or insertion codes, and atom serials must resolve to one atom.
     """
-    from fastmdxplora.gui.selection import topology_the_analyses_read
-
-    topology_path = topology_the_analyses_read(root)
+    topology_path = _profile_topology(Path(root))
     if topology_path is None:
         return [None] * len(rows)
     try:
@@ -373,10 +371,29 @@ def _profile_entities(root: Path, path: Path, record: dict[str, Any],
         return [None] * len(rows)
 
 
+def _profile_topology(root: Path) -> Path | None:
+    """The structure the analyses selected atoms in, as
+    `selection.topology_the_analyses_read` finds it, each record read
+    through `record_access`: in a read held to the study, a manifest or a
+    structure linked out of it is refused and named, never opened where it
+    leads (the structure is then read by MDTraj, by its name)."""
+    manifest = _json(root / "analysis" / "analysis_manifest.json")
+    resolved = manifest.get("resolved") if isinstance(manifest.get("resolved"), dict) else {}
+    for candidate in (resolved.get("topology"), manifest.get("topology_input")):
+        if isinstance(candidate, str) and candidate and _records.can_read(Path(candidate)) \
+                and _records.is_file(Path(candidate)):
+            return Path(candidate)
+    for candidate in (root / "simulation" / "trajectory_topology.pdb",
+                      root / "setup" / "topology.pdb"):
+        if _records.is_file(candidate):
+            return candidate
+    return None
+
+
 def _profile_table_rows(path: Path) -> list[dict[str, str]]:
     """Read identity columns from the analyses' comma-table form."""
     try:
-        text = path.read_text(encoding="utf-8")
+        text = _records.read_text(path, encoding="utf-8")
     except OSError:
         return []
     first = next((line for line in text.splitlines()
@@ -409,7 +426,7 @@ def _order_parameter_rows(
                        row.get("s2", ""), row.get("measured", "nan")] for row in table)
         else:
             fields = (["", *line.split()[:3]]
-                      for line in path.read_text(encoding="utf-8").splitlines()
+                      for line in _records.read_text(path, encoding="utf-8").splitlines()
                       if line.strip() and not line.lstrip().startswith("#"))
         rows: list[tuple[list[str], list[float]]] = []
         reference: list[float | None] = []
