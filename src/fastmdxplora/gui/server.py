@@ -409,6 +409,17 @@ def _bytes_confined(root: Path, read: Callable[[Path], tuple[bytes | None, dict[
     return answer if isinstance(answer, tuple) else (None, answer)
 
 
+def _held_bytes(path: Path) -> bytes | None:
+    """A file's bytes through `record_access`, held to the study within
+    `_bytes_confined`; None where it is not there or is refused."""
+    from fastmdxplora import record_access
+
+    try:
+        return record_access.read_bytes(path)
+    except OSError:
+        return None
+
+
 def _as_opened(value: Any, inside: str, opened: str) -> Any:
     """``value`` with the study's resolved folder ``inside`` said as it was
     opened, ``opened``, in every string."""
@@ -1587,16 +1598,20 @@ def make_handler(
                 from fastmdxplora.gui.runs_together import runs_together
                 from fastmdxplora.gui.trajectory_frames import frames_info
 
-                together = runs_together(study_root, most_frames=cfg.max_browser_frames,
-                                         force=allow_control and "force=1" in parsed.query)
+                force = allow_control and "force=1" in parsed.query
+                # Read from the study's own records only (`_confined`), as
+                # an exact frame is: a trajectory or topology linked out of
+                # it, or named outside it, is not played, and is said not read.
+                together = _confined(study_root, lambda inside: runs_together(
+                    inside, most_frames=cfg.max_browser_frames, force=force))
                 if together is not None:
-                    self._send_json(together)
+                    self._send_json(_said_not_read(together))
                     return
-                sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
-                self._send_json(frames_info(
-                    root, most_frames=cfg.max_browser_frames,
-                    simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
-                    force=allow_control and "force=1" in parsed.query))
+                self._send_json(_said_not_read(_confined(root, lambda inside: frames_info(
+                    inside, most_frames=cfg.max_browser_frames,
+                    simulation_time_ns_total=_load_json(
+                        inside / "simulation" / "simulation_parameters.json"
+                    ).get("duration_ns_actual"), force=force))))
                 return
             if path == "/api/exact-frame":
                 from fastmdxplora.gui.trajectory_frames import exact_frame_info
@@ -1686,17 +1701,26 @@ def make_handler(
             if path == "/api/frames-pieces":
                 from fastmdxplora.gui.trajectory_frames import frames_pieces
 
-                self._send_json(frames_pieces(root))
+                # Read from the study's own records only (`_confined`), and
+                # only of the frames the study plays now (`_frames_played`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: frames_pieces(
+                    inside) if self._frames_played(inside) else {
+                        "ok": False, "reason": "There are no frames yet."})))
                 return
             if path == "/structure/frames-piece.xtc":
                 from fastmdxplora.gui.trajectory_frames import PIECES
 
                 k = (parse_qs(parsed.query).get("k") or [""])[0]
-                target = root / "simulation" / PIECES / f"piece_{k}.xtc"
-                if not k.isdigit() or not target.is_file():
+                if not (k.isascii() and k.isdigit()):
                     self.send_error(404, "No such piece of the frames")
                     return
-                data = target.read_bytes()
+                # Read from the study's own records only (`_bytes_confined`).
+                data, _ = _bytes_confined(root, lambda inside: (_held_bytes(
+                    inside / "simulation" / PIECES / f"piece_{k}.xtc")
+                    if self._frames_played(inside) else None, {}))
+                if data is None:
+                    self.send_error(404, "No such piece of the frames")
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Cache-Control", "no-store")
@@ -3129,10 +3153,6 @@ def make_handler(
 
         def _send_frames(self, root: Path, name: str,
                          query: dict[str, list[str]] | None = None) -> None:
-            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
-                                                            frames_info, superposed_frames,
-                                                            superposed_name)
-
             if "exact_frame" in (query or {}):
                 from fastmdxplora.gui.trajectory_frames import exact_frames_dcd
 
@@ -3162,50 +3182,13 @@ def make_handler(
                 self.wfile.write(data)
                 return
 
-            target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
-                                            else FRAMES_TOPOLOGY)
-            if not target.is_file():
-                frames_info(root, most_frames=cfg.max_browser_frames)
-            on = ((query or {}).get("superposed") or [""])[0]
-            if on and name.endswith(".dcd"):
-                # The frames superposed, by a name made from the request's
-                # words, written if they are not yet.
-                one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
-                to, smooth = one("to") or "first", one("smooth") or "1"
-                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
-                                                  smooth)
-                if file is None:
-                    self.send_error(404, reason)
-                    return
-                if not (root / "simulation" / file).is_file():
-                    said = superposed_frames(root, on, ligand=one("ligand"),
-                                             cutoff_angstrom=one("cutoff") or 5.0, to=to,
-                                             smooth=smooth)
-                    if not said.get("ok"):
-                        self.send_error(404, said.get("reason"))
-                        return
-                target = root / "simulation" / file
-            between = ((query or {}).get("between") or [""])[0]
-            if between and name.endswith(".dcd"):
-                # A movie's frames with frames in between them.
-                from fastmdxplora.gui.trajectory_frames import frames_between
-
-                tweened, reason = frames_between(
-                    target, ((query or {}).get("span") or [""])[0], between)
-                if tweened is None:
-                    self.send_error(404, reason)
-                    return
-                target = tweened
-            if ((query or {}).get("as") or [""])[0] == "xtc" and name.endswith(".dcd"):
-                # As the frames were loaded in pieces: XTC, read in place of
-                # them without loading them again.
-                from fastmdxplora.gui.trajectory_frames import as_xtc
-
-                target = as_xtc(target)
-            try:
-                data = target.read_bytes()
-            except OSError:
-                self.send_error(404, "Frames not available")
+            # Read from the study's own records only (`_bytes_confined`), as
+            # an exact frame is: frames written from a trajectory or topology
+            # linked out of the study, or named outside it, are not sent.
+            data, said = _bytes_confined(root, lambda inside: self._frames_held(
+                inside, name, query or {}))
+            if data is None:
+                self.send_error(404, said.get("reason") or "Frames not available")
                 return
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream" if name.endswith(".dcd")
@@ -3214,6 +3197,67 @@ def make_handler(
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _frames_played(self, inside: Path) -> bool:
+            """Whether the study plays frames written from its own records
+            now (`frames_info`, in the held read the caller is in): frames
+            written before a record was linked out of it are not."""
+            from fastmdxplora.gui.trajectory_frames import frames_info
+
+            return bool(frames_info(inside, most_frames=cfg.max_browser_frames).get(
+                "playback_available"))
+
+        def _frames_held(self, inside: Path, name: str, query: dict[str, list[str]]
+                         ) -> tuple[bytes | None, dict[str, Any]]:
+            """The frames written beside the study's trajectory for the
+            browser (or their topology, or the frames superposed, in between
+            or as XTC), read in `_bytes_confined`: none where the frames the
+            study plays now are not its own (`frames_info`), and the reason
+            a fixed one, never a path."""
+            from fastmdxplora import record_access
+            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
+                                                            superposed_frames, superposed_name)
+
+            simulation = inside / "simulation"
+            if not self._frames_played(inside):
+                return None, {"reason": "Frames not available"}
+            target = simulation / (FRAMES_FILE if name.endswith(".dcd") else FRAMES_TOPOLOGY)
+            one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+            on = one("superposed")
+            if on and name.endswith(".dcd"):
+                # The frames superposed, by a name made from the request's
+                # words, written if they are not yet.
+                to, smooth = one("to") or "first", one("smooth") or "1"
+                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
+                                                  smooth)
+                if file is None:
+                    return None, {"reason": reason}
+                if not record_access.is_file(simulation / file):
+                    # Written now; one linked out of the study is refused
+                    # there before it is opened.
+                    said = superposed_frames(inside, on, ligand=one("ligand"),
+                                             cutoff_angstrom=one("cutoff") or 5.0, to=to,
+                                             smooth=smooth)
+                    if not said.get("ok"):
+                        return None, {"reason": said.get("reason")}
+                target = simulation / file
+            between = one("between")
+            if between and name.endswith(".dcd"):
+                # A movie's frames with frames in between them.
+                from fastmdxplora.gui.trajectory_frames import frames_between
+
+                tweened, reason = frames_between(target, one("span"), between)
+                if tweened is None:
+                    return None, {"reason": reason}
+                target = tweened
+            if one("as") == "xtc" and name.endswith(".dcd"):
+                # As the frames were loaded in pieces: XTC, read in place of
+                # them without loading them again.
+                from fastmdxplora.gui.trajectory_frames import as_xtc
+
+                target = as_xtc(target)
+            data = _held_bytes(target)
+            return (data, {}) if data is not None else (None, {"reason": "Frames not available"})
 
         def _send_occupancy(self, root: Path, query: dict[str, list[str]]) -> None:
             """A map written beside the frames, named by the request's words."""
@@ -3239,11 +3283,15 @@ def make_handler(
             study, never a path."""
             from fastmdxplora.gui.runs_together import TOGETHER
 
-            target = root / TOGETHER / f"run_{run}.{'pdb' if topology else 'dcd'}"
-            if not run.isdigit() or not target.is_file():
+            if not (run.isascii() and run.isdigit()):
                 self.send_error(404, "No such run's frames")
                 return
-            data = target.read_bytes()
+            # Read from the study's own records only (`_bytes_confined`).
+            data, _ = _bytes_confined(root, lambda inside: (_held_bytes(
+                inside / TOGETHER / f"run_{run}.{'pdb' if topology else 'dcd'}"), {}))
+            if data is None:
+                self.send_error(404, "No such run's frames")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8" if topology
                              else "application/octet-stream")

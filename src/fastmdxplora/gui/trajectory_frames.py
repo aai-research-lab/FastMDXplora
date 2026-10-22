@@ -234,6 +234,17 @@ def _sent_here(simulation: Path, *names: str) -> bool:
     return all(record_access.is_file(simulation / name) for name in names)
 
 
+def _linked_out(path: Path) -> bool:
+    """Whether a read held to the study refuses ``path``, a link out of it
+    (named, so the page says it was not read): checked before the file is
+    stat'ed or opened where it leads. False outside a held read."""
+    from fastmdxplora import record_access
+
+    with record_access.refusals_noted() as refused:
+        record_access.exists(path)
+    return bool(refused)
+
+
 def exact_frame(output_dir: str | Path, frame: int, *, most_frames: int = MOST_FRAMES,
                 source_signature: str | None = None, on: str = "none",
                 ligand: str | None = None, cutoff_angstrom: Any = 5.0,
@@ -315,7 +326,7 @@ def exact_frames_dcd(output_dir: str | Path, frame: int, *, most_frames: int = M
                 if not fitted.get("ok"):
                     return None, _refused(str(fitted.get("reason") or
                                               "The frames could not be superposed."),
-                                          "config.option.not_permitted")
+                                          fitted.get("code") or "config.option.not_permitted")
                 base_path = simulation / str(fitted["file"])
                 if not _sent_here(simulation, str(fitted["file"])):
                     return None, _refused(*_NOT_SENT)
@@ -465,8 +476,14 @@ def _source(out: Path) -> dict[str, Any] | None:
         named = Path(str(joined.get("topology") or ""))
         # The topology the join names, where it is a record of the study
         # (it is named by the folder the study was in when it was joined).
-        if record_access.can_read(named) and named.is_file():
-            topology = named
+        # One outside it is refused and named, and no other read in its
+        # place; one that is nowhere (a study moved since) is passed over.
+        if record_access.can_read(named):
+            if record_access.is_file(named):
+                topology = named
+        elif str(named) not in ("", ".") and os.path.lexists(named):
+            record_access.is_file(named)
+            return None
         finished = True
     history = [record for record in read_live_frame_history(simulation).get("frames", [])
                if isinstance(record, dict)]
@@ -513,6 +530,10 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
     source = _source(out)
     if source is None:
         return _unavailable("There is no trajectory, and fewer than two frames written.")
+    if any([_linked_out(simulation / name) for name in (FRAMES_FILE, FRAMES_TOPOLOGY)]):
+        # In a read held to the study: frames linked out of it are neither
+        # sent nor written over; each is named as not read.
+        return _unavailable(_NOT_SENT[0])
     # The index file persists across launches. Bump this when the meaning of
     # an identity field changes so a former live-step-as-frame cache is not
     # served as though it were a logical sequence.
@@ -526,8 +547,7 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
     if not force:
         cached = _load_json(index)
         if (cached.get("available") and cached.get("signature") == signature
-                and (simulation / FRAMES_FILE).is_file()
-                and (simulation / FRAMES_TOPOLOGY).is_file()):
+                and _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY)):
             interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
                         and cached.get("source_kind") == "production-dcd" else None)
             cached.setdefault("simulation_steps",
@@ -875,8 +895,11 @@ def superposed_frames(output_dir: str | Path, on: str, *, ligand: str | None = N
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(str(out.resolve()), threading.RLock())
     with lock:
-        if not (frames_file.is_file() and topology_file.is_file()):
+        if not _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY):
             return {"ok": False, "reason": "There are no frames to superpose yet."}
+        if _linked_out(target):
+            # Refused before it is stat'ed or opened, not written over.
+            return {"ok": False, "reason": _NOT_SENT[0], "code": _NOT_SENT[1]}
         from fastmdxplora.utils.native_output import pdb_quietly, suppress_native_output
 
         with suppress_native_output():
@@ -955,16 +978,21 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
     out = Path(output_dir)
     simulation = out / "simulation"
     index = _load_json(simulation / FRAMES_INDEX)
-    if not index.get("available") or not (simulation / FRAMES_FILE).is_file():
+    # Through `record_access` (`_sent_here`): in a read held to the study,
+    # frames or pieces linked out of it are refused and named.
+    if not index.get("available") or not _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY):
         return {"ok": False, "reason": "There are no frames yet."}
     folder = simulation / PIECES
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(str(out.resolve()), threading.RLock())
     with lock:
         said = _load_json(folder / "index.json")
-        if said.get("signature") == index.get("signature") and all(
-                (folder / f"piece_{k}.xtc").is_file() for k in range(len(said.get("pieces", [])))):
+        if said.get("signature") == index.get("signature") and _sent_here(
+                folder, *(f"piece_{k}.xtc" for k in range(len(said.get("pieces", []))))):
             return said
+        if any(_linked_out(folder / f"piece_{k}.xtc")
+               for k in range(len(said.get("pieces", [])))):
+            return {"ok": False, "reason": _NOT_SENT[0]}
         with suppress_native_output():
             frames = md.load_dcd(str(simulation / FRAMES_FILE),
                                  top=str(simulation / FRAMES_TOPOLOGY))
