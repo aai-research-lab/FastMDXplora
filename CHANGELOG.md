@@ -587,6 +587,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- A view saved, or written as a scene, at a frame opened from a chart
+  keeps that source frame and its coordinates, and opens at it again. It
+  keeps which trajectory the frame is of: once that trajectory has been
+  extended, joined or written again, the view says so instead of opening
+  another frame of the same number. A source-frame scene of smoothed
+  coordinates is refused, and writing a scene no longer rewrites the
+  frames the Viewer was sent.
+
 - A point on an analysis chart opens the trajectory frame it was
   computed from. Before, the nearest of the few hundred frames the Viewer
   plays was opened. A frame the Viewer does not hold is read from the

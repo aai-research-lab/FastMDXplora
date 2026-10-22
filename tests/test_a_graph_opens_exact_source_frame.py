@@ -259,9 +259,18 @@ def test_a_chart_click_shows_exact_frame_coordinates_and_playback_order(tmp_path
             assert got["x"] == pytest.approx(7.0, abs=0.02)
             # The counter's total is one more than the frames sent: said so.
             assert "and frame 7 read from the trajectory" in page.text_content("#traj-loaded")
-            shown = ("() => { const s = window.FastMDXMoleculeViewer.STATE;"
-                     " return s.playbackFrameIndices[Number("
-                     "document.getElementById('traj-slider').value)]; }")
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.viewNow().frame") == 7
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.currentViewHints().frame") == 7
+            saved = page.evaluate("""async () => {
+              const response = await fetch('/api/views', {method:'POST',
+                headers:{'content-type':'application/json'}, body:JSON.stringify({
+                  action:'save', name:'Exact source frame',
+                  view:window.FastMDXMoleculeViewer.viewNow()})});
+              return response.json();
+            }""")
+            assert saved["ok"]
+            saved_view = next(view for view in saved["views"] if view["name"] == "Exact source frame")
+            assert saved_view.get("frame_source") is True
             # The next slider step is source frame 10 and the previous one is 5.
             page.locator("#traj-slider").evaluate(
                 "el => { el.value = '3'; el.dispatchEvent(new Event('input')); }"
@@ -269,14 +278,23 @@ def test_a_chart_click_shows_exact_frame_coordinates_and_playback_order(tmp_path
             page.wait_for_function(
                 "() => document.getElementById('traj-current').textContent === '4'"
             )
-            assert page.evaluate(shown) == 10
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.viewNow().frame") == 10
             page.locator("#traj-slider").evaluate(
                 "el => { el.value = '1'; el.dispatchEvent(new Event('input')); }"
             )
             page.wait_for_function(
                 "() => document.getElementById('traj-current').textContent === '2'"
             )
-            assert page.evaluate(shown) == 5
+            assert page.evaluate("view => window.FastMDXMoleculeViewer.showView(view)", saved_view)
+            page.wait_for_function("() => window.FastMDXMoleculeViewer.currentViewHints().frame === 7")
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine"
+                                 ".find({atom:'CA'})[0].x") == pytest.approx(7.0, abs=0.02)
+            # Kept with the trajectory it was named in: in another, it is
+            # said and not shown at the same number.
+            assert saved_view["frame_signature"] == payload["source_signature"]
+            assert page.evaluate("view => window.FastMDXMoleculeViewer.showView(view)",
+                                 {**saved_view, "frame_signature": "elsewhere.dcd:1:2"}) is False
+            assert "has since changed" in page.text_content("#sr-live")
 
             def select_chart_frame(frame: int) -> None:
                 page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
@@ -720,3 +738,79 @@ def test_a_larger_exact_frame_remains_bounded(tmp_path):
     assert exact.n_frames == 1
     assert exact.xyz[0, 1, 0] * 10 == pytest.approx(73.0, abs=0.01)
     assert elapsed >= 0
+
+
+def test_a_source_frame_scene_exports_that_frames_coordinates(tmp_path):
+    from fastmdxplora.scenes import build_scene, write_scene
+
+    root = _study(tmp_path / "study", frame_count=4001)
+    (root / "setup").mkdir()
+    (root / "setup" / "topology.pdb").write_bytes(
+        (root / "simulation" / "trajectory_topology.pdb").read_bytes())
+    scene = build_scene(root, {"frame": 7, "frame_source": True})
+    assert scene["ok"] and scene["of"] == "frames"
+    ca = next(line for line in scene["files"]["structure.pdb"].splitlines()
+              if line.startswith("ATOM") and line[12:16].strip() == "CA")
+    assert float(ca[30:38]) == pytest.approx(7.0, abs=0.002)
+    assert scene["state"]["root"]["custom"]["fastmdxplora"]["view"]["frame_source"] is True
+    refused = write_scene(root, "outside", {"frame": 4001, "frame_source": True})
+    assert not refused["ok"]
+    assert not (root / "scenes" / "outside.mvsx").exists()
+
+
+def test_a_saved_source_frame_view_opens_at_that_frame_fitted_its_way(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+
+    root = _study(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    viewer = "window.FastMDXMoleculeViewer"
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => !!{viewer}")
+            assert page.evaluate(f"async () => !!(await {viewer}.movie.frames())")
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {trajectoryFrame: 7}}))")
+            page.wait_for_function(f"() => {viewer}.STATE.exactFrame?.frame === 7")
+            view = page.evaluate(f"() => {viewer}.viewNow()")
+            assert view["frame"] == 7 and view["frame_source"] is True
+            # The view as saved with the frames fitted on the backbone.
+            opened = page.evaluate(f"(view) => {viewer}.showView(view)",
+                                   {**view, "superposed": "backbone", "superposed_to": "first"})
+            got = page.evaluate(f"""() => {{ const s = {viewer}.STATE;
+                return {{superposed: s.superposed, url: s.superposedUrl,
+                    exact: s.exactFrame && s.exactFrame.frame, count: s.engine.frameCount(),
+                    shown: s.playbackFrameIndices[
+                        Number(document.getElementById('traj-slider').value)],
+                    x: s.engine.find({{atom: 'CA'}})[0].x}}; }}""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert opened is True
+    assert got["superposed"] == "backbone" and got["url"], got
+    assert got["exact"] == 7 and got["shown"] == 7 and got["count"] == 4, got
+    # At its own coordinates, fitted onto the first frame as the view has it.
+    assert got["x"] == pytest.approx(0.0, abs=0.05), got
+
+
+def test_a_scene_of_a_changed_trajectory_says_why_with_its_code(tmp_path):
+    from fastmdxplora.gui.trajectory_frames import frames_info
+    from fastmdxplora.scenes import write_scene
+
+    root = _study(tmp_path / "study")
+    (root / "setup").mkdir()
+    (root / "setup" / "topology.pdb").write_bytes(
+        (root / "simulation" / "trajectory_topology.pdb").read_bytes())
+    frames_info(root, most_frames=3)
+    said = write_scene(root, "old", {"frame": 7, "frame_source": True,
+                                     "frame_signature": "simulation/production.dcd:1:2"})
+    assert said["ok"] is False and said["code"] == "analysis.frame.changed", said

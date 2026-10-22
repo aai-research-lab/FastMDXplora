@@ -121,6 +121,23 @@ def _cached(kind: str, path: Path, make: Any) -> Any:
     return value
 
 
+def same_source(signature: str | None, other: str | None) -> bool:
+    """Whether two frame signatures name the same trajectory: the part after
+    ``:most=`` says how many frames the browser was sent, not which."""
+    def source(value: str | None) -> str:
+        return str(value or "").split(":most=", 1)[0]
+
+    return source(signature) == source(other)
+
+
+def most_frames_sent(output_dir: str | Path) -> int:
+    """How many frames the browser was last sent of this study, so a scene
+    written without a server's setting reads the frames as they are."""
+    index = _load_json(Path(output_dir) / "simulation" / FRAMES_INDEX)
+    found = re.search(r":most=(\d+)", str(index.get("source_signature") or ""))
+    return int(found.group(1)) if found else MOST_FRAMES
+
+
 def _refused(reason: str, code: str) -> dict[str, Any]:
     return {"ok": False, "reason": reason, "code": code}
 
@@ -153,7 +170,7 @@ def exact_frame_info(output_dir: str | Path, frame: Any, *, most_frames: int = M
         return _refused("An exact frame is available only from this study's production "
                         "trajectory.", "analysis.data.absent")
     signature = str(payload.get("source_signature") or "")
-    if source_signature is not None and source_signature != signature:
+    if source_signature is not None and not same_source(source_signature, signature):
         return _refused("The trajectory has changed since this frame was named; "
                         "reload its charts before opening it.", "analysis.frame.changed")
     source = _source(out)

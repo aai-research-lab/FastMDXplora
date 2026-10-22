@@ -1312,7 +1312,22 @@
       // scheme of this page's to follow.
       ground: groundIsWhite() ? "white" : "dark",
     };
-    if (STATE.mode === "playback" && STATE.framesRendered) view.frame = engine.frame();
+    if (STATE.mode === "playback" && STATE.framesRendered) {
+      const index = STATE.playbackEngineIndices.indexOf(engine.frame());
+      // An unsmoothed production frame has a persistent source identity.
+      // Snapshot histories and smoothed samples retain the saved-view
+      // contract for their loaded coordinate sequence.
+      if (STATE.playbackPayload?.source_kind === "production-dcd"
+          && Number(STATE.appliedSmooth || 1) <= 1
+          && index >= 0 && Number.isInteger(STATE.playbackFrameIndices[index])) {
+        view.frame = STATE.playbackFrameIndices[index];
+        view.frame_source = true;
+        // Which trajectory that frame is of, so the view is not opened at
+        // the same number of another (extended, joined) trajectory.
+        const signature = STATE.playbackPayload?.source_signature;
+        if (signature) view.frame_signature = signature;
+      } else view.frame = engine.frame();
+    }
     return view;
   }
 
@@ -1323,12 +1338,16 @@
     const view = viewNow() || {};
     const dashboard = window.FastMDXDashboard?.state || {};
     const appState = dashboard.appState || {};
+    const displayed = STATE.playbackEngineIndices.indexOf(STATE.engine?.frame());
+    const sourceFrame = STATE.mode === "playback" && displayed >= 0
+      && STATE.playbackPayload?.source_kind === "production-dcd"
+      ? STATE.playbackFrameIndices[displayed] : view.frame;
     const hints = {
       page: dashboard.activePage || null,
       // No study open, once the page has read so, is named as such ("");
       // the server refuses it when the GUI has one open (CI-774 review L18).
       study: appState.active_run || (Object.keys(appState).length ? "" : null),
-      frame: Number.isInteger(view.frame) ? view.frame : null,
+      frame: Number.isInteger(sourceFrame) ? sourceFrame : null,
       representation: view.representation || null,
       colour: view.colour || null,
       superposed: view.superposed || null,
@@ -1375,11 +1394,13 @@
     });
     if (view.ground) setGround(view.ground);
     setPublication(!!view.publication);
-    if (Number.isInteger(view.frame) && (await loadPlayback(STATE.playbackPayload))) {
+    if (Number.isInteger(view.frame)) {
       stopFollowing();
-      await setPlaybackFrame(view.frame);
+      if (!(await loadPlayback(STATE.playbackPayload))) return false;
     }
     if (!isViewerGenerationCurrent(generation)) return false;
+    // The frames fitted as the view has them first, so a source frame is
+    // read fitted that way, at its own coordinates.
     const to = view.superposed_to || "first";
     const over = view.superposed && view.superposed !== "none" ? (view.smoothed_over || 1) : 1;
     if (view.superposed && (view.superposed !== STATE.superposed || to !== STATE.superposedTo
@@ -1392,8 +1413,15 @@
       STATE.smoothedOver = over;
       const smooth = document.getElementById("traj-smooth");
       if (smooth) smooth.value = String(over);
-      await superpose(view.superposed);
+      await superpose(view.superposed, {reseek: false});
     }
+    if (Number.isInteger(view.frame)) {
+      if (view.frame_source === true) {
+        if (!(await seekTrajectoryFrame(view.frame, view.frame_signature
+          || STATE.playbackPayload?.source_signature))) return false;
+      } else if (!(await setPlaybackFrame(view.frame))) return false;
+    }
+    if (!isViewerGenerationCurrent(generation)) return false;
     await restyleViewers();
     if (!isViewerGenerationCurrent(generation) || !STATE.engine) return false;
     STATE.engine.restoreCamera(view.camera);
@@ -2931,6 +2959,13 @@
     if (follow && follow.checked) follow.checked = false;
   }
 
+  /** Whether two frame signatures name one trajectory: what follows
+   * `:most=` says how many frames were sent, not which trajectory. */
+  function sameSource(signature, other) {
+    const source = (value) => String(value || "").split(":most=")[0];
+    return source(signature) === source(other);
+  }
+
   async function seekTrajectoryFrame(frame, sourceSignature) {
     const target = Number(frame);
     if (!Number.isInteger(target) || target < 0) {
@@ -2950,8 +2985,9 @@
     const payload = await ensurePlaybackPayload();
     if (!current() || !payload) return false;
     const signature = payload.source_signature || payload.compiled_at || "";
-    if (sourceSignature && signature !== sourceSignature) {
-      announce("The selected chart belongs to a trajectory that is no longer open.");
+    if (sourceSignature && !sameSource(signature, sourceSignature)) {
+      announce(`Frame ${target} was named in a trajectory that has since changed`
+        + " (extended, joined or written again), so it is not shown.");
       return false;
     }
     if (payload.source_kind !== "production-dcd") {

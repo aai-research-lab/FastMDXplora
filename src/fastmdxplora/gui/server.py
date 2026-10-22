@@ -2010,7 +2010,7 @@ def make_handler(
                     study, payload.get("name"), payload.get("view"),
                     selections=selections or None,
                     ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
-                    else None, source=played)
+                    else None, source=played, most_frames=cfg.max_browser_frames)
                 if played is not None and said.get("ok"):
                     said["notes"] = [*said.get("notes", []),
                                      f"The scene is of the run played ({played.name}) alone: "

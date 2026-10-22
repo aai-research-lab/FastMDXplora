@@ -4,11 +4,13 @@
 coordinates of a frame the browser never sampled. These are the refusals and
 the less common routes beside it: a frame whose source is no longer the
 production trajectory, an alignment that cannot be made, a frame that cannot
-be read or written, and the DCD-only route for an engine that cannot read XTC.
+be read or written, the DCD-only route for an engine that cannot read XTC, and
+a source-frame scene asked for smoothed.
 """
 
 from __future__ import annotations
 
+import json
 import types
 import urllib.error
 import urllib.request
@@ -471,3 +473,75 @@ def test_the_dcd_route_over_http_is_one_more_frame_or_a_404(tmp_path, study):
         assert caught.value.code == 404
     finally:
         session.server.shutdown()
+
+
+def test_a_source_frame_scene_refuses_smoothed_coordinates(study):
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.scenes import build_scene
+
+    root, _signature = study
+    (root / "setup").mkdir(exist_ok=True)
+    (root / "setup" / "topology.pdb").write_bytes(
+        (root / "simulation" / "trajectory_topology.pdb").read_bytes())
+    try:
+        answer = build_scene(root, {"frame": 7, "frame_source": True, "smoothed_over": 3})
+    except StudyError as exc:
+        assert "needs unsmoothed coordinates" in str(exc)
+        assert exc.code == "config.option.not_permitted"
+    else:
+        assert answer["ok"] is False
+        assert "needs unsmoothed coordinates" in json.dumps(answer)
+
+
+def _with_setup(root: Path) -> None:
+    (root / "setup").mkdir(exist_ok=True)
+    (root / "setup" / "topology.pdb").write_bytes(
+        (root / "simulation" / "trajectory_topology.pdb").read_bytes())
+
+
+def test_a_source_frame_named_in_another_trajectory_is_not_shown(study):
+    from fastmdxplora.gui.saved_views import _checked
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.scenes import build_scene
+
+    root, signature = study
+    _with_setup(root)
+    camera = {"position": [0, 0, 10], "target": [0, 0, 0], "up": [0, 1, 0]}
+    view = {"camera": camera, "frame": 7, "frame_source": True, "frame_signature": signature}
+    # A saved view keeps the trajectory its frame was named in.
+    assert _checked(view)["frame_signature"] == signature
+    # The same trajectory, sent to the browser as more frames: still it.
+    same = signature.replace(":most=3", ":most=2000")
+    assert build_scene(root, {**view, "frame_signature": same}, most_frames=3)["ok"]
+    with pytest.raises(StudyError) as caught:
+        build_scene(root, {**view, "frame_signature": "simulation/production.dcd:1:2:most=3"},
+                    most_frames=3)
+    assert caught.value.code == "analysis.frame.changed"
+    assert "has changed since this frame was named" in str(caught.value)
+
+
+def test_a_scene_reads_the_frames_as_the_viewer_was_sent_them(study):
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+
+    root, signature = study
+    _with_setup(root)
+    index = root / "simulation" / "frames_index.json"
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                      config=DashboardConfig(max_browser_frames=3))
+    try:
+        request = urllib.request.Request(
+            session.url.rstrip("/") + "/api/scenes", method="POST",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"name": "exact", "view": {
+                "frame": 7, "frame_source": True, "frame_signature": signature}}).encode())
+        with urllib.request.urlopen(request, timeout=120) as response:
+            assert json.loads(response.read())["ok"] is True
+    finally:
+        session.server.shutdown()
+    # The browser's three frames were not written again as two thousand.
+    assert json.loads(index.read_text())["frame_indices"] == [0, 5, 10]
+    # Nor by a scene written with no server's setting: the frames sent are read.
+    from fastmdxplora.scenes import write_scene
+
+    assert write_scene(root, "again", {"frame": 7, "frame_source": True})["ok"]
+    assert json.loads(index.read_text())["frame_indices"] == [0, 5, 10]

@@ -124,6 +124,14 @@ def _checked(view: Any) -> dict[str, Any] | None:
     frame = view.get("frame")
     if isinstance(frame, int) and not isinstance(frame, bool) and 0 <= frame < 10_000_000:
         clean["frame"] = frame
+        if view.get("frame_source") is True:
+            clean["frame_source"] = True
+            # The trajectory the frame was named in, so a view opened after
+            # it was extended or joined is not shown at another frame.
+            signature = view.get("frame_signature")
+            if isinstance(signature, str) and 0 < len(signature) <= 1024 \
+                    and signature.isprintable():
+                clean["frame_signature"] = signature
     for key, word in (("representation", _WORD), ("colour", _COLOURING)):
         if isinstance(view.get(key), str) and word.match(view[key]):
             clean[key] = view[key]
