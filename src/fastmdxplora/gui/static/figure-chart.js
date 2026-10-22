@@ -466,6 +466,8 @@
     if (!count) return { set: function () {}, current: function () { return -1; } };
     var place = keptPlace(f, { index: -1 });
     var svg = f.svg;
+    // Its arrows move along its points; zoom keeps + - [ ] (plot-tools.js).
+    f.ownArrows = true;
     svg.setAttribute("role", "application");
     svg.setAttribute("tabindex", "0");
     svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS : ""));

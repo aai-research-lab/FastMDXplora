@@ -1203,6 +1203,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   chosen values and decisions for inactive phases as well as the phases
   running now.
 
+- A figure's arrows step along its points and leave its view alone until
+  it is zoomed in; the zoom keys took them too and moved the view with each
+  step.
+
 - Analysis charts can be stepped through with the keyboard: the arrows
   choose a point, bar or cell, Home and End go to the ends, and Enter opens
   its frame or residue. A click outside a chart's plot does nothing.

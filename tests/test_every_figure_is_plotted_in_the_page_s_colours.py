@@ -137,6 +137,50 @@ def test_projection_keyboard_skips_missing_coordinates(tmp_path, linked) -> None
         session.server.shutdown()
 
 
+def test_a_figure_s_arrows_go_along_its_points_and_move_no_view(tmp_path) -> None:
+    """Not zoomed in, a figure's arrows are its points' (`keyboard`): the
+    zoom keys (plot-tools.js) took them too, and moved the view a quarter
+    along with every step, so the plot was drawn again zoomed."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import expect, sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _write(tmp_path / "study")
+    payload = _get(root, "dimred/dimred_pca")
+    frames = payload["frames"]
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url, wait_until="domcontentloaded")
+            page.evaluate("""data => {
+              const host = document.createElement('div');
+              host.id = 'arrows-check';
+              document.body.appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", payload)
+            chart = page.locator("#arrows-check")
+            svg = chart.locator("svg").first
+            svg.scroll_into_view_if_needed()
+            svg.focus()
+            expect(chart.locator(".series-tip")).to_contain_text(f"frame {frames[0]} ")
+            svg.press("ArrowRight")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text(f"frame {frames[2]} ")
+            view = page.evaluate("() => document.getElementById('arrows-check')._view || null")
+            hint = chart.locator("svg").first.get_attribute("data-zoom-hint") or ""
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert view is None
+    assert "(or the arrows)" not in hint
+
+
 class TestEachFigureIsGivenInItsShape:
 
     def test_secondary_structure_in_the_analysis_s_three_classes(self, study) -> None:
