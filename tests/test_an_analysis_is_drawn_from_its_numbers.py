@@ -23,13 +23,15 @@ import pytest
 from fastmdxplora.gui.series import MOST_POINTS, series_payload
 
 
-def _analysis(root: Path, name: str, text: str, mean: dict | None = None) -> None:
+def _analysis(root: Path, name: str, text: str, mean: dict | None = None,
+              *, options: dict | None = None, selection: str | None = None) -> None:
     folder = root / "analysis" / name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{name}.dat").write_text(text, encoding="utf-8")
     _figure(folder / f"{name}.png")
     (folder / "options.json").write_text(json.dumps(
-        {"analysis": name, "findings": {} if mean is None else {"mean": mean}}),
+        {"analysis": name, "selection": selection, "options": options or {},
+         "findings": {} if mean is None else {"mean": mean}}),
         encoding="utf-8")
 
 
@@ -50,9 +52,13 @@ def _figure(path: Path) -> None:
 
 def _manifest(root: Path, **load) -> None:
     (root / "analysis").mkdir(parents=True, exist_ok=True)
+    topology = load.pop("topology", None)
+    resolved = {"trajectory": str(root / "simulation" / "production.dcd")}
+    if topology is not None:
+        resolved["topology"] = str(topology)
     (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
         "load_kwargs": {"stride": None, "first": None, "saving_interval_ps": None, **load},
-        "resolved": {"trajectory": str(root / "simulation" / "production.dcd")},
+        "resolved": resolved,
     }), encoding="utf-8")
 
 
@@ -120,6 +126,63 @@ class TestTheSeries:
         assert data["labels"] == ["1", "2"]
         assert data["y"] == [0.2, 0.3]
 
+    def test_atom_mode_is_not_mislabelled_as_a_residue_profile(self, tmp_path) -> None:
+        _analysis(tmp_path, "rmsf", "7 0.2\n12 0.3\n",
+                  options={"per_residue": False}, selection="name CA")
+
+        data = series_payload(tmp_path, "rmsf")
+
+        assert data["kind"] == "atom"
+        assert data["x_label"] == "Atom"
+        assert data["labels"] == ["Atom 7", "Atom 12"]
+        assert data["entities"] == [None, None]
+
+    def test_atom_rows_are_tied_to_the_analyzed_topology(self, tmp_path) -> None:
+        pytest.importorskip("mdtraj")
+        from fastmdxplora.utils.native_output import topology_quietly
+        from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+        root = _write_study(tmp_path / "study")
+        topology_path = root / "simulation" / "trajectory_topology.pdb"
+        topology = topology_quietly(topology_path)
+        atoms = [atom for atom in topology.atoms if atom.name == "CA"][:3]
+        _manifest(root, topology=topology_path)
+        _analysis(root, "rmsf", "".join(
+            f"{atom.serial} {0.1 + i * 0.01:.2f}\n" for i, atom in enumerate(atoms)),
+            options={"per_residue": False}, selection="protein and name CA")
+
+        entities = series_payload(root, "rmsf")["entities"]
+
+        assert entities[0] == {"kind": "atom", "chain": "A", "resi": 1,
+                               "icode": "", "resn": "ALA", "atom": "CA"}
+        assert [entity["resi"] for entity in entities] == [1, 2, 3]
+
+    @pytest.mark.parametrize("analysis", ["rmsf"])
+    def test_a_residue_number_shared_by_two_chains_is_not_guessed(self, tmp_path, analysis) -> None:
+        pytest.importorskip("mdtraj")
+        import mdtraj as md
+
+        from fastmdxplora.gui.series import series_payload
+
+        simulation = tmp_path / "simulation"
+        simulation.mkdir()
+        topology = md.Topology()
+        for chain_name in ("A", "B"):
+            chain = topology.add_chain(chain_name)
+            residue = topology.add_residue("ALA", chain, resSeq=12)
+            topology.add_atom("CA", md.element.carbon, residue)
+        structure = md.Trajectory(
+            xyz=[[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]], topology=topology)
+        topology_path = simulation / "trajectory_topology.pdb"
+        structure[0].save_pdb(str(topology_path))
+        _manifest(tmp_path, topology=topology_path)
+        _analysis(tmp_path, analysis, "12 0.2\n", options={"per_residue": True},
+                  selection="name CA")
+
+        profile = series_payload(tmp_path, analysis)
+
+        assert profile["labels"] == ["12"]
+        assert profile["entities"] == [None]
 
 class TestWhatIsLinked:
 
@@ -201,11 +264,13 @@ def dashboard(tmp_path_factory):
     from tests.test_the_drawing_scripts_run_in_a_browser import FRAMES, _write_study
 
     root = _write_study(tmp_path_factory.mktemp("series") / "study")
-    _manifest(root, saving_interval_ps=2.0)
+    _manifest(root, saving_interval_ps=2.0,
+              topology=root / "simulation" / "trajectory_topology.pdb")
     _analysis(root, "rmsd", _series(FRAMES), {
         "mean": 0.112, "standard_error": 0.002, "effective_samples": 11.0,
         "discard": 5, "n_frames": FRAMES})
-    _analysis(root, "rmsf", "".join(f"{i + 1} {0.05 + 0.01 * i:.4f}\n" for i in range(10)))
+    _analysis(root, "rmsf", "".join(f"{i + 1} {0.05 + 0.01 * i:.4f}\n" for i in range(10)),
+              options={"per_residue": True}, selection="protein and name CA")
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
     yield session
     session.server.shutdown()
@@ -292,16 +357,119 @@ class TestTheChart:
         assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine.frame()") == 19
 
     def test_choosing_a_residue_shows_it(self, page) -> None:
-        _point_at(page, "rmsf", 0.5)
+        # The molecular engine is mounted only on the Viewer page. Load the
+        # trajectory there before returning to Analysis to exercise a profile
+        # selection without changing the current frame.
+        page.evaluate("() => window.FastMDXDashboard.navigate('viewer')")
+        page.wait_for_function("() => document.documentElement.dataset.page === 'viewer'")
+        assert page.evaluate("async () => window.FastMDXMoleculeViewer.movie.frames()")
+        page.wait_for_function(
+            "() => window.FastMDXMoleculeViewer.STATE.playbackLoaded", timeout=30000
+        )
+        page.evaluate("() => window.FastMDXMoleculeViewer.movie.showFrame(7)")
+        page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.engine.frame() === 7",
+                               timeout=15000)
+        page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+        _point_at(page, "rmsf", 5 / 9)
         page.mouse.down()
         page.mouse.up()
         page.wait_for_function(
             "() => document.documentElement.dataset.page === 'viewer'"
-            " && window.FastMDXMoleculeViewer.STATE.focusResidue", timeout=30000)
+            " && (window.FastMDXMoleculeViewer.STATE.focusResidue"
+            " || window.FastMDXMoleculeViewer.STATE.selection?.residues?.length === 1)",
+            timeout=30000)
+        assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.selection") is not None
         page.wait_for_function(
             "() => { const S = window.FastMDXMoleculeViewer.STATE;"
-            " return S.engine && (S.engine.rendered || []).includes('focus') && S.focusIndices.length"
-            " && S.engine.atoms(S.focusIndices).every((atom) => atom.resi === 6); }",
+            " return S.engine && S.selection.atoms.length"
+            " && S.engine.atoms(S.selection.atoms).every((atom) => atom.resi === 6); }",
             timeout=15000)
-        focus = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.focusResidue")
-        assert focus == {"resi": 6, "chain": None}
+        selection = page.evaluate("() => window.FastMDXMoleculeViewer.STATE.selection")
+        assert selection["residues"][0]["resi"] == 6
+        assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine.frame()") == 7
+        assert page.evaluate("() => window.FastMDXMoleculeViewer.currentViewHints().selection") == [
+            {"chain": "A", "resi": 6, "icode": "", "resn": "ALA"}]
+        page.locator("#seq-clear").click()
+        page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.selection === null")
+        assert "selection" not in page.evaluate(
+            "() => window.FastMDXMoleculeViewer.currentViewHints()"
+        )
+
+
+@pytest.mark.parametrize("delay_loading_check", [False, True])
+def test_clicking_atom_rmsf_selects_the_named_atom_in_the_viewer(
+        tmp_path, delay_loading_check) -> None:
+    pytest.importorskip("playwright.sync_api")
+    pytest.importorskip("mdtraj")
+    from playwright.sync_api import TimeoutError as BrowserTimeout
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.utils.native_output import topology_quietly
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    root = _write_study(tmp_path / "atom-rmsf")
+    topology_path = root / "simulation" / "trajectory_topology.pdb"
+    topology = topology_quietly(topology_path)
+    atoms = [atom for atom in topology.atoms if atom.name == "CA"]
+    _manifest(root, topology=topology_path)
+    _analysis(root, "rmsf", "".join(
+        f"{atom.serial} {0.1 + i * 0.01:.2f}\n" for i, atom in enumerate(atoms)),
+        options={"per_residue": False}, selection="protein and name CA")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            errors: list[str] = []
+            series_responses = []
+            held_loading_checks = []
+            if delay_loading_check:
+                page.route("**/api/metrics", lambda route: held_loading_checks.append(route))
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on("response", lambda response: series_responses.append(response.status)
+                    if "/api/series?" in response.url else None)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            chart = page.locator('.series-chart[data-analysis="rmsf"] svg')
+            try:
+                chart.wait_for(state="visible", timeout=30000)
+            except BrowserTimeout as error:
+                raise AssertionError({
+                    "series_http_status": series_responses, "page_errors": errors,
+                    "cards": page.locator('[data-series="rmsf"]').evaluate_all(
+                        "nodes => nodes.map(n => ({ready: n.dataset.seriesReady,"
+                        " hidden: n.hidden}))"),
+                    "source": series_payload(root, "rmsf"),
+                }) from error
+            if delay_loading_check:
+                # A plotted chart can still be covered by the startup checklist.
+                assert held_loading_checks
+                assert "state-loading" in page.locator("body").get_attribute("class")
+                for route in held_loading_checks:
+                    route.continue_()
+                page.unroute("**/api/metrics")
+            # Wait for the current SVG to receive the click after startup/redraw.
+            chart.click(trial=True)
+            height = chart.evaluate("el => el.clientHeight")
+            # Inside the first point's interval, clear of the plot's boundary.
+            chart.click(position={"x": 65, "y": height / 2})
+            page.wait_for_function(
+                "() => document.documentElement.dataset.page === 'viewer'"
+                " && window.FastMDXMoleculeViewer.STATE.selection?.atoms?.length === 1",
+                timeout=60000)
+            selected = page.evaluate("""() => {
+              const S = window.FastMDXMoleculeViewer.STATE;
+              return {atom: S.engine.atoms(S.selection.atoms)[0],
+                context: window.FastMDXMoleculeViewer.currentViewHints().selection};
+            }""")
+            assert (selected["atom"]["chain"], selected["atom"]["resi"],
+                    selected["atom"]["resn"], selected["atom"]["atom"]) == (
+                        "A", 1, "ALA", "CA")
+            assert selected["context"] == [{"chain": "A", "resi": 1, "icode": "",
+                                             "resn": "ALA", "atom": "CA"}]
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()

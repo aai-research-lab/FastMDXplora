@@ -404,6 +404,16 @@
     pendingFrame = setTimeout(function () { window.FastMDXSeries.openFrame(frameNumber); }, 280);
   }
 
+  function focusResidue(entity) {
+    if (!entity || !window.FastMDXDashboard) return;
+    window.FastMDXDashboard.focusEntity(entity);
+  }
+
+  function openFrameAndResidue(data, index, entity) {
+    openFrame(data, data.frames[index]);
+    focusResidue(entity);
+  }
+
   function nearestIndex(xs, x) {
     var lo = 0, hi = xs.length - 1;
     while (hi - lo > 1) {
@@ -463,18 +473,29 @@
     }));
     var names = {};
     data.classes.forEach(function (k) { names[k.code] = k.label; });
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame and focus the residue" : "";
+    function cellAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
-      var res = Math.min(residues, Math.max(1, Math.round(y.low + (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low))));
-      showTip(f, at.x, at.y, [names[data.states[i].charAt(res - 1)] || "", "residue " + data.residues[res - 1], when(data, i, f)], hint);
-      f.svg.dataset.at = String(i);
+      if (!inside(f, at)) return null;
+      return {
+        at: at,
+        frame: nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+          (f.plot.right - f.plot.left) * (x.high - x.low)),
+        residue: Math.min(residues, Math.max(1, Math.round(y.low +
+          (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low)))),
+      };
+    }
+    f.svg.addEventListener("mousemove", function (event) {
+      var cell = cellAt(event);
+      if (!cell) { f.tip.hidden = true; return; }
+      showTip(f, cell.at.x, cell.at.y, [names[data.states[cell.frame].charAt(cell.residue - 1)] || "",
+        "residue " + data.residues[cell.residue - 1], when(data, cell.frame, f)], hint);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var cell = cellAt(event);
+      if (cell) openFrameAndResidue(data, cell.frame,
+        data.entities && data.entities[cell.residue - 1]);
     });
     return f;
   }
@@ -807,14 +828,25 @@
       note.textContent = data.note;
       host.appendChild(note);
     }
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
       var i = Math.floor((at.y - f.plot.top) / row);
-      if (at.x < 0 || at.x > f.plot.right || i < 0 || i >= bars.length) { f.tip.hidden = true; return; }
+      if (at.x < 0 || at.x > f.plot.right || at.y < f.plot.top || at.y > f.plot.bottom
+          || i < 0 || i >= bars.length) return -1;
+      return i;
+    }
+    f.svg.addEventListener("mousemove", function (event) {
+      var at = pointer(f, event), i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
       var b = bars[i];
-      showTip(f, Math.min(at.x, f.plot.right - 20), f.plot.top + i * row + 4, b.said, "");
+      showTip(f, Math.min(at.x, f.plot.right - 20), f.plot.top + i * row + 4, b.said,
+        b.entity ? "Click to focus this residue" : "");
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0 && bars[i].entity) focusResidue(bars[i].entity);
+    });
     return f;
   }
 

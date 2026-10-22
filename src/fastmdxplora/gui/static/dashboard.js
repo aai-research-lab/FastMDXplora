@@ -3069,6 +3069,12 @@
     window.dispatchEvent(new CustomEvent(`dashboard:${name}`, {detail}));
   }
 
+  function focusEntity(entity) {
+    if (!entity) return;
+    navigate("viewer");
+    emit("residue-focus", entity);
+  }
+
   function setExactFrame(frame, time, signature) {
     if (state.playbackSignature !== signature || !Number.isInteger(frame) || frame < 0) return false;
     state.exactFrame = {frame, time: Number.isFinite(time) ? time : null, signature};
@@ -3087,6 +3093,7 @@
     get state() { return JSON.parse(JSON.stringify(state)); },
     navigate,
     showAnalysis,
+    focusEntity,
     applyStatus,
     applyAppState,
     applyMetrics,

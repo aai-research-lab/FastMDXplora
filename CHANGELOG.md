@@ -587,6 +587,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- Choosing a point on an RMSF chart, a contact or interaction bar, or a
+  secondary structure cell selects that residue in the Viewer by its
+  chain, number, insertion code and name, so a number two chains share is
+  no longer guessed. A row that matches no single residue says so and
+  selects nothing. An atom RMSF chart is labelled by atom and selects the
+  atom it names, and the Agent is told which atom is selected.
+
 - A view saved, or written as a scene, at a frame opened from a chart
   keeps that source frame and its coordinates, and opens at it again. It
   keeps which trajectory the frame is of: once that trajectory has been

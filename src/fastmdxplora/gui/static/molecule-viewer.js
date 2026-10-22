@@ -1354,12 +1354,20 @@
     };
     if (STATE.selection?.expression) hints.expression = STATE.selection.expression;
     else if (Array.isArray(STATE.selection?.residues) && STATE.selection.residues.length) {
-      hints.selection = STATE.selection.residues.slice(0, 20).map((residue) => ({
-        chain: String(residue.chain || "").slice(0, 32),
-        resi: Number.isInteger(residue.resi) ? residue.resi : null,
-        icode: String(residue.icode || "").slice(0, 1),
-        resn: String(residue.resn || "").slice(0, 8),
-      }));
+      const selectedAtoms = STATE.engine?.atoms(STATE.selection.atoms || []) || [];
+      hints.selection = STATE.selection.residues.slice(0, 20).map((residue) => {
+        const hint = {
+          chain: String(residue.chain || "").slice(0, 32),
+          resi: Number.isInteger(residue.resi) ? residue.resi : null,
+          icode: String(residue.icode || "").slice(0, 1),
+          resn: String(residue.resn || "").slice(0, 8),
+        };
+        const named = selectedAtoms.filter((atom) => atom.chain === residue.chain
+          && atom.resi === residue.resi && atom.icode === (residue.icode || "")
+          && atom.resn === residue.resn);
+        if (residue.atom && named.length === 1) hint.atom = String(named[0].atom || "").slice(0, 8);
+        return hint;
+      });
     }
     return Object.fromEntries(Object.entries(hints).filter(([, value]) => value != null));
   }
@@ -2768,12 +2776,26 @@
       STATE.focusIndices = null;
       return [];
     }
-    const wanted = {resi: residue.resi};
-    if (residue.chain) wanted.chain = residue.chain;
-    const atoms = engine.find(wanted);
-    STATE.focusIndices = atoms.map((atom) => atom.index);
+    const identity = {chain: residue.chain || "", resi: residue.resi,
+      icode: residue.icode || "", resn: residue.resn || ""};
+    const indices = engine.atomsOfResidues([[identity.chain, identity.resi,
+      identity.icode, identity.resn]]);
+    const inResidue = engine.atoms(indices);
+    const atoms = residue.atom ? inResidue.filter((atom) => atom.atom === residue.atom) : inResidue;
+    const selected = atoms.map((atom) => atom.index);
+    STATE.focusIndices = selected;
+    if (!atoms.length) {
+      selectResidues([], [], {});
+      window.FastMDXSequence?.markAtoms([]);
+      await restyleViewers();
+      return [];
+    }
+    identity.atom = residue.atom || null;
+    if (residue.atom) selectAtoms(selected, {residues: [identity]});
+    else selectResidues([identity], selected);
+    window.FastMDXSequence?.markAtoms(selected);
     await restyleViewers();
-    if (atoms.length) engine.focus(STATE.focusIndices);
+    engine.focus(selected);
     return atoms;
   }
 
@@ -2792,13 +2814,15 @@
     window.addEventListener("dashboard:residue-focus", (event) => {
       const detail = event.detail || {};
       const resi = Number(detail.resi);
-      STATE.focusResidue = Number.isFinite(resi)
-        ? {resi, chain: detail.chain || null} : null;
+      STATE.focusResidue = Number.isFinite(resi) && detail.resn
+        ? {resi, chain: detail.chain || "", icode: detail.icode || "",
+          resn: detail.resn, atom: detail.kind === "atom" ? detail.atom : null} : null;
       whenRendered(async () => {
         const atoms = await focusTheResidue();
         if (!STATE.focusResidue) return;
         const name = `${atoms[0]?.resn || "residue"} ${detail.chain ? detail.chain + ":" : ""}${resi}`;
-        announce(atoms.length ? `${name} shown` : `Residue ${resi} is not in the structure shown`);
+        announce(atoms.length ? `${detail.kind === "atom" ? detail.atom + " of " : ""}${name} shown`
+          : `The identified ${detail.kind === "atom" ? "atom" : "residue"} is not in the structure shown`);
       });
     });
   }

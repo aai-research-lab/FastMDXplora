@@ -253,7 +253,8 @@ def _secondary_structure(root: Path) -> dict[str, Any] | None:
     return {
         "kind": "states", "title": "Secondary structure (DSSP)",
         "x": x, "x_label": x_label, "frames": frames, "linked": _linked(root),
-        "residues": residues, "y_label": "Residue", "states": states,
+        "residues": residues, "entities": _residue_entities(root, residues),
+        "y_label": "Residue", "states": states,
         "classes": [{"code": code, "label": label} for code, label in SS_CLASSES],
         "thinned": len(rows) if len(keep) < len(rows) else None,
     }
@@ -740,8 +741,11 @@ def _contacts(root: Path) -> dict[str, Any] | None:
         return {"kind": "hbars", "title": "Protein-ligand contact frequency by residue",
                 "x_label": "Contact frequency (fraction of frames)", "x_low": 0.0, "x_high": 1.0,
                 "bars": [], "note": "No protein-ligand contacts detected."}
-    bars = [{"label": name, "value": f, "said": [name, f"in contact in {_percent(f)} of frames"]}
-            for name, f in rows[:MOST_BARS]]
+    names = [name for name, _ in rows[:MOST_BARS]]
+    entities = _residue_entities(root, names)
+    bars = [{"label": name, "value": f, "entity": entity,
+             "said": [name, f"in contact in {_percent(f)} of frames"]}
+            for (name, f), entity in zip(rows[:MOST_BARS], entities)]
     note = (f"The {MOST_BARS} most often in contact of {len(rows)} residues."
             if len(rows) > MOST_BARS else "")
     return {"kind": "hbars", "title": "Protein-ligand contact frequency by residue",
@@ -767,8 +771,10 @@ def _interactions(root: Path) -> dict[str, Any] | None:
 
     rows = [r for r in _table(path) if _number(r.get("occupancy")) is not None]
     rows.sort(key=lambda r: _number(r.get("occupancy")) or 0.0, reverse=True)
+    shown = rows[:MOST_BARS]
+    entities = _residue_entities(root, [str(row.get("residue") or "") for row in shown])
     bars = []
-    for row in rows[:MOST_BARS]:
+    for row, entity in zip(shown, entities):
         occupancy = _number(row.get("occupancy")) or 0.0
         error = _number(row.get("standard_error"))
         present, total = _number(row.get("frames_present")), _number(row.get("frames_total"))
@@ -781,8 +787,8 @@ def _interactions(root: Path) -> dict[str, Any] | None:
             said.append(f"\u00b1 {error:.2f}")
         if episodes is not None:
             said.append(f"formed {episodes:.0f} " + ("time" if episodes == 1 else "times"))
-        bars.append({"label": label, "value": occupancy, "error": error, "hollow": not well,
-                     "said": said})
+        bars.append({"label": label, "value": occupancy, "error": error,
+                     "hollow": not well, "entity": entity, "said": said})
     thin = sum(1 for b in bars if b["hollow"])
     notes = []
     if not bars:
@@ -794,6 +800,42 @@ def _interactions(root: Path) -> dict[str, Any] | None:
     return {"kind": "hbars", "title": "Protein-ligand interactions by type",
             "x_label": "Fraction of frames present", "x_low": 0.0, "x_high": 1.0,
             "bars": bars, "note": " ".join(notes)}
+
+
+def _residue_entities(root: Path, labels: list[str]) -> list[dict[str, Any] | None]:
+    """Resolve saved residue labels only when the analyzed topology makes
+    each label unique. An ambiguous or unavailable label remains value-only."""
+    if not labels:
+        return []
+    from fastmdxplora.gui.selection import topology_the_analyses_read
+
+    path = topology_the_analyses_read(root)
+    if path is None:
+        return [None] * len(labels)
+    try:
+        from fastmdxplora.analysis.residues import (
+            chain_name,
+            insertion_code,
+            named,
+            number,
+            remember_insertion_codes,
+            several_chains,
+        )
+        from fastmdxplora.utils.native_output import topology_quietly
+
+        remember_insertion_codes(path)
+        topology = topology_quietly(path)
+        qualified = several_chains(topology)
+        by_label: dict[str, dict[str, Any] | None] = {}
+        for residue in topology.residues:
+            label = named(residue, qualified=qualified)
+            entity = {"kind": "residue", "chain": chain_name(residue),
+                      "resi": number(residue), "icode": insertion_code(residue),
+                      "resn": str(residue.name)}
+            by_label[label] = entity if label not in by_label else None
+        return [by_label.get(label) for label in labels]
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        return [None] * len(labels)
 
 
 # ---------------------------------------------------------------------------

@@ -234,7 +234,7 @@
         x: px(v), y: plot.bottom + 15, fill: c.axis, "font-size": 10, "text-anchor": "middle",
       }, svg);
       label.textContent = data.kind === "residue"
-        ? (data.labels[Math.round(v) - 1] || "") : xText(v);
+        ? (data.labels[xs.indexOf(v)] || "") : xText(v);
     });
     el("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: c.axis }, svg);
     var xTitle = el("text", {
@@ -302,11 +302,13 @@
       cursor.setAttribute("visibility", "visible");
       dot.setAttribute("cx", x); dot.setAttribute("cy", y);
       dot.setAttribute("visibility", "visible");
-      var where = data.kind === "residue"
-        ? "residue " + data.labels[index]
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      var where = data.kind === "residue" || data.kind === "atom"
+        ? data.labels[index]
         : (data.x_label === "Frame" ? "frame " + data.frames[index]
           : format(xs[index]) + " " + (clock.unit || "ns") + " · frame " + data.frames[index]);
-      var action = data.kind === "residue" ? "show it in the structure"
+      var action = (data.kind === "residue" || data.kind === "atom") && entity
+        ? "select it in the structure"
         : (data.linked ? "open this frame" : "");
       tip.innerHTML = "";
       var value = document.createElement("strong");
@@ -318,6 +320,11 @@
         hint.className = "series-tip-hint";
         hint.textContent = "Click to " + action;
         tip.appendChild(hint);
+      } else if ((data.kind === "residue" || data.kind === "atom") && !entity) {
+        var unavailable = document.createElement("span");
+        unavailable.className = "series-tip-hint";
+        unavailable.textContent = "Selection unavailable: this row has no unique topology match.";
+        tip.appendChild(unavailable);
       }
       tip.hidden = false;
       var left = Math.min(Math.max(x + 12, 4), width - tip.offsetWidth - 4);
@@ -400,10 +407,10 @@
 
   function open(data, index) {
     if (index < 0 || !window.FastMDXDashboard) return;
-    if (data.kind === "residue") {
-      window.FastMDXDashboard.navigate("viewer");
-      window.dispatchEvent(new CustomEvent("dashboard:residue-focus",
-        { detail: data.residues[index] }));
+    if (data.kind === "residue" || data.kind === "atom") {
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      if (!entity) return;
+      window.FastMDXDashboard.focusEntity(entity);
       return;
     }
     if (!data.linked) return;

@@ -1,11 +1,13 @@
-"""An exact source frame is given only when it can be.
+"""An exact source frame, and the chart points that lead to one, are given only
+when they can be.
 
 ``test_a_graph_opens_exact_source_frame.py`` follows a chart click to the
 coordinates of a frame the browser never sampled. These are the refusals and
 the less common routes beside it: a frame whose source is no longer the
 production trajectory, an alignment that cannot be made, a frame that cannot
-be read or written, the DCD-only route for an engine that cannot read XTC, and
-a source-frame scene asked for smoothed.
+be read or written, the DCD-only route for an engine that cannot read XTC, a
+source-frame scene asked for smoothed, and profile and figure rows whose
+residue or atom cannot be named uniquely in the topology the analysis read.
 """
 
 from __future__ import annotations
@@ -545,3 +547,73 @@ def test_a_scene_reads_the_frames_as_the_viewer_was_sent_them(study):
 
     assert write_scene(root, "again", {"frame": 7, "frame_source": True})["ok"]
     assert json.loads(index.read_text())["frame_indices"] == [0, 5, 10]
+
+
+# -- profile and figure rows ------------------------------------------------
+
+
+def _analysis(root: Path, name: str, text: str, *, options=None, selection=None) -> None:
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _analysis as write
+
+    write(root, name, text, options=options, selection=selection)
+
+
+def test_atom_rows_name_an_atom_only_where_its_serial_is_unique(study):
+    from fastmdxplora.gui.series import series_payload
+
+    root, _signature = study
+    _analysis(root, "rmsf", "2 0.20\n99 0.30\n", options={"per_residue": False})
+    data = series_payload(root, "rmsf")
+    assert data["kind"] == "atom" and data["labels"] == ["Atom 2", "Atom 99"]
+    assert data["entities"] == [
+        {"kind": "atom", "chain": "A", "resi": 1, "icode": "", "resn": "ALA", "atom": "CA"},
+        None]
+
+
+def test_a_chain_word_before_a_residue_number_chooses_the_chain(study):
+    from fastmdxplora.gui.series import series_payload
+
+    root, _signature = study
+    _analysis(root, "rmsf", "A 1 0.20\nB 1 0.30\n", options={"per_residue": True})
+    entities = series_payload(root, "rmsf")["entities"]
+    assert entities == [{"kind": "residue", "chain": "A", "resi": 1, "icode": "",
+                         "resn": "ALA"}, None]
+
+
+def test_profile_rows_stay_value_only_where_the_topology_cannot_name_them(study):
+    from fastmdxplora.gui.series import series_payload
+
+    root, _signature = study
+    _analysis(root, "rmsf", "1 0.20\n", options={"per_residue": True},
+              selection="this is not a selection")
+    assert series_payload(root, "rmsf")["entities"] == [None]
+    (root / "simulation" / "trajectory_topology.pdb").rename(root / "elsewhere.pdb")
+    _analysis(root, "rmsf", "1 0.20\n", options={"per_residue": True})
+    assert series_payload(root, "rmsf")["entities"] == [None]
+
+
+def test_a_comma_table_whose_rows_do_not_match_the_profile_names_none(monkeypatch, study):
+    from fastmdxplora.gui import series
+
+    root, _signature = study
+    _analysis(root, "rmsf", "chain,residue,rmsf_nm\nA,1,0.20\nA,1,0.30\n",
+              options={"per_residue": True})
+    monkeypatch.setattr(series, "_profile_table_rows",
+                        lambda _path: [{"chain": "A", "residue": "1", "rmsf_nm": "0.2"}])
+    assert series.series_payload(root, "rmsf")["entities"] == [None, None]
+
+
+def test_figure_residue_labels_are_named_only_from_a_readable_topology(monkeypatch, study):
+    from fastmdxplora.gui.figure_data import _residue_entities
+    from fastmdxplora.utils import native_output
+
+    root, _signature = study
+    assert _residue_entities(root, []) == []
+    assert _residue_entities(root, ["ALA1", "GLY9"]) == [
+        {"kind": "residue", "chain": "A", "resi": 1, "icode": "", "resn": "ALA"}, None]
+
+    def unreadable(_path):
+        raise OSError("synthetic unreadable topology")
+
+    monkeypatch.setattr(native_output, "topology_quietly", unreadable)
+    assert _residue_entities(root, ["ALA1", "ALA2"]) == [None, None]
