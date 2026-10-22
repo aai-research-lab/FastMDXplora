@@ -615,6 +615,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   coordinates is refused, and writing a scene no longer rewrites the
   frames the Viewer was sent.
 
+- The RMSD matrix names the frames each of its cells stands for from what
+  its file records: a file averaged in blocks of frames (its `block`) has
+  each cell said as its block's frames and none opened as one frame, and
+  a file whose frames do not fit its cells names none.
+
 - A point on an analysis chart opens the trajectory frame it was
   computed from. Before, the nearest of the few hundred frames the Viewer
   plays was opened. A frame the Viewer does not hold is read from the

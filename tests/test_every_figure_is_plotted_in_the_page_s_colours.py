@@ -254,6 +254,40 @@ class TestEachFigureIsGivenInItsShape:
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         assert _get(root, "cluster/cluster_rmsd_matrix")["linked"] is False
 
+    def test_a_matrix_saved_in_blocks_names_the_frames_each_cell_holds(self, tmp_path) -> None:
+        """A matrix the clustering saved averaged in blocks of frames (its
+        ``block``) with every frame it read (``frames``, ``time_ns``): each
+        cell stands for its block's frames, none for one frame alone."""
+        from fastmdxplora.gui.series import analysed_axis
+
+        root = _write(tmp_path / "study")
+        frames = 14
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((5, 5), dtype=np.float32), block=np.int64(3),
+            frames=np.arange(frames), time_ns=np.arange(frames) * 0.01)
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        read = analysed_axis(root, frames)[0]
+        assert matrix["frames"] is None and matrix["block"] == 3
+        assert matrix["frame_groups"][0] == {"first": read[0], "last": read[2], "count": 3}
+        assert matrix["frame_groups"][-1] == {"first": read[12], "last": read[13], "count": 2}
+        # Five cells of three frames each, the last one as wide.
+        assert matrix["extent"] == pytest.approx([-0.005, (15 - 0.5) * 0.01])
+
+    def test_a_matrix_whose_frames_do_not_fit_its_cells_names_none(self, tmp_path) -> None:
+        root = _write(tmp_path / "study")
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((5, 5), dtype=np.float32),
+            frames=np.arange(14), time_ns=np.arange(14) * 0.01)
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        assert matrix["frames"] is None and matrix["frame_groups"] is None
+        assert matrix["axis_label"] == "Frame"
+
     def test_a_projection_names_its_components_by_their_share(self, study) -> None:
         pca = _get(study, "dimred/dimred_pca")
         assert pca["axes"] == ["PC 1 (39.5%)", "PC 2 (14.7%)"]

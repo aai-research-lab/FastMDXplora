@@ -506,21 +506,32 @@ def _rmsd_matrix(root: Path) -> dict[str, Any] | None:
     else:
         fits = values is not None and n >= 2
     if fits:
-        timed = times is not None and len(times) == n and bool(np.all(np.isfinite(times)))
         # `frames` in this file count the frames the analysis loaded (after
         # its first frame and stride); the clock turns them into the
-        # trajectory's own frames, as for a series.
-        indices = loaded.tolist() if loaded is not None and len(loaded) == n else list(range(n))
-        source_frames = _clock(root, indices)[0]
-        axis = times if timed else np.asarray(source_frames, dtype=float)
+        # trajectory's own frames, as for a series. Where the file's frames
+        # do not fit its cells, no cell names its frames.
+        agrees = loaded is None or (loaded.ndim == 1 and len(loaded) == n)
+        timed = (agrees and times is not None and len(times) == n
+                 and bool(np.all(np.isfinite(times))))
+        source_frames = None
+        if agrees:
+            indices = loaded.tolist() if loaded is not None else list(range(n))
+            source_frames = _clock(root, indices)[0]
+        if timed:
+            axis = times
+        elif source_frames is not None:
+            axis = np.asarray(source_frames, dtype=float)
+        else:
+            axis = np.arange(n, dtype=float)
         step = float(np.median(np.diff(axis))) if n > 1 else 1.0
         shown = math.ceil(n / block)
-        groups = []
-        for start in range(0, n, block):
-            stop = min(n, start + block)
-            group = source_frames[start:stop]
-            groups.append({"first": int(group[0]), "last": int(group[-1]),
-                           "count": len(group)})
+        groups = None
+        if source_frames is not None:
+            groups = []
+            for start in range(0, n, block):
+                group = source_frames[start:min(n, start + block)]
+                groups.append({"first": int(group[0]), "last": int(group[-1]),
+                               "count": len(group)})
         payload = {
             "kind": "matrix", "title": "RMSD between frames",
             "values": _grid(values),
