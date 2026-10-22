@@ -644,3 +644,62 @@ def test_figure_residue_labels_are_named_only_from_a_readable_topology(monkeypat
 
     monkeypatch.setattr(native_output, "topology_quietly", unreadable)
     assert _residue_entities(root, ["ALA1", "ALA2"]) == [None, None]
+
+
+# -- what is refused, and what is let go of ---------------------------------
+
+
+def test_a_source_frame_scene_of_other_atoms_is_refused(study):
+    """The frames' topology one atom short of the frame read: refused, as
+    the frames played are, not each coordinate given to the next atom."""
+    from fastmdxplora.scenes import write_scene
+
+    root, signature = study
+    _with_setup(root)
+    topology = root / "simulation" / "frames_topology.pdb"
+    lines = topology.read_text(encoding="utf-8").splitlines(keepends=True)
+    first = next(at for at, line in enumerate(lines) if line.startswith(("ATOM", "HETATM")))
+    topology.write_text("".join(lines[:first] + lines[first + 1:]), encoding="utf-8")
+    said = write_scene(root, "fewer", {"frame": 7, "frame_source": True,
+                                       "frame_signature": signature})
+    assert said["ok"] is False and said["code"] == "analysis.trajectory.unreadable", said
+    assert not (root / "scenes" / "fewer.mvsx").exists()
+
+
+def test_a_file_that_could_not_be_read_is_not_waited_on_after(tmp_path):
+    from fastmdxplora.gui import trajectory_frames
+
+    path = tmp_path / "topology.pdb"
+    path.write_text("one", encoding="utf-8")
+
+    def unreadable():
+        raise ValueError("not a structure")
+
+    with pytest.raises(ValueError):
+        trajectory_frames._cached("unreadable", path, unreadable)
+    assert not [key for key in trajectory_frames._READING if key[0] == "unreadable"]
+    assert trajectory_frames._cached("unreadable", path, lambda: "read") == "read"
+
+
+def test_frames_played_from_the_snapshots_are_signed_as_the_trajectory_s_are(
+        monkeypatch, study):
+    """A trajectory that cannot be read now is played from the snapshots:
+    their index carries the same version as every other, so it is known for
+    what it is when read again."""
+    from fastmdxplora.gui import trajectory_frames
+
+    root, _ = study
+    real = trajectory_frames._source
+    snapshots = [{"sequence": 1, "mtime_ns": 1}, {"sequence": 2, "mtime_ns": 2}]
+    monkeypatch.setattr(trajectory_frames, "_source",
+                        lambda out: dict(real(out), records=snapshots))
+
+    def being_written(*_args, **_kwargs):
+        raise OSError("the trajectory is being written")
+
+    monkeypatch.setattr(trajectory_frames, "_from_trajectory", being_written)
+    monkeypatch.setattr(trajectory_frames, "_from_history",
+                        lambda *_args: {"available": True, "frame_indices": [0, 1]})
+    said = trajectory_frames.frames_info(root, most_frames=3, force=True)
+    assert said["source_kind"] == "live-history"
+    assert said["signature"] == "history:2:2:2:most=3:payload=2"

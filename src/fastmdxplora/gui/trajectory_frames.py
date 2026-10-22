@@ -108,16 +108,22 @@ def _cached(kind: str, path: Path, make: Any) -> Any:
         if key in _READ_CACHE:
             return _READ_CACHE[key]
         reading = _READING.setdefault(key, threading.Lock())
-    with reading:
+    try:
+        with reading:
+            with _READ_CACHE_GUARD:
+                if key in _READ_CACHE:
+                    return _READ_CACHE[key]
+            value = make()
+            with _READ_CACHE_GUARD:
+                if len(_READ_CACHE) >= _READ_CACHE_MOST:
+                    _READ_CACHE.pop(next(iter(_READ_CACHE)))
+                _READ_CACHE[key] = value
+    finally:
+        # Let go of whether ``make()`` gave a value or raised: a file that
+        # could not be read is not waited on for ever after.
         with _READ_CACHE_GUARD:
-            if key in _READ_CACHE:
-                return _READ_CACHE[key]
-        value = make()
-        with _READ_CACHE_GUARD:
-            if len(_READ_CACHE) >= _READ_CACHE_MOST:
-                _READ_CACHE.pop(next(iter(_READ_CACHE)))
-            _READ_CACHE[key] = value
-            _READING.pop(key, None)
+            if _READING.get(key) is reading:
+                _READING.pop(key)
     return value
 
 
@@ -577,7 +583,7 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
                               signature=f"history:{len(source['records'])}:"
                                         f"{source['records'][-1].get('sequence')}:"
                                         f"{source['records'][-1].get('mtime_ns')}")
-                signature = f"{source['signature']}:most={int(most_frames)}"
+                signature = f"{source['signature']}:most={int(most_frames)}:payload=2"
                 said = _from_history(source, simulation, most_frames)
         else:
             said = _from_history(source, simulation, most_frames)

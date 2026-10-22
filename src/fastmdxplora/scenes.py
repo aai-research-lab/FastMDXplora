@@ -123,6 +123,12 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
         text = (root / "simulation" / FRAMES_TOPOLOGY).read_text(encoding="utf-8")
         lines = _atom_lines(text)
         xyz = exact.xyz[0] * 10.0
+        if len(xyz) != len(lines):
+            # As the frames played are checked below: a coordinate given to
+            # another atom, or an atom left with none, is not a scene.
+            from fastmdxplora.analysis.loading import TrajectoryLoadError
+
+            raise TrajectoryLoadError("The frame's coordinates are not of its topology's atoms.")
         secondary = _dssp(text, exact.xyz)
         return ([f"{line[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}"
                  for line, (x, y, z) in zip(lines, xyz)], frame, secondary)
