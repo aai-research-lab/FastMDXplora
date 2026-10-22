@@ -186,8 +186,13 @@ def exact_frame_info(output_dir: str | Path, frame: Any, *, most_frames: int = M
             return _refused(reason or "The alignment settings are unavailable.",
                             "config.option.not_permitted")
     simulation = _load_json(out / "simulation" / "simulation_parameters.json")
-    exact_time = _times([frame], total, simulation.get("duration_ns_actual"),
-                        _interval_ns(out, source))[0]
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    # No time where the integrator chose its own step, as playback says none
+    # (`frame_times_ns`): spreading the run's length evenly made one up.
+    exact_time = (None if chose_its_own_step(out / "simulation")
+                  else _times([frame], total, simulation.get("duration_ns_actual"),
+                              _interval_ns(out, source))[0])
     query: dict[str, Any] = {"frame": frame, "signature": signature}
     dcd_query: dict[str, Any] = {"exact_frame": frame, "signature": signature}
     for values in (query, dcd_query):

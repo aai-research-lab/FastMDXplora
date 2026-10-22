@@ -276,6 +276,9 @@ def _atoms(root: Path, analysis: str, label: str, unit: str, path: Path,
            record: dict[str, Any], rows: list[tuple[list[str], list[float]]]
            ) -> dict[str, Any]:
     """An atom RMSF profile, with an action only where its atom is known."""
+    # A row whose atom serial is not a finite number names no atom (a "nan"
+    # or "inf" in the file made the whole series a server error).
+    rows = [(words, numbers) for words, numbers in rows if math.isfinite(numbers[0])]
     values = [numbers[-1] for _, numbers in rows]
     serials = [int(numbers[0]) for _, numbers in rows]
     return {
@@ -366,7 +369,7 @@ def _profile_entities(root: Path, path: Path, record: dict[str, Any],
                            "resi": number(residue), "icode": insertion_code(residue),
                            "resn": str(residue.name)})
         return result
-    except (OSError, ValueError, TypeError, IndexError, KeyError):
+    except (OSError, ValueError, TypeError, IndexError, KeyError, OverflowError):
         return [None] * len(rows)
 
 

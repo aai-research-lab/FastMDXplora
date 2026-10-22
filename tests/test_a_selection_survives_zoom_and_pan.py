@@ -179,10 +179,13 @@ def test_an_rmsd_matrix_keeps_its_row_and_column_through_zoom(tmp_path):
     root, session = _session(tmp_path)
     folder = root / "analysis" / "cluster"
     folder.mkdir(parents=True)
+    # As the clustering writes it: the frames it loaded, counted from 0.
     np.savez(folder / "cluster_rmsd_matrix.npz", rmsd_nm=np.zeros((20, 20)),
-             frames=np.array(FRAMES), time_ns=np.arange(20) * 0.001)
+             frames=np.arange(20), time_ns=np.arange(20) * 0.001)
     payload = figure_payload(root, "analysis/cluster/cluster_rmsd_matrix.png")
-    assert payload["ok"] and payload["frames"] == FRAMES
+    # The trajectory's frames, through the analysis's first frame and stride.
+    frames = payload["frames"]
+    assert payload["ok"] and frames == [(14 + k) * 7 for k in range(20)]
     payload["linked"] = True
     try:
         with sync_playwright() as pw:
@@ -198,20 +201,20 @@ def test_an_rmsd_matrix_keeps_its_row_and_column_through_zoom(tmp_path):
             # Shift+Enter: the column's frame; Enter: the row's.
             page.locator("#kept-selection svg").focus()
             page.keyboard.press("Shift+Enter")
-            column = _viewer_at(page, FRAMES[8])
+            column = _viewer_at(page, frames[8])
             _back(page)
             again = _tip(page)
             page.keyboard.press("Enter")
-            row = _viewer_at(page, FRAMES[5])
+            row = _viewer_at(page, frames[5])
             browser.close()
     finally:
         session.server.shutdown()
     assert errors == []
-    assert f"row frame {FRAMES[5]}" in chosen and f"column frame {FRAMES[8]}" in chosen, chosen
-    assert f"row frame {FRAMES[5]}" in kept and f"column frame {FRAMES[8]}" in kept, kept
-    assert f"row frame {FRAMES[5]}" in again and f"column frame {FRAMES[8]}" in again, again
-    assert column == pytest.approx(float(FRAMES[8]), abs=0.02)
-    assert row == pytest.approx(float(FRAMES[5]), abs=0.02)
+    assert f"row frame {frames[5]}" in chosen and f"column frame {frames[8]}" in chosen, chosen
+    assert f"row frame {frames[5]}" in kept and f"column frame {frames[8]}" in kept, kept
+    assert f"row frame {frames[5]}" in again and f"column frame {frames[8]}" in again, again
+    assert column == pytest.approx(float(frames[8]), abs=0.02)
+    assert row == pytest.approx(float(frames[5]), abs=0.02)
 
 
 def test_a_series_chart_keeps_its_point_through_zoom(tmp_path):
@@ -404,8 +407,9 @@ def test_a_matrix_column_moved_out_of_view_gives_way_and_its_row_stays(tmp_path)
     folder = root / "analysis" / "cluster"
     folder.mkdir(parents=True)
     np.savez(folder / "cluster_rmsd_matrix.npz", rmsd_nm=np.zeros((20, 20)),
-             frames=np.array(FRAMES), time_ns=np.arange(20) * 0.001)
+             frames=np.arange(20), time_ns=np.arange(20) * 0.001)
     payload = figure_payload(root, "analysis/cluster/cluster_rmsd_matrix.png")
+    frames = payload["frames"]
     payload["linked"] = True
     low, high = payload["extent"]
     centres = [low + (k + 0.5) * (high - low) / 20 for k in range(20)]
@@ -428,19 +432,19 @@ def test_a_matrix_column_moved_out_of_view_gives_way_and_its_row_stays(tmp_path)
             said = _tip(page)
             page.keyboard.press("Shift+Enter")
             nearest = min(k for k in range(20) if centres[k] >= off[0] - 1e-9)
-            column = _viewer_at(page, FRAMES[nearest])
+            column = _viewer_at(page, frames[nearest])
             _back(page)
             page.keyboard.press("Enter")
-            row = _viewer_at(page, FRAMES[14])
+            row = _viewer_at(page, frames[14])
             browser.close()
     finally:
         session.server.shutdown()
     assert errors == []
     assert zoomed[0] <= centres[8] <= zoomed[1] and zoomed[0] <= centres[14] <= zoomed[1]
     assert centres[8] < off[0] <= centres[14] <= off[1]
-    assert f"column frame {FRAMES[nearest]}" in said and f"row frame {FRAMES[14]}" in said, said
-    assert column == pytest.approx(float(FRAMES[nearest]), abs=0.02)
-    assert row == pytest.approx(float(FRAMES[14]), abs=0.02)
+    assert f"column frame {frames[nearest]}" in said and f"row frame {frames[14]}" in said, said
+    assert column == pytest.approx(float(frames[nearest]), abs=0.02)
+    assert row == pytest.approx(float(frames[14]), abs=0.02)
 
 
 def test_a_series_point_moved_out_of_view_gives_way_to_the_nearest_shown(tmp_path):
