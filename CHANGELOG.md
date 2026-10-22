@@ -643,6 +643,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   a frame that cannot be rendered leaves them as they were and says so. A
   trajectory of one frame is shown without starting a playback timer.
 
+- A frame opened from a chart or a saved view is named on the counter once
+  it is drawn: the frame shown before it was given against the new total
+  for up to two seconds.
+
+- A frame that cannot be opened (its trajectory not read, named in a
+  trajectory since changed, or the GUI busy preparing others) is said in
+  the page's notice as well as read out. A residue chart whose structure
+  was not read says so in its hover box, and a figure says it under its
+  plot, rather than that no residue matched.
+
+- A residue profile's points and measured squares are drawn whole at both
+  ends, and its line no longer joins one chain's last residue to the next
+  chain's first. A source-frame scene whose topology holds other atoms than
+  the frame read is refused.
+
+- A series chart whose newly opened study has no such series shows the
+  card's figure again, and a range chosen on a chart is forgotten when
+  another study is opened.
+
 - The phone-to-desktop browser check waits for the side panel to return
   after its dialog closes, avoiding a timing-sensitive assertion.
 
@@ -1506,7 +1525,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A chart's residues are named from the study's own records: the profile's
   table, the analyses' manifest and the structure it names are read held
   to the study, so a structure linked out of it, or named outside it, is
-  not opened for a page, and its points are left value-only.
+  not opened for a page, and its points are left value-only. The bars of a
+  ligand's contacts and interactions and the secondary-structure map name
+  theirs the same way, and each says the structure was not read.
+
+- The frames the Viewer plays are read from the study's own trajectory and
+  topology alone, as an exact frame is: one linked out of the study, or a
+  topology its join names outside it, is not played, on this computer or
+  on a public bind, and the Viewer is told it was not read; frames written
+  from it before are not sent, and frames linked out are not written over.
 
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a
