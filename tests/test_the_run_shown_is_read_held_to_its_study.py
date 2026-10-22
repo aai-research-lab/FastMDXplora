@@ -92,3 +92,41 @@ def test_a_run_linked_out_of_the_study_is_not_played(tmp_path, public):
     assert [status for route, (status, _) in asked.items() if "exact" in route
             and route.startswith("/structure/")] == [404, 404]
     assert str(tmp_path) not in json.dumps(info)
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_records_the_runs_are_played_from_are_not_read_through_a_link(tmp_path, public):
+    root = _runs(tmp_path, 9, 7)
+    # The run played's parameters linked out, naming a length of its own.
+    parameters = _moved_out(root, tmp_path, "runs/r1/simulation/simulation_parameters.json")
+    parameters.write_text(json.dumps({"duration_ns_actual": 777.0}), encoding="utf-8")
+    _watch(parameters.parent)
+    try:
+        status, body = _ask(root, tmp_path, "/api/frames-info", public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    said = json.loads(body)
+    assert status == 200 and said["playback_available"] is True, said
+    assert "runs/r1/simulation/simulation_parameters.json was not read" in said["not_read"]
+    # No time spread over a length read through the link.
+    assert said["frame_times_ns"] == [None] * said["n_frames_browser"]
+
+    # The index of the runs set beside it linked out, saying other frames.
+    index = _moved_out(root, tmp_path, "viewer_runs/index.json")
+    kept = json.loads(index.read_text(encoding="utf-8"))
+    kept["runs"]["r2"]["entry"]["frames"] = 777
+    index.write_text(json.dumps(kept), encoding="utf-8")
+    before = index.read_bytes()
+    _watch(index.parent)
+    try:
+        status, body = _ask(root, tmp_path, "/api/frames-info", public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    said = json.loads(body)
+    assert "viewer_runs/index.json was not read" in said["not_read"]
+    assert all(run["frames"] != 777 for run in said["runs_together"]["runs"])
+    assert index.read_bytes() == before

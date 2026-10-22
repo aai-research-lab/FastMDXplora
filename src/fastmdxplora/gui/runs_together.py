@@ -119,6 +119,7 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
               force: bool) -> dict[str, Any]:
     import hashlib
 
+    from fastmdxplora import record_access
     from fastmdxplora.gui.trajectory_frames import _source, _unavailable, _write_text, frames_info
 
     main = run_shown(base)
@@ -157,7 +158,9 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
             continue
         label = labels.get(run_id, run_id)
         folder = Path(run["path"])
-        source = _source(folder) if folder.is_dir() else None
+        # Through `record_access`, as `run_shown` looks: a run linked out of
+        # the study is refused and named, not looked in.
+        source = _source(folder) if record_access.is_dir(folder) else None
         if source is None:
             excluded.append({"run_id": run_id, "label": label,
                              "reason": "It has no trajectory yet."})
@@ -165,7 +168,7 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
         before = keep.get(run_id) or {}
         target = out / f"run_{order[run_id]}.dcd"
         if before.get("signature") == source["signature"] and (
-                before.get("entry") is None or target.is_file()):
+                before.get("entry") is None or record_access.is_file(target)):
             said = before
         else:
             if context is None:
@@ -370,8 +373,12 @@ def _frames_of(source: dict[str, Any], ours: list[str], indices: list[int]
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    # Through `record_access`: in a read held to the study, a record linked
+    # out of it is refused and named, never read where it leads.
+    from fastmdxplora import record_access
+
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(record_access.read_text(path, encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
