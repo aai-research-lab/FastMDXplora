@@ -41,6 +41,7 @@
     playbackSimulationSteps: [],
     playbackSignature: null,
     playbackData: null,
+    exactFrame: null,
     metrics: [],
     status: {},
     health: {},
@@ -797,6 +798,7 @@
     state.playbackSimulationSteps = [];
     state.playbackSignature = null;
     state.playbackData = null;
+    state.exactFrame = null;
     const slider = byId("traj-slider");
     if (slider) {
       slider.min = "0";
@@ -2511,7 +2513,26 @@
     const previousFrame = parseInt(byId("traj-slider")?.value || "0", 10) || 0;
     const sourceChanged = previousSignature !== null && previousSignature !== signature;
 
+    if (previousSignature && signature !== previousSignature) state.exactFrame = null;
     state.playbackData = payload || null;
+    if (state.exactFrame && state.exactFrame.signature === signature
+        && payload?.playback_available && Array.isArray(payload.frame_indices)) {
+      const entries = payload.frame_indices.map((frame, index) => ({
+        frame,
+        time: payload.frame_times_ns?.[index] ?? null,
+        step: payload.simulation_steps?.[index] ?? null,
+      }));
+      if (!entries.some((entry) => entry.frame === state.exactFrame.frame)) {
+        entries.push({frame: state.exactFrame.frame, time: state.exactFrame.time, step: null});
+      }
+      entries.sort((a, b) => a.frame - b.frame);
+      payload = Object.assign({}, payload, {
+        n_frames_browser: entries.length,
+        frame_indices: entries.map((entry) => entry.frame),
+        frame_times_ns: entries.map((entry) => entry.time),
+        simulation_steps: entries.map((entry) => entry.step),
+      });
+    }
 
     state.playbackAvailable = !!payload?.playback_available;
     state.playbackFrames = Number(payload?.n_frames_browser || 0);
@@ -2553,8 +2574,8 @@
     const maxFrame = Math.max(0, state.playbackFrames - 1);
     let frame = sourceChanged ? 0 : Math.min(previousFrame, maxFrame);
     if (viewerShowsPlayback) {
-      const displayed = viewer.engine.frame();
-      if (Number.isInteger(displayed) && displayed >= 0 && displayed <= maxFrame) frame = displayed;
+      const displayed = viewer.playbackEngineIndices.indexOf(viewer.engine.frame());
+      if (displayed >= 0) frame = displayed;
     }
     slider.min = "0";
     slider.max = String(maxFrame);
@@ -3048,6 +3069,20 @@
     window.dispatchEvent(new CustomEvent(`dashboard:${name}`, {detail}));
   }
 
+  function setExactFrame(frame, time, signature) {
+    if (state.playbackSignature !== signature || !Number.isInteger(frame) || frame < 0) return false;
+    state.exactFrame = {frame, time: Number.isFinite(time) ? time : null, signature};
+    applyPlayback(state.playbackData);
+    return true;
+  }
+
+  function clearExactFrame(signature) {
+    if (signature && state.exactFrame?.signature !== signature) return false;
+    state.exactFrame = null;
+    applyPlayback(state.playbackData);
+    return true;
+  }
+
   window.FastMDXDashboard = {
     get state() { return JSON.parse(JSON.stringify(state)); },
     navigate,
@@ -3058,6 +3093,8 @@
     applyStructure,
     applyPlayback,
     setPlaybackPosition,
+    setExactFrame,
+    clearExactFrame,
     applyResults,
     on(eventName, handler) {
       window.addEventListener(`dashboard:${eventName}`, (event) => handler(event.detail));

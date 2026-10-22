@@ -326,6 +326,7 @@ A few you are likely to meet, and what each means.
 | `environment.path.not_found` | A named file is not where the run was started from |
 | `analysis.memory.matrix_too_large` | Clustering's frame-by-frame RMSD matrix, or MDS's in `dimred`, and the copies made of it, would not fit in the memory this process can take: the least of the machine's available memory, its control group's limit less its usage (a SLURM job's, a container's) and its `ulimit -v` or data limit less what it holds (three quarters of it is planned on). The frames, the bytes needed and available, and the stride that fits are named: set `stride: k` under `analysis.options.cluster` to cluster every k-th frame (for MDS, `analysis: {stride: k}`, or PCA, which makes no matrix). The other analyses still run on every frame |
 | `environment.service.unreachable` | RCSB did not answer. The message carries the exact `curl` to run elsewhere |
+| `environment.service.busy` | The GUI was preparing other exact frames and this one waited too long. Retryable: open it again |
 | `environment.service.machine_unreachable` | `ssh` could not reach a machine. The message quotes `ssh`'s own reason; try `ssh <name>` in the same terminal |
 | `remote.machine.unknown` | A machine that has not been inspected here. `fastmdx remote --machine <name>` first |
 | `remote.machine.not_ready` | Nothing on the machine holds this computer's code with its backends loading. `fastmdx remote --machine <name>` says why |
@@ -346,6 +347,8 @@ A few you are likely to meet, and what each means.
 | `analysis.data.absent` | The trajectory or prepared system named is not there. Every candidate path is listed |
 | `simulation.resume.segment_named_twice` | Two segment folders of one study read as the same number (`segment-1` and `segment-001`). Both are named |
 | `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |
+| `analysis.frame.outside` | A frame opened by its number (from a chart, a saved view or a scene) is past the end of the study's production trajectory |
+| `analysis.frame.changed` | A frame was named in a trajectory that has since been extended, joined or written again, so its number may now name other coordinates. Open it again from the study's charts |
 | `analysis.sampling.*` | The run is sound and too short. `sampling_shortfall` says by how much |
 | `simulation.run.stopped` | The run was asked to stop (SIGTERM or Ctrl-C): in production it ended on a frame, with a checkpoint there; in a parallel study's other phases, where it was; a second Ctrl-C, or one outside production, where it was. Retryable: `fastmdx resume` carries it on |
 | `simulation.run.interrupted` | The run ended without recording its end: its process is gone (the machine restarted, or a scheduler or a person ended it), or nothing has been written for a day with no process here to ask. Retryable: `fastmdx resume` carries it on from its last checkpoint, offered to run from the GUI only where its process was seen to be gone |

@@ -282,6 +282,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/frames-info", "/api/frames-superposed",
             # The same frames as XTC, in pieces, played from the first.
             "/api/frames-pieces", "/structure/frames-piece.xtc",
+            # Chart navigation reads one exact source frame from the same
+            # served study; these routes accept no alternative file path.
+            "/api/exact-frame", "/structure/exact-frame.xtc",
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
             "/api/interactions-over-frames", "/api/chain-contacts",

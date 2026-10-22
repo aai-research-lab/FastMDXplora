@@ -258,6 +258,12 @@
       shown.showInteractions([], GROUP).catch(function () {});
       return;
     }
+    if (state.frame == null) {
+      shown.showInteractions([], GROUP).catch(function () {});
+      say(nameOf(d.a) + " and " + nameOf(d.b) + ": in contact in " + percent(d.share)
+        + " of frames. The frame shown was opened from the trajectory and is not one of the frames played.");
+      return;
+    }
     var frame = Math.min(state.frame, d.atoms.length - 1);
     var atoms = d.atoms[frame];
     shown.showInteractions([{ a: atoms[0], b: atoms[1], colour: LINE }], GROUP)
@@ -335,7 +341,11 @@
     byId("cmap-all").addEventListener("click", function () { ask(null); });
     byId("cmap-clear").addEventListener("click", clear);
     window.addEventListener("dashboard:frame-shown", function (event) {
-      state.frame = Number(event.detail && event.detail.index) || 0;
+      var played = event.detail ? event.detail.playedIndex : undefined;
+      // A frame opened from the trajectory between the frames played has
+      // no value here (null): never a neighbour's.
+      state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
+        : played;
       if (state.pairData) showPair();
     });
     window.addEventListener("dashboard:viewer-rendered", offer);

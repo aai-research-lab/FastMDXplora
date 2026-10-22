@@ -4514,6 +4514,9 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .chain-contact { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs);
                  color: var(--text-muted); }
 .chain-contact.is-present { color: var(--text-primary); font-weight: 600; }
+/* At a frame read from the trajectory, not one played: neither present nor
+   absent, as the line above the list says. */
+.chain-contacts[data-unplayed] .chain-contact { opacity: 0.55; font-style: italic; }
 .chain-contact-kind { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 2px; }
 .chain-contact-residues { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .chain-contact-share { flex: 0 0 auto; }

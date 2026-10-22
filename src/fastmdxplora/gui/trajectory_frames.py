@@ -22,6 +22,7 @@ once (two dashboards on one folder) each finish, the last one's copy kept.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -31,8 +32,13 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.refusals import CodedError, MissingResultError, StudyError
+
+logger = logging.getLogger("fastmdxplora.gui.trajectory_frames")
+
 __all__ = ["BINARY_ATOM_FRAMES", "FRAMES_FILE", "FRAMES_TOPOLOGY", "PIECE_ATOM_FRAMES",
-           "SUPERPOSED_ON", "as_xtc", "frames_for_binary", "frames_info", "frames_pieces",
+           "SUPERPOSED_ON", "as_xtc", "exact_frame", "exact_frame_info", "exact_frame_xtc",
+           "exact_frames_dcd", "frames_for_binary", "frames_info", "frames_pieces",
            "pocket_backbone", "superposed_frames", "superposed_name"]
 
 FRAMES_FILE = "frames.dcd"
@@ -77,6 +83,317 @@ def frames_info(output_dir: str | Path, *, most_frames: int = MOST_FRAMES,
     with lock:
         return _frames_info(out, most_frames=most_frames,
                             simulation_time_ns_total=simulation_time_ns_total, force=force)
+
+
+#: How many exact frames are prepared at once; a request beyond these waits
+#: up to :data:`_PREPARING_WAIT_S` for one to finish, then is refused.
+_PREPARING = threading.BoundedSemaphore(2)
+_PREPARING_WAIT_S = 30.0
+
+#: Parsed topologies and fit references, by the file (its device, inode,
+#: size and time), so a frame opened again does not read them again.
+_READ_CACHE: dict[tuple[Any, ...], Any] = {}
+_READ_CACHE_GUARD = threading.Lock()
+_READ_CACHE_MOST = 8
+#: One reading of each file at a time: a second request for it waits for
+#: the first instead of reading it beside it.
+_READING: dict[tuple[Any, ...], threading.Lock] = {}
+
+
+def _cached(kind: str, path: Path, make: Any) -> Any:
+    """``make()``, kept while ``path`` is unchanged."""
+    stat = path.stat()
+    key = (kind, str(path.resolve()), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+    with _READ_CACHE_GUARD:
+        if key in _READ_CACHE:
+            return _READ_CACHE[key]
+        reading = _READING.setdefault(key, threading.Lock())
+    with reading:
+        with _READ_CACHE_GUARD:
+            if key in _READ_CACHE:
+                return _READ_CACHE[key]
+        value = make()
+        with _READ_CACHE_GUARD:
+            if len(_READ_CACHE) >= _READ_CACHE_MOST:
+                _READ_CACHE.pop(next(iter(_READ_CACHE)))
+            _READ_CACHE[key] = value
+            _READING.pop(key, None)
+    return value
+
+
+def _refused(reason: str, code: str) -> dict[str, Any]:
+    return {"ok": False, "reason": reason, "code": code}
+
+
+def _not_prepared(frame: int, exc: BaseException) -> dict[str, Any]:
+    """What the page is told when a frame could not be read or written: no
+    path or library message, which may name the server's folders. The
+    exception is logged here."""
+    logger.warning("exact frame %s could not be prepared: %s", frame, exc)
+    logger.debug("exact frame %s could not be prepared", frame, exc_info=exc)
+    return _refused(f"Frame {frame} could not be prepared.", "analysis.trajectory.unreadable")
+
+
+def exact_frame_info(output_dir: str | Path, frame: Any, *, most_frames: int = MOST_FRAMES,
+                     source_signature: str | None = None, on: str = "none",
+                     ligand: str | None = None, cutoff_angstrom: Any = 5.0,
+                     to: str = "first") -> dict[str, Any]:
+    """Validate one source-frame request and describe its bounded coordinate loads.
+
+    A caller names only a frame number and optional viewer alignment settings;
+    the study's recorded trajectory and its source signature are resolved here.
+    """
+    from urllib.parse import urlencode
+
+    out = Path(output_dir)
+    if type(frame) is not int or frame < 0:
+        return _refused("A source frame is a non-negative integer.", "config.option.wrong_type")
+    payload = frames_info(out, most_frames=most_frames)
+    if not payload.get("playback_available") or payload.get("source_kind") != "production-dcd":
+        return _refused("An exact frame is available only from this study's production "
+                        "trajectory.", "analysis.data.absent")
+    signature = str(payload.get("source_signature") or "")
+    if source_signature is not None and source_signature != signature:
+        return _refused("The trajectory has changed since this frame was named; "
+                        "reload its charts before opening it.", "analysis.frame.changed")
+    source = _source(out)
+    if source is None or source.get("kind") != "trajectory":
+        return _refused("The study's source trajectory is unavailable.", "analysis.data.absent")
+    total = int(payload.get("n_frames_total") or 0)
+    if frame >= total:
+        return _refused(f"The source frame is outside 0 to {max(0, total - 1)}.",
+                        "analysis.frame.outside")
+    if on != "none":
+        name, _, reason = superposed_name(on, ligand, cutoff_angstrom, to, 1)
+        if name is None:
+            return _refused(reason or "The alignment settings are unavailable.",
+                            "config.option.not_permitted")
+    simulation = _load_json(out / "simulation" / "simulation_parameters.json")
+    exact_time = _times([frame], total, simulation.get("duration_ns_actual"),
+                        _interval_ns(out, source))[0]
+    query: dict[str, Any] = {"frame": frame, "signature": signature}
+    dcd_query: dict[str, Any] = {"exact_frame": frame, "signature": signature}
+    for values in (query, dcd_query):
+        if on != "none":
+            values.update(on=on, to=to)
+            if on == "pocket":
+                values.update(ligand=ligand or "", cutoff=f"{float(cutoff_angstrom):g}")
+    return {"ok": True, "frame": frame, "time_ns": exact_time,
+            "source_signature": signature, "frame_indices": payload["frame_indices"],
+            "frame_times_ns": payload["frame_times_ns"], "n_frames_total": total,
+            "exact_url": "/structure/exact-frame.xtc?" + urlencode(query),
+            "dcd_url": "/structure/frames.dcd?" + urlencode(dcd_query)}
+
+
+class _Preparing:
+    """At most two frames prepared at once; refused once the wait is over."""
+
+    def __enter__(self) -> bool:
+        self.held = _PREPARING.acquire(timeout=_PREPARING_WAIT_S)
+        return self.held
+
+    def __exit__(self, *_exc: Any) -> None:
+        if self.held:
+            _PREPARING.release()
+
+
+_BUSY = ("Other frames are being prepared; try again in a moment.", "environment.service.busy")
+
+
+def exact_frame(output_dir: str | Path, frame: int, *, most_frames: int = MOST_FRAMES,
+                source_signature: str | None = None, on: str = "none",
+                ligand: str | None = None, cutoff_angstrom: Any = 5.0,
+                to: str = "first") -> tuple[Any | None, dict[str, Any]]:
+    """One validated source frame, made whole and fitted for playback or export."""
+    out = Path(output_dir)
+    details = exact_frame_info(out, frame, most_frames=most_frames,
+                               source_signature=source_signature, on=on, ligand=ligand,
+                               cutoff_angstrom=cutoff_angstrom, to=to)
+    if not details.get("ok"):
+        return None, details
+    with _Preparing() as held:
+        if not held:
+            return None, _refused(*_BUSY)
+        try:
+            exact = _source_frame(out, _source(out), frame)
+            if on != "none":
+                # Fitted as the viewer's playback is: to the first frame it
+                # plays, read alone (the fit and the pocket use no other).
+                exact = _fit_exact_frame(out, exact, on=on, ligand=ligand,
+                                         cutoff_angstrom=float(cutoff_angstrom), to=to)
+            return exact, details
+        except CodedError as exc:
+            return None, _refused(str(exc), exc.code)
+        except Exception as exc:  # noqa: BLE001 - said to the page without its text
+            return None, _not_prepared(frame, exc)
+
+
+def exact_frame_xtc(output_dir: str | Path, frame: int, *, most_frames: int = MOST_FRAMES,
+                    source_signature: str | None = None, on: str = "none",
+                    ligand: str | None = None, cutoff_angstrom: Any = 5.0,
+                    to: str = "first") -> tuple[bytes | None, dict[str, Any]]:
+    """The one requested frame, made whole and optionally fitted, as one XTC."""
+    import tempfile
+
+    exact, details = exact_frame(output_dir, frame, most_frames=most_frames,
+                                 source_signature=source_signature, on=on, ligand=ligand,
+                                 cutoff_angstrom=cutoff_angstrom, to=to)
+    if exact is None:
+        return None, details
+    try:
+        with tempfile.TemporaryDirectory(prefix="fastmdx-exact-") as directory:
+            target = Path(directory) / "frame.xtc"
+            exact.save_xtc(str(target))
+            return target.read_bytes(), details
+    except Exception as exc:  # noqa: BLE001 - said to the page without its text
+        return None, _not_prepared(frame, exc)
+
+
+def exact_frames_dcd(output_dir: str | Path, frame: int, *, most_frames: int = MOST_FRAMES,
+                     source_signature: str | None = None, on: str = "none",
+                     ligand: str | None = None, cutoff_angstrom: Any = 5.0,
+                     to: str = "first") -> tuple[bytes | None, dict[str, Any]]:
+    """The bounded browser sample plus one exact frame, for a DCD-only engine path."""
+    import tempfile
+
+    import mdtraj as md
+
+    out = Path(output_dir)
+    details = exact_frame_info(out, frame, most_frames=most_frames,
+                               source_signature=source_signature, on=on, ligand=ligand,
+                               cutoff_angstrom=cutoff_angstrom, to=to)
+    if not details.get("ok"):
+        return None, details
+    simulation = out / "simulation"
+    with _Preparing() as held:
+        if not held:
+            return None, _refused(*_BUSY)
+        try:
+            base_path = simulation / FRAMES_FILE
+            if on != "none":
+                fitted = superposed_frames(out, on, ligand=ligand,
+                                           cutoff_angstrom=float(cutoff_angstrom), to=to,
+                                           smooth=1)
+                if not fitted.get("ok"):
+                    return None, _refused(str(fitted.get("reason") or
+                                              "The frames could not be superposed."),
+                                          "config.option.not_permitted")
+                base_path = simulation / str(fitted["file"])
+            from fastmdxplora.utils.native_output import suppress_native_output
+
+            with suppress_native_output():
+                base = md.load_dcd(str(base_path), top=str(simulation / FRAMES_TOPOLOGY))
+                exact = _source_frame(out, _source(out), frame)
+                if on != "none":
+                    exact = _fit_exact_frame(out, exact, on=on, ligand=ligand,
+                                             cutoff_angstrom=float(cutoff_angstrom), to=to,
+                                             reference_frames=base)
+            # Keep exactly one temporary frame beside the bounded browser sample.
+            joined = md.join([base, exact], check_topology=False)
+            with tempfile.TemporaryDirectory(prefix="fastmdx-exact-") as directory:
+                target = Path(directory) / "frames.dcd"
+                joined.save_dcd(str(target))
+                return target.read_bytes(), details
+        except CodedError as exc:
+            return None, _refused(str(exc), exc.code)
+        except Exception as exc:  # noqa: BLE001 - said to the page without its text
+            return None, _not_prepared(frame, exc)
+
+
+def _source_frame(out: Path, source: dict[str, Any] | None, frame: int) -> Any:
+    """Read one source frame using the topology and solvent rule of playback."""
+    import mdtraj as md
+
+    if source is None or source.get("kind") != "trajectory":
+        raise MissingResultError("the source trajectory is unavailable")
+    from fastmdxplora.analysis.loading import _made_whole
+    from fastmdxplora.utils.native_output import suppress_native_output, topology_quietly
+
+    topology_path: Path = source["topology"]
+
+    def shown_atoms() -> tuple[Any, Any]:
+        whole = topology_quietly(topology_path)
+        shown = whole.select("not water")
+        if len(shown) == 0:
+            shown = np.arange(whole.n_atoms)
+        return whole.subset(shown), shown
+
+    topology, shown = _cached("shown", Path(topology_path), shown_atoms)
+    with (
+        suppress_native_output(),
+        md.formats.DCDTrajectoryFile(str(source["trajectory"])) as handle,
+    ):
+        handle.seek(frame)
+        xyz, lengths, angles = handle.read(1, atom_indices=shown)
+    if not len(xyz):
+        raise MissingResultError("the source frame could not be read")
+    boxed = lengths is not None and np.all(np.asarray(lengths) > 0)
+    result = md.Trajectory(
+        np.asarray(xyz, dtype=np.float32) / 10.0,
+        topology,
+        unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
+        unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None,
+    )
+    return _made_whole(result) if boxed else result
+
+
+def _first_played(simulation: Path) -> Any:
+    """The first frame the browser plays, with its topology."""
+    import mdtraj as md
+
+    from fastmdxplora.utils.native_output import suppress_native_output, topology_quietly
+
+    topology = topology_quietly(simulation / FRAMES_TOPOLOGY)
+    with (
+        suppress_native_output(),
+        md.formats.DCDTrajectoryFile(str(simulation / FRAMES_FILE)) as handle,
+    ):
+        xyz, lengths, angles = handle.read(1)
+    boxed = lengths is not None and np.all(np.asarray(lengths) > 0)
+    return md.Trajectory(
+        np.asarray(xyz, dtype=np.float32) / 10.0, topology,
+        unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
+        unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
+
+
+def _fit_exact_frame(out: Path, exact: Any, *, on: str, ligand: str | None,
+                     cutoff_angstrom: float, to: str,
+                     reference_frames: Any | None = None) -> Any:
+    """Fit an exact frame by the viewer's current saved alignment settings."""
+    import mdtraj as md
+
+    from fastmdxplora.utils.native_output import pdb_quietly
+
+    simulation = out / "simulation"
+    if reference_frames is None:
+        # The fit is to the first frame played, and the pocket is found in
+        # it: that frame is read, not every frame the browser plays.
+        reference_frames = _cached("first-played", simulation / FRAMES_FILE,
+                                   lambda: _first_played(simulation))
+    atoms = (reference_frames.topology.select("protein and backbone") if on == "backbone"
+             else pocket_backbone(reference_frames, str(ligand or "").upper(),
+                                  cutoff_angstrom)[0])
+    if atoms is None or len(atoms) < 3:
+        raise StudyError("the selected alignment has fewer than three matching backbone atoms",
+                         code="analysis.system.inapplicable")
+    reference, reference_atoms = reference_frames, atoms
+    if to == "start":
+        reference = pdb_quietly(simulation / FRAMES_TOPOLOGY)
+    elif to == "deposited":
+        matched, xyz, reason = _deposited_reference(out, simulation / FRAMES_TOPOLOGY, atoms)
+        if matched is None:
+            raise StudyError(reason, code="analysis.system.inapplicable")
+        atoms = matched
+        reference = md.Trajectory(xyz[None].astype(np.float32), exact.topology.subset(atoms))
+        reference_atoms = np.arange(len(atoms))
+    from fastmdxplora.analysis.base import superposed
+
+    fitted = superposed(exact, atom_indices=atoms, reference=reference,
+                        ref_atom_indices=reference_atoms)
+    if exact.unitcell_lengths is not None and fitted.unitcell_lengths is None:
+        fitted.unitcell_lengths = exact.unitcell_lengths
+        fitted.unitcell_angles = exact.unitcell_angles
+    return fitted
 
 
 def _source(out: Path) -> dict[str, Any] | None:
@@ -753,7 +1070,18 @@ def _temporary(target: Path) -> Path:
 def _write_text(target: Path, text: str) -> None:
     temporary = _temporary(target)
     temporary.write_text(text, encoding="utf-8")
-    temporary.replace(target)
+    # Two local dashboard requests can atomically replace the same Windows
+    # target at once. Windows may briefly refuse the second rename while the
+    # first replacement is settling; retry that transient sharing failure.
+    for attempt in range(6):
+        try:
+            temporary.replace(target)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 5:
+                temporary.unlink(missing_ok=True)
+                raise
+            time.sleep(0.01 * (attempt + 1))
 
 
 def _has_a_cell(path: Path) -> bool:

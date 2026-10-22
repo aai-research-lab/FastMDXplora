@@ -290,6 +290,10 @@ CODES: tuple[Code, ...] = (
          "An external service answered with something unreadable.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
          detail_keys=("url", "resource")),
+    Code("environment.service.busy",
+         "The GUI was preparing other trajectory frames, and this one waited its "
+         "turn too long.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True),
     Code("environment.service.machine_unreachable",
          "A machine did not answer over SSH.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
@@ -791,6 +795,13 @@ CODES: tuple[Code, ...] = (
          "one the run simulated.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("recorded", "found")),
+    Code("analysis.frame.outside",
+         "A trajectory frame named by its number is not in the trajectory.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY),
+    Code("analysis.frame.changed",
+         "The trajectory a frame was named in has changed since: extended, "
+         "joined or written again.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
 
     # -- analysis: not enough to answer with --------------------------------
     # The family this software exists to take seriously. Separated from

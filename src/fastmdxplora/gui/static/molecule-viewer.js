@@ -114,6 +114,14 @@
     playbackFrameIndices: [],
     // Integrator steps label snapshots but do not index browser-playable frames.
     playbackFrameSteps: [],
+    // Logical source-frame order can differ from the encoded XTC append order.
+    playbackEngineIndices: [],
+    // Each loaded frame's place among the frames played (the sample the
+    // per-frame panels are computed over); null for an inserted exact frame.
+    playbackPlayedIndices: [],
+    exactFrame: null,
+    exactAbort: null,
+    trajectorySeekAsked: 0,
     playbackFrameAsked: 0,
     playbackLoaded: false,
     // The frames are in the engine (playbackLoaded: and shown, ready).
@@ -181,6 +189,7 @@
     STATE.viewerGeneration += 1;
     STATE.playbackLoadPromise = null;
     STATE.framesArriving = null;
+    STATE.framesPieces = null;
     pausePlayback();
     STATE.liveUpdates = true;
     STATE.liveFrameIndex = null;
@@ -206,6 +215,10 @@
     STATE.playbackFrameTimes = [];
     STATE.playbackFrameIndices = [];
     STATE.playbackFrameSteps = [];
+    STATE.playbackEngineIndices = [];
+    STATE.playbackPlayedIndices = [];
+    STATE.exactFrame = null;
+    STATE.trajectorySeekAsked += 1;
     STATE.playbackTimer = null;
     STATE.model = null;
     STATE.miniModel = null;
@@ -2093,10 +2106,32 @@
       return;
     }
     STATE.playbackSignature = signature;
-    STATE.playbackFrameTimes = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
-    STATE.playbackFrameIndices = Array.isArray(payload?.frame_indices) ? payload.frame_indices : [];
-    STATE.playbackFrameSteps = Array.isArray(payload?.simulation_steps)
-      ? payload.simulation_steps : [];
+    if (changed && !sameLiveHistorySource) STATE.exactFrame = null;
+    const indices = Array.isArray(payload?.frame_indices) ? payload.frame_indices : [];
+    const times = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
+    const steps = Array.isArray(payload?.simulation_steps) ? payload.simulation_steps : [];
+    if (STATE.exactFrame && STATE.exactFrame.signature === signature) {
+      const baseIndices = STATE.framesPieces?.baseIndices
+        || indices.filter((frame) => frame !== STATE.exactFrame.frame);
+      const baseTimes = STATE.framesPieces?.baseTimes || times.filter((_, index) =>
+        indices[index] !== STATE.exactFrame.frame);
+      const baseSteps = STATE.framesPieces?.baseSteps || steps.filter((_, index) =>
+        indices[index] !== STATE.exactFrame.frame);
+      const loaded = Number(STATE.framesPieces?.baseLoaded ?? Math.max(0, indices.length - 1));
+      const map = playbackFrameMap(baseIndices, baseTimes, loaded, STATE.exactFrame, loaded,
+        baseSteps);
+      STATE.playbackFrameIndices = map.frames;
+      STATE.playbackFrameTimes = map.times;
+      STATE.playbackFrameSteps = map.steps;
+      STATE.playbackEngineIndices = map.engineIndices;
+      STATE.playbackPlayedIndices = map.played;
+    } else {
+      STATE.playbackFrameTimes = times;
+      STATE.playbackFrameIndices = indices;
+      STATE.playbackFrameSteps = steps;
+      STATE.playbackEngineIndices = indices.map((_, index) => index);
+      STATE.playbackPlayedIndices = indices.map((_, index) => index);
+    }
     // While frames still arrive in pieces, the frames there are those the
     // engine holds, not all the study has: a frame past them was said
     // shown, and the engine showed its last.
@@ -2166,6 +2201,9 @@
           ? available.frame_indices.slice() : [];
         STATE.playbackFrameSteps = Array.isArray(available.simulation_steps)
           ? available.simulation_steps.slice() : [];
+        STATE.playbackEngineIndices = STATE.playbackFrameIndices.map((_, index) => index);
+        STATE.playbackPlayedIndices = STATE.playbackFrameIndices.map((_, index) => index);
+        STATE.exactFrame = null;
         STATE.mode = "playback";
         STATE.environment = false;
         applyLook(engine, false);
@@ -2182,6 +2220,8 @@
         STATE.playbackFrameIndices = STATE.playbackFrameIndices.slice(0, STATE.playbackFrames);
         STATE.playbackFrameTimes = STATE.playbackFrameTimes.slice(0, STATE.playbackFrames);
         STATE.playbackFrameSteps = STATE.playbackFrameSteps.slice(0, STATE.playbackFrames);
+        STATE.playbackEngineIndices = STATE.playbackEngineIndices.slice(0, STATE.playbackFrames);
+        STATE.playbackPlayedIndices = STATE.playbackPlayedIndices.slice(0, STATE.playbackFrames);
         STATE.model = {atoms: loaded.atoms, frames: STATE.playbackFrames, of: "frames"};
         window.dispatchEvent(new CustomEvent("dashboard:viewer-rendered", {detail: {of: "frames"}}));
         STATE.residueLookups = new Map();
@@ -2254,10 +2294,15 @@
     const sourceIndices = Array.isArray(payload?.frame_indices) ? payload.frame_indices : [];
     const sourceTimes = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
     const sourceSteps = Array.isArray(payload?.simulation_steps) ? payload.simulation_steps : [];
-    STATE.framesPieces = {total: pieces.total, loaded: loaded.frames, pieces: pieces.pieces.length};
+    STATE.framesPieces = {total: pieces.total, loaded: loaded.frames, baseLoaded: loaded.frames,
+      pieces: pieces.pieces.length, baseParts: parts,
+      baseIndices: sourceIndices.slice(), baseTimes: sourceTimes.slice(),
+      baseSteps: sourceSteps.slice()};
     STATE.playbackFrameIndices = sourceIndices.slice(0, loaded.frames);
     STATE.playbackFrameTimes = sourceTimes.slice(0, loaded.frames);
     STATE.playbackFrameSteps = sourceSteps.slice(0, loaded.frames);
+    STATE.playbackEngineIndices = STATE.playbackFrameIndices.map((_, index) => index);
+    STATE.playbackPlayedIndices = STATE.playbackFrameIndices.map((_, index) => index);
     sayFramesLoaded();
     if (pieces.pieces.length > 1) {
       announce(`Playing the first ${loaded.frames} of ${pieces.total} frames while the rest arrive.`);
@@ -2266,15 +2311,41 @@
           const bytes = await fetched(piece);
           if (!isViewerGenerationCurrent(generation) || STATE.engine !== engine) return;
           parts.push(bytes);
+          STATE.framesPieces.baseParts = parts;
           const count = await engine.appendFrames(joinedBytes(parts));
           // Given whole meanwhile (the frames superposed), or loaded again.
           if (!count || !STATE.framesPieces) return;
           STATE.framesPieces.loaded = count;
+          STATE.framesPieces.baseLoaded = Math.min(sourceIndices.length,
+            (pieces.pieces.slice(0, parts.length).reduce((sum, one) => sum + one.frames, 0)));
           STATE.playbackFrames = count;
-          STATE.playbackFrameIndices = sourceIndices.slice(0, count);
-          STATE.playbackFrameTimes = sourceTimes.slice(0, count);
-          STATE.playbackFrameSteps = sourceSteps.slice(0, count);
-          await setPlaybackFrame(Number(document.getElementById("traj-slider")?.value || 0));
+          const slider = document.getElementById("traj-slider");
+          const wasExactShown = !!(STATE.exactFrame && slider
+            && STATE.playbackFrameIndices[Number(slider.value)] === STATE.exactFrame.frame);
+          STATE.playbackFrameIndices = STATE.framesPieces.baseIndices.slice(0,
+            STATE.framesPieces.baseLoaded);
+          STATE.playbackFrameTimes = STATE.framesPieces.baseTimes.slice(0,
+            STATE.framesPieces.baseLoaded);
+          STATE.playbackFrameSteps = STATE.framesPieces.baseSteps.slice(0,
+            STATE.framesPieces.baseLoaded);
+          if (engine.framesExactBytes && STATE.exactFrame) {
+            const map = playbackFrameMap(STATE.framesPieces.baseIndices,
+              STATE.framesPieces.baseTimes, STATE.framesPieces.baseLoaded,
+              STATE.exactFrame, STATE.framesPieces.baseLoaded,
+              STATE.framesPieces.baseSteps);
+            STATE.playbackFrameIndices = map.frames;
+            STATE.playbackFrameTimes = map.times;
+            STATE.playbackFrameSteps = map.steps;
+            STATE.playbackEngineIndices = map.engineIndices;
+            STATE.playbackPlayedIndices = map.played;
+          } else {
+            STATE.playbackEngineIndices = STATE.playbackFrameIndices.map((_, index) => index);
+            STATE.playbackPlayedIndices = STATE.playbackFrameIndices.map((_, index) => index);
+          }
+          const wanted = wasExactShown && STATE.exactFrame
+            ? STATE.playbackFrameIndices.indexOf(STATE.exactFrame.frame)
+            : Number(slider?.value || 0);
+          await setPlaybackFrame(wanted);
           if (STATE.model && STATE.model.of === "frames") STATE.model.frames = count;
           sayFramesLoaded();
         }
@@ -2293,6 +2364,29 @@
     return whole;
   }
 
+  /* The temporary exact frame is encoded after the sampled XTC frames, but
+   * playback follows source order so Step and Play still move in time. */
+  function playbackFrameMap(baseIndices, baseTimes, baseLoaded, exact, exactEngineIndex,
+                            baseSteps = []) {
+    const entries = [];
+    (baseIndices || []).slice(0, baseLoaded).forEach((frame, index) => {
+      if (!Number.isInteger(frame)) return;
+      entries.push({frame, time: (baseTimes || [])[index] ?? null,
+        step: (baseSteps || [])[index] ?? null, engineIndex: index, played: index});
+    });
+    if (exact && Number.isInteger(exact.frame)
+        && !entries.some((entry) => entry.frame === exact.frame)) {
+      entries.push({frame: exact.frame, time: exact.time ?? null, step: null,
+        engineIndex: exactEngineIndex, played: null});
+    }
+    entries.sort((a, b) => a.frame - b.frame);
+    return {frames: entries.map((entry) => entry.frame),
+      times: entries.map((entry) => entry.time),
+      steps: entries.map((entry) => entry.step),
+      engineIndices: entries.map((entry) => entry.engineIndex),
+      played: entries.map((entry) => entry.played)};
+  }
+
   /** How many of the frames have arrived, beside the transport. */
   function sayFramesLoaded() {
     const row = document.getElementById("trajectory-row");
@@ -2301,8 +2395,14 @@
     row.setAttribute("data-frames-loaded", String(pieces.loaded));
     const said = document.getElementById("traj-loaded");
     if (said) {
-      said.hidden = pieces.loaded >= pieces.total;
-      said.textContent = `${pieces.loaded} of ${pieces.total} frames here`;
+      const baseLoaded = Number(pieces.baseLoaded ?? pieces.loaded);
+      // A frame read from the trajectory is one more than the frames sent,
+      // so the counter's total is one more: said here too.
+      const exact = STATE.exactFrame && STATE.playbackPlayedIndices.includes(null)
+        ? STATE.exactFrame.frame : null;
+      said.hidden = baseLoaded >= pieces.total && exact == null;
+      said.textContent = `${baseLoaded} of ${pieces.total} frames here`
+        + (exact != null ? `, and frame ${exact} read from the trajectory` : "");
     }
   }
 
@@ -2310,13 +2410,14 @@
    * or on the backbone of the ligand's pocket, or as written ("none"). The
    * server fits them (`/api/frames-superposed`); the Viewer and the preview
    * then read them in place of the frames shown, at the same frame. */
-  async function superpose(on) {
+  async function superpose(on, options = {}) {
     const generation = STATE.viewerGeneration;
     const select = document.getElementById("traj-superpose");
     const label = document.getElementById("traj-superpose-label");
     const previous = STATE.superposed;
     const previousTo = STATE.appliedTo || "first";
     const previousOver = STATE.appliedSmooth || 1;
+    const exactBefore = STATE.exactFrame && {...STATE.exactFrame};
     STATE.superposed = on;
     const to = STATE.superposedTo;
     const over = on === "none" ? 1 : STATE.smoothedOver;
@@ -2358,15 +2459,48 @@
     const moved = await STATE.engine.setFramesCoordinates(url);
     if (!isViewerGenerationCurrent(generation) || STATE.superposed !== on) return;
     if (!moved) {
+      // The settings are those of the frames shown, as they were.
+      STATE.superposed = previous;
+      STATE.superposedTo = previousTo;
+      STATE.smoothedOver = previousOver;
+      if (select) select.value = previous;
+      const fitted = document.getElementById("traj-superpose-to");
+      if (fitted) fitted.value = previousTo;
+      const smooth = document.getElementById("traj-smooth");
+      if (smooth) smooth.value = String(previousOver);
       announce("The frames could not be read again; they are shown as they were.");
       return;
     }
     // Frames still arriving in pieces are now here whole.
     STATE.playbackFrames = STATE.engine.frameCount();
+    if (exactBefore) {
+      // The frames read again are the frames sent alone: the exact frame
+      // is read again below, fitted the new way, unless they are smoothed.
+      STATE.exactFrame = null;
+      window.FastMDXDashboard?.clearExactFrame?.(exactBefore.signature);
+    }
     if (STATE.framesPieces) {
       STATE.framesPieces.loaded = STATE.playbackFrames;
+      STATE.framesPieces.baseLoaded = STATE.playbackFrames;
       sayFramesLoaded();
     }
+    const sourceIndices = STATE.framesPieces?.baseIndices
+      || (STATE.playbackFrameIndices || []).filter((frame) =>
+        !exactBefore || frame !== exactBefore.frame);
+    const sourceTimes = STATE.framesPieces?.baseTimes
+      || (STATE.playbackFrameTimes || []).filter((_, index) =>
+        !exactBefore || STATE.playbackFrameIndices[index] !== exactBefore.frame);
+    const sourceSteps = STATE.framesPieces?.baseSteps
+      || (STATE.playbackFrameSteps || []).filter((_, index) =>
+        !exactBefore || STATE.playbackFrameIndices[index] !== exactBefore.frame);
+    const baseCount = Math.min(STATE.playbackFrames, sourceIndices.length);
+    const baseMap = playbackFrameMap(sourceIndices, sourceTimes, baseCount, null, baseCount,
+      sourceSteps);
+    STATE.playbackFrameIndices = baseMap.frames;
+    STATE.playbackFrameTimes = baseMap.times;
+    STATE.playbackFrameSteps = baseMap.steps;
+    STATE.playbackEngineIndices = baseMap.engineIndices;
+    STATE.playbackPlayedIndices = baseMap.played;
     STATE.superposedUrl = on === "none" ? null : url;
     // Fitted to the deposited structure, the molecule is where that
     // structure's coordinates put it, not in the box the camera was on: it
@@ -2404,6 +2538,18 @@
         + " to the first frame, and are shown again when these frames are." : "")
       + (placed && !placedFitAsPlayed() ? " What is placed on the first frame is hidden: it is placed"
         + " on the first frame, and are shown again when the frames are fitted to it." : ""));
+    if (exactBefore && options.reseek !== false) {
+      if (over <= 1) {
+        await seekTrajectoryFrame(exactBefore.frame, exactBefore.signature);
+      } else {
+        // Smoothed frames are averages over frames sent: the frame read from
+        // the trajectory is not among them, and the nearest one is shown.
+        const at = indexNearest(exactBefore.frame);
+        if (at >= 0) await setPlaybackFrame(at);
+        announce(`Frame ${exactBefore.frame.toLocaleString()} was read from the trajectory;`
+          + " smoothed frames are averages of the frames sent, so the nearest of them is shown.");
+      }
+    }
   }
 
   /** Whether the frames played are fitted as the maps and water sites are
@@ -2653,7 +2799,23 @@
     });
     window.addEventListener("dashboard:trajectory-seek", async (event) => {
       stopFollowing();
-      if (await loadPlayback(STATE.playbackPayload)) await setPlaybackFrame(event.detail?.frame || 0);
+      const detail = event.detail || {};
+      if (Number.isInteger(detail.trajectoryFrame) && detail.nearest) {
+        // Followed while a drag goes on: the nearest frame loaded, with no
+        // request; the exact frame is asked for once the drag ends.
+        if (!(await loadPlayback(STATE.playbackPayload))) return;
+        STATE.trajectorySeekAsked += 1;
+        STATE.exactAbort?.abort();
+        const at = indexNearest(detail.trajectoryFrame);
+        if (at >= 0) await setPlaybackFrame(at);
+      } else if (Number.isInteger(detail.trajectoryFrame)) {
+        await seekTrajectoryFrame(detail.trajectoryFrame, detail.sourceSignature);
+      } else if (await loadPlayback(STATE.playbackPayload)) {
+        // A panel computed over the frames played names its frame so.
+        const at = Number.isInteger(detail.playedFrame)
+          ? indexOfPlayed(detail.playedFrame) : (detail.frame || 0);
+        if (at >= 0) await setPlaybackFrame(at);
+      }
     });
     document.getElementById("traj-speed")?.addEventListener("change", async (event) => {
       STATE.playbackSpeed = Number(event.target.value) || 1;
@@ -2769,6 +2931,138 @@
     if (follow && follow.checked) follow.checked = false;
   }
 
+  async function seekTrajectoryFrame(frame, sourceSignature) {
+    const target = Number(frame);
+    if (!Number.isInteger(target) || target < 0) {
+      announce("The selected source frame is not a non-negative integer.");
+      return false;
+    }
+    const generation = STATE.viewerGeneration;
+    const asked = ++STATE.trajectorySeekAsked;
+    // A newer request for a frame ends the one before it, on the wire too.
+    STATE.exactAbort?.abort();
+    const abort = new AbortController();
+    STATE.exactAbort = abort;
+    const current = () => isViewerGenerationCurrent(generation)
+      && asked === STATE.trajectorySeekAsked;
+    stopFollowing();
+    pausePlayback();
+    const payload = await ensurePlaybackPayload();
+    if (!current() || !payload) return false;
+    const signature = payload.source_signature || payload.compiled_at || "";
+    if (sourceSignature && signature !== sourceSignature) {
+      announce("The selected chart belongs to a trajectory that is no longer open.");
+      return false;
+    }
+    if (payload.source_kind !== "production-dcd") {
+      announce("This chart is not linked to the production trajectory currently shown.");
+      return false;
+    }
+    if (!(await loadPlayback(payload)) || !current()) return false;
+    const baseIndices = Array.isArray(STATE.framesPieces?.baseIndices)
+      ? STATE.framesPieces.baseIndices : (payload.frame_indices || []);
+    const baseTimes = Array.isArray(STATE.framesPieces?.baseTimes)
+      ? STATE.framesPieces.baseTimes : (payload.frame_times_ns || []);
+    const baseLoaded = STATE.framesPieces
+      ? Number(STATE.framesPieces.baseLoaded || 0) : Number(payload.n_frames_browser || 0);
+    const exactAlready = STATE.exactFrame?.signature === signature
+      && STATE.exactFrame.frame === target;
+    const smooth = Number(STATE.smoothedOver || 1) > 1;
+    if (!smooth && !exactAlready) {
+      const loadedAt = baseIndices.slice(0, baseLoaded).indexOf(target);
+      if (loadedAt >= 0) {
+        const logicalAt = STATE.playbackFrameIndices.indexOf(target);
+        return await setPlaybackFrame(logicalAt >= 0 ? logicalAt : loadedAt) && current();
+      }
+    }
+    if (exactAlready && STATE.playbackFrameIndices.includes(target)) {
+      return await setPlaybackFrame(STATE.playbackFrameIndices.lastIndexOf(target)) && current();
+    }
+
+    let smoothingChanged = false;
+    if (smooth) {
+      STATE.smoothedOver = 1;
+      const smoothing = document.getElementById("traj-smooth");
+      if (smoothing) smoothing.value = "1";
+      // The frames read again as written, with no exact frame held: this
+      // request is the one that inserts it.
+      if (STATE.superposed !== "none") await superpose(STATE.superposed, {reseek: false});
+      if (!current()) return false;
+      smoothingChanged = true;
+    }
+
+    const query = new URLSearchParams({frame: String(target), signature});
+    if (STATE.superposed !== "none") {
+      query.set("on", STATE.superposed);
+      query.set("to", STATE.superposedTo || "first");
+      if (STATE.superposed === "pocket") {
+        query.set("ligand", STATE.ligandResname || ligandResnames()[0] || "");
+        query.set("cutoff", String(STATE.pocketCutoff));
+      }
+    }
+    let info;
+    try {
+      const response = await fetch(`/api/exact-frame?${query}`,
+        {cache: "no-store", signal: abort.signal});
+      info = await response.json();
+      if (!response.ok || !info?.ok) {
+        announce(`Frame ${target} is unavailable: ${info?.reason || `HTTP ${response.status}`}`);
+        return false;
+      }
+    } catch (error) {
+      if (current()) announce(`Frame ${target} could not be requested. Try selecting it again.`);
+      return false;
+    }
+    if (!current()) return false;
+
+    try {
+      // The frame alone as XTC where the frames came in pieces, else the
+      // frames sent with it as one DCD; read here, then given to the engine
+      // with this request's token, so a newer request supersedes it even
+      // while it waits its turn in the engine.
+      const xtc = STATE.engine.framesBytes === "xtc";
+      const response = await fetch(xtc ? info.exact_url : info.dcd_url,
+        {cache: "no-store", signal: abort.signal});
+      if (!response.ok) {
+        throw new Error(response.status === 503
+          ? "other frames are being prepared; try again in a moment"
+          : `exact frame HTTP ${response.status}`);
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!current()) return false;
+      const count = await STATE.engine.setExactFrame(bytes, {whole: !xtc, isCurrent: current});
+      if (!current()) return false;
+      if (!count) throw new Error("the viewer could not hold the exact frame");
+      if (STATE.framesPieces) STATE.framesPieces.loaded = count;
+      STATE.exactFrame = {frame: target, time: info.time_ns, signature};
+      STATE.playbackFrames = count;
+      const exactEngineIndex = STATE.framesPieces
+        ? Number(STATE.framesPieces.baseLoaded || baseLoaded) : baseLoaded;
+      const baseSteps = STATE.framesPieces?.baseSteps || STATE.playbackFrameSteps;
+      const map = playbackFrameMap(baseIndices, baseTimes,
+        STATE.framesPieces ? STATE.framesPieces.baseLoaded : baseLoaded,
+        STATE.exactFrame, exactEngineIndex, baseSteps);
+      STATE.playbackFrameIndices = map.frames;
+      STATE.playbackFrameTimes = map.times;
+      STATE.playbackFrameSteps = map.steps;
+      STATE.playbackEngineIndices = map.engineIndices;
+      STATE.playbackPlayedIndices = map.played;
+      if (STATE.model && STATE.model.of === "frames") STATE.model.frames = count;
+      if (STATE.framesPieces) sayFramesLoaded();
+      if (window.FastMDXDashboard?.setExactFrame) {
+        window.FastMDXDashboard.setExactFrame(target, info.time_ns, signature);
+      }
+      const shown = await setPlaybackFrame(STATE.playbackFrameIndices.indexOf(target));
+      if (shown && smoothingChanged) {
+        announce(`Frame ${target} shown at its exact coordinates; smoothing was set to 1.`);
+      }
+      return shown && current();
+    } catch (error) {
+      if (current()) announce(`Frame ${target} could not be shown: ${error.message || error}`);
+      return false;
+    }
+  }
+
   async function setPlaybackFrame(frame) {
     const generation = STATE.viewerGeneration;
     const engine = STATE.engine;
@@ -2781,21 +3075,25 @@
     const trajectoryFrame = Number.isInteger(STATE.playbackFrameIndices[index])
       ? STATE.playbackFrameIndices[index] : index;
     const slider = document.getElementById("traj-slider");
-    if (slider) slider.value = String(engine.frame());
+    const engineIndex = Number.isInteger(STATE.playbackEngineIndices[index])
+      ? STATE.playbackEngineIndices[index] : index;
+    const displayed = STATE.playbackEngineIndices.indexOf(engine.frame());
+    if (slider && displayed >= 0) slider.value = String(displayed);
     try {
-      if (await engine.setFrame(index) === false) {
+      if (await engine.setFrame(engineIndex) === false) {
         throw new Error("The trajectory model is unavailable.");
       }
     } catch (error) {
       if (current()) {
         pausePlayback();
-        if (slider) slider.value = String(engine.frame());
+        const actual = STATE.playbackEngineIndices.indexOf(engine.frame());
+        if (slider && actual >= 0) slider.value = String(actual);
         announce(`Frame ${index + 1} could not be shown. Try reloading the trajectory.`);
         console.debug("trajectory frame render failed", error);
       }
       return false;
     }
-    if (!current() || engine.frame() !== index) return false;
+    if (!current() || engine.frame() !== engineIndex) return false;
     // The renderer has committed this frame. Only now may the counter,
     // overlay and chart marker say that its coordinates are on screen.
     if (slider) {
@@ -2813,7 +3111,13 @@
     setOverlay(false, {stage: "playback", frame: index + 1,
       total: STATE.playbackFrames, step, simtime: time, simtimeSaid: said});
     try {
-      if (STATE.miniEngine && STATE.miniModel?.of === "frames") await STATE.miniEngine.setFrame(index);
+      if (STATE.miniEngine && STATE.miniModel?.of === "frames") {
+        const base = STATE.framesPieces?.baseIndices || STATE.playbackPayload?.frame_indices || [];
+        const miniIndex = base.length ? base.reduce((best, source, at) =>
+          Math.abs(source - trajectoryFrame) < Math.abs(base[best] - trajectoryFrame) ? at : best, 0)
+          : index;
+        await STATE.miniEngine.setFrame(Math.min(miniIndex, Math.max(0, STATE.miniModel.frames - 1)));
+      }
     } catch (error) {
       if (current()) announce("The playback frame is shown, but its overview preview could not update.");
       console.debug("overview frame render failed", error);
@@ -2822,9 +3126,39 @@
     // The atoms measured have moved with the frame, and so have their numbers.
     if (STATE.picks.length) sayMeasurement();
     // And the series under the transport follows it (frame-series.js).
+    // `playedIndex` is the frame's place among the frames played, which the
+    // per-frame panels are computed over; null for an inserted exact frame.
     window.dispatchEvent(new CustomEvent("dashboard:frame-shown",
-      {detail: {index, trajectoryFrame, simulationStep: step, timeNs: time}}));
+      {detail: {index, playedIndex: playedIndexAt(index), trajectoryFrame,
+        simulationStep: step, timeNs: time}}));
     return true;
+  }
+
+  /** A loaded frame's place among the frames played; null where it was
+   * inserted from the source trajectory and is not one of them. */
+  function playedIndexAt(index) {
+    if (!STATE.playbackPlayedIndices.length) return Number.isInteger(index) ? index : null;
+    const played = STATE.playbackPlayedIndices[index];
+    return Number.isInteger(played) ? played : null;
+  }
+
+  /** The loaded frame at a place among the frames played. */
+  function indexOfPlayed(played) {
+    if (!STATE.playbackPlayedIndices.length) return played;
+    return STATE.playbackPlayedIndices.indexOf(played);
+  }
+
+  /** The loaded frame nearest a trajectory frame, without fetching it. */
+  function indexNearest(trajectoryFrame) {
+    const frames = STATE.playbackFrameIndices;
+    let best = -1;
+    frames.forEach((frame, at) => {
+      if (!Number.isInteger(frame)) return;
+      if (best < 0 || Math.abs(frame - trajectoryFrame) < Math.abs(frames[best] - trajectoryFrame)) {
+        best = at;
+      }
+    });
+    return best;
   }
 
   function updatePlaybackButtons() {
@@ -3704,6 +4038,8 @@
         return {count: STATE.playbackFrames, times: STATE.playbackFrameTimes.slice()};
       },
       shownFrame: () => Number(document.getElementById("traj-slider")?.value || 0),
+      shownPlayedFrame: () => playedIndexAt(
+        Number(document.getElementById("traj-slider")?.value || 0)),
       showFrame: setPlaybackFrame,
       hold: () => {
         pausePlayback();

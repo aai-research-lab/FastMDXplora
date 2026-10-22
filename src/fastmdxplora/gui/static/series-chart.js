@@ -398,19 +398,6 @@
     });
   }
 
-  /* The frame of a point, as the viewer numbers what it plays: the viewer
-   * plays a subset of the trajectory's frames (at most a few hundred), so
-   * the nearest of those. */
-  function playedIndex(frame) {
-    var frames = playback && Array.isArray(playback.frame_indices) ? playback.frame_indices : [];
-    if (!frames.length) return null;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
-    return best;
-  }
-
   function open(data, index) {
     if (index < 0 || !window.FastMDXDashboard) return;
     if (data.kind === "residue") {
@@ -421,14 +408,15 @@
     }
     if (!data.linked) return;
     var frame = data.frames[index];
-    var go = function () {
-      var played = playedIndex(frame);
-      if (played == null) return;
+    var go = function (source) {
       window.FastMDXDashboard.navigate("viewer");
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: played, trajectoryFrame: frame } }));
+        { detail: { trajectoryFrame: frame, sourceSignature: source.source_signature } }));
     };
-    if (playback) { go(); return; }
+    if (playback && playback.playback_available && playback.source_kind === "production-dcd") {
+      go(playback);
+      return;
+    }
     fetch("/api/frames-info", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (payload) {
@@ -436,7 +424,7 @@
         // trajectory; during a run it plays snapshots, numbered otherwise.
         playback = payload && payload.playback_available
           && payload.source_kind === "production-dcd" ? payload : null;
-        if (playback) go(); else window.FastMDXDashboard.navigate("viewer");
+        if (playback) go(playback); else window.FastMDXDashboard.navigate("viewer");
       })
       .catch(function () { /* the viewer says why when opened */ });
   }

@@ -587,6 +587,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- A point on an analysis chart opens the trajectory frame it was
+  computed from. Before, the nearest of the few hundred frames the Viewer
+  plays was opened. A frame the Viewer does not hold is read from the
+  production trajectory, fitted as the Viewer fits its frames, and placed
+  among the playback frames in time order. An RMSD matrix cell opens its
+  row frame on a click and its column frame on a Shift-click, and a cell
+  that averages groups of frames says which. A drag along the series under
+  the Viewer follows the frames it holds, and the frame where the drag
+  ends is read. The per-frame panels (backbone angles, contacts, pocket)
+  say they have no value at a frame read so, rather than show another
+  frame's. Fitting or smoothing the frames again keeps them and that frame
+  in step: the frame is read again fitted the new way, and smoothed frames
+  show the nearest frame sent instead. On Windows, writing the record of
+  the frames sent is tried again for a moment where another request is
+  replacing it.
+
 - The Viewer's playback counter counts the frames loaded, from 1. While a
   study runs, a snapshot's integrator step is shown beside it rather than
   read as its frame number. The counter, the

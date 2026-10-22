@@ -35,37 +35,6 @@ def _write_history(root: Path, count: int = 200) -> None:
     )
 
 
-def _study(root: Path, *, frame_count: int = 11, residues: int = 1) -> Path:
-    import mdtraj as md
-    import numpy as np
-
-    simulation = root / "simulation"
-    simulation.mkdir(parents=True)
-    topology = md.Topology()
-    chain = topology.add_chain()
-    atoms_per_residue = ("N", "CA", "C", "O", "CB")
-    for residue_index in range(residues):
-        residue = topology.add_residue("ALA", chain, resSeq=residue_index + 1)
-        for name in atoms_per_residue:
-            topology.add_atom(name, md.element.carbon, residue)
-    n_atoms = topology.n_atoms
-    xyz = np.zeros((frame_count, n_atoms, 3), dtype=np.float32)
-    xyz[:, :, 0] = np.arange(frame_count, dtype=np.float32)[:, None] * 0.1
-    xyz[:, :, 1] = np.arange(n_atoms, dtype=np.float32)[None, :] * 0.025
-    xyz[:, :, 2] = 0.1
-    trajectory = md.Trajectory(xyz, topology)
-    trajectory[0].save_pdb(str(simulation / "trajectory_topology.pdb"))
-    trajectory.save_dcd(str(simulation / "production.dcd"))
-    (simulation / "live_status.json").write_text(json.dumps(
-        {"status": "completed", "stage": "production"}), encoding="utf-8")
-    (simulation / "simulation_parameters.json").write_text(json.dumps({
-        "parameters": {"integrator": "verlet", "timestep_fs": 2.0},
-        "resolved": {"trajectory_interval_steps": 500,
-                     "production_steps": frame_count * 500},
-    }), encoding="utf-8")
-    return root
-
-
 def test_history_payload_separates_recorded_sequence_step_and_time(tmp_path):
     from fastmdxplora.gui.trajectory_frames import frames_info
 
@@ -88,6 +57,7 @@ def test_the_counter_announces_only_a_frame_the_renderer_committed(tmp_path, rej
     from playwright.sync_api import sync_playwright
 
     from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
 
     session = start_dashboard_session(output=str(_study(tmp_path / "study", frame_count=3)),
                                       host="127.0.0.1", port=0)
@@ -353,6 +323,7 @@ def test_switching_studies_reconciles_playback_counts_and_position(tmp_path):
     from playwright.sync_api import sync_playwright
 
     from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
 
     large = _study(tmp_path / "large", frame_count=200)
     _study(tmp_path / "short", frame_count=3)

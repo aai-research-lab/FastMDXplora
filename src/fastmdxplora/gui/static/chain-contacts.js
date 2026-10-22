@@ -14,7 +14,7 @@
   // The ligand panel's colours for the same kinds (frame-interactions.js).
   var KIND_COLOURS = { hydrogen_bond: "#56B4E9", salt_bridge: "#D55E00" };
 
-  var state = { data: null, asked: false, index: null, shownKey: "" };
+  var state = { data: null, asked: false, index: null, unplayed: false, shownKey: "" };
 
   function byId(id) { return document.getElementById(id); }
 
@@ -60,9 +60,15 @@
     var now = d.contacts.filter(function (c) { return present(c, state.index); }).length;
     var said = byId("chain-contacts-now");
     if (said) {
-      said.textContent = state.index == null ? ""
+      said.textContent = state.unplayed
+        ? "The frame shown was opened from the trajectory and is not one of"
+          + " the frames played; its contacts are not counted."
+        : state.index == null ? ""
         : now + " of " + d.total + " present in frame " + state.index;
     }
+    // At a frame not played the rows say nothing of it, rather than absent.
+    var list = byId("chain-contacts-list");
+    if (list) list.toggleAttribute("data-unplayed", !!state.unplayed);
     document.querySelectorAll("#chain-contacts-list .chain-contact").forEach(function (row) {
       var contact = d.contacts[Number(row.getAttribute("data-index"))];
       row.classList.toggle("is-present", !!contact && present(contact, state.index));
@@ -143,7 +149,12 @@
       load();
     });
     window.addEventListener("dashboard:frame-shown", function (event) {
-      state.index = event.detail ? event.detail.index : null;
+      // Contacts are counted over the frames played; a frame opened from
+      // the trajectory between them (playedIndex null) has none to show.
+      var detail = event.detail || null;
+      state.index = !detail ? null
+        : (detail.playedIndex !== undefined ? detail.playedIndex : detail.index);
+      state.unplayed = !!detail && detail.playedIndex === null;
       load();
       mark();
     });

@@ -103,6 +103,10 @@
       else context.lineTo(xOf(canvas, k), y(v));
     });
     context.stroke();
+    if (state.frame == null) {
+      byId("pocket-now").textContent = "The frame shown was opened from the trajectory and is not one of the frames played; its pocket is not measured.";
+      return;
+    }
     var frame = Math.min(state.frame, volumes.length - 1);
     context.strokeStyle = token("--text-primary", "#f2f2f4");
     context.lineWidth = m.ratio;
@@ -128,7 +132,7 @@
         if (!said.ok) return said;
         state.data = said;
         var v = viewer();
-        state.frame = v && v.movie ? v.movie.shownFrame() : 0;
+        state.frame = v && v.movie ? v.movie.shownPlayedFrame() : 0;
         draw();
         return said;
       });
@@ -193,7 +197,7 @@
         + "which they could not be.";
       return;
     }
-    await render(state.frame);
+    if (state.frame != null) await render(state.frame);
   }
 
   function offer() {
@@ -221,12 +225,17 @@
       var share = (x - m.left) / (canvas.width - m.left - m.right);
       var frame = Math.max(0, Math.min(state.data.frames - 1,
         Math.round(share * (state.data.frames - 1))));
-      window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek", { detail: { frame: frame } }));
+      window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
+        { detail: { playedFrame: frame } }));
     });
     window.addEventListener("dashboard:frame-shown", function (event) {
-      state.frame = Number(event.detail && event.detail.index) || 0;
+      var played = event.detail ? event.detail.playedIndex : undefined;
+      // A frame opened from the trajectory between the frames played has
+      // no value here (null): never a neighbour's.
+      state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
+        : played;
       if (state.data) draw();
-      if (byId("pocket-shown").checked) render(state.frame);
+      if (byId("pocket-shown").checked && state.frame != null) render(state.frame);
     });
     window.addEventListener("dashboard:viewer-rendered", offer);
     window.addEventListener("dashboard:frames-ready", offer);

@@ -160,6 +160,8 @@ class TestEachFigureIsGivenInItsShape:
         assert 0 < tree["cut"] < 9
 
     def test_the_rmsd_between_frames_is_averaged_in_blocks_past_its_size(self, tmp_path) -> None:
+        from fastmdxplora.gui.series import analysed_axis
+
         root = _write(tmp_path / "study")
         n = MOST_CELLS + 51
         big = np.random.default_rng(1).random((n, n)).astype(np.float32)
@@ -169,9 +171,42 @@ class TestEachFigureIsGivenInItsShape:
         cells = math.ceil(n / 2)
         assert matrix["block"] == 2 and len(matrix["values"]) == cells
         assert matrix["values"][0][0] == pytest.approx(big[:2, :2].mean(), rel=1e-4)
+        read = analysed_axis(root, n)[0]
+        assert matrix["frame_groups"][0] == {"first": read[0], "last": read[1], "count": 2}
         # The last cell is a block wide too: the axis ends where it does.
         assert matrix["extent"] == pytest.approx([-0.005, (cells * 2 - 0.5) * 0.01])
+        assert matrix["frame_groups"][-1] == {"first": read[-1], "last": read[-1], "count": 1}
         assert matrix["values"][-1][-1] == pytest.approx(float(big[-1, -1]), rel=1e-4)
+
+    def test_the_rmsd_matrix_names_the_trajectory_frames_its_rows_were_read_from(
+            self, tmp_path) -> None:
+        from fastmdxplora.gui.series import analysed_axis
+
+        root = _write(tmp_path / "study")
+        manifest_path = root / "analysis" / "analysis_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["load_kwargs"].update({"first": 1, "stride": 2})
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        # The clustering wrote the frames it compared by their place among
+        # the frames the analysis loaded: here from the second one loaded.
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((3, 3), dtype=np.float32),
+            frames=np.array([1, 2, 3]), time_ns=np.full(3, np.nan))
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        # The same trajectory frames a series of that analysis gives.
+        assert matrix["frames"] == analysed_axis(root, 4)[0][1:4] == [4, 6, 8]
+        assert matrix["axis_label"] == "Frame"
+        assert matrix["extent"] == pytest.approx([3.0, 9.0])
+        assert matrix["linked"] is False
+        manifest["resolved"] = {"trajectory": str(root / "simulation" / "production.dcd")}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        assert _get(root, "cluster/cluster_rmsd_matrix")["linked"] is True
+        manifest["resolved"]["trajectory"] = str(root / "other.dcd")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        assert _get(root, "cluster/cluster_rmsd_matrix")["linked"] is False
 
     def test_a_projection_names_its_components_by_their_share(self, study) -> None:
         pca = _get(study, "dimred/dimred_pca")

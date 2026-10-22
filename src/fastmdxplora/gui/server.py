@@ -152,6 +152,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
+    "/api/exact-frame", "/structure/exact-frame.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
@@ -174,7 +175,8 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
-    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
+    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/exact-frame",
+    "/structure/exact-frame.xtc", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
     "/api/timeline",
 })
@@ -559,6 +561,17 @@ def _served_beyond_loopback(root: Path, target: Path) -> bool:
 
 #: How much of a file is read and sent at a time.
 SENT_AT_A_TIME = 1 << 20
+
+
+def _source_frame_number(query: dict[str, list[str]], key: str = "frame") -> int | None:
+    """One unambiguous ASCII frame index, including Python's integer-size guard."""
+    values = query.get(key, [])
+    if len(values) != 1 or not values[0].isascii() or not values[0].isdecimal():
+        return None
+    try:
+        return int(values[0])
+    except ValueError:
+        return None
 
 
 def byte_range(asked: str, size: int) -> tuple[int, int] | tuple[()] | None:
@@ -1571,6 +1584,23 @@ def make_handler(
                     simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
                     force=allow_control and "force=1" in parsed.query))
                 return
+            if path == "/api/exact-frame":
+                from fastmdxplora.gui.trajectory_frames import exact_frame_info
+
+                query = parse_qs(parsed.query)
+                frame = _source_frame_number(query)
+                if frame is None:
+                    self._send_json({"ok": False,
+                                     "reason": "A source frame is a non-negative integer.",
+                                     "code": "config.option.wrong_type"})
+                    return
+                one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+                self._send_json(exact_frame_info(
+                    root, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=one("signature") or None,
+                    on=one("on") or "none", ligand=one("ligand") or None,
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))
+                return
             if path == "/api/open-output":
                 if hosting is not None:
                     # A file manager would open on the server, not in front
@@ -1605,7 +1635,36 @@ def make_handler(
                 self._send_live_coordinates(root)
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
-                self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
+                self._send_frames(root, path.rsplit("/", 1)[1],
+                                  parse_qs(parsed.query, keep_blank_values=True))
+                return
+            if path == "/structure/exact-frame.xtc":
+                from fastmdxplora.gui.trajectory_frames import exact_frame_xtc
+
+                query = parse_qs(parsed.query)
+                frame = _source_frame_number(query)
+                signature = (query.get("signature") or [""])[0]
+                if frame is None or not signature:
+                    self.send_error(400, "A source frame and its trajectory signature are required")
+                    return
+                one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+                data, details = exact_frame_xtc(
+                    root, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=one("signature") or None,
+                    on=one("on") or "none", ligand=one("ligand") or None,
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first")
+                if data is None:
+                    # A fixed reason: the details are said by /api/exact-frame,
+                    # where a hosted page has them scrubbed of paths.
+                    busy = details.get("code") == "environment.service.busy"
+                    self.send_error(503 if busy else 404, "Exact frame unavailable")
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path == "/api/frames-pieces":
                 from fastmdxplora.gui.trajectory_frames import frames_pieces
@@ -3056,6 +3115,34 @@ def make_handler(
             from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
                                                             frames_info, superposed_frames,
                                                             superposed_name)
+
+            if "exact_frame" in (query or {}):
+                from fastmdxplora.gui.trajectory_frames import exact_frames_dcd
+
+                signature = ((query or {}).get("signature") or [""])[0]
+                frame = _source_frame_number(query or {}, "exact_frame")
+                if frame is None or not signature:
+                    self.send_error(400, "A source frame and its trajectory signature are required")
+                    return
+                one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
+                data, details = exact_frames_dcd(
+                    root, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=signature, on=one("on") or "none",
+                    ligand=one("ligand") or None, cutoff_angstrom=one("cutoff") or 5.0,
+                    to=one("to") or "first")
+                if data is None:
+                    # A fixed reason: the details are said by /api/exact-frame,
+                    # where a hosted page has them scrubbed of paths.
+                    busy = details.get("code") == "environment.service.busy"
+                    self.send_error(503 if busy else 404, "Exact frame unavailable")
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
 
             target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
                                             else FRAMES_TOPOLOGY)
