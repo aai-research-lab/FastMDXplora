@@ -992,6 +992,10 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(str(out.resolve()), threading.RLock())
     with lock:
+        if any([_linked_out(folder), _linked_out(folder / "index.json")]):
+            # Refused before anything is written there: a folder linked out
+            # of the study is not written into.
+            return {"ok": False, "reason": _NOT_SENT[0]}
         said = _load_json(folder / "index.json")
         if said.get("signature") == index.get("signature") and _sent_here(
                 folder, *(f"piece_{k}.xtc" for k in range(len(said.get("pieces", []))))):
@@ -1021,14 +1025,17 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
         return said
 
 
-def as_xtc(dcd: Path) -> Path:
+def as_xtc(dcd: Path) -> Path | None:
     """A DCD of the frames (the frames superposed) as XTC beside it, written
-    once for it as it is."""
+    once for it as it is; None where the XTC beside it is linked out of the
+    study (in a read held to it), which is neither read nor written over."""
     import mdtraj as md
 
     from fastmdxplora.utils.native_output import suppress_native_output
 
     target = dcd.with_suffix(".xtc")
+    if _linked_out(target):
+        return None
     if target.is_file() and target.stat().st_mtime_ns >= dcd.stat().st_mtime_ns:
         return target
     with suppress_native_output():
@@ -1065,6 +1072,9 @@ def frames_between(source: Path, span: Any, between: Any
     if every < 1 or first < 0 or last < 0:
         return None, "A movie's frames are counted from 0, every 1 or more."
     target = source.with_name(f"{source.stem}_between{n}_{first}_{last}_{every}.dcd")
+    if _linked_out(target):
+        # In a read held to the study: neither read nor written over.
+        return None, _NOT_SENT[0]
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(str(source.parent.parent.resolve()), threading.RLock())
     with lock:

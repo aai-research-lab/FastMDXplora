@@ -129,4 +129,29 @@ def test_the_records_the_runs_are_played_from_are_not_read_through_a_link(tmp_pa
     said = json.loads(body)
     assert "viewer_runs/index.json was not read" in said["not_read"]
     assert all(run["frames"] != 777 for run in said["runs_together"]["runs"])
-    assert index.read_bytes() == before
+    assert index.read_bytes() == before and (root / "viewer_runs" / "index.json").is_symlink()
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_runs_set_beside_are_not_written_through_a_link(tmp_path, public):
+    """Where the runs set beside the run played are written is linked out of
+    the study (to an empty folder): nothing is written there, the run
+    played is played alone, and why the others are not beside it is said."""
+    root = _runs(tmp_path, 9, 7)
+    outside = tmp_path / "outside" / "viewer_runs"
+    outside.mkdir(parents=True)
+    _link(root / "viewer_runs", outside)
+    _watch(outside)
+    try:
+        status, body = _ask(root, tmp_path, "/api/frames-info", public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    assert _listed(outside) == {}
+    said = json.loads(body)
+    assert status == 200 and said["playback_available"] is True, said
+    together = said["runs_together"]
+    assert [run["run_id"] for run in together["runs"]] == ["r1"]
+    assert [run["run_id"] for run in together["excluded"]] == ["r2"]
+    assert "viewer_runs was not read" in said["not_read"]

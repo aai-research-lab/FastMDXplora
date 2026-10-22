@@ -39,6 +39,9 @@ RUN_COLOURS = ("#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00")
 #: Where the other runs' fitted frames are written, under the study's root.
 TOGETHER = "viewer_runs"
 _INDEX = "index.json"
+#: Why a run is not set beside the run played where its frames would be
+#: written through a link out of the study.
+_NOT_WRITTEN = "Where its frames would be written is not one of this study's own records."
 
 _LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
@@ -120,7 +123,8 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
     import hashlib
 
     from fastmdxplora import record_access
-    from fastmdxplora.gui.trajectory_frames import _source, _unavailable, _write_text, frames_info
+    from fastmdxplora.gui.trajectory_frames import (_linked_out, _source, _unavailable,
+                                                    _write_text, frames_info)
 
     main = run_shown(base)
     if main is None:
@@ -139,15 +143,26 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
         shown["runs_together"] = {"runs": [], "excluded": []}
         return shown
     out = base / TOGETHER
+    entries = [{"run_id": main_id, "label": labels.get(main_id, main_id),
+                "colour": _colour(order[main_id]), "frames": int(shown["n_frames_browser"]),
+                "main": True, "index": order[main_id],
+                "running": shown.get("source_kind") == "live-history"}]
+    # Nothing is written through a link out of the study: where the other
+    # runs' frames are written is one, they are not set beside it.
+    if any([_linked_out(out), _linked_out(out / _INDEX)]):
+        said = dict(shown)
+        said["runs_together"] = {
+            "runs": entries, "signature": None, "fitted": None,
+            "excluded": [{"run_id": run["run_id"], "reason": _NOT_WRITTEN,
+                          "label": labels.get(run["run_id"], run["run_id"])}
+                         for run in runs if run["run_id"] != main_id],
+            "first": labels.get(main_id, main_id)}
+        return said
     cached = _load_json(out / _INDEX)
     # Each run written again only where it, or the run played, changed: a
     # running run's new snapshots are its own.
     keep = {} if force or cached.get("main") != shown.get("signature") else \
         cached.get("runs") or {}
-    entries = [{"run_id": main_id, "label": labels.get(main_id, main_id),
-                "colour": _colour(order[main_id]), "frames": int(shown["n_frames_browser"]),
-                "main": True, "index": order[main_id],
-                "running": shown.get("source_kind") == "live-history"}]
     excluded = []
     fitted_on = None
     written: dict[str, Any] = {}
@@ -229,8 +244,13 @@ def _one_run(base: Path, source: dict[str, Any], context: dict[str, Any], index:
     from fastmdxplora.analysis.base import superposed
     from fastmdxplora.gui.trajectory_frames import _write_dcd, _write_text
 
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
     first, backbone = context["first"], context["backbone"]
     target = base / TOGETHER / f"run_{index}.dcd"
+    if any([_linked_out(target), _linked_out(target.with_suffix(".pdb"))]):
+        # Not written through a link out of the study.
+        return {"entry": None, "reason": _NOT_WRITTEN}
     target.parent.mkdir(exist_ok=True)
     if source["kind"] == "trajectory":
         try:

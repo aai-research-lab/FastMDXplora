@@ -177,3 +177,50 @@ def test_frames_superposed_linked_out_are_refused_before_they_are_opened(
     assert opened == [] and looked == []
     assert fitted[0] == 404 and exact[0] == 404
     assert (outside / relative).stat().st_size > 0
+
+
+def _listed(folder: Path) -> dict[str, tuple[int, int]]:
+    """Every file under ``folder``, with its size and time."""
+    return {str(path.relative_to(folder)): (path.stat().st_size, path.stat().st_mtime_ns)
+            for path in sorted(folder.rglob("*")) if path.is_file()}
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("relative, route", [
+    ("simulation/frames_pieces", "/api/frames-pieces"),
+    ("simulation/frames_pieces/index.json", "/api/frames-pieces"),
+    ("simulation/frames.xtc", "/structure/frames.dcd?as=xtc"),
+    ("simulation/frames_between1_0_2_1.dcd", SENT[3])])
+def test_nothing_is_written_through_a_link_out_of_the_study(tmp_path, relative, route, public):
+    """The pieces, their index, the frames as XTC and the frames in between,
+    each linked out of the study, are refused before anything is written
+    where they lead, or over the link: a folder linked out is not written
+    into (one empty outside), a file linked out (older than the frames, so
+    it would be written again) is not replaced."""
+    import os
+
+    root = _study(tmp_path)
+    assert _ask(root, tmp_path, route, public=public)[0] == 200
+    folder = relative.endswith("frames_pieces")
+    if folder:
+        outside = tmp_path / "outside" / relative
+        outside.mkdir(parents=True)
+        shutil.rmtree(root / relative)
+        _link(root / relative, outside)
+    else:
+        outside = _moved_out(root, tmp_path, relative) / relative
+        os.utime(outside, ns=(0, 0))
+    before = _listed(outside) if folder else outside.read_bytes()
+    (answer,), opened = _asked(root, tmp_path, [route], outside.parent if not folder
+                               else outside, public=public)
+    assert opened == []
+    assert (_listed(outside) if folder else outside.read_bytes()) == before
+    assert (root / relative).is_symlink()
+    status, body = answer
+    if route.startswith("/api/"):
+        said = json.loads(body)
+        assert said["ok"] is False, said
+        assert f"{relative} was not read" in said["not_read"]
+        assert str(tmp_path) not in body.decode("utf-8")
+    else:
+        assert status == 404

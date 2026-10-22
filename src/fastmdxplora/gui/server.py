@@ -3264,6 +3264,8 @@ def make_handler(
                 from fastmdxplora.gui.trajectory_frames import as_xtc
 
                 target = as_xtc(target)
+                if target is None:
+                    return None, {"reason": "Frames not available"}
             data = _held_bytes(target)
             return (data, {}) if data is not None else (None, {"reason": "Frames not available"})
 
