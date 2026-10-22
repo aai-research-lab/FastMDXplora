@@ -61,7 +61,7 @@ def frames_for_binary(n_atoms: int, most: int = MOST_FRAMES) -> int:
 def _unavailable(reason: str) -> dict[str, Any]:
     return {"available": False, "playback_available": False, "reason": reason, "n_atoms": 0,
             "n_frames_total": 0, "n_frames_browser": 0, "frame_indices": [],
-            "frame_times_ns": []}
+            "simulation_steps": [], "frame_times_ns": []}
 
 
 def frames_info(output_dir: str | Path, *, most_frames: int = MOST_FRAMES,
@@ -156,7 +156,10 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
     source = _source(out)
     if source is None:
         return _unavailable("There is no trajectory, and fewer than two frames written.")
-    signature = f"{source['signature']}:most={int(most_frames)}"
+    # The index file persists across launches. Bump this when the meaning of
+    # an identity field changes so a former live-step-as-frame cache is not
+    # served as though it were a logical sequence.
+    signature = f"{source['signature']}:most={int(most_frames)}:payload=2"
     index = simulation / FRAMES_INDEX
     from fastmdxplora.simulation.runner import chose_its_own_step
 
@@ -170,7 +173,10 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
                 and (simulation / FRAMES_TOPOLOGY).is_file()):
             interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
                         and cached.get("source_kind") == "production-dcd" else None)
-            if chose_its_own_step(simulation):
+            cached.setdefault("simulation_steps",
+                              [None] * len(cached.get("frame_indices") or []))
+            if (chose_its_own_step(simulation)
+                    and cached.get("source_kind") != "live-history"):
                 cached["frame_times_ns"] = [None] * len(cached.get("frame_indices") or [])
             elif interval:
                 # Read again where a record says it: frames written before
@@ -266,6 +272,7 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
     return {"available": True, "reason": None, "n_atoms": int(len(shown)),
             "n_frames_total": int(total), "n_frames_browser": len(indices),
             "frame_indices": indices,
+            "simulation_steps": [None] * len(indices),
             "frame_times_ns": _times(indices, total, total_ns,
                                      _interval_ns(simulation.parent, source)),
             "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept,
@@ -280,11 +287,12 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
 
     records = source["records"]
     first = _atom_lines(_read(simulation / str(records[-1].get("path") or "")))
-    chosen = [records[i] for i in _even(len(records), frames_for_binary(len(first), most_frames))]
+    chosen_positions = _even(len(records), frames_for_binary(len(first), most_frames))
+    chosen = [(position, records[position]) for position in chosen_positions]
     lines: list[str] | None = None
     opened = ""
-    xyz, used, cells = [], [], []
-    for record in chosen:
+    xyz, used, cells, source_positions = [], [], [], []
+    for source_position, record in chosen:
         text = _read(simulation / str(record.get("path") or ""))
         atoms = _atom_lines(text)
         if not atoms or (lines is not None and len(atoms) != len(lines)):
@@ -294,6 +302,7 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
         xyz.append([(float(a[30:38]), float(a[38:46]), float(a[46:54])) for a in atoms])
         cells.append(cell_of(text))
         used.append(record)
+        source_positions.append(source_position)
     if lines is None or len(used) < 2:
         return _unavailable("Fewer than two of the frames written could be read.")
     # Each snapshot wraps every molecule into the box on its own, so a bound
@@ -317,9 +326,16 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
     _write_dcd(md.Trajectory(coordinates / 10.0, topology), simulation / FRAMES_FILE)
     return {"available": True, "reason": None, "n_atoms": len(lines),
             "n_frames_total": len(records), "n_frames_browser": len(used),
-            "frame_indices": [record.get("frame_index") for record in used],
-            # A snapshot's time is its step times the timestep, which is no
-            # time where the integrator chose its own step.
+            # Snapshot sequence and simulation step are different identities.
+            # The sequence indexes the playable snapshot; frame_index is the
+            # integrator step, and each recorded time is independent metadata.
+            "frame_indices": [int(record["sequence"])
+                              if isinstance(record.get("sequence"), int) else position
+                              for position, record in zip(source_positions, used)],
+            "simulation_steps": [record.get("frame_index") for record in used],
+            # Older adaptive-step snapshots store step * nominal timestep,
+            # which is not their physical time. Until the history records an
+            # actual integrator clock, do not present that estimate as time.
             "frame_times_ns": ([None] * len(used) if chose_its_own_step(simulation)
                                else [record.get("simulation_time_ns") for record in used]),
             "made_whole": whole is not None}

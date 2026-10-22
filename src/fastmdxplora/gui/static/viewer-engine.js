@@ -1080,7 +1080,7 @@
 
     async setFrame(index, step) {
       const cell = this.trajectoryModelCell();
-      if (!cell) return;
+      if (!cell) return false;
       const total = this.frameCount();
       let frame = Math.max(0, Math.min(total - 1, Math.round(index)));
       let raw = frame;
@@ -1121,6 +1121,7 @@
       }
       await this.followThePocket();
       await this.followTheBox();
+      return true;
     }
 
     /* -------------------------------------------------------------- */

@@ -345,7 +345,7 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     assert not page.is_checked("#traj-follow")
     for _ in range(9):
         page.click('.ctl-btn[data-action="next-frame"]')
-    page.wait_for_function("() => document.getElementById('traj-current').textContent === '10'",
+    page.wait_for_function("() => document.getElementById('traj-current').textContent === '11'",
                            timeout=60000)
     page.wait_for_function(f"() => {ENGINE}.frame() === 10", timeout=60000)
     moved = hooks.atoms(page, resn="LIG")[0]["z"] - first_z
@@ -353,7 +353,7 @@ def test_playback_steps_through_the_frames_and_the_atoms_move(page) -> None:
     # 1 to 10 of 20 are 9/19 of it, and Mol* works in angstroms.
     assert moved == pytest.approx(3.0 * 9 / (FRAMES - 1), abs=0.05)
     page.click('.ctl-btn[data-action="prev-frame"]')
-    page.wait_for_function("() => document.getElementById('traj-current').textContent === '9'",
+    page.wait_for_function("() => document.getElementById('traj-current').textContent === '10'",
                            timeout=60000)
     assert page.errors == []
 
@@ -367,7 +367,7 @@ def test_water_during_playback_is_an_overlay_that_follows_the_frames(page) -> No
     # The animated solute stays the playback model.
     assert page.evaluate(f"() => {VIEWER}.mode") == "playback"
     page.click('.ctl-btn[data-action="next-frame"]')
-    page.wait_for_function("() => document.getElementById('traj-current').textContent === '2'",
+    page.wait_for_function("() => document.getElementById('traj-current').textContent === '3'",
                            timeout=60000)
     assert page.errors == []
 

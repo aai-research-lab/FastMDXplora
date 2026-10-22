@@ -587,6 +587,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- The Viewer's playback counter counts the frames loaded, from 1. While a
+  study runs, a snapshot's integrator step is shown beside it rather than
+  read as its frame number. The counter, the
+  slider and the overlay change only once the frame they name is on screen;
+  a frame that cannot be rendered leaves them as they were and says so. A
+  trajectory of one frame is shown without starting a playback timer.
+
 - The phone-to-desktop browser check waits for the side panel to return
   after its dialog closes, avoiding a timing-sensitive assertion.
 

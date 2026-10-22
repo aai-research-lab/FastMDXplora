@@ -148,6 +148,19 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
             page.wait_for_function("(text) => document.querySelector("
                                    "'#measure-said .measure-values')?.textContent !== text",
                                    arg=before)
+            # Read the overlay and live state in the same browser turn. A
+            # separate wait followed by several DOM reads can cross a poll
+            # that changes the overlay between assertions.
+            overlay = page.wait_for_function(f"""() => {{
+                const state = {live};
+                const step = document.getElementById('overlay-step')?.textContent || '';
+                if (state.liveFrameIndex !== 7000
+                    || Number(state.liveOverlay?.overlay?.step) !== 7000
+                    || !/^step 7,?000$/.test(step)) return false;
+                return {{step, mode: state.mode, liveOverlay: state.liveOverlay,
+                    frame: document.getElementById('overlay-frame')?.textContent || ''}};
+            }}""")
+            overlay_state = overlay.json_value()
             moved = {
                 "loaded again": page.evaluate(f"() => {live}.model !== window.shown"),
                 "measured": page.evaluate(f"() => {live}.engine.measurementCount()"),
@@ -156,7 +169,10 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
                 "atoms": [[a["x"], a["y"], a["z"]] for resi in (3, 9)
                           for a in hooks.atoms(page, resi=resi, atom="CA")],
                 "dssp": page.evaluate(f"() => {live}.secondaryStructure"),
-                "step": page.text_content("#overlay-frame"),
+                "frame": overlay_state["frame"],
+                "step": overlay_state["step"],
+                "mode": overlay_state["mode"],
+                "live overlay": overlay_state["liveOverlay"],
             }
 
             # A frame of other atoms is loaded whole.
@@ -176,6 +192,7 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
     distance = float(np.linalg.norm(expected[0] - expected[1]))
     assert f"{distance:.2f} Å" in moved["said"]
     assert moved["dssp"]["of"] == "live" and moved["dssp"]["applied"] is True
-    assert moved["step"] in ("step 7,000", "step 7000")
+    assert moved["frame"] == ""
+    assert moved["step"] in ("step 7,000", "step 7000"), moved
     assert reloaded is True
     assert errors == []

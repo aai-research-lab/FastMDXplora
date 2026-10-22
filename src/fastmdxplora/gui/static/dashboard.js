@@ -37,9 +37,10 @@
     bindingPocketCutoff: 5,
     playbackAvailable: false,
     playbackFrames: 0,
-    playbackTotalFrames: 0,
     playbackFrameTimes: [],
+    playbackSimulationSteps: [],
     playbackSignature: null,
+    playbackData: null,
     metrics: [],
     status: {},
     health: {},
@@ -792,9 +793,19 @@
     state.phases = [];
     state.playbackAvailable = false;
     state.playbackFrames = 0;
-    state.playbackTotalFrames = 0;
     state.playbackFrameTimes = [];
+    state.playbackSimulationSteps = [];
     state.playbackSignature = null;
+    state.playbackData = null;
+    const slider = byId("traj-slider");
+    if (slider) {
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+    }
+    const row = byId("trajectory-row");
+    if (row) row.hidden = true;
+    setPlaybackPosition(0, 0, null, null);
     if (window.FastMDXCharts) window.FastMDXCharts.update([]);
     renderLiveProgress({});
     renderStructureTab({valid: false, reason: "missing"});
@@ -2495,43 +2506,88 @@
 
   function applyPlayback(payload) {
     const previousSignature = state.playbackSignature;
+    const previousPayload = state.playbackData;
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const previousFrame = parseInt(byId("traj-slider")?.value || "0", 10) || 0;
+    const sourceChanged = previousSignature !== null && previousSignature !== signature;
+
+    state.playbackData = payload || null;
 
     state.playbackAvailable = !!payload?.playback_available;
     state.playbackFrames = Number(payload?.n_frames_browser || 0);
-    state.playbackTotalFrames = Number(payload?.n_frames_total || 0);
-    state.playbackFrameTimes = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
+    // The range and counter describe only frames the browser can play. A
+    // live-history payload may grow while the viewer intentionally keeps its
+    // already-loaded snapshot until the user reloads it.
+    const viewer = window.FastMDXMoleculeViewer?.STATE;
+    const viewerKeepsGrowingHistory = !sourceChanged
+      && previousPayload?.source_kind === "live-history"
+      && payload?.source_kind === "live-history"
+      && viewer?.playbackLoaded;
+    const viewerShowsPlayback = !!viewer?.playbackLoaded
+      && (viewer.playbackSignature === signature || viewerKeepsGrowingHistory);
+    if (viewerKeepsGrowingHistory) {
+      state.playbackFrames = Math.min(state.playbackFrames, Number(viewer.playbackFrames || 0));
+    }
+    state.playbackFrameTimes = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameTimes : (Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : []);
+    state.playbackSimulationSteps = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameSteps : (Array.isArray(payload?.simulation_steps)
+        ? payload.simulation_steps : []);
     state.playbackSignature = signature;
 
     const slider = byId("traj-slider");
     const row = byId("trajectory-row");
     if (!slider || !row) return;
-    if (!state.playbackAvailable) {
+    if (!state.playbackAvailable || state.playbackFrames < 1) {
+      state.playbackAvailable = false;
+      state.playbackFrames = 0;
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+      setPlaybackPosition(0, 0, null, null);
       row.hidden = true;
       emit("playback-ready", payload || {});
       return;
     }
 
     const maxFrame = Math.max(0, state.playbackFrames - 1);
-    const frame = Math.min(previousFrame, maxFrame);
+    let frame = sourceChanged ? 0 : Math.min(previousFrame, maxFrame);
+    if (viewerShowsPlayback) {
+      const displayed = viewer.engine.frame();
+      if (Number.isInteger(displayed) && displayed >= 0 && displayed <= maxFrame) frame = displayed;
+    }
     slider.min = "0";
     slider.max = String(maxFrame);
-    // Do not reset the user's scrubber on every three-second API poll.
+    // A different trajectory starts at its first loaded frame; a periodic
+    // update to the same source preserves the position.
     slider.value = String(frame);
-    setText("traj-current", String(frame));
-    setText("traj-total", String(state.playbackFrames));
-    setText(
-      "traj-simtime",
-      window.FastMDXSeries?.frameTimeSaid
-        ? window.FastMDXSeries.frameTimeSaid(state.playbackFrameTimes[frame], state.playbackFrameTimes)
-        : state.playbackFrameTimes[frame] != null
-          ? formatNumber(state.playbackFrameTimes[frame], 3) + " ns" : "—"
-    );
+    setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
+      viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
+      viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null);
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
-      source_changed: previousSignature !== null && previousSignature !== signature,
+      source_changed: sourceChanged,
     }));
+  }
+
+  function setPlaybackPosition(index, total, time, step, times) {
+    const frameCount = Number(total);
+    if (!Number.isInteger(frameCount) || frameCount < 0) return false;
+    const hasCurrentFrame = frameCount > 0 && index != null;
+    const frameIndex = hasCurrentFrame ? Number(index) : null;
+    if (hasCurrentFrame && (!Number.isInteger(frameIndex)
+        || frameIndex < 0 || frameIndex >= frameCount)) return false;
+    setText("traj-current", frameIndex == null ? (frameCount ? "\u2014" : "0") : String(frameIndex + 1));
+    setText("traj-total", String(frameCount));
+    setText("traj-step", step == null || !Number.isFinite(Number(step))
+      ? "\u2014" : `step ${Number(step).toLocaleString()}`);
+    // In the ruler's unit: ps for a run under a nanosecond.
+    const timeSaid = window.FastMDXSeries?.frameTimeSaid
+      ? window.FastMDXSeries.frameTimeSaid(Number(time), times || state.playbackFrameTimes)
+      : `${formatNumber(time, 3)} ns`;
+    setText("traj-simtime", time == null || !Number.isFinite(Number(time))
+      ? "\u2014" : `time ${timeSaid}`);
+    return true;
   }
 
   /* ------------------------------------------------------------------ */
@@ -3001,6 +3057,7 @@
     applyMetrics,
     applyStructure,
     applyPlayback,
+    setPlaybackPosition,
     applyResults,
     on(eventName, handler) {
       window.addEventListener(`dashboard:${eventName}`, (event) => handler(event.detail));
