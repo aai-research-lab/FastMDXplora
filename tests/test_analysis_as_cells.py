@@ -186,6 +186,9 @@ def _csv(page, selector):
 
 
 def _drag(page, selector, a, b, shift=False):
+    # In view first: a chart below its From/To range form can start below
+    # the window, where the pointer reaches nothing.
+    page.locator(selector + " svg").scroll_into_view_if_needed()
     box = page.locator(selector + " svg").bounding_box()
     if shift:
         page.keyboard.down("Shift")

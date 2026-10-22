@@ -460,6 +460,9 @@
       if (current < 0) set(seek(0, 1));
     });
     svg.addEventListener("keydown", function (event) {
+      // Zoomed in, the arrows move the view (plot-tools.js); Home, End and
+      // Enter still go along the points.
+      if (f.view && /^Arrow/.test(event.key)) return;
       var base = current < 0 ? 0 : current;
       if (event.key === "Home") set(seek(0, 1));
       else if (event.key === "End") set(seek(count - 1, -1));
@@ -489,6 +492,7 @@
     }
     svg.addEventListener("focus", function () { if (column < 0) set(0, 0); });
     svg.addEventListener("keydown", function (event) {
+      if (f.view && /^Arrow/.test(event.key)) return;
       if (event.key === "Home") set(0, row);
       else if (event.key === "End") set(columns - 1, row);
       else if (event.key === "ArrowLeft") set((column < 0 ? 0 : column) - 1, row);
@@ -838,6 +842,7 @@
       f.svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Enter Shift+Enter");
       f.svg.addEventListener("focus", function () { if (column < 0) { column = 0; f.showCell(column, row); } });
       f.svg.addEventListener("keydown", function (event) {
+        if (f.view && /^Arrow/.test(event.key)) return;
         if (event.key === "ArrowLeft") column = Math.max(0, (column < 0 ? 0 : column) - 1);
         else if (event.key === "ArrowRight") column = Math.min(n - 1, (column < 0 ? 0 : column) + 1);
         else if (event.key === "ArrowUp") row = Math.max(0, row - 1);
@@ -1121,6 +1126,9 @@
     tools.attach(host, {
       svg: f.svg, width: f.width, height: f.height, plot: f.plot,
       zoom: ZOOM[data.kind] || "", shared: clock, zoomed: !!f.view,
+      // A plot's arrows go along its points until it is zoomed in, then move
+      // the view.
+      ownArrows: !!f.ownArrows && !f.view,
       least: leastOf(data, x, y),
       full: { x: x.full || null, y: y.full || null },
       name: (data.figure || data.title || data.kind).replace(/^analysis\//, "").replace(/\.png$/, "") +

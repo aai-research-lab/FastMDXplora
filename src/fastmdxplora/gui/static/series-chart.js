@@ -173,6 +173,9 @@
     };
     var view = viewOf(host, data);
     host.dataset.view = view ? (host._view === view ? "zoomed" : "range") : "";
+    // Said on the chart too, which holds this plot under its range form.
+    var chart = host.closest ? host.closest(".series-chart") : null;
+    if (chart && chart !== host) chart.dataset.view = host.dataset.view;
     var clock = data.kind === "residue" ? { factor: 1, label: data.x_label, unit: "" }
       : timeScale(view || data.x, data.x_label);
     var xs = clock.factor === 1 ? data.x : data.x.map(function (x) { return x * clock.factor; });
@@ -745,7 +748,9 @@
   document.addEventListener("fmx:time-range", function () {
     drawn = drawn.filter(function (d) { return d.chart.isConnected; });
     drawn.forEach(function (d) {
-      if (!d.chart.hidden && d.data.kind !== "residue") draw(d.chart, d.data);
+      // Into the chart's plot, under its own From/To range, not over the
+      // chart (its range form and notice are its own).
+      if (!d.chart.hidden && d.data.kind !== "residue") d.chart.__seriesRender();
     });
   });
 
