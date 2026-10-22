@@ -603,6 +603,33 @@ def test_a_comma_table_whose_rows_do_not_match_the_profile_names_none(monkeypatc
     assert series.series_payload(root, "rmsf")["entities"] == [None, None]
 
 
+def test_only_a_readable_identity_table_is_read_as_one(tmp_path):
+    from fastmdxplora.gui.series import _profile_table_rows
+
+    assert _profile_table_rows(tmp_path / "missing.csv") == []
+    unnamed = tmp_path / "unnamed.csv"
+    unnamed.write_text("chain,number,value\nA,1,0.2\n", encoding="utf-8")
+    assert _profile_table_rows(unnamed) == []
+    oversized = tmp_path / "oversized.csv"
+    oversized.write_text("chain,residue,s2\nA,1," + "9" * 200_000 + "\n", encoding="utf-8")
+    assert _profile_table_rows(oversized) == []
+    named = tmp_path / "named.csv"
+    named.write_text("# S2\nChain, Residue ,S2\nA, 1 ,0.8\n", encoding="utf-8")
+    assert _profile_table_rows(named) == [{"chain": "A", "residue": "1", "s2": "0.8"}]
+
+
+def test_order_parameter_rows_keep_only_finite_whole_residues(tmp_path):
+    from fastmdxplora.gui.series import _order_parameter_rows
+
+    path = tmp_path / "order_parameters.dat"
+    path.write_text("# residue S2 measured\n1 0.80 0.75\nresidue two 0.5\n2.5 0.70\n"
+                    "3 nan\ninf 0.9\n4 0.60 bad\n5\n", encoding="utf-8")
+    rows, reference = _order_parameter_rows(path)
+    assert rows == [([], [1.0, 0.8]), ([], [4.0, 0.6])]
+    assert reference == [0.75, None]
+    assert _order_parameter_rows(tmp_path / "missing.dat") == ([], [])
+
+
 def test_figure_residue_labels_are_named_only_from_a_readable_topology(monkeypatch, study):
     from fastmdxplora.gui.figure_data import _residue_entities
     from fastmdxplora.utils import native_output

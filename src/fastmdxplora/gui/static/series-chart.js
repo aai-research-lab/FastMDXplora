@@ -186,6 +186,10 @@
     var pad = (yHigh - yLow) * 0.06 || Math.abs(yHigh) * 0.1 || 1;
     yHigh += pad;
     if (yLow < 0) yLow -= pad;
+    if (data.y_bounds) {
+      yLow = data.y_bounds[0];
+      yHigh = data.y_bounds[1];
+    }
 
     function px(x) { return plot.left + (x - xLow) / (xHigh - xLow) * (plot.right - plot.left); }
     function py(y) { return plot.bottom - (y - yLow) / (yHigh - yLow) * (plot.bottom - plot.top); }
@@ -263,6 +267,17 @@
         el("circle", { cx: px(x), cy: py(ys[i]), r: 2.2, fill: c.line }, layer);
       });
     }
+    if (Array.isArray(data.reference)) {
+      data.reference.forEach(function (value, i) {
+        if (value == null || !isFinite(value)) return;
+        el("rect", { x: px(xs[i]) - 3, y: py(value) - 3, width: 6, height: 6,
+          fill: c.mean, class: "series-reference" }, svg);
+      });
+      var referenceLabel = el("text", { x: plot.left, y: plot.top - 4,
+        fill: c.mean, "font-size": 10, "text-anchor": "start" }, svg);
+      referenceLabel.textContent = data.reference.some(function (v) { return v != null; })
+        ? "Squares: measured S²" : "";
+    }
 
     // The mean over the frames kept, with its error where there is one.
     if (mean && mean.value != null) {
@@ -299,9 +314,10 @@
 
     var cursor = el("line", {
       y1: plot.top, y2: plot.bottom, stroke: c.axis, "stroke-width": 1, visibility: "hidden",
+      "pointer-events": "none",
     }, svg);
     var dot = el("circle", { r: 4, fill: c.line, stroke: c.shade, "stroke-width": 1.5,
-                             visibility: "hidden" }, svg);
+                             visibility: "hidden", "pointer-events": "none" }, svg);
     var tip = document.createElement("div");
     tip.className = "series-tip";
     tip.hidden = true;
@@ -330,6 +346,9 @@
       value.textContent = withUnit(ys[index], data.unit);
       tip.appendChild(value);
       tip.appendChild(document.createTextNode(" · " + where));
+      if (data.reference && data.reference[index] != null) {
+        tip.appendChild(document.createTextNode(" · measured " + format(data.reference[index])));
+      }
       if (action) {
         var hint = document.createElement("span");
         hint.className = "series-tip-hint";
@@ -471,7 +490,7 @@
     });
     if (!indices.length) return null;
     var shown = Object.assign({}, data);
-    ["x", "y", "frames", "labels", "entities"].forEach(function (key) {
+    ["x", "y", "frames", "labels", "entities", "reference"].forEach(function (key) {
       if (Array.isArray(data[key]) && data[key].length === data.x.length) {
         shown[key] = indices.map(function (index) { return data[key][index]; });
       }
@@ -659,8 +678,15 @@
         chart.__seriesRender = controls ? controls.render : function () { draw(plot, chart.__seriesData); };
         if (controls) chart.appendChild(controls.form);
         chart.appendChild(plot);
+        var notice = document.createElement("p");
+        notice.className = "series-notice";
+        notice.textContent = data.notice || "";
+        notice.hidden = !data.notice;
+        chart.appendChild(notice);
         chart.__seriesSetData = function (fresh) {
           chart.__seriesData = fresh;
+          notice.textContent = fresh.notice || "";
+          notice.hidden = !fresh.notice;
           if (controls) controls.updateData(fresh);
           chart.__seriesRender();
         };

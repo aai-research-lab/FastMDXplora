@@ -1189,6 +1189,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   chosen values and decisions for inactive phases as well as the phases
   running now.
 
+- Backbone order parameters (S²) are plotted on the Analysis page, on a
+  fixed 0 to 1.05 scale, with measured values as squares where they were
+  given and the analysis's note where S² is only an upper bound. A point
+  selects its residue in the Viewer.
+
 - An analysis chart can be limited to a range of times, frames or
   residues, chosen by their names on a residue chart, and reset. A point
   in the range opens the same frame or residue as before. The mean line is
