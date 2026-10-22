@@ -599,16 +599,20 @@
       "/api/events", "/api/results",
       "/api/structure-info", "/api/frames-info",
     ];
-    const settled = await Promise.allSettled(urls.map(fetchJSON));
-    // A successful switch can precede its HTTP answer. Do not paint the
-    // new study under the previous study's address while navigation waits.
-    if (state.addressAsking) return;
-    // Asked before one already applied: what it read is older.
-    if (number < state.pollApplied) return;
-    state.pollApplied = number;
+    const responses = urls.map((url) => fetchJSON(url).then(
+      (value) => ({status: "fulfilled", value}),
+      (reason) => ({status: "rejected", reason})
+    ));
     let successes = 0;
 
-    settled.forEach((result, index) => {
+    function applyResponse(result, index) {
+      // A successful switch can precede its HTTP answer. Do not paint the
+      // new study under the previous study's address while navigation waits.
+      if (state.addressAsking) return;
+      // Asked before one already applied: what it read is older. The app
+      // state, applied first, marks this poll as the one applied.
+      if (number < state.pollApplied) return;
+      if (index === 0) state.pollApplied = number;
       const name = names[index];
       if (result.status === "rejected") {
         state.apiErrors[name] = String(result.reason || "request failed");
@@ -635,7 +639,15 @@
       if (name === "results") safeApply(name, () => applyResults(payload));
       if (name === "structure") safeApply(name, () => applyStructure(payload));
       if (name === "playback") safeApply(name, () => applyPlayback(payload));
-    });
+    }
+
+    // Establish the study before its panels, but do not hold results behind
+    // an unrelated trajectory/topology request that is still being read.
+    applyResponse(await responses[0], 0);
+    await Promise.all(responses.slice(1).map(async (response, index) => {
+      applyResponse(await response, index + 1);
+    }));
+    if (state.addressAsking) return;
 
     if (successes) {
       state.lastUpdateMs = Date.now();

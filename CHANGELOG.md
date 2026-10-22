@@ -587,6 +587,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- The Analysis page shows its charts as soon as the results arrive,
+  without waiting for the trajectory and structure details the Viewer
+  reads.
+
 - Choosing a point on an RMSF chart, a contact or interaction bar, or a
   secondary structure cell selects that residue in the Viewer by its
   chain, number, insertion code and name, so a number two chains share is

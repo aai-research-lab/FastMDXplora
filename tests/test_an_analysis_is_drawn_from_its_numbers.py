@@ -396,6 +396,50 @@ class TestTheChart:
         )
 
 
+@pytest.mark.parametrize("delayed", ["frames-info", "structure-info"])
+def test_rmsf_chart_does_not_wait_for_unrelated_viewer_metadata(tmp_path, delayed) -> None:
+    """Results already received are shown while viewer metadata is pending."""
+    pytest.importorskip("playwright.sync_api")
+    pytest.importorskip("mdtraj")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_the_drawing_scripts_run_in_a_browser import _write_study
+
+    root = _write_study(tmp_path / "rmsf-startup")
+    _manifest(root, topology=root / "simulation" / "trajectory_topology.pdb")
+    _analysis(root, "rmsf", "".join(f"{0.1 + i * 0.01:.2f}\n" for i in range(10)))
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            held = []
+
+            def hold(route):
+                held.append(route)
+
+            page.route(f"**/api/{delayed}", hold)
+            try:
+                with page.expect_request(f"**/api/{delayed}"):
+                    with page.expect_response("**/api/results") as results:
+                        page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+                assert results.value.status == 200
+                page.locator('.series-chart[data-analysis="rmsf"] svg').wait_for(
+                    state="visible", timeout=5000)
+                assert held, f"the delayed {delayed} request was not intercepted"
+                # The chart really contains its ten residue measurements.
+                assert page.locator(
+                    '.series-chart[data-analysis="rmsf"] svg circle[r="2.2"]'
+                ).count() == 10
+            finally:
+                for route in held:
+                    route.abort()
+                browser.close()
+    finally:
+        session.server.shutdown()
+
+
 @pytest.mark.parametrize("delay_loading_check", [False, True])
 def test_clicking_atom_rmsf_selects_the_named_atom_in_the_viewer(
         tmp_path, delay_loading_check) -> None:
