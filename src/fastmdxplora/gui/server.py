@@ -3199,13 +3199,17 @@ def make_handler(
             self.wfile.write(data)
 
         def _frames_played(self, inside: Path) -> bool:
-            """Whether the study plays frames written from its own records
-            now (`frames_info`, in the held read the caller is in): frames
-            written before a record was linked out of it are not."""
+            """Whether the frames written beside the study's trajectory may be
+            sent (`frames_info`, in the held read the caller is in): not
+            where it refused a record, so frames written before a record was
+            linked out of the study are not; frames with no trajectory left
+            to write them from are sent as they are."""
+            from fastmdxplora import record_access
             from fastmdxplora.gui.trajectory_frames import frames_info
 
-            return bool(frames_info(inside, most_frames=cfg.max_browser_frames).get(
-                "playback_available"))
+            with record_access.refusals_noted() as refused:
+                said = frames_info(inside, most_frames=cfg.max_browser_frames)
+            return bool(said.get("playback_available")) or not refused
 
         def _frames_held(self, inside: Path, name: str, query: dict[str, list[str]]
                          ) -> tuple[bytes | None, dict[str, Any]]:
