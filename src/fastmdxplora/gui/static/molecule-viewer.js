@@ -122,6 +122,9 @@
     exactFrame: null,
     exactAbort: null,
     trajectorySeekAsked: 0,
+    // How many frame requests are going on: while one is, the counter is
+    // written only once its frame is drawn (`setPlaybackFrame`).
+    seeking: 0,
     playbackFrameAsked: 0,
     playbackLoaded: false,
     // The frames are in the engine (playbackLoaded: and shown, ready).
@@ -2994,7 +2997,19 @@
     return source(signature) === source(other);
   }
 
+  /* A trajectory frame opened, the frame a chart point or a saved view
+   * names. Until it is drawn the counter goes on naming the frame shown
+   * (the dashboard leaves it while `STATE.seeking`). */
   async function seekTrajectoryFrame(frame, sourceSignature) {
+    STATE.seeking += 1;
+    try {
+      return await seekTrajectoryFrameNow(frame, sourceSignature);
+    } finally {
+      STATE.seeking -= 1;
+    }
+  }
+
+  async function seekTrajectoryFrameNow(frame, sourceSignature) {
     const target = Number(frame);
     if (!Number.isInteger(target) || target < 0) {
       refuse("The selected source frame is not a non-negative integer.");

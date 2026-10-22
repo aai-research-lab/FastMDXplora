@@ -2518,7 +2518,7 @@
     return escapeHTML(parts.join(" · "));
   }
 
-  function applyPlayback(payload) {
+  function applyPlayback(payload, {counter = true} = {}) {
     const previousSignature = state.playbackSignature;
     const previousPayload = state.playbackData;
     const signature = payload?.source_signature || payload?.compiled_at || null;
@@ -2558,6 +2558,10 @@
       && viewer?.playbackLoaded;
     const viewerShowsPlayback = !!viewer?.playbackLoaded
       && (viewer.playbackSignature === signature || viewerKeepsGrowingHistory);
+    // While a frame is being opened the counter is the viewer's to write,
+    // once that frame is drawn: the frame before it against the new total
+    // named a frame that was never shown.
+    const writesCounter = counter && !viewer?.seeking;
     if (viewerKeepsGrowingHistory) {
       state.playbackFrames = Math.min(state.playbackFrames, Number(viewer.playbackFrames || 0));
     }
@@ -2591,14 +2595,16 @@
     }
     slider.min = "0";
     slider.max = String(maxFrame);
-    // A different trajectory starts at its first loaded frame; a periodic
-    // update to the same source preserves the position.
-    slider.value = String(frame);
     const production = payload?.source_kind === "production-dcd";
-    setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
-      viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
-      viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null,
-      viewerShowsPlayback && production ? payload.frame_indices?.[frame] : null);
+    if (writesCounter) {
+      // A different trajectory starts at its first loaded frame; a periodic
+      // update to the same source preserves the position.
+      slider.value = String(frame);
+      setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
+        viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
+        viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null,
+        viewerShowsPlayback && production ? payload.frame_indices?.[frame] : null);
+    }
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
       source_changed: sourceChanged,
@@ -3130,7 +3136,9 @@
   function setExactFrame(frame, time, signature) {
     if (state.playbackSignature !== signature || !Number.isInteger(frame) || frame < 0) return false;
     state.exactFrame = {frame, time: Number.isFinite(time) ? time : null, signature};
-    applyPlayback(state.playbackData);
+    // The total and the slider's range; the counter is written once the
+    // frame is drawn (the viewer's `setPlaybackFrame`).
+    applyPlayback(state.playbackData, {counter: false});
     return true;
   }
 
