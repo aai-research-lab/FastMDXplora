@@ -295,6 +295,58 @@ def page(dashboard):
         browser.close()
 
 
+@pytest.mark.parametrize("width", [390, 1440])
+def test_the_range_form_and_the_chart_s_notes_fit_the_card(dashboard, width) -> None:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        page = browser.new_page(viewport={"width": width, "height": 900})
+        page.goto(dashboard.url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_function(
+            "() => document.querySelectorAll('.series-chart svg').length >= 2", timeout=30000)
+        page.evaluate("() => document.fonts.ready")
+        found = page.evaluate("""() => {
+            const box = (e) => e.getBoundingClientRect();
+            const chart = document.querySelector('.series-chart[data-analysis="rmsd"]');
+            const apply = [...chart.querySelectorAll('.series-range button')]
+                .find((b) => b.textContent === 'Apply range');
+            const fields = [...chart.querySelectorAll('.series-range [data-range]')];
+            const note = box(chart.querySelector('.series-excluded-label'));
+            const mean = box(chart.querySelector('.series-mean-label'));
+            const svg = box(chart.querySelector('svg'));
+            const profile = document.querySelector('.series-chart[data-analysis="rmsf"]');
+            const from = profile.querySelector('[data-range="from"]');
+            return {
+                applyHeight: box(apply).height, applyRight: box(apply).right,
+                applyLines: (() => { const r = document.createRange();
+                    r.selectNodeContents(apply);
+                    return new Set([...r.getClientRects()].map((q) => Math.round(q.top))).size;
+                })(),
+                fieldsRight: Math.max(...fields.map((f) => box(f).right)),
+                chartRight: box(chart).right,
+                apart: note.right <= mean.left || note.bottom <= mean.top
+                    || mean.bottom <= note.top,
+                meanInside: mean.right <= svg.right && mean.left >= svg.left,
+                // Over the plot area (16 px under the chart's top), on no value.
+                meanAbove: mean.bottom <= svg.top + 16 + 1,
+                profileField: from.tagName, profileSaid: from.closest('label').textContent,
+                profileFirst: from.options ? from.options[from.selectedIndex].textContent : null,
+            };
+        }""")
+        browser.close()
+    # Apply range on one line, the fields and buttons inside the card.
+    assert found["applyHeight"] <= 36 and found["applyLines"] == 1, found
+    assert found["applyRight"] <= found["chartRight"] + 1, found
+    assert found["fieldsRight"] <= found["chartRight"] + 1, found
+    # The note on what was left out and the mean's label do not meet.
+    assert found["apart"] and found["meanInside"] and found["meanAbove"], found
+    # A profile is limited by its residues' names.
+    assert found["profileField"] == "SELECT"
+    assert found["profileSaid"].startswith("From residue")
+    assert found["profileFirst"] == "1"
+
+
 def _point_at(page, analysis: str, share: float) -> None:
     # Scrolled to first, as a reader would: the page opens with the results
     # table and the index above the figures.
@@ -315,7 +367,9 @@ class TestTheChart:
         assert chart.locator(".series-mean").count() == 1
         assert chart.locator(".series-error").count() == 1
         label = chart.locator("svg").get_attribute("aria-label")
-        assert label.startswith("RMSD, 20 points; mean 0.112 nm plus or minus 0.00200")
+        assert label.startswith(
+            "RMSD, 20 points; full-analysis mean 0.112 nm plus or minus 0.00200"
+        )
         assert page.errors == []
 
     def test_pointing_gives_the_value_time_and_frame(self, page) -> None:
@@ -327,12 +381,28 @@ class TestTheChart:
         assert tip.text_content().startswith("0.100 nm · 2.000 ps · frame 0")
         assert "Click to open this frame" in tip.text_content()
 
+    def test_the_hover_box_sits_just_over_its_point(self, page) -> None:
+        # Measured against the plot, not the card: the range form above the
+        # plot must not lift the box off its point.
+        _point_at(page, "rmsd", 0.5)
+        chart = page.locator('.series-chart[data-analysis="rmsd"]')
+        tip = chart.locator(".series-tip").bounding_box()
+        dot = chart.locator('svg circle[r="4"]').bounding_box()
+        gap = dot["y"] - (tip["y"] + tip["height"])
+        assert 0 <= gap <= 12, (tip, dot)
+        assert tip["x"] <= dot["x"] + dot["width"] + 16
+
     def test_the_keyboard_moves_along_it(self, page) -> None:
         svg = page.locator('.series-chart[data-analysis="rmsd"] svg')
         svg.focus()
         for _ in range(3):
             page.keyboard.press("ArrowRight")
-        assert page.locator('.series-chart[data-analysis="rmsd"]').get_attribute("data-at") == "3"
+        assert (
+            page.locator('.series-chart[data-analysis="rmsd"] .series-plot').get_attribute(
+                "data-at"
+            )
+            == "3"
+        )
 
     def test_the_figure_is_a_click_away(self, page) -> None:
         card = page.locator(".analysis-card", has=page.locator('[data-series="rmsd"]'))

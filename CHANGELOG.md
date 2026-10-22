@@ -1189,6 +1189,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   chosen values and decisions for inactive phases as well as the phases
   running now.
 
+- An analysis chart can be limited to a range of times, frames or
+  residues, chosen by their names on a residue chart, and reset. A point
+  in the range opens the same frame or residue as before. The mean line is
+  labelled as the mean of the whole analysis.
+
 - A Problems tab beside Log and Files lists the open study's recorded
   refusals (its phases' and the report formats it could not produce), a
   run interrupted or stopped as the Overview says it, the report's verdict

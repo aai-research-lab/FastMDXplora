@@ -20,6 +20,7 @@
   var MARGIN = { top: 16, right: 28, bottom: 38, left: 64 };
   var cache = {};
   var playback = null;
+  var ranges = Object.create(null);
 
   function token(name, fallback) {
     var value = "";
@@ -128,7 +129,7 @@
     var parts = [data.label + ", " + data.y.length + " points"];
     var mean = data.mean;
     if (mean && mean.value != null) {
-      parts.push("mean " + withUnit(mean.value, data.unit)
+      parts.push("full-analysis mean " + withUnit(mean.value, data.unit)
         + (mean.error != null ? " plus or minus " + format(mean.error) : "")
         + (mean.noted ? ", " + mean.noted : ""));
     }
@@ -201,8 +202,9 @@
     var layer = el("g", { "clip-path": "url(#" + clipId + ")" }, svg);
 
     // What the analysis left out, first, so the line is drawn over it.
-    if (mean && mean.from_x != null && mean.discard > 0) {
-      var cut = px(mean.from_x * clock.factor);
+    if (mean && mean.from_x != null && mean.discard > 0 && mean.from_x * clock.factor > xLow) {
+      // Within the plot where a range shows only part of what was left out.
+      var cut = Math.min(plot.right, px(mean.from_x * clock.factor));
       el("rect", {
         x: plot.left, y: plot.top, width: Math.max(0, cut - plot.left),
         height: plot.bottom - plot.top, fill: c.axis, "fill-opacity": 0.12,
@@ -275,11 +277,24 @@
           fill: c.mean, "fill-opacity": 0.16, class: "series-error",
         }, layer);
       }
-      el("line", {
-        x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
-        stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
-        "stroke-dasharray": "5 4", class: "series-mean",
-      }, layer);
+      if (from < plot.right) {
+        el("line", {
+          x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
+          stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
+          "stroke-dasharray": "5 4", class: "series-mean",
+        }, layer);
+        // Over the plot, not on it: the label covers none of the values.
+        var meanLabel = el("text", {
+          x: plot.right - 4, y: plot.top - 4, fill: c.mean, "font-size": 10,
+          "text-anchor": "end", class: "series-mean-label",
+        }, svg);
+        meanLabel.textContent = "Full-analysis mean " + withUnit(mean.value, data.unit);
+        // Shorter on a narrow chart.
+        var room = meanLabel.getBBox();
+        if (room.width && room.x < plot.left + 4) {
+          meanLabel.textContent = "Mean " + withUnit(mean.value, data.unit);
+        }
+      }
     }
 
     var cursor = el("line", {
@@ -436,6 +451,182 @@
       .catch(function () { /* the viewer says why when opened */ });
   }
 
+  function rangeBounds(data) {
+    var values = (data.x || []).filter(function (value) { return isFinite(value); });
+    return values.length ? [Math.min.apply(null, values), Math.max.apply(null, values)] : null;
+  }
+
+  function rangeOf(name, data) {
+    var bounds = rangeBounds(data);
+    return ranges[name] || (bounds ? { from: bounds[0], to: bounds[1] } : null);
+  }
+
+  /* Keep each selected point's source frame or residue identity attached.
+   * The chart gets a view of the arrays; the analysis data stays untouched. */
+  function withinRange(data, range) {
+    if (!range) return null;
+    var indices = [];
+    (data.x || []).forEach(function (value, index) {
+      if (isFinite(value) && value >= range.from && value <= range.to) indices.push(index);
+    });
+    if (!indices.length) return null;
+    var shown = Object.assign({}, data);
+    ["x", "y", "frames", "labels", "entities"].forEach(function (key) {
+      if (Array.isArray(data[key]) && data[key].length === data.x.length) {
+        shown[key] = indices.map(function (index) { return data[key][index]; });
+      }
+    });
+    return shown;
+  }
+
+  function rangeInput(form, field, labelText, bounds, value) {
+    var label = document.createElement("label");
+    label.className = "series-range-field";
+    var said = document.createElement("span");
+    said.textContent = labelText;
+    var input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.required = true;
+    input.min = String(bounds[0]);
+    input.max = String(bounds[1]);
+    input.value = String(value);
+    input.setAttribute("aria-label", labelText);
+    input.dataset.range = field;
+    label.append(said, input);
+    form.appendChild(label);
+    return input;
+  }
+
+  /* A profile's range is chosen by its residues' (or atoms') own names,
+   * not by their places along the axis. */
+  function rangeSelect(form, field, labelText, data, value) {
+    var label = document.createElement("label");
+    label.className = "series-range-field";
+    var said = document.createElement("span");
+    said.textContent = labelText;
+    var select = document.createElement("select");
+    select.setAttribute("aria-label", labelText);
+    select.dataset.range = field;
+    fillSelect(select, data, value);
+    label.append(said, select);
+    form.appendChild(label);
+    return select;
+  }
+
+  function fillSelect(select, data, value) {
+    select.replaceChildren();
+    (data.x || []).forEach(function (x, index) {
+      if (!isFinite(x)) return;
+      var option = document.createElement("option");
+      option.value = String(x);
+      option.textContent = (data.labels && data.labels[index]) || String(x);
+      select.appendChild(option);
+    });
+    select.value = String(value);
+  }
+
+  function rangeControls(chart, data, name) {
+    var bounds = rangeBounds(data);
+    if (!bounds) return null;
+    var form = document.createElement("form");
+    form.className = "series-range";
+    form.noValidate = true;
+    form.setAttribute("aria-label", "Limit " + data.label + " plot range");
+    var profile = data.kind === "residue" || data.kind === "atom";
+    var unit = data.x_label === "Time (ns)" ? "time (ns)"
+      : profile ? (data.kind === "atom" ? "atom" : "residue") : "frame";
+    var initial = rangeOf(name, data);
+    var from = profile ? rangeSelect(form, "from", "From " + unit, data, initial.from)
+      : rangeInput(form, "from", "From " + unit, bounds, initial.from);
+    var to = profile ? rangeSelect(form, "to", "To " + unit, data, initial.to)
+      : rangeInput(form, "to", "To " + unit, bounds, initial.to);
+    var apply = document.createElement("button");
+    apply.type = "submit";
+    apply.className = "line-btn";
+    apply.textContent = "Apply range";
+    form.appendChild(apply);
+    var reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "line-btn";
+    reset.textContent = "Reset";
+    reset.setAttribute("aria-label", "Reset plot range");
+    form.appendChild(reset);
+    var status = document.createElement("span");
+    status.className = "series-range-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    form.appendChild(status);
+
+    function render() {
+      var current = chart.__seriesData;
+      var shown = withinRange(current, rangeOf(name, current));
+      if (!shown) {
+        chart.__seriesPlot.replaceChildren();
+        var empty = document.createElement("p");
+        empty.className = "series-range-empty";
+        empty.textContent = "No points fall inside this range. Choose a wider range or reset it.";
+        chart.__seriesPlot.appendChild(empty);
+        return;
+      }
+      draw(chart.__seriesPlot, shown);
+    }
+
+    function mark(input, invalid, message) {
+      if (invalid) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+      status.textContent = message;
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var low = String(from.value).trim() === "" ? NaN : Number(from.value);
+      var high = String(to.value).trim() === "" ? NaN : Number(to.value);
+      if (!isFinite(low)) return mark(from, true, "Enter a numeric start value.");
+      if (!isFinite(high)) return mark(to, true, "Enter a numeric end value.");
+      if (low < bounds[0] || low > bounds[1]) {
+        return mark(from, true, "Start must be within the available range.");
+      }
+      if (high < bounds[0] || high > bounds[1]) {
+        return mark(to, true, "End must be within the available range.");
+      }
+      if (low > high) return mark(to, true, "End must be at or after start.");
+      ranges[name] = { from: low, to: high };
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+      status.textContent = withinRange(chart.__seriesData, ranges[name])
+        ? "Showing the selected range." : "No plotted points fall inside this range.";
+    });
+    reset.addEventListener("click", function () {
+      delete ranges[name];
+      from.value = String(bounds[0]);
+      to.value = String(bounds[1]);
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+    });
+    return {
+      form: form, from: from, to: to, render: render,
+      updateData: function (fresh) {
+        bounds = rangeBounds(fresh);
+        if (profile) {
+          fillSelect(from, fresh, bounds[0]);
+          fillSelect(to, fresh, bounds[1]);
+        } else {
+          from.min = String(bounds[0]);
+          from.max = String(bounds[1]);
+          to.min = String(bounds[0]);
+          to.max = String(bounds[1]);
+        }
+        from.value = String(bounds[0]);
+        to.value = String(bounds[1]);
+        mark(from, false, "");
+        mark(to, false, "");
+      },
+    };
+  }
+
   function load(name) {
     if (!cache[name]) {
       cache[name] = fetch("/api/series?analysis=" + encodeURIComponent(name), { cache: "no-store" })
@@ -453,13 +644,26 @@
       frame.setAttribute("data-series-ready", "pending");
       var name = frame.getAttribute("data-series");
       load(name).then(function (data) {
-        if (!data || !data.ok || !data.y || data.y.length < 2) {
+        if (!data || !data.ok || !data.y || data.y.length < 1) {
           frame.setAttribute("data-series-ready", "none");
           return;
         }
         var chart = document.createElement("div");
         chart.className = "series-chart";
         chart.setAttribute("data-analysis", name);
+        chart.__seriesData = data;
+        var controls = rangeControls(chart, data, name);
+        var plot = document.createElement("div");
+        plot.className = "series-plot";
+        chart.__seriesPlot = plot;
+        chart.__seriesRender = controls ? controls.render : function () { draw(plot, chart.__seriesData); };
+        if (controls) chart.appendChild(controls.form);
+        chart.appendChild(plot);
+        chart.__seriesSetData = function (fresh) {
+          chart.__seriesData = fresh;
+          if (controls) controls.updateData(fresh);
+          chart.__seriesRender();
+        };
         frame.parentNode.insertBefore(chart, frame);
         var card = frame.closest(".analysis-card");
         var toggle = card && card.querySelector("[data-series-toggle]");
@@ -467,7 +671,7 @@
           chart.hidden = !chartShown;
           frame.hidden = chartShown;
           if (toggle) toggle.textContent = chartShown ? "Show the figure" : "Show the chart";
-          if (chartShown) draw(chart, data);
+          if (chartShown) chart.__seriesRender();
         }
         if (toggle) {
           toggle.hidden = false;
@@ -484,7 +688,7 @@
           new ResizeObserver(function () {
             if (!chart.hidden && Math.abs(chart.clientWidth - width) > 4) {
               width = chart.clientWidth;
-              draw(chart, data);
+              chart.__seriesRender();
             }
           }).observe(chart);
         }
@@ -506,11 +710,21 @@
     Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
       var name = chart.getAttribute("data-analysis");
       if (chart.hidden || !cache[name]) return;
-      cache[name].then(function (data) { if (data && data.ok) draw(chart, data); });
+      cache[name].then(function (data) { if (data && data.ok) chart.__seriesRender(); });
     });
   });
   /* A new run, or new results, may have new numbers. */
-  window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; });
+  window.addEventListener("dashboard:run-changed", function () {
+    cache = {};
+    playback = null;
+    ranges = Object.create(null);
+    Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
+      var name = chart.getAttribute("data-analysis");
+      load(name).then(function (data) {
+        if (data && data.ok && data.y && data.y.length) chart.__seriesSetData(data);
+      });
+    });
+  });
 
   window.FastMDXSeries = {
     hydrate: hydrate, ticks: ticks, timeScale: timeScale, frameTimeSaid: frameTimeSaid,

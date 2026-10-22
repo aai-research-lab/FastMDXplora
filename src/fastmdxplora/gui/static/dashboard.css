@@ -4813,9 +4813,30 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
     border-bottom: 1px solid var(--border-subtle);
     min-height: 260px;
 }
+/* The hover box is placed against the plot, under the range form. */
+.series-plot { position: relative; }
 .series-svg { display: block; width: 100%; height: 260px; cursor: crosshair; outline: none; }
 .series-svg:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; }
 .series-svg text { font-family: var(--font-mono); }
+.series-range {
+    display: flex; align-items: end; flex-wrap: wrap; gap: 8px 12px;
+    margin: 0 0 6px; font-size: var(--text-2xs); color: var(--text-muted);
+}
+.series-range-field { display: grid; gap: 3px; flex: 0 1 132px; min-width: 88px; }
+.series-range-field input,
+.series-range-field select {
+    width: 100%; box-sizing: border-box; min-height: 30px; padding: 4px 7px;
+    border-radius: 5px; border: 1px solid var(--border-primary);
+    background: var(--background-soft); color: var(--text-primary); font: inherit;
+    font-variant-numeric: tabular-nums;
+}
+.series-range-field input[aria-invalid="true"] { border-color: var(--accent-red); }
+.series-range .line-btn {
+    width: auto; height: auto; min-height: 30px; padding: 4px 9px; white-space: nowrap;
+    border: 1px solid var(--border-primary); color: var(--text-primary);
+}
+.series-range-status { flex: 1 1 180px; min-height: 1.4em; }
+.series-range-empty { margin: 18px 0; color: var(--text-muted); font-size: var(--text-sm); }
 .series-tip {
     position: absolute;
     z-index: 3;
