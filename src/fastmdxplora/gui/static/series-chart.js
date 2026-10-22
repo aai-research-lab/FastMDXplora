@@ -797,7 +797,18 @@
     Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
       var name = chart.getAttribute("data-analysis");
       load(name).then(function (data) {
-        if (data && data.ok && data.y && data.y.length) chart.__seriesSetData(data);
+        if (data && data.ok && data.y && data.y.length) {
+          chart.__seriesSetData(data);
+          return;
+        }
+        // The new study has no such series: its figure, not the last
+        // study's numbers, is what the card shows.
+        chart.hidden = true;
+        var frame = chart.nextElementSibling;
+        if (frame && frame.hasAttribute("data-series")) frame.hidden = false;
+        var card = chart.closest(".analysis-card");
+        var toggle = card && card.querySelector("[data-series-toggle]");
+        if (toggle) toggle.hidden = true;
       });
     });
   });
@@ -806,7 +817,7 @@
     hydrate: hydrate, ticks: ticks, timeScale: timeScale, frameTimeSaid: frameTimeSaid,
     /* A series drawn into a host from its payload (as /api/series gives it). */
     draw: draw,
-    forget: function () { cache = {}; playback = null; },
+    forget: function () { cache = {}; playback = null; ranges = Object.create(null); },
     /* A frame of the trajectory opened in the viewer (figure-chart.js). */
     openFrame: function (frame) { open({ linked: true, frames: [frame] }, 0); },
   };

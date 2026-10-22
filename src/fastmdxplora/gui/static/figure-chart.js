@@ -537,7 +537,7 @@
     f.ownArrows = true;
     svg.setAttribute("role", "application");
     svg.setAttribute("tabindex", "0");
-    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS.replace(/point/g, "cell") : ""));
+    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS : ""));
     svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter");
     function seenColumn(i) { return i >= 0 && i < columns && (!columnSeen || columnSeen(i)); }
     function seenRow(j) { return j >= 0 && j < rows && (!rowSeen || rowSeen(j)); }
