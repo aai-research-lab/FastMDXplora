@@ -338,10 +338,35 @@
     tip.hidden = true;
     host.appendChild(tip);
 
+    // The point the keyboard (or the pointer) is on, kept on the host by
+    // its x in the data's own units: a zoom, a move, a time range or the
+    // From/To range draws the chart again, and the keyboard goes on from
+    // the same point, not from the first. Out of view, it gives way to the
+    // shown point nearest it; Enter opens only a point shown.
+    function shownAt(i) {
+      return i >= 0 && i < xs.length && xs[i] >= xLow - 1e-9 && xs[i] <= xHigh + 1e-9;
+    }
+    function firstShown(direction) {
+      for (var i = direction > 0 ? 0 : xs.length - 1; i >= 0 && i < xs.length; i += direction) {
+        if (shownAt(i)) return i;
+      }
+      return -1;
+    }
+    function nearestShown(value) {
+      if (value < xLow) return firstShown(1);
+      if (value > xHigh) return firstShown(-1);
+      var i = nearest(xs, value);
+      return shownAt(i) ? i : firstShown(1);
+    }
     var at = -1;
+    if (host._keyAt != null) {
+      at = data.x.indexOf(host._keyAt);
+      if (!shownAt(at)) at = nearestShown(host._keyAt * clock.factor);
+    }
     function show(index) {
       if (index < 0 || index >= xs.length) return;
       at = index;
+      host._keyAt = data.x[index];
       var x = px(xs[index]);
       var y = py(ys[index]);
       cursor.setAttribute("x1", x); cursor.setAttribute("x2", x);
@@ -437,7 +462,7 @@
     });
     svg.addEventListener("mouseleave", hide);
     svg.addEventListener("blur", hide);
-    svg.addEventListener("focus", function () { show(at >= 0 ? at : 0); });
+    svg.addEventListener("focus", function () { show(at >= 0 ? at : firstShown(1)); });
     // A click opens the point; the first click of a double click (show
     // all, plot-tools.js) does not: it waits to see if a second follows.
     var pending = null;
@@ -450,11 +475,13 @@
     svg.addEventListener("dblclick", function () { clearTimeout(pending); });
     svg.addEventListener("keydown", function (event) {
       var step = event.shiftKey ? Math.max(1, Math.round(xs.length / 20)) : 1;
-      if (event.key === "ArrowRight") show(Math.min(xs.length - 1, (at < 0 ? 0 : at) + step));
-      else if (event.key === "ArrowLeft") show(Math.max(0, (at < 0 ? 0 : at) - step));
-      else if (event.key === "Home") show(0);
-      else if (event.key === "End") show(xs.length - 1);
-      else if ((event.key === "Enter" || event.key === " ") && at >= 0) open(data, at);
+      // Along the points shown: zoomed in, the cursor stays in the view.
+      var first = firstShown(1), last = firstShown(-1);
+      if (event.key === "ArrowRight") show(at < 0 ? first : Math.min(last, at + step));
+      else if (event.key === "ArrowLeft") show(at < 0 ? first : Math.max(first, at - step));
+      else if (event.key === "Home") show(first);
+      else if (event.key === "End") show(last);
+      else if ((event.key === "Enter" || event.key === " ") && shownAt(at)) open(data, at);
       else return;
       event.preventDefault();
     });

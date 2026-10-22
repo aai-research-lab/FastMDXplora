@@ -172,7 +172,7 @@
     tip.hidden = true;
     host.appendChild(tip);
     return { svg: svg, layer: layer, plot: plot, width: width, height: height, tip: tip, c: colours(),
-             view: viewOf(host, data), clock: { factor: 1, unit: "ns" } };
+             view: viewOf(host, data), clock: { factor: 1, unit: "ns" }, host: host, data: data };
   }
 
   /* The kinds plotted on the simulation's clock (or on frame numbers, where
@@ -435,72 +435,152 @@
     return Math.abs(xs[lo] - x) <= Math.abs(xs[hi] - x) ? lo : hi;
   }
 
-  function keyboard(f, label, count, show, activate, selectable, vertical) {
+  /* Whether a value lies in what an axis shows (the view, once zoomed). */
+  function shownOn(axis, v) {
+    return axis != null && v != null && isFinite(v) && v >= axis.low - 1e-9 && v <= axis.high + 1e-9;
+  }
+
+  /* The keyboard's place on a plot, kept on its host for the data it
+   * shows: zooming, moving or a time range draws the plot again, and the
+   * new drawing goes on from the point (or cell) the last one had, rather
+   * than from the first. */
+  function keptPlace(f, fresh) {
+    var host = f.host;
+    if (!host) return fresh;
+    if (!host._keyPlace || host._keyPlace.data !== f.data) {
+      host._keyPlace = Object.assign({ data: f.data }, fresh);
+    }
+    return host._keyPlace;
+  }
+
+  /* What a plot zoomed into says of its keys, after what it says of its
+   * points. */
+  var ZOOMED_KEYS = " Zoomed in: the arrows move the view; Home and End select the first and" +
+    " last shown; Enter opens the one selected.";
+
+  /* The keys along a plot's points. visible(i) says whether point i is in
+   * view: one selected that a zoom or a move takes out of view gives way
+   * to the shown point nearest it, so Enter never opens a point not
+   * shown; with none shown, nothing is selected and Enter opens nothing. */
+  function keyboard(f, label, count, show, activate, selectable, vertical, visible) {
     if (!count) return { set: function () {}, current: function () { return -1; } };
-    var current = -1;
+    var place = keptPlace(f, { index: -1 });
     var svg = f.svg;
     svg.setAttribute("role", "application");
     svg.setAttribute("tabindex", "0");
-    svg.setAttribute("aria-label", label);
+    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS : ""));
     svg.setAttribute("aria-keyshortcuts", (vertical ? "ArrowUp ArrowDown" : "ArrowLeft ArrowRight")
       + " Home End Enter");
-    function allowed(i) { return !selectable || selectable(i); }
+    function usable(i) {
+      return i >= 0 && i < count && (!selectable || selectable(i)) && (!visible || visible(i));
+    }
     function set(i, display) {
-      if (i < 0 || i >= count) return current;
-      current = i;
+      if (i < 0 || i >= count) return place.index;
+      place.index = i;
       if (display !== false) show(i);
       return i;
     }
+    /* The first usable point from i on, in the direction given; -1 for none. */
     function seek(i, direction) {
       i = Math.max(0, Math.min(count - 1, i));
-      while (i >= 0 && i < count && !allowed(i)) i += direction;
-      return i >= 0 && i < count ? i : current;
+      while (i >= 0 && i < count && !usable(i)) i += direction;
+      return i >= 0 && i < count ? i : -1;
     }
+    /* The usable point nearest i (the earlier one on a tie). */
+    function nearest(i) {
+      for (var d = 0; d < count; d += 1) {
+        if (usable(i - d)) return i - d;
+        if (usable(i + d)) return i + d;
+      }
+      return -1;
+    }
+    if (place.index >= 0 && !usable(place.index)) place.index = nearest(place.index);
     svg.addEventListener("focus", function () {
-      if (current < 0) set(seek(0, 1));
+      if (place.index < 0) set(seek(0, 1));
+      else show(place.index);
     });
     svg.addEventListener("keydown", function (event) {
       // Zoomed in, the arrows move the view (plot-tools.js); Home, End and
-      // Enter still go along the points.
+      // Enter still go along the points shown.
       if (f.view && /^Arrow/.test(event.key)) return;
-      var base = current < 0 ? 0 : current;
+      var base = place.index < 0 ? 0 : place.index;
       if (event.key === "Home") set(seek(0, 1));
       else if (event.key === "End") set(seek(count - 1, -1));
       else if ((!vertical && event.key === "ArrowRight") || (vertical && event.key === "ArrowDown")) {
         set(seek(Math.min(count - 1, base + 1), 1));
       } else if ((!vertical && event.key === "ArrowLeft") || (vertical && event.key === "ArrowUp")) {
         set(seek(Math.max(0, base - 1), -1));
-      } else if ((event.key === "Enter" || event.key === " ") && current >= 0 && allowed(current)) {
-        activate(current);
+      } else if ((event.key === "Enter" || event.key === " ") && usable(place.index)) {
+        activate(place.index, event);
       } else return;
       event.preventDefault();
     });
-    return { set: set, current: function () { return current; } };
+    return { set: set, current: function () { return place.index; } };
   }
 
-  function gridKeyboard(f, label, columns, rows, show, activate) {
-    var column = -1, row = 0, svg = f.svg;
+  /* The keys across a grid's cells: a column and a row, each kept through
+   * a drawing again as keyboard() keeps a point, and each giving way to the
+   * shown one nearest it when a zoom or a move takes it out of view.
+   * activate(column, row, event) has the key, for Shift+Enter. */
+  function gridKeyboard(f, label, columns, rows, show, activate, columnSeen, rowSeen) {
+    var svg = f.svg;
     if (!columns || !rows) return { set: function () {} };
+    var place = keptPlace(f, { column: -1, row: 0 });
+    f.ownArrows = true;
     svg.setAttribute("role", "application");
     svg.setAttribute("tabindex", "0");
-    svg.setAttribute("aria-label", label);
+    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS.replace(/point/g, "cell") : ""));
     svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter");
-    function set(i, j, display) {
-      column = Math.max(0, Math.min(columns - 1, i));
-      row = Math.max(0, Math.min(rows - 1, j));
-      if (display !== false) show(column, row);
+    function seenColumn(i) { return i >= 0 && i < columns && (!columnSeen || columnSeen(i)); }
+    function seenRow(j) { return j >= 0 && j < rows && (!rowSeen || rowSeen(j)); }
+    function nearestOf(seen, i, n) {
+      for (var d = 0; d < n; d += 1) {
+        if (seen(i - d)) return i - d;
+        if (seen(i + d)) return i + d;
+      }
+      return -1;
     }
-    svg.addEventListener("focus", function () { if (column < 0) set(0, 0); });
+    function firstOf(seen, n, from, direction) {
+      for (var i = from; i >= 0 && i < n; i += direction) if (seen(i)) return i;
+      return -1;
+    }
+    if (place.column >= 0) {
+      if (!seenColumn(place.column)) place.column = nearestOf(seenColumn, place.column, columns);
+      if (!seenRow(place.row)) place.row = nearestOf(seenRow, place.row, rows);
+      if (place.row < 0) place.column = -1;
+      if (place.column < 0) place.row = Math.max(0, firstOf(seenRow, rows, 0, 1));
+    }
+    function set(i, j, display) {
+      place.column = Math.max(0, Math.min(columns - 1, i));
+      place.row = Math.max(0, Math.min(rows - 1, j));
+      if (display !== false) show(place.column, place.row);
+    }
+    function selected() { return place.column >= 0 && seenColumn(place.column) && seenRow(place.row); }
+    svg.addEventListener("focus", function () {
+      if (place.column < 0) {
+        var i = firstOf(seenColumn, columns, 0, 1), j = firstOf(seenRow, rows, 0, 1);
+        if (i >= 0 && j >= 0) set(i, j);
+      } else {
+        show(place.column, place.row);
+      }
+    });
     svg.addEventListener("keydown", function (event) {
       if (f.view && /^Arrow/.test(event.key)) return;
-      if (event.key === "Home") set(0, row);
-      else if (event.key === "End") set(columns - 1, row);
-      else if (event.key === "ArrowLeft") set((column < 0 ? 0 : column) - 1, row);
-      else if (event.key === "ArrowRight") set((column < 0 ? 0 : column) + 1, row);
-      else if (event.key === "ArrowUp") set(column < 0 ? 0 : column, row - 1);
-      else if (event.key === "ArrowDown") set(column < 0 ? 0 : column, row + 1);
-      else if ((event.key === "Enter" || event.key === " ") && column >= 0) activate(column, row);
-      else return;
+      var column = place.column < 0 ? 0 : place.column, row = place.row;
+      var first;
+      if (event.key === "Home") {
+        first = firstOf(seenColumn, columns, 0, 1);
+        if (first >= 0 && seenRow(row)) set(first, row);
+      } else if (event.key === "End") {
+        first = firstOf(seenColumn, columns, columns - 1, -1);
+        if (first >= 0 && seenRow(row)) set(first, row);
+      } else if (event.key === "ArrowLeft") set(column - 1, row);
+      else if (event.key === "ArrowRight") set(column + 1, row);
+      else if (event.key === "ArrowUp") set(column, row - 1);
+      else if (event.key === "ArrowDown") set(column, row + 1);
+      else if ((event.key === "Enter" || event.key === " ") && selected()) {
+        activate(place.column, place.row, event);
+      } else return;
       event.preventDefault();
     });
     return { set: set };
@@ -577,7 +657,7 @@
     var keys = gridKeyboard(f, data.title + ". Left and right select a frame; up and down select a residue.",
       data.x.length, residues, function (i, res) { showCell(i, res + 1); }, function (i, res) {
         openFrameAndResidue(data, i, data.entities && data.entities[res]);
-      });
+      }, function (i) { return shownOn(f.x, data.x[i]); }, function (res) { return shownOn(f.y, res + 1); });
     f.svg.addEventListener("mousemove", function (event) {
       var cell = cellAt(event);
       if (!cell) { f.tip.hidden = true; return; }
@@ -622,7 +702,8 @@
         [k < 0 ? "noise" : "cluster " + k, when(data, i, f)], hint);
     }
     var keys = keyboard(f, data.title + ". Select a frame with left and right arrows.", n,
-      show, function (i) { openFrame(data, data.frames[i]); });
+      show, function (i) { openFrame(data, data.frames[i]); }, null, false,
+      function (i) { return shownOn(f.x, data.x[i]); });
     f.svg.addEventListener("mousemove", function (event) {
       var i = indexAt(event);
       if (i < 0) { f.tip.hidden = true; return; }
@@ -835,30 +916,17 @@
       } : null,
     });
     if (exact) {
-      var column = -1, row = 0;
-      f.svg.setAttribute("role", "application");
-      f.svg.setAttribute("tabindex", "0");
-      f.svg.setAttribute("aria-label", "RMSD frame matrix. Arrows select a cell. Enter opens its row frame; Shift+Enter opens its column frame.");
-      f.svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Enter Shift+Enter");
-      f.svg.addEventListener("focus", function () { if (column < 0) { column = 0; f.showCell(column, row); } });
-      f.svg.addEventListener("keydown", function (event) {
-        if (f.view && /^Arrow/.test(event.key)) return;
-        if (event.key === "ArrowLeft") column = Math.max(0, (column < 0 ? 0 : column) - 1);
-        else if (event.key === "ArrowRight") column = Math.min(n - 1, (column < 0 ? 0 : column) + 1);
-        else if (event.key === "ArrowUp") row = Math.max(0, row - 1);
-        else if (event.key === "ArrowDown") row = Math.min(n - 1, row + 1);
-        else if (event.key === "Home") column = 0;
-        else if (event.key === "End") column = n - 1;
-        else if ((event.key === "Enter" || event.key === " ") && event.shiftKey) {
-          openFrame(data, data.frames[column]);
-        } else if (event.key === "Enter" || event.key === " ") {
-          openFrame(data, data.frames[row]);
-        } else return;
-        if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
-          f.showCell(column, row);
-        }
-        event.preventDefault();
-      });
+      // Its row and its column each kept through a zoom or a move: Enter
+      // opens the row's frame, Shift+Enter the column's.
+      var centre = function (k) { return (e[k] + e[k + 1]) / 2; };
+      gridKeyboard(f, "RMSD frame matrix. Arrows select a cell. Enter opens its row frame; " +
+        "Shift+Enter opens its column frame.", n, n,
+        function (column, row) { f.showCell(column, row); },
+        function (column, row, event) { openFrame(data, data.frames[event.shiftKey ? column : row]); },
+        function (column) { return shownOn(f.x, centre(column)); },
+        function (row) { return shownOn(f.y, centre(row)); });
+      f.svg.setAttribute("aria-keyshortcuts",
+        "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter Shift+Enter");
     }
     return f;
   }
@@ -922,7 +990,10 @@
     }
     var keys = keyboard(f, data.title + ". Left and right select a point; Enter opens its frame.", n,
       show, function (i) { openFrame(data, data.frames[i]); },
-      function (i) { return !!at[i]; });
+      function (i) { return !!at[i]; }, false, function (i) {
+        return at[i][0] >= f.plot.left - 0.5 && at[i][0] <= f.plot.right + 0.5 &&
+          at[i][1] >= f.plot.top - 0.5 && at[i][1] <= f.plot.bottom + 0.5;
+      });
     f.svg.addEventListener("mousemove", function (event) {
       var i = pointAt(event);
       if (i < 0) { f.tip.hidden = true; return; }
@@ -1069,7 +1140,8 @@
       })), hint);
     }
     var keys = keyboard(f, data.title + ". Left and right select a frame; Enter opens it.", n,
-      show, function (i) { openFrame(data, data.frames[i]); });
+      show, function (i) { openFrame(data, data.frames[i]); }, null, false,
+      function (i) { return shownOn(f.x, data.x[i]); });
     f.svg.addEventListener("mousemove", function (event) {
       var at = pointer(f, event), i = indexAt(event);
       if (i < 0) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
