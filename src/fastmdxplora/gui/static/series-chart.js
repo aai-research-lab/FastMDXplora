@@ -375,6 +375,8 @@
     function indexAt(event) {
       var box = svg.getBoundingClientRect();
       var x = (event.clientX - box.left) * (width / box.width);
+      var y = (event.clientY - box.top) * (HEIGHT / box.height);
+      if (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom) return -1;
       var value = xLow + (x - plot.left) / (plot.right - plot.left) * (xHigh - xLow);
       return nearest(xs, value);
     }
@@ -413,7 +415,10 @@
         },
       });
     }
-    svg.addEventListener("mousemove", function (event) { show(indexAt(event)); });
+    svg.addEventListener("mousemove", function (event) {
+      var index = indexAt(event);
+      if (index < 0) hide(); else show(index);
+    });
     svg.addEventListener("mouseleave", hide);
     svg.addEventListener("blur", hide);
     svg.addEventListener("focus", function () { show(at >= 0 ? at : 0); });

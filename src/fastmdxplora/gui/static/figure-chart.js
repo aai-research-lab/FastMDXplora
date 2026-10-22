@@ -423,6 +423,73 @@
     return Math.abs(xs[lo] - x) <= Math.abs(xs[hi] - x) ? lo : hi;
   }
 
+  function keyboard(f, label, count, show, activate, selectable, vertical) {
+    if (!count) return { set: function () {}, current: function () { return -1; } };
+    var current = -1;
+    var svg = f.svg;
+    svg.setAttribute("role", "application");
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("aria-label", label);
+    svg.setAttribute("aria-keyshortcuts", (vertical ? "ArrowUp ArrowDown" : "ArrowLeft ArrowRight")
+      + " Home End Enter");
+    function allowed(i) { return !selectable || selectable(i); }
+    function set(i, display) {
+      if (i < 0 || i >= count) return current;
+      current = i;
+      if (display !== false) show(i);
+      return i;
+    }
+    function seek(i, direction) {
+      i = Math.max(0, Math.min(count - 1, i));
+      while (i >= 0 && i < count && !allowed(i)) i += direction;
+      return i >= 0 && i < count ? i : current;
+    }
+    svg.addEventListener("focus", function () {
+      if (current < 0) set(seek(0, 1));
+    });
+    svg.addEventListener("keydown", function (event) {
+      var base = current < 0 ? 0 : current;
+      if (event.key === "Home") set(seek(0, 1));
+      else if (event.key === "End") set(seek(count - 1, -1));
+      else if ((!vertical && event.key === "ArrowRight") || (vertical && event.key === "ArrowDown")) {
+        set(seek(Math.min(count - 1, base + 1), 1));
+      } else if ((!vertical && event.key === "ArrowLeft") || (vertical && event.key === "ArrowUp")) {
+        set(seek(Math.max(0, base - 1), -1));
+      } else if ((event.key === "Enter" || event.key === " ") && current >= 0 && allowed(current)) {
+        activate(current);
+      } else return;
+      event.preventDefault();
+    });
+    return { set: set, current: function () { return current; } };
+  }
+
+  function gridKeyboard(f, label, columns, rows, show, activate) {
+    var column = -1, row = 0, svg = f.svg;
+    if (!columns || !rows) return { set: function () {} };
+    svg.setAttribute("role", "application");
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("aria-label", label);
+    svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter");
+    function set(i, j, display) {
+      column = Math.max(0, Math.min(columns - 1, i));
+      row = Math.max(0, Math.min(rows - 1, j));
+      if (display !== false) show(column, row);
+    }
+    svg.addEventListener("focus", function () { if (column < 0) set(0, 0); });
+    svg.addEventListener("keydown", function (event) {
+      if (event.key === "Home") set(0, row);
+      else if (event.key === "End") set(columns - 1, row);
+      else if (event.key === "ArrowLeft") set((column < 0 ? 0 : column) - 1, row);
+      else if (event.key === "ArrowRight") set((column < 0 ? 0 : column) + 1, row);
+      else if (event.key === "ArrowUp") set(column < 0 ? 0 : column, row - 1);
+      else if (event.key === "ArrowDown") set(column < 0 ? 0 : column, row + 1);
+      else if ((event.key === "Enter" || event.key === " ") && column >= 0) activate(column, row);
+      else return;
+      event.preventDefault();
+    });
+    return { set: set };
+  }
+
   /* Above the plot, so it hides nothing plotted. */
   function legend(f, items) {
     var x = f.plot.left, y = f.plot.top - 10;
@@ -473,7 +540,7 @@
     }));
     var names = {};
     data.classes.forEach(function (k) { names[k.code] = k.label; });
-    var hint = data.linked ? "Click to open this frame and focus the residue" : "";
+    var hint = data.linked ? "Click to open this frame and focus the residue; use arrow keys, then Enter" : "";
     function cellAt(event) {
       var at = pointer(f, event);
       if (!inside(f, at)) return null;
@@ -485,11 +552,21 @@
           (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low)))),
       };
     }
+    function showCell(i, res, at) {
+      var entity = data.entities && data.entities[res - 1];
+      showTip(f, at ? at.x : map.px(data.x[i]), at ? at.y : map.py(res),
+        [names[data.states[i].charAt(res - 1)] || "", "residue " + data.residues[res - 1], when(data, i, f)], hint);
+      return entity;
+    }
+    var keys = gridKeyboard(f, data.title + ". Left and right select a frame; up and down select a residue.",
+      data.x.length, residues, function (i, res) { showCell(i, res + 1); }, function (i, res) {
+        openFrameAndResidue(data, i, data.entities && data.entities[res]);
+      });
     f.svg.addEventListener("mousemove", function (event) {
       var cell = cellAt(event);
       if (!cell) { f.tip.hidden = true; return; }
-      showTip(f, cell.at.x, cell.at.y, [names[data.states[cell.frame].charAt(cell.residue - 1)] || "",
-        "residue " + data.residues[cell.residue - 1], when(data, cell.frame, f)], hint);
+      keys.set(cell.frame, cell.residue - 1, false);
+      showCell(cell.frame, cell.residue, cell.at);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
     f.svg.addEventListener("click", function (event) {
@@ -516,18 +593,30 @@
       el("circle", { cx: map.px(data.x[i]).toFixed(1), cy: map.py(data.labels[i]).toFixed(1), r: r,
                      fill: category(data.labels[i]) }, layer);
     }
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
+    function indexAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
+      if (!inside(f, at)) return -1;
+      return nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+    }
+    function show(i) {
       var k = data.labels[i];
-      showTip(f, map.px(data.x[i]), map.py(k), [k < 0 ? "noise" : "cluster " + k, when(data, i, f)], hint);
-      f.svg.dataset.at = String(i);
+      showTip(f, map.px(data.x[i]), map.py(k),
+        [k < 0 ? "noise" : "cluster " + k, when(data, i, f)], hint);
+    }
+    var keys = keyboard(f, data.title + ". Select a frame with left and right arrows.", n,
+      show, function (i) { openFrame(data, data.frames[i]); });
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }
@@ -555,10 +644,14 @@
              { fill: f.c.text, "text-anchor": "middle" });
       }
     });
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
-      var i = Math.round(x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
-      if (!inside(f, at) || i < 0 || i >= n) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      if (!inside(f, at)) return -1;
+      var i = Math.round(x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+      return i >= 0 && i < n ? i : -1;
+    }
+    function show(i) {
       var k = data.clusters[i];
       var parts = ["cluster " + k.cluster, k.frames + " frames" +
         (k.fraction != null ? " (" + (k.fraction * 100).toFixed(1) + "%)" : "")];
@@ -568,12 +661,22 @@
       }
       showTip(f, map.px(i), map.py(k.frames), parts,
               data.linked && k.medoid_frame != null ? "Click to open its medoid" : "");
-      f.svg.dataset.at = String(i);
+    }
+    var keys = keyboard(f, "Cluster populations. Up and down select a cluster; Enter opens its saved medoid.",
+      n, show, function (i) { openFrame(data, data.clusters[i].medoid_frame); },
+      function (i) { return data.linked && data.clusters[i].medoid_frame != null; }, true);
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (!f.svg.dataset.at) return;
-      openFrame(data, data.clusters[+f.svg.dataset.at].medoid_frame);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0 && data.clusters[i].medoid_frame != null) {
+        openFrame(data, data.clusters[i].medoid_frame);
+      }
     });
     return f;
   }
@@ -684,7 +787,7 @@
     var timed = data.axis_label !== "Frame";
     var exact = Array.isArray(data.frames) && data.frames.length === n && data.linked;
     var grouped = Array.isArray(data.frame_groups) && data.frame_groups.length === n;
-    var hint = exact ? "Click opens the row frame; Shift-click opens the column frame."
+    var hint = exact ? "Click opens the row frame; Shift-click opens the column frame. Use arrows, then Enter or Shift+Enter."
       : (grouped ? "Each cell averages frame groups; no single frame is selected." : "");
     function rowSaid(index) {
       if (exact) return "frame " + data.frames[index];
@@ -706,6 +809,31 @@
         openFrame(data, data.frames[event.shiftKey ? column : row]);
       } : null,
     });
+    if (exact) {
+      var column = -1, row = 0;
+      f.svg.setAttribute("role", "application");
+      f.svg.setAttribute("tabindex", "0");
+      f.svg.setAttribute("aria-label", "RMSD frame matrix. Arrows select a cell. Enter opens its row frame; Shift+Enter opens its column frame.");
+      f.svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Enter Shift+Enter");
+      f.svg.addEventListener("focus", function () { if (column < 0) { column = 0; f.showCell(column, row); } });
+      f.svg.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowLeft") column = Math.max(0, (column < 0 ? 0 : column) - 1);
+        else if (event.key === "ArrowRight") column = Math.min(n - 1, (column < 0 ? 0 : column) + 1);
+        else if (event.key === "ArrowUp") row = Math.max(0, row - 1);
+        else if (event.key === "ArrowDown") row = Math.min(n - 1, row + 1);
+        else if (event.key === "Home") column = 0;
+        else if (event.key === "End") column = n - 1;
+        else if ((event.key === "Enter" || event.key === " ") && event.shiftKey) {
+          openFrame(data, data.frames[column]);
+        } else if (event.key === "Enter" || event.key === " ") {
+          openFrame(data, data.frames[row]);
+        } else return;
+        if (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") {
+          f.showCell(column, row);
+        }
+        event.preventDefault();
+      });
+    }
     return f;
   }
 
@@ -749,25 +877,36 @@
     var inPs = !framed && Math.max(Math.abs(tr[0]), Math.abs(tr[1])) < 1;
     colourBar(f, inPs ? tr[0] * 1000 : tr[0], inPs ? tr[1] * 1000 : tr[1],
               framed ? "Frame" : inPs ? "Time (ps)" : "Time (ns)", viridis);
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
+    function pointAt(event) {
       var p = pointer(f, event);
-      if (!inside(f, p)) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      if (!inside(f, p)) return -1;
       var best = -1, distance = Infinity;
       at.forEach(function (q, k) {
         if (!q) return;
         var d = (q[0] - p.x) * (q[0] - p.x) + (q[1] - p.y) * (q[1] - p.y);
         if (d < distance) { distance = d; best = k; }
       });
-      if (best < 0 || distance > 400) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      return best >= 0 && distance <= 400 ? best : -1;
+    }
+    function show(best) {
       var unit = data.unit ? " " + data.unit : "";
       showTip(f, at[best][0], at[best][1], [when(data, best, f),
         format(data.x[best]) + unit + ", " + format(data.y[best]) + unit], hint);
-      f.svg.dataset.at = String(best);
+    }
+    var keys = keyboard(f, data.title + ". Left and right select a point; Enter opens its frame.", n,
+      show, function (i) { openFrame(data, data.frames[i]); },
+      function (i) { return !!at[i]; });
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = pointAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = pointAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }
@@ -835,12 +974,22 @@
           || i < 0 || i >= bars.length) return -1;
       return i;
     }
-    f.svg.addEventListener("mousemove", function (event) {
-      var at = pointer(f, event), i = indexAt(event);
-      if (i < 0) { f.tip.hidden = true; return; }
+    function show(i, at) {
       var b = bars[i];
-      showTip(f, Math.min(at.x, f.plot.right - 20), f.plot.top + i * row + 4, b.said,
-        b.entity ? "Click to focus this residue" : "");
+      var action = b.entity ? "Click to focus this residue; use up and down arrows, then Enter" : "";
+      showTip(f, at ? Math.min(at.x, f.plot.right - 20) : f.plot.left,
+        f.plot.top + i * row + 4, b.said, action);
+    }
+    var selectable = function (i) { return !!bars[i].entity; };
+    var keys = bars.some(function (b) { return b.entity; })
+      ? keyboard(f, data.title + ". Up and down select an identified residue; Enter focuses it.",
+        bars.length, show, function (i) { focusResidue(bars[i].entity); }, selectable, true)
+      : { set: function () {} };
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i, pointer(f, event));
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
     f.svg.addEventListener("click", function (event) {
@@ -875,27 +1024,39 @@
     legend(f, data.series.map(function (s, k) { return { label: s.label, colour: category(k) }; }));
     var guide = el("line", { y1: f.plot.top, y2: f.plot.bottom, stroke: f.c.axis,
                              "stroke-dasharray": "3 3", visibility: "hidden" }, f.svg);
-    var hint = data.linked ? "Click to open this frame" : "";
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
     var unit = data.unit ? " " + data.unit : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
+      if (!inside(f, at)) return -1;
+      return nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+    }
+    function show(i, at) {
       var px = map.px(data.x[i]);
       guide.setAttribute("x1", px);
       guide.setAttribute("x2", px);
       guide.setAttribute("visibility", "visible");
-      showTip(f, px, at.y, [when(data, i, f)].concat(data.series.map(function (s) {
+      showTip(f, px, at ? at.y : (f.plot.top + f.plot.bottom) / 2,
+        [when(data, i, f)].concat(data.series.map(function (s) {
         return s.label + " " + format(s.y[i]) + unit;
       })), hint);
-      f.svg.dataset.at = String(i);
+    }
+    var keys = keyboard(f, data.title + ". Left and right select a frame; Enter opens it.", n,
+      show, function (i) { openFrame(data, data.frames[i]); });
+    f.svg.addEventListener("mousemove", function (event) {
+      var at = pointer(f, event), i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
+      keys.set(i, false);
+      show(i, at);
     });
     f.svg.addEventListener("mouseleave", function () {
       f.tip.hidden = true;
       guide.setAttribute("visibility", "hidden");
     });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }

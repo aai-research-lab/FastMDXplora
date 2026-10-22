@@ -91,6 +91,52 @@ def _get(root, name):
     return payload
 
 
+@pytest.mark.parametrize("linked", [False, True])
+def test_projection_keyboard_skips_missing_coordinates(tmp_path, linked) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import expect, sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _write(tmp_path / "study")
+    path = root / "analysis" / "dimred" / "dimred_pca.dat"
+    path.write_text("frame,component_1,component_2\n"
+                    "0,nan,1\n1,1,2\n2,nan,nan\n3,3,4\n4,5,nan\n")
+    payload = _get(root, "dimred/dimred_pca")
+    payload["linked"] = linked
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url, wait_until="domcontentloaded")
+            page.evaluate("""data => {
+              const host = document.createElement('div');
+              host.id = 'projection-keyboard-check';
+              document.body.appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", payload)
+            chart = page.locator("#projection-keyboard-check")
+            svg = chart.locator("svg")
+            svg.scroll_into_view_if_needed()
+            svg.focus()
+            expect(chart.locator(".series-tip")).to_contain_text("frame 2")
+            svg.press("End")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            svg.press("Home")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 2")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+
 class TestEachFigureIsGivenInItsShape:
 
     def test_secondary_structure_in_the_analysis_s_three_classes(self, study) -> None:

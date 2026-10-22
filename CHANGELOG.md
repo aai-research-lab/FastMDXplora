@@ -1192,6 +1192,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   chosen values and decisions for inactive phases as well as the phases
   running now.
 
+- Analysis charts can be stepped through with the keyboard: the arrows
+  choose a point, bar or cell, Home and End go to the ends, and Enter opens
+  its frame or residue. A click outside a chart's plot does nothing.
+
 - Backbone order parameters (S²) are plotted on the Analysis page, on a
   fixed 0 to 1.05 scale, with measured values as squares where they were
   given and the analysis's note where S² is only an upper bound. A point

@@ -374,6 +374,102 @@ def test_a_chart_click_shows_exact_frame_coordinates_and_playback_order(tmp_path
         session.server.shutdown()
 
 
+def test_figure_chart_supports_keyboard_navigation_and_ignores_clicks_outside_its_plot(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _figure
+
+    root = _study(tmp_path / "study")
+    _series(root)
+    folder = root / "analysis" / "cluster"
+    folder.mkdir(parents=True)
+    (folder / "cluster_kmeans.dat").write_text(
+        "frame,cluster\n" + "".join(f"{frame},{frame % 2}\n" for frame in range(11)),
+        encoding="utf-8")
+    _figure(folder / "cluster_kmeans.png")
+    manifest_path = root / "analysis" / "analysis_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["results"]["cluster_kmeans"] = {"status": "done"}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.add_init_script(
+                "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            chart = page.locator('.figure-chart[data-figure-kind="labels"] svg')
+            chart.wait_for()
+            with page.expect_request("**/api/exact-frame?frame=7*"):
+                _click_chart(chart, 0.7, left=62, right=20)
+            page.wait_for_function(
+                "() => window.FastMDXMoleculeViewer?.STATE.exactFrame?.frame === 7",
+                timeout=60000)
+            page.wait_for_function(
+                "() => window.FastMDXMoleculeViewer.STATE.engine.find({atom:'CA'})[0]?.x > 6.98",
+                timeout=90000)
+
+            # Reopen the analysis chart after the exact-frame action so its
+            # keyboard state is initialized against the updated playback map.
+            page.evaluate("() => window.FastMDXDashboard.navigate('viewer')")
+            page.wait_for_function("() => document.documentElement.dataset.page === 'viewer'")
+            page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+            page.wait_for_function("() => document.documentElement.dataset.page === 'analysis'")
+            chart = page.locator('.figure-chart[data-figure-kind="labels"] svg')
+            chart.wait_for(state="visible")
+            page.wait_for_function("() => document.querySelector("
+                                   "'.figure-chart[data-figure-kind=labels] svg')"
+                                   "?.getAttribute('role') === 'application'")
+            chart.click(trial=True)
+            chart.focus()
+            chart.press("End")
+            chart.press("Enter")
+            page.wait_for_function(
+                "() => { const s = window.FastMDXMoleculeViewer.STATE;"
+                " const i = Number(document.getElementById('traj-slider').value);"
+                " return s.playbackFrameIndices[i] === 10; }",
+                timeout=60000)
+            page.wait_for_function(
+                "() => window.FastMDXMoleculeViewer.STATE.engine.find({atom:'CA'})[0]?.x > 9.98",
+                timeout=90000)
+
+            # Frame navigation can put the viewer page in front. Return to
+            # Analysis and wait for the replacement chart to be visible before
+            # checking that a click outside its plot leaves the frame alone.
+            page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+            page.wait_for_function("() => document.documentElement.dataset.page === 'analysis'")
+            chart = page.locator('.figure-chart[data-figure-kind="labels"] svg')
+            chart.wait_for(state="visible")
+            chart.click(trial=True)
+            size = chart.evaluate("el => ({width:el.clientWidth, height:el.clientHeight})")
+            chart.hover(position={"x": 62 + (size["width"] - 82) * 0.2,
+                                  "y": size["height"] / 2})
+            chart.click(position={"x": 30, "y": size["height"] / 2})
+            page.wait_for_timeout(700)
+            stayed = page.evaluate(
+                "() => { const s = window.FastMDXMoleculeViewer.STATE;"
+                " const i = Number(document.getElementById('traj-slider').value);"
+                " return {frame: s.playbackFrameIndices[i],"
+                " x: s.engine.find({atom:'CA'})[0].x}; }"
+            )
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+    assert errors == []
+    assert stayed["frame"] == 10
+    assert stayed["x"] == pytest.approx(10.0, abs=0.02)
+
+
 def test_the_per_frame_panels_follow_the_frames_played_around_an_inserted_frame(tmp_path):
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
@@ -814,3 +910,74 @@ def test_a_scene_of_a_changed_trajectory_says_why_with_its_code(tmp_path):
     said = write_scene(root, "old", {"frame": 7, "frame_source": True,
                                      "frame_signature": "simulation/production.dcd:1:2"})
     assert said["ok"] is False and said["code"] == "analysis.frame.changed", said
+
+
+@pytest.mark.parametrize("figure", ["matrix", "contacts", "interactions"])
+def test_matrix_and_identified_contact_charts_activate_from_the_keyboard(tmp_path, figure):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.figure_data import figure_payload
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+
+    root = _study(tmp_path / "study", residues=2)
+    _series(root)
+    folder = root / "analysis"
+    if figure == "matrix":
+        (folder / "cluster").mkdir()
+        np.savez(folder / "cluster" / "cluster_rmsd_matrix.npz",
+                 rmsd_nm=np.zeros((11, 11)), frames=np.arange(11), time_ns=np.arange(11) * 0.001)
+        name = "cluster/cluster_rmsd_matrix"
+    elif figure == "contacts":
+        (folder / "pl_contacts").mkdir()
+        (folder / "pl_contacts" / "pl_contacts_per_residue.csv").write_text(
+            "residue,contact_frequency\nALA1,0.9\nALA2,0.8\n")
+        name = "pl_contacts/pl_contacts"
+    else:
+        (folder / "pl_interactions").mkdir()
+        (folder / "pl_interactions" / "pl_interactions.dat").write_text(
+            "kind,residue,occupancy,well_sampled\nhydrophobic,ALA1,0.9,True\n"
+            "hydrophobic,ALA2,0.8,True\n")
+        name = "pl_interactions/pl_interactions"
+    payload = figure_payload(root, "analysis/" + name + ".png")
+    assert payload["ok"]
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.add_init_script("localStorage.setItem('fmx.viewerPlaybackOpen', '1')")
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.wait_for_function("() => !!window.FastMDXMoleculeViewer")
+            assert page.evaluate("async () => !!(await window.FastMDXMoleculeViewer.movie.frames())")
+            page.evaluate("""data => {
+              window.FastMDXDashboard.navigate('analysis');
+              const host = document.createElement('div');
+              host.id = 'identified-chart-check';
+              document.querySelector('.page[data-page="analysis"]').appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", payload)
+            svg = page.locator("#identified-chart-check svg")
+            svg.scroll_into_view_if_needed()
+            assert svg.get_attribute("role") == "application"
+            svg.focus()
+            if figure == "matrix":
+                svg.press("ArrowDown")
+                svg.press("Enter")
+                page.wait_for_function("() => window.FastMDXMoleculeViewer.currentViewHints().frame === 1")
+                assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine"
+                                     ".find({atom:'CA'})[0].x") == pytest.approx(1.0, abs=0.02)
+            else:
+                svg.press("ArrowDown")
+                svg.press("Enter")
+                page.wait_for_function("() => window.FastMDXMoleculeViewer.currentViewHints()"
+                                       ".selection?.[0]?.resi === 2")
+                assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.selection.residues") == [
+                    {"chain": "A", "resi": 2, "icode": "", "resn": "ALA", "atom": None}]
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
