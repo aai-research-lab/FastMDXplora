@@ -435,6 +435,26 @@ class TestTheChart:
         assert tip.text_content().startswith("0.100 nm · 2 ps · frame 0")
         assert "Click to open this frame" in tip.text_content()
 
+    def test_a_range_is_chosen_in_the_unit_the_axis_reads_in(self, page) -> None:
+        """A run of 40 ps is plotted in ps, and its range is chosen in ps:
+        the form said "time (ns)" and took 0.002 for the first frame."""
+        form = page.locator('.series-chart[data-analysis="rmsd"] .series-range')
+        start = form.locator('[data-range="from"]')
+        end = form.locator('[data-range="to"]')
+        said = start.evaluate("e => e.previousSibling.textContent")
+        first, last = float(start.input_value()), float(end.input_value())
+        start.fill("10")
+        end.fill("20")
+        form.get_by_role("button", name="Apply range").click()
+        page.wait_for_function(
+            "() => document.querySelector('.series-chart[data-analysis=\"rmsd\"]"
+            " .series-svg')?.getAttribute('aria-label')?.startsWith('RMSD, 6 points')")
+        form.get_by_role("button", name="Reset plot range").click()
+        assert said == "From time (ps)"
+        # Frame k at (k + 1) intervals of 2 ps: 2 ps to 40 ps.
+        assert (first, last) == (2.0, 40.0)
+        assert page.errors == []
+
     def test_the_hover_box_sits_just_over_its_point(self, page) -> None:
         # Measured against the plot, not the card: the range form above the
         # plot must not lift the box off its point.

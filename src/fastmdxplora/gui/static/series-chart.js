@@ -286,7 +286,7 @@
       data.reference.forEach(function (value, i) {
         if (value == null || !isFinite(value)) return;
         el("rect", { x: px(xs[i]) - 3, y: py(value) - 3, width: 6, height: 6,
-          fill: c.mean, class: "series-reference" }, svg);
+          fill: c.mean, class: "series-reference" }, layer);
       });
       var referenceLabel = el("text", { x: plot.left, y: plot.top - 4,
         fill: c.mean, "font-size": 10, "text-anchor": "start" }, svg);
@@ -534,7 +534,11 @@
     if (!range) return null;
     var indices = [];
     (data.x || []).forEach(function (value, index) {
-      if (isFinite(value) && value >= range.from && value <= range.to) indices.push(index);
+      // A range said in ps is read back in ns: within a part in 1e9.
+      var slack = 1e-9 * Math.max(Math.abs(range.from), Math.abs(range.to), 1e-12);
+      if (isFinite(value) && value >= range.from - slack && value <= range.to + slack) {
+        indices.push(index);
+      }
     });
     if (!indices.length) return null;
     var shown = Object.assign({}, data);
@@ -601,13 +605,24 @@
     form.noValidate = true;
     form.setAttribute("aria-label", "Limit " + data.label + " plot range");
     var profile = data.kind === "residue" || data.kind === "atom";
-    var unit = data.x_label === "Time (ns)" ? "time (ns)"
-      : profile ? (data.kind === "atom" ? "atom" : "residue") : "frame";
+    // A time in the unit the chart's axis reads in: ps for a run under a
+    // nanosecond (`timeScale`), each value read back in ns.
+    function factorOf(d) {
+      return !profile && d.x_label === "Time (ns)" ? timeScale(d.x, d.x_label).factor : 1;
+    }
+    function unitOf(d) {
+      return d.x_label === "Time (ns)" ? (factorOf(d) === 1000 ? "time (ps)" : "time (ns)")
+        : profile ? (d.kind === "atom" ? "atom" : "residue") : "frame";
+    }
+    var k = factorOf(data);
+    var unit = unitOf(data);
+    function shown(value) { return k === 1 ? value : Number((value * k).toPrecision(12)); }
+    function said(pair) { return [shown(pair[0]), shown(pair[1])]; }
     var initial = rangeOf(name, data);
     var from = profile ? rangeSelect(form, "from", "From " + unit, data, initial.from)
-      : rangeInput(form, "from", "From " + unit, bounds, initial.from);
+      : rangeInput(form, "from", "From " + unit, said(bounds), shown(initial.from));
     var to = profile ? rangeSelect(form, "to", "To " + unit, data, initial.to)
-      : rangeInput(form, "to", "To " + unit, bounds, initial.to);
+      : rangeInput(form, "to", "To " + unit, said(bounds), shown(initial.to));
     var apply = document.createElement("button");
     apply.type = "submit";
     apply.className = "line-btn";
@@ -651,14 +666,15 @@
       var high = String(to.value).trim() === "" ? NaN : Number(to.value);
       if (!isFinite(low)) return mark(from, true, "Enter a numeric start value.");
       if (!isFinite(high)) return mark(to, true, "Enter a numeric end value.");
-      if (low < bounds[0] || low > bounds[1]) {
+      var edges = profile ? bounds : said(bounds);
+      if (low < edges[0] || low > edges[1]) {
         return mark(from, true, "Start must be within the available range.");
       }
-      if (high < bounds[0] || high > bounds[1]) {
+      if (high < edges[0] || high > edges[1]) {
         return mark(to, true, "End must be within the available range.");
       }
       if (low > high) return mark(to, true, "End must be at or after start.");
-      ranges[name] = { from: low, to: high };
+      ranges[name] = { from: low / k, to: high / k };
       mark(from, false, "");
       mark(to, false, "");
       render();
@@ -667,8 +683,8 @@
     });
     reset.addEventListener("click", function () {
       delete ranges[name];
-      from.value = String(bounds[0]);
-      to.value = String(bounds[1]);
+      from.value = String(profile ? bounds[0] : shown(bounds[0]));
+      to.value = String(profile ? bounds[1] : shown(bounds[1]));
       mark(from, false, "");
       mark(to, false, "");
       render();
@@ -681,13 +697,19 @@
           fillSelect(from, fresh, bounds[0]);
           fillSelect(to, fresh, bounds[1]);
         } else {
-          from.min = String(bounds[0]);
-          from.max = String(bounds[1]);
-          to.min = String(bounds[0]);
-          to.max = String(bounds[1]);
+          k = factorOf(fresh);
+          unit = unitOf(fresh);
+          [[from, "From "], [to, "To "]].forEach(function (pair) {
+            pair[0].setAttribute("aria-label", pair[1] + unit);
+            if (pair[0].previousSibling) pair[0].previousSibling.textContent = pair[1] + unit;
+          });
+          from.min = String(shown(bounds[0]));
+          from.max = String(shown(bounds[1]));
+          to.min = String(shown(bounds[0]));
+          to.max = String(shown(bounds[1]));
         }
-        from.value = String(bounds[0]);
-        to.value = String(bounds[1]);
+        from.value = String(profile ? bounds[0] : shown(bounds[0]));
+        to.value = String(profile ? bounds[1] : shown(bounds[1]));
         mark(from, false, "");
         mark(to, false, "");
       },

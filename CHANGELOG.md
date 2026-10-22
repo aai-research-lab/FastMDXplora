@@ -1216,6 +1216,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   given and the analysis's note where S² is only an upper bound. A point
   selects its residue in the Viewer.
 
+- A chart's range of times is chosen in the unit its axis reads in, ps
+  for a run under a nanosecond, and the measured S² squares stay inside
+  the axes when the chart is zoomed.
+
 - An analysis chart can be limited to a range of times, frames or
   residues, chosen by their names on a residue chart, and reset. A point
   in the range opens the same frame or residue as before. The mean line is
