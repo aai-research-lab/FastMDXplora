@@ -130,6 +130,7 @@ def test_a_study_copied_whole_names_its_residues_from_its_own_structure(tmp_path
     manifest = original / "analysis" / "analysis_manifest.json"
     record = json.loads(manifest.read_text(encoding="utf-8"))
     record["resolved"] = {"topology": str(original / "simulation" / "trajectory_topology.pdb")}
+    record["n_atoms"] = 3
     manifest.write_text(json.dumps(record), encoding="utf-8")
     copied = tmp_path / "copied"
     subprocess.run(["cp", "-a", str(original), str(copied)], check=True)

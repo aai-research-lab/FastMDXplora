@@ -386,7 +386,12 @@ def topology_held(root: Path) -> Path | None:
     for candidate in (resolved.get("topology"), manifest.get("topology_input")):
         if not isinstance(candidate, str) or not candidate:
             continue
-        named = _of_this_study(root, Path(candidate))
+        named = _of_this_study(root, Path(candidate), manifest)
+        if named is None:
+            # Named outside the study, and the study's file in its place is
+            # not that structure: neither is read, and the name is said.
+            _records.is_file(Path(candidate))
+            return None
         if _records.can_read(named):
             if _records.is_file(named):
                 return named
@@ -404,14 +409,16 @@ def topology_held(root: Path) -> Path | None:
     return None
 
 
-def _of_this_study(root: Path, named: Path) -> Path:
+def _of_this_study(root: Path, named: Path, manifest: dict[str, Any]) -> Path | None:
     """A structure the analyses name, as this study has it: a study copied
     or moved names the structure where it was analysed, the folder it was
     in then (the original, still there or gone). Named outside the study
     where the study has a file in its place (its last two parts,
-    ``simulation/trajectory_topology.pdb``), that file is the one meant, as
-    `_of_the_played_trajectory` reads the trajectory; any other is left as
-    named, to be refused."""
+    ``simulation/trajectory_topology.pdb``) of as many atoms as the
+    analyses read (the manifest's ``n_atoms``), that file is the one meant,
+    as `_of_the_played_trajectory` reads the trajectory; None where it is
+    of other atoms, or the manifest records none, so neither is read; any
+    other is left as named, to be refused."""
     if not named.is_absolute() or len(named.parts) < 3:
         return named
     for base in {Path(root).absolute(), Path(root).resolve()}:
@@ -421,7 +428,60 @@ def _of_this_study(root: Path, named: Path) -> Path:
         except ValueError:
             continue
     here = Path(root).joinpath(*named.parts[-2:])
-    return here if os.path.lexists(here) else named
+    if not os.path.lexists(here):
+        return named
+    return here if _as_many_atoms(here, manifest) else None
+
+
+def _as_many_atoms(path: Path, manifest: dict[str, Any]) -> bool:
+    """Whether the study's own file ``path`` holds as many atoms as the
+    analyses read, as their manifest records it (``n_atoms``): a structure
+    or a DCD of the same atoms, by its own count. Through `record_access`:
+    in a read held to the study, one linked out of it is refused and named,
+    not counted."""
+    expected = manifest.get("n_atoms")
+    if isinstance(expected, bool) or not isinstance(expected, int) or expected <= 0:
+        return False
+    with _records.refusals_noted() as refused:
+        own = _records.is_file(path)
+    if not own or refused:
+        return False
+    try:
+        if path.suffix.lower() == ".dcd":
+            return _dcd_atoms(path) == expected
+        if path.suffix.lower() == ".pdb":
+            count = 0
+            for line in _records.read_text(path, encoding="utf-8",
+                                           errors="replace").splitlines():
+                if line.startswith("ENDMDL"):
+                    break
+                count += line.startswith(("ATOM  ", "HETATM"))
+            return count == expected
+        from fastmdxplora.utils.native_output import topology_quietly
+
+        # Checked to be the study's own above, then read by its name.
+        return int(topology_quietly(path).n_atoms) == expected
+    except Exception:  # noqa: BLE001 - a file not counted is not the same
+        return False
+
+
+def _dcd_atoms(path: Path) -> int | None:
+    """The number of atoms a DCD's header records (its third record), read
+    by the file's name once it was found the study's own; None where it is
+    not a DCD's."""
+    import struct
+
+    with open(path, "rb") as handle:
+        head = handle.read(4096)
+    for order in ("<", ">"):
+        if len(head) < 8 or struct.unpack(order + "i", head[:4])[0] != 84:
+            continue
+        title_at = 4 + 84 + 4
+        (title,) = struct.unpack(order + "i", head[title_at:title_at + 4])
+        atoms_at = title_at + 4 + title + 4
+        marker, atoms = struct.unpack(order + "ii", head[atoms_at:atoms_at + 8])
+        return atoms if marker == 4 else None
+    return None
 
 
 def _profile_table_rows(path: Path) -> list[dict[str, str]]:
@@ -502,13 +562,28 @@ def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
     try:
         if Path(analysed).resolve() == played.resolve():
             return True
-        # A study moved or shared names the trajectory where it was read:
-        # the same place in the study, the folder before it gone.
+        # A study moved or copied names the trajectory where it was read:
+        # the same place in the study, of as many atoms as the analyses
+        # read, whether or not the folder before it is still there.
         named = Path(analysed)
-        return (not named.exists() and _records.is_file(played)
-                and named.parts[-2:] == played.relative_to(root).parts[-2:])
+        return (named.parts[-2:] == played.relative_to(root).parts[-2:]
+                and _outside(root, named) and _as_many_atoms(played, manifest))
     except (OSError, ValueError):
         return False
+
+
+def _outside(root: Path, named: Path) -> bool:
+    """Whether ``named`` is a path outside the study ``root``, as it was
+    opened or where it leads."""
+    if not named.is_absolute():
+        return False
+    for base in {Path(root).absolute(), Path(root).resolve()}:
+        try:
+            named.relative_to(base)
+            return False
+        except ValueError:
+            continue
+    return True
 
 
 def trajectory_of_this_study(root: Path, manifest: dict[str, Any], named: Path

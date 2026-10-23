@@ -14,6 +14,7 @@ import json
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.test_the_study_pages_read_only_the_study import _OPENED, _WATCHED, _link, _watch
@@ -266,3 +267,120 @@ def test_a_study_copied_whole_selects_in_its_own_structure(tmp_path, route, publ
         assert said["ok"], said
     if public:
         assert str(tmp_path) not in body.decode("utf-8")
+
+
+# --------------------------------------------------------------------------
+# A copied study is read as its own only where it is the same structure
+# (G7 M1, G8 M2)
+# --------------------------------------------------------------------------
+
+def _chain(path: Path, residues: int, atoms: tuple[str, ...]) -> Path:
+    topology = md.Topology()
+    chain = topology.add_chain("A")
+    for number in range(1, residues + 1):
+        residue = topology.add_residue("ALA", chain, resSeq=number)
+        for name in atoms:
+            topology.add_atom(name, md.element.carbon, residue)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    md.Trajectory(np.zeros((1, topology.n_atoms, 3), dtype=np.float32) + 0.1,
+                  topology).save_pdb(str(path))
+    return path
+
+
+@pytest.mark.parametrize("original_there", [True, False], ids=["kept", "gone"])
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_structure_named_outside_of_other_atoms_is_not_read_as_the_study_s(
+        tmp_path, public, original_there):
+    """The manifest names a 29-atom structure outside the study by the last
+    two parts of the study's own 54-atom file: that file is not the one the
+    analyses read, so neither is read, and the name is said not read."""
+    root = tmp_path / "study"
+    named = _chain(tmp_path / "elsewhere" / "simulation" / "trajectory_topology.pdb", 29,
+                   ("CA",))
+    _chain(root / "simulation" / "trajectory_topology.pdb", 9,
+           ("N", "CA", "C", "O", "CB", "H"))
+    if not original_there:
+        named.unlink()
+    (root / "analysis" / "rmsf").mkdir(parents=True)
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+        "phase": "analysis", "n_frames": 3, "n_atoms": 29,
+        "resolved": {"topology": str(named)}, "results": {"rmsf": {"status": "ok"}}}),
+        encoding="utf-8")
+    (root / "analysis" / "rmsf" / "rmsf.dat").write_text(
+        "chain,residue,insertion,rmsf_nm\nA,1,,0.11\nA,2,,0.12\nA,3,,0.13\n", encoding="utf-8")
+    (root / "analysis" / "rmsf" / "options.json").write_text(json.dumps(
+        {"analysis": "rmsf", "selection": None, "options": {}, "findings": {}}),
+        encoding="utf-8")
+    (root / "manifest.json").write_text(json.dumps({"phases": [
+        {"name": "analysis", "status": "ok"}]}), encoding="utf-8")
+
+    for route in ("/api/series?analysis=rmsf",
+                  "/api/selection?chain=A&resseq=2&resname=ALA&atom=CA"):
+        (status, body), opened = _opened_asking(tmp_path / "elsewhere", lambda asked=route: (
+            _asked(root, tmp_path, asked, public=public)))
+        said = json.loads(body)
+        assert status == 200 and opened == [], (route, opened)
+        assert "a file named outside the study was not read" in said["not_read"], said
+        if route.startswith("/api/series"):
+            assert said["entities"] == [None, None, None], said
+        else:
+            assert said["ok"] is False, said
+
+
+def _copied_study(tmp_path: Path) -> tuple[Path, Path]:
+    """A study of eleven frames analysed for RMSD, its manifest naming its
+    trajectory where it was, and a `cp -a` copy of it beside it; the
+    original's trajectory then changed, every atom moved 5 nm along x."""
+    from tests.test_a_graph_opens_exact_source_frame import _series
+    from tests.test_a_graph_opens_exact_source_frame import _study as written
+
+    original = written(tmp_path / "first")
+    _series(original)
+    manifest = original / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["n_atoms"] = 5
+    record["resolved"]["topology"] = str(original / "simulation" / "trajectory_topology.pdb")
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    copy = tmp_path / "copy"
+    shutil.copytree(original, copy, symlinks=True)
+    production = original / "simulation" / "production.dcd"
+    frames = md.load_dcd(str(production),
+                         top=str(original / "simulation" / "trajectory_topology.pdb"))
+    frames.xyz[:, :, 0] += 5.0
+    frames.save_dcd(str(production))
+    return original, copy
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_copied_study_s_time_point_opens_its_own_frame(tmp_path, public):
+    from urllib.parse import quote
+
+    original, copy = _copied_study(tmp_path)
+    series = json.loads(_asked(copy, tmp_path, "/api/series?analysis=rmsd", public=public)[1])
+    assert series["linked"] is True, series
+    signature = json.loads(_asked(copy, tmp_path, "/api/frames-info",
+                                  public=public)[1])["source_signature"]
+    route = f"/structure/exact-frame.xtc?frame=7&signature={quote(signature, safe='')}"
+    (status, kept), opened = _opened_asking(original, lambda: _asked(
+        copy, tmp_path, route, public=public))
+    assert status == 200 and opened == []
+    shutil.rmtree(original)
+    status, alone = _asked(copy, tmp_path, route, public=public)
+    # The copy's own frame 7, with the original there or not.
+    assert status == 200 and kept == alone
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_copied_study_measures_over_its_own_frames(tmp_path, public):
+    original, copy = _copied_study(tmp_path)
+    route = "/api/measure-over-frames?a=resSeq+1+and+name+N&b=resSeq+1+and+name+CB"
+    (status, body), opened = _opened_asking(original, lambda: _asked(
+        copy, tmp_path, route, public=public))
+    said = json.loads(body)
+    assert status == 200 and said["ok"] and opened == [], said
+    assert str(original) not in body.decode("utf-8")
+    if public:
+        assert "simulation/production.dcd" in said["command"]
+        assert str(tmp_path) not in body.decode("utf-8")
+    else:
+        assert str(copy / "simulation" / "production.dcd") in said["command"]
