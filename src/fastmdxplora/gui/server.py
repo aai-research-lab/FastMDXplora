@@ -2100,30 +2100,44 @@ def make_handler(
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
                 ligands = payload.get("ligands")
-                selections = (selections_of(study)["selections"]
-                              if payload.get("selections", True) else [])
                 highlight = payload.get("highlight")
-                if isinstance(highlight, str) and highlight.strip():
-                    # Atoms to show, as a scene the Agent proposed names them.
-                    from fastmdxplora.scenes import highlighted
-
-                    selections = [*selections, highlighted(highlight.strip()[:500],
-                                                           payload.get("labels") is True)]
-                # A study of several runs: the run the Viewer plays, alone.
+                view = payload.get("view")
+                # A scene at a frame is made of the frames the Viewer plays.
+                framed = isinstance(view, dict) and type(view.get("frame")) is int
                 from fastmdxplora.gui.runs_together import run_shown
 
-                played = _confined(study, run_shown)
-                played = played if isinstance(played, Path) else None
-                said = write_scene(
-                    study, payload.get("name"), payload.get("view"),
-                    selections=selections or None,
-                    ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
-                    else None, source=played, most_frames=cfg.max_browser_frames)
-                if played is not None and said.get("ok"):
-                    said["notes"] = [*said.get("notes", []),
-                                     f"The scene is of the run played ({played.name}) alone: "
-                                     "the other runs are not part of it."]
-                self._send_json(said)
+                def made(inside: Path) -> dict[str, Any]:
+                    # Read from the study's own records only (`_confined`):
+                    # its selections, the run it plays, the structure, the
+                    # frames and what colours them. A frame, topology or
+                    # record linked out of it is not read, and said not read.
+                    selections = (selections_of(inside)["selections"]
+                                  if payload.get("selections", True) else [])
+                    if isinstance(highlight, str) and highlight.strip():
+                        # Atoms to show, as a scene the Agent proposed names them.
+                        from fastmdxplora.scenes import highlighted
+
+                        selections = [*selections, highlighted(highlight.strip()[:500],
+                                                               payload.get("labels") is True)]
+                    # A study of several runs: the run the Viewer plays, alone.
+                    played = run_shown(inside)
+                    played = played if isinstance(played, Path) else None
+                    refused = self._frames_refused(played or inside) if framed else None
+                    if refused:
+                        return refused
+                    said = write_scene(
+                        inside, payload.get("name"), view, selections=selections or None,
+                        ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
+                        else None, source=played, most_frames=cfg.max_browser_frames)
+                    if played is not None and said.get("ok"):
+                        said["notes"] = [*said.get("notes", []),
+                                         f"The scene is of the run played ({played.name}) "
+                                         "alone: the other runs are not part of it."]
+                    return said
+
+                said = _said_not_read(_confined(study, made))
+                inside, opened = str(study.resolve()), str(study)
+                self._send_json(said if inside == opened else _as_opened(said, inside, opened))
                 return
             if path == "/api/viewer-selections":
                 # A selection of the Viewer named in the study, or forgotten.

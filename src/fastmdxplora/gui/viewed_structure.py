@@ -12,6 +12,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from fastmdxplora import record_access as _records
 from fastmdxplora.gui.protein_preview import find_structure, find_system
 
 __all__ = ["display_structure_bytes", "structure_file", "viewer_structure"]
@@ -21,13 +22,14 @@ __all__ = ["display_structure_bytes", "structure_file", "viewer_structure"]
 def _display_structure_cached(path_string: str, _mtime_ns: int, _size: int) -> bytes:
     from fastmdxplora.gui.live_frames import dashboard_display_pdb
 
+    # Through `record_access`, in the held read of whoever asked.
     target = Path(path_string)
-    text = target.read_text(encoding="utf-8", errors="ignore")
-    filtered = dashboard_display_pdb(text)
+    data = _records.read_bytes(target)
+    filtered = dashboard_display_pdb(data.decode("utf-8", errors="ignore"))
     # An empty filter result means nothing matched the solute test -- an
     # unusual file rather than a solvent box. Send it as written rather than
     # sending nothing.
-    return filtered.encode("utf-8") if filtered.strip() else target.read_bytes()
+    return filtered.encode("utf-8") if filtered.strip() else data
 
 
 def display_structure_bytes(target: Path) -> bytes:
@@ -37,21 +39,24 @@ def display_structure_bytes(target: Path) -> bytes:
     filter it and the viewer asks on every page load.
     """
     try:
-        stat = target.stat()
+        stat = _records.stat(target)
         return _display_structure_cached(
-            str(target.resolve()), int(stat.st_mtime_ns), int(stat.st_size)
+            str(_records.resolved(target)), int(stat.st_mtime_ns), int(stat.st_size)
         )
     except OSError:
-        return target.read_bytes()
+        return _records.read_bytes(target)
 
 
 def structure_file(root: Path) -> Path | None:
     """The structure the Viewer is sent: the system simulated, else the
-    structure the study started from."""
-    target = find_system(root)
-    if target is None or not target.is_file():
-        target = find_structure(root)
-    return target if target is not None and target.is_file() else None
+    structure the study started from. Through `record_access`: in a read
+    held to the study, one linked out of it, or named outside it, is
+    refused and named, and no other is sent in its place."""
+    with _records.refusals_noted() as refused:
+        target = find_system(root)
+        if target is None and not refused:
+            target = find_structure(root)
+    return target if target is not None and not refused else None
 
 
 def viewer_structure(root: Path, of: str, *, with_solvent: bool
@@ -69,7 +74,8 @@ def viewer_structure(root: Path, of: str, *, with_solvent: bool
     if target is None:
         return None, ("", 0, 0)
     try:
-        stat = target.stat()
+        # Through `record_access`: held to the study where the read is.
+        stat = _records.stat(target)
         if of == "live":
             from fastmdxplora.gui.live_frames import live_frame_text
 
@@ -78,9 +84,10 @@ def viewer_structure(root: Path, of: str, *, with_solvent: bool
                 return None, ("", 0, 0)
             data = text.encode("utf-8")
         else:
-            data = (target.read_bytes() if of == "frames" or with_solvent
+            data = (_records.read_bytes(target) if of == "frames" or with_solvent
                     else display_structure_bytes(target))
     except OSError:
         return None, ("", 0, 0)
-    key = (f"{target.resolve()}|{of}|{with_solvent}", int(stat.st_mtime_ns), int(stat.st_size))
+    key = (f"{_records.resolved(target)}|{of}|{with_solvent}", int(stat.st_mtime_ns),
+           int(stat.st_size))
     return data, key

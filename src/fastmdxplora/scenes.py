@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora import record_access as _records
 from fastmdxplora.refusals import CodedError
 
 __all__ = ["HIGHLIGHT_COLOUR", "MVS_VERSION", "SCENES_DIR", "build_scene", "highlighted",
@@ -90,12 +91,15 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
     """The frames' atoms at the frame the view shows, superposed where it
     is; None where the study has no frames to show it at."""
     from fastmdxplora.gui.trajectory_frames import (
+        _NOT_SENT,
         FRAMES_FILE,
         FRAMES_TOPOLOGY,
+        _sent_here,
         frames_info,
         most_frames_sent,
         superposed_frames,
     )
+    from fastmdxplora.refusals import StudyError
 
     # As many frames as the Viewer was sent: another number would write
     # the browser's frames again.
@@ -106,7 +110,6 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
     if view.get("frame_source") is True:
         from fastmdxplora.gui.by_residue import _dssp
         from fastmdxplora.gui.trajectory_frames import exact_frame
-        from fastmdxplora.refusals import StudyError
 
         if (view.get("smoothed_over") or 1) > 1:
             raise StudyError("A source-frame scene needs unsmoothed coordinates.",
@@ -120,7 +123,9 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
         if exact is None:
             raise StudyError(details.get("reason") or "The source frame is unavailable.",
                              code=details.get("code") or "analysis.data.absent")
-        text = (root / "simulation" / FRAMES_TOPOLOGY).read_text(encoding="utf-8")
+        # Through `record_access`: in a read held to the study, a topology
+        # linked out of it is refused, never read where it leads.
+        text = _records.read_text(root / "simulation" / FRAMES_TOPOLOGY, encoding="utf-8")
         lines = _atom_lines(text)
         xyz = exact.xyz[0] * 10.0
         if len(xyz) != len(lines):
@@ -138,22 +143,28 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
         return None
     simulation = root / "simulation"
     coordinates = simulation / FRAMES_FILE
+    if not _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY):
+        # Held to the study: frames or a topology linked out of it are
+        # refused and named, not opened where they lead.
+        raise StudyError(_NOT_SENT[0], code=_NOT_SENT[1])
     on = view.get("superposed") or "none"
     if on in ("backbone", "pocket"):
         said = superposed_frames(root, on, ligand=ligands[0] if ligands else None,
                                  cutoff_angstrom=view.get("pocket_cutoff") or 5.0,
                                  to=view.get("superposed_to") or "first",
                                  smooth=view.get("smoothed_over") or 1)
-        if said.get("ok"):
+        if said.get("ok") and _sent_here(simulation, said["file"]):
             coordinates = simulation / said["file"]
+        elif said.get("ok"):
+            raise StudyError(_NOT_SENT[0], code=_NOT_SENT[1])
         else:
             notes.append(f"The frames are not superposed: {said.get('reason')}")
     import mdtraj as md
 
     from fastmdxplora.utils.native_output import suppress_native_output
 
-    lines = _atom_lines((simulation / FRAMES_TOPOLOGY).read_text(encoding="utf-8",
-                                                                 errors="replace"))
+    lines = _atom_lines(_records.read_text(simulation / FRAMES_TOPOLOGY, encoding="utf-8",
+                                           errors="replace"))
     with suppress_native_output(), md.formats.DCDTrajectoryFile(str(coordinates)) as handle:
         handle.seek(frame)
         xyz = handle.read(1)[0][0]                    # angstroms, as the DCD holds them
@@ -656,10 +667,16 @@ def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None,
         return {"ok": False, "reason": f"The scene could not be made: {exc}"}
     if not scene.get("ok"):
         return scene
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
     folder = Path(root) / SCENES_DIR
-    folder.mkdir(exist_ok=True)
     target = folder / f"{name}.mvsx"
     temporary = folder / f".{name}.mvsx.tmp"
+    if any(_linked_out(path) for path in (folder, target)):
+        # Held to the study: nothing is written through a link out of it.
+        return {"ok": False, "reason": "Where the scene would be written is not one of this "
+                                       "study's own records, so it is not written."}
+    folder.mkdir(exist_ok=True)
     temporary.write_bytes(scene_bytes(scene))
     temporary.replace(target)
     return {"ok": True, "name": name, "path": str(target), "notes": scene["notes"],
@@ -667,12 +684,21 @@ def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None,
 
 
 def scenes_of(root: str | Path) -> dict[str, Any]:
-    """The scenes written with the study, newest first."""
+    """The scenes written with the study, newest first. Through
+    `record_access`: in a read held to the study, a scene or the folder of
+    them linked out of it is refused and named, never listed where it
+    leads."""
     folder = Path(root) / SCENES_DIR
-    found = sorted(folder.glob("*.mvsx"), key=lambda p: p.stat().st_mtime, reverse=True) \
-        if folder.is_dir() else []
-    return {"ok": True, "scenes": [{"name": p.stem, "bytes": p.stat().st_size}
-                                   for p in found if _NAME.match(p.stem)]}
+    found = []
+    for path in (_records.glob(folder, "*.mvsx") if _records.is_dir(folder) else ()):
+        try:
+            stat = _records.stat(path)
+        except OSError:
+            continue
+        if _NAME.match(path.stem):
+            found.append((stat.st_mtime, path.stem, stat.st_size))
+    found.sort(key=lambda one: one[0], reverse=True)
+    return {"ok": True, "scenes": [{"name": stem, "bytes": size} for _, stem, size in found]}
 
 
 def read_scene(root: str | Path, name: Any, member: str = "index.mvsj") -> bytes | None:
@@ -682,7 +708,8 @@ def read_scene(root: str | Path, name: Any, member: str = "index.mvsj") -> bytes
         return None
     path = Path(root) / SCENES_DIR / f"{name}.mvsx"
     try:
-        with zipfile.ZipFile(path) as archive:
+        # Through `record_access`: held to the study where the read is.
+        with zipfile.ZipFile(io.BytesIO(_records.read_bytes(path))) as archive:
             if member not in archive.namelist():
                 return None
             return archive.read(member)

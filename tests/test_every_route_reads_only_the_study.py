@@ -1,0 +1,144 @@
+"""Every route a page asks for reads only inside the study.
+
+A study folder can hold a link that leads out of it, and a study copied
+whole names its original's files in its records. What a link leads to, or
+a file named outside the study, is never read for a page, on this computer
+or on a public bind: the answer says it was not read instead. MDTraj reads a
+DCD in C, where the audit hook on `open` does not see it, so each answer is
+checked as well as the hook.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+import pytest
+
+from tests.test_the_study_pages_read_only_the_study import _OPENED, _WATCHED, _link, _watch
+
+md = pytest.importorskip("mdtraj")
+
+
+def _serve(root: Path, workspace: Path, *, public: bool):
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from tests.test_a_public_dashboard_answers_only_what_it_lists import _serving
+
+    runtime = DashboardRuntime(workspace_root=root, exploration_root=workspace,
+                               active_root=root)
+    return _serving(runtime, allow_control=not public)
+
+
+def _asked(root: Path, workspace: Path, route: str, *, public: bool = False,
+           body: dict | None = None) -> tuple[int, bytes]:
+    from tests.test_a_public_dashboard_answers_only_what_it_lists import _ask
+
+    with _serve(root, workspace, public=public) as url:
+        return _ask(url + route, body=body)
+
+
+def _study(tmp_path: Path) -> Path:
+    """A finished study of two chains of alanines and a ligand, twelve
+    frames of each atom moving about its place, analysed (its manifest
+    naming its own trajectory and structure, with an RMSF), its browser's
+    frames written."""
+    from tests.test_what_the_viewer_computes_from_the_frames_keeps_to_the_study import (
+        _study as written)
+
+    root = written(tmp_path)
+    simulation = root / "simulation"
+    # The system simulated, as the Viewer's structure.
+    shutil.copy(simulation / "trajectory_topology.pdb", simulation / "topology.pdb")
+    analysis = root / "analysis"
+    (analysis / "rmsf").mkdir(parents=True)
+    n_atoms = md.load_topology(str(simulation / "trajectory_topology.pdb")).n_atoms
+    (analysis / "analysis_manifest.json").write_text(json.dumps({
+        "phase": "analysis", "n_frames": 12, "n_atoms": n_atoms,
+        "load_kwargs": {"saving_interval_ps": 1.0},
+        "trajectory_input": str(simulation / "production.dcd"),
+        "topology_input": str(simulation / "trajectory_topology.pdb"),
+        "resolved": {"trajectory": str(simulation / "production.dcd"),
+                     "topology": str(simulation / "trajectory_topology.pdb")},
+        "results": {"rmsf": {"status": "ok"}}}), encoding="utf-8")
+    (analysis / "rmsf" / "rmsf.dat").write_text(
+        "# residue rmsf_nm\n" + "".join(f"{k} {0.05 + 0.01 * k:.4f}\n" for k in range(1, 5)),
+        encoding="utf-8")
+    (root / "manifest.json").write_text(json.dumps({"phases": [
+        {"name": "simulation", "status": "ok"}, {"name": "analysis", "status": "ok"}]}),
+        encoding="utf-8")
+    return root
+
+
+def _moved_out(root: Path, tmp_path: Path, relative: str, *, shift: float = 0.0) -> Path:
+    """``relative`` moved out of the study, a link to it left in its place;
+    a DCD moved with every atom shifted ``shift`` nm along x, so a read of
+    it would show."""
+    outside = tmp_path / "outside"
+    target = outside / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    (root / relative).rename(target)
+    if shift and target.suffix == ".dcd":
+        frames = md.load_dcd(str(target), top=str(
+            (root / relative).parent / ("frames_topology.pdb" if target.name == "frames.dcd"
+                                        else "trajectory_topology.pdb")))
+        frames.xyz[:, :, 0] += shift
+        frames.save_dcd(str(target))
+    _link(root / relative, target)
+    return outside
+
+
+def _opened_asking(outside: Path, ask) -> tuple[object, list[str]]:
+    _watch(outside)
+    try:
+        answer = ask()
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    return answer, opened
+
+
+# --------------------------------------------------------------------------
+# A scene is made of the study's own frames (G7 H1)
+# --------------------------------------------------------------------------
+
+SCENES = {"frame": {"frame": 3}, "source frame": {"frame": 7, "frame_source": True}}
+
+
+@pytest.mark.parametrize("kind", sorted(SCENES))
+@pytest.mark.parametrize("relative", ["simulation/production.dcd", "simulation/frames.dcd",
+                                      "simulation/frames_topology.pdb"])
+def test_a_scene_is_not_made_of_frames_linked_out_of_the_study(tmp_path, relative, kind):
+    """The scene POST reads the frames, the trajectory and their topology
+    held to the study: one linked out of it is refused with what was not
+    read, no scene is written, and a public bind has no scene to send."""
+    root = _study(tmp_path)
+    view = {**SCENES[kind], "camera": {"position": [0, 0, 50], "target": [0, 0, 0],
+                                       "up": [0, 1, 0]}}
+    status, body = _asked(root, tmp_path, "/api/scenes", body={"name": "own", "view": view})
+    assert status == 200 and json.loads(body)["ok"], body[:300]
+    outside = _moved_out(root, tmp_path, relative, shift=5.0)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, "/api/scenes", body={"name": "s1", "view": view}))
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False, said
+    assert f"{relative} was not read" in said["not_read"], said
+    assert opened == []
+    assert not (root / "scenes" / "s1.mvsx").exists()
+    status, _ = _asked(root, tmp_path, "/scenes/s1/structure.pdb", public=True)
+    assert status == 404
+
+
+def test_a_scene_is_not_written_through_a_folder_linked_out(tmp_path):
+    root = _study(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _link(root / "scenes", elsewhere)
+    status, body = _asked(root, tmp_path, "/api/scenes",
+                          body={"name": "s1", "view": {"camera": {
+                              "position": [0, 0, 50], "target": [0, 0, 0], "up": [0, 1, 0]}}})
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False, said
+    assert list(elsewhere.iterdir()) == []

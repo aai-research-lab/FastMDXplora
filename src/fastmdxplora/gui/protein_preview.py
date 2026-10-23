@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from colorsys import hsv_to_rgb
 from pathlib import Path
 from typing import Any
+from fastmdxplora import record_access as _records
 from fastmdxplora.refusals import BackendUnavailable
 
 
@@ -97,6 +99,13 @@ def protein_preview_payload(root: str | Path, *, regenerate: bool = False) -> di
 
     output_path = _preview_output_path(project_root)
     pymol = _find_pymol_executable(project_root)
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+    if pymol and any(_linked_out(path) for path in (
+            output_path.parent, output_path, output_path.with_suffix(".pml"))):
+        # Held to the study: nothing is written through a link out of it.
+        return _viewer_only(project_root, "The preview is not written: where it would be "
+                                          "written is not one of this study's own records.")
     if pymol:
         try:
             _render_with_pymol(pymol, structure, output_path)
@@ -126,9 +135,19 @@ def _find_pymol_executable(root: Path) -> str | None:
 
 
 def _find_existing_preview(root: Path) -> Path | None:
-    for rel in PREVIEW_CANDIDATES:
-        path = root / rel
-        if path.is_file():
+    return _first_held([root / rel for rel in PREVIEW_CANDIDATES])
+
+
+def _first_held(candidates: list[Path]) -> Path | None:
+    """The first of ``candidates`` that is a file, through `record_access`:
+    in a read held to the study, one linked out of it, or named outside
+    it, is refused and named, and no other is read in its place."""
+    for path in candidates:
+        with _records.refusals_noted() as refused:
+            found = _records.is_file(path)
+        if refused:
+            return None
+        if found:
             return path
     return None
 
@@ -152,24 +171,27 @@ def find_system(root: str | Path) -> Path | None:
 def _find_structure(
     root: Path, *, candidates: tuple[str, ...] = STRUCTURE_CANDIDATES
 ) -> Path | None:
-    for rel in candidates:
-        path = root / rel
-        if path.is_file():
-            return path
+    with _records.refusals_noted() as refused:
+        found = _first_held([root / rel for rel in candidates])
+    if found is not None or refused:
+        return found
 
     manifest = _load_json(root / "manifest.json")
     system = manifest.get("system")
-    if system:
-        candidates = [Path(str(system)), root / str(system)]
-        for path in candidates:
-            if path.is_file() and path.suffix.lower() == ".pdb":
-                return path
+    if system and str(system).lower().endswith(".pdb"):
+        named = Path(str(system))
+        if named.is_absolute():
+            return _first_held([named])
+        # In a read held to the study, only where it would be in the study:
+        # a name relative to wherever the GUI was started is not of it.
+        held = not _records.can_read(Path(os.path.abspath(os.sep)))
+        return _first_held([root / named] if held else [named, root / named])
     return None
 
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(_records.read_text(path, encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -177,14 +199,14 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _preview_output_path(root: Path) -> Path:
     report_assets = root / "report" / "dashboard_assets"
-    if report_assets.exists():
+    if _records.is_dir(report_assets):
         return report_assets / "protein_preview.png"
     return root / "simulation" / "protein_preview.png"
 
 
 def _available(root: Path, path: Path, *, static_mode: str, message: str) -> dict[str, Any]:
     rel = path.relative_to(root).as_posix()
-    image_url = f"/artifacts/{rel}?v={int(path.stat().st_mtime)}"
+    image_url = f"/artifacts/{rel}?v={int(_records.stat(path).st_mtime)}"
     structure_info = _structure_info(root)
     return {
         "available": True,
@@ -222,7 +244,7 @@ def _structure_info(root: Path) -> dict[str, Any]:
     if structure is not None:
         try:
             structure_rel = structure.relative_to(root).as_posix()
-            structure_url = f"/structure/topology.pdb?v={int(structure.stat().st_mtime)}"
+            structure_url = f"/structure/topology.pdb?v={int(_records.stat(structure).st_mtime)}"
         except ValueError:
             structure_rel = structure.as_posix()
     return {
