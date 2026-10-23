@@ -604,6 +604,15 @@
     setOverlay(on, overlay);
   }
 
+  /* The overlay's word with no live frame: waiting while the run may still
+   * write one; once it has ended, that its frames were not read where they
+   * were not, else nothing (a finished run waits for no frame). */
+  function stageWithoutAFrame() {
+    if (!STATE.runStatus || runIsWriting()) return "waiting";
+    const payload = STATE.playbackPayload;
+    return payload && !payload.playback_available && payload.not_read ? "frames not read" : "";
+  }
+
   async function pollLiveFrame() {
     const generation = STATE.viewerGeneration;
     if (!STATE.liveUpdates || document.body.classList.contains("state-loading")) return;
@@ -614,7 +623,7 @@
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!index.live_frame_available) {
-        sayLive(false, {stage: index.simulation_stage || "waiting", age: "\u2014"});
+        sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
@@ -2127,6 +2136,10 @@
       && payload?.source_kind === "live-history";
     STATE.playbackPayload = payload || null;
     sayTheRuns(payload);
+    if (!payload?.playback_available && STATE.mode !== "playback" && !STATE.liveOverlay?.on) {
+      // Said at once, not at the next look for a live frame.
+      sayLive(false, {stage: stageWithoutAFrame(), age: "\u2014"});
+    }
     // The other runs changed (one wrote more snapshots, or finished): they
     // are rendered again, and the frames played are left as they are.
     const runsNow = runsTogether(payload);
@@ -2918,7 +2931,10 @@
     STATE.liveUpdates = false;
     clearPlaybackTimer();
     updatePlaybackButtons();
-    const payload = await ensurePlaybackPayload();
+    // Asked for (Play, Space): why nothing plays is said where it is seen.
+    const payload = await ensurePlaybackPayload((reason) => {
+      if (asked === STATE.playbackAsked) refuse(`Trajectory playback is not ready: ${reason}`);
+    });
     if (!payload || !(await loadPlayback(payload))) {
       if (asked === STATE.playbackAsked) pausePlayback();
       return;

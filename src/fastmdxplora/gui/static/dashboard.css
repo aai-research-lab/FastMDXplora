@@ -1155,6 +1155,9 @@ button {
    screen reader; the transport under the canvas, its scrubber taking the
    width. */
 .control-row.transport, .control-row.view-tools, .control-row.display-tools { align-items: center; }
+/* Frames not read: the transport shows why, and nothing to play them with. */
+.control-row.transport[data-not-read] > :not(#traj-loaded) { display: none; }
+.control-row.transport[data-not-read] #traj-loaded { color: var(--text-primary); }
 /* The series under the transport, as tracks taking the width
    (frame-series.js; the rest of them with the timeline's). */
 .frame-series-chart { min-width: 200px; }

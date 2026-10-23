@@ -159,3 +159,57 @@ def test_a_busy_gui_says_so_where_it_is_seen(tmp_path, monkeypatch):
     assert "Frame 7 could not be shown" in said, said
     assert "other frames are being prepared; try again in a moment" in said, said
     assert errors == []
+
+
+@pytest.mark.parametrize("width, scheme", [(1440, "light"), (390, "dark")])
+def test_a_viewer_whose_trajectory_is_not_read_says_so_where_it_is_seen(tmp_path, width,
+                                                                       scheme):
+    """The Viewer of a finished study whose trajectory is linked out of it
+    says, and goes on saying, that its frames are not played and why, where
+    the transport would be; its overlay waits for nothing; Play (Space)
+    says it in the notice."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study")
+    _moved_out(root, tmp_path, "simulation/production.dcd")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": width, "height": 900},
+                                    color_scheme=scheme)
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            note = _seen(page, "#traj-loaded")
+            page.wait_for_function(
+                "() => document.getElementById('overlay-stage').textContent"
+                " === 'frames not read'")
+            stage = _seen(page, "#overlay-stage")
+            buttons = page.locator('#trajectory-row [data-action="play-trajectory"]')
+            hidden = not buttons.is_visible()
+            wide = page.evaluate("() => document.documentElement.scrollWidth > innerWidth")
+            webgl = page.evaluate("() => !!document.createElement('canvas').getContext('webgl')")
+            played = None
+            if webgl:
+                page.keyboard.press(" ")
+                played = _seen(page, TOAST)
+            still = _seen(page, "#traj-loaded")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    for said in (note, still):
+        assert said.startswith("Not played: simulation/production.dcd was not read"), said
+        assert str(tmp_path) not in said
+    assert stage == "frames not read"
+    assert hidden and not wide
+    if played is not None:
+        assert "Trajectory playback is not ready: simulation/production.dcd was not read" \
+            in played, played
+    assert errors == []

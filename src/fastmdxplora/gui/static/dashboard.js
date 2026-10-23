@@ -818,7 +818,10 @@
       slider.value = "0";
     }
     const row = byId("trajectory-row");
-    if (row) row.hidden = true;
+    if (row) {
+      sayNotPlayed(row, "");
+      row.hidden = true;
+    }
     setPlaybackPosition(0, 0, null, null);
     if (window.FastMDXCharts) window.FastMDXCharts.update([]);
     renderLiveProgress({});
@@ -2582,7 +2585,9 @@
       slider.max = "0";
       slider.value = "0";
       setPlaybackPosition(0, 0, null, null);
-      row.hidden = true;
+      // Frames not read are said where the transport would be, and stay.
+      sayNotPlayed(row, payload?.not_read);
+      row.hidden = !payload?.not_read;
       emit("playback-ready", payload || {});
       return;
     }
@@ -2605,10 +2610,25 @@
         viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null,
         viewerShowsPlayback && production ? payload.frame_indices?.[frame] : null);
     }
+    sayNotPlayed(row, "");
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
       source_changed: sourceChanged,
     }));
+  }
+
+  /* Why the frames are not played (a record not read), in the playback
+   * note: the row then shows it alone (dashboard.css). Cleared once they
+   * are, the note left to the frames loaded. */
+  function sayNotPlayed(row, notRead) {
+    const said = notRead ? `Not played: ${notRead}` : "";
+    const note = byId("traj-loaded");
+    row.toggleAttribute("data-not-read", !!said);
+    if (!note || (!said && !note.hasAttribute("data-not-read"))) return;
+    note.toggleAttribute("data-not-read", !!said);
+    // Written once: the note is a status, read out at each change.
+    if (note.textContent !== said) note.textContent = said;
+    note.hidden = !said;
   }
 
   /* Where the frame shown is in the run: the integrator step a snapshot was
