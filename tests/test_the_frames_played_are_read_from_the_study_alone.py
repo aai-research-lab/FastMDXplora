@@ -224,3 +224,59 @@ def test_nothing_is_written_through_a_link_out_of_the_study(tmp_path, relative, 
         assert str(tmp_path) not in body.decode("utf-8")
     else:
         assert status == 404
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_frames_with_no_trajectory_left_are_sent(tmp_path, public):
+    """A study kept with its browser's frames and not its trajectory (one
+    shared without it) still has them sent, and computed from, where
+    nothing was refused: for a movie's frames in between and the panels
+    computed from the frames played."""
+    root = _study(tmp_path)
+    (root / "simulation" / "production.dcd").unlink()
+    simulation = root / "simulation"
+    status, body = _ask(root, tmp_path, "/structure/frames.dcd", public=public)
+    assert status == 200 and body == (simulation / "frames.dcd").read_bytes()
+    status, body = _ask(root, tmp_path, SENT[3], public=public)
+    assert status == 200 and body
+    said = json.loads(_ask(root, tmp_path, "/api/frames-superposed?on=backbone",
+                           public=public)[1])
+    assert "not_read" not in said and said.get("reason") != (
+        "The frames sent to the browser are not this study's own records."), said
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_trajectory_linked_out_with_no_topology_left_is_refused(tmp_path, public):
+    """With no topology left to read it with, a trajectory linked out of the
+    study is still looked at, refused and said not read: the frames written
+    from it before are not sent."""
+    root = _study(tmp_path)
+    (root / "simulation" / "trajectory_topology.pdb").unlink()
+    outside = _moved_out(root, tmp_path, "simulation/production.dcd")
+    (info, *sent), opened = _asked(root, tmp_path, ["/api/frames-info", *SENT[:2]], outside,
+                                   public=public)
+    assert opened == []
+    said = json.loads(info[1])
+    assert said["playback_available"] is False, said
+    assert "simulation/production.dcd was not read" in said["not_read"]
+    assert [status for status, _ in sent] == [404, 404]
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_saved_topology_linked_out_is_read_in_no_other_s_place(tmp_path, public):
+    """The topology of what was saved linked out of the study: the study's
+    full topology beside it is not read in its place, and nothing plays."""
+    root = _study(tmp_path)
+    simulation = root / "simulation"
+    shutil.copyfile(simulation / "trajectory_topology.pdb", simulation / "topology.pdb")
+    for name in ("frames.dcd", "frames_topology.pdb", "frames_index.json"):
+        (simulation / name).unlink()
+    outside = _moved_out(root, tmp_path, "simulation/trajectory_topology.pdb")
+    (info, frames), opened = _asked(root, tmp_path, ["/api/frames-info", SENT[0]], outside,
+                                    public=public)
+    assert opened == []
+    said = json.loads(info[1])
+    assert said["playback_available"] is False, said
+    assert "simulation/trajectory_topology.pdb was not read" in said["not_read"]
+    assert frames[0] == 404
+    assert not (simulation / "frames.dcd").exists()

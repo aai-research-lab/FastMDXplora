@@ -472,7 +472,14 @@ def _source(out: Path) -> dict[str, Any] | None:
     # a held read, as pathlib.
     simulation = out / "simulation"
     saved = simulation / "trajectory_topology.pdb"
-    topology = saved if record_access.is_file(saved) else simulation / "topology.pdb"
+    with record_access.refusals_noted() as refused:
+        found = record_access.is_file(saved)
+    if refused:
+        # The topology of what was saved, refused: no other read in its
+        # place (the full topology fits the trajectory only where it saved
+        # every atom).
+        return None
+    topology = saved if found else simulation / "topology.pdb"
     trajectory = simulation / "production.dcd"
     finished = not _simulation_going(out)
     joined = _load_json(out / "joined" / "joined.json")
@@ -497,8 +504,10 @@ def _source(out: Path) -> dict[str, Any] | None:
         return {"kind": "live-history", "records": history, "simulation": simulation,
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
                              f"{history[-1].get('mtime_ns')}"}
-    if (record_access.is_file(topology) and record_access.is_file(trajectory)
-            and record_access.stat(trajectory).st_size > 0):
+    # Each looked at, so a trajectory linked out is refused, and named, with
+    # no topology left to read it with.
+    there = [record_access.is_file(topology), record_access.is_file(trajectory)]
+    if all(there) and record_access.stat(trajectory).st_size > 0:
         return {"kind": "trajectory", "trajectory": trajectory, "topology": topology,
                 "records": history, "simulation": simulation,
                 "signature": f"{trajectory.parent.name}/{trajectory.name}:"
