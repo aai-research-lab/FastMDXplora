@@ -2124,6 +2124,18 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
+                from fastmdxplora.gui.trajectory_frames import _linked_out
+                from fastmdxplora.movies import MOVIES_DIR
+
+                # Held to the study (`_confined`): nothing is written through
+                # a folder linked out of it.
+                linked = _said_not_read(_confined(study, lambda inside: {
+                    "ok": not _linked_out(inside / MOVIES_DIR)}))
+                if not linked.get("ok"):
+                    self._send_json({**linked, "reason": (
+                        "Where the movie would be written is not one of this study's own "
+                        "records, so it is not made.")})
+                    return
                 self._send_json(start_movie(study, payload.get("name"), fps=payload.get("fps"),
                                             width=payload.get("width"),
                                             height=payload.get("height"),

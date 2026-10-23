@@ -541,3 +541,19 @@ def test_nothing_is_saved_over_views_or_selections_linked_out(tmp_path, route, r
     assert f"{relative} was not read" in said["not_read"]
     assert (outside / relative).read_bytes() == before
     assert (root / relative).is_symlink()
+
+
+def test_no_movie_is_made_through_a_folder_linked_out(tmp_path):
+    from fastmdxplora.movies import encoding
+
+    if not encoding()["ok"]:
+        pytest.skip("no movie encoder on this computer")
+    root = _study(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _link(root / "movies", elsewhere)
+    status, body = _asked(root, tmp_path, "/api/movies", body={
+        "name": "m1", "fps": 30, "width": 64, "height": 64})
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False and "movies was not read" in said["not_read"]
+    assert list(elsewhere.iterdir()) == []
