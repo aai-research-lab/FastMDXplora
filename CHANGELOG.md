@@ -662,6 +662,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   card's figure again, and a range chosen on a chart is forgotten when
   another study is opened.
 
+- The Viewer of a study whose frames were not read says so in its playback
+  note, and goes on saying it; its overlay waits for no frame once the run
+  has ended, and Play says why nothing plays.
+
+- A refused frame is read out once, the notice showing it without saying
+  it again; a frame whose frames could not be loaded is said in the notice;
+  a live frame's time under 1 ns is said in ps on the overlay; a drag along
+  the series track selects no text of the page.
+
 - The phone-to-desktop browser check waits for the side panel to return
   after its dialog closes, avoiding a timing-sensitive assertion.
 
@@ -1534,6 +1543,35 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   topology its join names outside it, is not played, on this computer or
   on a public bind, and the Viewer is told it was not read; frames written
   from it before are not sent, and frames linked out are not written over.
+
+- What the Viewer computes from the frames it plays (the frames superposed,
+  a motion, the backbone angles, the contacts between chains and between
+  residues, the states and two of them compared, the maps of the ligand and
+  the water, the water sites, the pocket's room, the frames' secondary
+  structure, a selection typed in them and the interactions over them) is
+  read held to the study, and only of the frames it plays: frames, their
+  topology or a record read beside them linked out of the study is not
+  read, on this computer or on a public bind, and each answer says so.
+
+- For a study of several runs, the run the Viewer plays is chosen held to
+  the study: a run folder linked out of it is passed over, so its frames
+  and exact frames are not read, written or sent. The run played's
+  parameters and the index of the runs set beside it are read held to the
+  study too, and said not read where they are linked out.
+
+- Nothing is written through a link out of the study: the frames' pieces
+  or their index, the frames as XTC or with frames in between, or the folder
+  the runs set beside the run played are written to, linked out of it, is
+  refused before anything is written.
+
+- A study copied whole, whose analyses name its structure where the
+  original is, reads its own structure in that place, so its charts' points
+  select residues again; a file named outside the study is said not read as
+  that, not as a link.
+
+- A trajectory linked out of the study is refused and said not read where
+  no topology is left to read it with, and a saved topology refused has no
+  other read in its place.
 
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a
