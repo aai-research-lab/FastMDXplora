@@ -88,10 +88,12 @@ def _placed(base: Path, pairs: list[dict[str, Any]]) -> list[list[int] | None]:
     """Each contact's two atoms, protein first, among the atoms of the frames
     played; ``None`` for a contact whose atoms are not there, or not the ones
     the analysis named."""
-    from fastmdxplora.gui.selection import topology_the_analyses_read
+    from fastmdxplora.gui.series import topology_held
 
     nothing: list[list[int] | None] = [None] * len(pairs)
-    where = topology_the_analyses_read(base)
+    # Through `record_access` (`topology_held`): in a read held to the
+    # study, a structure linked out of it, or named outside it, is not read.
+    where = topology_held(base)
     try:
         said = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
