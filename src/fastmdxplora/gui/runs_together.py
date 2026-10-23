@@ -175,10 +175,12 @@ def _together(base: Path, runs: list[dict[str, Any]], *, most_frames: int,
         folder = Path(run["path"])
         # Through `record_access`, as `run_shown` looks: a run linked out of
         # the study is refused and named, not looked in.
-        source = _source(folder) if record_access.is_dir(folder) else None
+        with record_access.refusals_noted() as refused:
+            source = _source(folder) if record_access.is_dir(folder) else None
         if source is None:
-            excluded.append({"run_id": run_id, "label": label,
-                             "reason": "It has no trajectory yet."})
+            excluded.append({"run_id": run_id, "label": label, "reason": (
+                "It is linked out of the study, so it was not read." if refused
+                else "It has no trajectory yet.")})
             continue
         before = keep.get(run_id) or {}
         target = out / f"run_{order[run_id]}.dcd"

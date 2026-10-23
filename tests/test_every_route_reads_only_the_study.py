@@ -557,3 +557,19 @@ def test_no_movie_is_made_through_a_folder_linked_out(tmp_path):
     said = json.loads(body)
     assert status == 200 and said["ok"] is False and "movies was not read" in said["not_read"]
     assert list(elsewhere.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# The Viewer says what it did not read (G8 lows)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_run_linked_out_is_said_not_read_in_the_runs_panel(tmp_path, public):
+    from tests.test_the_run_shown_is_read_held_to_its_study import _moved_out as moved
+    from tests.test_the_run_shown_is_read_held_to_its_study import _runs
+
+    root = _runs(tmp_path, 13, 7)
+    moved(root, tmp_path, "runs/r1")
+    info = json.loads(_asked(root, tmp_path, "/api/frames-info", public=public)[1])
+    excluded = {run["run_id"]: run["reason"] for run in info["runs_together"]["excluded"]}
+    assert excluded["r1"] == "It is linked out of the study, so it was not read."
