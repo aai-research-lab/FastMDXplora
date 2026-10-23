@@ -510,3 +510,33 @@ def test_the_frame_shown_is_said_on_one_line_on_a_narrow_page(tmp_path, width):
     assert found["toolbarFits"], found
     # What is cut at the end of the line under the slider is in its title.
     assert "trajectory frame 1" in found["title"] and "0.004 ps" in found["title"], found
+
+
+def test_a_live_frame_s_time_under_a_nanosecond_is_said_in_ps(tmp_path):
+    """The overlay says a live frame's time, which the record gives in ns,
+    in ps under 1 ns, as every other time of a frame is said."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = tmp_path / "study"
+    _write_history(root, count=5)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            said = page.wait_for_function(
+                "() => { const said = document.getElementById('overlay-simtime').textContent;"
+                " return said.startsWith('sim time ') && !said.endsWith('\\u2014')"
+                " ? said : null; }",
+                timeout=60_000).json_value()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert said == "sim time 334 ps", said
+    assert errors == []

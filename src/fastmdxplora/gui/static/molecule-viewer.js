@@ -3910,12 +3910,11 @@
           ? `step ${Number(info.step).toLocaleString()}` : null);
       setText("overlay-step", place ?? "");
       setText("overlay-age", info?.age != null && !ended ? `age ${info.age}` : "");
-      // In ps under 1 ns, as every page says a length: the last frame of a
-      // run of 2 ps read "0.002 ns" under a ruler in ps.
       const ns = Number(info?.simtime);
-      const said = Math.abs(ns) < 1 ? `${+(ns * 1000).toFixed(1)} ps` : `${ns.toFixed(3)} ns`;
       setText("overlay-simtime", info?.simtime != null && Number.isFinite(ns)
-        ? info.simtimeSaid || `${info.simtimeOf ? info.simtimeOf + " " : "sim time "}${said}`
+        ? info.simtimeSaid
+          || `${info.simtimeOf ? info.simtimeOf + " " : "sim time "}${Math.abs(ns) < 1
+            ? `${+(ns * 1000).toFixed(1)} ps` : `${ns.toFixed(3)} ns`}`
         : "");
     }
     tidyOverlay();
