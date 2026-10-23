@@ -250,14 +250,18 @@ def read_live_frame_history(output_dir: str | Path) -> dict[str, Any]:
 
 
 def read_live_frame_index(output_dir: str | Path) -> dict[str, Any]:
+    # Through `record_access`: held to its study where the read is.
+    from fastmdxplora import record_access
+
     out = Path(output_dir)
     idx_path = out / LIVE_FRAME_INDEX_FILE
-    if not idx_path.is_file():
+    if not record_access.is_file(idx_path):
         return {"live_frame_available": False}
     try:
-        return json.loads(idx_path.read_text(encoding="utf-8"))
+        said = json.loads(record_access.read_text(idx_path, encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"live_frame_available": False}
+    return said if isinstance(said, dict) else {"live_frame_available": False}
 
 
 def live_frame_pdb_path(output_dir: str | Path) -> Path:
@@ -265,7 +269,9 @@ def live_frame_pdb_path(output_dir: str | Path) -> Path:
 
 
 def live_frame_exists(output_dir: str | Path) -> bool:
-    return live_frame_pdb_path(output_dir).is_file()
+    from fastmdxplora import record_access
+
+    return record_access.is_file(live_frame_pdb_path(output_dir))
 
 
 #: The live frames last made whole, by file, time written and size: a
@@ -288,21 +294,25 @@ def live_frame_text(output_dir: str | Path) -> str | None:
     a frame is imaged in the box of the trajectory's last frame, the moment
     a finished run's last snapshot is of.
     """
+    # Through `record_access`: in a read held to the study, a live frame or
+    # trajectory linked out of it is refused and named, not read.
+    from fastmdxplora import record_access
+
     out = Path(output_dir)
     path = live_frame_pdb_path(out)
     recorded = read_live_frame_index(out).get("cell")
     trajectory = out / "production.dcd"
     try:
-        stat = path.stat()
-        key = (str(path.resolve()), int(stat.st_mtime_ns), int(stat.st_size))
-        if not recorded and trajectory.is_file():
-            moved = trajectory.stat()
+        stat = record_access.stat(path)
+        key = (str(record_access.resolved(path)), int(stat.st_mtime_ns), int(stat.st_size))
+        if not recorded and record_access.is_file(trajectory):
+            moved = record_access.stat(trajectory)
             key += (int(moved.st_mtime_ns), int(moved.st_size))
         with _WHOLE_GUARD:
             if key in _WHOLE:
                 _WHOLE.move_to_end(key)
                 return _WHOLE[key]
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = record_access.read_text(path, encoding="utf-8", errors="replace")
     except OSError:
         return None
     cell = None if recorded else _last_cell(trajectory)
@@ -393,7 +403,10 @@ def _bonded_topology(pdb_text: str) -> Any:
 def _last_cell(trajectory: Path) -> tuple[float, ...] | None:
     """The box of a DCD's last frame, or ``None`` where it has none or
     cannot be read (a run still writing it)."""
-    if not trajectory.is_file():
+    from fastmdxplora import record_access
+
+    # Its own, in a read held to the study, before MDTraj opens it by name.
+    if not record_access.is_file(trajectory):
         return None
     try:
         import mdtraj as md

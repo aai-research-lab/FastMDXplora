@@ -1565,10 +1565,12 @@ def make_handler(
 
                 of = (parse_qs(parsed.query).get("of") or ["structure"])[0]
                 # The frames' read from the study's own records only, and only
-                # of the frames it plays (`_from_the_frames`).
+                # of the frames it plays (`_from_the_frames`); the structure's
+                # and the live frame's from its own records only (`_confined`).
                 self._send_json(self._from_the_frames(
                     root, lambda inside: secondary_structure(inside, of))
-                    if of == "frames" else secondary_structure(root, of))
+                    if of == "frames" else _said_not_read(_confined(
+                        root, lambda inside: secondary_structure(inside, of))))
                 return
             if path == "/api/stopping":
                 from fastmdxplora.gui.stopping_view import stopping_payload
@@ -1604,23 +1606,30 @@ def make_handler(
                 self._send_json(answer if inside == opened
                                 else _as_opened(answer, inside, opened))
                 return
+            # The structure, the live frame and what is read of them, below,
+            # are read from the study's own records only (`_confined`): one
+            # linked out of it, or named outside it, is not read, no other is
+            # read in its place, and the answer says it was not read.
             if path == "/api/protein-preview":
                 # Beyond loopback a viewer reads what the run has; it does
                 # not set this machine redoing work on request.
                 regenerate = allow_control and parsed.query == "regenerate=1"
-                self._send_json(protein_preview_payload(root, regenerate=regenerate))
+                self._send_json(_said_not_read(_confined(root, lambda inside: (
+                    protein_preview_payload(inside, regenerate=regenerate)))))
                 return
             if path == "/api/structure-info":
-                self._send_json(_structure_info_payload(root, cfg))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: _structure_info_payload(inside, cfg))))
                 return
             if path == "/api/ligands":
-                self._send_json(_ligands_payload(root, cfg))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: _ligands_payload(inside, cfg))))
                 return
             if path == "/api/live-frame-index":
-                self._send_json(_live_frame_index(root))
+                self._send_json(_said_not_read(_confined(root, _live_frame_index)))
                 return
             if path == "/api/live-coordinates":
-                self._send_json(_live_coordinates_payload(root))
+                self._send_json(_said_not_read(_confined(root, _live_coordinates_payload)))
                 return
             if path == "/api/frames-info":
                 # The trajectory as binary frames: a topology and a DCD.
@@ -1774,9 +1783,10 @@ def make_handler(
                     return atoms_selected(pdb, one("expression"), key=key)
 
                 # The frames' topology read from the study's own records only,
-                # and only of the frames it plays (`_from_the_frames`).
+                # and only of the frames it plays (`_from_the_frames`); the
+                # structure and the live frame from its own records only.
                 self._send_json(self._from_the_frames(root, selected) if one("of") == "frames"
-                                else selected(root))
+                                else _said_not_read(_confined(root, selected)))
                 return
             if path == "/api/viewer-selections":
                 from fastmdxplora.gui.viewer_selections import selections_of
@@ -3188,10 +3198,6 @@ def make_handler(
             # the prepared solute kept the file small but omitted the ligand,
             # which is put back only when the system is built, so a ligand run
             # drew a bare protein and said nothing about the absence.
-            target = _structure_file(root)
-            if target is None:
-                self.send_error(404, "Structure not found")
-                return
             # Water and ions on request only. The viewer's Water and Ions
             # toggles had nothing to act on, because the copy sent to the
             # browser has bulk solvent stripped -- and before that it was the
@@ -3199,9 +3205,21 @@ def make_handler(
             # never shown anything. Sending the whole box every time would
             # cost every reader the download for a view most of them never
             # open; sending it when asked costs only them.
-            data = (
-                target.read_bytes() if with_solvent else _display_structure_bytes(target)
-            )
+            def held(inside: Path) -> tuple[bytes | None, dict[str, Any]]:
+                # Read from the study's own records only (`_bytes_confined`).
+                target = _structure_file(inside)
+                if target is None:
+                    return None, {}
+                try:
+                    return (_held_bytes(target) if with_solvent
+                            else _display_structure_bytes(target)), {}
+                except OSError:
+                    return None, {}
+
+            data, _ = _bytes_confined(root, held)
+            if data is None:
+                self.send_error(404, "Structure not found")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -3213,9 +3231,10 @@ def make_handler(
             from fastmdxplora.gui.live_frames import live_frame_text
 
             # Made whole, so a bound ligand is shown in its pocket rather
-            # than in the copy of the box the snapshot wrapped it into.
-            text = live_frame_text(_live_dir(root))
-            if text is None:
+            # than in the copy of the box the snapshot wrapped it into. Read
+            # from the study's own records only (`_confined`).
+            text = _confined(root, lambda inside: live_frame_text(_live_dir(inside)))
+            if not isinstance(text, str):
                 self.send_error(404, "Live frame not available")
                 return
             data = text.encode("utf-8")
@@ -3229,8 +3248,9 @@ def make_handler(
         def _send_live_coordinates(self, root: Path) -> None:
             from fastmdxplora.gui.live_frames import live_frame_coordinates
 
-            said = live_frame_coordinates(_live_dir(root))
-            if said is None:
+            # Read from the study's own records only (`_confined`).
+            said = _confined(root, lambda inside: live_frame_coordinates(_live_dir(inside)))
+            if not isinstance(said, dict) or "data" not in said:
                 self.send_error(404, "Live frame not available")
                 return
             data = said["data"]
@@ -4069,7 +4089,7 @@ def _structure_info_payload(
     except ValueError:
         info["structure_path"] = structure_path.as_posix()
     info["structure_url"] = (
-        f"/structure/topology.pdb?v={int(structure_path.stat().st_mtime_ns)}"
+        f"/structure/topology.pdb?v={int(_records_stat(structure_path).st_mtime_ns)}"
     )
     info["structure_available"] = True
     return info
@@ -4081,7 +4101,7 @@ def _ligands_payload(
     # Preparation strips the ligand and puts it back with small-molecule
     # parameters, so the prepared structure is the one file that never has it.
     structure_path = find_system(root)
-    if structure_path is None or not structure_path.is_file():
+    if structure_path is None or not _records_is_file(structure_path):
         return {"ligands": [], "explicit": normalise_ligand_resname(config.ligand_resname), "valid": False}
     info = count_structure(structure_path, max_bytes=_MAX_PDB_BYTES_FOR_SYSTEM_SCAN)
     instances = []
@@ -4411,8 +4431,11 @@ def _ligand_interactions(root: Path) -> dict[str, Any]:
     and not found from one that was never looked for, which are different
     things to tell somebody about a binding site.
     """
+    from fastmdxplora import record_access
+
+    # Through `record_access`: held to the study where the read is.
     table = root / "analysis" / "pl_interactions" / "pl_interactions.dat"
-    if not table.is_file():
+    if not record_access.is_file(table):
         return {"analysed": False, "kinds": {}}
 
     # Counted by residue, not by row. Each row is one ligand-atom /
@@ -4424,7 +4447,7 @@ def _ligand_interactions(root: Path) -> dict[str, Any]:
         label: {"residues": {}, "pairs": 0} for label in _PANEL_INTERACTION_KINDS.values()
     }
     try:
-        with table.open(newline="", encoding="utf-8") as handle:
+        with record_access.open_text(table, newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 label = _PANEL_INTERACTION_KINDS.get(str(row.get("kind", "")).strip())
                 if label is None:
@@ -4585,8 +4608,12 @@ def _crystal_positions(root: Path) -> dict[str, list[str]]:
     rather than plumbed through the setup pipeline -- the file is already in
     every run directory.
     """
+    from fastmdxplora import record_access
+
+    # Its own, through `record_access`, before it is read by its name: in a
+    # held read, a setup linked out of the study or named outside it is not.
     source = _setup_of(root) / "input.pdb"
-    if not source.is_file():
+    if not record_access.is_file(source):
         return {}
     info = count_structure(source)
     if not info.get("valid"):

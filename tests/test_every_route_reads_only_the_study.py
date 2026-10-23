@@ -384,3 +384,71 @@ def test_a_copied_study_measures_over_its_own_frames(tmp_path, public):
         assert str(tmp_path) not in body.decode("utf-8")
     else:
         assert str(copy / "simulation" / "production.dcd") in said["command"]
+
+
+# --------------------------------------------------------------------------
+# The structure and the live frame the Viewer renders (G7 M2)
+# --------------------------------------------------------------------------
+
+#: What a page asks of the structure, the live frame or the preview, the
+#: record each reads, and whether it answers in JSON.
+OF_THE_STRUCTURE = {
+    "/structure/topology.pdb": ("simulation/topology.pdb", False),
+    "/structure/topology.pdb?solvent=1": ("simulation/topology.pdb", False),
+    "/api/structure-info": ("simulation/topology.pdb", True),
+    "/api/ligands": ("simulation/topology.pdb", True),
+    "/api/protein-preview": ("simulation/topology.pdb", True),
+    "/api/viewer-atoms?of=structure&expression=protein": ("simulation/topology.pdb", True),
+    "/api/secondary-structure?of=structure": ("simulation/topology.pdb", True),
+    "/api/live-frame-index": ("simulation/live_frame_index.json", True),
+    "/api/live-coordinates": ("simulation/live_frame_index.json", True),
+    "/structure/live-frame.pdb": ("simulation/live_frame.pdb", False),
+    "/structure/live-frame.dcd": ("simulation/live_frame.pdb", False),
+    "/api/viewer-atoms?of=live&expression=protein": ("simulation/live_frame.pdb", True),
+    "/api/secondary-structure?of=live": ("simulation/live_frame.pdb", True),
+}
+
+
+def _with_a_live_frame(root: Path) -> Path:
+    simulation = root / "simulation"
+    shutil.copy(simulation / "trajectory_topology.pdb", simulation / "live_frame.pdb")
+    (simulation / "live_frame_index.json").write_text(json.dumps({
+        "live_frame_available": True, "live_frame_index": 6000, "simulation_time_ns": 0.012}),
+        encoding="utf-8")
+    # A structure the Viewer could be sent in the system's place, were it.
+    (root / "setup").mkdir(exist_ok=True)
+    shutil.copy(simulation / "trajectory_topology.pdb", root / "setup" / "prepared.pdb")
+    return root
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", sorted(OF_THE_STRUCTURE))
+def test_the_structure_and_live_frame_are_read_from_the_study_alone(tmp_path, route, public):
+    root = _with_a_live_frame(_study(tmp_path))
+    relative, answers_json = OF_THE_STRUCTURE[route]
+    status, body = _asked(root, tmp_path, route, public=public)
+    assert status == 200, body[:300]
+    if answers_json:
+        assert "not_read" not in json.loads(body), body[:300]
+    outside = _moved_out(root, tmp_path, relative)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, public=public))
+
+    assert opened == []
+    if not answers_json:
+        # Neither the file linked out nor another in its place is sent.
+        assert status == 404
+        return
+    said = json.loads(body)
+    assert status == 200 and f"{relative} was not read" in said["not_read"], said
+    assert str(outside) not in body.decode("utf-8")
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_structure_s_details_read_no_run_record_linked_out(tmp_path, public):
+    root = _with_a_live_frame(_study(tmp_path))
+    outside = _moved_out(root, tmp_path, "simulation/simulation_parameters.json")
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, "/api/structure-info", public=public))
+    assert status == 200 and opened == []
