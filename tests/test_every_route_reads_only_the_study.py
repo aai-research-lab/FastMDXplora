@@ -471,6 +471,7 @@ OF_THE_STUDY = {
     "/analysis-figures-svg.zip": ("analysis/rmsf/rmsf.svg", True),
     "/api/again": ("resolved_config.yml", False),
     "/api/files/deposit": ("manifest.json", False),
+    "/api/timeline": ("stopping.json", False),
 }
 
 
@@ -589,3 +590,21 @@ def test_the_pocket_says_a_frame_s_time_in_ps_under_1_ns():
                            "[timeSaid(0.12), timeSaid(0.0015), timeSaid(1), timeSaid(12.5)]));"],
                           capture_output=True, text=True, check=True)
     assert json.loads(said.stdout) == ["120 ps", "1.5 ps", "1.000 ns", "12.500 ns"]
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", ["/api/results", "/api/analysis-overview",
+                                   "/api/convergence?analysis=rmsd"])
+def test_the_analysis_pages_say_a_record_not_read_in_one_sentence(tmp_path, route, public):
+    """Each answer held to the study says what it did not read in its
+    ``not_read``, as every other does, beside its own way of saying it."""
+    from tests.test_the_study_pages_read_only_the_study import OUTSIDE
+    from tests.test_the_study_pages_read_only_the_study import _study as analysed
+    from tests.test_the_study_pages_read_only_the_study import _write
+
+    root = analysed(tmp_path)
+    outside = _write(tmp_path, "elsewhere/options.json", OUTSIDE["determined"])
+    _link(root / "analysis/rmsd/options.json", outside)
+    status, body = _asked(root, tmp_path, route, public=public)
+    said = json.loads(body)
+    assert status == 200 and "analysis/rmsd/options.json was not read" in said["not_read"]

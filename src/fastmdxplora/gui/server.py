@@ -1356,6 +1356,8 @@ def make_handler(
                 # Read from the study's own results only (`_confined`).
                 from fastmdxplora.gui.overview_view import overview_payload
 
+                # Its ``not_read`` is the count of means not read, which its
+                # tiles say each with why (`overview_payload`).
                 self._send_json(_confined(
                     root, lambda inside, refused: overview_payload(inside, refused=refused),
                     keeps=True))
@@ -1385,7 +1387,7 @@ def make_handler(
                 # Read from the study's own records only (`_confined`).
                 from fastmdxplora.gui.timeline_view import timeline_payload
 
-                self._send_json(_confined(root, timeline_payload))
+                self._send_json(_said_not_read(_confined(root, timeline_payload)))
                 return
             if path == "/api/status-bar":
                 # This computer and its GPUs, for the strip under every
@@ -1460,7 +1462,7 @@ def make_handler(
                 return
             if path == "/api/results" or path == "/api/analyses":
                 # Read from the study's own results only (`_confined`).
-                payload = _confined(root, _results_payload)
+                payload = _said_not_read(_confined(root, _results_payload))
                 if payload.get("ok", True):
                     if payload.get("output_dir"):
                         # The folder as it was opened, not where its links lead.
@@ -1502,14 +1504,15 @@ def make_handler(
                 # or to a hidden file in it, is not read (`record_access`).
                 from fastmdxplora.gui.analysis_overview import overview_of
 
-                self._send_json(_confined(root, overview_of))
+                self._send_json(_said_not_read(_confined(root, overview_of)))
                 return
             if path == "/api/convergence":
                 from fastmdxplora.gui.analysis_overview import convergence_payload
 
                 name = (parse_qs(parsed.query).get("analysis") or [""])[0]
                 # Read from the study's own results only (`_confined`).
-                self._send_json(_confined(root, lambda inside: convergence_payload(inside, name)))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: convergence_payload(inside, name))))
                 return
             if path == "/api/selection":
                 from fastmdxplora.gui.selection import selection_for
