@@ -321,3 +321,39 @@ def test_frames_pieces_linked_out_are_said_not_read_in_the_viewer(tmp_path):
     assert said.startswith("The frames are played whole: simulation/frames_pieces was not read")
     assert played is True
     assert list(elsewhere.iterdir()) == []
+
+
+@pytest.mark.parametrize("linked", [False, True], ids=["own", "linked out"])
+def test_the_maps_over_the_frames_are_offered_only_of_frames_read(tmp_path, linked):
+    """Where the ligand and water were is placed on the frames played: with
+    the frames not read, the tool is not offered, as Motion and Pocket are
+    not."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_every_route_reads_only_the_study import _study
+
+    root = _study(tmp_path)
+    if linked:
+        _moved_out(root, tmp_path, "simulation/frames.dcd")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session.url, "#viewer")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            viewer = "window.FastMDXMoleculeViewer"
+            page.wait_for_function(f"() => {viewer} && {viewer}.STATE.engine"
+                                   f" && {viewer}.STATE.playbackPayload")
+            if not linked:
+                page.evaluate(f"async () => {{ await {viewer}.movie.frames(); }}")
+            # What the tool offers of the study as it now stands.
+            hidden = page.evaluate("async () => { await window.FastMDXOccupancy.offer();"
+                                   " return document.getElementById('side-occupancy').hidden; }")
+            ligand = page.evaluate("() => !document.getElementById('occ-ligand-row').hidden")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert ligand is True and hidden is linked
