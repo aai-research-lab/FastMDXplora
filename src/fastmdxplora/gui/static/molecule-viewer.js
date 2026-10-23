@@ -2339,6 +2339,8 @@
     }
     STATE.framesPieces = null;
     if (!pieces || !pieces.ok || !Array.isArray(pieces.pieces) || !pieces.pieces.length) {
+      // Pieces linked out of the study are not read: the frames are played whole.
+      if (pieces?.not_read) refuse(`The frames are played whole: ${pieces.not_read}`);
       return engine.loadFrames(topology, coordinates);
     }
     const version = Date.now();

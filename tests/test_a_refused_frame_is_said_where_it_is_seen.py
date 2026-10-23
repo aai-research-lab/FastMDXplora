@@ -282,3 +282,42 @@ def test_a_frame_whose_frames_cannot_be_loaded_is_said_where_it_is_seen(tmp_path
     finally:
         session.server.shutdown()
     assert shown == "Frame 7 could not be shown: the frames could not be loaded.", shown
+
+
+def test_frames_pieces_linked_out_are_said_not_read_in_the_viewer(tmp_path):
+    """The frames' pieces linked out of the study are not read, and the
+    frames are played whole: the notice says so as the frames load."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.gui.trajectory_frames import frames_info
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study")
+    assert frames_info(root)["playback_available"]
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _link(root / "simulation" / "frames_pieces", elsewhere)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session.url, "#viewer")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            viewer = "window.FastMDXMoleculeViewer"
+            page.wait_for_function(f"() => {viewer} && {viewer}.STATE.engine"
+                                   f" && {viewer}.STATE.playbackPayload")
+            page.evaluate(f"async () => {{ await {viewer}.movie.frames(); }}")
+            page.wait_for_function("() => document.getElementById('sr-live').textContent"
+                                   ".includes('frames_pieces was not read')")
+            # In the notice, which shows it for a while (`showToast`).
+            said = page.text_content("#dashboard-toast .dashboard-toast-said")
+            played = page.evaluate(f"() => {viewer}.STATE.playbackPayload.playback_available")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert said.startswith("The frames are played whole: simulation/frames_pieces was not read")
+    assert played is True
+    assert list(elsewhere.iterdir()) == []
