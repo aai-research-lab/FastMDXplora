@@ -255,3 +255,30 @@ def test_a_refusal_is_read_out_once(tmp_path):
     assert shown == read_out == "The selected source frame is not a non-negative integer."
     assert quiet == "true" and heard is None
     assert errors == []
+
+
+def test_a_frame_whose_frames_cannot_be_loaded_is_said_where_it_is_seen(tmp_path):
+    """The frames said ready, and then not sent (gone between the two): a
+    frame asked for says it could not be shown, in the notice."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _viewer_page(pw, session.url)
+            for sent in ("**/structure/frames.dcd*", "**/structure/frames-topology.pdb*",
+                         "**/api/frames-pieces*"):
+                page.route(sent, lambda route: route.fulfill(status=404, body="Not found"))
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {trajectoryFrame: 7}}))")
+            shown = _seen(page, TOAST)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert shown == "Frame 7 could not be shown: the frames could not be loaded.", shown

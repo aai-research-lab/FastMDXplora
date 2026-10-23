@@ -3055,7 +3055,11 @@
       refuse("This chart is not linked to the production trajectory currently shown.");
       return false;
     }
-    if (!(await loadPlayback(payload)) || !current()) return false;
+    if (!(await loadPlayback(payload))) {
+      if (current()) refuse(`Frame ${target} could not be shown: the frames could not be loaded.`);
+      return false;
+    }
+    if (!current()) return false;
     const baseIndices = Array.isArray(STATE.framesPieces?.baseIndices)
       ? STATE.framesPieces.baseIndices : (payload.frame_indices || []);
     const baseTimes = Array.isArray(STATE.framesPieces?.baseTimes)
