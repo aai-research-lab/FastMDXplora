@@ -20,6 +20,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora import record_access as _records
+
 __all__ = ["MOST_SELECTIONS", "SELECTIONS_FILE", "atoms_selected", "delete_selection",
            "save_selection", "selections_of"]
 
@@ -163,9 +165,11 @@ def _topology(pdb: bytes, key: tuple[str, int, int]) -> Any:
 # --------------------------------------------------------------------------
 
 def selections_of(root: Path | str) -> dict[str, Any]:
-    """The selections named in the study, in the order they were named."""
+    """The selections named in the study, in the order they were named.
+    Through `record_access`: in a read held to the study, a record of them
+    linked out of it is refused and named, not read."""
     try:
-        data = json.loads((Path(root) / SELECTIONS_FILE).read_text(encoding="utf-8"))
+        data = json.loads(_records.read_text(Path(root) / SELECTIONS_FILE, encoding="utf-8"))
     except (OSError, ValueError):
         data = {}
     listed = data.get("selections") if isinstance(data, dict) else None
@@ -187,7 +191,9 @@ def save_selection(root: Path | str, name: Any, selection: Any) -> dict[str, Any
     if clean is None:
         return {"ok": False, "reason": "That is not a selection the Viewer can show."}
     with _LOCK:
-        listed = selections_of(root)["selections"]
+        listed = _kept(root)
+        if listed is None:
+            return dict(_NOT_READ)
         at = next((i for i, s in enumerate(listed) if s["name"] == name), None)
         if at is None and len(listed) >= MOST_SELECTIONS:
             return {"ok": False, "reason": f"A study keeps at most {MOST_SELECTIONS} "
@@ -203,12 +209,27 @@ def save_selection(root: Path | str, name: Any, selection: Any) -> dict[str, Any
 def delete_selection(root: Path | str, name: Any) -> dict[str, Any]:
     """The selection of that name forgotten."""
     with _LOCK:
-        listed = selections_of(root)["selections"]
+        listed = _kept(root)
+        if listed is None:
+            return dict(_NOT_READ)
         kept = [s for s in listed if s["name"] != str(name)]
         if len(kept) == len(listed):
             return {"ok": False, "reason": "There is no selection of that name."}
         _write(Path(root), kept)
     return {"ok": True, "selections": kept}
+
+
+#: Why a selection is not saved over selections that were not read.
+_NOT_READ = {"ok": False, "reason": "The selections named in the study were not read, so "
+                                    "none is saved or forgotten over them."}
+
+
+def _kept(root: Path | str) -> list[dict[str, Any]] | None:
+    """The selections named in the study, or None where a held read refused
+    their record (a link out of the study): nothing is written over it."""
+    with _records.refusals_noted() as refused:
+        listed = selections_of(root)["selections"]
+    return None if refused else listed
 
 
 def _write(root: Path, selections: list[dict[str, Any]]) -> None:

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat as stat_module
 import secrets
 import shutil
 import struct
@@ -412,11 +413,23 @@ def cancel_movie(key: Any) -> dict[str, Any]:
 
 
 def movies_of(root: str | Path) -> dict[str, Any]:
-    """The movies made of a study, newest first."""
+    """The movies made of a study, newest first. Through `record_access`:
+    in a read held to the study, a movie or the folder of them linked out of
+    it is refused and named, never listed where it leads."""
+    from fastmdxplora import record_access
+
     folder = Path(root) / MOVIES_DIR
-    found = [p for p in folder.glob("*") if p.is_file() and not p.name.startswith(".")
-             and p.suffix in {".mp4", ".webm"} and _NAME.match(p.stem)] \
-        if folder.is_dir() else []
-    found.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    found = []
+    for path in (record_access.glob(folder, "*") if record_access.is_dir(folder) else ()):
+        if path.name.startswith(".") or path.suffix not in {".mp4", ".webm"} \
+                or not _NAME.match(path.stem):
+            continue
+        try:
+            stat = record_access.stat(path)
+        except OSError:
+            continue
+        if stat_module.S_ISREG(stat.st_mode):
+            found.append((stat.st_mtime, path, stat.st_size))
+    found.sort(key=lambda one: one[0], reverse=True)
     return {"ok": True, "movies": [{"name": p.stem, "file": f"{MOVIES_DIR}/{p.name}",
-                                    "bytes": p.stat().st_size} for p in found]}
+                                    "bytes": size} for _, p, size in found]}

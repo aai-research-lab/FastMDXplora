@@ -452,3 +452,92 @@ def test_the_structure_s_details_read_no_run_record_linked_out(tmp_path, public)
     (status, body), opened = _opened_asking(outside, lambda: _asked(
         root, tmp_path, "/api/structure-info", public=public))
     assert status == 200 and opened == []
+
+
+# --------------------------------------------------------------------------
+# What else a page reads of the study: its views, selections, scenes,
+# movies, figures, stopping record, Config and deposit
+# --------------------------------------------------------------------------
+
+#: Each route, the record of the study it reads, and whether a public bind
+#: answers it.
+OF_THE_STUDY = {
+    "/api/stopping": ("stopping.json", True),
+    "/api/views": ("viewer_views.json", True),
+    "/api/viewer-selections": ("viewer_selections.json", True),
+    "/api/scenes": ("scenes/s1.mvsx", True),
+    "/scenes/s1/index.mvsj": ("scenes/s1.mvsx", True),
+    "/api/movies": ("movies/m1.mp4", False),
+    "/analysis-figures-svg.zip": ("analysis/rmsf/rmsf.svg", True),
+    "/api/again": ("resolved_config.yml", False),
+    "/api/files/deposit": ("manifest.json", False),
+}
+
+
+def _with_its_records(root: Path, tmp_path: Path) -> Path:
+    """The study with a view, a selection, a scene, a movie, a figure, a
+    stopping record and a Config, as the GUI and a run write them."""
+    camera = {"position": [0, 0, 50], "target": [0, 0, 0], "up": [0, 1, 0]}
+    for route, body in (("/api/views", {"name": "v1", "view": {"camera": camera}}),
+                        ("/api/viewer-selections", {"name": "s1", "selection": {
+                            "kind": "expression", "expression": "protein"}}),
+                        ("/api/scenes", {"name": "s1", "view": {"camera": camera}})):
+        status, said = _asked(root, tmp_path, route, body=body)
+        assert status == 200 and json.loads(said)["ok"], said
+    (root / "movies").mkdir()
+    (root / "movies" / "m1.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    (root / "analysis" / "rmsf" / "rmsf.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+    (root / "stopping.json").write_text(json.dumps({
+        "targets": [{"analysis": "rmsd", "relative_error": 0.05}], "outcome": "running",
+        "rounds": [{"production_ns": 0.012, "decision": "more"}]}), encoding="utf-8")
+    (root / "resolved_config.yml").write_text(
+        "systems: [{system: 1L2Y}]\ninclude_phase: [analysis]\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", sorted(OF_THE_STUDY))
+def test_what_else_a_page_reads_is_the_study_s_own(tmp_path, route, public):
+    relative, answered = OF_THE_STUDY[route]
+    if public and not answered:
+        pytest.skip("not answered beyond loopback")
+    root = _with_its_records(_study(tmp_path), tmp_path)
+    status, body = _asked(root, tmp_path, route, public=public)
+    assert status == 200, body[:300]
+    outside = _moved_out(root, tmp_path, relative)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, public=public))
+
+    assert opened == []
+    if not route.startswith("/api/"):
+        assert status == 404
+        return
+    said = json.loads(body)
+    assert status == 200 and f"{relative} was not read" in said["not_read"], said
+    assert str(outside) not in body.decode("utf-8")
+
+
+@pytest.mark.parametrize("route,relative,body", [
+    ("/api/views", "viewer_views.json", {"name": "v2", "view": {"camera": {
+        "position": [0, 0, 50], "target": [0, 0, 0], "up": [0, 1, 0]}}}),
+    ("/api/views", "viewer_views.json", {"name": "v1", "action": "delete"}),
+    ("/api/viewer-selections", "viewer_selections.json", {"name": "s2", "selection": {
+        "kind": "expression", "expression": "protein"}}),
+    ("/api/viewer-selections", "viewer_selections.json", {"name": "s1", "action": "delete"}),
+])
+def test_nothing_is_saved_over_views_or_selections_linked_out(tmp_path, route, relative,
+                                                              body):
+    root = _with_its_records(_study(tmp_path), tmp_path)
+    outside = _moved_out(root, tmp_path, relative)
+    before = (outside / relative).read_bytes()
+
+    (status, answer), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, body=body))
+
+    said = json.loads(answer)
+    assert status == 200 and said["ok"] is False and opened == [], said
+    assert f"{relative} was not read" in said["not_read"]
+    assert (outside / relative).read_bytes() == before
+    assert (root / relative).is_symlink()

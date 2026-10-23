@@ -1426,10 +1426,11 @@ def make_handler(
 
                 query = parse_qs(parsed.query)
                 sets = query.get("sets")
-                self._send_json(deposit_plan(
-                    root, _artifact_records(root),
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: deposit_plan(
+                    inside, _artifact_records(inside),
                     figures=(query.get("figures") or ["svg"])[0],
-                    sets=None if sets is None else [k for k in ",".join(sets).split(",") if k]),
+                    sets=None if sets is None else [k for k in ",".join(sets).split(",") if k]))),
                     verbatim=("readme",))
                 return
             if path == "/api/files/sha256":
@@ -1585,7 +1586,19 @@ def make_handler(
                 # Not answered beyond loopback, like the POST it offers.
                 from fastmdxplora.gui.again_view import again_payload
 
-                self._send_json(again_payload(root))
+                # Read from the study's own records only (`_confined`): what
+                # is offered again is planned from its own Config.
+                def offered(inside: Path) -> dict[str, Any]:
+                    from fastmdxplora.config.recorded import RECORDED
+                    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+                    if _linked_out(inside / RECORDED):
+                        return {"available": False, "why": (
+                            f"{RECORDED} is not one of this study's own records, so "
+                            "nothing is offered to run again from it.")}
+                    return again_payload(inside)
+
+                self._send_json(_said_not_read(_confined(root, offered)))
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its
@@ -1769,7 +1782,8 @@ def make_handler(
             if path == "/api/views":
                 from fastmdxplora.gui.saved_views import views_of
 
-                self._send_json(views_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, views_of)))
                 return
             if path == "/api/viewer-atoms":
                 # The atoms a typed selection names in what the Viewer renders.
@@ -1791,12 +1805,14 @@ def make_handler(
             if path == "/api/viewer-selections":
                 from fastmdxplora.gui.viewer_selections import selections_of
 
-                self._send_json(selections_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, selections_of)))
                 return
             if path == "/api/scenes":
                 from fastmdxplora.scenes import scenes_of
 
-                self._send_json(scenes_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, scenes_of)))
                 return
             if path == "/api/movies":
                 # What a movie is made with on this computer, and the movies
@@ -1804,7 +1820,11 @@ def make_handler(
                 # computer's ffmpeg, and making one writes the study.
                 from fastmdxplora.movies import encoding, movies_of
 
-                self._send_json({**encoding(), "movies": movies_of(root)["movies"]})
+                # Read from the study's own records only (`_confined`).
+                made = _said_not_read(_confined(root, movies_of))
+                self._send_json({**encoding(), **{key: made[key] for key in
+                                                  ("not_read", "unavailable") if key in made},
+                                 "movies": made.get("movies") or []})
                 return
             if path.startswith("/scenes/"):
                 # One file of a scene written with the study, so a viewer
@@ -2023,9 +2043,20 @@ def make_handler(
                                      "it now would carry what is still being written."})
                     return
                 asked = payload if isinstance(payload, dict) else {}
-                said = write_deposit(root, _artifact_records(root),
-                                     sets=[str(k) for k in asked.get("sets") or []],
-                                     figures=str(asked.get("figures") or "svg"))
+
+                def written(inside: Path) -> dict[str, Any]:
+                    # Held to the study (`_confined`): its records read from
+                    # it alone, and nothing written through a link out of it.
+                    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+                    if _linked_out(inside / "deposit"):
+                        return {"ok": False, "error": "Where the deposit would be written is "
+                                                      "not one of this study's own records."}
+                    return write_deposit(inside, _artifact_records(inside),
+                                         sets=[str(k) for k in asked.get("sets") or []],
+                                         figures=str(asked.get("figures") or "svg"))
+
+                said = _said_not_read(_confined(root, written))
                 if said.get("ok"):
                     said["href"] = f"/artifacts/{quote(said['path'])}?download=1"
                 self._send_json(said)
@@ -2174,11 +2205,13 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
-                if payload.get("action") == "delete":
-                    self._send_json(delete_selection(study, payload.get("name")))
-                else:
-                    self._send_json(save_selection(study, payload.get("name"),
-                                                   payload.get("selection")))
+                # Held to the study (`_confined`): selections linked out of it
+                # are not read, nor written over.
+                self._send_json(_said_not_read(_confined(study, lambda inside: (
+                    delete_selection(inside, payload.get("name"))
+                    if payload.get("action") == "delete"
+                    else save_selection(inside, payload.get("name"),
+                                        payload.get("selection"))))))
                 return
             if path == "/api/views":
                 # A view of the Viewer saved with the study, or forgotten.
@@ -2192,10 +2225,12 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
-                if payload.get("action") == "delete":
-                    self._send_json(delete_view(study, payload.get("name")))
-                else:
-                    self._send_json(save_view(study, payload.get("name"), payload.get("view")))
+                # Held to the study (`_confined`): views linked out of it are
+                # not read, nor written over.
+                self._send_json(_said_not_read(_confined(study, lambda inside: (
+                    delete_view(inside, payload.get("name"))
+                    if payload.get("action") == "delete"
+                    else save_view(inside, payload.get("name"), payload.get("view"))))))
                 return
             if path == "/api/run":
                 # Runs what the config describes rather than what a form was
@@ -2914,8 +2949,10 @@ def make_handler(
 
             name, _, member = unquote(rest).partition("/")
             archive = root / SCENES_DIR / f"{name}.mvsx"
-            data = read_scene(root, name, "index.mvsj" if member == "view"
-                              else member or "index.mvsj")
+            # Read from the study's own records only (`_confined`).
+            data = _confined(root, lambda inside: read_scene(
+                inside, name, "index.mvsj" if member == "view" else member or "index.mvsj"))
+            data = data if isinstance(data, bytes) else None
             if data is None or (not allow_control
                                 and not _served_beyond_loopback(root, archive)):
                 self.send_error(404, "Scene not found")
@@ -3167,20 +3204,27 @@ def make_handler(
 
         def _send_svg_bundle(self, root: Path) -> None:
             """Download every generated SVG analysis/report figure as one ZIP."""
-            svg_paths = [path for path in _svg_figure_paths(root)
-                         if allow_control or _served_beyond_loopback(root, path)]
-            if not svg_paths:
+            def bundled(inside: Path) -> tuple[bytes | None, dict[str, Any]]:
+                # Read from the study's own records only (`_bytes_confined`):
+                # a figure, or a folder of them, linked out of it is not.
+                svg_paths = [path for path in _svg_figure_paths(inside)
+                             if allow_control or _served_beyond_loopback(inside, path)]
+                buffer = io.BytesIO()
+                written = 0
+                with zipfile.ZipFile(buffer, mode="w",
+                                     compression=zipfile.ZIP_DEFLATED) as archive:
+                    for source in svg_paths:
+                        figure = _held_bytes(source)
+                        if figure is None:
+                            continue
+                        archive.writestr(source.relative_to(inside).as_posix(), figure)
+                        written += 1
+                return (buffer.getvalue() if written else None), {}
+
+            data, _ = _bytes_confined(root, bundled)
+            if data is None:
                 self.send_error(404, "No SVG figures are available yet")
                 return
-            buffer = io.BytesIO()
-            with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for source in svg_paths:
-                    try:
-                        relative = source.relative_to(root).as_posix()
-                        archive.write(source, arcname=relative)
-                    except (OSError, ValueError):
-                        continue
-            data = buffer.getvalue()
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Cache-Control", "no-store")
