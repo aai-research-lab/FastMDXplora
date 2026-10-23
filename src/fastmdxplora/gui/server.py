@@ -1842,16 +1842,17 @@ def make_handler(
                 if not named:
                     self._send_json({"ok": False, "reason": "No study was named."})
                     return
-                # This study's frames and what is written beside them, its own
-                # records only (`_frames_refused`); the study named is read as
-                # it is named.
-                from fastmdxplora.gui.beside import BESIDE
+                # The study named is read as it is named, first; then this
+                # study's frames, what is written beside them and the records
+                # read with them, its own records only (`_from_the_frames`).
+                from fastmdxplora.gui.beside import BESIDE, the_other
 
-                refused = self._from_the_frames(root, lambda inside: None, BESIDE)
-                if isinstance(refused, dict):
-                    self._send_json(refused)
+                other = the_other(named, most_frames=cfg.max_browser_frames)
+                if not other.get("ok"):
+                    self._send_json(other)
                     return
-                self._send_json(beside(root, named, most_frames=cfg.max_browser_frames))
+                self._send_json(self._from_the_frames(root, lambda inside: beside(
+                    inside, other, most_frames=cfg.max_browser_frames), BESIDE))
                 return
             if path in ("/structure/beside.pdb", "/structure/beside.dcd"):
                 from fastmdxplora.gui.beside import BESIDE, beside_file

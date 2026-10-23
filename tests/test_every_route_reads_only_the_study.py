@@ -61,6 +61,8 @@ def _study(tmp_path: Path) -> Path:
         "resolved": {"trajectory": str(simulation / "production.dcd"),
                      "topology": str(simulation / "trajectory_topology.pdb")},
         "results": {"rmsf": {"status": "ok"}}}), encoding="utf-8")
+    (analysis / "rmsf" / "options.json").write_text(json.dumps({"analysis": "rmsf"}),
+                                                     encoding="utf-8")
     (analysis / "rmsf" / "rmsf.dat").write_text(
         "# residue rmsf_nm\n" + "".join(f"{k} {0.05 + 0.01 * k:.4f}\n" for k in range(1, 5)),
         encoding="utf-8")
@@ -142,3 +144,42 @@ def test_a_scene_is_not_written_through_a_folder_linked_out(tmp_path):
     said = json.loads(body)
     assert status == 200 and said["ok"] is False, said
     assert list(elsewhere.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# Another study beside this one reads this one held to it (G7 H2)
+# --------------------------------------------------------------------------
+
+#: This study's records `/api/beside` reads, and what each says outside it.
+BESIDE_RECORDS = {
+    "simulation/simulation_parameters.json": json.dumps({
+        "parameters": {"integrator": "verlet", "timestep_fs": 2.0},
+        "duration_ns_actual": 777.0,
+        "resolved": {"trajectory_interval_steps": 500, "production_steps": 6000}}),
+    "analysis/analysis_manifest.json": None,
+    "analysis/rmsf/rmsf.dat": "# residue rmsf_nm\n" + "".join(
+        f"{k} 777.0\n" for k in range(1, 5)),
+}
+
+
+@pytest.mark.parametrize("relative", sorted(BESIDE_RECORDS))
+def test_another_study_beside_reads_this_one_s_own_records(tmp_path, relative):
+    root = _study(tmp_path)
+    other = _study(tmp_path / "other")
+    route = f"/api/beside?path={other}"
+    status, body = _asked(root, tmp_path, route)
+    said = json.loads(body)
+    assert status == 200 and said["ok"] and "not_read" not in said, said
+    assert said["property"]["high"] < 1.0
+    shutil.rmtree(root / "viewer_beside")
+    outside = _moved_out(root, tmp_path, relative)
+    if BESIDE_RECORDS[relative] is not None:
+        (outside / relative).write_text(BESIDE_RECORDS[relative], encoding="utf-8")
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(root, tmp_path, route))
+
+    said = json.loads(body)
+    assert status == 200 and f"{relative} was not read" in said["not_read"], said
+    assert opened == []
+    assert "776.9" not in body.decode("utf-8") and "777.0" not in body.decode("utf-8")
+    assert said.get("property") is None or said["property"]["high"] < 1.0
