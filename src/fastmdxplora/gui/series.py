@@ -482,6 +482,14 @@ def _order_parameter_rows(
         return [], []
 
 
+def _played(root: Path) -> Path:
+    """The trajectory the viewer plays once a run has finished: the joined
+    trajectory of an extended study, or the production trajectory."""
+    joined = root / "joined" / "production.dcd"
+    return joined if _records.is_file(root / "joined" / "joined.json") \
+        and _records.is_file(joined) else root / "simulation" / "production.dcd"
+
+
 def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
     """Whether the analysed trajectory is the one the viewer plays once a run
     has finished, so that a point's frame is a frame the viewer can show: the
@@ -490,9 +498,7 @@ def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
     analysed = resolved.get("trajectory") or manifest.get("trajectory_input")
     if not isinstance(analysed, str) or not analysed:
         return False
-    joined = root / "joined" / "production.dcd"
-    played = joined if _records.is_file(root / "joined" / "joined.json") \
-        and _records.is_file(joined) else root / "simulation" / "production.dcd"
+    played = _played(root)
     try:
         if Path(analysed).resolve() == played.resolve():
             return True
@@ -503,6 +509,23 @@ def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
                 and named.parts[-2:] == played.relative_to(root).parts[-2:])
     except (OSError, ValueError):
         return False
+
+
+def trajectory_of_this_study(root: Path, manifest: dict[str, Any], named: Path
+                             ) -> Path | None:
+    """The trajectory the analyses name, ``named``, as this study has it:
+    the study's own file where it names one in the study, or the one the
+    viewer plays where it names that trajectory where the study was
+    analysed (`_of_the_played_trajectory`); None for any other, which is
+    not read. Through `record_access`: in a read held to the study, one
+    linked out of it is refused and named."""
+    for base in {Path(root).absolute(), Path(root).resolve()}:
+        try:
+            named.relative_to(base)
+        except ValueError:
+            continue
+        return named if _records.is_file(named) else None
+    return _played(root) if _of_the_played_trajectory(root, manifest) else None
 
 
 def _rows(path: Path) -> list[tuple[list[str], list[float]]]:

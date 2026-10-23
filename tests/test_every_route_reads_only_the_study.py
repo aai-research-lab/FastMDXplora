@@ -183,3 +183,86 @@ def test_another_study_beside_reads_this_one_s_own_records(tmp_path, relative):
     assert opened == []
     assert "776.9" not in body.decode("utf-8") and "777.0" not in body.decode("utf-8")
     assert said.get("property") is None or said["property"]["high"] < 1.0
+
+
+# --------------------------------------------------------------------------
+# A residue or two atoms selected read the study's own structure (G7 H3, G8 H1)
+# --------------------------------------------------------------------------
+
+SELECTED = {
+    "/api/selection?chain=A&resseq=2&resname=ALA&atom=CA&frames_atom=6": True,
+    "/api/measure-over-frames?a=chainid+0+and+resSeq+2+and+name+CA"
+    "&b=chainid+1+and+resSeq+3+and+name+CA": True,
+    "/api/residue-states?chain=A&resseq=2&resname=HIS": False,
+}
+
+
+def _given(root: Path, tmp_path: Path) -> None:
+    """The structure the study was given, a histidine its second residue:
+    named by its Config outside the study, and placed in its setup."""
+    text = (root / "simulation" / "trajectory_topology.pdb").read_text(encoding="utf-8")
+    given = "".join(line.replace("ALA A   2", "HIS A   2") + "\n"
+                    for line in text.splitlines() if line.startswith(("ATOM", "HETATM")))
+    (tmp_path / "given.pdb").write_text(given + "END\n", encoding="utf-8")
+    (root / "setup").mkdir(exist_ok=True)
+    (root / "setup" / "input.pdb").write_text(given + "END\n", encoding="utf-8")
+    (root / "resolved_config.yml").write_text(
+        f"systems: [{{system: {tmp_path / 'given.pdb'}}}]\nsetup: {{forcefield: amber14}}\n",
+        encoding="utf-8")
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("relative", ["simulation/trajectory_topology.pdb",
+                                      "analysis/analysis_manifest.json",
+                                      "simulation/frames_index.json", "resolved_config.yml",
+                                      "setup/input.pdb"])
+@pytest.mark.parametrize("route", sorted(SELECTED))
+def test_a_selection_reads_no_structure_linked_out(tmp_path, route, relative, public):
+    if public and not SELECTED[route]:
+        pytest.skip("not answered beyond loopback")
+    root = _study(tmp_path)
+    _given(root, tmp_path)
+    status, body = _asked(root, tmp_path, route, public=public)
+    said = json.loads(body)
+    assert status == 200 and said["ok"] and "not_read" not in said, said
+    outside = _moved_out(root, tmp_path, relative)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, public=public))
+
+    said = json.loads(body)
+    assert opened == []
+    read = {"/api/selection": ("simulation/trajectory_topology.pdb",
+                               "analysis/analysis_manifest.json",
+                               "simulation/frames_index.json"),
+            "/api/measure-over-frames": ("simulation/trajectory_topology.pdb",
+                                         "analysis/analysis_manifest.json"),
+            "/api/residue-states": ("resolved_config.yml", "setup/input.pdb")}[
+        route.split("?")[0]]
+    if relative in read:
+        assert f"{relative} was not read" in said["not_read"], said
+    assert str(outside) not in body.decode("utf-8")
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", sorted(SELECTED))
+def test_a_study_copied_whole_selects_in_its_own_structure(tmp_path, route, public):
+    """A `cp -a` copy, its original still there: what it selects is read
+    from the copy alone, and nothing of the original is opened or named."""
+    if public and not SELECTED[route]:
+        pytest.skip("not answered beyond loopback")
+    original = _study(tmp_path / "first")
+    _given(original, tmp_path)
+    copy = tmp_path / "copy"
+    shutil.copytree(original, copy, symlinks=True)
+
+    (status, body), opened = _opened_asking(original, lambda: _asked(
+        copy, tmp_path, route, public=public))
+
+    said = json.loads(body)
+    assert status == 200 and opened == [], (said, opened)
+    assert str(original) not in body.decode("utf-8")
+    if not route.startswith("/api/measure"):
+        assert said["ok"], said
+    if public:
+        assert str(tmp_path) not in body.decode("utf-8")

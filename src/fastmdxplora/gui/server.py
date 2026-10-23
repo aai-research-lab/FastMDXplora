@@ -1518,9 +1518,12 @@ def make_handler(
                 def one(key: str) -> str:
                     return (query.get(key) or [""])[0]
 
-                self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
-                                              resname=one("resname"), atom=one("atom"),
-                                              frames_atom=one("frames_atom") or None))
+                # Read from the study's own records only (`_confined`): the
+                # structure the analyses read and the frames' index, a study
+                # copied whole its own (`series.topology_held`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: selection_for(
+                    inside, chain=one("chain"), resseq=one("resseq"), resname=one("resname"),
+                    atom=one("atom"), frames_atom=one("frames_atom") or None))))
                 return
             if path == "/api/residue-states":
                 # A clicked residue's states, for a new study of the same
@@ -1528,16 +1531,25 @@ def make_handler(
                 from fastmdxplora.gui.selection import states_for
 
                 query = parse_qs(parsed.query)
-                self._send_json(states_for(root, chain=(query.get("chain") or [""])[0],
-                                           resseq=(query.get("resseq") or [""])[0],
-                                           resname=(query.get("resname") or [""])[0]))
+                # Read from the study's own records only (`_confined`): its
+                # Config and the structure it was given, as its setup placed it.
+                self._send_json(_said_not_read(_confined(root, lambda inside: states_for(
+                    inside, chain=(query.get("chain") or [""])[0],
+                    resseq=(query.get("resseq") or [""])[0],
+                    resname=(query.get("resname") or [""])[0]))))
                 return
             if path == "/api/measure-over-frames":
                 from fastmdxplora.gui.measure import over_frames
 
                 query = parse_qs(parsed.query)
-                self._send_json(over_frames(root, (query.get("a") or [""])[0],
-                                            (query.get("b") or [""])[0]))
+                # Read from the study's own records only (`_confined`), and
+                # its files named from the study's folder beyond loopback.
+                answer = _said_not_read(_confined(root, lambda inside: over_frames(
+                    inside, (query.get("a") or [""])[0], (query.get("b") or [""])[0],
+                    relative=not allow_control)))
+                inside, opened = str(root.resolve()), str(root)
+                self._send_json(answer if inside == opened or not allow_control
+                                else _as_opened(answer, inside, opened))
                 return
             if path == "/api/residue-values":
                 # The per-residue results the viewer colours the structure by.

@@ -3713,6 +3713,13 @@
     const copy = window.FastMDXIcons.button("copy", "Copy the command", "measure-copy");
     copy.addEventListener("click", () => window.FastMDXIcons.copy(copy, said.textContent));
     host.append(said, copy);
+    if (answer.note) {
+      // Where to run it, where its files are named from the study's folder.
+      const note = document.createElement("p");
+      note.className = "muted small measure-note";
+      note.textContent = answer.note;
+      host.appendChild(note);
+    }
   }
 
   /* The selection a clicked atom is, as a Config writes it, checked by the
