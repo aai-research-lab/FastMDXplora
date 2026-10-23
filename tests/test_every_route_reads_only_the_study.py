@@ -573,3 +573,19 @@ def test_a_run_linked_out_is_said_not_read_in_the_runs_panel(tmp_path, public):
     info = json.loads(_asked(root, tmp_path, "/api/frames-info", public=public)[1])
     excluded = {run["run_id"]: run["reason"] for run in info["runs_together"]["excluded"]}
     assert excluded["r1"] == "It is linked out of the study, so it was not read."
+
+
+def test_the_pocket_says_a_frame_s_time_in_ps_under_1_ns():
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "viewer-pocket.js").read_text(encoding="utf-8")
+    start = script.index("  function timeSaid(")
+    function = script[start:script.index("\n  }\n", start) + 4]
+    said = subprocess.run([node, "-e", function + "\nconsole.log(JSON.stringify("
+                           "[timeSaid(0.12), timeSaid(0.0015), timeSaid(1), timeSaid(12.5)]));"],
+                          capture_output=True, text=True, check=True)
+    assert json.loads(said.stdout) == ["120 ps", "1.5 ps", "1.000 ns", "12.500 ns"]

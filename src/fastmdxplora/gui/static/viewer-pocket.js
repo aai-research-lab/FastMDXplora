@@ -117,8 +117,13 @@
     var time = state.data.times && state.data.times[frame];
     var named = shownName(frame);
     byId("pocket-now").textContent = named.charAt(0).toUpperCase() + named.slice(1)
-      + (time != null ? " (" + Number(time).toFixed(3) + " ns)" : "") + ": "
+      + (time != null ? " (" + timeSaid(Number(time)) + ")" : "") + ": "
       + Math.round(volumes[frame]).toLocaleString() + " Å³.";
+  }
+
+  /* A frame's time, in ps under 1 ns, as the Viewer's overlay says it. */
+  function timeSaid(ns) {
+    return Math.abs(ns) < 1 ? +(ns * 1000).toFixed(1) + " ps" : ns.toFixed(3) + " ns";
   }
 
   /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
