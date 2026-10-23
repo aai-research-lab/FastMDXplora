@@ -671,6 +671,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   a live frame's time under 1 ns is said in ps on the overlay; a drag along
   the series track selects no text of the page.
 
+- The Runs panel says a run linked out of the study was not read, not that
+  it has no trajectory yet; the maps over the frames are offered only where
+  the frames were read, as Motion and Pocket are; the pocket's frame time is
+  said in ps under 1 ns; the frames' pieces linked out of the study are said
+  in the notice as the frames are played whole.
+
 - The phone-to-desktop browser check waits for the side panel to return
   after its dialog closes, avoiding a timing-sensitive assertion.
 
@@ -1572,6 +1578,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A trajectory linked out of the study is refused and said not read where
   no topology is left to read it with, and a saved topology refused has no
   other read in its place.
+
+- Every route a page asks for reads only inside the study. A scene is made
+  of the study's own frames, trajectory and structure, and none is written
+  through a link; another study set beside this one reads this one's
+  parameters, manifest and RMSF held to it; a residue's or two atoms'
+  selections and a residue's states read the study's own structure and
+  index, and the command that measures a distance names no path on this
+  computer beyond it. The structure the Viewer is sent, the live frame, the
+  structure's details and ligands, the preview, a typed selection and the
+  secondary structure of either, the views, selections, scenes and movies
+  saved, the figures zipped, the stopping record, what can be run again and
+  the deposit are read held to the study, on this computer and on a public
+  bind; each answer says what it did not read, no other file is read in
+  its place, and no view, selection, deposit or movie is written over or
+  through a record linked out.
+
+- A study copied whole is read as its own only where it is the same
+  structure: its own file in the place its analyses name is read only where
+  it holds as many atoms as they read (`n_atoms`), and its trajectory the
+  same way, so a copied study's time points open its own frames with the
+  original still there; a structure of other atoms is said not read.
 
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a

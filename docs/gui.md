@@ -1027,6 +1027,14 @@ The GUI is a thin layer over a JSON API on the same port, which is worth
 knowing if you want to drive it from a script. Requests are capped at 1 MB,
 a movie's frames at 64 MB.
 
+Every route reads only inside the study: a record linked out of it, or a
+file its records name outside it, is not read, nor another read in its
+place, on this computer or on a public bind. A JSON answer names it in
+`unavailable` and says it was not read (`not_read`); a file route gives a
+404; nothing is written over or through it. A study copied whole reads its
+own file in the place its records name only where it holds as many atoms as
+its analyses read (`n_atoms`).
+
 **Reading**
 
 | Endpoint | What it returns |
@@ -1063,7 +1071,7 @@ a movie's frames at 64 MB.
 | `GET /api/studies?path=`, `/api/compared?a=&b=`, `/api/study-thumbnail?path=` | The studies under a folder as cards (each with its tags and note), the tags they carry, the most used first, two compared (for the Compare page, with each named and their series), and a card's figure; loopback only, as browsing folders is, and inside the workspace when hosted |
 | `POST /api/study-tags` | A study's tags and note, `{"path", "tags", "note"}`, replacing those it had (without `note`, the note kept), kept in its `study_tags.json`; loopback only, and inside the workspace when hosted |
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |
-| `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |
+| `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom; beyond loopback its files are named from the study's folder, where it is run (`note`) |
 | `GET /api/remote/machines`, `/api/remote/job?job=`, `/api/remote/fetch-sizes?job=` | Your machines as recorded at a terminal ([Other machines](remote.md)) and the jobs whose results come back into the workspace, nothing asked of any machine; a job's state, asked of its machine at most every 30 s; what a fetch of an ended job would bring, each part's size; loopback only, and not in a hosted GUI |
 | `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
 | `GET /api/stopping` | For a study run until it is determined: the rule, each quantity's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |
