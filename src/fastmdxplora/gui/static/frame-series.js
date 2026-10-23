@@ -267,6 +267,9 @@
         { detail: { trajectoryFrame: frame } }));
     }
     svg.addEventListener("pointerdown", function (event) {
+      // A drag along the track moves the frame, and selects no text of the
+      // page it passes over.
+      event.preventDefault();
       dragging = true;
       aimed = null;
       if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);

@@ -627,6 +627,60 @@ def test_a_drag_along_the_series_follows_the_frames_and_reads_where_it_ends(tmp_
         session.server.shutdown()
 
 
+def test_a_drag_along_the_series_selects_no_text(tmp_path):
+    """A drag along the Viewer's series track at a phone's width, sliding
+    off it, moves the frame and leaves no text of the page selected."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+
+    root = _study(tmp_path / "study", frame_count=60)
+    _series(root, rows=60)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=5))
+    viewer = "window.FastMDXMoleculeViewer"
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 390, "height": 844}, color_scheme="dark")
+            page.add_init_script(
+                "try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => !!{viewer}")
+            assert page.evaluate(f"async () => !!(await {viewer}.movie.frames())")
+            page.wait_for_selector("#frame-series:not([hidden]) .frame-series-line")
+            box = None
+            for _ in range(10):
+                track = page.wait_for_selector("#frame-series:not([hidden]) .frame-series-svg")
+                try:
+                    track.scroll_into_view_if_needed(timeout=5000)
+                    box = track.bounding_box()
+                    break
+                except PlaywrightError:
+                    continue
+            assert box is not None
+            y = box["y"] + box["height"] / 2
+            page.evaluate("() => window.getSelection().removeAllRanges()")
+            page.mouse.move(box["x"] + 60, y)
+            page.mouse.down()
+            # Along the track and off it, over the page's text below, as a
+            # thumb slides.
+            for i in range(30):
+                page.mouse.move(box["x"] + 60 + i * (box["width"] * 0.62 - 60) / 29, y + 8 * i,
+                                steps=2)
+            page.mouse.up()
+            selected = page.evaluate("() => window.getSelection().toString()")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert selected == "", selected
+
+
 def _two_chains(root: Path) -> list[int]:
     """Four frames of two chains holding each other (as in
     test_what_holds_the_chains_is_shown); the frames the browser plays."""
