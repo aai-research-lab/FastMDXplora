@@ -386,7 +386,7 @@ def topology_held(root: Path) -> Path | None:
     for candidate in (resolved.get("topology"), manifest.get("topology_input")):
         if not isinstance(candidate, str) or not candidate:
             continue
-        named = Path(candidate)
+        named = _of_this_study(root, Path(candidate))
         if _records.can_read(named):
             if _records.is_file(named):
                 return named
@@ -402,6 +402,26 @@ def topology_held(root: Path) -> Path | None:
         if refused:
             return None
     return None
+
+
+def _of_this_study(root: Path, named: Path) -> Path:
+    """A structure the analyses name, as this study has it: a study copied
+    or moved names the structure where it was analysed, the folder it was
+    in then (the original, still there or gone). Named outside the study
+    where the study has a file in its place (its last two parts,
+    ``simulation/trajectory_topology.pdb``), that file is the one meant, as
+    `_of_the_played_trajectory` reads the trajectory; any other is left as
+    named, to be refused."""
+    if not named.is_absolute() or len(named.parts) < 3:
+        return named
+    for base in {Path(root).absolute(), Path(root).resolve()}:
+        try:
+            named.relative_to(base)
+            return named
+        except ValueError:
+            continue
+    here = Path(root).joinpath(*named.parts[-2:])
+    return here if os.path.lexists(here) else named
 
 
 def _profile_table_rows(path: Path) -> list[dict[str, str]]:

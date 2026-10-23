@@ -332,6 +332,8 @@ def _with_its_runs_process_records(study: Path,
 #: The names `record_access` gives a refused record that is not in the
 #: folder it was held to, which no path is relative to.
 _UNNAMED_REFUSALS = ("an unavailable record", "a non-regular record")
+#: How a record named outside the study, refused, is said.
+_NAMED_OUTSIDE = "a file named outside the study was not read"
 
 
 def _named_from(inside: Path, held: Path, name: str) -> str:
@@ -527,9 +529,17 @@ def _refusals_said(answer: dict[str, Any]) -> str:
     if not names:
         return ""
     why = answer.get("unavailable_why") or {}
-    said = "; ".join(f"{name} was not read: " + NOT_READ_BECAUSE.get(
-        why.get(name), "it leads outside the study, or to a file of the study that is not "
-        "one of its results") for name in names)
+
+    def one(name: str) -> str:
+        if name == _UNNAMED_REFUSALS[0]:
+            # Named by an address outside the study (`record_access` gives
+            # it no name of its own): no link, and said as what it is.
+            return _NAMED_OUTSIDE
+        return f"{name} was not read: " + NOT_READ_BECAUSE.get(
+            why.get(name), "it leads outside the study, or to a file of the study that is not "
+            "one of its results")
+
+    said = "; ".join(one(name) for name in names)
     return said + (", so what it says is not shown." if len(names) == 1
                    else ", so what they say is not shown.")
 

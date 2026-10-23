@@ -113,8 +113,35 @@ def test_a_structure_the_manifest_names_outside_the_study_is_not_read(tmp_path, 
         _WATCHED.clear()
     assert opened == []
     assert data["entities"] == [None, None, None]
-    assert "was not read" in data["not_read"]
+    # Not a link: said as what it is.
+    assert data["not_read"] == ("a file named outside the study was not read, so what it "
+                                "says is not shown.")
     assert str(tmp_path) not in json.dumps(data)
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_study_copied_whole_names_its_residues_from_its_own_structure(tmp_path, public):
+    """A study copied whole (`cp -a`) names the structure by the original's
+    place, the original still there: the copy's own file in its place is
+    read, and the original is not opened."""
+    import subprocess
+
+    original = _study(tmp_path / "first")
+    manifest = original / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["resolved"] = {"topology": str(original / "simulation" / "trajectory_topology.pdb")}
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    copied = tmp_path / "copied"
+    subprocess.run(["cp", "-a", str(original), str(copied)], check=True)
+    _watch(original)
+    try:
+        data = _series(copied, tmp_path, public=public)
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+    assert opened == []
+    assert [entity and entity["resi"] for entity in data["entities"]] == [1, 2, 3]
+    assert "not_read" not in data
 
 
 #: Each figure that names residues, with what it is read from: the name of
