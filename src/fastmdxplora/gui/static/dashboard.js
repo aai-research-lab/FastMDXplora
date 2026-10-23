@@ -2953,6 +2953,8 @@
     }
     toast.querySelectorAll(".dashboard-toast-action").forEach((old) => old.remove());
     said.textContent = message;
+    // Read out, unless whoever showed it has said it already (`refuse`).
+    said.removeAttribute("aria-hidden");
     toast.setAttribute("data-kind", kind || "ok");
     const offered = action && action.label && typeof action.run === "function";
     toast.style.pointerEvents = offered ? "auto" : "";

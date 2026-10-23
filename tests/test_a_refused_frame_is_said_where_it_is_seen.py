@@ -213,3 +213,45 @@ def test_a_viewer_whose_trajectory_is_not_read_says_so_where_it_is_seen(tmp_path
         assert "Trajectory playback is not ready: simulation/production.dcd was not read" \
             in played, played
     assert errors == []
+
+
+def _viewer_page(pw, url: str):
+    browser, page, errors = _page(pw, url, "#viewer")
+    if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+        browser.close()
+        pytest.skip("this browser has no WebGL, so the viewer cannot render")
+    page.wait_for_function("() => !!window.FastMDXMoleculeViewer")
+    return browser, page, errors
+
+
+def test_a_refusal_is_read_out_once(tmp_path):
+    """A frame refused is read out from `#sr-live` and shown in the notice,
+    which is not read out again; the next notice is read out as ever."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _study
+
+    root = _study(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    said = ".dashboard-toast-said"
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _viewer_page(pw, session.url)
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {trajectoryFrame: -1}}))")
+            shown = _seen(page, TOAST)
+            read_out = page.text_content("#sr-live")
+            quiet = page.get_attribute(f"#dashboard-toast {said}", "aria-hidden")
+            page.evaluate("() => window.FastMDXDashboard.toast('Saved.')")
+            page.wait_for_function(f"() => document.querySelector('{said}').textContent"
+                                   " === 'Saved.'")
+            heard = page.get_attribute(f"#dashboard-toast {said}", "aria-hidden")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert shown == read_out == "The selected source frame is not a non-negative integer."
+    assert quiet == "true" and heard is None
+    assert errors == []

@@ -4064,7 +4064,13 @@
    * notice, as well as read out. */
   function refuse(message) {
     announce(message);
-    window.FastMDXDashboard?.toast?.(message, "warning");
+    const toast = window.FastMDXDashboard?.toast;
+    if (!toast) return;
+    toast(message, "warning");
+    // Read out once, from `#sr-live`: the notice shows it without saying it
+    // again (it is a status of its own, until the next notice).
+    document.querySelector("#dashboard-toast .dashboard-toast-said")
+      ?.setAttribute("aria-hidden", "true");
   }
 
   function setText(id, value) {
