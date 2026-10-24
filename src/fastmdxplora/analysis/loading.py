@@ -63,6 +63,36 @@ FORMATS_THAT_CARRY_A_CLOCK = frozenset(
 PathLike = Union[str, Path]
 TrajectoryInput = Union[PathLike, Sequence[PathLike]]
 
+# The loaded frame indices where recorded segments start, carried through
+# copies that preserve all frames. Spatial selections do not change them.
+SEGMENT_JOINS = "_fastmdxplora_segment_joins"
+
+
+def _loaded_joins(paths: list[Path], top: Path | None, stride: int | None,
+                  n_loaded: int) -> tuple[int, ...]:
+    from fastmdxplora.analysis.joining import joins_beside
+
+    recorded = [joins_beside(path) for path in paths]
+    if not any(recorded):
+        return ()
+    step = int(stride) if stride else 1
+    if len(paths) == 1:
+        return tuple(sorted({(j + step - 1) // step for j in recorded[0]
+                             if 0 < j and (j + step - 1) // step < n_loaded}))
+    joins: set[int] = set()
+    offset = 0
+    for path, boundaries in zip(paths, recorded):
+        length = _frames_in(path, top)
+        if length is None:
+            logger.warning("Could not map recorded joins in %s to loaded frames.", path.name)
+            return ()
+        joins.update(offset + (j + step - 1) // step for j in boundaries if 0 < j < length)
+        offset += (length + step - 1) // step
+    if offset != n_loaded:
+        logger.warning("Recorded file lengths do not match loaded frames; joins cannot be mapped.")
+        return ()
+    return tuple(sorted(j for j in joins if 0 < j < n_loaded))
+
 
 class TrajectoryLoadError(CodedError, ValueError):
     """Raised when a trajectory cannot be located, opened, or parsed."""
@@ -581,6 +611,8 @@ def load_trajectory(
     trajectory = _with_a_real_clock(
         trajectory, traj_paths, saving_interval_ps, stride, written)
 
+    joins = _loaded_joins(traj_paths, top_path, stride, trajectory.n_frames)
+
     if first is not None or last is not None:
         n = trajectory.n_frames
         f = first if first is not None else 0
@@ -590,6 +622,9 @@ def load_trajectory(
                 f"Invalid frame slice [{f}:{l}] for trajectory with {n} frames."
             , code="analysis.option.out_of_range")
         trajectory = trajectory[f:l]
+        joins = tuple(j - f for j in joins if f < j < l)
+
+    setattr(trajectory, SEGMENT_JOINS, joins)
 
     # Measured once here, on what is handed on, so the analyses need not.
     from fastmdxplora.analysis.base import mark_wholeness

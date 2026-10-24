@@ -861,10 +861,10 @@ CODES: tuple[Code, ...] = (
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
          detail_keys=("frames", "drift_in_spread", "trend_in_errors", "needed")),
     Code("analysis.sampling.drifting",
-         "The segment means move in order across the run, so it had not "
+         "The segment means support a trend across the run, so it had not "
          "equilibrated at the scale of the whole run.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
-         detail_keys=("drift_p", "heterogeneity", "span", "segments")),
+         detail_keys=("drift_p", "heterogeneity", "span", "segments", "drift_test")),
     Code("analysis.sampling.not_equilibrated",
          "No equilibrated region was detected, so there is nothing to "
          "average over.",

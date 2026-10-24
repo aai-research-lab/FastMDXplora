@@ -433,13 +433,19 @@ def joins_beside(trajectory: Path | str) -> list[int]:
     """
     path = Path(trajectory)
     record = path.with_suffix(path.suffix + ".join.json")
-    if not record.is_file():
+    from fastmdxplora.refusals import OutsideWorkspace
+    from fastmdxplora.simulation.pipeline import _refuse
+
+    _refuse(record)
+    if not _records.is_file(record):
         return []
     try:
         return [int(frame)
-                for frame in json.loads(record.read_text(encoding="utf-8")
+                for frame in json.loads(_records.read_text(record, encoding="utf-8")
                                         ).get("joins", [])]
-    except (ValueError, TypeError):
+    except OutsideWorkspace:
+        raise
+    except (OSError, ValueError, TypeError, AttributeError):
         # An unreadable record is treated as absent rather than repaired.
         # Guessing at where the joins were would put an invented number
         # into the decision about how to read the run.

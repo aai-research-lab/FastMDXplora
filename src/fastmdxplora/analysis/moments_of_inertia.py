@@ -207,6 +207,7 @@ class MomentsOfInertia(Analysis):
         where the report, the GUI and the Agent read it."""
         super()._record_what_the_mean_is_worth(traj)
         from fastmdxplora.analysis.base import _frame_interval_ns
+        from fastmdxplora.analysis.loading import SEGMENT_JOINS
         from fastmdxplora.statistics import mean_record
 
         shape = getattr(self, "_shape", None)
@@ -214,7 +215,8 @@ class MomentsOfInertia(Analysis):
         if shape is not None and len(shape) == traj.n_frames:
             for column, (key, _name, unit) in enumerate(SHAPE_DESCRIPTORS):
                 record = mean_record(shape[:, column],
-                                     frame_interval_ns=_frame_interval_ns(traj))
+                                     frame_interval_ns=_frame_interval_ns(traj),
+                                     joins=getattr(traj, SEGMENT_JOINS, ()))
                 record["unit"] = unit
                 self.findings[key] = record
                 if reason:

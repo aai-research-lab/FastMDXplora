@@ -33,7 +33,7 @@ import numpy as np
 from fastmdxplora import record_access as _records
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.statistics import summarise
+from fastmdxplora.statistics import mean_record
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import MissingResultError
 
@@ -264,16 +264,25 @@ def state_record_pieces(root: str | Path) -> list[dict[str, Any]] | None:
     return pieces
 
 
-def read_pieces_state_table(pieces: list[dict[str, Any]]) -> dict[str, np.ndarray]:
+def read_pieces_state_table(pieces: list[dict[str, Any]], *,
+                            joins: dict[str, list[int]] | None = None) -> dict[str, np.ndarray]:
     """One state table of a study's pieces (:func:`state_record_pieces`),
-    each piece's rows to its last step, its step and time carried on."""
+    each piece's rows to its last step, its step and time carried on.
+    Optional ``joins`` receives boundaries in each column's own samples,
+    after trimming and missing values; energy rows need not match frames."""
     header0: list[str] = []
     columns: dict[str, list[float | None]] = {}
+    boundaries: dict[str, list[int]] = {}
+    counts: dict[str, int] = {}
     for piece in pieces:
         header, rows = _rows_of(piece["path"])
         if not header0:
             header0 = header
             columns = {name: [] for name in header}
+            boundaries = {name: [] for name in header}
+            counts = {name: 0 for name in header}
+        for name in columns:
+            boundaries[name].append(counts[name])
         step_at = _column_named(header, "step")
         time_at = _column_named(header, "time")
         for row in rows:
@@ -289,11 +298,14 @@ def read_pieces_state_table(pieces: list[dict[str, Any]]) -> dict[str, np.ndarra
                 elif value is not None and index == time_at:
                     value += piece["ps_before"]
                 columns[name].append(value)
+                counts[name] += int(value is not None)
     table: dict[str, np.ndarray] = {}
     for name, values in columns.items():
         kept = [value for value in values if value is not None]
         if kept:
             table[name] = np.asarray(kept, dtype=float)
+            if joins is not None:
+                joins[name] = sorted({j for j in boundaries[name] if 0 < j < len(kept)})
     return table
 
 
@@ -362,7 +374,9 @@ class Thermodynamics(Analysis):
         if (not self.state_csv and path.name == "energy.csv"
                 and path.parent.name == "simulation"):
             pieces = state_record_pieces(path.parent.parent)
-        table = read_pieces_state_table(pieces) if pieces else read_state_table(path)
+        column_joins: dict[str, list[int]] = {}
+        table = (read_pieces_state_table(pieces, joins=column_joins)
+                 if pieces else read_state_table(path))
         if not table:
             raise StudyError(
                 f"{path} holds no rows, so the run recorded no state. A run "
@@ -372,10 +386,12 @@ class Thermodynamics(Analysis):
         # When each row was written, to read the image check's frame at it.
         self._row_times = _row_times_ps(table)
         found = {}
+        found_joins = {}
         for key, (needle, _units) in COLUMNS.items():
             for name, values in table.items():
                 if needle.lower() in name.lower():
                     found[key] = values
+                    found_joins[key] = column_joins.get(name, [])
                     break
 
         volume = found.get("volume")
@@ -434,27 +450,19 @@ class Thermodynamics(Analysis):
                 }
                 continue
 
-            equilibrated, reason = summarise(values)
-            entry: dict[str, Any] = {"units": units}
-            if equilibrated is not None:
-                entry.update(equilibrated.as_record())
+            entry: dict[str, Any] = {
+                **mean_record(values, frame_interval_ns=interval_ns,
+                              joins=found_joins.get(key, [])),
+                "units": units,
+            }
+            if "mean" in entry:
                 labels.append(key)
                 rows.append((
-                    float(equilibrated.mean),
-                    float(equilibrated.standard_error),
-                    float(equilibrated.effective_samples),
-                    float(equilibrated.standard_deviation),
+                    float(entry["mean"]),
+                    float(entry["standard_error"]),
+                    float(entry["effective_samples"]),
+                    float(entry["standard_deviation"]),
                 ))
-            if reason is not None:
-                entry["not_a_measurement"] = reason
-                # And how much longer, as every other analysis's mean says
-                # it: "what they need" named the trajectory's analyses and
-                # left out the energy, temperature and density withheld.
-                from fastmdxplora.statistics import mean_record
-
-                shortfall = mean_record(values, frame_interval_ns=interval_ns).get("shortfall")
-                if shortfall:
-                    entry["shortfall"] = shortfall
             record[key] = entry
 
         self.findings["thermodynamics"] = record

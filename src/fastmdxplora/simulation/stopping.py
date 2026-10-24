@@ -389,7 +389,7 @@ def _more_for(error: float, allowed: float, production_ns: float, kept: float) -
 _RECOMPUTED = frozenset({
     "discard", "statistical_inefficiency", "effective_samples", "mean", "standard_error",
     "standard_deviation", "degrees_of_freedom", "not_a_measurement", "shortfall", "n_frames",
-    "start_shared_with_replicas"})
+    "start_shared_with_replicas", "segment_joins", "drift_test"})
 
 
 def _series_in(path: Path) -> "Any | None":
@@ -454,6 +454,7 @@ def share_the_start(runs: list[Path], analysis: str, production_ns: float | None
         if shared == at or (not shared and at <= int(record.get("discard") or 0)):
             continue
         again = mean_record(series, start_at_least=at,
+                            joins=record.get("segment_joins") or (),
                             frame_interval_ns=(production_ns / series.size
                                                if production_ns else None))
         kept = {k: v for k, v in record.items() if k not in _RECOMPUTED}

@@ -151,7 +151,8 @@ DRIFT_FRAMES = 6
 #: by :data:`DRIFT_IN_ERRORS` of the trend's own error. A record without
 #: the key was written by an earlier version, most of which did not
 #: withhold such a mean, so it may call one determined.
-MEAN_RULES = 3
+#: 4 also checks recorded joins for a resolved trend between segments.
+MEAN_RULES = 4
 
 #: A series whose averaged frames trend by this many times the trend's own
 #: error is still drifting, however small the trend is against the frames'
@@ -928,20 +929,31 @@ def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", t
 
 
 def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
-                start_at_least: int = 0) -> dict[str, Any]:
+                start_at_least: int = 0, joins: list[int] | tuple[int, ...] = ()) -> dict[str, Any]:
     """What an analysis records of a per-frame series: its mean and error
     after equilibration, or why there is none and how much longer would give
     one. One function for every analysis and for whatever reads the records
     as the analyses would write them (the stopping rule's calibration among
     them), so the two cannot differ. ``start_at_least`` is a start shared
-    with replicas (:func:`shared_start`); the record says where it came from."""
+    with replicas (:func:`shared_start`); the record says where it came from.
+    Known ``joins`` additionally guard against drift between segments. This
+    guard does not change the existing single-series estimate into a pooled
+    estimate: it withholds its error when the joined run is still moving."""
     values = np.asarray(series, dtype=float)
     equilibrated, reason = summarise(values, start_at_least=start_at_least)
+    boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
+    if boundaries:
+        _, joined_reason = summarise_segments(values, boundaries)
+        if _code_of(joined_reason) == "analysis.sampling.drifting":
+            reason = joined_reason
     record: dict[str, Any] = {}
     if equilibrated is not None:
         record.update(equilibrated.as_record())
     if reason is not None:
         record["not_a_measurement"] = reason
+        if _code_of(reason) == "analysis.sampling.drifting":
+            record["standard_error"] = float("nan")
+            record["drift_test"] = reason.refusal.details["drift_test"]
         # And what would make it one: "the remedy is a longer run" left the
         # length to guess, and the correlation the series already shows
         # says how much longer.
@@ -969,6 +981,8 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
             if not shortfall.met:
                 record["shortfall"] = shortfall.as_record()
     record["n_frames"] = int(values.size)
+    if boundaries:
+        record["segment_joins"] = boundaries
     if start_at_least:
         record["start_shared_with_replicas"] = int(start_at_least)
     return record
@@ -1076,8 +1090,8 @@ class Pooled:
     #: Observed scatter of the segment means over what their own standard
     #: errors predict. One means they agree.
     heterogeneity: float = 1.0
-    #: How unusual the *ordering* of the segment means is. Low means they
-    #: climb or fall rather than scatter.
+    #: The drift test's p-value: a weighted slope with a line-fit check for
+    #: three or four segments, an order-permutation test for five or more.
     drift_p: float = 1.0
     #: What is true of this mean that would not be true of one from a run
     #: that stayed put. Empty where nothing is.
@@ -1099,6 +1113,7 @@ class Pooled:
             ],
             "heterogeneity": self.heterogeneity,
             "drift_p": self.drift_p,
+            "drift_test": _segment_drift_method(self.contributing),
             # Said plainly, because a reader comparing this against a run
             # that went through in one piece should know they are not the
             # same kind of number.
@@ -1299,13 +1314,22 @@ def summarise_segments(
 
     qualification = ""
     if scatter > HETEROGENEITY_QUALIFY_ABOVE:
-        qualification = (
-            f"The segment means scatter {scatter:.1f} times more than their "
-            "own standard errors predict, in no particular order. That is "
-            "not drift -- it says the per-segment errors are too small, "
-            "usually because the statistical inefficiency did not fully "
-            "capture the correlation. Treat the error on this mean as a "
-            "lower bound.")
+        if 3 <= len(pieces) <= 4:
+            qualification = (
+                f"The segment means scatter {scatter:.1f} times more than their "
+                "own standard errors predict, without a resolved straight-line "
+                "trend consistent with those errors. This does not establish "
+                "stationarity: unordered offsets or nonlinear movement can "
+                "also disagree this way. Treat the error on this mean as a "
+                "lower bound.")
+        else:
+            qualification = (
+                f"The segment means scatter {scatter:.1f} times more than their "
+                "own standard errors predict, in no particular order. That is "
+                "not drift -- it says the per-segment errors are too small, "
+                "usually because the statistical inefficiency did not fully "
+                "capture the correlation. Treat the error on this mean as a "
+                "lower bound.")
 
     return Pooled(
         segments=tuple(pieces),
@@ -1324,7 +1348,7 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
     """The heterogeneity, the drift p-value, and the refusal for segment
     means that move in order (None where they do not).
 
-    Both an ordering (``drift_across_segments`` below 0.05) and a
+    Both a trend (``drift_across_segments`` at most 0.05) and a
     disagreement (``heterogeneity_ratio`` above one) are needed, because
     either alone is not drift: a low p on segments that agree is a trend of
     nothing, and scatter with no order is underestimated error rather than
@@ -1341,10 +1365,18 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
     span = float(means[-1] - means[0])
     chance = (f"about {drifting:.1%}" if drifting >= 0.001
               else "less than 0.1%")
+    method = _segment_drift_method(means.size)
+    evidence = (
+        "a weighted straight-line trend has a two-sided slope p-value of "
+        f"{chance}, using the segments' own standard errors, with residuals "
+        "consistent with those errors" if method == "weighted_slope" else
+        f"an ordering this clean arises by chance {chance} of the time")
+    movement = (
+        f"The first and last segment means differ by {span:+.4g} across the run"
+        if method == "weighted_slope" else
+        f"The segment means move in order across the run, by {span:+.4g} from first to last")
     said = (
-        f"The segment means move in order across the run, by {span:+.4g} "
-        f"from first to last, and an ordering this clean arises by "
-        f"chance {chance} of the time. The system had not "
+        f"{movement}, and {evidence}. The system had not "
         "equilibrated at the scale of the whole run, so a pooled mean "
         "would be the mean of a moving target with a confident error "
         "bar on it. The remedy is a longer run, not more pooling.")
@@ -1353,6 +1385,7 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
         code="analysis.sampling.drifting",
         drift_p=float(drifting), heterogeneity=float(scatter),
         span=span, segments=int(means.size),
+        drift_test=method,
     )
 
 
@@ -1362,8 +1395,8 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
 #: the inefficiency did not fully capture.
 HETEROGENEITY_QUALIFY_ABOVE = 2.0
 
-#: How unusual the ordering of the segment means has to look before it is
-#: called drift rather than scatter.
+#: The significance threshold for a segment-mean trend, and the lack-of-fit
+#: threshold below which a short run's straight-line explanation is rejected.
 DRIFT_SIGNIFICANT_BELOW = 0.05
 
 #: Orderings counted exactly rather than sampled, at most: every ordering
@@ -1385,10 +1418,57 @@ def _weighted_slope(means: np.ndarray, weights: np.ndarray,
                  / spread)
 
 
+def _segment_drift_method(count: int) -> str:
+    if count < 3:
+        return "not_tested"
+    return "weighted_slope" if count < 5 else "permutation"
+
+
+def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
+    """An absolute-error slope test, only where a line fits those errors.
+
+    For independent Gaussian mean errors, Var(slope) = 1 / Sxx, with
+    inverse-variance weights. Its two-sided normal tail uses the supplied
+    errors, not a variance estimated from the line's residuals. The latter
+    would give a perfect line zero error however uncertain its means were.
+
+    A jump or unordered offsets can have a significant fitted slope too.
+    Require their weighted residual sum to be compatible with chi-square
+    on k - 2 degrees of freedom at 0.05. For k = 3 or 4 those survival
+    functions are erfc(sqrt(Q/2)) and exp(-Q/2). Returning 1 on lack of fit
+    makes the combined p-value conservative; it does not establish that
+    the series is stationary. The disagreement still qualifies its error.
+    """
+    scale = float(precisions.max())
+    weights = precisions / scale
+    total = float(weights.sum())
+    positions = np.arange(means.size, dtype=float)
+    x = positions - float(weights @ positions / total)
+    # A common offset is irrelevant to a slope and can otherwise lose
+    # precision when large compared with the differences being tested.
+    relative = means - means[0]
+    y = relative - float(weights @ relative / total)
+    spread = float(weights @ (x * x))
+    if spread <= 0 or not np.all(np.isfinite(y)):
+        return 1.0
+    slope = float(weights @ (x * y) / spread)
+    residual = y - slope * x
+    q = float(weights @ (residual * residual)) * scale
+    if not math.isfinite(q):
+        return 1.0
+    fit_p = (math.erfc(math.sqrt(q / 2.0)) if means.size == 3
+             else math.exp(-q / 2.0))
+    if fit_p < DRIFT_SIGNIFICANT_BELOW:
+        return 1.0
+    z = abs(slope) * math.sqrt(scale) * math.sqrt(spread)
+    # An extreme normal tail can underflow, rather than be exactly zero.
+    return max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0))
+
+
 def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
                           permutations: int = 4999,
                           seed: int = 0) -> float:
-    """How unusual the ordering of these segment means is, as a p-value.
+    """A p-value for drift across segment means, using their own errors.
 
     Scatter and drift look the same in a list of numbers and mean
     different things. Segment means that disagree but in no order are
@@ -1398,29 +1478,42 @@ def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
     of the three outcomes, because it is the one that looks most like a
     measurement.
 
-    Tested by permuting the order of the segments rather than by assuming
-    a distribution. The observed statistic is the weighted least-squares
+    With three or four means and finite positive inverse-variance weights,
+    use a two-sided Gaussian slope test (:func:`_short_segment_drift_p`).
+    It assumes approximately independent, Gaussian segment-mean errors,
+    whose supplied standard errors approximate their absolute scale. A
+    line must fit those errors at 0.05; otherwise return 1, leaving the
+    disagreement to qualify the pooled error, not establish stationarity.
+
+    With five or more segments, permute their order as before, without a
+    distributional assumption. The statistic is the weighted least-squares
     slope against segment index; the null is what that slope looks like
     when the same segment means are put in another order. Every ordering is
     counted where there are at most :data:`EXACT_ORDERINGS_AT_MOST` of them
     (seven segments), and ``permutations`` are drawn at random beyond that.
 
-    Reversing an order negates the slope, so on ``k`` segments the test can
-    say no less than ``2 / k!``: a third for three segments and a twelfth
+    Reversing an order negates the slope, so on ``k`` segments a permutation
+    test can say no less than ``2 / k!``: a third for three segments and a twelfth
     for four, both above :data:`DRIFT_SIGNIFICANT_BELOW`. It cannot call
-    three or four segments drifting, whatever their means; that is a known
-    limit, not a finding that they agree.
+    three or four segments drifting, whatever their means, which is why
+    those counts use their errors rather than their ordering alone.
 
     Returns 1.0 for fewer than three segments: two points always lie on a
     line, and calling that a trend would refuse every two-segment run; and
     1.0 where a mean is not a number. Weights that are not all positive
-    numbers are replaced by equal ones, and the order judged alone.
+    numbers fall back to the order-permutation test with equal weights,
+    including at three or four means: an unknown error is not a unit error.
     """
     if means.size < 3:
         return 1.0
+    if not np.all(np.isfinite(means)):
+        return 1.0
 
     positions = np.arange(means.size, dtype=float)
-    if not (np.all(np.isfinite(weights)) and np.all(weights > 0.0)):
+    readable = np.all(np.isfinite(weights)) and np.all(weights > 0.0)
+    if means.size < 5 and readable:
+        return _short_segment_drift_p(means, weights)
+    if not readable:
         # Weights that cannot be read leave the order alone to judge, so a
         # NaN cannot switch the test off.
         weights = np.ones(means.size)

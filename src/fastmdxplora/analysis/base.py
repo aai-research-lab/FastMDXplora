@@ -542,7 +542,10 @@ class Analysis(ABC):
         if series.ndim != 1 or series.size != traj.n_frames:
             return
 
-        record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj))
+        from fastmdxplora.analysis.loading import SEGMENT_JOINS
+
+        record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj),
+                             joins=getattr(traj, SEGMENT_JOINS, ()))
         unit = self._recorded_unit()
         if unit is not None:
             record["unit"] = unit
@@ -1063,6 +1066,12 @@ def _checked_whole(traj) -> bool:
 def carry_wholeness(source, copy):
     """``copy`` with what is known of ``source``'s wholeness: an MDTraj
     slice is a new object and keeps none of it."""
+    from fastmdxplora.analysis.loading import SEGMENT_JOINS
+
+    if getattr(source, "n_frames", None) == getattr(copy, "n_frames", None):
+        joins = getattr(source, SEGMENT_JOINS, None)
+        if joins is not None:
+            _mark(copy, SEGMENT_JOINS, joins)
     if getattr(source, IMAGING_FAILED, False):
         _mark(copy, IMAGING_FAILED)
     mark = getattr(source, WHOLE_CHECKED, None)
@@ -1146,7 +1155,8 @@ def _whole_if_broken(traj) -> tuple[Any, str | None]:
     from fastmdxplora.analysis.loading import _made_whole
 
     # On a copy: the caller's trajectory is theirs, and imaging is in place.
-    whole = _made_whole(traj.slice(np.arange(traj.n_frames), copy=True))
+    whole = _made_whole(carry_wholeness(
+        traj, traj.slice(np.arange(traj.n_frames), copy=True)))
     left = int(_split_bonds(whole, bonds, widths).sum())
     if left:
         _mark(traj, IMAGING_FAILED)

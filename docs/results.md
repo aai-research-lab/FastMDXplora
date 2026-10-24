@@ -269,8 +269,13 @@ each join:
 The naive number is not merely imprecise. It is confidently wrong, with a
 standard error on it that says otherwise.
 
-The report finds the joins itself, so this is handled for you where
-FastMDXplora joined the run. Doing it by hand:
+When FastMDXplora loads a joined trajectory, its sidecar supplies the joins;
+these follow stride and frame selection. Analyses use them to withhold an
+error if the segment means resolve a drift, and the report reads that saved
+verdict. Thermodynamic analyses use each energy column's own segment rows.
+This additional guard leaves the existing single-series estimate unchanged
+when it does not find a drift; full per-segment pooling is available through
+`summarise_segments`. Doing that by hand:
 
 ```python
 from fastmdxplora.analysis.joining import joins_beside
@@ -288,6 +293,21 @@ error should be read as a lower bound. Segment means that *climb or fall* say
 the system had not equilibrated at the scale of the whole run — that is a refusal,
 `analysis.sampling.drifting`, and the remedy is a longer run rather than more
 pooling.
+
+With **three or four contributing segments**, the test fits a weighted
+straight-line trend against segment order, using each segment mean's own
+standard error. The slope must be significant at 0.05 and the line's residuals
+must be consistent with those errors. A jump or unordered offsets can have a
+large fitted slope too, so the residual check is necessary. The assumptions are
+approximately independent, Gaussian segment-mean errors with a resolved scale.
+With **five or more segments**, the existing order-permutation test is used.
+Fewer than three segments give no drift test. The pooled record and a drift
+refusal identify the method in `drift_test`.
+
+The short-run test returns `drift_p = 1` when a line fails its fit check; that
+does not establish stationarity. Substantial unexplained scatter still qualifies
+the error as a lower bound. See the [method, assumptions and fixed synthetic
+checks](short-segment-drift.md) for the formulas and validation counts.
 
 ```
 equilibrated  mean=10.005 het=0.7   drift_p=0.30   qualified=False

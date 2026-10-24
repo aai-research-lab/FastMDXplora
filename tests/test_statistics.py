@@ -508,9 +508,7 @@ def _segments(steps, *, frames=2000, phi=0.9, seed=0):
 
 
 class TestOrderingsAreCountedExactly:
-    """Reversing an order negates the slope, and the mirror ordering's slope
-    compared smaller or not by luck of rounding: on four segments the verdict
-    turned on it."""
+    """The mirror ordering counts despite rounding in its slope."""
 
     def test_five_segments_count_every_ordering(self) -> None:
         # Exact: the observed ordering and its mirror, of 120.
@@ -519,14 +517,14 @@ class TestOrderingsAreCountedExactly:
         p = drift_across_segments(np.arange(5, dtype=float), np.ones(5))
         assert p == pytest.approx(2.0 / 120.0)
 
-    def test_the_mirror_always_counts(self) -> None:
+    def test_the_mirror_always_counts_for_the_permutation_test(self) -> None:
         from fastmdxplora.statistics import drift_across_segments
 
         rng = np.random.default_rng(0)
         for _ in range(200):
-            means = np.sort(rng.normal(size=4))
-            weights = rng.uniform(1.0, 100.0, 4)
-            assert drift_across_segments(means, weights) >= 2.0 / 24.0 - 1e-12
+            means = np.sort(rng.normal(size=5))
+            weights = rng.uniform(1.0, 100.0, 5)
+            assert drift_across_segments(means, weights) >= 2.0 / 120.0 - 1e-12
 
     def test_a_slope_that_cannot_be_computed_is_not_significant(self) -> None:
         from fastmdxplora.statistics import drift_across_segments

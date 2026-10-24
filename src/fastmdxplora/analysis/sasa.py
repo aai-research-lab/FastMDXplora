@@ -359,6 +359,9 @@ class SASA(Analysis):
             ``mode="total"``: columns ``frame, sasa_nm2``.
             ``mode="residue"``: columns ``frame, residue, sasa_nm2`` (long form).
         """
+        from fastmdxplora.analysis.loading import SEGMENT_JOINS
+
+        self._segment_joins = getattr(traj, SEGMENT_JOINS, ())
         # Restrict to the selected atoms (e.g. protein/solute) before
         # computing SASA — solvent should not contribute to the solute's
         # accessible surface area.
@@ -476,7 +479,8 @@ class SASA(Analysis):
         })
         interval = _frame_interval_ns(traj)
         for k, name in enumerate(("hydrophobic_sasa", "polar_sasa")):
-            record = mean_record(split[:, k], frame_interval_ns=interval)
+            record = mean_record(split[:, k], frame_interval_ns=interval,
+                                 joins=getattr(self, "_segment_joins", ()))
             record["unit"] = "nm²"
             self.findings[name] = record
         self.findings["surface_classes"] = (
