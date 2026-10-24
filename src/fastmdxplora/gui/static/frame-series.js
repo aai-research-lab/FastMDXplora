@@ -31,6 +31,7 @@
     tracks: [],       // [{name, data, plot, asked}]
     playback: null,   // the frames played: frame_indices
     index: null,      // the played frame shown
+    sourceFrame: null,
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -110,14 +111,19 @@
     return index != null && index >= 0 && index < frames.length ? frames[index] : null;
   }
 
-  function playedIndex(frame) {
-    var frames = state.playback ? state.playback.frame_indices : [];
-    if (!frames.length) return null;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
+  /* The loaded frame nearest a trajectory frame, or none before playback. */
+  function nearestLoaded(frame) {
+    var frames = state.playback && Array.isArray(state.playback.frame_indices)
+      ? state.playback.frame_indices : [];
+    var best = null;
+    frames.forEach(function (loaded) {
+      if (best == null || Math.abs(loaded - frame) < Math.abs(best - frame)) best = loaded;
+    });
     return best;
+  }
+
+  function shownFrame() {
+    return state.sourceFrame != null ? state.sourceFrame : trajectoryFrame(state.index);
   }
 
   /* The analysed point nearest a trajectory frame, over frames ascending. */
@@ -249,24 +255,34 @@
     el("circle", { class: "frame-series-dot", r: 3, fill: c.line, stroke: c.here,
       "stroke-width": 1.1, visibility: "hidden" }, svg);
 
-    // A click, or a drag, along the track shows that frame.
+    // A click, or a drag, along the track shows that frame. While the
+    // pointer moves, the frame shown is the nearest one already loaded;
+    // where it is let go, that exact frame. Asking for each frame passed
+    // over fetched (and fitted) one exact frame per pointer move.
     var dragging = false;
-    function seek(event) {
+    function seek(event, exact) {
       var box = svg.getBoundingClientRect();
       var x = (event.clientX - box.left) * (width / box.width);
       var value = xLow + (x - area.left) / (area.right - area.left) * (xHigh - xLow);
-      var played = playedIndex(frameOfX(d, value));
-      if (played == null || played === state.index) return;
+      var frame = Math.round(frameOfX(d, value));
+      if (!exact) {
+        var loaded = nearestLoaded(frame);
+        if (loaded != null) frame = loaded;
+      }
+      if (frame === shownFrame()) return;
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: played, trajectoryFrame: trajectoryFrame(played) } }));
+        { detail: { trajectoryFrame: frame } }));
     }
     svg.addEventListener("pointerdown", function (event) {
       dragging = true;
       if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
-      seek(event);
+      seek(event, false);
     });
-    svg.addEventListener("pointermove", function (event) { if (dragging) seek(event); });
-    svg.addEventListener("pointerup", function () { dragging = false; });
+    svg.addEventListener("pointermove", function (event) { if (dragging) seek(event, false); });
+    svg.addEventListener("pointerup", function (event) {
+      if (dragging) seek(event, true);
+      dragging = false;
+    });
     svg.addEventListener("pointercancel", function () { dragging = false; });
     markTrack(track);
   }
@@ -276,7 +292,7 @@
     var d = track.data;
     var node = host() && host().querySelector('.frame-track[data-analysis="' + track.name + '"]');
     if (!d || !node || !track.plot) return;
-    var frame = trajectoryFrame(state.index);
+    var frame = shownFrame();
     var here = node.querySelector(".frame-series-here");
     var dot = node.querySelector(".frame-series-dot");
     var said = node.querySelector(".frame-track-value");
@@ -309,7 +325,7 @@
   }
 
   function mark() {
-    var frame = trajectoryFrame(state.index);
+    var frame = shownFrame();
     if (host() && frame != null) host().setAttribute("data-frame", String(frame));
     state.tracks.forEach(markTrack);
     window.dispatchEvent(new CustomEvent("dashboard:tracks-marked", { detail: { frame: frame } }));
@@ -438,6 +454,7 @@
     state.tracks = [];
     state.playback = null;
     state.index = null;
+    state.sourceFrame = null;
     hide("none");
   }
 
@@ -456,6 +473,8 @@
     });
     window.addEventListener("dashboard:frame-shown", function (event) {
       state.index = event.detail ? event.detail.index : null;
+      state.sourceFrame = Number.isInteger(event.detail?.trajectoryFrame)
+        ? event.detail.trajectoryFrame : null;
       if (!state.playback) {
         fetch("/api/frames-info", { cache: "no-store" })
           .then(function (r) { return r.json(); })

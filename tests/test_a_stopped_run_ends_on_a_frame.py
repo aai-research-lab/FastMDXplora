@@ -14,7 +14,6 @@ with a refusal a resume reads as an interruption.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import signal
 import tempfile
@@ -105,16 +104,16 @@ class TestTheSignalIsNoted:
     def test_a_first_signal_is_noted_and_a_handler_restored_after(self) -> None:
         before = signal.getsignal(signal.SIGTERM)
         with _StopRequests() as stop:
-            os.kill(os.getpid(), signal.SIGTERM)
+            signal.raise_signal(signal.SIGTERM)
             assert stop.requested and stop.name == "SIGTERM"
         assert signal.getsignal(signal.SIGTERM) == before
 
     def test_a_second_ctrl_c_is_obeyed_at_once(self) -> None:
         with pytest.raises(KeyboardInterrupt):
             with _StopRequests() as stop:
-                os.kill(os.getpid(), signal.SIGINT)
+                signal.raise_signal(signal.SIGINT)
                 assert stop.requested
-                os.kill(os.getpid(), signal.SIGINT)
+                signal.raise_signal(signal.SIGINT)
 
     def test_off_the_main_thread_nothing_is_installed(self) -> None:
         import threading
@@ -185,7 +184,7 @@ class TestARealRunStoppedMidProduction(unittest.TestCase):
         def step_then_stop(simulation, steps):
             if taken["steps"] >= 200 + 130 and not taken["sent"]:
                 taken["sent"] = True
-                os.kill(os.getpid(), signal.SIGTERM)
+                signal.raise_signal(signal.SIGTERM)
             taken["steps"] += int(steps)
             return real_step(simulation, steps)
 

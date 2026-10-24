@@ -15,6 +15,8 @@ frame, from the analysis manifest), and the time as the loader set it: frame
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import math
 import re
@@ -127,12 +129,35 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     if not kind:
         return {"ok": False, "reason": f"{analysis} is not a series"}
 
-    rows = _rows(data)
+    reference = None
+    if analysis == "order_parameters":
+        rows, reference = _order_parameter_rows(data)
+    else:
+        rows = _rows(data)
     if not rows:
         return {"ok": False, "reason": f"{analysis}'s data file holds no numbers"}
     unit = unit_of(analysis, found)
     if kind == "residue":
-        return _residues(analysis, label, unit, rows)
+        options = record.get("options") if isinstance(record.get("options"), dict) else {}
+        if analysis == "rmsf" and options.get("per_residue") is False:
+            return _atoms(Path(root), analysis, label, unit, data, record, rows)
+        payload = _residues(analysis, label, unit, rows)
+        if analysis in {"rmsf", "order_parameters"}:
+            entities = _profile_entities(Path(root), data, record, rows, "residue")
+            payload["entities"] = entities
+            for index, entity in enumerate(entities):
+                if entity is None or not entity.get("icode"):
+                    continue
+                name = f"{entity['resi']}{entity['icode']}"
+                if payload["labels"][index].startswith(f"{entity['chain']}:"):
+                    name = f"{entity['chain']}:{name}"
+                payload["labels"][index] = name
+        if analysis == "order_parameters":
+            payload["reference"] = reference
+            payload["y_bounds"] = [0.0, 1.05]
+            finding = (record.get("findings") or {}).get("order_parameters") or {}
+            payload["notice"] = finding.get("not_a_measurement")
+        return payload
     return _over_time(Path(root), analysis, label, unit, rows, found)
 
 
@@ -245,6 +270,165 @@ def _residues(analysis: str, label: str, unit: str,
         "x_label": "Residue", "x": list(range(1, len(values) + 1)), "y": values,
         "labels": labels, "residues": residues, "linked": False, "mean": None,
     }
+
+
+def _atoms(root: Path, analysis: str, label: str, unit: str, path: Path,
+           record: dict[str, Any], rows: list[tuple[list[str], list[float]]]
+           ) -> dict[str, Any]:
+    """An atom RMSF profile, with an action only where its atom is known."""
+    # A row whose atom serial is not a finite number names no atom (a "nan"
+    # or "inf" in the file made the whole series a server error).
+    rows = [(words, numbers) for words, numbers in rows if math.isfinite(numbers[0])]
+    values = [numbers[-1] for _, numbers in rows]
+    serials = [int(numbers[0]) for _, numbers in rows]
+    return {
+        "ok": True, "analysis": analysis, "label": label, "unit": unit, "kind": "atom",
+        "x_label": "Atom", "x": serials, "y": values,
+        "labels": [f"Atom {serial}" for serial in serials],
+        "entities": _profile_entities(root, path, record, rows, "atom"),
+        "linked": False, "mean": None,
+    }
+
+
+def _profile_entities(root: Path, path: Path, record: dict[str, Any],
+                      rows: list[tuple[list[str], list[float]]], kind: str
+                      ) -> list[dict[str, Any] | None]:
+    """Resolve profile rows against the topology that analysis actually read.
+
+    A chart point remains value-only when its saved label cannot be mapped
+    uniquely. In particular, residue numbers alone never choose between
+    chains or insertion codes, and atom serials must resolve to one atom.
+    """
+    from fastmdxplora.gui.selection import topology_the_analyses_read
+
+    topology_path = topology_the_analyses_read(root)
+    if topology_path is None:
+        return [None] * len(rows)
+    try:
+        from fastmdxplora.analysis.residues import (
+            chain_name,
+            insertion_code,
+            number,
+            remember_insertion_codes,
+        )
+        from fastmdxplora.utils.native_output import topology_quietly
+
+        remember_insertion_codes(topology_path)
+        topology = topology_quietly(topology_path)
+        selection = record.get("selection")
+        selected = (list(range(topology.n_atoms)) if not isinstance(selection, str)
+                    else [int(index) for index in topology.select(selection)])
+        if kind == "atom":
+            by_label: dict[int, list[Any]] = {}
+            for index in selected:
+                atom = topology.atom(index)
+                label = int(atom.serial) if atom.serial is not None else int(atom.index) + 1
+                by_label.setdefault(label, []).append(atom)
+            result: list[dict[str, Any] | None] = []
+            for _, numbers in rows:
+                matches = by_label.get(int(numbers[0]), [])
+                if len(matches) != 1:
+                    result.append(None)
+                    continue
+                atom = matches[0]
+                residue = atom.residue
+                result.append({"kind": "atom", "chain": chain_name(residue),
+                               "resi": number(residue),
+                               "icode": insertion_code(residue),
+                               "resn": str(residue.name), "atom": str(atom.name)})
+            return result
+
+        ordered: dict[int, Any] = {}
+        for index in selected:
+            atom = topology.atom(index)
+            ordered[atom.residue.index] = atom.residue
+        residues = [ordered[index] for index in sorted(ordered)]
+        explicit = _profile_table_rows(path)
+        if explicit and len(explicit) != len(rows):
+            return [None] * len(rows)
+        result = []
+        for row_index, (words, values) in enumerate(rows):
+            requested = explicit[row_index] if explicit and row_index < len(explicit) else {}
+            number_value = _finite(requested.get("residue"))
+            number_value = int(number_value) if number_value is not None else int(values[0])
+            chain = str(requested.get("chain") or "").strip() or None
+            code = requested.get("insertion")
+            if code is None and not requested and words:
+                # Older human-written profile files use a chain word before
+                # the number (the native DataFrame format is parsed above).
+                chain = words[0]
+            code = str(code or "").strip() if code is not None else None
+            matches = [residue for residue in residues if number(residue) == number_value
+                       and (chain is None or chain_name(residue) == chain)
+                       and (code is None or insertion_code(residue) == code)]
+            if len(matches) != 1:
+                result.append(None)
+                continue
+            residue = matches[0]
+            result.append({"kind": "residue", "chain": chain_name(residue),
+                           "resi": number(residue), "icode": insertion_code(residue),
+                           "resn": str(residue.name)})
+        return result
+    except (OSError, ValueError, TypeError, IndexError, KeyError, OverflowError):
+        return [None] * len(rows)
+
+
+def _profile_table_rows(path: Path) -> list[dict[str, str]]:
+    """Read identity columns from the analyses' comma-table form."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    first = next((line for line in text.splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")), "")
+    if "," not in first:
+        return []
+    try:
+        reader = csv.DictReader(io.StringIO("\n".join(
+            line for line in text.splitlines() if not line.lstrip().startswith("#"))))
+        fields = {str(name or "").strip().lower() for name in reader.fieldnames or ()}
+        if "residue" not in fields or not fields.intersection({"rmsf_nm", "s2"}):
+            return []
+        return [{str(key or "").strip().lower(): str(value or "").strip()
+                 for key, value in row.items()} for row in reader]
+    except (csv.Error, TypeError):
+        return []
+
+
+def _order_parameter_rows(
+        path: Path) -> tuple[list[tuple[list[str], list[float]]], list[float | None]]:
+    """Simulated S² is column two; an optional measured value stays separate.
+
+    The chain-qualified CSV uses named columns, including insertion codes.
+    The older numeric table has residue, simulated S² and optional measured S².
+    """
+    table = _profile_table_rows(path)
+    try:
+        if table:
+            fields = ([row.get("chain", ""), row.get("residue", ""),
+                       row.get("s2", ""), row.get("measured", "nan")] for row in table)
+        else:
+            fields = (["", *line.split()[:3]]
+                      for line in path.read_text(encoding="utf-8").splitlines()
+                      if line.strip() and not line.lstrip().startswith("#"))
+        rows: list[tuple[list[str], list[float]]] = []
+        reference: list[float | None] = []
+        for row in fields:
+            try:
+                residue, value = float(row[1]), float(row[2])
+            except (ValueError, IndexError):
+                continue
+            if not math.isfinite(residue) or not residue.is_integer() or not math.isfinite(value):
+                continue
+            rows.append(([row[0]] if row[0] else [], [residue, value]))
+            try:
+                measured = float(row[3])
+            except (ValueError, IndexError):
+                measured = float("nan")
+            reference.append(measured if math.isfinite(measured) else None)
+        return rows, reference
+    except OSError:
+        return [], []
 
 
 def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:

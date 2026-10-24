@@ -17,6 +17,11 @@ from fastmdxplora.analysis.rmsf import RMSF
 from fastmdxplora.refusals import StudyError
 
 
+def _rmsf_values(result):
+    """A chain-qualified profile names its values; the compact array has two columns."""
+    return result["rmsf_nm"].to_numpy() if hasattr(result, "columns") else result[:, 1]
+
+
 def _mobile_hydrogens(frames=2000):
     """Four residues of CA, HA and N, the hydrogens moving 0.15 nm and the
     heavy atoms 0.02 nm."""
@@ -108,9 +113,9 @@ def test_the_relaxation_is_left_out():
     assert frames["start"] == "equilibrated"
     # Frame k was written at (k + 1) saving intervals of 10 ps.
     assert frames["first_time_ns"] == pytest.approx((frames["first_frame"] + 1) * 0.01)
-    loop_rmsf = result[loop, 1].mean()
+    loop_rmsf = _rmsf_values(result)[loop].mean()
     assert loop_rmsf == pytest.approx(np.sqrt(3) * 0.03, abs=0.004)
-    assert RMSF(start=0).compute(traj)[loop, 1].mean() > 0.075
+    assert _rmsf_values(RMSF(start=0).compute(traj))[loop].mean() > 0.075
 
 
 def test_the_start_can_be_given(tmp_path):
@@ -124,7 +129,7 @@ def test_the_start_can_be_given(tmp_path):
     expected = traj[600:]
     expected.superpose(traj, 0, atom_indices=np.arange(traj.n_atoms))
     deviation = expected.xyz - expected.xyz.mean(axis=0)
-    assert np.allclose(result[:, 1], np.sqrt((deviation ** 2).sum(axis=2).mean(axis=0)),
+    assert np.allclose(_rmsf_values(result), np.sqrt((deviation ** 2).sum(axis=2).mean(axis=0)),
                        atol=1e-5)
 
 

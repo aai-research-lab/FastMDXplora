@@ -29,6 +29,45 @@ def _medoids(root: Path, rows: list[tuple[int, int, float]]) -> None:
             writer.writerow([cluster, 3, share, frame, 0.002 * frame])
 
 
+def test_a_medoid_outside_the_playback_sample_shows_its_exact_coordinates(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import DashboardConfig, start_dashboard_session
+    from tests.test_a_graph_opens_exact_source_frame import _series, _study
+
+    root = _study(tmp_path / "study")
+    _series(root)
+    _medoids(root, [(0, 7, 1.0)])
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0,
+                                     config=DashboardConfig(max_browser_frames=3))
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.set_default_timeout(60000)
+            page.wait_for_selector('.timeline-mark[data-kind="medoid"]')
+            assert page.evaluate("async () => (await (await fetch('/api/frames-info')).json())"
+                                 ".frame_indices") == [0, 5, 10]
+            page.locator('.timeline-mark[data-kind="medoid"]').click()
+            page.wait_for_function("""() => {
+                const viewer = window.FastMDXMoleculeViewer.STATE;
+                return viewer.exactFrame?.frame === 7 && viewer.engine.find({atom: 'CA'})[0]?.x > 6.98;
+            }""")
+            page.wait_for_function("""() => document.getElementById('timeline-ruler').dataset.frame === '7'
+                && document.getElementById('frame-series-chart').dataset.frame === '7'""")
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.STATE.engine"
+                                 ".find({atom:'CA'})[0].x") == pytest.approx(7.0, abs=0.02)
+            assert page.evaluate("() => window.FastMDXMoleculeViewer.viewNow().frame") == 7
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+
 def test_the_marks_are_read_from_the_records(tmp_path):
     from fastmdxplora.gui.timeline_view import timeline_payload
 

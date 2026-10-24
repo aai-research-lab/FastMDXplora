@@ -199,6 +199,83 @@ def test_stop_is_offered_by_cmd_k_while_a_run_goes(browser, tmp_path):  # noqa: 
     assert "checkpoint there" in question
 
 
+def test_stop_waits_for_the_run_s_status_before_cmd_k_can_ask(browser, tmp_path):  # noqa: F811
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    stopped: list = []
+    try:
+        _with_a_run(page, stopped)
+        page.add_init_script("""(() => {
+            const fetch = window.fetch;
+            const status = new Promise(resolve => { window.__releaseStopStatus = resolve; });
+            window.__stopStatusHeld = 0;
+            window.fetch = (url, ...options) => {
+                if (new URL(url, location.href).pathname === '/api/status') {
+                    window.__stopStatusHeld += 1;
+                    return status.then(() => fetch(url, ...options));
+                }
+                return fetch(url, ...options);
+            };
+        })();""")
+        page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_function("() => window.__stopStatusHeld > 0 && "
+                               "window.FastMDXDashboard.state.appState.process_running")
+        assert page.evaluate("() => window.FastMDXStop.running()") is False
+        assert page.locator("#sb-stop").is_hidden()
+        page.keyboard.press("Control+k")
+        page.fill("#palette-input", "stop")
+        assert page.locator("#palette-list .palette-item").filter(
+            has_text="Stop the run").count() == 0
+        assert stopped == []
+        page.keyboard.press("Escape")
+        page.locator("#palette").wait_for(state="hidden")
+
+        page.evaluate("() => window.__releaseStopStatus()")
+        page.wait_for_function("() => window.FastMDXStop.running()")
+        page.keyboard.press("Control+k")
+        page.fill("#palette-input", "stop")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#health-stop-ask .stop-run-yes")
+        question = page.text_content("#health-stop-ask")
+        assert page.evaluate("() => document.activeElement.textContent") == "Not now"
+        assert "checkpoint there" in question
+        page.keyboard.press("Enter")
+        page.locator("#health-stop-ask").wait_for(state="hidden")
+        assert stopped == []
+    finally:
+        page.close()
+        session.server.shutdown()
+
+
+def test_a_run_without_telemetry_can_still_be_stopped(browser, tmp_path):  # noqa: F811
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    (study / "simulation" / "live_status.json").unlink()
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    stopped: list = []
+    try:
+        _with_a_run(page, stopped)
+        page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_function("() => window.FastMDXStop && window.FastMDXStop.running()")
+        assert page.evaluate("() => window.FastMDXDashboard.state.status") == {}
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-yes")
+        assert page.evaluate("() => document.activeElement.textContent") == "Not now"
+        assert stopped == []
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_function(
+            "() => document.getElementById('sb-stop-ask').textContent === 'Stopped.'")
+        assert stopped == ["POST"]
+    finally:
+        page.close()
+        session.server.shutdown()
+
+
 def test_a_stop_s_answer_goes_once_another_run_starts(browser, tmp_path):  # noqa: F811
     """Stopped, then carried on with What would fix it, Run it: "Stopped."
     stayed under a live Stop the run the whole carry-on through."""

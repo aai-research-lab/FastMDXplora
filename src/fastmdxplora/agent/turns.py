@@ -1,12 +1,10 @@
-"""One turn of a conversation with an AI model, with tools, in each provider's shape.
+"""One turn of a conversation with an AI model in the OpenAI-compatible chat shape.
 
 :func:`fastmdxplora.agent.propose_config` began with a prompt in and text
 out, and that is still what a test, a script or a lent AI model gives it.
 This module adds the other way to talk to an AI model: a system prompt, the
-conversation as turns, and the tools declared to the provider, so that a
-reply is a structured call rather than text read by a pattern. Each
-provider has its own wire shape for that; the differences are tabled here
-and nowhere else, so the loop that uses a turn knows nothing about them.
+conversation as turns, and the tools declared in the chat shape, so that a
+reply is a structured call rather than text read by a pattern.
 
 What a turn gives back is the same whoever answered: the text the AI model
 wrote, the tools it called with their arguments as data, and what the call
@@ -31,10 +29,8 @@ a fault, and is said as one.
 never in the request's words; a provider's error that quotes it back has it
 replaced before the error is raised.
 
-**It caches what does not change.** The tools and the system prompt are
-the same for every message of every conversation; marked for caching
-where the provider asks to be told (content blocks), and left first where
-it caches a repeated beginning by itself (the chat shape).
+**It reports usage.** Input, cached input and output counts are read from the
+provider's response when supplied.
 """
 
 from __future__ import annotations
@@ -88,33 +84,25 @@ class Usage:
     calls: int = 0
     input_tokens: int = 0
     cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
     output_tokens: int = 0
 
     def add(self, other: Usage) -> None:
         self.calls += other.calls
         self.input_tokens += other.input_tokens
         self.cache_read_tokens += other.cache_read_tokens
-        self.cache_write_tokens += other.cache_write_tokens
         self.output_tokens += other.output_tokens
 
     def as_record(self) -> dict[str, int]:
         return {"calls": self.calls, "input_tokens": self.input_tokens,
                 "cache_read_tokens": self.cache_read_tokens,
-                "cache_write_tokens": self.cache_write_tokens,
                 "output_tokens": self.output_tokens}
 
     def said(self) -> str:
-        """As a person reads it: '2 calls, 31,204 tokens in (28,770 cached), 412 out'.
-        Tokens the provider kept for the next message are said too ("written
-        to the cache"): they cost a little more once, and are why the next
-        message reads most of its tokens from the cache."""
-        sent = self.input_tokens + self.cache_read_tokens + self.cache_write_tokens
+        """As a person reads it: '2 calls, 31,204 tokens in (28,770 cached), 412 out'."""
+        sent = self.input_tokens + self.cache_read_tokens
         parts = []
         if self.cache_read_tokens:
             parts.append(f"{self.cache_read_tokens:,} cached")
-        if self.cache_write_tokens:
-            parts.append(f"{self.cache_write_tokens:,} written to the cache")
         kept = f" ({', '.join(parts)})" if parts else ""
         return (f"{self.calls} call{'' if self.calls == 1 else 's'}, {sent:,} tokens in"
                 f"{kept}, {self.output_tokens:,} out")
@@ -145,57 +133,6 @@ class NoToolCalling(CodedError, Exception):
 #   {"role": "assistant", "text": str, "calls": [ToolCall, ...]}
 #   {"role": "results", "results": [{"id", "name", "content", "is_error"}]}
 # ---------------------------------------------------------------------------
-def _blocks_body(model: str, system: str, messages: list[dict[str, Any]],
-                 tools: list[ToolSpec], max_tokens: int,
-                 cache_for: str = "5m") -> dict[str, Any]:
-    """The content-block shape: system and tools cached, the conversation
-    as blocks, each tool's result answering its call by id. ``cache_for``
-    is how long the provider keeps them: ``"5m"`` (its default, written at
-    1.25 times the input price) or ``"1h"`` (written at twice it), each
-    renewed whenever it is read."""
-    kept: dict[str, str] = {"type": "ephemeral"}
-    if cache_for == "1h":
-        kept["ttl"] = "1h"
-    out: list[dict[str, Any]] = []
-    for message in _alternating(messages):
-        if message["role"] == "user":
-            said = {"type": "text", "text": message["text"]}
-            if out and out[-1]["role"] == "user":
-                # After the tool results, in the same turn: two user turns
-                # in a row are refused, and every result has to come in the
-                # turn straight after its call.
-                out[-1]["content"].append(said)
-            else:
-                out.append({"role": "user", "content": [said]})
-        elif message["role"] == "assistant":
-            content: list[dict[str, Any]] = []
-            if str(message.get("text") or "").strip():
-                content.append({"type": "text", "text": message["text"]})
-            for call in message.get("calls") or ():
-                content.append({"type": "tool_use", "id": call.id, "name": call.name,
-                                "input": call.arguments})
-            out.append({"role": "assistant",
-                        "content": content or [{"type": "text", "text": "…"}]})
-        else:
-            out.append({"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": r["id"], "content": str(r["content"]),
-                 "is_error": bool(r.get("is_error"))} for r in message["results"]]})
-    if out:
-        # The conversation so far cached too, so a second look in one reply
-        # reads what the first sent from the cache.
-        last = out[-1]["content"][-1]
-        last["cache_control"] = dict(kept)
-    body: dict[str, Any] = {
-        "model": model, "max_tokens": max_tokens,
-        "system": [{"type": "text", "text": system, "cache_control": dict(kept)}],
-        "messages": out,
-    }
-    if tools:
-        body["tools"] = [{"name": t.name, "description": t.description,
-                          "input_schema": t.parameters} for t in tools]
-    return body
-
-
 def _chat_body(model: str, system: str, messages: list[dict[str, Any]],
                tools: list[ToolSpec], *, usage_in_stream: bool) -> dict[str, Any]:
     """The chat shape: the system prompt first, function tools, each result
@@ -265,32 +202,12 @@ def _id_of(given: Any, number: int) -> str:
     return str(given) if given else f"call_{number}"
 
 
-def _blocks_usage(usage: dict[str, Any] | None) -> Usage:
-    usage = usage or {}
-    return Usage(calls=1, input_tokens=int(usage.get("input_tokens") or 0),
-                 cache_read_tokens=int(usage.get("cache_read_input_tokens") or 0),
-                 cache_write_tokens=int(usage.get("cache_creation_input_tokens") or 0),
-                 output_tokens=int(usage.get("output_tokens") or 0))
-
-
 def _chat_usage(usage: dict[str, Any] | None) -> Usage:
     usage = usage or {}
     cached = int(((usage.get("prompt_tokens_details") or {}).get("cached_tokens")) or 0)
     return Usage(calls=1, input_tokens=max(0, int(usage.get("prompt_tokens") or 0) - cached),
                  cache_read_tokens=cached,
                  output_tokens=int(usage.get("completion_tokens") or 0))
-
-
-def _blocks_reply(answer: dict[str, Any]) -> Turn:
-    text, calls = [], []
-    for part in answer.get("content") or []:
-        if part.get("type") == "text":
-            text.append(str(part.get("text") or ""))
-        elif part.get("type") == "tool_use":
-            calls.append(ToolCall(_id_of(part.get("id"), len(calls)), str(part.get("name")),
-                                  _arguments(part.get("input"))))
-    return Turn("".join(text), tuple(calls), _blocks_usage(answer.get("usage")),
-                str(answer.get("stop_reason") or ""))
 
 
 def _chat_reply(answer: dict[str, Any], url: str) -> Turn:
@@ -325,47 +242,9 @@ def _events(response: Any):
 
 def _stream_error(event: dict[str, Any]) -> str:
     error = event.get("error") if isinstance(event.get("error"), dict) else {}
-    return redacted("I could not finish: the provider said: "
-                    f"{str(error.get('message') or error)[:400]}")
-
-
-def _blocks_streamed(response: Any, on_text: Callable[[str], None] | None,
-                     on_call: Callable[[str], None] | None, url: str) -> Turn:
-    text: list[str] = []
-    blocks: dict[int, dict[str, Any]] = {}
-    usage: dict[str, Any] = {}
-    stop = ""
-    for event in _events(response):
-        kind = event.get("type")
-        if kind == "error":
-            raise StudyError(_stream_error(event),
-                             code="environment.service.unusable_response", url=url)
-        if kind == "message_start":
-            usage.update((event.get("message") or {}).get("usage") or {})
-        elif kind == "content_block_start":
-            block = event.get("content_block") or {}
-            blocks[int(event.get("index") or 0)] = {"type": block.get("type"),
-                                                     "id": block.get("id"),
-                                                     "name": block.get("name"), "json": ""}
-            if block.get("type") == "tool_use" and on_call is not None:
-                on_call(str(block.get("name")))
-        elif kind == "content_block_delta":
-            delta = event.get("delta") or {}
-            if delta.get("type") == "input_json_delta":
-                blocks.setdefault(int(event.get("index") or 0), {"json": ""})["json"] += str(
-                    delta.get("partial_json") or "")
-            elif delta.get("text"):
-                piece = str(delta["text"])
-                text.append(piece)
-                if on_text is not None:
-                    on_text(piece)
-        elif kind == "message_delta":
-            usage.update({k: v for k, v in (event.get("usage") or {}).items() if v is not None})
-            stop = str((event.get("delta") or {}).get("stop_reason") or stop)
-    used = [b for _, b in sorted(blocks.items()) if b.get("type") == "tool_use"]
-    calls = tuple(ToolCall(_id_of(b.get("id"), i), str(b.get("name")), _arguments(b["json"]))
-                  for i, b in enumerate(used))
-    return Turn("".join(text), calls, _blocks_usage(usage), stop)
+    code = str(error.get("code") or "")
+    detail = str(error.get("message") or code or error or "Unknown provider error")[:400]
+    return redacted("I could not finish: the provider said: " + detail)
 
 
 def _chat_streamed(response: Any, on_text: Callable[[str], None] | None,
@@ -466,32 +345,34 @@ def take_turn(*, url: str, headers: dict[str, str], shape: str, model: str,
               label: str, timeout: float = 120.0, max_tokens: int = 8192,
               on_text: Callable[[str], None] | None = None,
               on_call: Callable[[str], None] | None = None,
-              usage_in_stream: bool = False, cache_for: str = "5m") -> Turn:
-    """Ask once, in ``shape`` (``"blocks"`` or ``"chat"``), retrying what the
+              usage_in_stream: bool = False) -> Turn:
+    """Ask once in the OpenAI-compatible chat shape, retrying what the
     provider says to retry. The key is in ``headers`` and never in what is
     raised: an error message is the easiest place for a secret to escape
     into a log."""
+    if shape != "chat":
+        raise StudyError(
+            "Only the OpenAI-compatible chat request shape is supported.",
+            code="config.option.inapplicable", option="shape",
+            context="OpenAI-compatible chat request",
+        )
     streamed = on_text is not None or on_call is not None
-    if shape == "blocks":
-        body = _blocks_body(model, system, messages, tools, max_tokens, cache_for)
-    else:
-        body = _chat_body(model, system, messages, tools,
-                          usage_in_stream=streamed and usage_in_stream)
+    body = _chat_body(model, system, messages, tools,
+                      usage_in_stream=streamed and usage_in_stream)
     if streamed:
         body["stream"] = True
     data = json.dumps(body).encode("utf-8")
     sent = dict(headers, **{"content-type": "application/json"})
     secrets = [value for name, value in headers.items()
-               if name.lower() in ("authorization", "x-api-key", "api-key")]
+               if name.lower() in ("authorization", "api-key")]
     for attempt in range(MOST_TRIES):
         request = urllib.request.Request(url, method="POST", data=data, headers=sent)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 if streamed:
-                    reader = _blocks_streamed if shape == "blocks" else _chat_streamed
-                    return reader(response, on_text, on_call, url)
+                    return _chat_streamed(response, on_text, on_call, url)
                 answer = json.loads(response.read())
-                return _blocks_reply(answer) if shape == "blocks" else _chat_reply(answer, url)
+                return _chat_reply(answer, url)
         except urllib.error.HTTPError as exc:
             detail = redacted(exc.read().decode("utf-8", "replace")[:400], secrets)
             if exc.code in RETRIED and attempt < MOST_TRIES - 1:

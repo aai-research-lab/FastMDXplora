@@ -14,6 +14,7 @@
  * to change. Said so in words above each (markWaiting), and inert; not
  * faded, which at .55 put every label and help line under them below the
  * contrast the schemes are held to (test_every_scheme_can_be_read). */
+.builder-step.is-waiting .builder-step-body { opacity: 1; }
 .builder-step-waiting { margin: -4px 0 12px; font-size: var(--text-xs); }
 
 /* What it costs here: one line a diagnostic, its level, what it is about

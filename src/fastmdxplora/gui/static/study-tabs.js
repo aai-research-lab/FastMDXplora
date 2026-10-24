@@ -425,13 +425,14 @@
     });
     api.on("results-updated", function () { rememberShown(false); });
     api.on("study-opening", function (study) {
+      rememberShown(false);
       if (validKey(study.key)) closed = closed.filter(function (key) { return key !== study.key; });
       save();
     });
     // A switch asked another way is in flight: the strip is busy and
     // asks nothing more of the server until it is answered.
     api.on("study-switching", function (on) {
-      if (on && !pending) { pending = elsewhere = true; render(); }
+      if (on && !pending) { rememberShown(false); pending = elsewhere = true; render(); }
       else if (!on && elsewhere) { pending = elsewhere = false; render(); }
     });
     // A switch held on another way to a study: said here as well.

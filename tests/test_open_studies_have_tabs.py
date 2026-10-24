@@ -732,6 +732,12 @@ def test_many_tabs_fit_the_page_and_work_by_keyboard(browser, site, width, besid
             page.click("#agent-beside-open")
             page.locator("#agent-drawer").wait_for()
         page.wait_for_function("document.getElementById('study-tabs').matches('.more-before, .more-after')")
+        # The strip narrows as the Agent opens beside it; its observer puts
+        # the open tab back in view on the next frame. Asserted below.
+        try:
+            page.wait_for_function(IN_VIEW, timeout=10000)
+        except Exception:
+            pass
         facts = page.evaluate(LAYOUT)
         # The open study is in view at the end of a long strip; a fade says
         # more tabs lie past the edge; nothing runs past the page or under

@@ -17,7 +17,7 @@ issues, and committed; a key in one is a key on the internet. It lives in
 a file of its own with owner-only permissions, or in the environment, and
 this module is the only thing that reads it.
 
-**The environment wins.** ``ANTHROPIC_API_KEY`` and ``OPENAI_API_KEY`` are
+**The environment wins.** ``OPENAI_API_KEY`` is
 checked before the stored file, because that is how a cluster job and a CI
 run get a key without anybody storing one, and because it is what people
 already expect.
@@ -27,10 +27,9 @@ the AI model's name, never the key. Six months on, "why did this study pick
 300 K" has a different answer depending on whether a frontier AI model or a 7B
 running on a laptop proposed it, and that is provenance like any other.
 
-Two providers are offered by name. A third option takes any
-OpenAI-compatible base URL, which covers DeepSeek, vLLM, Ollama,
-OpenRouter and most local servers -- they speak the same shape, so there
-is nothing to add per provider.
+OpenAI is offered by name. **Other** takes any OpenAI-compatible base URL,
+which covers DeepSeek, vLLM, Ollama, OpenRouter and most local servers --
+they speak the same shape, so there is nothing to add per provider.
 """
 
 from __future__ import annotations
@@ -49,9 +48,6 @@ from fastmdxplora.user_dir import user_config_dir
 __all__ = [
     "list_models",
     "default_model",
-    "cache_for",
-    "save_cache_for",
-    "CACHE_FOR",
     "ModelChoice",
     "PROVIDERS",
     "model_path",
@@ -65,25 +61,6 @@ __all__ = [
 #: an auth header and where the reply sits in the response -- a table, not
 #: an integration.
 PROVIDERS: dict[str, dict[str, Any]] = {
-    "anthropic": {
-        "label": "Anthropic",
-        "url": "https://api.anthropic.com/v1/messages",
-        "default_model": "claude-sonnet-4-6",
-        #: What to offer before a key is set, and if the provider cannot
-        #: be reached. The real list comes from `list_models`, which asks
-        #: the provider -- a list written here is stale the week after it
-        #: is written, and an AI model released next month would be missing
-        #: with nothing to explain why.
-        #: One string, not a guessed list. `claude-opus-4-1` sat here and
-        #: 404s -- a name invented from a pattern rather than read from the
-        #: provider. Anything beyond the default comes from `list_models`,
-        #: which asks; a wrong name offered in a dropdown is worse than no
-        #: dropdown, because it looks chosen rather than typed.
-        "models": ("claude-sonnet-4-6",),
-        "models_url": "https://api.anthropic.com/v1/models",
-        "env": "ANTHROPIC_API_KEY",
-        "auth": "x-api-key",
-    },
     "openai": {
         "label": "OpenAI",
         "url": "https://api.openai.com/v1/chat/completions",
@@ -104,8 +81,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         #: protocol is what is supported, and a vendor list goes stale.
         "examples": (
             ("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
-            ("OpenRouter", "https://openrouter.ai/api/v1",
-             "anthropic/claude-sonnet-4-6"),
+            ("OpenRouter", "https://openrouter.ai/api/v1", "deepseek-chat"),
             ("Ollama (local)", "http://localhost:11434/v1", "llama3.1"),
             ("vLLM (local)", "http://localhost:8000/v1", "<your AI model>"),
         ),
@@ -150,8 +126,6 @@ class ModelChoice:
 #: The family each provider's default belongs to, and its version read from
 #: a name: the newest of it a provider offers is the default.
 _FAMILIES: dict[str, re.Pattern[str]] = {
-    # claude-sonnet-4-6, claude-sonnet-4-5-20250929, claude-sonnet-5
-    "anthropic": re.compile(r"^claude-sonnet-(\d+)(?:-(\d{1,2})(?!\d))?(?:-\d{8})?$"),
     # gpt-5, gpt-5.1; not gpt-5-mini or gpt-4o, which are other families
     "openai": re.compile(r"^gpt-(\d+)(?:\.(\d+))?$"),
 }
@@ -162,8 +136,8 @@ def default_model(provider: str, offered: Any = ()) -> str:
     written default belongs to among those the provider offers, or the
     written default where it offers none of them (no key yet, or offline).
 
-    The default was written in (`claude-sonnet-4-6`, `gpt-5`) and stayed
-    there as newer ones came out; a new person was offered last year's AI
+    The default was written as `gpt-5` and stayed there as newer ones came
+    out; a new person was offered last year's AI
     model with nothing to say there was another. The family is kept, not
     the newest of everything: a provider's newest may be its largest and
     dearest, or its smallest."""
@@ -183,50 +157,6 @@ def default_model(provider: str, offered: Any = ()) -> str:
         if best is None or ranked > best:
             best = ranked
     return best[2] if best is not None else written
-
-
-#: How long the Agent's instructions are kept in the provider's cache
-#: (Anthropic): "auto" is an hour on the GUI's Agent page, where a person
-#: reads a plan before answering, and five minutes from the command line,
-#: where a request is usually asked once.
-CACHE_FOR = ("auto", "1h", "5m")
-
-
-def cache_for(where: str = "command line", path: Path | None = None) -> str:
-    """``"1h"`` or ``"5m"``: the setting stored with the choice, or for
-    ``"auto"`` (and where none is stored), an hour on the page and five
-    minutes anywhere else."""
-    try:
-        record = json.loads((path or model_path()).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        record = {}
-    chosen = str(record.get("cache_for") or "auto") if isinstance(record, dict) else "auto"
-    if chosen in ("1h", "5m"):
-        return chosen
-    return "1h" if where == "page" else "5m"
-
-
-def save_cache_for(value: str, path: Path | None = None) -> None:
-    """Store how long the instructions are kept, beside the choice and
-    keeping everything else in the file, the key included, owner-only."""
-    if value not in CACHE_FOR:
-        raise StudyError(f"The cache is kept for {', '.join(CACHE_FOR)}; not {value!r}.",
-                         code="config.option.not_permitted", option="cache_for",
-                         permitted=list(CACHE_FOR))
-    target = path or model_path()
-    try:
-        record = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        record = {}
-    if not isinstance(record, dict):
-        record = {}
-    record["cache_for"] = value
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    try:
-        target.chmod(0o600)
-    except OSError:  # pragma: no cover - some filesystems refuse
-        pass
 
 
 def model_path() -> Path:
@@ -251,21 +181,33 @@ def load_choice(path: Path | None = None) -> ModelChoice | None:
 
 def save_choice(choice: ModelChoice, *, key: str = "",
                 path: Path | None = None) -> Path:
-    """Store the choice, and the key if one was given.
+    """Store the choice and keep a key only within its provider and URL.
 
     The key goes in the same file because there is nowhere better that
     works on every platform without a dependency, and the file is owner-
     only. It is never copied anywhere else: :func:`as_record` does not
     carry it, and nothing writes this file into a study.
 
-    Giving no key is the ordinary case on a shared machine -- the choice is
-    stored, and the key comes from the environment at call time.
+    Giving no key keeps an existing saved key only when the provider and
+    base URL match this choice. Otherwise the new record has no key, and one
+    may come from the environment at call time. The key is never returned.
     """
     target = path or model_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     record: dict[str, str] = dict(choice.as_record())
     if key:
         record["api_key"] = key
+    else:
+        try:
+            previous = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            previous = {}
+        if isinstance(previous, dict):
+            previous_key = previous.get("api_key")
+            if (previous.get("provider") == choice.provider
+                    and previous.get("base_url", "") == choice.base_url
+                    and isinstance(previous_key, str) and previous_key):
+                record["api_key"] = previous_key
     target.write_text(json.dumps(record, indent=2), encoding="utf-8")
     try:
         target.chmod(0o600)
@@ -312,9 +254,9 @@ def list_models(choice: ModelChoice | None = None, *,
 
     A list written into this file is stale the week after it is written,
     and an AI model released next month would simply be missing with nothing to
-    explain why. Both hosted providers publish one at ``/v1/models``, and
-    an OpenAI-compatible server serves the same path relative to its base
-    URL, so a local Ollama answers this too.
+    explain why. OpenAI publishes one at ``/v1/models``, and an
+    OpenAI-compatible server serves the same path relative to its base URL,
+    so a local Ollama answers this too.
 
     Returns the fallback in `PROVIDERS` when there is no key yet, when the
     provider cannot be reached, or when the answer is not the shape this
@@ -343,9 +285,7 @@ def list_models(choice: ModelChoice | None = None, *,
     except StudyError:
         return fallback
     headers = {}
-    if chosen.provider == "anthropic":
-        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-    elif key:
+    if key:
         headers = {"Authorization": f"Bearer {key}"}
 
     try:
@@ -355,7 +295,7 @@ def list_models(choice: ModelChoice | None = None, *,
     except (urllib.error.URLError, OSError, ValueError, TimeoutError):
         return fallback
 
-    # Anthropic and OpenAI both answer {"data": [{"id": ...}, ...]}.
+    # OpenAI-compatible model listings answer {"data": [{"id": ...}, ...]}.
     rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return fallback
@@ -364,12 +304,15 @@ def list_models(choice: ModelChoice | None = None, *,
     return found or fallback
 
 
+def list_model_options(choice: ModelChoice, *, timeout: float = 10.0) -> list[dict[str, str]]:
+    """Return model ids and labels for the selected provider and server."""
+    return [{"id": model, "label": model}
+            for model in list_models(choice, timeout=timeout)]
+
+
 def completion_for(choice: ModelChoice | None = None, *,
-                   path: Path | None = None, timeout: float = 120.0,
-                   where: str = "command line"):
-    """Build the prompt-in, text-out function the agent takes. ``where`` it
-    is asked from (``"page"`` for the GUI's Agent page) decides how long
-    the instructions are cached where the setting is ``auto``.
+                   path: Path | None = None, timeout: float = 120.0):
+    """Build the prompt-in, text-out function the agent takes.
 
     One HTTPS request per call, through the standard library. No client
     library, because a package that should not gain a dependency should
@@ -394,15 +337,9 @@ def completion_for(choice: ModelChoice | None = None, *,
         the whole reply is returned either way. An exception from
         ``on_text`` (the page that asked has gone) ends the request."""
         key = _key_for(settled, path)
-        if settled.auth_style == "x-api-key":
-            headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-            body: dict[str, Any] = {
-                "model": settled.model, "max_tokens": 4000,
-                "messages": [{"role": "user", "content": prompt}]}
-        else:
-            headers = {"Authorization": f"Bearer {key}"}
-            body = {"model": settled.model,
-                    "messages": [{"role": "user", "content": prompt}]}
+        headers = {"Authorization": f"Bearer {key}"}
+        body: dict[str, Any] = {"model": settled.model,
+                                "messages": [{"role": "user", "content": prompt}]}
         headers["content-type"] = "application/json"
         if on_text is not None:
             body["stream"] = True
@@ -443,16 +380,12 @@ def completion_for(choice: ModelChoice | None = None, *,
                     code="environment.service.unreachable", url=settled.url,
                 ) from None
 
-        if "content" in answer:  # Anthropic
-            return "".join(part.get("text", "")
-                           for part in answer.get("content", []))
-        choices = answer.get("choices") or []  # OpenAI shape
+        choices = answer.get("choices") or []
         if choices:
             return str(choices[0].get("message", {}).get("content", ""))
         raise StudyError(
             f"{settled.url} answered in a shape this does not recognise. "
-            "An OpenAI-compatible server returns `choices[0].message."
-            "content`; Anthropic returns `content[].text`.",
+            "An OpenAI-compatible server returns `choices[0].message.content`.",
             code="environment.service.unusable_response", url=settled.url,
         )
 
@@ -471,18 +404,12 @@ def completion_for(choice: ModelChoice | None = None, *,
         from fastmdxplora.agent.turns import take_turn
 
         key = _key_for(settled, path)
-        if settled.auth_style == "x-api-key":
-            headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-            shape = "blocks"
-        else:
-            headers = {"Authorization": f"Bearer {key}"}
-            shape = "chat"
-        return take_turn(url=settled.url, headers=headers, shape=shape,
+        headers = {"Authorization": f"Bearer {key}"}
+        return take_turn(url=settled.url, headers=headers, shape="chat",
                          model=settled.model, system=system, messages=messages,
                          tools=tools, label=str(PROVIDERS[settled.provider]["label"]),
                          timeout=timeout, on_text=on_text, on_call=on_call,
-                         usage_in_stream=settled.provider == "openai",
-                         cache_for=cache_for(where, path))
+                         usage_in_stream=settled.provider == "openai")
 
     def turned_away() -> None:
         """The server turned tools away on a conversation's first turn:
@@ -540,8 +467,8 @@ def _note_no_tool_calling(path: Path | None = None,
 
 
 def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
-    """A reply read as server-sent events, in content blocks or the OpenAI chat shape,
-    each piece of text handed on as it arrives, the whole returned."""
+    """An OpenAI chat reply read as server-sent events, each piece of text
+    handed on as it arrives, the whole returned."""
     parts: list[str] = []
     for raw in response:
         line = raw.decode("utf-8", "replace").strip()
@@ -556,19 +483,15 @@ def _streamed(response: Any, on_text: Callable[[str], None], url: str) -> str:
             continue
         if not isinstance(event, dict):
             continue
-        if event.get("type") == "error":
+        if event.get("type") == "error" or ("error" in event and "choices" not in event):
             error = event.get("error") if isinstance(event.get("error"), dict) else {}
             raise StudyError(
                 f"I could not finish: the provider said: {str(error.get('message') or error)[:400]}",
                 code="environment.service.unusable_response", url=url)
         piece = ""
-        delta = event.get("delta")
-        if event.get("type") == "content_block_delta" and isinstance(delta, dict):
-            piece = str(delta.get("text") or "")  # content blocks
-        else:
-            choices = event.get("choices") or []  # OpenAI shape
-            if choices and isinstance(choices[0], dict):
-                piece = str((choices[0].get("delta") or {}).get("content") or "")
+        choices = event.get("choices") or []
+        if choices and isinstance(choices[0], dict):
+            piece = str((choices[0].get("delta") or {}).get("content") or "")
         if piece:
             parts.append(piece)
             on_text(piece)
@@ -579,7 +502,7 @@ def describe_choice(path: Path | None = None) -> str:
     """What is set, for `fastmdx agent model` and the agent panel."""
     settled = load_choice(path)
     if settled is None:
-        return "No AI model chosen. Run `fastmdx agent model` to pick one."
+        return "No AI model is set. Run `fastmdx agent model` to pick one."
     env_name = str(PROVIDERS[settled.provider]["env"])
     where = ("the environment" if os.environ.get(env_name)
              else "the stored file" if _has_stored_key(path) else "nowhere")

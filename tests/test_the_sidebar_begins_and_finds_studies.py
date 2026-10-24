@@ -64,6 +64,41 @@ def test_recent_lists_the_newest_and_marks_the_open_one(browser, session) -> Non
     assert {name for name, _ in said} >= {"1UBQ", "5AWL"}
 
 
+def test_recent_marks_the_open_study_before_its_status_and_results_arrive(browser, session) -> None:
+    tab = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
+    try:
+        tab.add_init_script("""(() => {
+            const fetch = window.fetch;
+            const records = new Promise(resolve => { window.__releaseRecentRecords = resolve; });
+            window.__recentRecordsHeld = {};
+            window.fetch = (url, ...options) => {
+                const path = new URL(url, location.href).pathname;
+                if (path === '/api/status' || path === '/api/results') {
+                    window.__recentRecordsHeld[path] = true;
+                    return records.then(() => fetch(url, ...options));
+                }
+                return fetch(url, ...options);
+            };
+        })();""")
+        tab.goto(session.url + "#overview", wait_until="domcontentloaded")
+        tab.wait_for_function("""() => window.__recentRecordsHeld['/api/status'] &&
+            window.__recentRecordsHeld['/api/results'] &&
+            window.FastMDXDashboard.state.appState.active_run &&
+            document.querySelectorAll('#sidebar-recent-list .sidebar-recent-item').length === 3""")
+        shown = tab.evaluate("""() => ({
+            active: window.FastMDXDashboard.state.appState.active_run,
+            folder: document.getElementById('sidebar-output-folder').textContent.trim(),
+            recent: [...document.querySelectorAll('#sidebar-recent-list .sidebar-recent-item')]
+                .map(b => ({path: b.dataset.path, current: b.getAttribute('aria-current') === 'true'}))
+        })""")
+        assert shown["folder"] != shown["active"]
+        assert [item["path"] for item in shown["recent"] if item["current"]] == [shown["active"]]
+        tab.evaluate("() => window.__releaseRecentRecords()")
+        tab.wait_for_function("() => document.body.classList.contains('state-ready')")
+    finally:
+        tab.context.close()
+
+
 def test_recent_stays_folded_once_folded(browser, session) -> None:
     tab = _open(browser, session)
     tab.click("#sidebar-recent > summary")

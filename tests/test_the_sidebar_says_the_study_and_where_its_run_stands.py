@@ -79,6 +79,9 @@ def _sidebar_of(browser, study: Path, height: int = 900):
                                ".textContent !== ''")
         # The fix link is shown once the fixes are known (fixes.js).
         page.wait_for_function("() => !!document.documentElement.dataset.fixes")
+        # A finished study without a live record is named from its results'
+        # phases. Status and results can arrive separately in the first poll.
+        page.wait_for_function("() => window.FastMDXDashboard.state.lastUpdateMs > 0")
         facts = page.evaluate(_FACTS)
         facts["errors"] = errors
         yield facts, page

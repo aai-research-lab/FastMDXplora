@@ -117,7 +117,21 @@ def test_a_reply_is_marked_useful_or_wrong_and_kept(session, monkeypatch) -> Non
 
     replies = [{"ok": False, "answer": "It has 76 residues.", "cites": [], "attempts": [],
                 "usage": {"calls": 1, "input_tokens": 93, "cache_read_tokens": 17806,
-                          "cache_write_tokens": 0, "output_tokens": 498}}]
+                          "output_tokens": 498}}]
+
+    def saved_feedback(response):
+        request = response.request
+        if (request.method != "POST"
+                or not response.url.endswith("/api/agent/conversation")):
+            return False
+        try:
+            entries = json.loads(request.post_data or "{}").get("entries", [])
+        except (TypeError, ValueError):
+            return False
+        return any(entry.get("text") == "It has 76 residues."
+                   and entry.get("feedback") == "wrong"
+                   for entry in entries if isinstance(entry, dict))
+
     with sync_playwright() as pw:
         browser, page, errors = _page(pw, session.url, 1400)
         page.route("**/api/agent/propose*", lambda route: route.fulfill(
@@ -127,8 +141,9 @@ def test_a_reply_is_marked_useful_or_wrong_and_kept(session, monkeypatch) -> Non
         page.wait_for_selector("#agent-thread .agent-answer:has-text('76 residues')")
         meta = page.locator("#agent-thread .agent-meta").last
         used = meta.locator(".agent-usage").text_content()
-        meta.locator("[data-feedback=wrong]").click()
-        page.wait_for_timeout(600)
+        with page.expect_response(saved_feedback) as saved:
+            meta.locator("[data-feedback=wrong]").click()
+        assert saved.value.ok
         kept = json.loads(urllib.request.urlopen(session.url + "/api/agent/conversation",
                                                  timeout=10).read())["entries"]
         page.reload(wait_until="domcontentloaded")

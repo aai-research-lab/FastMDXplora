@@ -20,31 +20,59 @@ widens is theirs until the page changes.
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 import pytest
 
-STATIC = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui" / "static"
-CSS = (STATIC / "dashboard.css").read_text(encoding="utf-8")
 LEAST = {"viewer": 788, "run": 784}
 PAGES = ("overview", "viewer", "analysis", "run", "report", "files", "studies")
 
 
-def test_each_page_wraps_its_right_panel_at_the_least_it_names() -> None:
-    """The width frame.js keeps a page at, and the width the page's right
-    panel goes under it below, are one number."""
-    for page, least in LEAST.items():
-        assert re.search(rf'\.page\[data-page="{page}"\] \{{ --page-least: {least}px; '
-                         r"--own-right-panel: 1; \}", CSS), page
-    assert ".page { --page-least: 480px; --own-right-panel: 0; }" in CSS
-    # Written as a range, so no fraction of a pixel falls between the two
-    # layouts (a page of 787.28px, the Agent's width being a share of the
-    # window).
-    viewer = re.findall(r"@container viewerpage \(width ([<>]=?) (\d+)px\)", CSS)
-    assert len(viewer) == 4 and set(viewer) == {("<", "788"), (">=", "788")}, viewer
-    assert re.findall(r"@container builder \((.*?)\)", CSS) == ["width < 784px"]
-    assert not re.search(r"@container [a-z]+ \((max|min)-width", CSS)
+@pytest.mark.parametrize("page", sorted(LEAST))
+@pytest.mark.parametrize("delta", [-0.25, 0, 0.25])
+def test_each_page_wraps_its_right_panel_at_the_least_it_names(
+        browser, session, page, delta) -> None:
+    """Render both sides of each breakpoint, including fractional widths."""
+    tab = _page(browser, session, width=1920, page=page)
+    room = LEAST[page] + delta
+    tab.evaluate("""width => {
+        const page = document.querySelector('.page[data-page="' +
+            document.documentElement.dataset.page + '"]');
+        page.style.boxSizing = 'content-box';
+        page.style.flex = 'none';
+        page.style.maxWidth = 'none';
+        page.style.width = width + 'px';
+        page.style.padding = '0';
+        page.style.border = '0';
+    }""", room)
+    _settle_layout(tab)
+    layout = ".viewer-layout" if page == "viewer" else ".builder-layout"
+    columns = tab.locator(layout).evaluate(
+        "e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
+    actual = tab.locator(f'.page[data-page="{page}"]').evaluate(
+        "e => e.getBoundingClientRect().width")
+    tab.context.close()
+    assert actual == pytest.approx(room)
+    assert columns == (2 if delta >= 0 else 1)
+
+
+def _settle_layout(tab):
+    """Wait for fonts, finite transitions and stable rendered geometry."""
+    tab.evaluate("() => { delete window.__fitLayoutProbe; }")
+    tab.wait_for_function("""() => {
+        if (document.fonts.status !== 'loaded') return false;
+        if (document.getAnimations().some(a => a.playState === 'running'
+            && a.effect.getTiming().iterations !== Infinity)) return false;
+        const boxes = [...document.querySelectorAll(
+            '.main, .sidebar, .side-panel, #agent-drawer, .viewer-layout, '
+            + '.builder-layout, .builder-summary, #agent-request')].map(e => {
+                const r = e.getBoundingClientRect();
+                return [r.x, r.y, r.width, r.height, e.scrollWidth, e.scrollHeight];
+            });
+        const key = JSON.stringify(boxes);
+        const before = window.__fitLayoutProbe;
+        const stable = before && before.key === key ? before.stable + 1 : 0;
+        window.__fitLayoutProbe = {key, stable};
+        return stable >= 3;
+    }""")
 
 
 @pytest.fixture(scope="module")
@@ -96,18 +124,23 @@ def _page(browser, session, width=1440, scheme=None, page="overview", stored=Non
     tab.goto(session.url + "#" + page, wait_until="domcontentloaded")
     tab.wait_for_function("() => window.FastMDXFrame && window.FastMDXAgentBeside"
                           " && document.documentElement.dataset.page === '" + page + "'")
-    if not set(stored or ()) & {"panelCollapsed", "builderPanelOpen", "viewerPanelOpen"}:
+    tab.wait_for_function("() => document.body.classList.contains('state-ready')")
+    if "panelCollapsed" in (stored or {}):
+        expected = "true" if stored["panelCollapsed"] == "1" else "false"
+        tab.wait_for_function(
+            "() => document.body.classList.contains('panel-collapsed') === " + expected)
+    elif not set(stored or ()) & {"builderPanelOpen", "viewerPanelOpen"}:
         # The log is open until the study's first status says it finished:
         # the page as it stands once it has.
         tab.wait_for_function("() => document.body.classList.contains('panel-collapsed')")
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     return tab
 
 
 def _go(tab, page):
     tab.evaluate(f"() => window.FastMDXDashboard.navigate('{page}')")
     tab.wait_for_function(f"() => document.documentElement.dataset.page === '{page}'")
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
 
 
 def _folded(tab):
@@ -124,7 +157,7 @@ def test_the_fold_button_lines_up_with_the_buttons_under_it(browser, session, sc
                 beside: box('#agent-beside-open'), besideIcon: box('#agent-beside-open svg')}; }""")
     tab.click("#sidebar-collapse")
     tab.mouse.move(700, 500)
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     strip = tab.evaluate("""() => {
         const middle = e => { const b = e.getBoundingClientRect(); return b.left + b.width / 2; };
         return [middle(document.querySelector('#sidebar-expand .strip-mark')
@@ -169,7 +202,7 @@ def test_send_waits_for_something_to_send(browser, session) -> None:
     look()
     # Clicked with nothing written, it sends nothing.
     tab.click("#agent-propose", force=True)
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     sent = tab.evaluate("() => document.querySelectorAll('#agent-thread .agent-msg-user').length")
     tab.context.close()
     # Quiet, it says why it waits (CM, 10-16: the title was not asserted).
@@ -187,10 +220,10 @@ def test_the_agent_beside_folds_the_sidebar_beside_a_page_with_its_own_right_pan
     seen["opened"] = _folded(tab)
     # Opened again by the person while the Agent is beside: theirs.
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen["reopened"] = _folded(tab)
     tab.evaluate("() => window.dispatchEvent(new Event('resize'))")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen["kept"] = _folded(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     seen["closed"] = _folded(tab)
@@ -227,7 +260,7 @@ def test_the_viewer_s_sidebar_reopened_beside_the_agent_is_not_kept(browser, ses
     tab = _page(browser, session, width=1440, page="viewer")
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen = [_folded(tab)]
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     seen.append(_folded(tab))
@@ -300,10 +333,10 @@ def test_a_column_opened_or_closed_by_hand_refits_the_page(browser, session) -> 
 
     seen = [shown()]
     tab.click("#side-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen.append(shown())
     tab.click("#side-collapse")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen.append(shown())
     tab.context.close()
     assert seen == [[False, True, "beside"], [True, False, "beside"], [False, True, "beside"]]
@@ -323,8 +356,13 @@ def test_the_side_panel_opened_or_closed_refits_the_page(browser, session) -> No
     assert seen == [False, True, False]
 
 
-PANEL_JS = (STATIC / "agent-panel.js").read_text(encoding="utf-8")
-BESIDE_WORDS = re.findall(r'^    \w+: \["[^"]*", "([^"]*)"\],$', PANEL_JS, re.M)
+# The compact composer messages are a UI copy contract. Measure their actual
+# textarea layout instead of extracting JavaScript source as test input.
+BESIDE_WORDS = [
+    "Write your next message", "Answer above: yes or no", "Pick one above, or type it",
+    "Type your answer", "Change it, or say run it", "Ask how it is going",
+    "Ask why it stopped", "Ask, or describe a study", "Ask, or describe a study",
+]
 
 
 def test_every_prompt_beside_a_page_fits_its_box_at_its_least(browser, session) -> None:
@@ -333,7 +371,7 @@ def test_every_prompt_beside_a_page_fits_its_box_at_its_least(browser, session) 
     assert len(BESIDE_WORDS) == 9, BESIDE_WORDS
     tab = _page(browser, session, width=1024)
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
     clipped = tab.evaluate("""(words) => { const a = document.getElementById('agent-request');
         const was = a.placeholder;
         const out = words.filter(w => { a.placeholder = w; a.style.height = '';
@@ -350,7 +388,7 @@ def test_the_prompt_beside_a_page_follows_the_study_and_fits(browser, session) -
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     tab.evaluate("""() => window.FastMDXDashboard.applyAppState(
         {status: 'running', process_running: true})""")
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     beside = tab.evaluate("""() => { const a = document.getElementById('agent-request');
         return [a.placeholder, a.scrollHeight <= a.clientHeight + 1]; }""")
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
@@ -365,10 +403,10 @@ def test_a_window_resized_refits_the_page(browser, session) -> None:
     tab = _page(browser, session, width=1440, page="run")
     seen = [_folded(tab)]
     tab.set_viewport_size({"width": 1024, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     seen.append(_folded(tab))
     tab.set_viewport_size({"width": 1440, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     seen.append(_folded(tab))
     tab.context.close()
     assert seen == [False, True, False]
@@ -382,17 +420,17 @@ def test_a_seam_put_back_by_a_double_click_refits_the_page(browser, session) -> 
     tab.mouse.down()
     tab.mouse.move(handle[0] - 200, handle[1], steps=8)
     tab.mouse.up()
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
     widened = _folded(tab)
     seam = tab.evaluate("""() => { const b = document.querySelector('.col-handle[data-handle="panel"]')
         .getBoundingClientRect(); return [b.left + b.width / 2, b.top + 200]; }""")
     tab.mouse.dblclick(*seam)
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
     put_back = _folded(tab)
     # Its width put back, the log is no longer held: folded to fit as the
     # window narrows (CI, 10-16: no test narrowed the window after it).
     tab.set_viewport_size({"width": 900, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     _two_frames(tab)
     narrowed = tab.evaluate("() => document.body.classList.contains('panel-collapsed')")
     tab.context.close()
@@ -408,7 +446,7 @@ def test_a_column_opened_by_hand_stays_where_the_page_then_has_less(browser, ses
     tab.wait_for_function("() => !document.body.classList.contains('panel-collapsed')")
     tab.set_viewport_size({"width": 900, "height": 900})
     tab.wait_for_function("() => document.body.classList.contains('sidebar-collapsed')")
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     seen = tab.evaluate("""() => { const p = document.querySelector('.page[data-page="overview"]');
         const s = getComputedStyle(p);
         return [document.body.classList.contains('panel-collapsed'),
@@ -427,7 +465,7 @@ def test_the_agent_gives_back_the_sidebar_as_the_person_left_it(browser, session
     seen = {}
     tab = _page(browser, session, width=1024, page="run")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen["builder, opened"] = _folded(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     seen["builder, Agent"] = _folded(tab)
@@ -437,7 +475,7 @@ def test_the_agent_gives_back_the_sidebar_as_the_person_left_it(browser, session
     tab.evaluate("() => window.FastMDXFrame.setCollapsed(false, false)")
     seen["overview, log open"] = _folded(tab)
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     seen["overview, Agent"] = _folded(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
@@ -448,7 +486,7 @@ def test_the_agent_gives_back_the_sidebar_as_the_person_left_it(browser, session
     tab.mouse.move(700, 500)
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen["closed, reopened beside"] = _folded(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     seen["closed, Agent closed"] = _folded(tab)
@@ -466,15 +504,38 @@ def test_a_seam_dragged_refits_the_page(browser, session) -> None:
     before = [_folded(tab), tab.evaluate(GEOMETRY)["room"]]
     handle = tab.evaluate("""() => { const b = document.querySelector('.col-handle[data-handle="panel"]')
         .getBoundingClientRect(); return [b.left + b.width / 2, b.top + 200]; }""")
+    tab.evaluate("""() => {
+        window.__panelDragTrace = [];
+        document.addEventListener('mousedown', e => {
+            const seam = e.target.closest('.col-handle[data-handle="panel"]');
+            if (seam) window.__panelDragTrace.push(['down', e.clientX, e.clientY]);
+        }, true);
+        document.addEventListener('mousemove', e => {
+            if (document.body.classList.contains('col-dragging'))
+                window.__panelDragTrace.push(['move', e.clientX, e.clientY]);
+        }, true);
+        document.addEventListener('mouseup', e => {
+            if (document.body.classList.contains('col-dragging'))
+                window.__panelDragTrace.push(['up', e.clientX, e.clientY]);
+        }, true);
+    }""")
     tab.mouse.move(*handle)
     tab.mouse.down()
     tab.mouse.move(handle[0] - 200, handle[1], steps=8)
     tab.mouse.up()
-    tab.wait_for_timeout(150)
-    after = [_folded(tab), tab.evaluate(GEOMETRY)["room"]]
+    _settle_layout(tab)
+    after = tab.evaluate("""() => {
+        const page = document.querySelector('.page[data-page="overview"]');
+        const s = getComputedStyle(page);
+        return {sidebar_folded: document.body.classList.contains('sidebar-collapsed'),
+                room: page.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight),
+                panel_width: document.querySelector('.side-panel').getBoundingClientRect().width,
+                handle_dragging: document.querySelector('.col-handle[data-handle="panel"]')
+                    .classList.contains('dragging'), trace: window.__panelDragTrace}; }""")
     tab.context.close()
     assert before[0] is False and before[1] >= 480, before
-    assert after[0] is True and after[1] >= 480, after
+    assert after["panel_width"] >= 600, after
+    assert after["sidebar_folded"] and after["room"] >= 480 and not after["handle_dragging"], after
 
 
 def test_a_column_dragged_wider_holds_until_the_page_changes(browser, session) -> None:
@@ -489,11 +550,11 @@ def test_a_column_dragged_wider_holds_until_the_page_changes(browser, session) -
     tab.mouse.down()
     tab.mouse.move(handle[0] - 150, handle[1], steps=8)
     tab.mouse.up()
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
     width = "() => Math.round(document.querySelector('.side-panel').getBoundingClientRect().width)"
     dragged = tab.evaluate(width)
     tab.set_viewport_size({"width": 1000, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     _two_frames(tab)
     narrowed = [tab.evaluate("() => document.body.classList.contains('panel-collapsed')"),
                 _folded(tab), tab.evaluate(width), tab.evaluate(GEOMETRY)["room"] < 480]
@@ -526,7 +587,7 @@ def test_a_long_path_breaks_in_the_form_and_the_summary(browser, session) -> Non
                               " && !document.getElementById('run-system-preview').hidden"
                               " && [...document.querySelectorAll('.builder-plan-lines dd')]"
                               ".some(e => e.textContent.includes('receptor_ligand'))")
-        tab.wait_for_timeout(200)
+        _settle_layout(tab)
         found[width] = tab.evaluate("""() => {
             const wider = e => e.scrollWidth > e.clientWidth + 1
                 && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName);
@@ -674,7 +735,7 @@ def test_a_peek_left_goes_through_a_fit(browser, session) -> None:
     tab.wait_for_function("() => document.body.classList.contains('sidebar-peek')")
     tab.mouse.move(700, 500)
     tab.set_viewport_size({"width": 1030, "height": 900})
-    tab.wait_for_timeout(800)
+    tab.wait_for_function("() => !document.body.classList.contains('sidebar-peek')")
     gone = not tab.evaluate("() => document.body.classList.contains('sidebar-peek')")
     tab.context.close()
     assert gone
@@ -690,10 +751,10 @@ def test_the_agent_page_s_prompt_has_its_room_after_the_agent_was_beside(browser
         return a.scrollHeight <= a.clientHeight + 1; }""")
     _go(tab, "overview")
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     _go(tab, "agent")
-    tab.wait_for_timeout(200)
+    _settle_layout(tab)
     again = tab.evaluate("""() => { const a = document.getElementById('agent-request');
         return a.scrollHeight <= a.clientHeight + 1; }""")
     tab.context.close()
@@ -710,10 +771,10 @@ def test_the_sidebar_folded_again_beside_the_agent_is_the_agent_s_fold(browser, 
     seen = [_folded(tab)]
     tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.click("#sidebar-collapse")
     tab.mouse.move(700, 500)
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     seen.append(_folded(tab))
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     seen.append(_folded(tab))
@@ -731,9 +792,9 @@ def test_a_seam_double_clicked_is_not_a_width_chosen(browser, session) -> None:
     seam = tab.evaluate("""() => { const b = document.querySelector('.col-handle[data-handle="panel"]')
         .getBoundingClientRect(); return [b.left + b.width / 2, b.top + 200]; }""")
     tab.mouse.dblclick(*seam)
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.set_viewport_size({"width": 900, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     room = tab.evaluate(GEOMETRY)["room"]
     tab.context.close()
     assert room >= 480
@@ -751,9 +812,9 @@ def test_a_seam_pressed_without_moving_is_not_a_width_chosen(browser, session) -
     # The hand moves, but not across: no width changes.
     tab.mouse.move(seam[0], seam[1] + 12, steps=3)
     tab.mouse.up()
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.set_viewport_size({"width": 900, "height": 900})
-    tab.wait_for_timeout(300)
+    _settle_layout(tab)
     _two_frames(tab)
     room = tab.evaluate(GEOMETRY)["room"]
     tab.context.close()
@@ -765,12 +826,12 @@ def test_a_seam_double_clicked_keeps_a_column_opened_by_hand(browser, session) -
     person, its seam double-clicked to put its width back, it stays open."""
     tab = _page(browser, session, width=1000, page="run")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     opened = _folded(tab)
     seam = tab.evaluate("""() => { const b = document.querySelector('.col-handle[data-handle="sidebar"]')
         .getBoundingClientRect(); return [b.left + b.width / 2, b.top + 300]; }""")
     tab.mouse.dblclick(*seam)
-    tab.wait_for_timeout(150)
+    _settle_layout(tab)
     after = _folded(tab)
     tab.context.close()
     assert [opened, after] == [False, False]
@@ -784,7 +845,7 @@ def test_text_written_beside_a_page_is_sized_again_on_the_agent_page(browser,
     tab.evaluate("() => window.FastMDXAgentBeside.open()")
     tab.keyboard.type("What does the radius of gyration say about how compact the "
                       "protein stayed over the production run, and when?")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     beside = tab.evaluate("() => document.getElementById('agent-request').clientHeight")
     tab.evaluate("() => window.FastMDXAgentBeside.close()")
     _go(tab, "agent")
@@ -803,7 +864,7 @@ def test_text_written_on_the_agent_page_is_sized_again_beside_a_page(browser,
     tab.keyboard.type("What does the radius of gyration say about how compact the "
                       "protein stayed over the production run, and when did it "
                       "stop changing, if it did, in each of the three replicas?")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     there = tab.evaluate("() => document.getElementById('agent-request').clientHeight")
     _go(tab, "overview")
     tab.evaluate("() => window.FastMDXAgentBeside.open()")
@@ -822,7 +883,7 @@ NEEDS = """() => { const a = document.getElementById('agent-request');
 def _two_frames(tab):
     tab.evaluate("() => new Promise(done => requestAnimationFrame("
                  "() => requestAnimationFrame(() => done())))")
-    tab.wait_for_timeout(50)
+    _settle_layout(tab)
 
 
 def test_a_peek_kept_by_its_button_is_the_column_opened(browser, session) -> None:
@@ -831,7 +892,7 @@ def test_a_peek_kept_by_its_button_is_the_column_opened(browser, session) -> Non
     tab.mouse.move(20, 14)
     tab.wait_for_function("() => document.body.classList.contains('sidebar-peek')")
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     shown = tab.evaluate("""() => [document.body.classList.contains('sidebar-collapsed'),
                                    document.body.classList.contains('sidebar-peek')]""")
     tab.context.close()
@@ -844,7 +905,7 @@ def test_a_column_shown_by_pointing_stays_shown_through_a_fit(browser, session) 
     tab.mouse.move(20, 14)
     tab.wait_for_function("() => document.body.classList.contains('sidebar-peek')")
     tab.set_viewport_size({"width": 1010, "height": 900})
-    tab.wait_for_timeout(200)
+    _settle_layout(tab)
     peeking = tab.evaluate("() => document.body.classList.contains('sidebar-peek')")
     tab.context.close()
     assert peeking
@@ -857,7 +918,7 @@ def test_the_agent_is_beside_the_page_from_the_least_window(browser, session) ->
     for width in (932, 931):
         tab = _page(browser, session, width=width)
         tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
-        tab.wait_for_timeout(150)
+        _settle_layout(tab)
         found[width] = tab.evaluate(GEOMETRY)
         tab.context.close()
     beside = found[932]
@@ -870,9 +931,9 @@ def test_a_column_the_person_opens_stays_until_the_page_changes(browser, session
     tab = _page(browser, session, width=1024, page="run")
     seen = [_folded(tab)]
     tab.click("#sidebar-expand")
-    tab.wait_for_timeout(100)
+    _settle_layout(tab)
     tab.set_viewport_size({"width": 1000, "height": 900})
-    tab.wait_for_timeout(200)
+    _settle_layout(tab)
     seen.append(_folded(tab))
     _go(tab, "viewer")
     _go(tab, "run")
@@ -915,7 +976,7 @@ def test_every_page_fits_the_window(browser, session, width, agent) -> None:
         _go(tab, page)
         if agent and not tab.evaluate("() => window.FastMDXAgentBeside.isOpen()"):
             tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
-            tab.wait_for_timeout(100)
+            _settle_layout(tab)
         found[page] = tab.evaluate(GEOMETRY)
     tab.context.close()
     _each_page_fits(found, agent)
@@ -979,16 +1040,16 @@ def test_the_builder_s_form_fits_beside_its_summary(browser, session, width, age
     tab = _page(browser, session, width=width, page="run")
     if agent:
         tab.evaluate("() => window.FastMDXAgentBeside.open(true)")
-        tab.wait_for_timeout(300)
+        _settle_layout(tab)
     tab.locator("#run-starters button").filter(has_text=starter).first.click()
     tab.wait_for_function("() => [...document.querySelectorAll('.builder-system-holds')]"
                           ".some(e => e.textContent.trim())")
-    tab.wait_for_timeout(500)
+    _settle_layout(tab)
     for _ in range(4):
         # What opens may hold more to open.
         tab.evaluate("""() => document.querySelectorAll(
             '.builder-main button[aria-expanded="false"]').forEach(b => b.click())""")
-        tab.wait_for_timeout(250)
+        _settle_layout(tab)
     assert tab.evaluate("() => [...document.querySelectorAll('.chip-toggle')]"
                         ".some(e => e.textContent.trim() === 'kmeans'"
                         " && e.getBoundingClientRect().width)")
@@ -1086,7 +1147,7 @@ def test_no_fraction_of_a_pixel_falls_between_the_viewer_s_two_layouts(browser, 
     seen = []
     for width in (1247, 1249, 1250, 1251):
         tab.set_viewport_size({"width": width, "height": 900})
-        tab.wait_for_timeout(250)
+        _settle_layout(tab)
         seen.append(tab.evaluate("""() => {
             const p = document.querySelector('.page[data-page="viewer"]'), s = getComputedStyle(p);
             const room = p.getBoundingClientRect().width - (p.offsetWidth - p.clientWidth)
@@ -1111,7 +1172,7 @@ def test_a_scroll_bar_that_comes_refits_the_page(browser_with_scroll_bars, sessi
     tab.locator("#run-starters button").first.click()
     tab.wait_for_function("() => (document.getElementById('run-starters-note')"
                           ".textContent || '').startsWith('Started')")
-    tab.wait_for_timeout(400)
+    _settle_layout(tab)
     _two_frames(tab)
     seen = tab.evaluate("""() => {
         const m = document.querySelector('.page[data-page="run"] .builder-main').getBoundingClientRect();
@@ -1153,11 +1214,11 @@ def test_the_steps_keep_their_names_while_they_fit(browser, session) -> None:
     tab.locator("#run-starters button").filter(has_text="A protein in water").first.click()
     tab.wait_for_function("() => [...document.querySelectorAll('.builder-step-link')]"
                           ".every(e => !e.hidden)")
-    tab.wait_for_timeout(200)
+    _settle_layout(tab)
     found = {}
     for width in (1280, 912):
         tab.set_viewport_size({"width": width, "height": 900})
-        tab.wait_for_timeout(300)
+        _settle_layout(tab)
         _two_frames(tab)
         found[width] = tab.evaluate(STEPS)
     tab.context.close()

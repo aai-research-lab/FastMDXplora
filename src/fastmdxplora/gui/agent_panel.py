@@ -7,11 +7,9 @@ whether a config is acceptable. The validator does that, as it does for a
 config somebody typed by hand.
 
 The key is accepted here and handed to
-:func:`fastmdxplora.agent.save_choice`, which puts it in a file of its
-own. It is never echoed back to the browser, never written into a config,
-and never logged. Server-side rather than in the page because a browser
-cannot hold a secret: anything the page keeps is readable by anything else
-the page runs.
+:func:`fastmdxplora.agent.save_choice`, which writes it to the owner-only
+model settings file. It is never echoed back to the browser, never written
+into a config, and never logged.
 """
 
 from __future__ import annotations
@@ -24,6 +22,8 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora.refusals import StudyError
+
 __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
 
 
@@ -32,31 +32,38 @@ __all__ = ["model_endpoint", "propose_endpoint", "run_endpoint"]
 OWN_MEMORY = "own"
 
 
-def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
-    """Read or set which AI model to ask.
+def _model_options(choice: Any) -> list[dict[str, str]]:
+    """Fetch once, keeping the configured choices usable while offline."""
+    from fastmdxplora.agent.models import PROVIDERS, list_model_options
 
-    With no ``provider``, reports what is set. With one, stores the choice
-    and, if a key came with it, the key.
-    """
+    try:
+        return list(list_model_options(choice))
+    except Exception:  # noqa: BLE001 - settings remain usable if discovery fails
+        return [{"id": model, "label": model}
+                for model in PROVIDERS[choice.provider].get("models", ())]
+
+
+def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+    """Read or set the OpenAI or OpenAI-compatible model choice."""
     from fastmdxplora.agent.models import (
-        CACHE_FOR, PROVIDERS, ModelChoice, _takes_tools, default_model, load_choice,
-        model_path, save_cache_for, save_choice,
+        PROVIDERS, ModelChoice, _takes_tools, default_model, load_choice,
+        model_path, save_choice, _key_for,
     )
+
+    def key_is_set(choice: Any) -> bool:
+        try:
+            return bool(_key_for(choice))
+        except StudyError:
+            return False
 
     if not payload.get("provider"):
         current = load_choice()
-        # Ask the provider now, if there is already a key to ask with. The
-        # list used to be fetched only when a choice was saved, so opening
-        # Settings showed the written fallback and an AI model chosen from it
-        # could 404 -- which is how `claude-opus-4-1` reached somebody.
-        live: dict[str, list] = {}
+        live: dict[str, list[str]] = {}
+        options: dict[str, list[dict[str, str]]] = {}
         if current is not None:
-            from fastmdxplora.agent.models import list_models
-
-            try:
-                found = list(list_models(current))
-            except Exception:  # noqa: BLE001 - a fallback list still works
-                found = []
+            found_options = _model_options(current)
+            options[current.provider] = found_options
+            found = [item["id"] for item in found_options]
             if found:
                 live[current.provider] = found
         return {
@@ -65,6 +72,9 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                 {"id": name, "label": spec["label"],
                  "default_model": default_model(name, live.get(name)),
                  "models": live.get(name) or list(spec.get("models") or ()),
+                 "model_options": options.get(name) or [
+                     {"id": model, "label": model}
+                     for model in (live.get(name) or list(spec.get("models") or ()))],
                  "environment_variable": spec["env"],
                  "needs_url": not spec["url"],
                  "examples": [
@@ -73,53 +83,41 @@ def model_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
                  ]}
                 for name, spec in PROVIDERS.items()
             ],
-            # What is set, never the key.
             "current": current.as_record() if current else None,
-            # Whether the server takes tool calls; once it has turned them
-            # away, the Agent writes to it in plain text.
+            "key_set": key_is_set(current) if current else False,
             "tool_use": _takes_tools() if current else None,
-            # How long the instructions are kept in the provider's cache.
-            "cache_for": _stored_cache_for(),
             "stored_at": str(model_path()),
         }
 
     provider = str(payload["provider"])
     if provider not in PROVIDERS:
-        return {"ok": False,
-                "error": f"No provider called {provider!r}.",
+        return {"ok": False, "error": f"No provider called {provider!r}.",
                 "code": "config.option.not_permitted"}
 
-    base_url = str(payload.get("base_url") or "")
+    base_url = "" if PROVIDERS[provider]["url"] else str(payload.get("base_url") or "")
     if not PROVIDERS[provider]["url"] and not base_url:
         return {"ok": False,
-                "error": ("An OpenAI-compatible server needs a base URL, "
-                          "such as http://localhost:11434/v1 for Ollama."),
+                "error": "An OpenAI-compatible server needs a base URL, such as "
+                         "http://localhost:11434/v1 for Ollama.",
                 "code": "config.option.missing_companion"}
 
     model = str(payload.get("model") or default_model(provider))
     if not model:
         return {"ok": False, "error": "An AI model name is needed.",
                 "code": "config.option.missing_companion"}
-    cache = str(payload.get("cache_for") or "auto")
-    if cache not in CACHE_FOR:
-        return {"ok": False, "error": f"Keep the cache for {', '.join(CACHE_FOR)}.",
-                "code": "config.option.not_permitted"}
-
-    save_choice(ModelChoice(provider, model, base_url),
-                key=str(payload.get("api_key") or ""))
-    save_cache_for(cache)
-    # Ask the provider what it actually has, now that there is a key to ask
-    # with. The written list is what to show before this can be answered.
-    from fastmdxplora.agent.models import list_models
-
+    choice = ModelChoice(provider, model, base_url)
     try:
-        offered = list(list_models(ModelChoice(provider, model, base_url)))
-    except Exception:  # noqa: BLE001 - a stale list beats a broken save
-        offered = list(PROVIDERS[provider].get("models") or ())
-    # The choice, not the key. A browser that never receives one cannot
-    # leak one.
-    return {"ok": True, "models": offered,
-            "current": ModelChoice(provider, model, base_url).as_record()}
+        save_choice(choice, key=str(payload.get("api_key") or ""))
+    except StudyError as exc:
+        return {"ok": False, "error": str(exc), "code": exc.code}
+    except OSError:
+        return {"ok": False,
+                "error": "Agent settings could not be saved. Check the settings folder "
+                         "permissions and retry."}
+    options = _model_options(choice)
+    return {"ok": True, "models": [item["id"] for item in options],
+            "model_options": options, "current": choice.as_record(),
+            "key_set": key_is_set(choice)}
 
 
 def propose_endpoint(payload: dict[str, Any],
@@ -165,7 +163,7 @@ def propose_endpoint(payload: dict[str, Any],
     # opened while the AI model answers is not where its prompts belong.
     receipts = _receipts_of(runtime)
     try:
-        complete = completion_for(where="page")
+        complete = completion_for()
     except StudyError as exc:
         # The start page's questions about the study open are answered from
         # its records where no AI model can be asked.
@@ -421,20 +419,6 @@ def memory_endpoint(payload: dict[str, Any] | None = None, *,
     if op in ("add", "change", "forget", "undo"):
         answer["done"] = done.as_record() | {"said": done.said()}
     return answer
-
-
-def _stored_cache_for() -> str:
-    """The cache setting as stored: auto, 1h or 5m."""
-    import json
-
-    from fastmdxplora.agent.models import CACHE_FOR, model_path
-
-    try:
-        record = json.loads(model_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return "auto"
-    chosen = record.get("cache_for") if isinstance(record, dict) else None
-    return chosen if chosen in CACHE_FOR else "auto"
 
 
 def your_defaults(runtime: Any) -> Any:
@@ -785,6 +769,10 @@ def run_endpoint(payload: dict[str, Any], runtime: Any,
             source = (str(place[0]) if place[0] else None) if place else moving.get("study")
             started["conversation"] = attach_conversation(
                 runtime, started["output"], cid, source)
+            if started["conversation"].get("ok"):
+                from fastmdxplora.gui.workspace import study_key
+
+                started["conversation"]["study_key"] = study_key(started["output"])
             # The page saved the run's entry before it asked for the run;
             # where it went is written into that entry here, so a reload
             # before the page hears keeps the run (twelfth review, 10-08).

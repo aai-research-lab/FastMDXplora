@@ -2107,6 +2107,16 @@ body.agent-beside .dashboard-toast.show {
 
 /* The Agent's settings: choices in the page's font, the key field styled as
    the others (it had the browser's own); an address and a key in mono. */
+#agent-settings .builder-field-wide { grid-column: 1 / -1; }
+#agent-settings .agent-dialog-head,
+#agent-settings .agent-dialog-foot { flex-shrink: 0; }
+#agent-settings .agent-dialog-head > div { min-width: 0; }
+#agent-settings .agent-dialog-body { min-height: 0; }
+#agent-settings .builder-card-note {
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+#agent-model-summary { white-space: pre-line; }
 #agent-settings .builder-field select,
 #agent-settings .builder-field input[type="number"] { font-family: var(--font-stack); }
 #agent-settings .builder-field input[type="password"] {
@@ -2115,7 +2125,6 @@ body.agent-beside .dashboard-toast.show {
     background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
     font-family: var(--font-mono);
 }
-
 .builder-field input:focus,
 .builder-field select:focus {
     border-color: color-mix(in srgb, var(--accent) 62%, transparent);
@@ -4045,7 +4054,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     flex: none; display: inline-flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; margin: 0; padding: 0; font-size: var(--text-2xs);
 }
-/* Its right edge on the buttons' under it (the Agent beside, New in a
+/* Its right edge on the buttons under it (the Agent beside, New in a
    list's head): the brand row is padded 16px, the rows under it 10px and
    their buttons 1px in. */
 @media (min-width: 801px) {
@@ -4264,13 +4273,7 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
    fixed-position descendants, and the dialogs on other pages are those. */
 .page[data-page="viewer"] { container-type: inline-size; container-name: viewerpage; }
 /* The least width each page needs, read by frame.js, which folds the
-   sidebar and then the side panel before a page has less (user, 10-15).
-   The Viewer's tools and the Config Builder's summary are the pages' own
-   right panels: they stay beside the page down to its least, and go under
-   it below. The tools take their widest, 390px, before the molecule takes
-   any, so at 788px of page the molecule's column is about 380px (the
-   canvas a little less, by the column's scroll gutter); the builder's
-   784px, above. */
+   sidebar and then the side panel before a page has less. */
 .page { --page-least: 480px; --own-right-panel: 0; }
 .page[data-page="viewer"] { --page-least: 788px; --own-right-panel: 1; }
 .page[data-page="run"] { --page-least: 784px; --own-right-panel: 1; }
@@ -4810,11 +4813,27 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .series-svg { display: block; width: 100%; height: 260px; cursor: crosshair; outline: none; }
 .series-svg:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; }
 .series-svg text { font-family: var(--font-mono); }
+.series-range {
+    display: flex; align-items: end; flex-wrap: wrap; gap: 8px 12px;
+    margin: 0 0 6px; font-size: var(--text-2xs); color: var(--text-muted);
+}
+.series-range-field { display: grid; gap: 3px; }
+.series-range-field input {
+    width: 112px; min-height: 30px; padding: 4px 7px; border-radius: 5px;
+    border: 1px solid var(--border-primary); background: var(--background-soft);
+    color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums;
+}
+.series-range-field input[aria-invalid="true"] { border-color: var(--accent-red); }
+.series-range .line-btn { min-height: 30px; padding: 4px 9px; }
+.series-range-status { flex: 1 1 180px; min-height: 1.4em; }
+.series-range-empty { margin: 18px 0; color: var(--text-muted); font-size: var(--text-sm); }
 .series-tip {
     position: absolute;
     z-index: 3;
     pointer-events: none;
-    max-width: 260px;
+    width: max-content;
+    max-width: calc(100% - 8px);
+    box-sizing: border-box;
     padding: 6px 9px;
     border-radius: 6px;
     border: 1px solid var(--border-primary);
@@ -4824,7 +4843,8 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     line-height: 1.45;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .series-tip strong { color: var(--text-primary); font-weight: 600; }
 
@@ -5692,9 +5712,6 @@ body.agent-beside { --panel-width: 0px; }
 body.agent-beside .side-panel,
 body.agent-beside .col-handle[data-handle="panel"],
 body.agent-beside .side-expand { visibility: hidden; overflow: hidden; }
-/* Beside the page, not over it, wherever the strip of icons (56px), the
-   Agent at its least (340px) and a page at its least (480px) with its
-   margins (28px a side) fit: from 932px. */
 @media (min-width: 932px) {
     .agent-drawer { box-shadow: none; }
     body.agent-beside .app-shell { padding-right: var(--agent-width); }
@@ -6835,9 +6852,8 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 
 /* One column where the page is narrow, by the page's own width: the Agent
    opened beside the builder takes the window's room, not the page's rules.
-   The summary stays beside the form down to a page of 784px: the summary
-   at its widest, 380px, and the gap leave the form 380px; frame.js folds
-   the sidebar and the side panel to keep it there (--page-least). */
+   The summary stays beside the form down to a page of 784px; frame.js folds
+   the sidebar and side panel to keep it there (--page-least). */
 .page[data-page="run"] { container: builder / inline-size; }
 @container builder (width < 784px) {
     .page[data-page="run"] .builder-layout { grid-template-columns: minmax(0, 1fr); }
@@ -6853,7 +6869,7 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     .page[data-page="run"] .builder-phone-bar .primary-btn { margin-left: auto; min-height: 36px; }
 }
 /* The form by its own width: beside the summary at the page's least it has
-   380px, as narrow as on a phone, so it is laid out as on a phone there. */
+   380px, as narrow as on a phone, so lay it out as on a phone there. */
 .page[data-page="run"] .builder-main { container: builderform / inline-size; }
 @container builderform (width < 680px) {
     .page[data-page="run"] .builder-start,
@@ -6866,8 +6882,8 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     .page[data-page="run"] .builder-system-head { display: none; }
     .page[data-page="run"] .builder-stopping-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-/* The steps' names take 540px: under that, the numbers alone show, the
-   names still read out. */
+/* The steps' names take 540px: under that, show numbers while keeping the
+   names available to assistive technology. */
 @container builderform (width < 560px) {
     .page[data-page="run"] .builder-step-link span {
         position: absolute; width: 1px; height: 1px; overflow: hidden;

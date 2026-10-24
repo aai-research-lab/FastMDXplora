@@ -112,11 +112,13 @@ def test_the_run_moves_its_conversation_as_it_starts(tmp_path, monkeypatch) -> N
                             "conversation": {"id": cid, "study": None}}, runtime)
     assert started["ok"] and started["conversation"]["moved"]
     assert started["conversation"]["study"] == made[0]
+    assert started["conversation"]["study_key"] == study_key(made[0])
     assert started["study_key"] == study_key(made[0])
     assert read_conversation(runtime)["id"] == cid
     again = run_endpoint({"config": {"systems": [{"system": "1UAO"}]},
                           "conversation": {"id": cid, "study": made[0]}}, runtime)
     assert again["conversation"]["moved"] and again["conversation"]["study"] == made[1]
+    assert again["conversation"]["study_key"] == study_key(made[1])
     assert again["study_key"] == study_key(made[1])
 
 
@@ -549,7 +551,8 @@ def test_a_thread_switched_while_its_save_waits_keeps_both(tmp_path, monkeypatch
     assert errors == []
 
 
-def test_the_thread_is_left_alone_while_its_run_starts(tmp_path, monkeypatch):
+@pytest.mark.parametrize("named_study", [False, True], ids=["workspace", "study"])
+def test_the_thread_is_left_alone_while_its_run_starts(tmp_path, monkeypatch, named_study):
     """The GUI is on the run's folder before the launch answers (the move
     and the run's entry are written after the run starts); the page did not
     empty the thread then (twelfth review, 10-08: untested)."""
@@ -565,6 +568,10 @@ def test_the_thread_is_left_alone_while_its_run_starts(tmp_path, monkeypatch):
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", tempfile.mkdtemp())
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    if named_study:
+        original = workspace / "here"
+        original.mkdir()
+        (original / "exploration.yml").write_text("systems: []\n", encoding="utf-8")
     _launches(monkeypatch, workspace)
     said_where = agent_panel._say_where_it_ran
 
@@ -2645,9 +2652,9 @@ def test_a_run_then_another_study_opened_still_runs(tmp_path, monkeypatch):
         page.on("domcontentloaded", lambda _page: events.append("reload"))
         _slow_disk(monkeypatch, 1.0)
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
-        page.evaluate("(where) => window.FastMDXAgentPanel.open("
-                      "'conv-20261008-000000-000000', where, false)", str(other))
-        page.wait_for_timeout(7000)
+        with page.expect_event("domcontentloaded"):
+            page.evaluate("(where) => { window.FastMDXAgentPanel.open("
+                          "'conv-20261008-000000-000000', where, false); }", str(other))
         close()
     finally:
         session.server.shutdown()

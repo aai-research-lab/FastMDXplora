@@ -3,7 +3,7 @@
  * Each frame of the movie is a frame of the trajectory shown as the Viewer
  * shows it (the representation, the colouring, the parts shown, the
  * superposition, the camera) and rendered as a picture at the movie's size,
- * with the time and the colour bar of a result in its corners. The pictures
+ * with an optional caption, the time and the colour bar of a result in its corners. The pictures
  * are sent one by one to the GUI's server, where ffmpeg on this computer
  * encodes them as they arrive (movies.py): an MP4 (H.264), or a WebM where
  * that ffmpeg has no H.264 encoder. The movie is kept with the study in
@@ -96,6 +96,70 @@
     context.restore();
   }
 
+  function captionText(value) {
+    return Array.from(String(value == null ? "" : value)
+      .replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+      .slice(0, 240).join("");
+  }
+
+  function captionLines(context, text, maxWidth) {
+    var lines = [];
+    var line = "";
+    String(text).split(" ").forEach(function (word) {
+      if (!word) return;
+      var candidate = line ? line + " " + word : word;
+      if (context.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+        return;
+      }
+      if (line) lines.push(line);
+      line = "";
+      Array.from(word).forEach(function (character) {
+        if (line && context.measureText(line + character).width > maxWidth) {
+          lines.push(line);
+          line = character;
+        } else line += character;
+      });
+    });
+    if (line) lines.push(line);
+    if (lines.length > 8) {
+      lines = lines.slice(0, 8);
+      var last = Array.from(lines[7]);
+      while (last.length && context.measureText(last.join("") + "…").width > maxWidth) last.pop();
+      lines[7] = last.join("") + "…";
+    }
+    return lines;
+  }
+
+  function drawCaption(context, value) {
+    var text = captionText(value);
+    if (!text) return;
+    var canvas = context.canvas;
+    var scale = Math.max(1, canvas.width / 900);
+    var margin = 14 * scale;
+    var pad = 10 * scale;
+    var lineHeight = 19 * scale;
+    var maxWidth = Math.max(1, Math.min(canvas.width * 0.68,
+      canvas.width - 2 * margin - 2 * pad));
+    context.save();
+    context.font = "600 " + (14 * scale) + "px sans-serif";
+    context.textBaseline = "middle";
+    var lines = captionLines(context, text, maxWidth);
+    var measured = Math.max.apply(null, lines.map(function (line) {
+      return context.measureText(line).width;
+    }));
+    var width = Math.min(canvas.width - 2 * margin, Math.ceil(measured + 2 * pad));
+    var height = lines.length * lineHeight + 2 * pad;
+    context.fillStyle = "rgba(5, 5, 5, 0.82)";
+    context.fillRect(margin, margin, width, height);
+    context.fillStyle = "#f5f5f7";
+    lines.forEach(function (line, index) {
+      context.fillText(line, margin + pad,
+        margin + pad + lineHeight * (index + 0.5), maxWidth);
+    });
+    context.restore();
+  }
+
   function post(url, body, type) {
     return fetch(url, {
       method: "POST",
@@ -161,6 +225,7 @@
       turn: !!(byId("movie-turn") || {}).checked,
       time: !!(byId("movie-time") || {}).checked,
       between: whole("movie-between", 0),
+      caption: captionText((byId("movie-caption") || {}).value),
     };
   }
 
@@ -170,7 +235,7 @@
   }
 
   /** Makes the movie: as the form sets it, or as ``asked`` says (name, fps,
-   * turn, time, between, from, to, every, size), which `fastmdx movie`
+   * turn, time, between, caption, from, to, every, size), which `fastmdx movie`
    * gives. Resolves to what was made, or why nothing was. */
   async function make(asked) {
     if (making) return { ok: false, reason: "A movie is being made already." };
@@ -185,6 +250,7 @@
     var fps = Math.round(Number(given.fps) || 24);
     var turn = !!given.turn;
     var stamp = !!given.time;
+    var caption = captionText(given.caption);
     var between = [1, 3, 7].indexOf(Math.round(Number(given.between) || 0)) >= 0
       ? Math.round(Number(given.between)) : 0;
     making = { cancelled: false };
@@ -290,6 +356,7 @@
             break;
           }
           context.drawImage(rendered, 0, 0, dims[0], dims[1]);
+          drawCaption(context, caption);
           if (stamp) {
             var time = loaded.times[frames[k]];
             var next = k < frames.length - 1 ? loaded.times[frames[k + 1]] : null;
@@ -439,5 +506,6 @@
   else wire();
 
   window.FastMDXViewerMovie = { make: make, size: size, framesOf: framesOf, timeSaid: timeSaid,
+    drawCaption: drawCaption,
     settings: settings, encoding: loadEncoding };
 }());

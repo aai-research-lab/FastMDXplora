@@ -481,7 +481,7 @@ def test_a_study_level_agent_reaches_the_manifest(tmp_path: Path) -> None:
     config = {
         "systems": [{"id": "s1", "system": str(pdb)}],
         "agent": "assisted",
-        "agent_model": "anthropic/claude-sonnet-4-5-20250929",
+        "agent_model": "openai/gpt-5-2025-09-29",
         **FAST_SIM,
     }
     fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
@@ -557,7 +557,7 @@ def test_the_resolved_config_says_how_the_study_was_written(
     config = {
         "systems": [{"id": "s1", "system": str(pdb)}],
         "agent": "unvalidated",
-        "agent_model": "anthropic/claude-sonnet-4-5-20250929",
+        "agent_model": "openai/gpt-5-2025-09-29",
         **FAST_SIM,
     }
     fmdx = FastMDXplora(config_data=config, output_dir=tmp_path / "run")
@@ -566,7 +566,7 @@ def test_the_resolved_config_says_how_the_study_was_written(
     resolved = yaml.safe_load(
         (fmdx.output_dir / "resolved_config.yml").read_text())
     assert resolved["agent"] == "unvalidated"
-    assert resolved["agent_model"] == "anthropic/claude-sonnet-4-5-20250929"
+    assert resolved["agent_model"] == "openai/gpt-5-2025-09-29"
 
     # And it is still a config the validator accepts.
     from fastmdxplora.config import validate_config

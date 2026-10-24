@@ -148,6 +148,36 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
             page.wait_for_function("(text) => document.querySelector("
                                    "'#measure-said .measure-values')?.textContent !== text",
                                    arg=before)
+            # Read the overlay and live state in the same browser turn. A
+            # separate wait followed by several DOM reads can cross a poll
+            # that changes the overlay between assertions.
+            overlay = page.wait_for_function(f"""() => {{
+                const state = {live};
+                const frame = document.getElementById('overlay-frame')?.textContent || '';
+                if (state.liveFrameIndex !== 7000
+                    || Number(state.liveOverlay?.overlay?.step) !== 7000
+                    || !/^step 7,?000$/.test(frame)) return false;
+                return {{frame, age: document.getElementById('overlay-age')?.textContent || '',
+                    mode: state.mode, liveOverlay: state.liveOverlay}};
+            }}""")
+            overlay_state = overlay.json_value()
+            retained_overlay = page.evaluate("""() => {
+                const before = {
+                    frame: document.getElementById('overlay-frame')?.textContent || '',
+                    age: document.getElementById('overlay-age')?.textContent || '',
+                };
+                window.FastMDXDashboard.applyStatus({
+                    status: {status: 'running', stage: 'writing'},
+                    health: {}, times: {}, study: 'live-frame-regression'
+                });
+                return {
+                    before,
+                    after: {
+                        frame: document.getElementById('overlay-frame')?.textContent || '',
+                        age: document.getElementById('overlay-age')?.textContent || '',
+                    },
+                };
+            }""")
             moved = {
                 "loaded again": page.evaluate(f"() => {live}.model !== window.shown"),
                 "measured": page.evaluate(f"() => {live}.engine.measurementCount()"),
@@ -156,7 +186,10 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
                 "atoms": [[a["x"], a["y"], a["z"]] for resi in (3, 9)
                           for a in hooks.atoms(page, resi=resi, atom="CA")],
                 "dssp": page.evaluate(f"() => {live}.secondaryStructure"),
-                "step": page.text_content("#overlay-frame"),
+                "frame": overlay_state["frame"],
+                "mode": overlay_state["mode"],
+                "live overlay": overlay_state["liveOverlay"],
+                "retained overlay": retained_overlay,
             }
 
             # A frame of other atoms is loaded whole.
@@ -176,6 +209,60 @@ def test_a_new_frame_moves_the_atoms_and_keeps_the_measurement(tmp_path) -> None
     distance = float(np.linalg.norm(expected[0] - expected[1]))
     assert f"{distance:.2f} Å" in moved["said"]
     assert moved["dssp"]["of"] == "live" and moved["dssp"]["applied"] is True
-    assert moved["step"] in ("step 7,000", "step 7000")
+    assert moved["frame"] in ("step 7,000", "step 7000"), moved
+    assert moved["retained overlay"]["after"] == moved["retained overlay"]["before"]
     assert reloaded is True
     assert errors == []
+
+
+def test_switching_to_a_study_without_a_live_frame_clears_the_overlay(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study_a = _study(tmp_path / "study-a")
+    study_b = tmp_path / "study-b"
+    (study_b / "setup").mkdir(parents=True)
+    (study_b / "simulation").mkdir()
+    _peptide(12).save_pdb(str(study_b / "setup" / "topology.pdb"))
+
+    session = start_dashboard_session(output=str(study_a), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            page.wait_for_function(
+                "() => (document.getElementById('overlay-frame')?.textContent || '')"
+                ".startsWith('step') && document.getElementById('overlay-simtime')"
+                "?.textContent"
+            )
+            before = page.evaluate("""() => ({
+                frame: document.getElementById('overlay-frame')?.textContent || '',
+                simtime: document.getElementById('overlay-simtime')?.textContent || '',
+            })""")
+            assert before["frame"].startswith("step") and before["simtime"]
+
+            base = session.url.split("#")[0].rstrip("/")
+            asked = urllib.request.Request(
+                base + "/api/explore/switch", method="POST",
+                data=json.dumps({"folder": str(study_b)}).encode(),
+                headers={"content-type": "application/json"})
+            with urllib.request.urlopen(asked, timeout=30) as answer:
+                assert json.loads(answer.read()).get("ok") is not False
+            page.wait_for_function(
+                "() => (window.FastMDXDashboard.state.appState?.active_run || '')"
+                ".endsWith('study-b')"
+            )
+            after = page.evaluate("""() => ({
+                frame: document.getElementById('overlay-frame')?.textContent || '',
+                simtime: document.getElementById('overlay-simtime')?.textContent || '',
+            })""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+    assert after["frame"] == ""
+    assert after["simtime"] == ""

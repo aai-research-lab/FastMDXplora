@@ -126,7 +126,8 @@ def test_the_viewer_plays_from_the_first_piece(study, small_pieces):
             page.wait_for_function(f"() => {state}.framesPieces"
                                    f" && {state}.framesPieces.loaded === 6"
                                    f" && {state}.engine.frameCount() === 6")
-            pieces = page.evaluate(f"() => {state}.framesPieces")
+            pieces = page.evaluate(f"() => {{ const p = {state}.framesPieces;"
+                                   " return {total:p.total, loaded:p.loaded, pieces:p.pieces}; }")
             loaded = page.get_attribute("#trajectory-row", "data-frames-loaded")
             page.evaluate("() => window.dispatchEvent(new CustomEvent("
                           "'dashboard:trajectory-seek', {detail: {frame: 5}}))")

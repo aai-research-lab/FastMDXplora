@@ -271,7 +271,7 @@ def test_the_menu_says_the_agent_s_provider_and_mode_and_its_model_only_in_its_s
     from fastmdxplora.agent.models import ModelChoice, save_choice
     from fastmdxplora.gui.server import start_dashboard_session
 
-    save_choice(ModelChoice(provider="anthropic", model="claude-test-model"))
+    save_choice(ModelChoice(provider="openai", model="gpt-test-model"))
     study = _study(tmp_path / "ubiquitin", system="1UBQ")
     started = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     try:
@@ -308,11 +308,11 @@ def test_the_menu_says_the_agent_s_provider_and_mode_and_its_model_only_in_its_s
     finally:
         started.server.shutdown()
     assert errors == []
-    assert engine == "Anthropic"
+    assert engine == "OpenAI"
     assert mode == "Seeker: built-in, assisted"
-    assert "claude-test-model" not in menu
-    assert "claude-test-model" not in elsewhere
-    assert settings == "claude-test-model"
+    assert "gpt-test-model" not in menu
+    assert "gpt-test-model" not in elsewhere
+    assert settings == "gpt-test-model"
 
 
 def test_the_docs_say_the_menu_names_the_provider_and_mode_not_the_model():

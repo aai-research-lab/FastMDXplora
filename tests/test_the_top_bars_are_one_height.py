@@ -27,12 +27,16 @@ _BARS = """() => {
     const title = box('.page:not([hidden]) .page-title');
     const tabs = box('.side-panel-tabs');
     const brand = box('.sidebar-brand');
-    const strip = document.getElementById('study-tabs');
-    const top = strip && !strip.hidden ? strip.getBoundingClientRect() : header;
+    const stripElement = document.getElementById('study-tabs');
+    const strip = stripElement && !stripElement.hidden
+        ? stripElement.getBoundingClientRect() : null;
     return {
-        header: [top.top, top.bottom], tabs: [tabs.top, tabs.bottom],
+        header: [header.top, header.bottom],
+        strip: strip ? [strip.top, strip.bottom] : null,
+        tabs: [tabs.top, tabs.bottom],
         brand: [brand.top, brand.bottom],
-        titleBar: header.bottom - header.top, under: header.top - top.bottom,
+        titleBar: header.bottom - header.top,
+        under: header.top - (strip ? strip.bottom : header.top),
         offCentre: (title.top + title.bottom) / 2 - (header.top + header.bottom) / 2,
     };
 }"""
@@ -78,7 +82,12 @@ def test_the_three_bars_are_one_height_on_every_page(tmp_path):
     finally:
         session.server.shutdown()
     for name, bars in found.items():
-        assert bars["header"] == bars["tabs"] == bars["brand"], (name, bars)
+        if bars["strip"] is None:
+            assert bars["header"] == bars["tabs"] == bars["brand"], (name, bars)
+        else:
+            assert bars["strip"] == bars["tabs"] == bars["brand"], (name, bars)
+            assert bars["strip"][1] - bars["strip"][0] == 52, (name, bars)
+            assert abs(bars["header"][0] - bars["strip"][1]) <= 1, (name, bars)
         assert bars["header"][1] - bars["header"][0] == 52, (name, bars)
         assert bars["titleBar"] == 52 and abs(bars["under"]) <= 1, (name, bars)
         assert abs(bars["offCentre"]) <= 1, (name, bars)

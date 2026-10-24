@@ -282,6 +282,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             "/api/frames-info", "/api/frames-superposed",
             # The same frames as XTC, in pieces, played from the first.
             "/api/frames-pieces", "/structure/frames-piece.xtc",
+            # Chart navigation reads one exact source frame from the same
+            # served study; these routes accept no alternative file path.
+            "/api/exact-frame", "/structure/exact-frame.xtc",
             # What holds the ligand, frame by frame, as the interactions
             # analysis recorded it.
             "/api/interactions-over-frames", "/api/chain-contacts",
@@ -423,7 +426,7 @@ class TestOnlyTheRunsResultsLeaveTheMachine:
     def test_the_runs_own_files_are_still_served(self, runtime) -> None:
         figure = runtime.active_root / "analysis" / "rmsd" / "rmsd.dat"
         figure.parent.mkdir(parents=True)
-        figure.write_text("0 0.1\n", encoding="utf-8")
+        figure.write_bytes(b"0 0.1\n")
         with _serving(runtime, allow_control=False) as url:
             served = _ask(url + "/artifacts/analysis/rmsd/rmsd.dat")
             previewed = _ask(url + "/api/file-text?path=analysis/rmsd/rmsd.dat")

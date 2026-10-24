@@ -17,7 +17,8 @@
 
   var NS = "http://www.w3.org/2000/svg";
   var HEIGHT = 30;
-  var state = { playback: null, index: null, marks: [], unread: [], asked: null, map: null };
+  var state = { playback: null, index: null, sourceFrame: null, timeNs: null,
+    marks: [], unread: [], asked: null, map: null };
 
   function byId(id) { return document.getElementById(id); }
   function el(name, attrs, parent) {
@@ -59,19 +60,16 @@
     for (var i = 1; i < all.length; i += 1) if (Math.abs(all[i] - t) < Math.abs(all[best] - t)) best = i;
     return best;
   }
-  function playedOfFrame(frame) {
-    var frames = state.playback.frame_indices;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
-    return best;
-  }
 
   function seek(played) {
-    if (played == null || played === state.index) return;
+    if (played == null) return;
+    seekSource(state.playback.frame_indices[played]);
+  }
+
+  function seekSource(frame) {
+    if (frame == null || frame === state.sourceFrame) return;
     window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek", {
-      detail: { frame: played, trajectoryFrame: state.playback.frame_indices[played] } }));
+      detail: { trajectoryFrame: frame, sourceSignature: state.playback.source_signature } }));
   }
 
   /* Where averaging began, by the first track drawn. */
@@ -150,7 +148,7 @@
     });
     state.marks.forEach(function (mark) {
       var t = clocked() ? mark.time_ns : null;
-      if (mark.frame != null) t = all[playedOfFrame(mark.frame)];
+      if (mark.frame != null && !clocked()) t = mark.frame;
       if (t == null || t < low - 1e-12 || t > high + 1e-12) return;
       var x = px(t);
       var shape = mark.kind === "medoid"
@@ -164,7 +162,8 @@
       el("title", {}, shape).textContent = mark.label;
       var go = function (event) {
         event.stopPropagation();
-        seek(mark.frame != null ? playedOfFrame(mark.frame) : playedOfTime(t));
+        if (mark.frame != null) seekSource(mark.frame);
+        else seek(playedOfTime(t));
       };
       shape.addEventListener("pointerdown", go);
       shape.addEventListener("keydown", function (event) {
@@ -202,13 +201,15 @@
     var host = byId("timeline-ruler");
     if (!host || !state.map || state.index == null || !ofTheTrajectory(state.playback)) return;
     var here = host.querySelector(".timeline-here");
-    var t = times()[state.index];
+    var frame = state.sourceFrame != null ? state.sourceFrame : state.playback.frame_indices[state.index];
+    var t = !clocked() ? frame
+      : state.timeNs != null ? state.timeNs : times()[state.playback.frame_indices.indexOf(frame)];
     if (!here || t == null) return;
     var x = state.map.px(t);
     here.setAttribute("x1", x);
     here.setAttribute("x2", x);
     here.setAttribute("visibility", "visible");
-    host.setAttribute("data-frame", String(state.playback.frame_indices[state.index]));
+    host.setAttribute("data-frame", String(frame));
   }
 
   function loadMarks() {
@@ -232,12 +233,18 @@
     });
     window.addEventListener("dashboard:frame-shown", function (event) {
       state.index = event.detail ? event.detail.index : null;
+      state.sourceFrame = Number.isInteger(event.detail?.trajectoryFrame)
+        ? event.detail.trajectoryFrame : null;
+      state.timeNs = typeof event.detail?.timeNs === "number" ? event.detail.timeNs : null;
       mark();
     });
     // The first track's equilibration, once it is drawn.
     window.addEventListener("dashboard:tracks-drawn", draw);
     window.addEventListener("dashboard:run-changed", function () {
       state.playback = null;
+      state.index = null;
+      state.sourceFrame = null;
+      state.timeNs = null;
       state.marks = [];
       state.unread = [];
       state.asked = null;

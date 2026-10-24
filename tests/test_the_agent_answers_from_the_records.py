@@ -181,6 +181,9 @@ def test_the_start_page_question_is_answered_in_the_page(tmp_path, monkeypatch):
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.wait_for_selector("#agent-start-study:not([hidden])")
+            # The study and saved model are fetched independently. The
+            # records note is ready only once both responses are applied.
+            page.locator("#agent-start-records").wait_for(state="visible")
             note = page.locator("#agent-start-records").is_visible()
             # Sent as it is pressed.
             page.locator(".agent-starter[data-records='found']").click()

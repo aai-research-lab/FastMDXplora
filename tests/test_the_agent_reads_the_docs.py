@@ -120,7 +120,7 @@ def test_nothing_asked_lists_the_pages() -> None:
 def test_a_page_says_its_sections_and_how_it_opens() -> None:
     said = read_docs(page="agent")
     assert said.startswith("The page `agent` (The FastMDXplora Agent)")
-    assert "- Connecting an AI model" in said and "It opens:" in said
+    assert "- Setting an AI model" in said and "It opens:" in said
     assert read_docs(page="agent.md") == said
     assert read_docs(page="The FastMDXplora Agent") == said
 
@@ -207,7 +207,7 @@ def test_a_heading_on_a_page_twice_is_read_by_the_headings_above_it() -> None:
 def test_a_page_or_section_not_there_is_refused_with_what_is() -> None:
     with pytest.raises(DocsNotFound, match="The pages are: agent, analyses"):
         read_docs(page="nowhere")
-    with pytest.raises(DocsNotFound, match="Its sections are: .*Connecting an AI model"):
+    with pytest.raises(DocsNotFound, match="Its sections are: .*Setting an AI model"):
         read_docs(page="agent", section="zeppelin")
     with pytest.raises(DocsNotFound, match="Name the page"):
         read_docs(section="Connecting an AI model")
@@ -719,7 +719,7 @@ def test_the_look_reads_what_it_is_asked_and_refuses_what_is_not_words() -> None
     box = Toolbox()
     found = box.use("read_docs", {"query": "Useful and Wrong under each reply"})
     assert found.ok and "**Useful or Wrong**" in found.said
-    whole = box.use("read_docs", {"page": "agent", "section": "Connecting an AI model"})
+    whole = box.use("read_docs", {"page": "agent", "section": "Setting an AI model"})
     assert whole.ok and "fastmdx agent model" in whole.said
     assert not box.use("read_docs", {"page": "nowhere"}).ok
     assert not box.use("read_docs", {"query": ["a", "list"]}).ok
@@ -938,7 +938,7 @@ def test_useful_and_wrong_are_line_icons_named_and_filled_when_pressed(session) 
 
     reply = {"ok": False, "answer": "It has 76 residues.", "cites": [], "attempts": [],
              "usage": {"calls": 1, "input_tokens": 93, "cache_read_tokens": 0,
-                       "cache_write_tokens": 0, "output_tokens": 49}}
+                       "output_tokens": 49}}
     errors: list[str] = []
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])

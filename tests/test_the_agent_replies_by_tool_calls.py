@@ -1,4 +1,4 @@
-"""The Agent replies by tool calls, in each provider's shape, by the same rules.
+"""The Agent replies by tool calls in the OpenAI-compatible chat shape.
 
 The text protocol read a reply with patterns: `SAY:`, `ASK:`, `DO:`,
 `USE:`, `SHOW:` and bare YAML. A sentence before the YAML cost an attempt,
@@ -8,10 +8,10 @@ reply as data, so none of that arises, and what the text protocol could
 not hold (a reason for each setting, a question's candidates, a sentence
 beside the config) has a place.
 
-Three groups of tests. The wire: a stand-in server that answers in each
-provider's exact shape (content blocks; the chat shape), whole and
-streamed, records what it was sent, and refuses, rate-limits or turns
-tools away when told to. The loop: a scripted turn, so what is tested is
+Two groups of tests. The wire: a stand-in server that answers in the
+OpenAI-compatible chat shape, whole and streamed, records what it was sent,
+and refuses, rate-limits or turns tools away when told to. The loop: a scripted
+turn, so what is tested is
 what the loop does with each kind of reply. And what the text protocol
 gained: repairs that keep the conversation, a config read out of prose,
 the remedy said.
@@ -97,7 +97,8 @@ def waits(monkeypatch):
 
 
 def ask(provider, shape, *, messages=None, tools=(LOOK,), **extra):
-    return turns.take_turn(url=provider.url, headers={"x-api-key": "sk-test"}, shape=shape,
+    return turns.take_turn(url=provider.url,
+                           headers={"Authorization": "Bearer sk-test"}, shape=shape,
                            model="an-ai-model", system="THE SYSTEM PROMPT",
                            messages=messages or [{"role": "user", "text": "Simulate trp-cage"}],
                            tools=list(tools), label="The provider", **extra)
@@ -112,76 +113,6 @@ CONVERSATION = [
     {"role": "results", "results": [{"id": "call_1", "name": "inspect_structure",
                                      "content": "1L2Y: 304 atoms", "is_error": False}]},
 ]
-
-
-def test_the_block_shape_caches_what_does_not_change_and_answers_each_call():
-    provider = Provider({"content": [{"type": "text", "text": "Looking."},
-                                     {"type": "tool_use", "id": "toolu_2",
-                                      "name": "propose_config",
-                                      "input": {"config": STUDY}}],
-                         "stop_reason": "tool_use",
-                         "usage": {"input_tokens": 120, "cache_read_input_tokens": 9000,
-                                   "cache_creation_input_tokens": 300,
-                                   "output_tokens": 80}})
-    try:
-        turn = ask(provider, "blocks", messages=CONVERSATION)
-    finally:
-        provider.close()
-    sent = provider.seen[0]["body"]
-    assert sent["system"] == [{"type": "text", "text": "THE SYSTEM PROMPT",
-                               "cache_control": {"type": "ephemeral"}}]
-    assert sent["tools"] == [{"name": "inspect_structure",
-                              "description": "What a structure holds.",
-                              "input_schema": LOOK.parameters}]
-    roles = [m["role"] for m in sent["messages"]]
-    assert roles == ["user", "assistant", "user", "assistant", "user"]
-    assert sent["messages"][3]["content"][0] == {
-        "type": "tool_use", "id": "call_1", "name": "inspect_structure",
-        "input": {"system": "1L2Y"}}
-    result = sent["messages"][4]["content"][0]
-    assert (result["type"], result["tool_use_id"], result["content"]) == (
-        "tool_result", "call_1", "1L2Y: 304 atoms")
-    # The conversation so far cached too, for the next look in this reply.
-    assert result["cache_control"] == {"type": "ephemeral"}
-    assert provider.seen[0]["headers"]["x-api-key"] == "sk-test"
-    assert turn.text == "Looking."
-    assert turn.calls == (ToolCall("toolu_2", "propose_config", {"config": STUDY}),)
-    assert turn.usage.as_record() == {"calls": 1, "input_tokens": 120,
-                                      "cache_read_tokens": 9000,
-                                      "cache_write_tokens": 300, "output_tokens": 80}
-
-
-def test_the_block_shape_streams_text_and_a_call_in_pieces():
-    provider = Provider([
-        {"type": "message_start", "message": {"usage": {
-            "input_tokens": 50, "cache_read_input_tokens": 8000, "output_tokens": 1}}},
-        {"type": "content_block_start", "index": 0, "content_block": {"type": "text"}},
-        {"type": "content_block_delta", "index": 0,
-         "delta": {"type": "text_delta", "text": "I will "}},
-        {"type": "content_block_delta", "index": 0,
-         "delta": {"type": "text_delta", "text": "write it."}},
-        {"type": "content_block_start", "index": 1, "content_block": {
-            "type": "tool_use", "id": "toolu_9", "name": "propose_config", "input": {}}},
-        {"type": "content_block_delta", "index": 1,
-         "delta": {"type": "input_json_delta", "partial_json": '{"config": {"systems": '}},
-        {"type": "content_block_delta", "index": 1,
-         "delta": {"type": "input_json_delta", "partial_json": '[{"system": "1L2Y"}]}}'}},
-        {"type": "message_delta", "delta": {"stop_reason": "tool_use"},
-         "usage": {"output_tokens": 64}},
-        {"type": "message_stop"},
-    ])
-    pieces, called = [], []
-    try:
-        turn = ask(provider, "blocks", on_text=pieces.append, on_call=called.append)
-    finally:
-        provider.close()
-    assert provider.seen[0]["body"]["stream"] is True
-    assert pieces == ["I will ", "write it."]
-    assert called == ["propose_config"]
-    assert turn.calls == (ToolCall("toolu_9", "propose_config",
-                                   {"config": {"systems": [{"system": "1L2Y"}]}}),)
-    assert (turn.usage.cache_read_tokens, turn.usage.output_tokens) == (8000, 64)
-    assert turn.stop == "tool_use"
 
 
 def test_the_chat_shape_puts_the_system_first_and_each_result_on_its_own():
@@ -235,9 +166,9 @@ def test_the_chat_shape_streams_a_call_in_pieces_and_its_usage_last():
 def test_a_rate_limit_is_asked_again_after_the_wait_the_provider_gives(waits):
     provider = Provider((429, {"error": "slow down"}, {"retry-after": "3"}),
                         (529, {"error": "overloaded"}, {}),
-                        {"content": [{"type": "text", "text": "Here."}]})
+                        {"choices": [{"message": {"content": "Here."}}]})
     try:
-        turn = ask(provider, "blocks")
+        turn = ask(provider, "chat")
     finally:
         provider.close()
     assert turn.text == "Here."
@@ -249,7 +180,7 @@ def test_a_refusal_is_said_at_once_with_the_provider_s_reason_and_never_the_key(
     provider = Provider((401, {"error": "bad key"}, {}))
     try:
         with pytest.raises(StudyError) as caught:
-            ask(provider, "blocks")
+            ask(provider, "chat")
     finally:
         provider.close()
     assert waits == []
@@ -283,6 +214,7 @@ def test_a_server_that_turns_tools_away_is_asked_in_text_from_then_on(tmp_path):
     assert proposal.answer == "Hello." and proposal.protocol == "text"
     stored = json.loads(where.read_text())
     assert stored["tool_use"] is False and stored["api_key"] == "sk-local"
+    assert "sk-local" not in describe_choice(where)
     assert not hasattr(completion_for(path=where), "turn")
     assert "does not take tool calls" in describe_choice(where)
     # A new choice starts again from asking with tools.
@@ -305,7 +237,7 @@ def test_the_text_completion_is_asked_again_on_a_rate_limit_too(tmp_path, waits)
 
 
 @pytest.mark.parametrize("detail", [
-    "messages.2: `tool_use` ids were found without `tool_result` blocks immediately after",
+    "messages.2: tool calls must be followed by tool results immediately after",
     "This model's maximum context length is 128000 tokens (800 in the functions).",
     "tools.3.custom.input_schema: JSON schema is invalid.",
     "Invalid value for 'tool_choice'",
@@ -325,18 +257,11 @@ def test_a_server_without_tools_is_known_by_what_it_says(detail):
     assert turns._no_tools(400, detail)
 
 
-def test_a_turn_that_said_nothing_is_still_a_turn_in_either_shape():
+def test_a_turn_that_said_nothing_is_still_a_turn():
     empty = [{"role": "user", "text": "hi"}, {"role": "assistant", "text": "  ", "calls": ()},
              {"role": "user", "text": "Reply to the person."}]
     chat = turns._chat_body("m", "s", empty, [], usage_in_stream=False)["messages"]
     assert chat[2] == {"role": "assistant", "content": "…"}
-    blocks = turns._blocks_body("m", "s", empty, [], 10)["messages"]
-    assert blocks[1]["content"] == [{"type": "text", "text": "…"}]
-    beside = [{"role": "user", "text": "hi"},
-              {"role": "assistant", "text": "\n\n", "calls": (ToolCall("t1", "x", {}),)},
-              {"role": "results", "results": [{"id": "t1", "name": "x", "content": "ok"}]}]
-    assert [c["type"] for c in turns._blocks_body("m", "s", beside, [], 10)["messages"][1][
-        "content"]] == ["tool_use"]
 
 
 def test_two_calls_are_two_calls_however_a_server_numbers_them():
@@ -671,15 +596,12 @@ def test_every_call_is_answered_in_the_next_turn_before_anything_more_is_said():
                                                       "call_show_scene_1"}
 
     # A written config refused beside a scene: the scene's result first,
-    # then what was refused, and in the block shape both in one user turn.
+    # then what was refused in the same conversation.
     turn = Scripted(said(call("show_scene", frame=1), text=wrong),
                     said(call("propose_config", config=STUDY)))
     assert propose(turn).accepted
     sent = turn.asked[1]["messages"]
     assert [m["role"] for m in sent[-3:]] == ["assistant", "results", "user"]
-    blocks = turns._blocks_body("m", "s", sent, [], 100)["messages"]
-    assert [m["role"] for m in blocks[-2:]] == ["assistant", "user"]
-    assert [c["type"] for c in blocks[-1]["content"]] == ["tool_result", "text"]
     chat = turns._chat_body("m", "s", sent, [], usage_in_stream=False)["messages"]
     assert [m["role"] for m in chat[-3:]] == ["assistant", "tool", "user"]
 

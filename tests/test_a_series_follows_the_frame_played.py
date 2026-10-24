@@ -121,6 +121,66 @@ def test_the_series_are_tracks_under_the_frames_and_follow_them(study) -> None:
             page.wait_for_function(
                 "() => document.getElementById('frame-series-chart').getAttribute('data-frame') === '0'")
             rg_said = page.text_content('.frame-track[data-analysis="rg"] .frame-track-value')
+            # Temporary Analysis-page ranges filter plotted points while
+            # retaining each point's original trajectory frame identity.
+            page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+            page.wait_for_selector('.series-chart[data-analysis="rmsd"] .series-range')
+            range_form = page.locator('.series-chart[data-analysis="rmsd"] .series-range')
+            start = range_form.locator('[data-range="from"]')
+            end = range_form.locator('[data-range="to"]')
+            assert float(start.input_value()) == pytest.approx(rmsd["x"][0])
+            assert float(end.input_value()) == pytest.approx(rmsd["x"][-1])
+
+            start.fill("")
+            range_form.get_by_role("button", name="Apply range").click()
+            assert "numeric start" in range_form.locator(".series-range-status").inner_text()
+            assert not page.locator('.series-chart[data-analysis="rmsd"] .series-svg').count() == 0
+
+            start.fill(str(rmsd["x"][4]))
+            end.fill(str(rmsd["x"][2]))
+            range_form.get_by_role("button", name="Apply range").click()
+            assert "at or after" in range_form.locator(".series-range-status").inner_text()
+
+            start.fill(str(rmsd["x"][0] - 1))
+            end.fill(str(rmsd["x"][4]))
+            range_form.get_by_role("button", name="Apply range").click()
+            assert "within the available" in range_form.locator(".series-range-status").inner_text()
+
+            start.fill(str(rmsd["x"][2]))
+            end.fill(str(rmsd["x"][4]))
+            end.press("Enter")
+            page.wait_for_function(
+                "() => document.querySelectorAll("
+                "'.series-chart[data-analysis=\\\"rmsd\\\"] .series-line').length === 1"
+            )
+            chart_svg = page.locator('.series-chart[data-analysis="rmsd"] .series-svg')
+            chart_svg.scroll_into_view_if_needed()
+            chart_box = chart_svg.bounding_box()
+            page.mouse.click(chart_box["x"] + (chart_box["width"] / 2),
+                             chart_box["y"] + 110)
+            page.wait_for_function("() => document.documentElement.dataset.page === 'viewer'")
+            page.wait_for_function(
+                "() => { const s = window.FastMDXMoleculeViewer.STATE;"
+                " const i = Number(document.getElementById('traj-slider').value);"
+                " return s.playbackFrameIndices[i] === 3; }"
+            )
+
+            page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+            range_form = page.locator('.series-chart[data-analysis="rmsd"] .series-range')
+            range_form.get_by_role("button", name="Reset plot range").click()
+            assert float(range_form.locator('[data-range="from"]').input_value()) \
+                == pytest.approx(rmsd["x"][0])
+            assert float(range_form.locator('[data-range="to"]').input_value()) \
+                == pytest.approx(rmsd["x"][-1])
+            range_form.locator('[data-range="from"]').fill(str(rmsd["x"][2]))
+            range_form.locator('[data-range="to"]').fill(str(rmsd["x"][4]))
+            range_form.get_by_role("button", name="Apply range").click()
+            page.evaluate("() => window.dispatchEvent(new CustomEvent('dashboard:run-changed'))")
+            page.wait_for_function(
+                "() => Number(document.querySelector("
+                '\'.series-chart[data-analysis=\\"rmsd\\"] [data-range=\\"from\\"]\').value)'
+                " === " + str(rmsd["x"][0])
+            )
             browser.close()
     finally:
         session.server.shutdown()

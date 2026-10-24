@@ -476,7 +476,7 @@ def test_an_error_from_the_provider_is_counted_in_neither_column() -> None:
     from fastmdxplora.refusals import StudyError
 
     def complete(prompt: str, **_: object) -> str:
-        raise StudyError("Anthropic refused the request (529): overloaded",
+        raise StudyError("The provider refused the request (529): overloaded",
                          code="environment.service.unusable_response")
 
     trial = _one("w_plain", complete)
@@ -785,10 +785,10 @@ def test_the_conversation_is_carried_as_the_page_carries_it() -> None:
     case = ev.Case("carried", "edit", ("Simulate 1UBQ.", "Run it."), "a stand-in",
                    must={"simulation.duration_ns": 10}, systems=("1UBQ",),
                    current=_WRITTEN_CONFIG)
-    ev.ask_case(case, complete, ai_model="anthropic/stand-in")
+    ev.ask_case(case, complete, ai_model="openai/stand-in")
     first, second = seen
     assert "Simulate 1UBQ for 10 ns." in first          # what the config was written for
-    assert "agent: assisted" in first and "agent_model: anthropic/stand-in" in first
+    assert "agent: assisted" in first and "agent_model: openai/stand-in" in first
     assert "No run is active." in first
     assert "Candidates: 7.0; 7.4." in second
 
@@ -1010,7 +1010,7 @@ def test_no_ai_model_to_ask_stops_the_run(monkeypatch, capsys) -> None:
     from fastmdxplora.refusals import StudyError
 
     def complete(prompt: str, **_: object) -> str:
-        raise StudyError("No API key is stored for anthropic.",
+        raise StudyError("No API key is set for this provider.",
                          code="environment.credentials.absent")
 
     with pytest.raises(StudyError):

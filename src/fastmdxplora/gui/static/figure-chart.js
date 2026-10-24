@@ -160,7 +160,7 @@
     tip.hidden = true;
     host.appendChild(tip);
     return { svg: svg, layer: layer, plot: plot, width: width, height: height, tip: tip, c: colours(),
-             view: viewOf(host, data), clock: { factor: 1, unit: "ns" } };
+             view: viewOf(host, data), clock: { factor: 1, unit: "ns" }, host: host, data: data };
   }
 
   /* The kinds plotted on the simulation's clock (or on frame numbers, where
@@ -404,6 +404,16 @@
     pendingFrame = setTimeout(function () { window.FastMDXSeries.openFrame(frameNumber); }, 280);
   }
 
+  function focusResidue(entity) {
+    if (!entity || !window.FastMDXDashboard) return;
+    window.FastMDXDashboard.focusEntity(entity);
+  }
+
+  function openFrameAndResidue(data, index, entity) {
+    openFrame(data, data.frames[index]);
+    focusResidue(entity);
+  }
+
   function nearestIndex(xs, x) {
     var lo = 0, hi = xs.length - 1;
     while (hi - lo > 1) {
@@ -411,6 +421,170 @@
       if (xs[mid] < x) lo = mid; else hi = mid;
     }
     return Math.abs(xs[lo] - x) <= Math.abs(xs[hi] - x) ? lo : hi;
+  }
+
+  /* Whether a value lies in what an axis shows (the view, once zoomed). */
+  function shownOn(axis, v) {
+    return axis != null && v != null && isFinite(v) && v >= axis.low - 1e-9 && v <= axis.high + 1e-9;
+  }
+
+  /* The keyboard's place on a plot, kept on its host for the data it
+   * shows: zooming, moving or a time range draws the plot again, and the
+   * new drawing goes on from the point (or cell) the last one had, rather
+   * than from the first. */
+  function keptPlace(f, fresh) {
+    var host = f.host;
+    if (!host) return fresh;
+    if (!host._keyPlace || host._keyPlace.data !== f.data) {
+      host._keyPlace = Object.assign({ data: f.data }, fresh);
+    }
+    return host._keyPlace;
+  }
+
+  /* What a plot zoomed into says of its keys, after what it says of its
+   * points. */
+  var ZOOMED_KEYS = " Zoomed in: the arrows move the view; Home and End select the first and" +
+    " last shown; Enter opens the one selected.";
+
+  /* The keys along a plot's points. visible(i) says whether point i is in
+   * view: one selected that a zoom or a move takes out of view gives way
+   * to the shown point nearest it, so Enter never opens a point not
+   * shown; with none shown, nothing is selected and Enter opens nothing. */
+  function keyboard(f, label, count, show, activate, selectable, vertical, visible) {
+    if (!count) return { set: function () {}, current: function () { return -1; } };
+    var place = keptPlace(f, { index: -1 });
+    var svg = f.svg;
+    // Its arrows move along its points; zoom keeps + - [ ] (plot-tools.js).
+    f.ownArrows = true;
+    svg.setAttribute("role", "application");
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS : ""));
+    svg.setAttribute("aria-keyshortcuts", (vertical ? "ArrowUp ArrowDown" : "ArrowLeft ArrowRight")
+      + " Home End Enter");
+    function usable(i) {
+      return i >= 0 && i < count && (!selectable || selectable(i)) && (!visible || visible(i));
+    }
+    // The point chosen in this drawing: the one remembered where it is
+    // shown, else the shown point nearest it (which becomes the one
+    // remembered), else none, the one remembered kept for a later drawing
+    // that shows it again.
+    var current = -1;
+    function set(i, display) {
+      if (i < 0 || i >= count) return current;
+      current = place.index = i;
+      if (display !== false) show(i);
+      return i;
+    }
+    /* The first usable point from i on, in the direction given; -1 for none. */
+    function seek(i, direction) {
+      i = Math.max(0, Math.min(count - 1, i));
+      while (i >= 0 && i < count && !usable(i)) i += direction;
+      return i >= 0 && i < count ? i : -1;
+    }
+    /* The usable point nearest i (the earlier one on a tie). */
+    function nearest(i) {
+      for (var d = 0; d < count; d += 1) {
+        if (usable(i - d)) return i - d;
+        if (usable(i + d)) return i + d;
+      }
+      return -1;
+    }
+    if (place.index >= 0) {
+      current = usable(place.index) ? place.index : nearest(place.index);
+      if (current >= 0) place.index = current;
+    }
+    svg.addEventListener("focus", function () {
+      if (current < 0) set(seek(0, 1));
+      else show(current);
+    });
+    svg.addEventListener("keydown", function (event) {
+      // Zoomed in, the arrows move the view (plot-tools.js); Home, End and
+      // Enter still go along the points shown.
+      if (f.view && /^Arrow/.test(event.key)) return;
+      var base = current < 0 ? 0 : current;
+      if (event.key === "Home") set(seek(0, 1));
+      else if (event.key === "End") set(seek(count - 1, -1));
+      else if ((!vertical && event.key === "ArrowRight") || (vertical && event.key === "ArrowDown")) {
+        set(seek(Math.min(count - 1, base + 1), 1));
+      } else if ((!vertical && event.key === "ArrowLeft") || (vertical && event.key === "ArrowUp")) {
+        set(seek(Math.max(0, base - 1), -1));
+      } else if ((event.key === "Enter" || event.key === " ") && usable(current)) {
+        activate(current, event);
+      } else return;
+      event.preventDefault();
+    });
+    return { set: set, current: function () { return current; } };
+  }
+
+  /* The keys across a grid's cells: a column and a row, each kept through
+   * a drawing again as keyboard() keeps a point, and each giving way to the
+   * shown one nearest it when a zoom or a move takes it out of view.
+   * activate(column, row, event) has the key, for Shift+Enter. */
+  function gridKeyboard(f, label, columns, rows, show, activate, columnSeen, rowSeen) {
+    var svg = f.svg;
+    if (!columns || !rows) return { set: function () {} };
+    var place = keptPlace(f, { column: -1, row: 0 });
+    f.ownArrows = true;
+    svg.setAttribute("role", "application");
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("aria-label", label + (f.view ? ZOOMED_KEYS : ""));
+    svg.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter");
+    function seenColumn(i) { return i >= 0 && i < columns && (!columnSeen || columnSeen(i)); }
+    function seenRow(j) { return j >= 0 && j < rows && (!rowSeen || rowSeen(j)); }
+    function nearestOf(seen, i, n) {
+      for (var d = 0; d < n; d += 1) {
+        if (seen(i - d)) return i - d;
+        if (seen(i + d)) return i + d;
+      }
+      return -1;
+    }
+    function firstOf(seen, n, from, direction) {
+      for (var i = from; i >= 0 && i < n; i += direction) if (seen(i)) return i;
+      return -1;
+    }
+    // The cell chosen in this drawing, as keyboard() chooses its point:
+    // the remembered column and row where shown, else the shown ones
+    // nearest them, else none, the remembered ones kept.
+    var column = -1, row = 0;
+    if (place.column >= 0) {
+      var c = seenColumn(place.column) ? place.column : nearestOf(seenColumn, place.column, columns);
+      var r = seenRow(place.row) ? place.row : nearestOf(seenRow, place.row, rows);
+      if (c >= 0 && r >= 0) { column = place.column = c; row = place.row = r; }
+    }
+    function set(i, j, display) {
+      column = place.column = Math.max(0, Math.min(columns - 1, i));
+      row = place.row = Math.max(0, Math.min(rows - 1, j));
+      if (display !== false) show(column, row);
+    }
+    function selected() { return column >= 0 && seenColumn(column) && seenRow(row); }
+    svg.addEventListener("focus", function () {
+      if (column < 0) {
+        var i = firstOf(seenColumn, columns, 0, 1), j = firstOf(seenRow, rows, 0, 1);
+        if (i >= 0 && j >= 0) set(i, j);
+      } else {
+        show(column, row);
+      }
+    });
+    svg.addEventListener("keydown", function (event) {
+      if (f.view && /^Arrow/.test(event.key)) return;
+      var at = column < 0 ? 0 : column;
+      var first;
+      if (event.key === "Home") {
+        first = firstOf(seenColumn, columns, 0, 1);
+        if (first >= 0 && seenRow(row)) set(first, row);
+      } else if (event.key === "End") {
+        first = firstOf(seenColumn, columns, columns - 1, -1);
+        if (first >= 0 && seenRow(row)) set(first, row);
+      } else if (event.key === "ArrowLeft") set(at - 1, row);
+      else if (event.key === "ArrowRight") set(at + 1, row);
+      else if (event.key === "ArrowUp") set(at, row - 1);
+      else if (event.key === "ArrowDown") set(at, row + 1);
+      else if ((event.key === "Enter" || event.key === " ") && selected()) {
+        activate(column, row, event);
+      } else return;
+      event.preventDefault();
+    });
+    return { set: set };
   }
 
   /* Above the plot, so it hides nothing plotted. */
@@ -463,18 +637,39 @@
     }));
     var names = {};
     data.classes.forEach(function (k) { names[k.code] = k.label; });
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame and focus the residue; use arrow keys, then Enter" : "";
+    function cellAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
-      var res = Math.min(residues, Math.max(1, Math.round(y.low + (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low))));
-      showTip(f, at.x, at.y, [names[data.states[i].charAt(res - 1)] || "", "residue " + data.residues[res - 1], when(data, i, f)], hint);
-      f.svg.dataset.at = String(i);
+      if (!inside(f, at)) return null;
+      return {
+        at: at,
+        frame: nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+          (f.plot.right - f.plot.left) * (x.high - x.low)),
+        residue: Math.min(residues, Math.max(1, Math.round(y.low +
+          (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low)))),
+      };
+    }
+    function showCell(i, res, at) {
+      var entity = data.entities && data.entities[res - 1];
+      showTip(f, at ? at.x : map.px(data.x[i]), at ? at.y : map.py(res),
+        [names[data.states[i].charAt(res - 1)] || "", "residue " + data.residues[res - 1], when(data, i, f)], hint);
+      return entity;
+    }
+    var keys = gridKeyboard(f, data.title + ". Left and right select a frame; up and down select a residue.",
+      data.x.length, residues, function (i, res) { showCell(i, res + 1); }, function (i, res) {
+        openFrameAndResidue(data, i, data.entities && data.entities[res]);
+      }, function (i) { return shownOn(f.x, data.x[i]); }, function (res) { return shownOn(f.y, res + 1); });
+    f.svg.addEventListener("mousemove", function (event) {
+      var cell = cellAt(event);
+      if (!cell) { f.tip.hidden = true; return; }
+      keys.set(cell.frame, cell.residue - 1, false);
+      showCell(cell.frame, cell.residue, cell.at);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var cell = cellAt(event);
+      if (cell) openFrameAndResidue(data, cell.frame,
+        data.entities && data.entities[cell.residue - 1]);
     });
     return f;
   }
@@ -495,18 +690,31 @@
       el("circle", { cx: map.px(data.x[i]).toFixed(1), cy: map.py(data.labels[i]).toFixed(1), r: r,
                      fill: category(data.labels[i]) }, layer);
     }
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
+    function indexAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
+      if (!inside(f, at)) return -1;
+      return nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+    }
+    function show(i) {
       var k = data.labels[i];
-      showTip(f, map.px(data.x[i]), map.py(k), [k < 0 ? "noise" : "cluster " + k, when(data, i, f)], hint);
-      f.svg.dataset.at = String(i);
+      showTip(f, map.px(data.x[i]), map.py(k),
+        [k < 0 ? "noise" : "cluster " + k, when(data, i, f)], hint);
+    }
+    var keys = keyboard(f, data.title + ". Select a frame with left and right arrows.", n,
+      show, function (i) { openFrame(data, data.frames[i]); }, null, false,
+      function (i) { return shownOn(f.x, data.x[i]); });
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }
@@ -534,10 +742,14 @@
              { fill: f.c.text, "text-anchor": "middle" });
       }
     });
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
-      var i = Math.round(x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
-      if (!inside(f, at) || i < 0 || i >= n) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      if (!inside(f, at)) return -1;
+      var i = Math.round(x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+      return i >= 0 && i < n ? i : -1;
+    }
+    function show(i) {
       var k = data.clusters[i];
       var parts = ["cluster " + k.cluster, k.frames + " frames" +
         (k.fraction != null ? " (" + (k.fraction * 100).toFixed(1) + "%)" : "")];
@@ -547,12 +759,22 @@
       }
       showTip(f, map.px(i), map.py(k.frames), parts,
               data.linked && k.medoid_frame != null ? "Click to open its medoid" : "");
-      f.svg.dataset.at = String(i);
+    }
+    var keys = keyboard(f, "Cluster populations. Up and down select a cluster; Enter opens its saved medoid.",
+      n, show, function (i) { openFrame(data, data.clusters[i].medoid_frame); },
+      function (i) { return data.linked && data.clusters[i].medoid_frame != null; }, true);
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (!f.svg.dataset.at) return;
-      openFrame(data, data.clusters[+f.svg.dataset.at].medoid_frame);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0 && data.clusters[i].medoid_frame != null) {
+        openFrame(data, data.clusters[i].medoid_frame);
+      }
     });
     return f;
   }
@@ -616,24 +838,38 @@
     });
     colourBar(f, range[0], range[1], data.label + (data.unit ? " (" + data.unit + ")" : ""), viridis);
     var nx = values[0].length, ny = values.length;
-    // The cell under the pointer, by where it is on the axes as shown.
-    function cellOf(edgesOf, value, n) {
+    // The cell under the pointer, by where it is on the axes as shown
+    // (zoomed, the view's extents, not the whole grid's).
+    function cellOf(edgesOf, value, count) {
       var k = 0;
-      while (k < n - 1 && edgesOf[k + 1] <= value) k += 1;
+      while (k < count - 1 && edgesOf[k + 1] <= value) k += 1;
       return k;
     }
-    f.svg.addEventListener("mousemove", function (event) {
+    function cellAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; return; }
+      if (!inside(f, at)) return null;
       var dx = x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low);
       var dy = y.low + (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low);
-      var i = cellOf(ex, dx, nx), j = cellOf(ey, dy, ny);
+      return { at: at, i: cellOf(ex, dx, nx), j: cellOf(ey, dy, ny) };
+    }
+    function showCell(i, j, at) {
       var v = values[j][i];
       var cx = (ex[i] + ex[i + 1]) / 2, cy = (ey[j] + ey[j + 1]) / 2;
-      showTip(f, at.x, at.y, [v == null ? opts.emptySaid : format(v) + (data.unit ? " " + data.unit : ""),
-                              opts.where(cx, cy, f.clock)], "");
+      showTip(f, at ? at.x : map.px(cx), at ? at.y : map.py(cy),
+        [v == null ? opts.emptySaid : format(v) + (data.unit ? " " + data.unit : ""),
+         opts.where(cx, cy, i, j, f.clock)], opts.hint || "");
+    }
+    f.svg.addEventListener("mousemove", function (event) {
+      var cell = cellAt(event);
+      if (!cell) { f.tip.hidden = true; return; }
+      showCell(cell.i, cell.j, cell.at);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
+    f.svg.addEventListener("click", function (event) {
+      var cell = cellAt(event);
+      if (cell && opts.activate) opts.activate(cell.i, cell.j, event);
+    });
+    f.showCell = showCell;
     return f;
   }
 
@@ -647,15 +883,44 @@
     var n = data.values.length;
     var e = edges(data.extent[0], data.extent[1], n);
     var timed = data.axis_label !== "Frame";
-    return plotGrid(host, data, {
+    var exact = Array.isArray(data.frames) && data.frames.length === n && data.linked;
+    var grouped = Array.isArray(data.frame_groups) && data.frame_groups.length === n;
+    var hint = exact ? "Click opens the row frame; Shift-click opens the column frame. Use arrows, then Enter or Shift+Enter."
+      : (grouped ? "Each cell averages frame groups; no single frame is selected." : "");
+    function rowSaid(index) {
+      if (exact) return "frame " + data.frames[index];
+      var group = grouped ? data.frame_groups[index] : null;
+      return group ? "source frames " + group.first + "–" + group.last
+        + " (" + group.count + " sampled frames)" : "frame group " + (index + 1);
+    }
+    var f = plotGrid(host, data, {
       edgesX: e, edgesY: e, xLabel: data.axis_label, yLabel: data.axis_label,
-      emptySaid: "\u2014",
-      where: function (a, b, clock) {
+      emptySaid: "—",
+      hint: hint,
+      where: function (a, b, column, row, clock) {
         var k = clock ? clock.factor : 1, unit = clock ? clock.unit : "ns";
-        return timed ? format(a * k) + " " + unit + " and " + format(b * k) + " " + unit
-          : "frames " + Math.round(a) + " and " + Math.round(b);
+        var axis = timed ? format(a * k) + " " + unit + " and " + format(b * k) + " " + unit
+          : "axis frames " + Math.round(a) + " and " + Math.round(b);
+        return axis + "; row " + rowSaid(row) + "; column " + rowSaid(column);
       },
+      activate: exact ? function (column, row, event) {
+        openFrame(data, data.frames[event.shiftKey ? column : row]);
+      } : null,
     });
+    if (exact) {
+      // Its row and its column each kept through a zoom or a move: Enter
+      // opens the row's frame, Shift+Enter the column's.
+      var centre = function (k) { return (e[k] + e[k + 1]) / 2; };
+      gridKeyboard(f, "RMSD frame matrix. Arrows select a cell. Enter opens its row frame; " +
+        "Shift+Enter opens its column frame.", n, n,
+        function (column, row) { f.showCell(column, row); },
+        function (column, row, event) { openFrame(data, data.frames[event.shiftKey ? column : row]); },
+        function (column) { return shownOn(f.x, centre(column)); },
+        function (row) { return shownOn(f.y, centre(row)); });
+      f.svg.setAttribute("aria-keyshortcuts",
+        "ArrowLeft ArrowRight ArrowUp ArrowDown Home End Enter Shift+Enter");
+    }
+    return f;
   }
 
   function plotLandscape(host, data) {
@@ -698,25 +963,39 @@
     var inPs = !framed && Math.max(Math.abs(tr[0]), Math.abs(tr[1])) < 1;
     colourBar(f, inPs ? tr[0] * 1000 : tr[0], inPs ? tr[1] * 1000 : tr[1],
               framed ? "Frame" : inPs ? "Time (ps)" : "Time (ns)", viridis);
-    var hint = data.linked ? "Click to open this frame" : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
+    function pointAt(event) {
       var p = pointer(f, event);
-      if (!inside(f, p)) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      if (!inside(f, p)) return -1;
       var best = -1, distance = Infinity;
       at.forEach(function (q, k) {
         if (!q) return;
         var d = (q[0] - p.x) * (q[0] - p.x) + (q[1] - p.y) * (q[1] - p.y);
         if (d < distance) { distance = d; best = k; }
       });
-      if (best < 0 || distance > 400) { f.tip.hidden = true; delete f.svg.dataset.at; return; }
+      return best >= 0 && distance <= 400 ? best : -1;
+    }
+    function show(best) {
       var unit = data.unit ? " " + data.unit : "";
       showTip(f, at[best][0], at[best][1], [when(data, best, f),
         format(data.x[best]) + unit + ", " + format(data.y[best]) + unit], hint);
-      f.svg.dataset.at = String(best);
+    }
+    var keys = keyboard(f, data.title + ". Left and right select a point; Enter opens its frame.", n,
+      show, function (i) { openFrame(data, data.frames[i]); },
+      function (i) { return !!at[i]; }, false, function (i) {
+        return at[i][0] >= f.plot.left - 0.5 && at[i][0] <= f.plot.right + 0.5 &&
+          at[i][1] >= f.plot.top - 0.5 && at[i][1] <= f.plot.bottom + 0.5;
+      });
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = pointAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i);
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = pointAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }
@@ -777,14 +1056,35 @@
       note.textContent = data.note;
       host.appendChild(note);
     }
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
       var i = Math.floor((at.y - f.plot.top) / row);
-      if (at.x < 0 || at.x > f.plot.right || i < 0 || i >= bars.length) { f.tip.hidden = true; return; }
+      if (at.x < 0 || at.x > f.plot.right || at.y < f.plot.top || at.y > f.plot.bottom
+          || i < 0 || i >= bars.length) return -1;
+      return i;
+    }
+    function show(i, at) {
       var b = bars[i];
-      showTip(f, Math.min(at.x, f.plot.right - 20), f.plot.top + i * row + 4, b.said, "");
+      var action = b.entity ? "Click to focus this residue; use up and down arrows, then Enter" : "";
+      showTip(f, at ? Math.min(at.x, f.plot.right - 20) : f.plot.left,
+        f.plot.top + i * row + 4, b.said, action);
+    }
+    var selectable = function (i) { return !!bars[i].entity; };
+    var keys = bars.some(function (b) { return b.entity; })
+      ? keyboard(f, data.title + ". Up and down select an identified residue; Enter focuses it.",
+        bars.length, show, function (i) { focusResidue(bars[i].entity); }, selectable, true)
+      : { set: function () {} };
+    f.svg.addEventListener("mousemove", function (event) {
+      var i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; return; }
+      keys.set(i, false);
+      show(i, pointer(f, event));
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0 && bars[i].entity) focusResidue(bars[i].entity);
+    });
     return f;
   }
 
@@ -813,27 +1113,40 @@
     legend(f, data.series.map(function (s, k) { return { label: s.label, colour: category(k) }; }));
     var guide = el("line", { y1: f.plot.top, y2: f.plot.bottom, stroke: f.c.axis,
                              "stroke-dasharray": "3 3", visibility: "hidden" }, f.svg);
-    var hint = data.linked ? "Click to open this frame" : "";
+    var hint = data.linked ? "Click to open this frame; use left and right arrows, then Enter" : "";
     var unit = data.unit ? " " + data.unit : "";
-    f.svg.addEventListener("mousemove", function (event) {
+    function indexAt(event) {
       var at = pointer(f, event);
-      if (!inside(f, at)) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
-      var i = nearestIndex(data.x, x.low + (at.x - f.plot.left) / (f.plot.right - f.plot.left) * (x.high - x.low));
+      if (!inside(f, at)) return -1;
+      return nearestIndex(data.x, x.low + (at.x - f.plot.left) /
+        (f.plot.right - f.plot.left) * (x.high - x.low));
+    }
+    function show(i, at) {
       var px = map.px(data.x[i]);
       guide.setAttribute("x1", px);
       guide.setAttribute("x2", px);
       guide.setAttribute("visibility", "visible");
-      showTip(f, px, at.y, [when(data, i, f)].concat(data.series.map(function (s) {
+      showTip(f, px, at ? at.y : (f.plot.top + f.plot.bottom) / 2,
+        [when(data, i, f)].concat(data.series.map(function (s) {
         return s.label + " " + format(s.y[i]) + unit;
       })), hint);
-      f.svg.dataset.at = String(i);
+    }
+    var keys = keyboard(f, data.title + ". Left and right select a frame; Enter opens it.", n,
+      show, function (i) { openFrame(data, data.frames[i]); }, null, false,
+      function (i) { return shownOn(f.x, data.x[i]); });
+    f.svg.addEventListener("mousemove", function (event) {
+      var at = pointer(f, event), i = indexAt(event);
+      if (i < 0) { f.tip.hidden = true; guide.setAttribute("visibility", "hidden"); return; }
+      keys.set(i, false);
+      show(i, at);
     });
     f.svg.addEventListener("mouseleave", function () {
       f.tip.hidden = true;
       guide.setAttribute("visibility", "hidden");
     });
-    f.svg.addEventListener("click", function () {
-      if (f.svg.dataset.at) openFrame(data, data.frames[+f.svg.dataset.at]);
+    f.svg.addEventListener("click", function (event) {
+      var i = indexAt(event);
+      if (i >= 0) openFrame(data, data.frames[i]);
     });
     return f;
   }
@@ -877,6 +1190,9 @@
     tools.attach(host, {
       svg: f.svg, width: f.width, height: f.height, plot: f.plot,
       zoom: ZOOM[data.kind] || "", shared: clock, zoomed: !!f.view,
+      // A plot's arrows go along its points until it is zoomed in, then move
+      // the view.
+      ownArrows: !!f.ownArrows && !f.view,
       least: leastOf(data, x, y),
       full: { x: x.full || null, y: y.full || null },
       name: (data.figure || data.title || data.kind).replace(/^analysis\//, "").replace(/\.png$/, "") +

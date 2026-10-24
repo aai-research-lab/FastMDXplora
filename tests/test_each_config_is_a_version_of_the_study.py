@@ -63,7 +63,7 @@ def test_a_change_is_said_setting_by_setting() -> None:
     after["simulation"]["temperature_K"] = 330
     after["analysis"] = {"include": ["rmsd", "rg"]}
     after["decisions"] = {"simulation.temperature_K": {"why": "As asked.", "source": "person"}}
-    before = dict(STUDY, agent="assisted", agent_model="anthropic/x")
+    before = dict(STUDY, agent="assisted", agent_model="openai/gpt-5")
     assert changes_between(before, after) == [
         {"setting": "simulation.temperature_K", "label": "Temperature",
          "before": "310 K", "after": "330 K"},

@@ -78,8 +78,8 @@ def test_the_command_line_says_each_look_in_words(monkeypatch, capsys, tmp_path)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
-    replies = [Turn("", (ToolCall("c1", "list_studies", {}),), Usage(1, 10, 0, 0, 1)),
-               Turn("None yet.", (), Usage(1, 10, 0, 0, 1))]
+    replies = [Turn("", (ToolCall("c1", "list_studies", {}),), Usage(1, 10, 0, 1)),
+               Turn("None yet.", (), Usage(1, 10, 0, 1))]
 
     def complete(prompt: str) -> str:
         raise AssertionError("asked in text")

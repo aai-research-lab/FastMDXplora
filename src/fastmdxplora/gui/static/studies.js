@@ -20,6 +20,7 @@
   // the tags the studies here carry (offered as one is typed).
   var tagged = null;
   var editing = null;
+  var tagForm = null;
   // The tags, note and tag half typed of the card being tagged, not yet
   // kept: the cards drawn again (the page's list read again as it opens, a
   // study's ID given) drew its editor again from the tags kept, and what
@@ -100,6 +101,7 @@
                            "study-tag-edit" + (some ? " has-tags" : ""));
     tag.title = (some ? "Tags" : "Tag") + ": words and a note of your own, saved in the study's folder";
     tag.addEventListener("click", function () {
+      if (editing !== study.path) tagForm = null;
       editing = study.path;
       draft = null;
       draw();
@@ -156,7 +158,11 @@
 
   /* The card's tags and note, changed on it and kept in the study's folder. */
   function tagEditor(study) {
+    // A list read or a name changed redraws the cards, not the words being
+    // edited. Keep the same form in cards and table, including its caret.
+    if (tagForm && tagForm.dataset.path === study.path) return tagForm;
     var form = make("form", "study-tag-editor");
+    form.dataset.path = study.path;
     form.setAttribute("aria-label", "Tags of " + study.name);
     if (!draft || draft.path !== study.path) {
       draft = { path: study.path, tags: (study.tags || []).slice(), note: study.note || "",
@@ -220,6 +226,7 @@
     cancel.type = "button";
     cancel.addEventListener("click", function () {
       editing = null;
+      tagForm = null;
       draft = null;
       draw();
     });
@@ -253,8 +260,8 @@
             one.note = d.note;
           });
         edited += 1;
-        editing = null;
-        draft = null;
+        if (tagForm === form) { editing = null; tagForm = null; }
+        if (draft && draft.path === study.path) draft = null;
         tagsUsed = countTags();
         offerTags();
         draw();
@@ -270,6 +277,7 @@
     var buttons = make("div", "study-tag-row");
     buttons.append(save, cancel);
     form.append(list, row, note, buttons, said);
+    tagForm = form;
     return form;
   }
 
@@ -843,7 +851,8 @@
       box.addEventListener("click", function (event) { picked(study.path, box.checked, event); });
       pick.append(box, document.createTextNode(" Choose"));
     }
-    actions.append.apply(actions, [openButton(study), tagButton(study), openButton(study, "files"), pick]
+    var open = openButton(study);
+    actions.append.apply(actions, [open, tagButton(study), openButton(study, "files"), pick]
       .filter(Boolean));
     var opened = actions.querySelector(".study-open");
     if (opened && notOpenedWhy[study.path]) sayKept(opened, study.path);
@@ -1110,7 +1119,8 @@
       tr.appendChild(active);
     }
     var acts = make("div", "studies-actions");
-    acts.append.apply(acts, [openButton(study), tagButton(study), openButton(study, "files")]
+    var open = openButton(study);
+    acts.append.apply(acts, [open, tagButton(study), openButton(study, "files")]
       .filter(Boolean));
     var opened = acts.querySelector(".study-open");
     if (opened && notOpenedWhy[study.path]) sayKept(opened, study.path);
@@ -1731,6 +1741,14 @@
     var grid = el("studies-grid");
     var empty = el("studies-empty");
     if (!grid) return;
+    var focused = tagForm && tagForm.contains(document.activeElement) ? document.activeElement : null;
+    var selection = focused && typeof focused.selectionStart === "number"
+      ? [focused.selectionStart, focused.selectionEnd] : null;
+    // A study or run no longer listed takes its open editor with it.
+    if (editing && !studyAt(editing)) {
+      editing = null;
+      tagForm = null;
+    }
     closeMeans();
     var shown = filtered();
     var filter = el("studies-tag-filter");
@@ -1770,6 +1788,10 @@
       });
     }
     sayChosen();
+    if (focused && document.contains(focused) && focused.getClientRects().length) {
+      focused.focus({ preventScroll: true });
+      if (selection) focused.setSelectionRange(selection[0], selection[1]);
+    }
   }
 
   /* The studies chosen, and one bar at the foot of the list while any is:
@@ -2184,7 +2206,7 @@
     var dashboard = window.FastMDXDashboard;
     delete notOpenedWhy[path];
     var held = switchBegun();
-    if (held) { notOpened(button, held); return; }
+    if (held) { notOpened(button, held, path); return; }
     button.disabled = true;
     fetch("/api/explore/switch", {
       method: "POST",
@@ -2595,7 +2617,8 @@
       // study was opened, under their pointer.
       if (list.contains(document.activeElement)) return;
       if (!evenUnderThePointer && list.matches(":hover")) return;
-      var open = ((el("sidebar-output-folder") || {}).textContent || "").trim();
+      // App state names the study before its status/results paint the folder.
+      var open = recentFor || "";
       var recent = (data && data.studies || []).slice(0, SHOWN_RECENT);
       if (!recent.length) {
         list.replaceChildren(make("div", "sidebar-recent-empty",
@@ -2764,8 +2787,8 @@
   // Again once the open study is known, or another is opened.
   var recentFor = null;
   var RECENT_AGAIN_MS = 30000;
-  window.addEventListener("dashboard:app-state", function () {
-    var open = ((el("sidebar-output-folder") || {}).textContent || "").trim();
+  window.addEventListener("dashboard:app-state", function (event) {
+    var open = String((event.detail && event.detail.active_run) || "");
     var stale = Date.now() - askedAt > RECENT_AGAIN_MS;
     if (open === recentFor && !stale) return;
     var moved = open !== recentFor;

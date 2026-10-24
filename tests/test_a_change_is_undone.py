@@ -227,13 +227,17 @@ def test_a_view_is_not_undone_into_another_study(browser, session) -> None:
     # On the Undo, so it is still offered however long the page takes to see
     # the other study (its next poll, where the change stream is slow).
     page.focus("#dashboard-toast .dashboard-toast-action")
+    undo = page.locator("#dashboard-toast .dashboard-toast-action").element_handle()
     page.evaluate("""(folder) => fetch('/api/explore/switch', {method: 'POST',
         headers: {'content-type': 'application/json'}, body: JSON.stringify({folder})})""",
                   str(session.workspace / "mutant"))
     page.wait_for_function("(key) => window.FastMDXDashboard.state.studyShown === key",
                            arg=study_key(session.workspace / "mutant"))
-    page.click("#dashboard-toast .dashboard-toast-action")
-    page.wait_for_timeout(1000)
+    # The study-change notice replaces Undo. An already-dispatched click
+    # can still reach its old handler, which must refuse the stale action.
+    undo.evaluate("button => button.click()")
+    page.wait_for_function("() => document.getElementById('dashboard-toast')"
+                           ".textContent.includes('another study is open')")
     elsewhere = _views(session)
     said = page.text_content("#dashboard-toast")
     page.evaluate("""(folder) => fetch('/api/explore/switch', {method: 'POST',

@@ -29,8 +29,8 @@ def _strings_of(script: str) -> list[str]:
 def test_the_page_s_script_names_the_ai_model_only_where_it_is_chosen() -> None:
     said = [s for s in _strings_of((GUI / "static" / "agent-panel.js").read_text(encoding="utf-8"))
             if "AI model" in s]
-    # The Settings dialog's field for an AI model the list does not have.
-    assert said == ["Type an AI model name\\u2026"]
+    # The no-choice message and the Settings dialog's custom-model field.
+    assert said == ["No AI model is set.", "Type an AI model name\\u2026"]
 
 
 def test_the_agent_page_names_no_ai_model_outside_its_settings() -> None:
@@ -78,6 +78,44 @@ def test_a_provider_s_error_is_said_as_mine(where) -> None:
     assert said.startswith("I could not finish: the provider said: overloaded")
 
 
+def test_take_turn_refuses_an_unsupported_shape_before_network(monkeypatch) -> None:
+    from fastmdxplora.agent.turns import take_turn
+    from fastmdxplora.refusals import StudyError
+
+    calls = []
+
+    def unexpected_request(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("an unsupported shape must be refused before network I/O")
+
+    monkeypatch.setattr("urllib.request.urlopen", unexpected_request)
+    with pytest.raises(StudyError) as raised:
+        take_turn(
+            url="https://example.org/v1/chat/completions", headers={},
+            shape="responses", model="test-model", system="system",
+            messages=[], tools=[], label="test provider",
+        )
+
+    assert raised.value.code == "config.option.inapplicable"
+    assert calls == []
+
+
+def test_streamed_openai_error_without_choices_is_said() -> None:
+    import io
+    import json
+
+    from fastmdxplora.agent.models import _streamed
+    from fastmdxplora.refusals import StudyError
+
+    event = {"error": {"message": "overloaded"}}
+    response = io.BytesIO(("data: " + json.dumps(event) + "\n\n").encode())
+    with pytest.raises(StudyError) as raised:
+        _streamed(response, lambda _piece: None, "https://example.org/v1/chat/completions")
+
+    assert raised.value.code == "environment.service.unusable_response"
+    assert "overloaded" in str(raised.value)
+
+
 def test_the_command_line_thinks_and_says_what_was_used(monkeypatch, capsys, tmp_path) -> None:
     import argparse
 
@@ -92,7 +130,7 @@ def test_the_command_line_thinks_and_says_what_was_used(monkeypatch, capsys, tmp
         return "SAY: unused"
 
     def turn(system, messages, tools, on_text=None, on_call=None):
-        return Turn("A 2 fs step.", (), Usage(1, 900, 0, 0, 10))
+        return Turn("A 2 fs step.", (), Usage(1, 900, 0, 10))
 
     complete.turn = turn
     complete.turned_away = lambda: False

@@ -171,7 +171,11 @@
       svg.setAttribute("data-zoom-hint", tip + ". " + keys);
       // Reached by the keyboard, and its keys said with what it shows.
       if (!svg.hasAttribute("tabindex")) svg.setAttribute("tabindex", "0");
-      svg.setAttribute("aria-keyshortcuts", "+ - [ ] 0");
+      // Added to the plot's own keys (its arrows and Enter), not over them.
+      var had = svg.getAttribute("aria-keyshortcuts") || "";
+      if (had.indexOf("+ - [ ] 0") < 0) {
+        svg.setAttribute("aria-keyshortcuts", had ? had + " + - [ ] 0" : "+ - [ ] 0");
+      }
       var label = svg.getAttribute("aria-label") || "";
       if (label.indexOf(keys) < 0) svg.setAttribute("aria-label", (label ? label + ". " : "") + keys);
     }

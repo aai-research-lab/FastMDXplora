@@ -46,7 +46,11 @@ def _agent(browser, where):
     page.goto(session.url + "#agent", wait_until="domcontentloaded")
     page.wait_for_function("() => !document.getElementById('agent-start').hidden",
                            timeout=30000)
-    page.wait_for_timeout(500)
+    page.wait_for_function("""() => {
+        const state = window.FastMDXDashboard?.state;
+        return state && Object.keys(state.appState).length > 0
+            && (!state.appState.active_run || state.studyShown);
+    }""")
     return session, page
 
 

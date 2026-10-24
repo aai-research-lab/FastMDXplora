@@ -71,7 +71,11 @@ def sweep(tmp_path_factory) -> Path:
 def _open(page, url: str, where: str) -> None:
     page.goto(url + "#" + where, wait_until="domcontentloaded")
     page.wait_for_function("() => window.FastMDXPlace && window.FastMDXDashboard")
-    page.wait_for_timeout(1200)
+    page.wait_for_function("""() => {
+        const state = window.FastMDXDashboard.state;
+        return state.appState?.active_run
+            && state.results?.output_dir === state.appState.active_run;
+    }""")
 
 
 def test_each_page_of_a_study_of_runs_says_the_study_the_runs_and_the_page(sweep):

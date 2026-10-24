@@ -179,7 +179,7 @@ class TestTheTiers(unittest.TestCase):
     """Easy, medium and hard, reported apart.
 
     The first eight answered one question: does the interface work at all.
-    It does — claude-sonnet-4-6 scored 8/8, seven of them first time. So
+    It does — the model scored 8/8, seven of them first time. So
     harder cases become informative, where before a failure could have been
     the harness.
 

@@ -141,13 +141,13 @@ def test_the_machine_s_gpus_and_the_agent_s_mode_are_said_never_its_model(tmp_pa
     monkeypatch.setattr(gpu_here, "room_here", lambda: Room(gpus=(
         Gpu(index=0, uuid="GPU-1", name="NVIDIA GeForce RTX 4090", total_mb=24564,
             used_mb=1000, free_mb=23564, busy_pct=3),)))
-    save_choice(ModelChoice(provider="anthropic", model="claude-test-model"))
+    save_choice(ModelChoice(provider="openai", model="gpt-test-model"))
     status_bar.forget()
     said = status_bar.status_bar()
     status_bar.forget()
     assert said["machine"]["gpus"][0]["name"] == "NVIDIA GeForce RTX 4090"
     assert said["machine"]["gpus_read"] is True
-    assert "claude-test-model" not in json.dumps(said) and "agent" not in said
+    assert "gpt-test-model" not in json.dumps(said) and "agent" not in said
 
     study = _study(tmp_path / "ubiquitin")
 
@@ -180,7 +180,7 @@ def test_the_machine_s_gpus_and_the_agent_s_mode_are_said_never_its_model(tmp_pa
     assert seen["footer"] == "Seeker: built-in, assisted"
     assert seen["ranger"][0] == "Agent · Ranger: built-in, autonomous"
     assert seen["footer_ranger"] == "Ranger: built-in, autonomous"
-    assert "claude-test-model" not in seen["strip"] and "claude-test-model" not in seen["ranger"][1]
+    assert "gpt-test-model" not in seen["strip"] and "gpt-test-model" not in seen["ranger"][1]
     # No Intel item on a person's own install, and never the model in its place.
     assert "Intel" not in seen["strip"]
 

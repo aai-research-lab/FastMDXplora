@@ -1216,7 +1216,7 @@ def _turn_from(record: Mapping[str, Any]) -> Any:
 
     usage = Usage(**{k: int(v) for k, v in (record.get("usage") or {}).items()
                      if k in ("calls", "input_tokens", "cache_read_tokens",
-                              "cache_write_tokens", "output_tokens")})
+                              "output_tokens")})
     return Turn(text=str(record.get("text") or ""),
                 calls=tuple(ToolCall(str(c["id"]), str(c["name"]),
                                      dict(c.get("arguments") or {}))

@@ -227,6 +227,89 @@ def test_the_page_tags_a_card_and_filters_by_a_tag(workspace):
     assert every == 3 and searched == 1
 
 
+def test_a_tag_editor_keeps_its_words_and_focus_when_the_list_is_redrawn(workspace):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.study_tags import tags_of
+
+    session = start_dashboard_session(output=str(workspace / "wild_type"), host="127.0.0.1",
+                                      port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            # Begun as cards (the table is the list's first view).
+            page.add_init_script(
+                "try { localStorage.setItem('fmx.studiesView', 'cards'); } catch (e) {}")
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.wait_for_selector("body.state-ready")
+            page.evaluate("path => window.FastMDXStudies.load(path)", str(workspace))
+            card = '.study-card[data-path$="wild_type"]'
+            page.click(f"{card} .study-tag-edit")
+            form = page.locator(".study-tag-editor")
+            form.locator(".study-tag-input").fill("ubiquitin")
+            form.locator(".study-tag-input").press("Enter")
+            form.locator(".study-tag-input").fill("reference")
+            form.locator(".study-note-input").fill("the wild type, 300 K")
+            page.evaluate("""() => {
+                window.__tagEditor = document.querySelector('.study-tag-editor');
+                const note = window.__tagEditor.querySelector('.study-note-input');
+                note.focus(); note.setSelectionRange(4, 8);
+            }""")
+
+            for view in ("cards", "table", "cards"):
+                if view != "cards" or page.locator("#studies-grid").is_hidden():
+                    page.locator(f'[data-studies-view="{view}"]').click()
+                form.locator(".study-note-input").focus()
+                page.evaluate("document.activeElement.setSelectionRange(4, 8)")
+                page.evaluate("path => window.FastMDXStudies.load(path)", str(workspace))
+                page.evaluate("""document.getElementById('setting-run-name')
+                    .dispatchEvent(new Event('change', {bubbles: true}))""")
+                assert page.evaluate("""() => {
+                    const form = document.querySelector('.study-tag-editor');
+                    const note = form.querySelector('.study-note-input');
+                    return form === window.__tagEditor && document.activeElement === note
+                        && note.selectionStart === 4 && note.selectionEnd === 8;
+                }""")
+                assert form.locator(".study-tag-input").input_value() == "reference"
+                assert form.locator(".study-note-input").input_value() == "the wild type, 300 K"
+                assert form.locator(".study-tag-drop").get_attribute("aria-label") == (
+                    "Remove the tag ubiquitin")
+
+            form.get_by_role("button", name="Save", exact=True).click()
+            form.wait_for(state="detached")
+            assert page.locator(f"{card} .study-tag").all_text_contents() == [
+                "ubiquitin", "reference"]
+            assert tags_of(workspace / "wild_type") == {
+                "tags": ["ubiquitin", "reference"], "note": "the wild type, 300 K"}
+
+            page.click(f"{card} .study-tag-edit")
+            form.locator(".study-note-input").fill("not kept")
+            form.get_by_role("button", name="Cancel", exact=True).click()
+            page.click(f"{card} .study-tag-edit")
+            assert form.locator(".study-note-input").input_value() == "the wild type, 300 K"
+            assert form.locator(".study-tag-input").input_value() == ""
+            assert form.locator(".study-tag-drop").count() == 2
+
+            # A refreshed list no longer containing the study ends its edit;
+            # a renamed study starts with only what was actually saved.
+            (workspace / "wild_type").rename(workspace / "renamed")
+            page.evaluate("path => window.FastMDXStudies.load(path)", str(workspace))
+            assert page.locator(".study-tag-editor").count() == 0
+            page.click('.study-card[data-path$="renamed"] .study-tag-edit')
+            assert form.locator(".study-note-input").input_value() == "the wild type, 300 K"
+            assert form.locator(".study-tag-input").input_value() == ""
+            assert form.locator(".study-tag-drop").count() == 2
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+
 def test_a_list_read_before_tags_were_kept_does_not_undo_them(workspace):
     """All studies is read again as it is shown (Back to it, a study opened
     from it). A reading asked before a card's tags were kept and answered

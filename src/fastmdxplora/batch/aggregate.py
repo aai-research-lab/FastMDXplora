@@ -241,9 +241,9 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
 def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0, *,
                          one_structure: bool = True) -> str:
     """Why replicas' spread is not yet their error: ``unbacked`` of the
-    ``runs`` did not determine their own mean, ``said_so`` of them by saying
-    their mean is not a measurement (an error of their own given or not),
-    the rest by giving no error of their own."""
+    ``runs`` did not determine their own mean, ``said_so`` of them by
+    withholding it (``not_a_measurement``, an error of their own given or
+    not), the rest by giving no error of their own."""
     which = (f"None of the {runs} replicas determined its own mean" if unbacked == runs
              else f"{unbacked} of the {runs} replicas did not determine "
                   f"{'its' if unbacked == 1 else 'their'} own mean")

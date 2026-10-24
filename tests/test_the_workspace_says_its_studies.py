@@ -326,7 +326,7 @@ def test_the_page(workspace) -> None:
             page.fill("#studies-search", "1l2y")
             searched = page.locator(".study-card").count()
             page.fill("#studies-search", "")
-            page.check('.study-card[data-path$="/ubiquitin"] .study-pick input')
+            page.check('.study-card[data-path$="ubiquitin"] .study-pick input')
             # One chosen: the bar under the list, Compare waiting for a second.
             waiting = page.is_visible("#studies-bar-in") and page.is_disabled("#studies-compare")
             page.check('.study-card[data-path$="ubiquitin_longer"] .study-pick input')
@@ -462,7 +462,7 @@ def test_why_a_study_did_not_open_wraps_in_the_table(workspace) -> None:
                        lambda route: route.fulfill(json={"ok": False, "error": why}))
             page.goto(session.url + "#studies", wait_until="domcontentloaded")
             page.evaluate(f"() => window.FastMDXStudies.load({str(workspace)!r})")
-            row = 'tr.studies-row[data-path$="/stopped"]'
+            row = 'tr.studies-row[data-path$="stopped"]'
             page.wait_for_selector(row + " .study-open", state="attached")
             page.wait_for_timeout(300)
             panel = page.evaluate("() => !document.body.classList.contains('panel-collapsed')")

@@ -18,8 +18,17 @@ that does not work.
 from __future__ import annotations
 
 import logging
+from subprocess import Popen
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _provider_credentials_are_not_inherited(monkeypatch):
+    """Provider tests use local stubs; ambient credentials must not turn
+    model discovery into a real network request."""
+    for name in ("OPENAI_API_KEY", "FASTMDX_MODEL_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +100,7 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
     """
     import os
     import signal
+    import subprocess
 
     from fastmdxplora.gui.exploration import DashboardRuntime
 
@@ -103,7 +113,7 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
     @functools.wraps(spawn)
     def spawn_and_remember(self, *args, **kwargs):
         result = spawn(self, *args, **kwargs)
-        if getattr(self, "process", None) is not None:
+        if isinstance(getattr(self, "process", None), Popen):
             started.append(self.process)
         return result
 
@@ -111,6 +121,21 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
     yield
     for process in started:
         if process.poll() is not None:
+            continue
+        if os.name == "nt":
+            # Windows has no killpg. These are PIDs spawned by this fixture,
+            # so stop their child trees before returning to the suite.
+            try:
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               check=False, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=10)
+                process.wait(timeout=10)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
             continue
         try:
             os.killpg(process.pid, signal.SIGTERM)

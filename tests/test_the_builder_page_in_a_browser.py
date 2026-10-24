@@ -571,6 +571,8 @@ class TestTheDraft:
         page.fill(ph, "6.5")
         page.dispatch_event(ph, "change")
         page.click("#run-start-button")
+        page.wait_for_function("() => document.getElementById('run-note')"
+                               ".textContent.startsWith('Running. Config saved to')")
         page.wait_for_selector("#run-draft", state="hidden")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_function("() => window.FastMDXRun && window.FastMDXRun.state.schema")

@@ -2,9 +2,9 @@
 
 A reply came back whole: the thread said "Thinking" for as long as the
 model took, a config or a long answer included, and nothing stopped it but
-closing the page. The model is now asked for a stream, in content blocks or the
-OpenAI chat shape, and the page is sent each piece as it arrives, each look the
-Agent takes as it takes it, and the answer it would have had at the end.
+closing the page. The model is now asked for a stream in the OpenAI-compatible
+chat shape, and the page is sent each piece as it arrives, each look the Agent
+takes as it takes it, and the answer it would have had at the end.
 The send button stops it while it is written, and the request to the model
 is closed with it.
 """
@@ -18,12 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from fastmdxplora.agent.models import PROVIDERS, ModelChoice, completion_for
+from fastmdxplora.agent.models import ModelChoice, completion_for
 from fastmdxplora.refusals import StudyError
-
-#: The provider that answers in content blocks, and where its key is read.
-BLOCKS = next(name for name, spec in PROVIDERS.items() if spec["auth"] == "x-api-key")
-BLOCKS_KEY = str(PROVIDERS[BLOCKS]["env"])
 
 
 def _provider(events: list[str], *, pause: float = 0.0):
@@ -43,7 +39,7 @@ def _provider(events: list[str], *, pause: float = 0.0):
                     self.wfile.write(event.encode("utf-8"))
                     self.wfile.flush()
                     time.sleep(pause)
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 asked[-1]["stopped"] = True
 
         def log_message(self, *args):
@@ -54,34 +50,13 @@ def _provider(events: list[str], *, pause: float = 0.0):
     return server, asked
 
 
-def _blocks(*pieces: str) -> list[str]:
-    events = ['event: message_start\ndata: {"type": "message_start"}\n\n']
-    events += [f'event: content_block_delta\ndata: {json.dumps({"type": "content_block_delta", "delta": {"type": "text_delta", "text": p}})}\n\n'
-               for p in pieces]
-    return events + ['event: message_stop\ndata: {"type": "message_stop"}\n\n']
-
-
 def _openai(*pieces: str) -> list[str]:
     events = [f'data: {json.dumps({"choices": [{"delta": {"content": p}}]})}\n\n' for p in pieces]
     return events + ["data: [DONE]\n\n"]
 
 
 class TestTheModelIsReadAsItWrites:
-    def test_a_stream_of_content_blocks(self, monkeypatch):
-        monkeypatch.setenv(BLOCKS_KEY, "k")
-        server, asked = _provider(_blocks("SAY: The box ", "is 6.9 nm", " wide."))
-        try:
-            complete = completion_for(ModelChoice(
-                BLOCKS, "m", base_url=f"http://127.0.0.1:{server.server_port}"))
-            pieces: list[str] = []
-            said = complete("How wide?", on_text=pieces.append)
-        finally:
-            server.shutdown()
-        assert said == "SAY: The box is 6.9 nm wide."
-        assert pieces == ["SAY: The box ", "is 6.9 nm", " wide."]
-        assert asked[0]["stream"] is True and complete.streams
-
-    def test_the_openai_shape(self, monkeypatch):
+    def test_an_openai_compatible_server_streams_text(self, monkeypatch):
         monkeypatch.setenv("FASTMDX_MODEL_API_KEY", "k")
         server, asked = _provider(_openai("systems:\n", "  - {system: 1UBQ}\n"))
         try:
@@ -94,24 +69,24 @@ class TestTheModelIsReadAsItWrites:
         assert said == "systems:\n  - {system: 1UBQ}\n" and len(pieces) == 2
 
     def test_an_error_in_the_stream_is_said(self, monkeypatch):
-        monkeypatch.setenv(BLOCKS_KEY, "k")
-        server, _ = _provider(['data: {"type": "error", "error": {"message": "overloaded"}}\n\n'])
+        monkeypatch.setenv("FASTMDX_MODEL_API_KEY", "k")
+        server, _ = _provider(['data: {"error": {"message": "overloaded"}}\n\n'])
         try:
             complete = completion_for(ModelChoice(
-                BLOCKS, "m", base_url=f"http://127.0.0.1:{server.server_port}"))
+                "compatible", "m", base_url=f"http://127.0.0.1:{server.server_port}"))
             with pytest.raises(StudyError, match="overloaded"):
                 complete("x", on_text=lambda piece: None)
         finally:
             server.shutdown()
 
     def test_without_on_text_it_is_asked_for_whole(self, monkeypatch):
-        monkeypatch.setenv(BLOCKS_KEY, "k")
+        monkeypatch.setenv("FASTMDX_MODEL_API_KEY", "k")
         asked: list[dict] = []
 
         class Whole(BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802
                 asked.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                body = json.dumps({"content": [{"type": "text", "text": "SAY: whole"}]}).encode()
+                body = json.dumps({"choices": [{"message": {"content": "SAY: whole"}}]}).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -124,7 +99,7 @@ class TestTheModelIsReadAsItWrites:
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             complete = completion_for(ModelChoice(
-                BLOCKS, "m", base_url=f"http://127.0.0.1:{server.server_port}"))
+                "compatible", "m", base_url=f"http://127.0.0.1:{server.server_port}"))
             assert complete("x") == "SAY: whole"
         finally:
             server.shutdown()
@@ -210,10 +185,10 @@ def test_the_page_shows_it_and_stops_it(tmp_path, monkeypatch) -> None:
     from fastmdxplora.gui.server import start_dashboard_session
 
     monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
-    monkeypatch.setenv(BLOCKS_KEY, "k")
+    monkeypatch.setenv("FASTMDX_MODEL_API_KEY", "k")
     words = [f"word{n} " for n in range(40)]
-    server, asked = _provider(_blocks("SAY: ", *words), pause=0.15)
-    model = completion_for(ModelChoice(BLOCKS, "m",
+    server, asked = _provider(_openai("SAY: ", *words), pause=0.15)
+    model = completion_for(ModelChoice("compatible", "m",
                                        base_url=f"http://127.0.0.1:{server.server_port}"))
     monkeypatch.setattr(agent_mod, "completion_for", lambda *a, **k: model)
     session = start_dashboard_session(output=str(tmp_path), host="127.0.0.1", port=0)

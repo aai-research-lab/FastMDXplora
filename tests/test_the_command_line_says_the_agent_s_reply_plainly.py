@@ -4,9 +4,8 @@ Found on the first live run with a provider's key (10-07): every message
 was announced as "Writing a config..." though most were answered; an
 accepted config read "Accepted after 1 attempt(s)" where the page says
 "Accepted first time."; an answer's emphasis came out as `**1AKI**`; and
-the first message's tokens, written to the provider's cache for the next
-one, were counted as plain input with nothing to say why the next message
-cost a tenth as much.
+the provider's cached prompt tokens were counted as plain input without
+showing how many were read from cache.
 """
 
 from __future__ import annotations
@@ -35,7 +34,7 @@ def _run(monkeypatch, tmp_path, reply: Turn) -> None:
 def test_an_answer_is_not_announced_as_a_config(monkeypatch, tmp_path, capsys):
     _run(monkeypatch, tmp_path, Turn("The usual one is **2 fs**, see "
                                      "[the docs](https://example.org/x).", (),
-                                     Usage(1, 10, 0, 0, 5)))
+                                     Usage(1, 10, 0, 5)))
     out = capsys.readouterr().out
     assert "Writing a config" not in out
     assert "Thinking..." in out and "AI model" not in out
@@ -46,19 +45,19 @@ def test_an_answer_is_not_announced_as_a_config(monkeypatch, tmp_path, capsys):
 def test_a_config_accepted_first_time_says_so(monkeypatch, tmp_path, capsys):
     study = {"systems": [{"system": "1L2Y"}], "simulation": {"duration_ns": 10}}
     _run(monkeypatch, tmp_path, Turn("", (ToolCall("c1", "propose_config", {
-        "config": study, "note": "1L2Y is an *NMR* ensemble."}),), Usage(1, 10, 0, 0, 5)))
+        "config": study, "note": "1L2Y is an *NMR* ensemble."}),), Usage(1, 10, 0, 5)))
     out = capsys.readouterr().out
     assert "✓ Accepted first time." in out
     assert "attempt(s)" not in out
     assert "1L2Y is an NMR ensemble." in out
 
 
-def test_tokens_kept_for_the_next_message_are_said():
-    assert Usage(1, 93, 0, 17806, 498).said() == (
-        "1 call, 17,899 tokens in (17,806 written to the cache), 498 out")
-    assert Usage(2, 100, 28770, 300, 412).said() == (
-        "2 calls, 29,170 tokens in (28,770 cached, 300 written to the cache), 412 out")
-    assert Usage(1, 900, 0, 0, 10).said() == "1 call, 900 tokens in, 10 out"
+def test_tokens_read_from_the_cache_are_said():
+    assert Usage(1, 93, 17806, 498).said() == (
+        "1 call, 17,899 tokens in (17,806 cached), 498 out")
+    assert Usage(2, 100, 28770, 412).said() == (
+        "2 calls, 28,870 tokens in (28,770 cached), 412 out")
+    assert Usage(1, 900, 0, 10).said() == "1 call, 900 tokens in, 10 out"
 
 
 def test_code_in_backticks_and_lone_asterisks_are_kept():

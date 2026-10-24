@@ -59,7 +59,7 @@
       <div class="agent-dialog-head">
         <div>
           <div class="builder-label">Agent settings</div>
-          <div class="builder-card-note" id="agent-model-current"></div>
+          <div class="builder-card-note" id="agent-model-summary"><span id="agent-model-current"></span></div>
           <a href="#settings" class="settings-part-link small" data-settings-part-link="agent">All settings</a>
         </div>
         <button type="button" id="agent-settings-close" class="line-btn dialog-x" aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
@@ -94,19 +94,6 @@
             <input id="agent-key" type="password"
                    placeholder="paste your key">
             <p class="builder-card-note" id="agent-key-help"></p>
-          </label>
-          <label class="builder-field builder-field-wide" id="agent-cache-field" hidden>
-            <span class="builder-label">Keep the instructions cached</span>
-            <select id="agent-cache">
-              <option value="auto">An hour on this page, five minutes from the command line</option>
-              <option value="1h">An hour</option>
-              <option value="5m">Five minutes</option>
-            </select>
-            <p class="builder-card-note">Every message starts with the same
-              instructions. Read again from the provider's cache they cost a
-              tenth of the usual price. Kept for an hour, writing them costs
-              twice the price instead of 1.25 times, and a reply after a pause
-              still reads them. Anthropic only.</p>
           </label>
           <label class="builder-field">
             <span class="builder-label">Mode</span>
@@ -1123,7 +1110,7 @@
                     <button class="icon-btn" type="button" data-traj="reverse" aria-label="Play backwards" aria-pressed="false" title="Play backwards, or forwards again"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg></button>
                   </div>
                   <input type="range" class="traj-slider" id="traj-slider" min="0" max="0" value="0" aria-label="Frame">
-                  <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-simtime">—</span></span>
+                  <span class="traj-time mono"><span id="traj-current">0</span> / <span id="traj-total">0</span> · <span id="traj-step">—</span> · <span id="traj-simtime">—</span></span>
                   <span class="traj-loaded muted small" id="traj-loaded" role="status" hidden></span>
                   <label class="chip-toggle micro" title="Playback speed">Speed
                     <select id="traj-speed">
@@ -1543,6 +1530,9 @@
                       <label class="chip-toggle" title="The simulated time of each frame, in the lower right corner"><input type="checkbox" id="movie-time" checked>Time</label>
                       <label class="chip-toggle" title="The camera turned once about the screen's vertical over the movie"><input type="checkbox" id="movie-turn">One turn</label>
                     </div>
+                    <label class="select-field">Caption (optional)
+                      <input type="text" id="movie-caption" maxlength="240" aria-label="Movie caption, optional" placeholder="Add a caption">
+                    </label>
                     <div class="sel-naming">
                       <input type="text" id="movie-name" maxlength="60" aria-label="Name of the movie" value="movie">
                       <button type="submit" class="chip-btn" id="movie-make" title="Render the frames as the Viewer shows them and encode them as a movie with the study (movies/), then download it">Make the movie</button>

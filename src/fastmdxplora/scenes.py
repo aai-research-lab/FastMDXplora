@@ -83,7 +83,7 @@ def _atom_lines(text: str) -> list[str]:
 
 
 def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
-                 notes: list[str]) -> tuple[list[str], int] | None:
+                 notes: list[str]) -> tuple[list[str], int, dict[str, Any] | None] | None:
     """The frames' atoms at the frame the view shows, superposed where it
     is; None where the study has no frames to show it at."""
     from fastmdxplora.gui.trajectory_frames import (
@@ -96,6 +96,27 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
     frame = view.get("frame")
     if not isinstance(frame, int):
         return None
+    if view.get("frame_source") is True:
+        from fastmdxplora.gui.by_residue import _dssp
+        from fastmdxplora.gui.trajectory_frames import exact_frame
+        from fastmdxplora.refusals import StudyError
+
+        if (view.get("smoothed_over") or 1) > 1:
+            raise StudyError("A source-frame scene needs unsmoothed coordinates.",
+                             code="config.option.not_permitted", option="smoothed_over")
+        exact, details = exact_frame(root, frame, on=view.get("superposed") or "none",
+                                     ligand=ligands[0] if ligands else None,
+                                     cutoff_angstrom=view.get("pocket_cutoff") or 5.0,
+                                     to=view.get("superposed_to") or "first")
+        if exact is None:
+            raise StudyError(details.get("reason") or "The source frame is unavailable.",
+                             code="analysis.data.not_this_system")
+        text = (root / "simulation" / FRAMES_TOPOLOGY).read_text(encoding="utf-8")
+        lines = _atom_lines(text)
+        xyz = exact.xyz[0] * 10.0
+        secondary = _dssp(text, exact.xyz)
+        return ([f"{line[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}"
+                 for line, (x, y, z) in zip(lines, xyz)], frame, secondary)
     info = frames_info(root)
     if not info.get("available") or not 0 <= frame < int(info.get("n_frames_browser") or 0):
         notes.append(f"The study has no frame {frame} to show; the structure is shown.")
@@ -126,7 +147,7 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
 
         raise TrajectoryLoadError("The frames' coordinates are not of their topology's atoms.")
     return [f"{line[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}"
-            for line, (x, y, z) in zip(lines, xyz)], frame
+            for line, (x, y, z) in zip(lines, xyz)], frame, None
 
 
 def _structure_lines(root: Path, view: dict[str, Any]) -> list[str] | None:
@@ -155,11 +176,12 @@ def _polymer(name: str) -> bool:
     return name.upper() in POLYMER_RESNAMES or name.upper() in _CAPS
 
 
-def _secondary_records(root: Path, of: str, frame: int, runs: list[Any]) -> list[str]:
+def _secondary_records(root: Path, of: str, frame: int, runs: list[Any], *,
+                       secondary: dict[str, Any] | None = None) -> list[str]:
     """HELIX and SHEET records of the study's DSSP for the residues shown."""
     from fastmdxplora.gui.by_residue import secondary_structure
 
-    said = secondary_structure(root, of)
+    said = secondary if secondary is not None else secondary_structure(root, of)
     if not said.get("available"):
         return []
     codes_of_frame = said["frames"][frame if len(said["frames"]) > 1 else 0]
@@ -435,8 +457,9 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
         ligands = list(detect_ligands((run[0], run[3], str(run[1])) for run in runs)["resnames"])
     framed = _frame_lines(base, view, ligands, notes)
     of, frame = "structure", 0
+    secondary = None
     if framed is not None:
-        lines, frame = framed
+        lines, frame, secondary = framed
         runs = residue_runs(lines)
         of = "frames"
         if shown.get("water"):
@@ -539,7 +562,7 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
     if shown.get("box"):
         notes.append("The periodic box is not part of a scene.")
 
-    records = _secondary_records(base, of, frame, runs)
+    records = _secondary_records(base, of, frame, runs, secondary=secondary)
     structure = _node("structure", {"type": "model"}, components)
     tree = [_node("download", {"url": "structure.pdb"}, [
         _node("parse", {"format": "pdb"}, [structure])])]

@@ -1,7 +1,7 @@
 """What a reply took, in tokens, is shown when asked, on the row of its tools.
 
-Every reply carried a line such as "60,049 tokens in (58,416 from the
-cache, 1,625 written to the cache) · 1,601 out" under it, with Useful and
+Every reply carried a line such as "58,424 tokens in (58,416 from the
+cache) · 1,601 out" under it, with Useful and
 Wrong on a row of their own above Copy. User, 10-09: "There should be a
 button that user needs to click first to reveal the token info ... that
 button should be on the same row with copy, retry, thumbs up/down". The
@@ -20,8 +20,8 @@ pytest.importorskip("playwright.sync_api")
 from tests.test_the_agent_page_on_a_phone_and_its_settings import _page, session  # noqa: F401
 
 USAGE = {"calls": 1, "input_tokens": 8, "cache_read_tokens": 58416,
-         "cache_write_tokens": 1625, "output_tokens": 1601}
-SAID = "60,049 tokens in (58,416 from the cache, 1,625 written to the cache) · 1,601 out"
+         "output_tokens": 1601}
+SAID = "58,424 tokens in (58,416 from the cache) · 1,601 out"
 
 
 def _row(page):

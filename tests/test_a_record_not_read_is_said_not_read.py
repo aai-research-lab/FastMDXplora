@@ -43,6 +43,22 @@ def _linked(tmp_path: Path, relative: str) -> Path:
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_status_title_is_not_read_from_a_manifest_outside_the_study(tmp_path, public):
+    root = _study(tmp_path)
+    outside = _write(tmp_path, "elsewhere/manifest.json", {"title": "Outside study title"})
+    (root / "manifest.json").unlink()
+    _link(root / "manifest.json", outside)
+
+    status, body = _ask(root, tmp_path, "/api/status", public=public)
+
+    assert status == 200
+    answer = json.loads(body)
+    assert answer["run_title"] == root.name
+    assert "Outside study title" not in body.decode("utf-8")
+    assert "manifest.json" in answer["unavailable"]
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
 def test_a_mean_not_read_is_counted_apart(tmp_path, public):
     root = _linked(tmp_path, "analysis/rmsd/options.json")
 

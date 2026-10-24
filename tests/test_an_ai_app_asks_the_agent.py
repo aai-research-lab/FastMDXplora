@@ -323,13 +323,13 @@ def test_a_modern_app_that_gives_no_reply_writes_nothing(workspace):
 def test_without_lending_the_person_s_own_key_is_used_and_said(workspace, monkeypatch):
     from fastmdxplora.agent.models import ModelChoice, save_choice
 
-    save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="sk-x")
+    save_choice(ModelChoice("openai", "gpt-5"), key="sk-x")
     wire = _wire(workspace, Model(STUDY))
     said = ask(wire, request="Five nanoseconds of ghg.pdb")["content"][0]["text"]
-    assert ("Written with your AI model (anthropic/claude-sonnet-4-6), chosen with "
+    assert ("Written with your AI model (openai/gpt-5), chosen with "
             "`fastmdx agent model`, on your own API key.") in said
     config = yaml.safe_load(next(workspace.glob("fastmdxplora_*.yml")).read_text())
-    assert config["agent_model"] == "anthropic/claude-sonnet-4-6"
+    assert config["agent_model"] == "openai/gpt-5"
     wire.close()
 
 

@@ -198,10 +198,9 @@ TOP_LEVEL = PhaseSchema(
               "involved and not which one, and six months on that is the "
               "difference between a record and a note. Pin a dated version "
               "rather than an alias if it matters: an alias moves when a "
-              "new snapshot lands, so `claude-sonnet-4-6` names different "
-              "software at different times while "
-              "`claude-sonnet-4-5-20250929` does not.",
-              example="anthropic/claude-sonnet-4-5-20250929"),
+              "new snapshot lands, so a dated version remains more precise "
+              "than an alias.",
+              example="compatible/example-model-20250929"),
         Field("budget_hours", float, None,
               "A ceiling on GPU hours for this study, every run of it: each "
               "window, replica and system. Checked after setup, "

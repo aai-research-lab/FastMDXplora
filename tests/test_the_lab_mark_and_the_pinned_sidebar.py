@@ -90,7 +90,7 @@ def test_a_person_signed_in_is_the_avatar(workspace) -> None:  # noqa: F811
 @pytest.mark.parametrize("content, said", [
     (b"just text", "not a PNG, JPEG, GIF, WebP, ICO or SVG"),
     (b"\x89PNG\r\n\x1a\n" + b"0" * (300 * 1024), "at most 262,144"),
-])
+], ids=["not-an-image", "over-size-limit"])
 def test_a_logo_that_is_not_a_small_picture_is_refused(workspace, tmp_path, monkeypatch,  # noqa: F811
                                                        content, said) -> None:
     logo = tmp_path / "logo.png"

@@ -120,8 +120,8 @@ def test_the_command_line_agent_lists_the_folder_it_is_run_in(workspace, monkeyp
     from fastmdxplora.agent.turns import ToolCall, Turn, Usage
 
     monkeypatch.chdir(workspace)
-    replies = iter([Turn("", (ToolCall("c1", "list_studies", {}),), Usage(1, 10, 0, 0, 5)),
-                    Turn("There are two.", (), Usage(1, 10, 0, 0, 5))])
+    replies = iter([Turn("", (ToolCall("c1", "list_studies", {}),), Usage(1, 10, 0, 5)),
+                    Turn("There are two.", (), Usage(1, 10, 0, 5))])
 
     def complete(prompt):  # pragma: no cover - the tool path is taken
         raise AssertionError("asked in text")

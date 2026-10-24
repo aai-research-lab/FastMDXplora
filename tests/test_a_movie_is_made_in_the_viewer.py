@@ -148,12 +148,68 @@ def test_the_movie_is_of_the_frames_shown_and_the_view_is_put_back(page, study):
     assert page.errors == []
 
 
+def test_a_movie_caption_wraps_inside_the_frame_with_time_kept(page, study):
+    import numpy as np
+    from PIL import Image
+
+    caption = "A plain text caption wraps inside the movie frame " * 5
+    layouts = page.evaluate("""(caption) => {
+        const movie = window.FastMDXViewerMovie;
+        const results = {};
+        for (const [name, width, height] of [
+            ['HD', 1280, 720], ['Full HD', 1920, 1080], ['4K', 3840, 2160]
+        ]) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            movie.drawCaption(canvas.getContext('2d'), caption);
+            results[name] = canvas.toDataURL('image/png');
+        }
+        return results;
+    }""", caption)
+    for name, data in layouts.items():
+        raw = __import__("base64").b64decode(data.split(",", 1)[1])
+        overlay = np.asarray(Image.open(io.BytesIO(raw)).convert("RGBA"))
+        alpha = overlay[:, :, 3] > 0
+        ys, xs = np.where(alpha)
+        width, height = Image.open(io.BytesIO(raw)).size
+        assert len(xs) > 100, name
+        assert xs.min() >= 14 and ys.min() >= 14, name
+        assert xs.max() < width * 0.72 and ys.max() < height * 0.2, name
+        # The lower corners remain clear for the time and colour legend.
+        assert not alpha[height - 100:, :width // 3].any(), name
+        assert not alpha[height - 100:, width * 2 // 3:].any(), name
+
+    hooks.tool(page, "side-movie")
+    page.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
+    page.fill("#movie-from", "0")
+    page.fill("#movie-to", "3")
+    page.fill("#movie-name", "captioned")
+    page.fill("#movie-caption", caption)
+    assert len(page.input_value("#movie-caption")) <= 240
+    assert page.is_checked("#movie-time")
+    with page.expect_download(timeout=600000) as caught:
+        page.click("#movie-make")
+    page.wait_for_function("() => !document.getElementById('movie-settings').disabled")
+    made = study / "movies" / caught.value.suggested_filename
+    frames = _frames(made)
+    assert len(frames) == 4
+    # Both the top-left caption and lower-right time remain legible after
+    # the real viewer render and ffmpeg encode.
+    top_left = frames[0][:220, :900]
+    assert np.count_nonzero(np.all(top_left > 190, axis=2)) > 100
+    time_corner = frames[0][HEIGHT - 60:HEIGHT - 20, WIDTH - 200:WIDTH - 20]
+    assert np.count_nonzero(np.all(time_corner > 190, axis=2)) > 10
+    assert page.errors == []
+
+
 def test_a_movie_cancelled_leaves_nothing(page, study):
     hooks.tool(page, "side-movie")
     page.select_option("#movie-size", f"{WIDTH}x{HEIGHT}")
     page.fill("#movie-from", "0")
     page.fill("#movie-to", "")
     page.fill("#movie-name", "never")
+    page.fill("#movie-caption", "cancelled caption")
     page.click("#movie-make")
     page.wait_for_function("() => Number(document.getElementById('movie-progress').value) >= 1")
     assert page.is_visible("#movie-cancel")
