@@ -172,7 +172,7 @@ opening a study, loading or checking a config, the Agent's attachments, and
 the folder a run is written to. A path outside it, whether by `..`, by an
 absolute path or by a link that leads out, is refused with
 "That is outside your workspace." The picker starts at the workspace and
-offers nothing above it. Opening a folder on the server's desktop is refused,
+offers nothing above it, nor a link that leads out of it. Opening a folder on the server's desktop is refused,
 since there is nobody at it.
 
 Paths are shown and read as `~/...`. The person sees their own folder, and the

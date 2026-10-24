@@ -196,6 +196,22 @@ class TestOneFolderIsTheWholeWorld:
             assert status == 403
             assert runtime.active_root is None
 
+    def test_a_link_out_is_not_offered_by_the_browser(self, hosting, workspace, outside) -> None:
+        """Opening it was refused, and listing it read it: what it held,
+        counted, and a linked file's size, both outside."""
+        (workspace / "shortcut").symlink_to(outside, target_is_directory=True)
+        (workspace / "their.yml").symlink_to(outside / "secret.yml")
+        (workspace / "own.yml").symlink_to(workspace / "study.yml")
+        (outside / "theirs.pdb").write_text("END\n", encoding="utf-8")
+        (workspace / "first-study" / "theirs").symlink_to(outside, target_is_directory=True)
+        with _serving(hosting) as (address, _):
+            listing = _json(_ask(address, "/api/browse")[1])
+        assert [e["path"] for e in listing["entries"]] == ["~/first-study"]
+        assert [f["path"] for f in listing["files"]] == ["~/own.yml", "~/study.yml"]
+        # Nor counted from a folder inside that holds such a link.
+        assert listing["entries"][0]["structures"] == 0
+        assert listing["structures"] == 0
+
     @pytest.mark.parametrize("route,field", [
         ("/api/explore/switch", "folder"),
         ("/api/load-config", "path"),
@@ -248,6 +264,47 @@ class TestNoPathOnTheServerIsShown:
         assert status == 200
         for spelling in {str(workspace), str(workspace.resolve()), sys.executable}:
             assert spelling not in text, route
+
+    def test_a_sentence_naming_the_workspace_itself_shows_it_as_home(
+        self, hosting, workspace
+    ) -> None:
+        """Only a path *in* the workspace was rewritten: "That is a folder,
+        not a config: /srv/person" showed the server's layout whole."""
+        with _serving(hosting) as (address, _):
+            answer = _json(_ask(address, "/api/check-config", body={"path": "~"})[1])
+        assert answer["error"].endswith(": ~"), answer
+        assert str(workspace.resolve()) not in json.dumps(answer)
+
+    def test_a_folder_beside_the_workspace_is_not_read_as_in_it(self, hosting) -> None:
+        root = str(hosting.workspace)
+        assert hosting.scrub(f"{root} is not a study.") == "~ is not a study."
+        assert hosting.scrub(f"see {root}.") == "see ~."
+        assert hosting.scrub({f"{root}/a": 1}) == {"~/a": 1}
+        for beside in (f"{root}2/x", f"{root}.yml", f"{root}-old"):
+            assert hosting.scrub(beside) == beside
+
+    def test_the_agent_s_reply_as_it_is_written_shows_no_path(
+        self, hosting, workspace, monkeypatch
+    ) -> None:
+        """`/api/agent/propose` was scrubbed as every answer is; the same
+        answer streamed a line at a time was written as it came."""
+        from fastmdxplora.gui import agent_panel
+
+        study = str(workspace.resolve() / "first-study")
+
+        def propose(payload, runtime, *, emit=None, **_):
+            emit({"type": "look", "text": f"Read {study}/notes.md"})
+            return {"ok": True, "config_path": f"{study}/run.yml"}
+
+        monkeypatch.setattr(agent_panel, "propose_endpoint", propose)
+        with _serving(hosting) as (address, _):
+            status, body = _ask(address, "/api/agent/propose-stream",
+                                body={"request": "x"},
+                                headers={"Origin": f"https://{NAME}"})
+        events = [json.loads(line) for line in body.decode().splitlines()]
+        assert status == 200
+        assert events[0]["text"] == "Read ~/first-study/notes.md"
+        assert events[-1]["answer"]["config_path"] == "~/first-study/run.yml"
 
     def test_the_state_names_the_workspace_as_home(self, hosting) -> None:
         with _serving(hosting) as (address, _):

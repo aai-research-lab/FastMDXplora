@@ -9,6 +9,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A hosted GUI shows the workspace itself as `~` wherever an answer names
+  it. Only a path inside it was rewritten, so a sentence naming the folder
+  ("That is a folder, not a config: /srv/person", "/srv/person is not a
+  study.") showed the server's layout. A folder beside it whose name it
+  begins (`/srv/person2`, `/srv/person.yml`) is left as it is, and an
+  answer's keys are rewritten as its values are.
+- A hosted GUI's Agent reply, as it is written (`/api/agent/propose-stream`),
+  shows no path on the server, as the same answer whole
+  (`/api/agent/propose`) did: its events were written as they came.
+- A hosted GUI's file picker leaves out a link that leads out of the
+  workspace. Opening one was refused, but listing it read it: the files
+  of a linked folder were counted, and a linked file's size given, from
+  outside. A folder inside that holds such a link counts only what is in
+  the workspace.
 - Clustering checks its frame-by-frame RMSD matrix against the memory this
   process can take before it makes it: the least of the machine's available
   memory (psutil where installed, else `/proc/meminfo` or `os.sysconf`; on a
