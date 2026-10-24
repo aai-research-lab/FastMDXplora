@@ -147,12 +147,19 @@ def pytest_configure(config):
 def _a_test_file_reads_the_insertion_codes_of_its_own_structures():
     """The insertion codes read from one test file's structures are not there
     for the next. `residues._INSERTION_CODES` is kept for the process, keyed
-    by atom serial, residue name and number, so trypsin's 184A read by one
+    by atom serial, residue name and number, and trypsin's 184A read by one
     file made another file's slice of the same deposition read as having
-    insertions, and its RMSF came back as a table by chain: it depended on
-    which file had run before it in the process, which under pytest-xdist
-    differs from the order the suite runs in alone. They are cleared once a
-    file, before its own fixtures, which may read them for all its tests."""
+    insertions, and its RMSF came back as a table by chain, depending on the
+    order the files ran in. A topology read through `load_trajectory` starts
+    from no codes
+    (`test_a_second_structure_read_in_one_process_has_only_its_own_codes`),
+    but a trajectory built with `md.load` reads the codes read last in the
+    process. Without this, `test_a_fluctuation_is_weighted_and_needs_frames`
+    run after `test_a_residue_is_named_by_its_chain` fails
+    `test_the_relaxation_is_left_out` and `test_the_start_can_be_given`: their
+    3PTB, built with `md.load`, read the codes the first file left. They are
+    cleared once a file, before its own fixtures, which may read them for all
+    its tests."""
     from fastmdxplora.analysis import residues
 
     residues._INSERTION_CODES.clear()
@@ -166,7 +173,10 @@ def _a_test_has_a_presenter_of_its_own():
     process and decides once, when it is made, whether to be quiet: made
     inside a batch, which sets FASTMDX_LOG_STYLE=plain while it runs, it said
     nothing for every test after, so a test reading what a command said
-    failed when a batch test had run before it in the same process."""
+    failed when a batch test had run before it in the same process. The batch
+    now sets aside a presenter made while it runs
+    (`test_a_run_after_a_batch_run_in_process_speaks_as_before`); this stays
+    as a backstop."""
     from fastmdxplora.utils import presenter
 
     presenter.reset_presenter()

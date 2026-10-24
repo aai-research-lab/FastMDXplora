@@ -150,8 +150,10 @@ def _going(pid: Any, folder: Path, argv: Any, record: dict[str, Any]) -> bool:
     from fastmdxplora.gui.exploration import _identify_run
     from fastmdxplora.orchestrator import record_is_from_elsewhere
 
+    # The one test of identity (`exploration._what_the_process_is`), asked
+    # of the record with its start where it has one.
     return (isinstance(pid, int) and pid > 0 and not record_is_from_elsewhere(record)
-            and _identify_run(pid, folder, argv) is not False)
+            and _identify_run(pid, folder, {**record, "argv": argv}) is not False)
 
 
 def _started_here(root: Path) -> list[dict[str, Any]]:

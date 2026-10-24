@@ -9,9 +9,10 @@ the criteria the interactions analysis applies to a ligand
 partner it holds:
 
 - a hydrogen bond: donor and acceptor in different chains within 3.5 A,
-  the donor-hydrogen-acceptor angle above 120 degrees (Baker and Hubbard
-  1984; McDonald and Thornton 1994), with the hydrogens the force field
-  placed;
+  the donor-hydrogen-acceptor angle above 120 degrees (a common heavy-atom
+  criterion, with ProLIF's distance; neither Baker and Hubbard's 2.5 A
+  hydrogen-acceptor bound nor McDonald and Thornton's wider HBPLUS limits),
+  with the hydrogens the force field placed;
 - a salt bridge: the centres of a positive group (Arg, Lys, and a histidine
   setup protonated twice) and a negative one (Asp, Glu) in different chains
   within 4.5 A (ProLIF's threshold), measured to the group's centre since a

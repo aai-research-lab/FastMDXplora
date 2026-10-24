@@ -24,9 +24,9 @@ pytest.importorskip("playwright.sync_api")
 
 from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa: E402
 
-PAGES = ("overview", "viewer", "analysis", "report", "files", "run", "agent")
-#: Preferences and the citation, which were pages, and the Agent's settings.
-DIALOGS = ("prefs-dialog", "cite-dialog", "agent-settings")
+PAGES = ("overview", "viewer", "analysis", "report", "files", "run", "agent", "settings")
+#: The citation, which was a page, and the Agent's settings.
+DIALOGS = ("cite-dialog", "agent-settings")
 SCHEMES = ("dark", "light")
 
 #: The text on the page measured against what is behind it; returns what

@@ -249,18 +249,7 @@ def test_the_range_is_marked_on_the_viewer_s_timeline(study):
             browser, page, errors = _page(pw, session)
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
-            # Dragged under the loading screen, the range was not drawn.
-            page.wait_for_selector("body.state-ready")
-            # A chart whose width changes is drawn again, and a drag begun on
-            # the plot it replaced is lost: dragged once every plot is in,
-            # and again on a plot drawn while it was dragged.
-            page.wait_for_function("() => !document.querySelector('[data-series-ready=\"pending\"]')")
-            chart = '.series-chart[data-analysis="rmsd"]'
-            for _ in range(3):
-                page.evaluate(f"() => {{ document.querySelector('{chart} svg').dataset.dragOn = '1'; }}")
-                _drag(page, chart, (0.4, 0.4), (0.8, 0.45))
-                if page.evaluate(f"() => !!document.querySelector('{chart} svg').dataset.dragOn"):
-                    break
+            _drag(page, '.series-chart[data-analysis="rmsd"]', (0.4, 0.4), (0.8, 0.45))
             page.wait_for_selector("#analysis-cell-range:not([hidden])")
             page.click('[data-view-link="viewer"]')
             page.wait_for_selector("#timeline-ruler svg .timeline-range")
@@ -377,7 +366,6 @@ def test_a_plot_is_zoomed_moved_and_shown_whole_by_the_keyboard(study):
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
             page.wait_for_selector('.figure-chart[data-figure-kind="states"] .plot-tools')
-            page.wait_for_selector("body.state-ready")
             view = "(s) => document.querySelector(s).dataset.view"
             rmsd = '.series-chart[data-analysis="rmsd"]'
             page.locator(rmsd + " svg").focus()
@@ -492,12 +480,8 @@ def test_a_cell_follows_its_page_and_says_what_its_analysis_read(full):
             page.wait_for_selector('.analysis-cell-head[data-analysis="thermodynamics"]')
             page.wait_for_selector('.analysis-cell-head[data-analysis="rmsd"] .cell-again')
             page.wait_for_selector('.series-chart[data-analysis="rmsf"] .plot-tools')
-            # The cell is drawn again once the results table it reads is in,
-            # with that table's quantities: read before, it still said the
-            # trajectory's frames, the table not yet in.
-            page.wait_for_function("() => document.querySelector("
-                                   "'.analysis-cell-head[data-analysis=\"thermodynamics\"]')"
-                                   ".textContent.includes('Temperature')")
+            # The cells are drawn again once the analyses' records are read.
+            page.wait_for_function("() => window.FastMDXAnalysisPage.overviewRead()")
             thermo = page.text_content('.analysis-cell-head[data-analysis="thermodynamics"]')
             rmsf = '.series-chart[data-analysis="rmsf"]'
             page.locator(rmsf + " svg").scroll_into_view_if_needed()
@@ -530,6 +514,52 @@ def test_a_cell_follows_its_page_and_says_what_its_analysis_read(full):
     assert going[0] is True and all(going[1]) and going[1]
     assert ended[0] is False and not any(ended[1])
     assert where == "analysis"
+
+
+def test_a_cell_says_no_frame_count_before_its_analysis_records_are_read(full):
+    """A cell is drawn before the analyses' records come. It said the
+    trajectory's frames meanwhile, so the thermodynamics cell read
+    "6 frames" over a state log of 20 rows until the records came, and a
+    machine slow to read them showed it (and a test read it). Until then it
+    says no count; then the count its analysis read."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(full), host="127.0.0.1", port=0)
+    head = '.analysis-cell-head[data-analysis="thermodynamics"]'
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _page(pw, session)
+            # The records held until the test lets them go.
+            page.add_init_script("""
+                const fetch = window.fetch;
+                let release;
+                const held = new Promise(done => { release = done; });
+                window.__releaseOverview = () => release();
+                window.fetch = (url, ...rest) =>
+                    new URL(url, location.href).pathname === '/api/analysis-overview'
+                        ? held.then(() => fetch(url, ...rest)) : fetch(url, ...rest);
+            """)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector(head + " .cell-again")
+            before = page.text_content(head)
+            # Read through `?.`, so a page without the hook fails on the
+            # count it says, not on the hook.
+            read_before = page.evaluate("() => window.FastMDXAnalysisPage.overviewRead?.()")
+            page.evaluate("() => window.__releaseOverview()")
+            page.wait_for_function(
+                "(head) => window.FastMDXAnalysisPage.overviewRead?.()"
+                " ?? /20 frames/.test(document.querySelector(head).textContent)", arg=head)
+            after = page.text_content(head)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert "frames" not in before, before
+    assert read_before is False
+    assert "20 frames" in after and "6 frames" not in after, after
 
 
 def test_a_study_of_runs_overlay_zooms_and_saves(tmp_path):

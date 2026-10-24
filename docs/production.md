@@ -282,7 +282,18 @@ different starting structures, or replica exchange, test it further.
 
 **What comes out.** `stopping.json` beside the study records every round: the
 production, each quantity with its error and what was asked, whether the
-replicas agreed, and what was decided. The report (for one run) or the
+replicas agreed, what was decided, and the round's own sentence (`said`). A
+round stopped also records what stopped it (`stopped_by`: `no mean`, an
+analysis that recorded none; `asked`, Ctrl+C or a signal; `error`, an
+extension that failed), saved when the study is resumed, since the record's
+own last sentence is then written over. A study stopped when asked before
+its rule was applied again says so in that sentence, the study's and none of
+its rounds'. A record written before these fields is read as it stands, with
+"not recorded" where it does not say what stopped a round. A record whose
+last word is "running" was written while the study ran: it cannot tell one
+still running from one killed, so the report says of it "Not finished when
+this was written", and the last round "extending ...; the record does not
+say it finished". The report (for one run) or the
 comparison report (for replicas) has a section, *How long it ran, and why*,
 built from it, and the Agent is given it. A budget prices the study at its
 ceiling, since that is what it may spend.

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora.config.schema import SETUP
 from fastmdxplora.ligand_detection import ION_RESNAMES, WATER_RESNAMES
 
 #: Atoms (heavy and hydrogen) of each standard residue inside a chain, as the
@@ -88,6 +89,10 @@ WATERS_LOST_AT_THE_FACES = 2.6
 #: deposited heavy atoms, in nm, for the bounding sphere of a structure
 #: deposited without them: 0.045 to 0.11 on the same nine builds.
 HYDROGEN_REACH_NM = 0.07
+
+#: The padding setup uses where a config gives none: the schema's default,
+#: read from it, so the estimate builds the box setup builds.
+_DEFAULT_PADDING_NM = float(SETUP.defaults()["solvent_padding_nm"])
 
 #: Molar concentration of pure water, as OpenMM counts ion pairs from it.
 WATER_MOLARITY = 55.4
@@ -280,7 +285,9 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
         radius += HYDROGEN_REACH_NM
 
     shape = str(setup.get("box_shape") or "dodecahedron").lower()
-    padding = float(setup.get("solvent_padding_nm") or 1.0)
+    # A given 0.0 is a padding (the schema's least), not an unset one.
+    given = setup.get("solvent_padding_nm")
+    padding = float(_DEFAULT_PADDING_NM if given is None else given)
     used, narrowest, width, grows, refuses = _box(radius, padding, shape, setup)
     volume = VOLUME_PER_WIDTH_CUBED.get(shape, 1.0) * width ** 3
 
@@ -524,10 +531,17 @@ def _box(radius: float, padding: float, shape: str, setup: dict[str, Any]
 def _cutoff(setup: dict[str, Any]) -> float | None:
     if setup.get("nonbonded_cutoff_nm") is not None:
         return float(setup["nonbonded_cutoff_nm"])
-    from fastmdxplora.setup.forcefields import FALLBACK_CUTOFF_NM, resolve_forcefield
+    from fastmdxplora.setup.forcefields import (
+        FALLBACK_CUTOFF_NM,
+        nonbonded_scheme,
+        resolve_forcefield,
+    )
 
     if setup.get("force_field"):
-        return FALLBACK_CUTOFF_NM
+        # As setup reads the list: a CHARMM36 family's 1.2 nm, else 1.0.
+        return float(nonbonded_scheme(list(setup["force_field"]), cutoff_nm=None,
+                                      use_switching_function=None,
+                                      switch_distance_nm=None)[0])
     try:
         return float(resolve_forcefield(setup.get("forcefield")).nonbonded[0])
     except Exception:  # noqa: BLE001 - an unknown name is setup's to refuse

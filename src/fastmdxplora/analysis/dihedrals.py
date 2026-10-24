@@ -2,7 +2,8 @@
 
 Computes the backbone phi (C-N-Cα-C), psi (N-Cα-C-N) and omega
 (Cα-C-N-Cα) dihedral angles for every protein residue across the
-trajectory, and produces a Ramachandran plot — the joint distribution of
+trajectory (omega in residue i's row is the peptide bond from i-1 to i,
+which IUPAC calls omega of residue i-1), and produces a Ramachandran plot: the joint distribution of
 phi/psi pairs coloured by frequency.
 
 Omega is the peptide bond itself, near 180 degrees in almost every

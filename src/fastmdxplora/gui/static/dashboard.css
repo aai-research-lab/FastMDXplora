@@ -1265,7 +1265,7 @@ button {
 .files-ic { width: 16px; height: 16px; }
 .files-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .files-mono, .files-path, .files-size, .files-when, .files-val, .files-chip, .files-code { font-family: var(--font-mono); }
-.files-empty, .files-none { color: var(--text-muted); font-size: var(--text-sm); padding: 18px 4px; }
+.files-none { color: var(--text-muted); font-size: var(--text-sm); padding: 18px 4px; }
 
 .files-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .files-search {
@@ -1426,7 +1426,7 @@ button {
 .files-menu-path { display: block; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); margin-top: 2px; overflow-wrap: anywhere; }
 
 .files-deposit-panel { width: min(760px, 100%); }
-#files-deposit-dialog .agent-dialog-foot, #files-clear-dialog .agent-dialog-foot { gap: 8px; align-items: center; flex-wrap: wrap; }
+#files-deposit-dialog .agent-dialog-foot { gap: 8px; align-items: center; flex-wrap: wrap; }
 #files-deposit-done { margin-top: 12px; }
 .files-dep-list { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; margin: 0; padding: 0; }
 .files-dep-row {
@@ -1449,7 +1449,6 @@ button {
 .files-dep-total { margin-right: auto; font-size: var(--text-xs); color: var(--text-muted); }
 .files-sha { overflow-wrap: anywhere; font-size: var(--text-2xs); }
 .files-dialog-said { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
-.files-dialog-kept { margin: 10px 0 0; padding-left: 18px; font-size: var(--text-xs); color: var(--text-muted); }
 
 @media (max-width: 760px) {
     .files-tiles { grid-template-columns: 1fr; }
@@ -1561,6 +1560,18 @@ button {
     white-space: normal;
 }
 .analysis-results-note { color: var(--text-muted); font-size: var(--text-2xs); }
+/* A mean's image note under its value, its paragraph a click away; the
+   verdict beside it is the record's. */
+.analysis-results-noted {
+    display: block; margin-top: 2px; max-width: 42ch; white-space: normal;
+    font-family: var(--font-stack); font-size: var(--text-2xs); color: var(--text-secondary);
+}
+.analysis-results-noted > summary { cursor: pointer; line-height: 1.4; }
+.analysis-results-noted p { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.45; }
+.analysis-results-finding { color: var(--text-secondary); white-space: normal; }
+.analysis-results-finding details > summary { cursor: pointer; }
+.analysis-results-finding p { margin: 4px 0 0; font-size: var(--text-2xs); line-height: 1.45; }
+.metric-noted { margin-top: 2px; font-size: var(--text-2xs); color: var(--text-secondary); }
 .analysis-results-other { color: var(--text-muted); }
 .analysis-results-status {
     display: inline-block;
@@ -1962,6 +1973,33 @@ body.state-ready .loading-screen {
 .dashboard-toast[data-kind="warning"] {
     border-color: color-mix(in srgb, var(--accent-orange) 48%, transparent);
 }
+/* The Agent's composer and its Send sit at the foot on the right, where a
+   toast was shown over them. Beside the Agent a toast is shown at its left;
+   where the Agent takes the whole width (a phone), and on the Agent page,
+   at the top under the bar there, above the composer however tall it has
+   grown (at most 40% of the window). */
+body.agent-beside .dashboard-toast {
+    right: calc(min(var(--agent-width), 100vw) + 22px);
+    max-width: min(440px, calc(100vw - min(var(--agent-width), 100vw) - 44px));
+}
+html[data-page="agent"] .dashboard-toast {
+    top: calc(var(--top-bar-height) + 12px);
+    bottom: auto;
+    transform: translateY(-8px);
+}
+@media (max-width: 800px) {
+    body.agent-beside .dashboard-toast {
+        right: 22px;
+        max-width: calc(100vw - 44px);
+        top: calc(var(--top-bar-height) + 12px);
+        bottom: auto;
+        transform: translateY(-8px);
+    }
+}
+html[data-page="agent"] .dashboard-toast.show,
+body.agent-beside .dashboard-toast.show {
+    transform: translateY(0);
+}
 .file-action[disabled],
 .chip-btn[disabled],
 .ctl-btn[disabled] {
@@ -2016,6 +2054,18 @@ body.state-ready .loading-screen {
     color: var(--text-muted);
     font-size: var(--text-xs);
 }
+
+.builder-defaults-refused {
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+}
+.builder-defaults-refused b { color: var(--text-primary); font-weight: 600; }
+.builder-defaults-again { display: block; margin-top: 8px; }
 
 .builder-grid {
     display: grid;
@@ -2794,13 +2844,12 @@ body.state-ready .loading-screen {
     padding: 14px 18px;
 }
 
-/* ---- Preferences, the citation and a study's own words ------------------
+/* ---- The citation and a study's own words --------------------------------
    The Agent's dialog, narrower; each a title with Close, a body that
-   scrolls on its own, and a foot. A row of Preferences is its name on the
+   scrolls on its own, and a foot. A row of Settings is its name on the
    left and its control on the right, as a system's settings are. */
 .agent-dialog-panel.dialog-narrow { width: min(540px, 100%); }
 .agent-dialog-foot { gap: 8px; }
-#prefs-dialog .agent-dialog-foot { justify-content: flex-start; }
 .pref-group + .pref-group { margin-top: 18px; }
 .pref-group-title {
     margin: 0 0 7px;
@@ -3680,7 +3729,9 @@ html[data-page="viewer"] .page-shell { max-width: 1480px; }
     --composer-btn: 32px;
     flex: none; position: sticky; bottom: 0;
     padding: 12px 0 8px;
-    background: linear-gradient(180deg, transparent, var(--background-primary) 30%);
+    /* Opaque from the foot of its top padding: a note above the box, of
+       two lines or more, showed the page scrolled beneath through it. */
+    background: linear-gradient(180deg, transparent, var(--background-primary) 12px);
 }
 /* The send button sits inside the box at its right end, as every
    assistant a person has used places it, rather than beside the box. */
@@ -4163,7 +4214,6 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .sidebar-stop[hidden], .stop-run-ask[hidden] { display: none; }
 .sidebar-stop:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
 .stop-run-ask { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-xs); }
-.stop-run-ask .stop-run-answers { display: flex; flex-wrap: wrap; gap: 6px; }
 .health-stop { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .health-stop:has(> [hidden] + [hidden]) { display: none; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }
@@ -5631,7 +5681,9 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
 .agent-drawer-spacer { flex: 1; }
 .agent-drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 0 0 16px; }
 .agent-drawer .agent-thread { padding-right: 12px; }
-.agent-drawer .agent-start { margin: 16px 0 8px; padding-right: 12px; }
+/* Beside a short page the opening words shrink and scroll: they pushed
+   the box and the line under it below the drawer, under the status bar. */
+.agent-drawer .agent-start { flex: 0 1 auto; min-height: 0; overflow-y: auto; margin: 16px 0 8px; padding-right: 12px; }
 .agent-drawer .agent-start-title { font-size: var(--text-lg); }
 .agent-drawer .agent-msg-user { max-width: 88%; }
 .agent-drawer .agent-composer { padding-right: 12px; background: var(--background-primary); }
@@ -5814,6 +5866,13 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     margin-top: 2px; font-size: var(--text-2xs); color: var(--text-muted); line-height: 1.4;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* A mean's image note, beside its verdict, which it does not change. */
+.tile-noted {
+    margin-top: 2px; font-size: var(--text-2xs); color: var(--text-secondary); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tile-why-noted { display: block; }
+.tile-why-noted:not(:first-child) { margin-top: 6px; }
 .overview-lead { margin: -2px 0 12px; font-size: var(--text-sm); color: var(--text-primary); line-height: 1.5; }
 .overview-lead[hidden] { display: none; }
 .tile-value { margin: 4px 0 2px; font-size: var(--text-lg); letter-spacing: -0.01em; color: var(--text-primary); overflow-wrap: anywhere; }
@@ -6130,6 +6189,7 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     }
 }
 .sidebar-chats:not(.flyout) .sidebar-conv-new { display: none; }
+.sidebar-chats:not(.flyout) .sidebar-conv-new.sidebar-conv-chat { display: flex; }
 .sidebar-conv-new { color: var(--accent-text); }
 
 /* A button that is its line icon alone, named on hover: Close in a

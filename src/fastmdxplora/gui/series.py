@@ -163,6 +163,8 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
             "discard": discard,
             "from_x": x[discard] if discard < n else None,
             "not_a_measurement": found.get("not_a_measurement") or None,
+            # Its image note beside its verdict, as the table says it.
+            "noted": _noted(found) or None,
         }
 
     every = max(1, math.ceil(n / MOST_POINTS))
@@ -176,6 +178,13 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
         "linked": _of_the_played_trajectory(root, manifest),
         "mean": mean,
     }
+
+
+def _noted(found: dict[str, Any]) -> str:
+    """A mean's image note in a line (:func:`fastmdxplora.image_note.said_short`)."""
+    from fastmdxplora.image_note import note_of, said_short
+
+    return said_short(note_of(found))
 
 
 def analysed_axis(root: Path, n: int) -> tuple[list[int], list[float], str]:

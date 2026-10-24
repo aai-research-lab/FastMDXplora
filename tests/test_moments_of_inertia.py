@@ -211,8 +211,10 @@ class TestItJoinsTheRegisters:
 
 
 class TestEveryReaderIsTold:
-    def test_a_broken_molecule_is_said_where_the_mean_is_read(self, tmp_path):
-        """The finding sat at the top level, which no reader opens."""
+    def test_a_broken_molecule_is_made_whole_and_said(self, tmp_path):
+        """Split across the box, the molecule is now made whole before the
+        analysis (as the loader makes it), and that is said where the
+        findings are read. Its moments are then the molecule's."""
         import json
 
         from fastmdxplora.report.document import _findings_notes
@@ -233,8 +235,9 @@ class TestEveryReaderIsTold:
         found = json.loads(
             (tmp_path / "moments_of_inertia" / "options.json").read_text())["findings"]
 
-        assert "wrapped across a periodic boundary" in found["mean"]["not_a_measurement"]
-        assert any("wrapped across" in note for note in _findings_notes(found))
+        assert "made whole" in found["made_whole"]
+        assert "not_a_measurement" not in found.get("mean", {})
+        assert any("made whole" in note for note in _findings_notes(found))
 
 
 class TestTheShapeDescriptors:

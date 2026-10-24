@@ -3,7 +3,7 @@
  * A run of hours is watched from another tab or another window. While it
  * runs, the tab's title begins with how far it is ("42% · 1L2Y"); once it
  * ends, the title is the page's own again. Where the person has asked for
- * it in Preferences (Notify when a run ends), the browser shows a notice as
+ * it in Settings (Notify when a run ends), the browser shows a notice as
  * the run completes, stops or fails: only a run seen running in this page,
  * so opening a finished study says nothing. The browser asks the person
  * once whether the page may; refused, the setting is unticked and says so.
@@ -33,6 +33,12 @@
     };
   }
 
+  /* The open study's folder, by its name, as the sidebar says it. */
+  function folderName() {
+    var folder = el("study-folder");
+    return folder ? folder.dataset.name || "" : "";
+  }
+
   function wanted() {
     var box = el("setting-notify");
     return !!(box && box.checked);
@@ -47,17 +53,22 @@
     document.title = far + state.name + " · " + base;
   }
 
-  function notify(state) {
-    if (!wanted() || !("Notification" in window) || Notification.permission !== "granted") return;
-    var run = state.run;
-    if (!run && !state.said) {
-      // No record says how it ended (its process ended before writing
-      // one, or a study of several runs): the process's own end, as the
-      // app state says it, failed or stopped.
+  /* How the run ended, one word for the browser's notice and the saved
+   * one alike: as its record says it, or where no record says it (its
+   * process ended before writing one, or a study of several runs) the
+   * process's own end, as the app state says it, failed or stopped. */
+  function outcome(state) {
+    var run = state.run || state.said;
+    if (!state.run && !state.said) {
       var app = window.FastMDXDashboard && window.FastMDXDashboard.state.appState;
       var word = app ? String(app.status || "") : "";
       if (word === "failed" || word === "stopped") run = word;
     }
+    return run;
+  }
+
+  function notify(state, run) {
+    if (!wanted() || !("Notification" in window) || Notification.permission !== "granted") return;
     var ended = { failed: "failed", stopped: "stopped", interrupted: "was interrupted" }[run]
       || "completed";
     try {
@@ -141,7 +152,13 @@
       state.study = detail.study ? String(detail.study) : "";
       title(state);
       if (last && last.run === "running" && state.run !== "running" && ended(last, state)) {
-        notify(state);
+        var run = outcome(state);
+        notify(state, run);
+        // Saved with the page's other notices (notices.js), asked for or
+        // not: the study by the server's key for it, and its folder's name.
+        window.dispatchEvent(new CustomEvent("fmx:run-ended", { detail: {
+          name: state.name, run: run, stage: state.stage, study: state.study,
+          folder: folderName(), started: state.started } }));
       }
       last = state;
     });

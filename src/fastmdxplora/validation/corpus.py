@@ -253,6 +253,21 @@ def _gas(box: float = 4.0, boxed: bool = True):
     return traj
 
 
+def _hydrated_gas(box: float = 4.0):
+    """`_gas` with six of the oxygens 0.3 nm from each CA: a first shell,
+    so the curve has a peak to report and only the range is in question."""
+    np = _numpy()
+    traj = _gas(box)
+    rng = np.random.default_rng(5)
+    for frame in traj.xyz:
+        for i in range(20):
+            way = rng.normal(size=(6, 3))
+            way /= np.linalg.norm(way, axis=1)[:, None]
+            frame[20 + 6 * i:26 + 6 * i] = frame[i] + 0.3 * way
+    traj.xyz %= box
+    return traj
+
+
 def _rdf_without_a_box() -> Any:
     from fastmdxplora.analysis.rdf import RadialDistribution
     return RadialDistribution(
@@ -264,7 +279,7 @@ def _rdf_past_half_the_box() -> Any:
     from fastmdxplora.analysis.rdf import RadialDistribution
     analysis = RadialDistribution(
         selection_a="name CA", selection_b="name O", r_max=5.0)
-    analysis.compute(_gas())
+    analysis.compute(_hydrated_gas())
     return analysis.findings
 
 
@@ -272,7 +287,7 @@ def _rdf_within_the_box() -> Any:
     from fastmdxplora.analysis.rdf import RadialDistribution
     analysis = RadialDistribution(
         selection_a="name CA", selection_b="name O", r_max=1.0)
-    analysis.compute(_gas())
+    analysis.compute(_hydrated_gas())
     return analysis.findings
 
 
@@ -1306,7 +1321,7 @@ DEFECTS: list[Case] = [
          _rdf_past_half_the_box, "qualified",
          "the range is cut to where the shells are complete, and the cut "
          "is stated rather than silent",
-         mentioning="half the smallest box"),
+         mentioning="half the cell's shortest lattice vector"),
     Case("density from a constant-volume run",
          _density_at_constant_volume, "qualified",
          "the density is a constant the setup fixed, so a mean with an "

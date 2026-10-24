@@ -14,6 +14,12 @@
     background: var(--accent); box-shadow: 0 0 0 2px var(--background-secondary, var(--panel-glass));
 }
 .tl-event[data-replaced="true"] .tl-dot { background: var(--text-muted); }
+/* A round of a study run until it is determined: a ring, its time not
+   recorded; one stopped, and a run that stopped without finishing, in the
+   colour of what waits on a person. */
+.tl-event[data-kind="round"] .tl-dot { background: var(--background-secondary, var(--panel-glass)); border: 2px solid var(--accent); box-sizing: border-box; }
+.tl-event[data-kind="round"][data-stopped-by] .tl-dot,
+.tl-event[data-kind="ended"] .tl-dot { border-color: var(--status-waiting); background: var(--status-waiting); }
 .tl-head { display: flex; align-items: baseline; gap: 8px; }
 .tl-said { color: var(--text-primary); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .tl-event[data-replaced="true"] .tl-said { color: var(--text-secondary); font-weight: 500; }

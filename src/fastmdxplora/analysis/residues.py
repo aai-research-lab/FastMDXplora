@@ -54,9 +54,13 @@ def chain_name(residue: Any) -> str:
     return letters[place] if place < len(letters) else str(place)
 
 
-#: Insertion codes read from topology files, by the first atom's serial,
-#: residue name and number: MDTraj keeps an atom's serial when it slices a
-#: trajectory, and drops the code with everything else it does not model.
+#: Insertion codes of the topology read last, by atom serial, residue name
+#: and number: MDTraj keeps an atom's serial when it slices a trajectory, and
+#: drops the code with everything else it does not model. Only the topology
+#: read last: the key is not unique across structures, so a second structure
+#: read in the same process (a batch run in process, the Python API) had the
+#: first one's codes wherever an atom had the same serial, name and number,
+#: and a structure with none read as having insertions.
 _INSERTION_CODES: dict[tuple[int, str, int], str] = {}
 
 
@@ -68,9 +72,15 @@ def remember_insertion_codes(topology_path: Any) -> int:
     PDB or mmCIF loaded as the trajectory itself. Reading only an external
     ``.pdb`` lost the codes of both, and trypsin's 184A and 184 came out as
     two residues numbered 184.
+
+    Each read starts from no codes, so they are those of this topology alone,
+    and a file that has none, or cannot be read, leaves none. The analyses
+    read a structure and run on it before another is read (one run at a time
+    in a batch); a structure read again has its codes read again.
     """
     from pathlib import Path
 
+    _INSERTION_CODES.clear()
     path = Path(str(topology_path))
     suffix = path.suffix.lower()
     if suffix in (".cif", ".pdbx", ".mmcif"):

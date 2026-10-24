@@ -159,7 +159,7 @@ def test_a_movie_cancelled_leaves_nothing(page, study):
     assert page.is_visible("#movie-cancel")
     page.click("#movie-cancel")
     page.wait_for_function("() => !document.getElementById('movie-settings').disabled")
-    assert page.text_content("#movie-said") == "The movie was cancelled; nothing was kept."
+    assert page.text_content("#movie-said") == "The movie was cancelled; nothing was saved."
     assert not any(p.stem == "never" for p in (study / "movies").iterdir())
     assert not page.is_visible("#movie-cancel")
     assert page.errors == []

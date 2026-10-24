@@ -9,6 +9,327 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Clustering checks its frame-by-frame RMSD matrix against the memory this
+  process can take before it makes it: the least of the machine's available
+  memory (psutil where installed, else `/proc/meminfo` or `os.sysconf`; on a
+  Mac without psutil, the machine's total memory, said as such), its
+  control group's limit less its usage (cgroup v2 or v1, a SLURM job's or a
+  container's; its reclaimable page cache, `inactive_file` in `memory.stat`,
+  not counted as used) and its `ulimit -v` or data limit less what it holds,
+  the refusal naming the least ("the container allows", "this machine has",
+  "the process may use"), the
+  peak counted as resident memory measures it (17 n^2 bytes beside the
+  matrix for an average or complete linkage, SciPy's own copy included).
+  Past it, clustering is refused
+  (`analysis.memory.matrix_too_large`), said in the log, leading with the
+  stride that fits (`options: {cluster: {stride: k}}`, new), then the
+  frames, the bytes needed and available, and last where the memory was
+  read; the other analyses still run. A chignolin study extended to 128,000
+  frames was killed by the kernel while clustering, a matrix of 131 GB and a
+  copy of 66 GB. The matrix is made with no copies beside it where it was
+  made with two, and k-means, Ward and DBSCAN on `features: coordinates`
+  make none. `dimred`'s MDS is checked and refused the same way, before
+  any of its methods runs (PCA, t-SNE or UMAP asked for beside it are run
+  and their projections saved, the refusal recorded and said in the report;
+  "every 2nd frame"), and makes
+  its matrix as clustering does, without the five copies of it it made.
+- Clustering no longer writes the frame-by-frame matrix twice:
+  `hierarchical_distance_matrix.npy` is gone (the dendrogram is the
+  linkage's), and `cluster_rmsd_matrix.npz` holds the map of time against
+  time at most 1,000 cells across, its rows and columns averaged in blocks
+  of frames, the block said in the figure's title and the report's caption,
+  the last block drawn as wide as the frames it holds.
+  The figure, the GUI and the report read that one file; a study clustered
+  before is read as it was, its whole matrix averaged as the GUI reads it, a
+  few rows at a time, never held whole. The whole matrix is written only with
+  `save_full_matrix: true`, its size said in the log first.
+- `fastmdx analyze --exclude-analyses ...` runs: the flag's setting is
+  `exclude`, and it was copied onto explore's `--exclude-phase`, so the
+  command stopped with "--include-phase and --exclude-phase are mutually
+  exclusive". The help of `--analyses` and `--exclude-analyses` (the
+  schema's) says the image check joins a listed plan, and what excluding it
+  leaves unchecked. The study's `resolved_config.yml` then holds the
+  analyses left out (`exclude`), not also the plan they resolved to
+  (`include`, in the analysis manifest), which the loader refused beside it,
+  so `fastmdx report` and `fastmdx analyze --rerun` on the study stopped; a
+  record written with both is read as the plan that ran.
+- The estimate of what setup will build keeps a given `solvent_padding_nm`
+  of 0.0 (the schema's least) where it read it as unset, now 2.0 nm.
+- The project bundle holds results and records, not working matrices: the
+  clustering's whole matrix, and any matrix the analyses saved past 100 MB,
+  stay in the study's folder, listed with their sizes in
+  `left_out_of_bundle.txt` inside the bundle and in the report. A
+  chignolin study's bundle was 7.3 GB.
+
+- An Analysis cell says no frame count until the analyses' records are read,
+  then the count its own analysis read: the thermodynamics cell said the
+  trajectory's 6 frames over a state log of 20.
+- Insertion codes are read afresh for each topology: a structure read after
+  one with an insertion code (GLY 184A) in the same process, as in a batch
+  run in process or from Python, had that code wherever an atom had the same
+  serial, name and number, and one with none read as having insertions.
+- A presenter made inside a batch run in process is set aside when the run
+  ends: a single run after a batch in one Python session said nothing.
+- An asparagine whose ND2 a LINK bonds to a sugar takes no second sugar by
+  distance: a second NAG near it was read as a second glycan on the same
+  asparagine. It is asked about as a free sugar.
+- An RDF whose r_max is less than one bin says there is no curve to plot.
+- A run stopped as asked is "To carry it on" in the status strip's link to
+  its card and in the Problems list, as on its card.
+- A printed page leaves out the "Skip to the page" link, which printed over
+  the foot of the first sheet.
+- All studies says why a study did not open only while it holds: a hold of
+  the page's own (unsent Agent words) is not said on the card drawn again,
+  and the server's answer is not said again once the page is left after it.
+- Tests: the Overview's line of a study opened after one with a live
+  record, All studies listed once, the study strip moved by the wheel
+  through a redraw; a job's processes are waited for in /proc.
+- An analysis orchestrator built before another and run after it runs on
+  its own insertion codes: the second one's read cleared the first one's,
+  and its RMSF had two residues numbered 184.
+- Of two sugars near one asparagine's ND2 with no LINK, only the one whose
+  C1 is nearer is read as its glycan; the other is asked about as a free
+  sugar. Both were read as glycans on that asparagine.
+- The Agent's answer for a stopped run that was never analysed sends a
+  person to "To carry it on" on the Overview, as the card is titled.
+- The Problems list says once that a run stopped in NVT wrote no
+  checkpoint: its fix said it again.
+- All studies' table says why a study did not open on a line of its own
+  under the row's buttons, wrapped, and fits the table again: said on one
+  line beside them, it widened the table past its column (1440 px with the
+  side panel open), and stays shown with the pointer away from the row. Where
+  the table is narrower (1100 to 1280 px with the side panel open) the row's
+  buttons show only on hover, and the reason with them, as on main. A
+  hold of the page's own is still said beside Open until the list is drawn
+  again after it has passed, as on main.
+- Tests: the Analysis page's count is unsaid until the study's results are
+  read; CI installs poppler-utils on the leg that runs the printed Report's
+  test.
+
+- A study just started no longer shows the last study's length, wall time
+  and last update under its name on the Overview until its own first
+  status arrives.
+- The NVT equilibration's box, in ns, said "Not set: 500 ps"; it says
+  "0.5 ns (500 ps)", so the number read is the number to type.
+- A run stopped before production is priced at the speed its
+  equilibration measured, not "no speed has been measured here". A run
+  stopped as asked is under "To carry it on" rather than "What would fix
+  it", and says it wrote no checkpoint once, not twice.
+- The New study form's results folder says its timestamp is UTC, as the
+  docs do: the folder read 23:48 beside a log at 16:48.
+
+- New study: a spelling offered for a refused value, once pressed, takes the
+  refusal's mark off its field at once.
+- An older answer about your machines no longer replaces a newer one (or
+  its reason a study built in the form cannot be sent).
+- The strip of open studies keeps the open study's tab in view when a tab
+  before it changes width, until the strip is moved away from it; All
+  studies says why a study did not open on its card or row drawn again
+  while the answer was on its way.
+- The test legs on macOS have 90 minutes.
+
+- A sugar bonded to an asparagine where the deposition has no LINK record
+  for that bond (its C1 within 2.8 A of the asparagine's ND2) is read as the
+  first sugar of an N-glycan, and said to be bonded by distance: 1HZH, an
+  IgG1, was refused as two sets of free sugars and now prepares. A sugar
+  only in contact with an asparagine is still asked about.
+- Setup's check that every atom has a positive mass reads the OpenMM units
+  `prepare_system` was given, not OpenMM's own a second time.
+- The GUI says a plot is plotted and a molecule rendered (Compare, a map's
+  picture of its cells, a plot's Save, All studies' pictures), and a
+  replica's withheld mean not determined; the Timeline's note is on the type
+  scale.
+- The Report prints whole: the status bar's styles held the page to the
+  window's height in print as well.
+- New study's steps 2 to 5, waiting for a starting point, are no longer
+  faded below the contrast both schemes are held to; they are inert and say
+  in words that they wait.
+- The strip of open studies is the centre column's top bar, as high as the
+  side panel's tabs and the sidebar's name, its rule on their line.
+- A study of runs' Analysis page says its runs' analyses once the study's
+  state arrives, whether its results were read before or after.
+- All studies: a card's tags, note and a tag half typed stay while the
+  cards are drawn again; tags saved while a list was being answered show on
+  the card listed now; a list read again is of the folder asked for, not
+  the workspace; the page opened on All studies lists them once; on a phone
+  its heading is its name alone.
+- A Viewer view chosen before the page's first state arrives stays chosen.
+- Tests: each test has its own insertion codes and presenter; the coverage
+  leg runs the tests that drive no browser on every core and the browser
+  tests one at a time after them; tests held to what the code now does.
+
+- Settings' This folder says the restraints and the dispersion correction
+  as they are now: restraints written as blocks are shown as the file holds
+  them and changed by hand (the box showed them as text, which a change
+  there would have written back as one selection), and the dispersion
+  correction left unset is as the force field was developed, not "none".
+
+- A defaults file that sets a setting of one study is refused, as one that
+  sets `systems` is: a folder's defaults say how studies are run, never
+  what is simulated or which study's files are read. The study one
+  continues or is prepared from (`simulation.resume_from`,
+  `resume_unsealed`, `extra_ns`, `setup_from`, `prepared_from`), the files
+  it analyses (`analysis.trajectory`, `analysis.topology`), its
+  structure, ligand, mutations, chains and model (`setup.fixed_pdb`,
+  `ligand`, `mutations`, `chains`, `model`), where its starting
+  coordinates come from (`setup.ligand_pose`) and every setting that names
+  one structure's parts (`setup.ligand_net_charge`, `ligand_name`,
+  `ligand_resname`, `residue_states`, `mutation_chain`,
+  `membrane_center_z_nm`, `simulation.dashboard_ligand_resname`, and the
+  biasing blocks `umbrella`, `steered`, `metadynamics` and `plumed`) were
+  taken by every new study made in the folder: `mutations: [L99A]` mutated
+  every protein, and `ligand_net_charge: -1` gave every ligand that charge.
+
+- A defaults file is refused, each with words of its own, where it sets a
+  structure oriented by hand (`setup.membrane_orientation_checked`, which
+  turned off the membrane's stops, so every new membrane study had its
+  bilayer built across its own structure at whatever angle it lay),
+  residues to highlight by number (`report.region_highlights`), one
+  study's title (`report.title`), a restraint of kind distance, angle or
+  torsion in `simulation.restrain`, or an analysis's option of one
+  structure in `analysis.options` (`pair_distance.selection_a` and
+  `selection_b`, any analysis's `ligand_resname`,
+  `pl_interactions.ligand_net_charge` and `ligand_chemistry`,
+  `order_parameters.reference` and `reference_exclude`,
+  `bfactor_comparison.structure`, `thermodynamics.state_csv`): every new
+  study measured the distance between the lab's residues 10 and 50 in its
+  own protein. Position restraints on a selection and the selections
+  every structure has stay a lab's, and the biasing blocks' refusal says
+  they bias one study's system along variables chosen for it. One given as
+  nothing (`membrane_orientation_checked: false`, as a full config writes
+  it, or `report.title: null`) is refused as that.
+
+- New study says a defaults file that is refused, and why, above the form,
+  with the way to Settings' This folder: the form showed FastMDXplora's own
+  values with nothing said, so a file refused for one setting dropped all
+  its values silently, and the study was refused only once it started.
+
+- New study says when the defaults file changed since its form was drawn
+  (in This folder or put right), with Read the defaults again, which draws
+  the form from the file as it is: the fields said "Your default 6.5"
+  while the run took the file's 6.8, beside a note that could say the
+  opposite. A file refused since is said as refused, as on opening, and on
+  a phone the note is brought into view, where New study opened as far
+  down as This folder was left.
+
+- Bound beyond loopback, `/api/schema` sends no folder defaults and no
+  refusal of them, as `/api/defaults-file` refuses the file there, and the
+  config `/api/config` hands back is drawn from FastMDXplora's own values:
+  anyone on the network was given the file's values and, for a refused
+  file, its path, and New study said them.
+
+- A change saved in This folder is shown set while the file is read
+  again: a read answered after it, with the file as it was, drew the row
+  empty and unset although the file held the value. A value set with
+  Enter is sent once, so Undo takes it back: it was sent again as its row
+  was drawn, and Undo put back the value just set.
+
+- Analysis at 390 pixels: a quantity the same in every frame wraps between
+  its name and its value, where it scrolled the page sideways.
+
+- In a window 720 pixels tall, the Agent beside the page shrinks its
+  opening words and scrolls them: they pushed its box and the line under it
+  under the status bar.
+
+- The Agent's mode and GPU-hour ceiling are saved as they are chosen: a
+  reload put the Agent back in Seeker with no ceiling, whatever was set.
+
+- A study run until what it asks is determined lists its rounds in its
+  Timeline: the production each judged and what was decided, a stopped
+  round said by what stopped it (an analysis that recorded no mean, Ctrl+C
+  or a signal, an error while the runs were extended) and "not recorded"
+  where its record does not say, never "an extension failed" whatever
+  stopped it. A round's record gives no time, so it is placed by the
+  recorded times of the steps around it, not below the oldest step.
+- Compare's Settings that differ, and the Timeline's rounds, say a length
+  under 1 ns in ps ("250 ps", not "0.25").
+- Replicas prepared from different models of an ensemble (`setup.model`)
+  are said to be "started from different models of the ensemble", not to
+  "differ only by random seed": in the aggregate's and the written
+  comparison's reason, on the Compare page, the runs' table, the Overview,
+  the plan and a stopping rule's verdict, all from one function
+  (`batch.aggregate.how_replicas_differ`). How they are aggregated is
+  unchanged.
+- Two replicas whose means are the only two read for a quantity are no
+  longer said "resolved" against their own errors: their spread is set
+  against those errors as the study's replicas are aggregated
+  (`spread_against_own`), and "only these two runs' means were read" is
+  said only where the study has more runs.
+- A run killed, or ended by a signal without writing its end, is said
+  "Stopped without finishing" in its Timeline, with the stage and step it
+  reached, never as finished at its last recorded step.
+- A study of several runs' Overview offers no box to choose a run to
+  compare on a GUI bound beyond loopback, where Compare is not answered.
+- A toast is shown clear of the Agent's composer and Send: at the Agent's
+  left beside a page, and at the top on the Agent page and where the Agent
+  takes the whole width.
+- A study of one run renamed, copied or unpacked under another name has
+  its rounds placed in its Timeline by when they happened, not listed
+  below the oldest step.
+- A study of several runs' Overview, on a GUI bound beyond loopback, names
+  each run as text: opening one switched study, a post the server refused.
+- What stopped a round is said by one function
+  (`stopping.round_decided`) in the Report's table, its methods and the
+  Timeline, from the record: a round now records what stopped it
+  (`stopped_by`), and an older record is read as before, "not recorded"
+  where it does not say. The last round of a study still said running is
+  said as extending, and that the record does not say it finished.
+- A replica's methods say the start it shares with its replicas as they
+  differ, read from its campaign's sweep: replicas from the models of an
+  ensemble are no longer said "started from one structure".
+- A plan's replicas are said in one line from every axis that makes them
+  replicas: 3 models with 2 seeds are 6, each with a seed of its own.
+- Compare counts a study's runs by those it plans, not those written so
+  far, and says two replicas read alone without the error it calls too
+  tight or the rule for two measurements.
+- A run swept over its length is named by it in ps under 1 ns in Compare
+  and the runs' table ("duration 250 ps").
+- A study run until it is determined and stopped without finishing is said
+  so on its Overview's card, never "Still running", with its lengths, and
+  those of a stopping rule's record, in ps under 1 ns.
+- The Timeline lists rounds placed at one time newest first, and says a
+  run killed in a piece by the piece's number.
+- A run of a study of several shows its methods in the GUI again: its
+  study's batch manifest is read for it, only where its start is shared
+  with its replicas and its campaign's rule was read, and a record refused
+  is said as what it is, a link only where it is one.
+- Each round of a stopping record keeps its own sentence; a study resumed
+  and stopped before its rule was applied again says so as its own end in
+  the Timeline, the Report and the methods, never as its last round's
+  cause.
+- The Viewer's timeline marks each round as the Report and the Timeline
+  say it, and its overlay says a time under 1 ns in ps.
+- A study killed in its first piece is said so on its stopping card, with
+  every run killed named as every page names it.
+- A stopping record still saying running is said "Not finished when this
+  was written" in the Report and on the card, never "Still running"; the
+  card says it running only where its process is known to be.
+- The Report's table of rounds gives production in ps under 1 ns, and a
+  record written before says its lengths so where it is quoted.
+- A round that began no piece is placed in the Timeline after the analyses
+  and report it judged.
+- The stopping card reads only the study's own records, beyond loopback
+  too: its record or batch manifest linked out of the study is not read,
+  and said not read.
+- A resumed study stopped when asked before its rule was applied again is
+  said so on the stopping card and in the Report, as in the Timeline and
+  the methods, and its record is written so.
+- A run's process record says when its process began, in ticks since the
+  machine booted, and a process is the run only where its number and start
+  match: a live run stays running when the clock is stepped, and a number
+  given to another process since is not said live, adopted, counted as
+  going in the workspace or signalled by Stop, which says why. A record
+  written before is judged by its arguments, and by when the process began
+  only where it has none.
+- The stopping card says how each killed run ended where they ended
+  differently.
+- `/api/runs-compared`, the app state's runs and the run's study, and the
+  GUI's adoption of a run read only the study's own records: a batch
+  manifest linked out of the study is not read, its runs named by their
+  folders, and a process record linked out names no run of it.
+- The stopping card says a record it did not read: its own record as "Not
+  read", and a batch manifest or process record in a note under it.
+
 - A joined run's drift between segments counts every ordering of up to
   seven segments, and the mirror of the observed order always counts as
   extreme: on four segments the verdict had turned on rounding. A segment
@@ -125,6 +446,119 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   changed, refuses a timestep of 0 on its box, shows the Mode a Config's
   workers give, tells a person what to add to a Config with no system, and
   lets its verdict and empty boxes be read whole at every width.
+
+- `verlet` and `variable_verlet` are refused: they have no thermostat, and
+  every stage of a run holds a temperature, so the NVT stage and production
+  were constant-energy dynamics (a "300 K" peptide in water ran at 169-181 K)
+  with a barostat over them, while the methods said "at 300 K with a friction
+  coefficient". Checked per run (a sweep or a system's own settings, the run
+  named) wherever a config is checked and the simulation runs; an older
+  study's record is still read and reported, and its Methods say the stages
+  ran at constant energy with no temperature held.
+- `brownian` is refused below the friction its step needs, 2 kT dt / (m s^2)
+  with a hydrogen's random step s held to 0.01 nm (about 100 per ps at 2 fs
+  and 300 K): at the default 1 per ps it went to NaN within 50 steps.
+
+- Each restraint is held at its own force constant. The release ladder was
+  written into every restraint as it stood, so a position restraint asked for
+  at 200, a distance at 500 and a torsion at 50 kJ/mol/rad² all ran at 1000,
+  500, 100, 0; now each is stepped down in the ladder's proportions, and one
+  given no constant runs at the ladder's values as before. With
+  `restrain_production` they are held at full strength throughout instead of
+  being let go during equilibration and taken up again at 1000 when
+  production began (a ladder other than the default is refused beside it, as
+  it would not be used); without it production is free whatever the last
+  step.
+- A distance, angle or torsion restraint given no `target` is held where it
+  is in the prepared structure (it was held at zero: two atoms pulled onto
+  each other), measured as the nearest image in a periodic box, and the value
+  is recorded; the distance, angle and torsion forces measure the nearest
+  image too (a ligand wrapped a box away was pulled through it). A target
+  outside its coordinate's range (an angle in degrees) is refused. An angle's or torsion's atoms are
+  taken in the order an `index` selection writes them (they were sorted).
+- One force constant is one spring: every kind is E = k x² with no half, and
+  the torsion is 2k(1 − cos x), which was k(1 − cos x), half as stiff as an
+  angle given the same number. Said in the docs, the schema and the methods,
+  with GROMACS's and PLUMED's ½ k x² beside it.
+- The long form of `restrain` documented in the guide is accepted in a study
+  file (it was refused as "should be string") and read when the config is
+  checked: a key a restraint does not take, a negative force constant, a
+  target on a position restraint and a ladder rising above its first step
+  are refused, in a system entry and a sweep value as in the study's own
+  block.
+
+- CHARMM36 runs without the long-range dispersion correction its file turns
+  off. Every run passed the correction on, OpenMM takes that over
+  `charmm36.xml`'s `useDispersionCorrection="False"`, and CHARMM36 systems,
+  bilayers among them, ran with an isotropic tail their lipids were fitted
+  without (-75 bar in CHARMM water at 1.2 nm). `dispersion_correction` now
+  defaults to the force field's scheme: off for CHARMM36, `charmm36_2024.xml`
+  included (it says nothing, which OpenMM reads as on), and otherwise as the
+  files leave it, on for AMBER (OpenMM's default). A stated value wins, and
+  the value used is recorded.
+- An explicit `force_field` list takes the cutoff scheme of the family its
+  files belong to: AMBER files listed by hand were switched at 0.9 nm, which
+  `amber14` by name is not, and CHARMM36 files ran at 1.0 nm rather than 1.2.
+  A list of no one family takes OpenMM's own default, no switch, and says so.
+- The Methods state the Lennard-Jones treatment (switch and tail correction),
+  and that `charmm36.xml` is an older CHARMM36 release, without the
+  CHARMM36m protein parameters.
+
+- `amber-fb15` runs with TIP3P-FB (`tip3pfb.xml`), the water AMBER-FB15 was
+  developed with, rather than plain TIP3P, and the records, the Methods, the
+  slides and the GUI name it. A study prepared before keeps its recorded
+  `force_field` list, and so its TIP3P, when it is run again.
+
+- An analysis handed a trajectory with molecules split across the box makes
+  them whole first, as the loader does, and says so: given straight from
+  `md.load`, a rigid body wrapped atom by atom read an RMSD of 2.7 nm. The
+  loader measures once that what it hands on is whole, so the analyses need
+  not, and makes a box of solvent alone whole too (MDTraj found no anchor
+  in one and left it split).
+- `rdf` and `coordination_number` stop at half the cell's shortest lattice
+  vector, not half its shortest edge (the same for the boxes setup builds;
+  past it in a squashed cell an ideal gas read g = 0.74), and the
+  centre-of-mass minimum image searches two cells out (it was 0.115 nm long
+  in such a cell).
+- `rdf`'s first peak and `coordination_number`'s `cutoff: rdf` are judged
+  against the scatter of g(r)'s own counts in each bin (each distinct pair
+  once, the larger of the counting noise and the spread over frames, widened
+  by the frames' correlation), at a bar set by how many bins are searched:
+  `rdf` reported a first peak on 15 ideal gases out of 15, and an FCC
+  crystal's first shell was refused. The cutoff is the first dip clear below
+  bulk that the curve climbs back out of to bulk, on g(r) smoothed over
+  0.035 nm, rather than the lowest point anywhere after the peak. Where the
+  trough is level, as the gap between a crystal's shells is, its middle is
+  taken (FCC reads 12 and rock salt 6 at thermal spreads of 0.002 to 0.01
+  nm). It is refused where there is no trough, where the minimum is not
+  located to within 0.1 nm and the count changes across that, where the two
+  halves of the run put it outside the stretch the whole run allows, and
+  where neither half finds one: O-O in 1 M NaCl (read before at 0.383 nm,
+  the second half of the run giving 0.349) is refused at every length of
+  run. The stretch the minimum could lie in, the count across it and the
+  cutoff from each half of the run are recorded and said. A gas moving 0.002
+  to 0.01 nm a frame over 50 frames is correlated beyond what the run can
+  show, and is still accepted now and then (4 of 640). More frames are
+  needed to resolve a minimum than before: TIP3P O-O reads at 60 frames of a
+  564-water box and not from its first 30.
+- `rdf` refuses a `bin_width` or `r_max` that is not a positive distance, a
+  range under one bin, and a frame whose cell is empty or not a number, as
+  `coordination_number` now does with an explicit cutoff too.
+- Wording and records: the H-bond criteria's defaults and citations
+  (`hbonds`' occupancy threshold; the 3.5 A rule no longer credited to
+  McDonald and Thornton, whose HBPLUS limits are wider), DSSP's loop letter, the omega
+  column's residue, the native frame of the Q value, `dimred`'s MDS and
+  `cluster`'s embedding, a united-atom lipid's refusal, the thermodynamics
+  ensemble without a volume column, `start` on the trajectory's clock, how
+  the RMSF is fitted, and the GUI page's count of analysis options.
+- `bfactor_comparison` and `ligand_rmsf` leave out the equilibration, as
+  `rmsf` does (`start`, `equilibrated` by default, recorded under
+  `findings.frames`, said on the figures). The B-factor comparison read every
+  frame, so a loop relaxing 0.4 nm over the first fifth of a run read 57%
+  higher there than in `rmsf.dat`; the ligand RMSF read 1.7 times the
+  fluctuation of the settled frames for a ligand still settling, and now
+  starts once both the receptor's RMSD and its own, in the receptor frame,
+  equilibrate, saying so where that leaves out more than a third of the run.
 - A study of several runs reads the same state in the sidebar, on its
   Overview and in All studies, from one derivation of its runs' states
   (it read "Unknown" in two places and "completed" in the third). Its runs'
@@ -173,8 +607,286 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study it was started from (opened there again elsewhere as the run
   started): that page shows its own study's conversation.
 
+- A run the Agent or the Config Builder started (Start, or Run on this
+  machine as it is) opens its own study, and only that change of study is
+  the window's own: another study opened as the run starts, or after a
+  launch that was refused, is said as opened elsewhere, and so is one the
+  window showed and went past as the run started, and a run's study it went
+  past without showing. A status read before another, and answered after it,
+  is not applied over it. A page that never showed the run's study says the
+  run's conversation is there. The Agent counts as a study what the GUI
+  opens as one: a run the Config Builder started is a study with its own
+  conversation from its config on, in every window, also where it ends at
+  once. While a run is starting (also while a run going in the folder shown
+  is not yet a study), until the page has read which study is open once it
+  has, before the page's first status, and while the conversation of the
+  study shown is being read (or read again, a read refused as the GUI moved
+  on), Send and Enter send nothing: beside the box the page says why, and
+  the words stay in the box, kept with their study as any unsent words.
+  Send is then offered again, and nothing is ever sent by itself; a message
+  sent goes into the thread of the study shown, with the page's view read
+  after the status that showed it (an Enter that waits only for that view
+  says so, sends once however often pressed, and says when it was not
+  sent). A conversation begun on a folder not yet a study, read or new, is
+  that study's own once it is one. With no study open (a run that failed at
+  once) Send sends at once. A choice, a confirm answer, Retry, an Edit, a fix
+  asked for and a starter send their own words, never over the words in the
+  box; while Send waits, a review holds the next message or an answer is
+  being written, they change nothing and say why, and an Edit keeps its
+  words. An Edit sends the words as edited. A study's first conversation is
+  saved in the study it was written in, with its answer and files, also
+  where another window opened another study meanwhile. A page left as a run
+  started says, when it comes back, where the words typed then are kept. Once
+  a launch answers, the study open is read from its status alone. Words typed
+  after Run into the thread the run took with it go with it to the run's
+  study, also where another study was seen first or a read of the study left,
+  asked before the launch answered, came after it; with two runs started one
+  after the other, they go with it to the second. Words kept for a study are
+  in its box again when it is opened with other words in the box. A status
+  read asked before a launch answered is not taken for where the GUI is after
+  it, nor is a run's own study then said as opened elsewhere; a read asked as
+  it answers is. With an answer that cannot be read, the last study seen as
+  the run started, still shown, is the run's, and one seen before it is said.
+  Run on this machine as it is, its answer not read, says so and is offered
+  again. A note of words kept for another study, a run's too, names it with
+  its folder, and a study opened elsewhere is named from the status that
+  showed it.
+
+- With no study open, or a folder open that is not a study, the Agent page
+  takes that as where the GUI is: after a reload, or a read refused as the
+  GUI moved on, Send no longer waits for good, and what is sent is saved in
+  the workspace's chats. A study opened there later, in another window or
+  by an AI app, shows its own conversation, and a message written on it goes
+  into it, not into the chat of no study shown before. An Edit refused (Send
+  waits, or a review holds it) keeps its words through a click elsewhere,
+  Escape alone putting the old ones back, and the review's note goes once
+  the review is chosen. Edit and Retry send the message's files with it,
+  read again (one gone or changed since is said, and nothing sent), and Edit
+  changes the words alone. An Enter pressed just as a study opened elsewhere
+  put its own saved words in the box sends nothing and says so. A note about
+  the words in the box goes once they are sent.
+
+- A page reloaded while the Agent's run starts, its request cut as the page
+  goes, says when it comes back where the words typed then are saved.
+
+- A message sent with no study shown names no study in its view, and the
+  Agent refuses it, as it refuses a view of another study, where the GUI has
+  a study open by then (another window opened one as Enter was pressed); it
+  was answered with that study open and filed in the workspace's chats.
+
+- An Edit refused (a review holds the next message, or its files changed
+  meanwhile) is no longer lost as its conversation is replaced (another
+  window opens a study, a reload, a switch as its files are read again): its
+  words are saved for the study it was written for and said, or with no
+  study put in the box; the note asking for a choice in a review goes once
+  no review is on screen.
+
+- Words put back for a study and sent with the second Enter leave no note
+  saying they were not sent; what it says of words saved for another study
+  stays.
+
+- Words typed for a study when the GUI goes to no study, or to a folder that
+  is not a study, are saved for that study and said, as for another study,
+  and are in its box again when it is open; they stayed in the box and went
+  into the workspace's chats. Words typed for a run the page started that
+  ends at once stay in the box, to be sent.
+
+- A note of words saved for a study names it by its folder alone, so one
+  study is named one way in every note, also before its run's name is read.
+
+- A message refused as the study open changed as it was sent (another
+  window opened a study as Enter was pressed, from no study or from another
+  study) is put back in the box, for a chat of no study or the study the box
+  is for, or saved for the study it was written in, and said; it was left
+  in its conversation with the refusal, out of view.
+
+- A refused Edit saved for its study is saved with the message's files,
+  attached again when its words are put back; it came back without them.
+
+- At phone width a note of two lines or more above the Agent's box hides
+  the page beneath it; the page showed through its first line.
+
+- A message naming no study is refused only where the GUI shows a study: in
+  a folder holding only a conversation moved there, every one was refused.
+
+- A page reloaded while a Config Builder run starts says where the words
+  typed then are saved, as for the Agent's own run.
+
+- Words typed for a run the page started stay in the box when it ends at
+  once only within that run's own while after its launch, not a later
+  launch's.
+
+- A refused Edit put back in the box after a reload says why it is there.
+
+- A run's study is named by its folder alone in the note of words saved for
+  it, as in every other note.
+
+- A message or an Edit refused as the study open changed, put back in the
+  box, keeps its attached files when the switch is seen while they are read
+  again: they come back with the words, on the study they were written in,
+  and are sent with them. The words were saved without them, and the files
+  were dropped, unsaid.
+
+- The note of a message refused as the study open changed names by its
+  folder the study the message is saved for, and, from no study, the study
+  opened.
+
+- Once a refused message is taken out, the Agent's welcome is shown from its
+  top; its heading was under the Agent bar.
+
 ### Added
 
+- A study of several runs (seeds, arms, mutants, umbrella windows) is
+  shared as one file with `fastmdx report --share`, and opened as the study
+  it was: its record of runs, members and comparison with each run's own
+  files and phases. A prepared system a run simulated from, kept outside
+  the study, is carried once in `prepared/<name>/` and its paths said as
+  that folder, so each run opened elsewhere finds its system (profile 1.1).
+  A run running, stopped short or never run, a system not found or another
+  one now, a file or folder kept as a link, and one that cannot be read
+  keep the study back, each named with what to do
+  (`environment.share.not_finished`). See [Sharing](docs/sharing.md).
+- A study shared to Zenodo holds up over an unsteady connection: each
+  request is asked again where Zenodo says to (429, 502, 503, 504, a lost
+  connection), a draft whose answer was lost is found again under a title
+  of its own rather than made twice, an answer that names another draft or
+  record, or says nothing of what was asked, is never taken as done, and a
+  download of a shared study resumes where it was cut and says how far it
+  has gone. What the person did on Zenodo's site is left alone: a new
+  version already begun, an edit saved on the record and not published, a
+  description of their own, a file or archive of their own. Shared again
+  after publishing, a study begins a new version from the latest one,
+  counted on in its label's own form. A full disk while sharing or opening
+  is refused with what to do, leaving nothing behind. See
+  [Sharing](docs/sharing.md).
+
+- Every study with a solute in a periodic box is checked frame by frame
+  against its own periodic images (`image_check`, run first, as
+  `gmx mindist -pi` checks it): the closest approach of any heavy atom of
+  the solute (the macromolecules: protein, nucleic acids and any other
+  polymer chain, with a ligand only where the analyses' solute holds it;
+  never water, ions or lipids; grouped into complexes, molecules bonded or
+  in contact within 0.5 nm in the first frame read, each complex checked
+  against its own images only, so separate copies meeting each other's
+  images in a box of several are not counted; grouped once, so a complex
+  that parts or a ligand that unbinds may still be noted and molecules that
+  join later are checked apart, as the finding says) to any heavy atom of every
+  image it could reach (searched as far as
+  the solute spans, not a fixed two cells), each frame made whole along its
+  bonds, in a cell of any shape, kept as a series with the
+  frames under the run's own real-space cutoff (its `nonbonded_cutoff_nm`
+  from the setup record of the system it simulated, found as every reader
+  finds it, a run given `setup_from` and an umbrella window's shared setup
+  included; else its force field's; else 1.0 nm, said which and why) and
+  under 0.5 nm counted. Where the solute
+  met its image in the frames an analysis uses (after its mean's discarded
+  equilibration, or from its `start` as its record of the frames read says
+  it: RMSF, `ligand_rmsf`, `bfactor_comparison`, clustering and the
+  projections), the analysis carries a note of it,
+  counted over those frames (for an analysis without a main mean, the
+  moments' shape descriptors or the secondary structure's fractions, over
+  the frames its means use, said as the union where they differ; for the
+  thermodynamics, over the energy rows each mean averages, after its
+  discard, each read at the trajectory frame nearest its time), said once
+  in its findings and with its numbers
+  on each mean record (sub-means and reweighted averages included): every
+  mean keeps its error, since meeting its copy may bias a mean but does not
+  make its error unknown; the shape analyses' note says the shape may be
+  biased. The report says the check's finding once, in its "Image check"
+  section, and one line under each analysis. Every page that shows a noted
+  mean says the note beside its verdict, which it does not change ("may be
+  biased: in 54 of 270 frames used (20%) the solute was within 1 nm of its
+  own image"): the Overview's tiles and production means, the Analysis
+  page's table (the analysis's paragraph a click away, said as the
+  analysis's where it counts other frames than the mean's, and in its CSV),
+  the line over each card, its caption and its convergence, the series, the
+  Report page, the runs of a study compared (on the Analysis page and the
+  Overview of a study of runs, each † said under the table, a difference
+  past twice the combined error said to be possibly the image's bias where
+  either mean is noted), the Report page's table of runs (its measures named
+  as the pages name them), the written comparison, its trend and its CSV (a
+  note column), the slides, All studies' rows and cards (beside the value,
+  and in its title), and the Compare page (either side, two studies or two
+  runs picked on an Overview, each † said under the table, and a resolved
+  difference with a noted side said to be possibly that bias); the
+  replicas' mean of their means, which shares their box, says how many of
+  their means are noted ("may be biased: in 2 of the 3 replicas the solute
+  was within 0.9 nm of its own image, in frames their means use"), on the
+  Overview's "The runs together", the All studies card and the written
+  comparison's "Across the replicas", and the runs compared keep their
+  noted-means sentence beside the calibration where it replaced it; an
+  analysis with no mean over its frames (RMSF, the order parameters, the
+  dihedrals, clustering, the projections) on its row and card, RMSF's
+  caption and Report page row, and the written dashboard's cards that have
+  no caption of their own (the order parameters, the cluster matrix, a
+  landscape); and the Agent, in its reading of the analyses, its answers
+  from the records, the means cited under its answers and the means of the
+  study cards; all from the record through one reader (`image_note`), read
+  on the pages without the report's code marks. The image check's own row and card
+  give its finding in a sentence ("No complex of the solute came closer
+  than ..." for several), its row opening to the rest of its paragraph, the
+  card titled "Image check" and its atoms said as the heavy atoms of the
+  macromolecules. `end_to_end` alone withholds its error, as it did
+  for its two ends, now from the same note rather than its ends, a check
+  that passed a chignolin chain which came to 0.261 nm of its own copy. It runs with every plan where there is a box
+  and a solute, a study's listed analyses (`include`, as the GUI writes
+  them) too; excluded by name, the log, the analysis manifest and the
+  report say the solute was not checked, and `end_to_end` checks its own
+  chain against the run's cutoff, said as its own check, the report then
+  pointing to no Image check section; the report says end-to-end's image
+  sentence once. Within the cutoff the solute is said to see its image,
+  and in contact with it only under 0.5 nm; the cutoff is said as "The
+  cutoff is 0.9 nm, read from ..." (or "taken because ..."); the report's
+  exclusion paragraph keeps its setting as code; its Convergence part says
+  how many frames were within the cutoff and, for a run in contact with its
+  image in every frame, that no claim about the solute's shape is
+  supported and that a longer run, which may determine the means, would
+  not lift the bias, as the Overview's lead and the Agent's answers on run
+  length and on what would strengthen the run now say beside the longer run
+  they advise, with or without a figure of how much longer
+  (`image_note.longer_run_said`); where every mean is determined, the lead
+  and those answers say the means may still be biased and a larger box lifts
+  it (`image_note.determined_said`), never "determined" or "By its records,
+  yes" alone, and advise replicas in a larger box; a mean's "The remedy is a
+  longer run, or better, replicas" in the report is followed, for a mean in
+  contact with its image in every frame it uses, by neither lifting it. A
+  record written with both the analyses that ran and those left out, read
+  as the analyses that ran, which an image check left out joins, is said so
+  in the log. The check's
+  figure gives its time in ps under 1 ns. Not yet done: complexes grouped
+  again as the run goes (a complex that parts, a ligand that unbinds, an
+  oligomer formed during the run), with one k-d tree over every complex
+  (64 copies of a decapeptide take about 0.15 s a frame); said while the run
+  goes; a ligand's approach to the protein's image recorded apart; grading
+  the note by thresholds (it waits for a registered check); the GUI map's
+  last block drawn its own width; several workers clustering at once; a
+  default frame cap (the person's choice); fetch sizes by kind; the
+  Agent's citation chip saying a mean's verdict before its note (it reads
+  "..., may be biased: ... of its own image, not determined"; the chip is
+  drawn by `agent-panel.js`).
+
+- One Settings page for every setting, found by its words, each applied as
+  it is changed. **You** is this computer: the scheme, the accent, the new
+  Display size, the Viewer, time, charts and notices (the Preferences
+  dialog's, which is gone) and the Agent's engine and mode. **This folder**
+  is the workspace's `fastmdx-defaults.yml`, which the GUI could only read:
+  each setting it may hold beside FastMDXplora's own, set, given a reason
+  or taken out there, the file checked as any defaults file is and left as
+  it was when refused, one change at a time; a setting of several values
+  (a stopping rule, the analyses' options) is shown under its words as the
+  file holds it, set only by hand there. The
+  gear's Settings… and the Agent's dialog lead to it, Cmd+K finds it by
+  "preferences" too, and `#preferences` is its address.
+- A Display size, in Settings: the whole page at once, text included, from
+  90% to 150%. Auto, the default, chooses from the screen (125% at 2560 by
+  1440, 150% at 3840 by 2160), so the GUI is not small on a large screen.
+  It is one zoom for every rule and script: the page is laid out as a
+  window of its own width is (at 150% a 1500 pixel window as a 1000 pixel
+  one), the Viewer's picking, tooltips and menus stay where they belong at
+  every size, and the columns end where the status bar begins. It never
+  makes the page narrower than a phone's 390 pixels: the size applied is
+  the largest not above the one chosen that keeps it so, as the window is
+  resized too, and Settings says so beside it.
 - Every page of a study says where it is at its head: the study, the run
   of a study of several (a menu of its runs and the study as a whole, each
   with its state, opening on the page shown), then the page. The sidebar's
@@ -328,6 +1040,45 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study whose tags were not read offers no Tag; a run begun whose length is
   not recorded counts as begun ("2 of 3 lengths known"); a cut name gives
   its whole name on hover; unfolded runs draw no stray line in lines.
+- Notices are saved: every notice the page gives, each run seen ending and
+  each refusal written while the page is open, the last 200 on this
+  computer, behind a bell in the status bar with how many are new (All,
+  Runs, Refusals and warnings; Clear the list with Undo). A notice saves
+  what it said and its study's name (a refusal its first line); a run's end
+  opens its study's Overview as every way to another study does, asked first
+  whether the switch would lose work here, by the server's key for the
+  study, and names the study by its folder; a run that failed with no record
+  of its own is saved as failed, as the browser's notice says it. A toast on
+  a page of no study is filed under none; one notice seen in two windows is
+  saved once; keys pressed in the list stay in it. Bound beyond this
+  computer, the page offers no Stop and no way to another study.
+- One confirmation for what cannot be undone (stopping a run, a job on one
+  of your machines, clearing the scratch), beside the button pressed; a
+  selection forgotten asks nothing and offers Undo. One empty, loading and
+  error block on All studies, Compare, Files, the Problems tab and the Log;
+  the Files page says when its files could not be read, with Try again,
+  where it said "Reading the study's files..." for ever; the question to
+  clear the scratch stays while the page is read again. Conversations and
+  Chats are one list in the sidebar, with New chat for a chat of no study
+  while a study is open.
+- A notice is saved with no path in it: "Opened output folder: /Users/..."
+  was saved and listed behind the bell as said; any path a notice names
+  (from the root, the home, a drive or a share) is left out of what is
+  saved, and out of a list saved before. A study opened elsewhere is saved
+  once however late a second window hears of it, and again when it is
+  opened elsewhere again. Tab stays in the open Notices list until Escape
+  or a choice. The Problems tab says when the server did not answer, and
+  Try again on All studies reads the folder that could not be listed, not
+  the last one listed.
+- A path is left out of a notice before a long line is cut, and whole: a
+  quoted path left open by the cut, one whose last part has a space
+  ("/Users/Kunle Aina"), one on a share ("//server/share", "smb://") or on
+  another machine ("lab:/home/..."); what is said of it stays ("Remote: is
+  full"), with no ".." or empty brackets left, and the page's own addresses
+  (/static/...) are not taken for paths. A window that missed a switch saves
+  no second "opened elsewhere". With the Notices list open, Tab reaches the
+  Undo of a notice shown beside it. All studies names the folder it could
+  not list whole on hover.
 
 - A strip of open studies keeps each study's last page in this browser
   window. Studies can be selected or closed individually; closing never
@@ -447,6 +1198,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   analysis first), and so is the check of a config. What one does not offer
   (an AI app's actions, which the Agent proposes on the page) is listed with
   why. See `docs/agent.md`, Looking before it answers, and `docs/mcp.md`.
+
+### Changed
+
+- Setup's default padding (`setup.solvent_padding_nm`) is 2.0 nm, about
+  1.0 nm of water between the solute and the box's wall, where it was 1.0 nm
+  (OpenMM's padding is the least distance from the solute to its image, so
+  1.0 nm was the cutoff itself, and chains that never unfolded came within
+  the cutoff of their own image). Every new study has more water, about
+  twice the atoms for a 10-residue peptide; the cost said before a run and
+  the GPU room read the new count. A study or defaults file that sets its
+  own padding keeps it, setup still grows a box too narrow for the cutoff,
+  and studies already run are unchanged.
 
 ### Fixed
 

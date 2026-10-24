@@ -111,6 +111,11 @@ class BFactorComparison(Analysis):
     align_selection : str, default "protein and name CA"
         Atoms used to remove rigid-body motion before fluctuations are
         measured, as in the RMSF analysis.
+    start : float or "equilibrated", default "equilibrated"
+        The first frame the fluctuations are taken over, as the RMSF
+        analysis takes it: every frame read the relaxation from the starting
+        structure into the fluctuation, so the comparison and ``rmsf.dat``
+        disagreed (a relaxing loop 57% high).
     **kwargs
         Standard base-class options.
 
@@ -140,14 +145,19 @@ class BFactorComparison(Analysis):
         *,
         structure: str | None = None,
         align_selection: str = ALPHA_CARBONS,
+        start: float | str = "equilibrated",
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        from fastmdxplora.analysis.starting_frame import start_as_given
+
         self.structure = structure
         self.align_selection = str(align_selection)
+        self.start: float | str | None = start_as_given(start)
         self.options.update(
             structure=self.structure,
             align_selection=self.align_selection,
+            start=self.start if self.start is not None else 0,
             conversion="B = (8 pi^2 / 3) <u^2>, isotropic",
         )
 
@@ -219,7 +229,20 @@ class BFactorComparison(Analysis):
                 "needs at least three."
             , code="analysis.selection.arity", expression=self.align_selection)
 
-        aligned = superposed(traj, frame=0, atom_indices=align_idx)
+        from fastmdxplora.analysis.starting_frame import first_frame, too_few_frames
+
+        too_few_frames(traj.n_frames)
+        first, record = first_frame(traj, align_idx, self.start, 0)
+        if first > traj.n_frames - 2:
+            raise StudyError(
+                f"`start` leaves {traj.n_frames - first} of {traj.n_frames} "
+                "frames, and a fluctuation needs at least two.",
+                code="analysis.option.out_of_range")
+        self.findings["frames"] = record
+        # Onto frame 0 of the whole trajectory, as the RMSF fits, so the two
+        # columns are one number with the default selection.
+        aligned = superposed(traj[first:], frame=0, atom_indices=align_idx,
+                             reference=traj)
         # Alpha carbons within the scope selection: comparing a chain the
         # study excluded would report a correlation over residues it was
         # not asked about.
@@ -352,11 +375,22 @@ class BFactorComparison(Analysis):
                 if not several:
                     self._label_by_residue(ax, rows)
             ax.legend(loc="best", fontsize="small", ncol=2 if several else 1)
+            self._say_the_frames(ax)
             return
         ax.plot(result[:, 0], result[:, 1], linewidth=1.2, label="simulated")
         ax.plot(result[:, 0], result[:, 2], linewidth=1.2,
                 linestyle="--", label="from B-factors")
         ax.legend(loc="best", fontsize="small")
+        self._say_the_frames(ax)
+
+    def _say_the_frames(self, ax: plt.Axes) -> None:
+        """Which frames the simulated column is over, as the RMSF says it."""
+        from fastmdxplora.analysis.starting_frame import which_frames
+
+        said_frames = which_frames(self.findings.get("frames"))
+        if said_frames:
+            ax.text(0.01, 0.98, said_frames, transform=ax.transAxes, ha="left",
+                    va="top", fontsize="small")
 
     @staticmethod
     def _label_by_residue(ax: plt.Axes, rows: Any) -> None:

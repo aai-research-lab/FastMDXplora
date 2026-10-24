@@ -76,7 +76,18 @@ developed with hard truncation near 1.0 and are not switched at all, since
 switching them moves a run away from the parameterisation rather than towards
 it. Setting `setup.nonbonded_cutoff_nm`, `setup.use_switching_function` or
 `setup.switch_distance_nm` overrides this, a stated 1.0 nm included, and the
-run records what it used in `setup_parameters.json`.
+run records what it used in `setup_parameters.json`. An explicit `force_field`
+list takes the scheme of the family its files belong to (every file AMBER's,
+or every file CHARMM36's, OpenMM's plain water files aside) and otherwise
+OpenMM's own default, a 1.0 nm cutoff and no switch, with a line saying so.
+
+The long-range dispersion correction is part of the same scheme. CHARMM36
+runs without it, as its lipids were fitted without one (`charmm36.xml` says
+so; `charmm36_2024.xml` says nothing, which OpenMM would read as on), and an
+isotropic tail assumes a uniform medium beyond the cutoff, which a bilayer is
+not. Any other force field gets what its files leave it at: OpenMM turns it
+on where a file says nothing, as the AMBER files do.
+`setup.dispersion_correction` overrides it, and the value used is recorded.
 
 The switching function is potential-based. A force-based switch is a different
 function and is not available here, so a protocol specifying one cannot be

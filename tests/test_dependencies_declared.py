@@ -59,6 +59,10 @@ OPTIONAL = {
     # it, and its browser is installed apart from any package. The `movies`
     # extra.
     "playwright",
+    # The memory clustering may use, where it is installed; without it the
+    # budget is read from /proc/meminfo, the cgroup and os.sysconf, and the
+    # refusal says which reading it took.
+    "psutil",
 }
 
 #: Imported, and deliberately absent from pyproject.toml because pip cannot

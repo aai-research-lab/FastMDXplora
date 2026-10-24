@@ -89,9 +89,9 @@ class SS(Analysis):
     ----------
     simplified : bool, default True
         If True, use MDTraj's three-letter simplification (H/E/C). If
-        False, use the full eight-letter DSSP alphabet (H/E/B/G/I/T/S/C)
-        which is then folded down to three classes for the figure but
-        preserved in the saved data.
+        False, use the full DSSP alphabet (H/E/B/G/I/T/S, and a space for
+        a loop, as MDTraj writes it), which is then folded down to three
+        classes for the figure but preserved in the saved data.
     **kwargs
         Standard base-class options.
 

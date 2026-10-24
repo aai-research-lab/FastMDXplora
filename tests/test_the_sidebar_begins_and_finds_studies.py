@@ -189,7 +189,8 @@ def test_folded_chats_show_beside_the_strip_with_a_new_one(browser, session) -> 
     hidden = tab.evaluate("""() => getComputedStyle(
         document.querySelector('#sidebar-chats-list .sidebar-conv-new')).display""")
     tab.context.close()
-    assert said == {"beside": True, "inside": True, "first": "New chat", "peeked": False,
+    # One list since 10-21: its new one is about the study open.
+    assert said == {"beside": True, "inside": True, "first": "New conversation", "peeked": False,
                     "expanded": "true"}
     assert gone
     # With the sidebar shown, its head's + is the way; the row is not shown.

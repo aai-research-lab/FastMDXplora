@@ -213,6 +213,16 @@ def _page_study_refused(root: Path, payload: Any) -> dict[str, Any] | None:
             "reason": STUDY_CHANGED, "error": STUDY_CHANGED}
 
 
+def _with_its_study_key(started: Any) -> Any:
+    """A launch's answer with the run's study, by the key the page names it
+    by: the change to it is the page's own, and no other is."""
+    if isinstance(started, dict) and started.get("ok") and started.get("output"):
+        from fastmdxplora.gui.workspace import study_key
+
+        started["study_key"] = study_key(started["output"])
+    return started
+
+
 def _get_answered_beyond_loopback(path: str) -> bool:
     return (path in GETS_ANSWERED_BEYOND_LOOPBACK
             or path.startswith(GET_PREFIXES_ANSWERED_BEYOND_LOOPBACK))
@@ -258,11 +268,14 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     such a study writes): the study, and admission for a confined read
     rooted there. A run waiting for its study's next round is known so only
     from the study's own records (`telemetry.between_rounds`): its
-    `stopping.json` and process record, and its runs' own records. Each run
-    is admitted as Problems admits a study (`admitted_for_problems`), and
-    only where it is: a record of one run linked to another's, or to the
-    study's, is a link out of it and refused. Nothing else of the study is
-    admitted. None for a study of its own."""
+    `stopping.json` and process record, and its runs' own records. Its
+    `batch_manifest.json` says what the runs were swept over, which a run's
+    methods say its replicas by (`methods._campaign_axes`). Each of these is
+    admitted only where it is, never through a link. Each run is admitted
+    as Problems admits a study (`admitted_for_problems`), and only where it
+    is: a record of one run linked to another's, or to the study's, is a
+    link out of it and refused. Nothing else of the study is admitted. None
+    for a study of its own."""
     if inside.parent.name != "runs":
         return None
     from fastmdxplora.gui.problems_view import admitted_for_problems
@@ -275,7 +288,7 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
         try:
             parts = path.relative_to(study).parts
             if len(parts) == 1:
-                return (parts[0] in (RECORD, RUN_PROCESS_FILE, runs.name)
+                return (parts[0] in (RECORD, RUN_PROCESS_FILE, "batch_manifest.json", runs.name)
                         and path.resolve() == study / parts[0])
             if len(parts) < 2 or parts[0] != runs.name or _private(parts[1:2]):
                 return False
@@ -380,7 +393,7 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
             # A copy: the answer may be one a reader keeps for its next call.
             # Each named with why it was not read, for the page to say so.
             answer = {**answer, "unavailable": sorted(refused),
-                      "unavailable_why": {name: _why_not_read(inside, name)
+                      "unavailable_why": {name: _why_not_read(inside, name, held)
                                           for name in sorted(refused)}}
     return answer
 
@@ -518,16 +531,19 @@ def _withheld_where_not_read(answer: dict[str, Any], key: str) -> dict[str, Any]
     return answer
 
 
-def _why_not_read(inside: Path, name: str) -> str:
+def _why_not_read(inside: Path, name: str, held: Path | None = None) -> str:
     """Why the confined read of the open folder ``inside`` refused the
-    record it names ``name`` (a key of `series.NOT_READ_BECAUSE`)."""
+    record it names ``name`` (a key of `series.NOT_READ_BECAUSE`), told
+    from the folder the read was held to, ``held`` (the study a run of it
+    belongs to): a file of that study that is not a link is never said to
+    be one."""
     from fastmdxplora.gui.series import why_not_read
 
     if name == "a non-regular record":
         return "not a file"
     if name in _UNNAMED_REFUSALS:
         return "outside"
-    return why_not_read(inside, inside / name)
+    return why_not_read(held or inside, inside / name)
 
 
 def _served_beyond_loopback(root: Path, target: Path) -> bool:
@@ -1177,16 +1193,35 @@ def make_handler(
                 # The workspace's defaults offered as the form's: a setting
                 # left at one runs with it. A defaults file that is wrong is
                 # said, and the form offers FastMDXplora's own meanwhile.
-                try:
-                    payload = schema_payload(your_defaults(app_runtime))
-                except ConfigError as exc:
+                # Bound beyond loopback the folder's file is neither shown
+                # nor said, as `/api/defaults-file` refuses it there: its
+                # values, its path and a refusal of it are the workspace's.
+                if not allow_control:
                     payload = schema_payload()
-                    payload["defaults_refused"] = str(exc)
+                else:
+                    try:
+                        payload = schema_payload(your_defaults(app_runtime))
+                    except ConfigError as exc:
+                        payload = schema_payload()
+                        payload["defaults_refused"] = str(exc)
                 # Where a results folder named rather than pathed will land.
                 # The page can then say it instead of leaving somebody to
                 # guess which directory "analysis_output" is relative to.
                 payload["workspace"] = str(app_runtime.exploration_root)
                 self._send_json(payload)
+                return
+            if path == "/api/defaults-file":
+                # The workspace's fastmdx-defaults.yml as Settings' This folder
+                # shows it (settings_page.py). Not a service's guests': the
+                # workspace and its defaults are the service's.
+                if hosting is not None:
+                    self._send_json({"ok": False,
+                                     "reason": "Not shown or changed here when the GUI is served."},
+                                    status=403)
+                    return
+                from fastmdxplora.gui.settings_page import defaults_said
+
+                self._send_json(defaults_said(app_runtime.exploration_root))
                 return
             if path == "/api/problems":
                 # A read-only list of the records already shown by status
@@ -1471,7 +1506,9 @@ def make_handler(
             if path == "/api/stopping":
                 from fastmdxplora.gui.stopping_view import stopping_payload
 
-                self._send_json(stopping_payload(root))
+                # Read from the study's own records only (`_confined`): its
+                # record, batch manifest and process records.
+                self._send_json(_said_not_read(_confined(root, stopping_payload)))
                 return
             if path == "/api/again":
                 # What can be run again on the study on screen, and why not,
@@ -1492,7 +1529,13 @@ def make_handler(
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared
 
-                self._send_json(runs_compared(root))
+                # Read from the study's own records only (`_confined`): a
+                # batch manifest linked out of it names no run of it. Its
+                # runs' paths said as the study was opened.
+                answer = _said_not_read(_confined(root, runs_compared))
+                inside, opened = str(root.resolve()), str(root)
+                self._send_json(answer if inside == opened
+                                else _as_opened(answer, inside, opened))
                 return
             if path == "/api/protein-preview":
                 # Beyond loopback a viewer reads what the run has; it does
@@ -1954,12 +1997,10 @@ def make_handler(
                 # Runs what the config describes rather than what a form was
                 # wired for, which is how an analysis of an existing
                 # trajectory can be started at all.
-                self._send_json(
-                    app_runtime.launch_from_config(
-                        payload or {},
-                        dashboard_url=self.headers.get("Origin"),
-                    )
-                )
+                self._send_json(_with_its_study_key(app_runtime.launch_from_config(
+                    payload or {},
+                    dashboard_url=self.headers.get("Origin"),
+                )))
                 return
             if path == "/api/agent/model":
                 # Reading and setting which AI model to ask. The key is
@@ -2052,13 +2093,11 @@ def make_handler(
                 named = self._path_for(request.get("path"))
                 if named is None:
                     return
-                self._send_json(
-                    app_runtime.launch_existing_config(
-                        named,
-                        output=request.get("output"),
-                        dashboard_url=self.headers.get("Origin"),
-                    )
-                )
+                self._send_json(_with_its_study_key(app_runtime.launch_existing_config(
+                    named,
+                    output=request.get("output"),
+                    dashboard_url=self.headers.get("Origin"),
+                )))
                 return
             if path == "/api/check-config":
                 # A config that has been elsewhere -- edited by hand, carried
@@ -2108,6 +2147,18 @@ def make_handler(
                     return
                 self._send_json(app_runtime.save_config_for_elsewhere(payload or {}))
                 return
+            if path == "/api/defaults-file":
+                # A setting of This folder set, taken back or given its
+                # reason, written into the file and checked as any defaults
+                # file is; refused with why, the file left as it was.
+                if hosting is not None:
+                    self._send_json({"ok": False, "reason": "Not changed here when the GUI is served."},
+                                    status=403)
+                    return
+                from fastmdxplora.gui.settings_page import defaults_changed
+
+                self._send_json(defaults_changed(app_runtime.exploration_root, payload or {}))
+                return
             if path == "/api/config":
                 # The file the page would run, handed back instead. A laptop
                 # is a poor place to run fifty nanoseconds and a cluster is a
@@ -2126,14 +2177,19 @@ def make_handler(
                 # says the values the run takes, and a value set back to
                 # FastMDXplora's own over yours is kept in the file. A
                 # defaults file that is wrong is said by the schema's route,
-                # and the file is written without it meanwhile.
+                # and the file is written without it meanwhile. Bound beyond
+                # loopback the folder's file is neither shown nor said, as the
+                # schema's route offers FastMDXplora's own values there: the
+                # config is drawn from those, as the form's fields are.
                 from fastmdxplora.config.loader import ConfigError
                 from fastmdxplora.gui.agent_panel import your_defaults
 
-                try:
-                    yours = your_defaults(app_runtime)
-                except ConfigError:
-                    yours = None
+                yours = None
+                if allow_control:
+                    try:
+                        yours = your_defaults(app_runtime)
+                    except ConfigError:
+                        yours = None
                 self._send_json(
                     config_yaml(request, full=bool(request.get("full")), defaults=yours)
                 )
@@ -4317,6 +4373,7 @@ def _setup_details(setup_manifest: dict[str, Any]) -> dict[str, Any]:
             params.get("force_field"),
         ),
         "water_model": _first_present(
+            forcefield.get("water_name"),
             forcefield.get("water_model"),
             params.get("water_model"),
         ),

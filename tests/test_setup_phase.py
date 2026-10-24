@@ -211,7 +211,7 @@ class TestPrepareSystem:
         choice = resolve_forcefield(None)
         assert choice.supports_ligand
         assert choice.small_molecule_forcefield
-        assert _prepare_mod.DEFAULT_PADDING_NM == 1.0
+        assert _prepare_mod.DEFAULT_PADDING_NM == 2.0
         assert _prepare_mod.DEFAULT_IONIC_STRENGTH_M == 0.15
 
     def test_missing_input_raises(self, tmp_path: Path):

@@ -101,8 +101,11 @@ def _means(base: Path) -> list[str]:
                 elif why:
                     lines.append(f"{label}: no mean; {why}.")
                 continue
+            # Its image note beside its verdict, which it does not change.
+            noted = f"; {quantity['noted']}" if quantity.get("noted") else ""
             if not quantity.get("determined"):
-                lines.append(f"{label}: {said}, not determined" + (f"; {why}." if why else "."))
+                lines.append(f"{label}: {said}, not determined" + (f"; {why}" if why else "")
+                             + noted + ".")
                 continue
             samples = quantity.get("samples")
             discard, frames = quantity.get("from_frame"), quantity.get("of_frames")
@@ -115,7 +118,7 @@ def _means(base: Path) -> list[str]:
                 # have withheld a mean still drifting; the report may differ.
                 said += (", determined by an earlier version's rules (Analyze again "
                          "to judge it by this version's)")
-            lines.append(f"{label}: {said}.")
+            lines.append(f"{label}: {said}{noted}.")
     if not any(row.get("analysis") == "thermodynamics" for row in rows):
         lines += _thermodynamic_means(base)
     return lines
@@ -136,13 +139,15 @@ def _thermodynamic_means(base: Path) -> list[str]:
         said = means.get(key)
         if not isinstance(said, dict) or not said.get("said"):
             continue
+        noted = f"; {said['noted']}" if said.get("noted") else ""
         if said.get("determined"):
             samples = said.get("samples")
             more = f", {samples:.0f} independent samples" if isinstance(samples, (int, float)) else ""
-            lines.append(f"{label}: {said['said']}{more}.")
+            lines.append(f"{label}: {said['said']}{more}{noted}.")
         else:
             why = _first_clause(said.get("why"))
-            lines.append(f"{label}: {said['said']}, not determined" + (f"; {why}." if why else "."))
+            lines.append(f"{label}: {said['said']}, not determined" + (f"; {why}" if why else "")
+                         + noted + ".")
     return lines
 
 
@@ -260,7 +265,9 @@ def _not_analysed(base: Path) -> str:
     if status in ("stopped", "failed", "interrupted"):
         # What to do is the fix card's: carried on where a checkpoint was
         # written, run again or changed where none was or the run failed.
-        said += (" It ended before it finished: What would fix it, on the Overview, "
+        # For a stop asked for, the card is titled "To carry it on".
+        card = "To carry it on" if status == "stopped" else "What would fix it"
+        said += (f" It ended before it finished: {card}, on the Overview, "
                  "says what to do first.")
     return said
 
@@ -280,16 +287,39 @@ def _long_enough(base: Path) -> str:
         parts.append("What they need, every mean withheld counted: " + text)
         if command:
             parts.append(f"To run it, extending the study in place:\n\n`{command}`")
+        parts.extend(_not_a_longer_run_alone(base))
     elif _determined(supports):
         parts.append("By its records, yes. " + supports)
+        parts.extend(_the_image_beside(base, determined=True))
     elif supports:
         parts.append("Not by its records. " + supports)
         parts.append(_no_figure(base))
+        parts.extend(_not_a_longer_run_alone(base))
     else:
         parts.append("Its records do not say yet: no analysis has judged whether its "
                      "series equilibrated.")
     parts.append(TRAPPED)
     return "\n\n".join(parts)
+
+
+def _not_a_longer_run_alone(base: Path) -> list[str]:
+    """Where the solute met its own image in every frame, that the longer
+    run asked for does not lift that bias, as the report says it
+    (:func:`fastmdxplora.image_note.longer_run_said`)."""
+    from fastmdxplora.image_note import longer_run_said, recorded_finding
+
+    lifted = longer_run_said(recorded_finding(base))
+    return [lifted] if lifted else []
+
+
+def _the_image_beside(base: Path, *, determined: bool) -> list[str]:
+    """Beside means all determined, where the solute met its own image in
+    every frame, that they may still be biased by it, and what lifts it
+    (:func:`fastmdxplora.image_note.determined_said`): never "yes" alone."""
+    from fastmdxplora.image_note import determined_said, recorded_finding
+
+    said = determined_said(recorded_finding(base)) if determined else ""
+    return [said] if said else []
 
 
 def _strengthen(base: Path) -> str:
@@ -305,19 +335,27 @@ def _strengthen(base: Path) -> str:
         parts.append("What they need: " + text)
         if command:
             parts.append(f"`{command}`")
+        parts.extend(_not_a_longer_run_alone(base))
     elif _determined(supports):
         parts.append("Its means are determined, so a longer run of this one adds "
                      "precision but not a check.")
+        parts.extend(_the_image_beside(base, determined=True))
     elif supports:
         parts.append("A longer run first. " + supports)
         parts.append(_no_figure(base))
+        parts.extend(_not_a_longer_run_alone(base))
     of = study_a_run_belongs_to(base)
     if of:
         parts.append(f"This run is one of the study {of.get('study')}. Its Report page "
                      "sets the runs' spread against each run's own error, which is the "
                      "check a single run cannot make.")
     else:
-        parts.append("Then replicas. " + TRAPPED)
+        # In contact with its image in every frame: replicas in the same
+        # box sample the same contact, as said above.
+        from fastmdxplora.image_note import longer_run_said, recorded_finding
+
+        larger = " in a larger box" if longer_run_said(recorded_finding(base)) else ""
+        parts.append(f"Then replicas{larger}. " + TRAPPED)
     return "\n\n".join(parts)
 
 

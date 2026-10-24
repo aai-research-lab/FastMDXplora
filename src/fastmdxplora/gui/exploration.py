@@ -11,6 +11,7 @@ science.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -194,13 +195,28 @@ class _AdoptedProcess:
     reports 0 if the study's manifest says it completed, else 1.
     """
 
-    def __init__(self, pid: int, root: Path) -> None:
+    def __init__(self, pid: int, root: Path, record: Mapping[str, Any] | None = None) -> None:
         self.pid = int(pid)
         self.root = Path(root)
+        #: The run's process record, by which it is told from a process
+        #: given its number since (`_what_the_process_is`).
+        self.record: Mapping[str, Any] = record if record is not None else {"pid": self.pid}
         self._returncode: int | None = None
 
     def _alive(self) -> bool:
-        return _process_alive(self.pid)
+        if not _process_alive(self.pid):
+            return False
+        # Its start where the record has it: a number given to another
+        # process once the run ended is not the run going on.
+        from fastmdxplora.orchestrator import process_start_ticks
+
+        ticks = self.record.get("start_ticks")
+        now = process_start_ticks(self.pid) if isinstance(ticks, int) else None
+        return now is None or now == ticks
+
+    def what_it_is(self) -> str:
+        """What the process is now to the run held (`_what_the_process_is`)."""
+        return _what_the_process_is(self.pid, self.root, self.record)
 
     def poll(self) -> int | None:
         if self._returncode is not None:
@@ -213,10 +229,13 @@ class _AdoptedProcess:
         return self._returncode
 
     def terminate(self) -> None:
-        _terminate_process(self.pid)
+        # Never a process that is not the run: asked again before each signal.
+        if self.what_it_is() == "the run":
+            _terminate_process(self.pid)
 
     def kill(self) -> None:
-        _terminate_process(self.pid, force=True)
+        if self.what_it_is() == "the run":
+            _terminate_process(self.pid, force=True)
 
     def wait(self, timeout: float | None = None) -> int:
         import time
@@ -253,9 +272,14 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
         rounds_of_a_study,
     )
 
-    manifest = _json_mapping(Path(root) / "batch_manifest.json")
+    with record_access.refusals_noted() as refused:
+        manifest = _json_mapping(Path(root) / "batch_manifest.json")
+    if refused and not manifest:
+        # Linked out of the study, it is not read (`record_access`): its runs
+        # are named by their folders, with no values or results of its.
+        manifest = {"planned": _runs_by_their_folders(Path(root))}
     planned = manifest.get("planned") or manifest.get("runs") or []
-    if not manifest or not isinstance(planned, list):
+    if not manifest or not isinstance(planned, list) or not planned:
         return None
     results = {r.get("run_id"): r for r in (manifest.get("runs") or []) if isinstance(r, dict)}
     entries = [entry for entry in planned if isinstance(entry, dict) and entry.get("run_id")]
@@ -353,6 +377,35 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
     return out
 
 
+def _runs_by_their_folders(root: Path) -> list[dict[str, Any]]:
+    """A study's runs as its `runs/` folder has them, for a study whose
+    batch manifest was not read: each by its folder's name alone."""
+    from fastmdxplora import record_access
+
+    try:
+        return [{"run_id": folder.name} for folder in sorted(record_access.iterdir(root / "runs"))
+                if not folder.name.startswith(".") and record_access.is_dir(folder)]
+    except OSError:
+        return []
+
+
+def _runs_held(root: Path) -> dict[str, Any]:
+    """The open folder's runs (`runs_of_a_study`) and, for a run of a study,
+    its study (`study_a_run_belongs_to`), read held to the study as its
+    pages read its records (`server._confined`): a batch manifest linked
+    out of the study is not read, its runs named by their folders, and it
+    is said not read (``unavailable``, ``not_read``). Paths are said as the
+    folder was opened."""
+    from fastmdxplora.gui.server import _as_opened, _confined, _said_not_read
+
+    answer = _said_not_read(_confined(Path(root), lambda inside: {
+        "runs": runs_of_a_study(inside), "run_of": study_a_run_belongs_to(inside)}))
+    if not isinstance(answer, dict):
+        return {}
+    inside, opened = str(Path(root).resolve()), str(root)
+    return answer if inside == opened else _as_opened(answer, inside, opened)
+
+
 def axes_that_differ(runs: list[dict[str, Any]]) -> list[str]:
     """The swept settings whose values differ between the runs, in the
     order they first appear."""
@@ -383,34 +436,70 @@ def _setting_and_unit(axis: str) -> tuple[str, str]:
 
 def setting_said(axis: str) -> str:
     """A swept setting as a column names it, in the words `run_label` says
-    a run by: "seed", "temperature (K)"."""
+    a run by: "seed", "temperature (K)"; a length by its name alone,
+    "duration", since each of its values carries its own unit
+    (`value_said`: "250 ps", "2 ns")."""
     name, unit = _setting_and_unit(axis)
-    return f"{name} ({unit})" if unit else name
+    return f"{name} ({unit})" if unit and unit != "ns" else name
+
+
+def value_said(axis: str, value: Any) -> str:
+    """A swept setting's value as a run is named by it: with its unit, and a
+    length in nanoseconds as every page says one, in picoseconds under one
+    nanosecond ("250 ps", not "0.25 ns")."""
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    _, unit = _setting_and_unit(axis)
+    if unit == "ns" and isinstance(value, (int, float)) and not isinstance(value, bool) \
+            and math.isfinite(value):
+        return length_said(value)
+    return f"{value}" + (f" {unit}" if unit else "")
+
+
+def lengths_said(record: dict[str, Any]) -> dict[str, Any]:
+    """A setting that differs (`config.diff`'s record: ``setting``,
+    ``first``, ``second``), a length in nanoseconds also said as every
+    page says one, in picoseconds under one nanosecond (``first_said``,
+    ``second_said``), as Compare and the Timeline give it."""
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    if str(record.get("setting", "")).endswith("_ns"):
+        for side in ("first", "second"):
+            value = record.get(side)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                record[f"{side}_said"] = length_said(value)
+    return record
 
 
 def run_label(values: dict[str, Any], axes: list[str] | None = None) -> str:
     """A run in a few words, by the values that set it apart: "seed 1",
-    "temperature 310 K", several joined by commas; "" with none. The setting
-    by its last part, `random_` left off and its unit after the value
-    ("random_seed = 1" was cut to "random_see…" in the sidebar)."""
+    "temperature 310 K", "duration 250 ps", several joined by commas; ""
+    with none. The setting by its last part, `random_` left off and its
+    value said with its unit (`value_said`) ("random_seed = 1" was cut to
+    "random_see…" in the sidebar)."""
     said = []
     for axis in (axes if axes is not None else list(values or {})):
         if axis not in (values or {}):
             continue
-        name, unit = _setting_and_unit(axis)
-        said.append(f"{name} {values[axis]}" + (f" {unit}" if unit else ""))
+        name, _ = _setting_and_unit(axis)
+        said.append(f"{name} {value_said(axis, values[axis])}")
     return ", ".join(said)
 
 
 def study_a_run_belongs_to(root: Path) -> dict[str, Any] | None:
     """For a run under a study of several: that study's folder and this run's
     swept values, so the page can say where it belongs and go back."""
+    from fastmdxplora import record_access
     from fastmdxplora.gui.browse import run_of
 
-    member = run_of(Path(root))
+    with record_access.refusals_noted() as refused:
+        member = run_of(Path(root))
+    study = Path(root).parent.parent
+    if not member and refused and Path(root).parent.name == "runs":
+        # Its study's batch manifest not read: a run of it, by its folder.
+        member = {"study": study.name}
     if not member:
         return None
-    study = Path(root).parent.parent
     # Its study's runs, so the place can offer the others (place.js), and
     # this run by what sets it apart among them.
     runs = runs_of_a_study(study) or []
@@ -423,31 +512,95 @@ def study_a_run_belongs_to(root: Path) -> dict[str, Any] | None:
             "runs": runs}
 
 
-def _identify_run(pid: int, root: Path, argv: Any = None) -> bool | None:
-    """Whether the PID is this study's run: True, False, or None for cannot
-    tell yet.
+def _as_a_record(record: Any) -> Mapping[str, Any]:
+    """A run's process record; a bare command line (``argv``), as earlier
+    callers gave one, as a record of it alone."""
+    if isinstance(record, Mapping):
+        return record
+    return {"argv": record} if isinstance(record, list) else {}
 
-    False is definite -- the process is gone, or its command line was read
-    and names something else, which is what guards against a stale record
-    whose PID the OS has reused. None is not: the process is alive and its
-    command line could not be read, which on Windows means PowerShell did
-    not answer in time. Adopting on None would let Stop kill a process the
-    OS gave the number to, so it is never adopted on None -- but it is
-    asked again, rather than taken as a final answer.
+
+def _what_the_process_is(pid: int, root: Path, record: Any = None, *,
+                         asking: bool = False) -> str:
+    """What the process numbered ``pid`` is to the run that wrote
+    ``record`` in the study ``root``: the one test of identity every reader
+    asks (the page's word on the run, adopting it, the workspace's runs,
+    Stop, resume), so that none of them takes a process for the run that
+    another does not.
+
+    - "the run": it is the run;
+    - "gone": no process has the number;
+    - "another": another process given the number since;
+    - "not a run": alive, its command line not this run's, and nothing
+      says it began since (a run started from a script, a notebook or a
+      pool's worker has such a command line);
+    - "unread": alive, its command line not read yet (PowerShell did not
+      answer in time).
+
+    Where the record has the run's start in ticks since boot
+    (``start_ticks``, with ``boot``), the process is the run only where its
+    start is the same, whatever its command line: exact against a reused
+    number, and unmoved by a step of the clock. A record written before
+    them is judged by its command line: one carrying the arguments the run
+    recorded is the run; where the record has no arguments (the Python
+    API's), or the command line is not a run's, a process begun more than
+    a few seconds after the record was written is another one
+    (`telemetry._began_since`, on Linux). ``asking``: the process is the
+    one asking or what started it, whose command line is not read: it is the
+    run unless it began more than a few seconds after the record was written.
     """
+    from fastmdxplora.gui.telemetry import _began_since
+    from fastmdxplora.orchestrator import process_start_ticks, this_machine
+
+    record = _as_a_record(record)
     if not _process_alive(pid):
-        return False
+        return "gone"
+    ticks = record.get("start_ticks")
+    if isinstance(ticks, int) and not isinstance(ticks, bool):
+        there, here = record.get("boot") or "", this_machine().get("boot") or ""
+        if there and here and there != here:
+            return "gone"
+        now = process_start_ticks(pid) if there and here else None
+        if now is not None:
+            return "the run" if now == ticks else "another"
+    argv = record.get("argv")
+    arguments = isinstance(argv, list) and bool(" ".join(str(a) for a in argv[1:]).split())
+    if asking:
+        # Its command line is not read, so it is judged by when it began: the
+        # asking process begun since the record was written is not the run.
+        return "another" if _began_since(pid, dict(record)) else "the run"
     line = _command_line_of(pid)
     if line is None:
-        return None
-    return _command_line_is_a_run(line, root, argv)
+        return "unread"
+    a_run = _command_line_is_a_run(line, root, argv)
+    if a_run and arguments:
+        return "the run"
+    if _began_since(pid, dict(record)):
+        return "another"
+    return "the run" if a_run else "not a run"
 
 
-def _process_is_this_run(pid: int, root: Path, argv: Any = None) -> bool:
-    """The PID is alive and its command line is the one the run recorded,
-    or, for a record without one, names this study or the program.
-    "Cannot tell" is not "yes": undetermined is not adopted."""
-    return _identify_run(pid, root, argv) is True
+def _identify_run(pid: int, root: Path, record: Any = None) -> bool | None:
+    """Whether the PID is this study's run (`_what_the_process_is`): True,
+    False, or None for cannot tell yet. ``record`` is the run's process
+    record (or, as earlier callers gave it, its ``argv`` alone).
+
+    False is definite -- the process is gone, or another process was given
+    its number, or its command line was read and names something else.
+    None is not: the process is alive and its command line could not be
+    read, which on Windows means PowerShell did not answer in time.
+    Adopting on None would let Stop kill a process the OS gave the number
+    to, so it is never adopted on None -- but it is asked again, rather
+    than taken as a final answer.
+    """
+    said = _what_the_process_is(pid, root, record)
+    return True if said == "the run" else None if said == "unread" else False
+
+
+def _process_is_this_run(pid: int, root: Path, record: Any = None) -> bool:
+    """The PID is this run (`_what_the_process_is`). "Cannot tell" is not
+    "yes": undetermined is not adopted."""
+    return _identify_run(pid, root, record) is True
 
 
 def _carries_the_recorded_arguments(tokens: list[str], argv: list[str]) -> bool:
@@ -622,6 +775,26 @@ def _json_mapping_or_yaml(path: Path) -> dict[str, Any]:
     except (OSError, yaml.YAMLError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _process_record_held(root: Path) -> dict[str, Any]:
+    """The run's process record in ``root``, read held to the study as the
+    pages read its records (`server._confined`): one linked out of the
+    study is not read, so its process is never adopted or signalled; it is
+    said in the log."""
+    from fastmdxplora.gui.server import _confined
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    answer = _confined(Path(root), lambda inside: {
+        "record": _json_mapping(inside / RUN_PROCESS_FILE)})
+    if not isinstance(answer, dict):
+        return {}
+    if answer.get("unavailable"):
+        logger.info("%s in %s was not read: it leads outside the study, so its process "
+                    "is not taken for the run.", RUN_PROCESS_FILE, root)
+        return {}
+    record = answer.get("record")
+    return dict(record) if isinstance(record, dict) else {}
 
 
 def _json_mapping(path: Path) -> dict[str, Any]:
@@ -1069,6 +1242,8 @@ class DashboardRuntime:
                 status = "failed"
             no_study = self._no_study_open()
             open_root = None if no_study or self.data_stale else self.active_root
+            # Its runs, and the study it is a run of, read held to the study.
+            held = _runs_held(open_root) if open_root else {}
             return {
                 "mode": "home" if open_root is None else "run",
                 "status": status,
@@ -1089,11 +1264,14 @@ class DashboardRuntime:
                 "log_path": str(self.log_path) if self.log_path else None,
                 # The runs of a study of several, each with its state, so the
                 # page can list them and open one. None for a study of one.
-                "runs": runs_of_a_study(open_root) if open_root else None,
+                "runs": held.get("runs"),
                 # A study that analysed a trajectory and ran no simulation
                 # here, so has no record of one to show or narrate.
                 "analysed_only": _analysed_only(open_root) if open_root else False,
-                "run_of": study_a_run_belongs_to(open_root) if open_root else None,
+                "run_of": held.get("run_of"),
+                # Its batch manifest, or its study's, linked out and not read.
+                **({key: held[key] for key in ("unavailable", "unavailable_why", "not_read")
+                    if key in held}),
                 "command": list(self.command),
                 "can_launch": not running,
                 # Whether this installation carries the demo study to open.
@@ -1596,9 +1774,7 @@ class DashboardRuntime:
         self._adoption_root = None
         if root is None or self.process is not None and self.process.poll() is None:
             return False
-        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
-
-        record = _json_mapping(Path(root) / RUN_PROCESS_FILE)
+        record = _process_record_held(Path(root))
         pid = record.get("pid")
         if not isinstance(pid, int) or pid <= 0:
             return False
@@ -1608,7 +1784,7 @@ class DashboardRuntime:
             # Written on another machine, or before a reboot: its process
             # number names nothing of this study here.
             return False
-        identity = _identify_run(pid, Path(root), record.get("argv"))
+        identity = _identify_run(pid, Path(root), record)
         if identity is None:
             # Alive, and not yet identifiable. Not adopted -- the sidebar
             # says idle, which is the honest word for "cannot tell" -- but
@@ -1624,7 +1800,7 @@ class DashboardRuntime:
 
     def _hold(self, root: Path, record: Mapping[str, Any], pid: int) -> None:
         """Take a run this server did not start as the one it is watching."""
-        self.process = _AdoptedProcess(pid, Path(root))
+        self.process = _AdoptedProcess(pid, Path(root), dict(record))
         self.running_root = Path(root)
         self.process_started_at = str(record.get("started_at") or _utc_now())
         self.process_finished_at = None
@@ -1650,8 +1826,6 @@ class DashboardRuntime:
     def _keep_trying_to_adopt(self, root: Path) -> None:
         import time
 
-        from fastmdxplora.orchestrator import RUN_PROCESS_FILE
-
         deadline = time.monotonic() + ADOPTION_RETRY_SECONDS
         while time.monotonic() < deadline:
             time.sleep(ADOPTION_RETRY_INTERVAL)
@@ -1660,13 +1834,13 @@ class DashboardRuntime:
                     return  # the person has opened a different study
                 if self.process is not None and self.process.poll() is None:
                     return  # already watching a run
-            record = _json_mapping(root / RUN_PROCESS_FILE)
+            record = _process_record_held(root)
             pid = record.get("pid")
             if not isinstance(pid, int) or pid <= 0:
                 return  # the run finished and took its record with it
             # Outside the lock: on Windows this can take ten seconds, and
             # the page's own requests must not wait behind it.
-            identity = _identify_run(pid, root, record.get("argv"))
+            identity = _identify_run(pid, root, record)
             if identity is False:
                 return
             if identity is True:
@@ -1905,6 +2079,9 @@ class DashboardRuntime:
 
     def stop(self) -> dict[str, Any]:
         with self.lock:
+            refused = self._not_the_run_held()
+            if refused is not None:
+                return {"stopped": False, "detail": refused, "state": self.snapshot()}
             self._refresh_process()
             if self.process is None or self.process.poll() is not None:
                 return {"stopped": False, "detail": "No workflow is currently running.", "state": self.snapshot()}
@@ -1941,6 +2118,29 @@ class DashboardRuntime:
                            "carries it on."),
                 "state": self.snapshot(),
             }
+
+
+    def _not_the_run_held(self) -> str | None:
+        """Why the run adopted here is not signalled, where its process is
+        no longer certainly the run (`_what_the_process_is`): its number
+        given to another process since, or what it is not told just now.
+        None where it is the run, or nothing adopted is held. Called with
+        the lock held."""
+        held = self.process
+        if not isinstance(held, _AdoptedProcess):
+            return None
+        found = held.what_it_is()
+        if found in ("the run", "gone"):
+            return None
+        if found == "unread":
+            return (f"Nothing was stopped: whether process {held.pid} is still the study's run "
+                    "could not be told just now. Press Stop again in a moment.")
+        # Not the run: no longer held, so the page says the study as its
+        # records have it.
+        self.process = None
+        self.running_root = None
+        return (f"Nothing was stopped: process {held.pid}, which the study's record names, is "
+                "no longer its run; the system has given its number to another process.")
 
 
 def _record_the_stop(root: Path) -> None:

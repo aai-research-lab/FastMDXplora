@@ -813,3 +813,32 @@ class TestTheRunSaysHowFarThroughItIs:
                       if label.startswith("Production")]
         assert len(production) > 3
         assert production == sorted(production) and production[-1] == 100
+
+
+def test_a_run_after_a_batch_run_in_process_speaks_as_before(tmp_path, monkeypatch) -> None:
+    """A batch run in process sets FASTMDX_LOG_STYLE=plain while it runs, and
+    a presenter first made then was quiet for everything after it in that
+    process: a single run after a batch in one Python session said nothing."""
+    import os
+
+    import fastmdxplora
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.utils import presenter
+
+    monkeypatch.delenv("FASTMDX_LOG_STYLE", raising=False)
+    made_inside = []
+
+    class _Run:
+        def __init__(self, **_):
+            made_inside.append(presenter.get_presenter())
+
+        def explore(self, **_):
+            return []
+
+    monkeypatch.setattr(fastmdxplora, "FastMDXplora", _Run)
+    spec = {"run_id": "r1", "system": "1UBQ", "sweep_values": {}, "options": {}}
+    result = explorer._execute_run(spec, str(tmp_path / "r1"), None, None, False, None)
+    assert result.status == "ok"
+    assert made_inside and made_inside[0].quiet, "inside the batch run it is quiet"
+    assert "FASTMDX_LOG_STYLE" not in os.environ
+    assert not presenter.get_presenter().quiet, "after it, a run speaks"

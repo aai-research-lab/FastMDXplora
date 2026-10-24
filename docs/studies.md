@@ -57,18 +57,47 @@ Position and distance restraints are in kJ/mol/nm²; angle and torsion are in
 kJ/mol/rad². The units differ because the coordinate does, and one number for
 both is how an angle restraint ends up a thousand times too weak.
 
+Each restraint keeps its own force constant. The ladder in `restraint_release`
+is in kJ/mol/nm² and is what a restraint given no force constant runs at (the
+short form above); one with its own is stepped down in the same proportions,
+so the distance above runs at 500, 250, 50 and 0, and the torsion at 50, 25, 5
+and 0.
+
+A distance, angle or torsion with **no `target`** is held where it is in the
+prepared structure, the one position restraints hold to (minimisation runs
+with the restraints on), and the value it was held at is recorded with the
+run. In a periodic box every separation is the nearest image, as the forces
+measure it. A target is in nm or radians; one outside what the coordinate can
+be (an angle of 109.5, meant in degrees) is refused.
+
+A `restraint_release` other than the default cannot be given with
+`restrain_production`: kept through production, the restraints are never
+stepped down.
+An angle or torsion takes its atoms in the order an `index` selection writes
+them ("index 8 6 4" has its apex at atom 6); any other selection is a set and
+comes in index order.
+
 ### What a restraint is, and is not
 
-Each is a harmonic penalty: the force grows with the square of the departure,
-so a restraint is a spring rather than a wall. A constrained atom cannot move;
-a restrained one can, and the restraint says what it cost.
+Each is a spring rather than a wall, and every kind is written in one form:
+E = k x² with **no factor of one half** (the form AMBER and CHARMM use), x
+being the departure in nm or radians; a torsion is 2k(1 − cos x), the same
+near its target and continuous across π. GROMACS and PLUMED write ½ k x², so
+the same spring has twice the k there: GROMACS's usual 1000 kJ/mol/nm² is 500
+here. This package's umbrella and steered windows follow PLUMED. A
+constrained atom cannot move; a restrained one can, and the restraint says
+what it cost.
 
 **They are released before production.** A biased production run samples the
 bias, and quantities of flexibility computed from one — RMSF, clustering,
 dimensionality reduction — describe the restraint as much as the system.
-Keeping them is possible with `restrain_production: true`, which logs what it
-costs and records it with the results, so a reader comparing that trajectory
-against a free one can tell which they have.
+Keeping them is possible with `restrain_production: true`, which holds them
+at their full force constants from the first step to the last (letting go
+during equilibration only to take hold again when production starts is the
+sudden change the ladder exists to avoid), logs what it costs and records it
+with the results, so a reader comparing that trajectory against a free one
+can tell which they have. Otherwise production is free whatever the ladder's
+last step.
 
 ### Two refusals
 

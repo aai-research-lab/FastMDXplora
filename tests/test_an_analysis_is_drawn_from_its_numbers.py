@@ -74,7 +74,8 @@ class TestTheSeries:
         assert data["x"] == [0.11, 0.16, 0.21, 0.26]
         assert (data["x_label"], data["unit"], data["label"]) == ("Time (ns)", "nm", "RMSD")
         assert data["mean"] == {"value": 0.1025, "error": 0.0004, "effective_samples": 12.0,
-                                "discard": 1, "from_x": 0.16, "not_a_measurement": None}
+                                "discard": 1, "from_x": 0.16, "not_a_measurement": None,
+                                "noted": None}
 
     def test_without_a_clock_the_axis_is_the_frame(self, tmp_path) -> None:
         _manifest(tmp_path)

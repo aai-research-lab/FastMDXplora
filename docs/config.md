@@ -143,9 +143,41 @@ decisions:
 
 The file holds the blocks that say how a study is simulated (`setup`,
 `simulation`, `analysis`, `report`, `execution`), each setting checked as
-a Config's is, and a `why` for any of them. It never says what is
-simulated: `systems`, `output`, `sweep` and the study's own keys are
-refused in it.
+a Config's is, and a `why` for any of them. A folder's defaults say how
+studies are run, never what is simulated or which study's files are read:
+`systems`, `output`, `sweep` and the study's own keys are refused in it,
+and so are the settings of one study, since every new study made in the
+folder would take them: the study it continues or is prepared from
+(`simulation.resume_from`, `resume_unsealed`, `extra_ns`, `setup_from`,
+`prepared_from`), the files it analyses (`analysis.trajectory`,
+`analysis.topology`), its structure, ligand, mutations, chains and model
+(`setup.fixed_pdb`, `ligand`, `mutations`, `chains`, `model`), where its
+starting coordinates come from (`setup.ligand_pose`), and every setting
+that names one structure's parts: a ligand's charge and name
+(`setup.ligand_net_charge`, `ligand_name`, `ligand_resname`,
+`simulation.dashboard_ligand_resname`), residues by their numbers
+(`setup.residue_states`, `report.region_highlights`), the chain mutated
+(`setup.mutation_chain`), the bilayer's place in the structure's frame
+(`setup.membrane_center_z_nm`), a structure oriented by hand
+(`setup.membrane_orientation_checked`, which turns off the membrane's
+stops for a tilted structure and one with no apolar belt), a restraint of
+kind distance, angle or torsion in `simulation.restrain`, which names
+particular atoms, and one study's title (`report.title`). So are the
+biasing blocks (`simulation.umbrella`, `steered`, `metadynamics`,
+`plumed`), which bias one study's system along variables chosen for it,
+and the analyses' options of one structure in `analysis.options`: the
+atoms a distance is measured between (`pair_distance.selection_a`,
+`pair_distance.selection_b`), the ligand of any analysis
+(`ligand_resname`), its charge and chemistry
+(`pl_interactions.ligand_net_charge`, `pl_interactions.ligand_chemistry`),
+one protein's measured order parameters and the residues left out of
+their comparison (`order_parameters.reference`,
+`order_parameters.reference_exclude`), one structure's deposited file
+(`bfactor_comparison.structure`) and one study's state record
+(`thermodynamics.state_csv`). Position restraints on a selection, and the
+selections every structure has (`protein`, `name CA`, `water and name O`,
+as `rdf`, `coordination_number` and the ligand analyses' `protein_selection`
+take them), are a lab's.
 
 **Which file.** The nearest `fastmdx-defaults.yml` in the study's folder or
 a folder above it, as git finds its repository, stopping at your home
@@ -308,6 +340,12 @@ analysis:
 What each analysis accepts is in [The FastMDXplora analyses](analyses.md), and
 the GUI shows it beside each analysis. A misspelled option is refused rather
 than ignored.
+
+Clustering checks its frame-by-frame matrix against this machine's memory
+before it makes it, and where it is refused, `cluster: {stride: 4}` clusters
+every fourth frame (the refusal names the stride that fits). The whole
+matrix is written only with `cluster: {save_full_matrix: true}`. See
+[Conformations](analyses.md#conformations).
 
 ---
 

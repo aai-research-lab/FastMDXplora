@@ -136,7 +136,7 @@ def _write(folder: Path, tags: list[str], note: str,
             json.dump(record, out, ensure_ascii=False, indent=2)
         os.replace(temporary, folder / TAGS_FILE)
     except OSError as exc:
-        return {"ok": False, "reason": f"The study's tags could not be kept in its folder: "
+        return {"ok": False, "reason": f"The study's tags could not be saved in its folder: "
                                        f"{exc.strerror or exc}."}
     said: dict[str, Any] = {"ok": True, "tags": tags, "note": note}
     if when:

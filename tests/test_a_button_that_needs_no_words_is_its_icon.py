@@ -46,7 +46,7 @@ def test_the_buttons_are_their_icons(tmp_path) -> None:
             page.goto(session.url + "#studies", wait_until="domcontentloaded")
             page.wait_for_function("() => window.FastMDXDialog")
             corners = {}
-            for dialog in ("prefs-dialog", "cite-dialog", "viewer-help", "agent-settings"):
+            for dialog in ("cite-dialog", "viewer-help", "agent-settings"):
                 page.evaluate(f"() => window.FastMDXDialog.open('{dialog}')")
                 corners[dialog] = page.evaluate(_CORNER, dialog)
                 page.click(f"#{dialog} .dialog-x")

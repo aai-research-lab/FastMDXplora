@@ -56,11 +56,12 @@ def test_no_page_shows_it(page):
 
 
 def test_the_stopping_rule_speaks_of_determining():
-    from fastmdxplora.simulation.stopping import _DECIDED, _OUTCOME, rule_said
+    from fastmdxplora.simulation.stopping import _OUTCOME, round_decided, rule_said
 
     assert _OUTCOME["met"] == "Determined as asked"
     assert _OUTCOME["ceiling"] == "Not determined as asked"
-    assert _DECIDED["met"] == "stopped: determined as asked"
+    assert round_decided({"decision": "met"}, last=True, record={"outcome": "met"})["said"] == (
+        "determined as asked, so stopped")
     assert rule_said({"measures": [{"analysis": "rmsd", "standard_error": 0.01}],
                       "max_duration_ns": 20,
                       "independent_starts": "not_required"}).startswith(

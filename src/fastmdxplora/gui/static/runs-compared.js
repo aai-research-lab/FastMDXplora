@@ -63,7 +63,8 @@
       data.completed + " of " + data.runs.length + " runs completed" +
       (data.so_far ? "; " + data.so_far + " read as far as their finished pieces go, between rounds"
         : "") +
-      (data.replicas ? "; replicas, differing only by seed" : "");
+      // How they differ, as every page says it (batch/aggregate.py).
+      (data.replicas ? "; replicas, " + data.replicas_said : "");
 
     var table = document.getElementById("runs-compared-table");
     table.innerHTML = "";
@@ -99,8 +100,11 @@
       }
       row.appendChild(name);
       data.axes.forEach(function (axis) {
+        // As the server says it under its head: a length with its unit.
+        var said = (run.values_said || {})[axis.axis];
         var value = run.values[axis.axis];
-        row.appendChild(el("td", "is-varied mono", value === undefined || value === null ? "" : String(value)));
+        row.appendChild(el("td", "is-varied mono", said !== undefined ? said
+          : value === undefined || value === null ? "" : String(value)));
       });
       data.measures.forEach(function (m) {
         var cell = m.cells[i] || {};
@@ -126,6 +130,12 @@
             td.appendChild(mark);
           }
         }
+        if (cell.mean !== null && cell.mean !== undefined && cell.noted) {
+          // Its image note, said in full under the table (runs_compared.py).
+          var noted = el("span", "runs-compared-mark is-noted", "\u2020");
+          noted.title = cell.noted.charAt(0).toUpperCase() + cell.noted.slice(1) + ".";
+          td.appendChild(noted);
+        }
         row.appendChild(td);
       });
       body.appendChild(row);
@@ -140,6 +150,13 @@
       line.appendChild(el("strong", "", m.label + ". "));
       line.appendChild(document.createTextNode(m.said));
       said.appendChild(line);
+    });
+    data.measures.forEach(function (m) {
+      m.cells.forEach(function (c) {
+        if (!c.noted || c.mean === null || c.mean === undefined) return;
+        said.appendChild(el("p", "muted small runs-compared-noted", "\u2020 " +
+          (labels[c.run_id] || c.run_id) + ", " + m.label + ": " + c.noted + "."));
+      });
     });
     if (data.measures.some(function (m) { return m.cells.some(function (c) { return c.withheld; }); })) {
       said.appendChild(el("p", "muted small",

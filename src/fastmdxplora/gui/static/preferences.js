@@ -1,14 +1,15 @@
-/* Preferences, the citation and a study's own words, as dialogs over
- * whatever page is shown, as the Agent's settings are.
+/* The dialogs over whatever page is shown (the citation, the keys, a
+ * study's own words, the Agent's settings), and the preferences of this
+ * browser, which are on the Settings page (settings.js).
  *
  * FastMDXDialog opens and closes them: Escape, a click on the dimmed page
  * or Close shuts the one on top, focus stays inside while it is open and
  * goes back to what opened it. Each opened adds a step to the browser's
  * history, so Back closes it before it leaves the page, and Forward opens
- * it again. The preferences are kept in this browser
+ * it again. The preferences are saved in this browser
  * (`fmx.preferences`) and put into their fields before the page reads
- * them, so a reload keeps them; a study's display name and ligand residue
- * are kept by the study's folder (`fmx.study:<folder>`). Nothing here is
+ * them, so a reload has them; a study's display name and ligand residue
+ * are saved by the study's folder (`fmx.study:<folder>`). Nothing here is
  * sent to the server or written into a study.
  */
 (function () {
@@ -25,7 +26,7 @@
       try {
         if (value === null) localStorage.removeItem(key);
         else localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) { /* a private window keeps nothing */ }
+      } catch (e) { /* a private window saves nothing */ }
     }
   };
 
@@ -48,7 +49,7 @@
   // step of its own. Those filled for what opened them (the palette, the
   // Agent's settings, a file's) have none, as Forward could not open them
   // again; Back closes them with the page's own step.
-  var AGAIN = ["prefs-dialog", "cite-dialog", "viewer-help"];
+  var AGAIN = ["cite-dialog", "viewer-help"];
   // The dialogs with a step of their own in the history, the newest last.
   var stepped = [];
   // A step back of a dialog's own on its way: what waits for it to land.
@@ -269,13 +270,13 @@
     var kept = store.read(KEY);
     if (kept && typeof kept === "object") put(kept);
 
-    // Kept once a person changes one, here or in the Viewer (its pocket
-    // cutoff is this one), and only then: until something is chosen, the
-    // defaults of the release in use apply.
-    // Kept at once: a page reloaded straight after a change, before a
+    // Saved once a person changes one, in Settings or in the Viewer (its
+    // pocket cutoff is this one), and only then: until something is
+    // chosen, the defaults of the release in use apply.
+    // Saved at once: a page reloaded straight after a change, before a
     // timer had run, came back without it. Here, on the document, this runs
     // after the field's own listeners (the Viewer's cutoff is copied into
-    // Preferences' field by the page's), so what they set is taken.
+    // Settings' field by the page's), so what they set is taken.
     document.addEventListener("change", function (e) {
       var id = e.target && e.target.id;
       if (ownFields().indexOf(id) >= 0 || id === "pocket-cutoff") {
@@ -286,11 +287,22 @@
     var restore = el("prefs-restore");
     if (restore) {
       restore.addEventListener("click", function () {
+        var was = taken();
         put(defaults());
         store.write(KEY, null);
-        var field = el(PREFERENCES.representation[0]);
-        if (field) field.dispatchEvent(new Event("change", { bubbles: true }));
-        // Writing nothing back: the change just sent would keep them.
+        // Each that moved is applied as though changed by hand: the
+        // Viewer, the clock and the charts read their own (Settings
+        // applies each as it is changed).
+        var now = taken();
+        Object.keys(PREFERENCES).forEach(function (name) {
+          var field = el(PREFERENCES[name][0]);
+          if (field && String(was[name]) !== String(now[name])) {
+            field.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+        // The Display size too, to Auto (theme-first.js).
+        if (window.FastMDXDisplay) window.FastMDXDisplay.choose("auto");
+        // Writing nothing back: the changes just sent would save them.
         setTimeout(function () { store.write(KEY, null); }, 0);
       });
     }
@@ -343,7 +355,7 @@
     Object.keys(STUDY_FIELDS).forEach(function (which) {
       var field = el(STUDY_FIELDS[which].field);
       var value = typeof kept[which] === "string" ? kept[which] : "";
-      // A name kept before IDs were four characters is not one.
+      // A name saved before IDs were four characters is not one.
       if (value && STUDY_FIELDS[which].check(STUDY_FIELDS[which].tidy(value))) value = "";
       if (field && field.value !== value) { field.value = value; changed = true; }
     });

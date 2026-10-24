@@ -74,8 +74,10 @@ class TestResolveForceField:
         assert c.water_model == "tip3p"
 
     def test_amber_fb15_xmls(self):
+        """With TIP3P-FB, the water it was developed with."""
         c = resolve_forcefield("amber-fb15")
-        assert c.xmls == ("amberfb15.xml", "tip3p.xml")
+        assert c.xmls == ("amberfb15.xml", "tip3pfb.xml")
+        assert c.water_model == "tip3p" and c.water_name == "TIP3P-FB"
 
     def test_case_insensitive(self):
         assert resolve_forcefield("CHARMM36").name == "charmm36"

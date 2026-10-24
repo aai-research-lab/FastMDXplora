@@ -799,7 +799,8 @@ def means_of(base: Path) -> dict[str, dict[str, Any]]:
                           "error": _finite(said.get("error")) if determined else None,
                           "unit": unit,
                           "withheld": None if determined else (str(said.get("why") or "")
-                                                               or "not determined")}
+                                                               or "not determined"),
+                          "noted": said.get("noted") or None}
         elif key in shown and found.get("not_read"):
             means[key] = {"label": label, "mean": None, "error": None, "unit": unit,
                           "withheld": None, "not_read": True}
@@ -929,12 +930,16 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
         if mean is None:
             continue
         withheld = mean.get("not_a_measurement") or None
+        from fastmdxplora.image_note import note_of, said_short
+
         out.append((name, {
             "label": _label_of(name),
             "mean": _finite(mean.get("mean")),
             "error": None if withheld else _finite(mean.get("standard_error")),
             "unit": unit_of(name, mean),
             "withheld": str(withheld) if withheld else None,
+            # Its image note beside its verdict (`image_note`).
+            "noted": said_short(note_of(mean)) or None,
         }))
     return out
 
@@ -1128,7 +1133,7 @@ def _ensemble_means(base: Path, of: int | None = None) -> list[dict[str, Any]]:
                     "error": together["error"], "spread": together["spread"],
                     "replicas": together["runs"],
                     "unit": unit_of(name, members[0]) if members else "",
-                    "withheld": together["withheld"],
+                    "withheld": together["withheld"], "noted": together["noted"],
                     **({"of": together["of"]} if "of" in together else {})})
     return out
 

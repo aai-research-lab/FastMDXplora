@@ -207,7 +207,15 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
                   if not all(a.residue.is_water for a in m)]
         # Older MDTraj raises from ``is_nucleic``; _is_polymer answers anyway.
         large = [m for m in solute if any(_is_polymer(a.residue) for a in m)]
-        anchors = large or solute or topology.guess_anchor_molecules()
+        anchors = large or solute
+        if not anchors:
+            # Solvent alone: MDTraj's guess finds no molecule above three
+            # atoms and raises, which left a water box wrapped atom by atom
+            # split. Any one molecule anchors it, as in `image_whole`.
+            try:
+                anchors = topology.guess_anchor_molecules()
+            except ValueError:
+                anchors = [max(molecules, key=len)] if molecules else []
         from fastmdxplora.analysis.imaging import image_trajectory
 
         image_trajectory(trajectory, anchors, [m for m in molecules if m not in anchors])
@@ -218,6 +226,9 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
             "molecules made whole, contacts and shape descriptors will be wrong "
             "in ways that do not announce themselves.", _named(exc),
         )
+        from fastmdxplora.analysis.base import IMAGING_FAILED, _mark
+
+        _mark(trajectory, IMAGING_FAILED)
         return trajectory
     if large:
         anchored = {id(m) for m in large}
@@ -580,6 +591,10 @@ def load_trajectory(
             , code="analysis.option.out_of_range")
         trajectory = trajectory[f:l]
 
+    # Measured once here, on what is handed on, so the analyses need not.
+    from fastmdxplora.analysis.base import mark_wholeness
+
+    mark_wholeness(trajectory)
     logger.debug(
         "Loaded trajectory: %d frames, %d atoms, %d residues",
         trajectory.n_frames,

@@ -743,7 +743,9 @@ def render(model: dict[str, Any], links: Links, *, view: str = "phases") -> str:
     folders (``view="folders"``), or both, one hidden (``"both"``, for the
     standalone dashboard, which has no server to ask for the other)."""
     if not model["files"]:
-        return ('<div class="files-empty">This study has not written any files yet.</div>')
+        # The page's one empty block (page-states.css), as every page says it.
+        return ('<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
+                'This study has not written any files yet.</span></div>')
     by_path = {entry["path"]: entry for entry in model["files"]}
     runs = {run["id"]: run["label"] for run in model["runs"]}
     tiles = "".join(_tile(tile, by_path, links, runs) for tile in model["keys"])

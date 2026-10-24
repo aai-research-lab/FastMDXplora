@@ -87,6 +87,6 @@ body:not(.has-study) .sb-live { display: none; }
  * Report printed its first screen and stopped. */
 @media print {
     :root { --status-bar-height: 0px; }
-    .status-bar, .sb-stop-ask { display: none !important; }
+    .status-bar, .sb-stop-ask, .skip-link { display: none !important; }
     .app-shell, .sidebar, .main, .side-panel { height: auto; }
 }

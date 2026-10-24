@@ -659,6 +659,84 @@ def test_a_mouse_wheel_moves_a_long_strip(browser, site):
         page.context.close()
 
 
+IN_VIEW = """() => {
+    const list = document.getElementById('study-tabs-list');
+    const current = list.querySelector('.study-tab.is-current').getBoundingClientRect();
+    const room = list.getBoundingClientRect();
+    return current.left >= room.left - 1 && current.right <= room.right + 1;
+}"""
+
+
+def test_a_tab_grown_before_the_open_one_keeps_it_in_view_unless_moved_away(browser, site):
+    """A tab before the open one that grows (a name drawn once the page's
+    font has come, a study's id read late) changes no size of the strip's
+    own, so the open tab was pushed out of view past the strip's right edge.
+    It is followed until the strip is moved away from it."""
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    key = "fmx.studyTabs:" + str(site["root"])
+    entries = {"tabs": [{"key": f"{n:016x}", "title": f"Study {n}", "page": "overview"} for n in range(10, 34)]
+               + [{"key": site["keys"][0], "title": "Alpha", "page": "overview"}]}
+    context.add_init_script("sessionStorage.setItem(" + json.dumps(key) + ", " + json.dumps(json.dumps(entries)) + ");")
+    page = _open(browser, site, context=context)
+    frames = "new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))"
+    grow = "px => { document.querySelector('#study-tabs-list .study-tab').style.minWidth = px + 'px'; }"
+    try:
+        page.wait_for_function(IN_VIEW)
+        page.evaluate(grow, 700)
+        page.evaluate(frames)
+        followed = page.evaluate(IN_VIEW)
+        # Moved away by a wheel, the strip stays where it was put.
+        box = page.locator("#study-tabs-list").bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, -4000)
+        page.wait_for_function("() => document.getElementById('study-tabs-list').scrollLeft < 50")
+        page.evaluate(frames)
+        left = page.evaluate("document.getElementById('study-tabs-list').scrollLeft")
+        page.evaluate(grow, 900)
+        page.evaluate(frames)
+        stayed = page.evaluate("document.getElementById('study-tabs-list').scrollLeft")
+        assert page.errors == []
+    finally:
+        page.context.close()
+    assert followed
+    assert abs(stayed - left) <= 1, (left, stayed)
+
+
+def test_a_strip_moved_by_the_wheel_stays_put_through_a_redraw_before_it_scrolls(browser, site):
+    """The strip followed the open tab until the scroll event a frame after
+    the wheel, so a redraw in between (a study's id read, a switch begun
+    elsewhere) scrolled the open tab back into view."""
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    key = "fmx.studyTabs:" + str(site["root"])
+    entries = {"tabs": [{"key": f"{n:016x}", "title": f"Study {n}", "page": "overview"} for n in range(10, 34)]
+               + [{"key": site["keys"][0], "title": "Alpha", "page": "overview"}]}
+    context.add_init_script("sessionStorage.setItem(" + json.dumps(key) + ", " + json.dumps(json.dumps(entries)) + ");")
+    page = _open(browser, site, context=context)
+    frames = "new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))"
+    try:
+        page.wait_for_function(IN_VIEW)
+        page.evaluate(frames)
+        moved = page.evaluate("""() => {
+            const list = document.getElementById('study-tabs-list');
+            const before = list.scrollLeft;
+            list.dispatchEvent(new WheelEvent('wheel', {deltaY: -4000, bubbles: true, cancelable: true}));
+            const wheeled = list.scrollLeft;
+            // Drawn again in the same task: a switch begun and ended elsewhere.
+            const dashboard = window.FastMDXDashboard;
+            const held = dashboard.beginStudySwitch();
+            if (!held) dashboard.endStudySwitch();
+            return {before, wheeled, held};
+        }""")
+        page.evaluate(frames)
+        left = page.evaluate("document.getElementById('study-tabs-list').scrollLeft")
+        assert page.errors == []
+    finally:
+        page.context.close()
+    assert moved["held"] == ""
+    assert moved["before"] > 50 and moved["wheeled"] < 50, moved
+    assert left < 50, (moved, left)
+
+
 LAYOUT = """() => {
     const box = el => el && el.getClientRects().length ? el.getBoundingClientRect() : null;
     const visible = el => el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden';
@@ -1203,7 +1281,7 @@ def test_without_session_storage_the_strip_says_open_studies_are_not_kept(browse
         get() { throw new DOMException('denied', 'SecurityError'); }});""")
     page = _open(browser, site, context=context)
     try:
-        expect(page.locator("#study-tabs-unkept")).to_contain_text("Open studies are not kept in this window")
+        expect(page.locator("#study-tabs-unkept")).to_contain_text("Open studies are not saved in this window")
         assert page.errors == []
     finally:
         page.context.close()
@@ -1447,7 +1525,7 @@ def test_a_window_whose_study_changed_under_it_says_so_and_keeps_its_words_for_t
         second.wait_for_function("key => window.FastMDXDashboard.state.studyShown === key", arg=site["keys"][2])
         expect(second.locator("#dashboard-toast")).to_contain_text("was opened elsewhere")
         expect(second.locator("#agent-request")).to_have_value("")
-        expect(second.locator("#agent-unsent-note")).to_contain_text("is kept for it")
+        expect(second.locator("#agent-unsent-note")).to_contain_text("is saved for it")
         assert dict(_kept_words(second))[site["keys"][1]]["words"] == "A question about the second study."
         assert site["keys"][2] not in dict(_kept_words(second))
         # Back in the second study, the words are there again.

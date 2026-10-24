@@ -67,6 +67,205 @@ def test_the_file_is_checked_as_part_of_a_config(tmp_path):
         assert DEFAULTS_FILE in str(caught.value)
 
 
+@pytest.mark.parametrize("setting, value", [
+    ("simulation.resume_from", "runs/old"), ("simulation.resume_unsealed", True),
+    ("simulation.setup_from", "runs/old"), ("simulation.prepared_from", "runs/old"),
+    ("simulation.extra_ns", 5.0), ("analysis.trajectory", "/data/old/production.dcd"),
+    ("analysis.topology", "/data/old/topology.pdb"), ("setup.fixed_pdb", "prepared.pdb"),
+    ("setup.ligand", "ligand.sdf"), ("setup.ligand_pose", "file"),
+    ("setup.mutations", ["L99A"]), ("setup.chains", ["A"]), ("setup.model", 2),
+    ("setup.ligand_net_charge", -1), ("setup.ligand_name", "BEN"),
+    ("setup.ligand_resname", "BEN"), ("setup.mutation_chain", "B"),
+    ("setup.residue_states", {"A:57": "HIP"}), ("setup.membrane_center_z_nm", 2.0),
+    ("simulation.dashboard_ligand_resname", "EPE"),
+    ("simulation.umbrella", {"collective_variable": "distance", "from": 0.3, "to": 1.5,
+                             "n_windows": 7, "force_constant": 5000}),
+    ("simulation.steered", {"collective_variable": "distance", "to": 1.5, "steps": 1000}),
+    ("simulation.metadynamics", {"collective_variable": "radius_of_gyration",
+                                 "selection": "protein and name CA", "sigma": 0.02}),
+    ("simulation.plumed", {"enabled": True, "script": "metad.dat"}),
+    ("setup.membrane_orientation_checked", True),
+    ("report.region_highlights", [{"label": "active site", "start": 57, "end": 102}]),
+    ("report.title", "Lysozyme L99A"),
+])
+def test_a_setting_of_one_study_is_refused_in_the_file(tmp_path, setting, value):
+    """A folder's defaults say how studies are run, never what is simulated
+    or which study's files are read: the study one study continues or is
+    prepared from, the files it analyses, its structure, ligand, mutations,
+    chains and model are that study's, and so is every setting that names
+    one structure's parts (a ligand's charge and name, residues by number,
+    the chain mutated, the bilayer's place and its orientation checked by
+    hand, a bias chosen for one system, one study's title). In the file,
+    every new study made in the folder would take them (`L99A` would mutate
+    every protein, `ligand_net_charge: -1` charge every ligand,
+    `membrane_orientation_checked` build every bilayer unchecked across its
+    own structure)."""
+    from fastmdxplora.config.defaults_file import write_defaults
+
+    block, _, key = setting.partition(".")
+    data = {"simulation": {"temperature_K": 310}}
+    data.setdefault(block, {})[key] = value
+    with pytest.raises(ConfigError) as caught:
+        read_defaults(_write(tmp_path, data))
+    assert caught.value.code == "config.option.inapplicable"
+    assert caught.value.refusal.details["option"] == setting
+    said = str(caught.value)
+    assert DEFAULTS_FILE in said and f"`{setting}`" in said
+    assert "never what is simulated or which study's files are read" in said
+    # Nor written into one (Settings' This folder), the file left as it was.
+    where = _write(tmp_path / "written")
+    before = where.read_text()
+    with pytest.raises(ConfigError) as caught:
+        write_defaults(where, given={setting: value})
+    assert caught.value.code == "config.option.inapplicable"
+    assert where.read_text() == before
+
+
+@pytest.mark.parametrize("setting, value, shown, not_said", [
+    ("setup.membrane_orientation_checked", False, "false", "turns off"),
+    ("report.title", None, "null", "one study's title"),
+    ("setup.mutations", [], "[]", "simulates"),
+])
+def test_a_setting_of_one_study_given_as_nothing_is_said_as_that(tmp_path, setting, value, shown,
+                                                                 not_said):
+    """A full config writes `membrane_orientation_checked: false`, and a
+    file holding it was refused as saying one structure was oriented by
+    hand and turning the membrane's stops off, the opposite of `false`;
+    `report.title: null` as one study's title. Refused still, as what it is."""
+    block, _, key = setting.partition(".")
+    with pytest.raises(ConfigError) as caught:
+        read_defaults(_write(tmp_path, {block: {key: value}}))
+    said = str(caught.value)
+    assert caught.value.code == "config.option.inapplicable"
+    assert f"`{setting}`, which is one study's setting; given as `{shown}` it sets nothing" in said
+    assert not_said not in said, said
+
+
+@pytest.mark.parametrize("block, value, named", [
+    ("analysis", {"options": {"pair_distance": {"selection_a": "resid 10 and name CA",
+                                                "selection_b": "resid 50 and name CA"}}},
+     "analysis.options.pair_distance.selection_a"),
+    ("analysis", {"options": {"pair_distance": {"selection_b": "resid 50 and name CA"}}},
+     "analysis.options.pair_distance.selection_b"),
+    ("analysis", {"options": {"sasa": {"ligand_resname": "BEN"}}},
+     "analysis.options.sasa.ligand_resname"),
+    ("analysis", {"options": {"pl_interactions": {"ligand_net_charge": -1}}},
+     "analysis.options.pl_interactions.ligand_net_charge"),
+    ("analysis", {"options": {"pl_interactions": {"ligand_chemistry": "ben.sdf"}}},
+     "analysis.options.pl_interactions.ligand_chemistry"),
+    ("analysis", {"options": {"order_parameters": {"reference": "s2.txt"}}},
+     "analysis.options.order_parameters.reference"),
+    ("analysis", {"options": {"order_parameters": {"reference_exclude": "1,72-76"}}},
+     "analysis.options.order_parameters.reference_exclude"),
+    ("analysis", {"options": {"bfactor_comparison": {"structure": "1ubq.pdb"}}},
+     "analysis.options.bfactor_comparison.structure"),
+    ("analysis", {"options": {"thermodynamics": {"state_csv": "/data/old/energy.csv"}}},
+     "analysis.options.thermodynamics.state_csv"),
+    ("simulation", {"restrain": [{"kind": "position", "selection": "protein and name CA"},
+                                 {"kind": "distance", "selection": "index 120 455",
+                                  "force_constant": 1000, "target": 0.3}]},
+     "simulation.restrain"),
+    ("simulation", {"restrain": {"kind": "angle", "selection": "index 1 2 3",
+                                 "force_constant": 100}}, "simulation.restrain"),
+    ("simulation", {"restrain": [{"kind": "Torsion", "selection": "index 1 2 3 4",
+                                  "force_constant": 100}]}, "simulation.restrain"),
+])
+def test_an_option_or_a_restraint_of_one_structure_s_atoms_is_refused(
+        tmp_path, block, value, named):
+    """An analysis's option that names one structure's atoms, its ligand,
+    its residues by number or its own files, and a restraint between
+    particular atoms, were filled into every new study: each new study
+    measured the distance between residues 10 and 50 of its own protein.
+    A selection every structure has, and position restraints on one, are a
+    lab's."""
+    from fastmdxplora.config.defaults_file import write_defaults
+
+    data = {"simulation": {"temperature_K": 310}}
+    data.setdefault(block, {}).update(value)
+    with pytest.raises(ConfigError) as caught:
+        read_defaults(_write(tmp_path, data))
+    assert caught.value.code == "config.option.inapplicable"
+    assert caught.value.refusal.details["option"] == named
+    said = str(caught.value)
+    assert f"`{named}`" in said and "never what is simulated" in said
+    where = _write(tmp_path / "written")
+    before = where.read_text()
+    key, held = next(iter(value.items()))
+    with pytest.raises(ConfigError):
+        write_defaults(where, given={f"{block}.{key}": held})
+    assert where.read_text() == before
+
+
+def test_a_lab_s_selections_and_position_restraints_are_taken(tmp_path):
+    data = {"analysis": {"options": {"rdf": {"selection_a": "protein",
+                                             "selection_b": "water and name O"},
+                                     "pl_contacts": {"protein_selection": "protein"},
+                                     "rmsd": {"selection": "name CA"}}},
+            "simulation": {"restrain": [{"kind": "position", "selection": "protein and name CA",
+                                         "force_constant": 500},
+                                        "backbone"]}}
+    defaults = read_defaults(_write(tmp_path, data))
+    assert dict(defaults.settings())["simulation.restrain"][1] == "backbone"
+    assert read_defaults(_write(tmp_path / "short", {
+        "simulation": {"restrain": "protein and not element H"}})).values
+
+
+def test_each_refusal_of_one_study_s_setting_says_what_it_is():
+    """`resume_unsealed` names no study, and `setup_from` prepares a study
+    rather than continuing one: each is said as what it is."""
+    from fastmdxplora.config.defaults_file import _ONE_STUDY_SAID
+
+    assert "continues" in _ONE_STUDY_SAID["simulation.resume_from"]
+    assert "names" not in _ONE_STUDY_SAID["simulation.resume_unsealed"]
+    for prepared in ("simulation.setup_from", "simulation.prepared_from"):
+        assert "prepared from" in _ONE_STUDY_SAID[prepared]
+        assert "continue" not in _ONE_STUDY_SAID[prepared]
+    assert "files" in _ONE_STUDY_SAID["analysis.trajectory"]
+    assert "simulates" in _ONE_STUDY_SAID["setup.mutations"]
+    # The pose says where the starting coordinates come from, not what is
+    # simulated; each setting of one structure's parts says its own.
+    assert "starting coordinates" in _ONE_STUDY_SAID["setup.ligand_pose"]
+    assert "simulates" not in _ONE_STUDY_SAID["setup.ligand_pose"]
+    assert "charge" in _ONE_STUDY_SAID["setup.ligand_net_charge"]
+    assert "chain" in _ONE_STUDY_SAID["setup.mutation_chain"]
+    assert "residues" in _ONE_STUDY_SAID["setup.residue_states"]
+    assert "bilayer" in _ONE_STUDY_SAID["setup.membrane_center_z_nm"]
+    assert "dashboard" in _ONE_STUDY_SAID["simulation.dashboard_ligand_resname"]
+    # A bias is along variables chosen for one system, which may name no
+    # structure's atoms (the radius of gyration of `protein and name CA`).
+    for bias in ("simulation.umbrella", "simulation.steered", "simulation.metadynamics",
+                 "simulation.plumed"):
+        assert "variables chosen for it" in _ONE_STUDY_SAID[bias], bias
+        assert "atoms" not in _ONE_STUDY_SAID[bias], bias
+    assert "oriented by hand" in _ONE_STUDY_SAID["setup.membrane_orientation_checked"]
+    assert "stops" in _ONE_STUDY_SAID["setup.membrane_orientation_checked"]
+    assert "residues" in _ONE_STUDY_SAID["report.region_highlights"]
+    assert "title" in _ONE_STUDY_SAID["report.title"]
+
+
+def test_the_rule_is_said_in_the_docs():
+    from pathlib import Path
+
+    docs = Path(__file__).resolve().parent.parent / "docs"
+    refusals = (docs / "refusals.md").read_text(encoding="utf-8")
+    row = [line for line in refusals.splitlines() if line.startswith("| `config.option.inapplicable`")]
+    assert row and "never what is simulated or which study's files are read" in row[0]
+    config = (docs / "config.md").read_text(encoding="utf-8")
+    assert "never what is simulated or which study's files are read" in config
+    # Each setting refused is named in both.
+    from fastmdxplora.config.defaults_file import (
+        _ONE_STUDY_OPTIONS, _ONE_STUDY_SAID, _RESTRAINT_OF_ATOMS)
+
+    section = config[config.index("never what is simulated"):config.index("**Which file.**")]
+    for name in [*_ONE_STUDY_SAID, *_ONE_STUDY_OPTIONS]:
+        key = name.partition(".")[2] or name
+        assert f"`{key}`" in row[0] or f"`{name}`" in row[0], name
+        assert f"`{key}`" in section or f"`{name}`" in section, name
+    for kind in _RESTRAINT_OF_ATOMS:
+        assert kind in row[0] and kind in section, kind
+    assert "`restrain`" in row[0] and "`simulation.restrain`" in section
+
+
 # ---------------------------------------------------------------------------
 # What they fill
 # ---------------------------------------------------------------------------

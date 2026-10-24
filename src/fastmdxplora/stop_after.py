@@ -7,11 +7,12 @@ of its server, so an AI app closed in the meantime took the watching with
 it and a run that ignored the request went on. The watching is done here
 instead, in a process started on its own, which outlives whatever asked:
 
-    python -m fastmdxplora.stop_after PID FOLDER SECONDS ARGV_JSON
+    python -m fastmdxplora.stop_after PID FOLDER SECONDS RECORD_JSON
 
-The run is identified again before it is ended, by its process and its
-command line, so a process number the system has given to something else
-since is never signalled. Where the run leads a session of its own, as a run
+The run is identified again before it is ended, by its process record (its
+start where it has one, else its command line; `exploration._identify_run`),
+so a process number the system has given to something else since is never
+signalled. The record may be given as the run's ``argv`` alone. Where the run leads a session of its own, as a run
 started from the GUI or by an AI app does, what is left of its group is
 ended with it, as the GUI's Stop does: a parallel study's workers are not
 left running a study nobody can see. A run started by hand in a terminal
@@ -36,11 +37,11 @@ __all__ = ["see_it_stops", "watch"]
 LOOK_EVERY_S = 0.5
 
 
-def see_it_stops(pid: int, folder: Path, argv: Any, grace_s: float) -> None:
+def see_it_stops(pid: int, folder: Path, record: Any, grace_s: float) -> None:
     """Start the watcher: a process of its own, in a session of its own,
     holding none of this process's files."""
     command = [sys.executable, "-m", "fastmdxplora.stop_after", str(int(pid)),
-               str(Path(folder)), repr(float(grace_s)), json.dumps(argv)]
+               str(Path(folder)), repr(float(grace_s)), json.dumps(record)]
     options: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
                                "stderr": subprocess.DEVNULL, "close_fds": True}
     if os.name == "nt":
@@ -51,7 +52,7 @@ def see_it_stops(pid: int, folder: Path, argv: Any, grace_s: float) -> None:
     subprocess.Popen(command, **options)
 
 
-def watch(pid: int, folder: Path, argv: Any, grace_s: float) -> bool:
+def watch(pid: int, folder: Path, record: Any, grace_s: float) -> bool:
     """Wait for the run to stop; end it if it has not by ``grace_s``.
     True where it had to be ended."""
     from fastmdxplora.gui.exploration import (
@@ -62,10 +63,10 @@ def watch(pid: int, folder: Path, argv: Any, grace_s: float) -> bool:
 
     deadline = time.monotonic() + max(0.0, grace_s)
     while time.monotonic() < deadline:
-        if _identify_run(pid, folder, argv) is False:
+        if _identify_run(pid, folder, record) is False:
             return False
         time.sleep(LOOK_EVERY_S)
-    if _identify_run(pid, folder, argv) is not True:
+    if _identify_run(pid, folder, record) is not True:
         return False
     its_own_session = False
     if os.name != "nt":
@@ -88,13 +89,13 @@ def watch(pid: int, folder: Path, argv: Any, grace_s: float) -> bool:
 def main(arguments: list[str] | None = None) -> int:
     given = sys.argv[1:] if arguments is None else arguments
     try:
-        pid, folder, grace_s, argv = int(given[0]), Path(given[1]), float(given[2]), \
+        pid, folder, grace_s, record = int(given[0]), Path(given[1]), float(given[2]), \
             json.loads(given[3])
     except (IndexError, ValueError):
         return 2
     if pid <= 0:
         return 2
-    watch(pid, folder, argv, grace_s)
+    watch(pid, folder, record, grace_s)
     return 0
 
 

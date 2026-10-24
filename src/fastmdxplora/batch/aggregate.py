@@ -5,7 +5,8 @@ Reading them is arithmetic; knowing what the spread across them measures is
 not, and it is the whole of why this exists.
 
 **Replicas and variants are opposites, and they look identical on disk.**
-Members that differ only by random seed are repeats of one measurement, so
+Members that differ only by random seed, or that start from different
+models of one ensemble, are repeats of one measurement, so
 the spread of their means is the error on it. Members that differ by
 system, mutation or parameter are different measurements, so the spread
 between them is the result. Averaging the second kind reports a mutant
@@ -35,10 +36,13 @@ import numpy as np
 __all__ = [
     "SEED_AXES",
     "aggregate_members",
+    "batch_manifest",
     "finished_members",
+    "how_replicas_differ",
     "member_directory",
     "read_member_findings",
     "replica_error",
+    "spread_against_own",
 ]
 
 #: Sweep axes that make members repeats rather than different studies.
@@ -111,14 +115,22 @@ def read_member_findings(run_dir: str | Path) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _finished(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """The campaign's manifest and its members that finished. Read through
-    `record_access`: held to the study where the read is (the Compare
-    page), as pathlib elsewhere."""
+def batch_manifest(batch_dir: str | Path) -> dict[str, Any]:
+    """A campaign's manifest, read through `record_access`: held to the
+    study where the read is (the Compare page), as pathlib elsewhere.
+    Raises OSError or ValueError where it cannot be read."""
     from fastmdxplora import record_access
 
-    manifest = json.loads(record_access.read_text(root / "batch_manifest.json",
+    manifest = json.loads(record_access.read_text(Path(batch_dir) / "batch_manifest.json",
                                                   encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("a batch manifest is an object")
+    return manifest
+
+
+def _finished(root: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The campaign's manifest and its members that finished."""
+    manifest = batch_manifest(root)
     return manifest, [r for r in manifest.get("runs", []) if r.get("status") == "ok"]
 
 
@@ -137,7 +149,7 @@ def finished_members(batch_dir: str | Path) -> tuple[list[tuple[str, Path]], boo
 def replica_error(means: Any, own: float | None) -> float | None:
     """The standard error of one replica's mean: the spread of the
     replicas' means (sample standard deviation, ``spread_of_means``), since
-    members that differ only by seed are repeats of one measurement and
+    replicas are repeats of one measurement and
     their spread is its error; or the run's own error where that is the
     larger, since a spread of few replicas can fall short of it by chance
     and a run's error is never narrowed by its repeats. None where fewer
@@ -150,6 +162,47 @@ def replica_error(means: Any, own: float | None) -> float | None:
     spread = float(np.std(values, ddof=1))
     mine = _finite_or_none(own)
     return max(spread, mine) if mine is not None and mine > 0 else spread
+
+
+def spread_against_own(means: Any, errors: Any) -> dict[str, Any] | None:
+    """Replicas' spread set against the errors the runs estimated for
+    themselves, the one check a single run's error gets: ``observed``, the
+    spread of their means (sample standard deviation); ``predicted``, the
+    mean of the errors given (each above zero); their ``ratio``; and
+    ``too_tight``, the spread past ``CALIBRATION_FACTOR`` times the
+    prediction, so the errors the runs printed are too tight. Of two
+    replicas whose own errors are all there is to set them against (the
+    Compare page) as of all of a study's (`aggregate_members`). None where
+    there are fewer than two means or no error of their own."""
+    values = np.asarray([m for m in means], dtype=float)
+    given = [float(e) for e in errors if e is not None and np.isfinite(e) and e > 0]
+    if values.size < 2 or not given:
+        return None
+    observed = float(np.std(values, ddof=1))
+    predicted = float(np.mean(given))
+    return {"observed": observed, "predicted": predicted, "ratio": float(observed / predicted),
+            "too_tight": observed > CALIBRATION_FACTOR * predicted,
+            "factor": CALIBRATION_FACTOR}
+
+
+def how_replicas_differ(axes: Any, *, models: Any = None,
+                        as_participle: bool = False) -> str:
+    """How a study's replicas differ, as every page and record says it,
+    from the axes they were swept over: "that differ only by random seed"
+    ("differing only by random seed" as a participle), or, where they were
+    prepared from different models of an ensemble (`setup.model`),
+    "started from different models of the ensemble" (the models named where
+    ``models`` gives them), with a seed of its own each where a seed was
+    swept too. Read after "runs" or "replicas"."""
+    axes = {str(axis) for axis in axes or ()}
+    if "setup.model" in axes:
+        said = "started from " + (
+            "models " + ", ".join(str(m) for m in models) + " of the ensemble" if models
+            else "different models of the ensemble")
+        if axes & (SEED_AXES - {"setup.model"}):
+            said += ", each with a seed of its own"
+        return said
+    return "differing only by random seed" if as_participle else "that differ only by random seed"
 
 
 def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
@@ -174,8 +227,8 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
         )
     if axes <= SEED_AXES:
         return True, (
-            "the members differ only by random seed, so they are repeats of "
-            "one estimate, and the spread of their means is its error once each "
+            f"the members are replicas {how_replicas_differ(axes)}, so they are "
+            "repeats of one estimate, and the spread of their means is its error once each "
             "run has determined its own mean"
         )
     return False, (
@@ -185,7 +238,8 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
     )
 
 
-def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0) -> str:
+def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0, *,
+                         one_structure: bool = True) -> str:
     """Why replicas' spread is not yet their error: ``unbacked`` of the
     ``runs`` did not determine their own mean, ``said_so`` of them by saying
     their mean is not a measurement (an error of their own given or not),
@@ -202,8 +256,9 @@ def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0) -> str:
     else:
         how = (f": {said_so} said {'its' if said_so == 1 else 'their'} mean is not "
                f"determined, and {plain} gave no error of {'its' if plain == 1 else 'their'} own")
+    begun = "begun from one structure, " if one_structure else ""
     return (f"{which}{how}, so their spread is not yet an "
-            "error: begun from one structure, runs too short to resolve their "
+            f"error: {begun}runs too short to resolve their "
             "correlation time are not yet independent samples.")
 
 
@@ -248,6 +303,7 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
     and says why the spread is not yet an error (``spread_not_an_error``).
     """
     from fastmdxplora import record_access
+    from fastmdxplora.image_note import note_of
 
     root = Path(batch_dir)
     manifest_path = root / "batch_manifest.json"
@@ -287,6 +343,9 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
                 # said its own number was not a measurement must not be
                 # averaged into one silently.
                 "not_a_measurement": mean.get("not_a_measurement"),
+                # Its image note (`image_note`), for the mean of the means
+                # to say how many of the replicas' means carry one.
+                "solute_image": note_of(mean),
             })
 
     table: dict[str, Any] = {}
@@ -320,8 +379,9 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
         said_so = [r["member"] for r in rows if r["not_a_measurement"]]
         if replicas and unbacked:
             entry["qualified_by_their_own_runs"] = unbacked
-            entry["spread_not_an_error"] = _spread_not_an_error(len(unbacked), len(rows),
-                                                                len(said_so))
+            entry["spread_not_an_error"] = _spread_not_an_error(
+                len(unbacked), len(rows), len(said_so),
+                one_structure="setup.model" not in (manifest.get("sweep") or {}))
         if replicas and not errors:
             observed = float(np.std(means, ddof=1))
             entry["predicted_standard_error"] = None
@@ -333,17 +393,18 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
                 "check the spread against. " + entry["spread_not_an_error"]
             )
         elif replicas and errors:
-            predicted = float(np.mean(errors))
-            observed = float(np.std(means, ddof=1))
+            # Two means or more (`rows`), and an error of their own (`errors`).
+            check = spread_against_own(means, errors)
+            predicted, observed = check["predicted"], check["observed"]
             entry["predicted_standard_error"] = predicted
             entry["observed_standard_error"] = observed
-            entry["ratio_observed_to_predicted"] = float(observed / predicted)
+            entry["ratio_observed_to_predicted"] = check["ratio"]
             qualified = entry.get("qualified_by_their_own_runs") or []
             # A prediction from some of the runs is said as such.
             some = ("" if len(errors) == len(rows) else
                     f" (from the {len(errors)} of {len(rows)} runs that "
                     "gave an error of their own)")
-            if observed > CALIBRATION_FACTOR * predicted:
+            if check["too_tight"]:
                 entry["calibration"] = (
                     f"The replicas spread {observed:.3g} where a single run "
                     f"predicted {predicted:.3g}{some}, more than the factor of "

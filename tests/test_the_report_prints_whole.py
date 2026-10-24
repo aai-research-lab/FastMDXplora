@@ -144,3 +144,29 @@ def test_printed_it_runs_to_its_last_section(browser, sessions) -> None:
     finally:
         page.close()
     assert clipped == []
+
+
+def test_printed_to_a_pdf_it_is_the_report_to_its_last_line_and_nothing_over_it(
+        browser, sessions, tmp_path) -> None:
+    """What is printed, read back from the PDF: the status strip covered a
+    line at the foot of the first sheet, and the "Skip to the page" link,
+    out of sight on the screen, was printed there over the report."""
+    import subprocess
+
+    # CI installs poppler-utils on the leg that runs the browser tests; on
+    # macOS no leg installs Playwright, so this file skips there whole.
+    if shutil.which("pdftotext") is None:
+        pytest.skip("pdftotext reads the PDF's text")
+    page = _report(browser, sessions["without"])
+    try:
+        page.emulate_media(media="print")
+        page.pdf(path=str(tmp_path / "report.pdf"))
+    finally:
+        page.close()
+    text = subprocess.run(["pdftotext", "-layout", str(tmp_path / "report.pdf"), "-"],
+                          capture_output=True, text=True, check=True).stdout
+    words = " ".join(text.split())
+    assert "Skip to the page" not in words
+    assert "Section 12" in words
+    last = words[words.index("Section 12"):]
+    assert last.count("within the spread of its own blocks.") == 8

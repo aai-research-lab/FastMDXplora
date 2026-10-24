@@ -185,14 +185,18 @@ def test_the_page_asks_first_in_a_browser(tmp_path):
             page.goto(session.url + "#files", wait_until="domcontentloaded")
             page.wait_for_selector('[data-phase="scratch"]', timeout=30000)
             page.click('.files-usage [data-clear]')
-            page.wait_for_function("() => !document.getElementById('files-clear-go').disabled",
-                                   timeout=20000)
-            said = page.inner_text("#files-clear-said")
+            # Asked beside the button, as a run's Stop is (confirm.js), since
+            # 10-21; its own dialog before. Not now has the keyboard.
+            page.wait_for_function("() => { const b = document.querySelector('.files-clear-go');"
+                                   " return b && !b.disabled; }", timeout=20000)
+            said = page.inner_text(".files-clear-ask .fmx-ask-detail")
+            focused = page.evaluate("() => document.activeElement.textContent")
             assert said.startswith("8 files, 800 B: ") and "4 of the live view's snapshots" in said
+            assert focused == "Not now"
             assert (root / "simulation" / "frames.dcd").exists()  # asked, not done
-            page.click("#files-clear-go")
+            page.click(".files-clear-go")
             page.wait_for_selector('[data-phase="scratch"]', state="detached", timeout=20000)
-            assert page.eval_on_selector("#files-clear-dialog", "e => e.hidden")
+            assert page.locator(".fmx-ask").count() == 0
             browser.close()
     finally:
         session.server.shutdown()

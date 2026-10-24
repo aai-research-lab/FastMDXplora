@@ -32,11 +32,28 @@
     window.dispatchEvent(new CustomEvent("dashboard:problems-counted",
       { detail: { count: count, partial: Boolean(partial) } }));
   }
-  function message(words) {
+  /* Where the tab stands: in its summary, or where there is the page's
+   * one block (page-states.js: reading, nothing open, or not read with Try
+   * again and the server's reason) in that alone, said once. */
+  function message(words, kind) {
     counted(null);
-    byId("problems-summary").textContent = words;
-    byId("problems-body").replaceChildren();
+    var block = kind && window.FastMDXPageState;
+    byId("problems-summary").textContent = block ? "" : words;
+    var body = byId("problems-body");
+    body.replaceChildren();
+    if (block) {
+      body.appendChild(window.FastMDXPageState.block(kind === "error" ? {
+        kind: "error", title: "The problems could not be read", detail: words,
+        action: { label: "Try again", run: function () { load(true); } },
+      } : kind === "loading" ? { kind: "loading", title: words } : { kind: "empty", title: words }));
+    }
     rendered = "";
+  }
+  /* A refusal with the server's reason, said as it gave it. */
+  function refused(reason) {
+    var error = new Error(reason || "");
+    error.said = true;
+    return error;
   }
   function clear() {
     generation += 1;
@@ -47,7 +64,8 @@
     study = "";
     liveSeen = null;
     eventsSeen = null;
-    message(active ? "Reading the study's records..." : "Open a study to read its problems.");
+    message(active ? "Reading the study's records..." : "Open a study to read its problems.",
+            active ? "loading" : "empty");
   }
   function render(data) {
     var key = JSON.stringify(data);
@@ -79,7 +97,11 @@
       card.appendChild(element("h3", "", item.title));
       card.appendChild(element("p", "", item.reason));
       if (item.code) card.appendChild(element("code", "problem-code", item.code));
-      card.appendChild(element("h4", "", "What would fix it"));
+      // Named as the Overview's card is (fixes.js): a run stopped as asked
+      // is not a fault, and is carried on rather than fixed. The stop is
+      // read from a phase's refusal or from the run's health record.
+      var stopped = item.code === "simulation.run.stopped" || item.id === "health:stopped";
+      card.appendChild(element("h4", "", stopped ? "To carry it on" : "What would fix it"));
       card.appendChild(element("p", "", item.fix || "No remedy is recorded."));
       if (item.file) {
         var file = element("div", "problem-file");
@@ -119,22 +141,29 @@
     byId("problems-refresh").disabled = true;
     fetch("/api/problems?study=" + encodeURIComponent(wanted), {
       cache: "no-store", signal: controller.signal
+    }).catch(function (error) {
+      // Not answered: said so, as All studies says it.
+      throw error.name === "AbortError" ? error : refused("The server did not answer.");
     }).then(function (response) {
-      if (!response.ok) throw new Error("Could not read the study's problems.");
+      if (!response.ok) {
+        return response.json().catch(function () { return {}; }).then(function (d) {
+          throw refused(d && (d.reason || d.error));
+        });
+      }
       return response.json();
     }).then(function (data) {
       if (at !== generation || root !== active) return;
       /* No study open has no key. A folder open that is not yet a study
        * (one a run has just begun in) has its key, and no run named. */
       if (data.ok && data.active_run === null && !data.study) {
-        message("Open a study to read its problems.");
+        message("Open a study to read its problems.", "empty");
         return;
       }
       if (data.study !== wanted || (data.active_run !== null && data.active_run !== root)) {
-        message("The open study changed. Waiting for its records...");
+        message("The open study changed. Waiting for its records...", "loading");
         return;
       }
-      if (!data.ok) throw new Error(data.reason || "Could not read the study's problems.");
+      if (!data.ok) throw refused(data.reason || data.error);
       if (data.state === "gone" || data.state === "unreadable" || data.state === "empty") {
         /* Refresh cannot bring a folder back: said once, without it. A
          * folder with no records yet is said as that, not as missing ones. */
@@ -144,7 +173,7 @@
       render(data);
     }).catch(function (error) {
       if (at !== generation || error.name === "AbortError") return;
-      message("Could not read problems. Use Refresh to try again.");
+      message(error.said ? error.message : "", "error");
     }).finally(function () {
       if (pending !== controller) return;
       pending = null;
@@ -170,9 +199,20 @@
       home.insertBefore(panel, next);
       phone.focus();
     });
-    window.matchMedia("(max-width: 800px)").addEventListener("change", function (event) {
-      if (!event.matches && dialog.open) dialog.close();
-    });
+    /* Closed as the window widens past a phone's. The list is made again
+     * when the Display size changes: one made before kept the lengths of
+     * the size it was made at (theme-first.js), and at 125% loaded, then
+     * 100% chosen, the dialog stayed open from 801 to 1000 pixels. */
+    var phoneWide = null;
+    var widened = function (event) { if (!event.matches && dialog.open) dialog.close(); };
+    var watchWidth = function () {
+      if (phoneWide) phoneWide.removeEventListener("change", widened);
+      phoneWide = window.matchMedia("(max-width: 800px)");
+      phoneWide.addEventListener("change", widened);
+      widened(phoneWide);
+    };
+    watchWidth();
+    window.addEventListener("fmx:display-size", watchWidth);
     byId("problems-refresh").addEventListener("click", load);
     /* Shown, however it was (its tab clicked or chosen by the keys, the
      * status bar's count, a phone's button): read again. */

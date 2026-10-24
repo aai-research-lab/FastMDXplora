@@ -85,7 +85,7 @@
     // "dark" (black) or "white".
     // The page's scheme's (--viewer-ground), unless white or dark is chosen.
     ground: "scheme",
-    // What Preferences last said of the ground, spin and the ligand.
+    // What Settings last said of the ground, spin and the ligand.
     groundChosen: "",
     spinChosen: false,
     ligandChosen: false,
@@ -1301,7 +1301,9 @@
     const appState = dashboard.appState || {};
     const hints = {
       page: dashboard.activePage || null,
-      study: appState.active_run || null,
+      // No study open, once the page has read so, is named as such ("");
+      // the server refuses it when the GUI has one open (CI-774 review L18).
+      study: appState.active_run || (Object.keys(appState).length ? "" : null),
       frame: Number.isInteger(view.frame) ? view.frame : null,
       representation: view.representation || null,
       colour: view.colour || null,
@@ -2777,7 +2779,7 @@
   /* ------------------------------------------------------------------ */
   /* Settings, status, selections                                        */
   /* ------------------------------------------------------------------ */
-  /* The Preferences dialog's settings, as the Viewer starts and as they
+  /* The Viewer's settings in Settings, as the Viewer starts and as they
    * change. The ground and spin follow a preference only when it changes,
    * so the ground button and the spin button keep what they were last
    * set to otherwise. */
@@ -3371,8 +3373,11 @@
     if (info?.age != null && !ended) setText("overlay-age", `age ${info.age}`);
     if (info?.simtimeSaid) setText("overlay-simtime", info.simtimeSaid);
     else if (info?.simtime != null) {
-      setText("overlay-simtime",
-        `${info.simtimeOf ? info.simtimeOf + " " : ""}${Number(info.simtime).toFixed(3)} ns`);
+      // In ps under 1 ns, as every page says a length: the last frame of a
+      // run of 2 ps read "0.002 ns" under a ruler in ps.
+      const ns = Number(info.simtime);
+      const said = Math.abs(ns) < 1 ? `${+(ns * 1000).toFixed(1)} ps` : `${ns.toFixed(3)} ns`;
+      setText("overlay-simtime", `${info.simtimeOf ? info.simtimeOf + " " : ""}${said}`);
     }
     tidyOverlay();
   }

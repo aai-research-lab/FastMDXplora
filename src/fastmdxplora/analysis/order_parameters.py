@@ -333,7 +333,7 @@ class OrderParameters(Analysis):
                 "order parameter is of a bond vector, and the bond has to be "
                 "present. Prepare the system with hydrogens, or compare "
                 "fluctuations instead."
-            , code="analysis.sampling.too_few_frames")
+            , code="analysis.data.absent")
 
         align_idx = traj.topology.select(self.align_selection)
         if len(align_idx) < 3:

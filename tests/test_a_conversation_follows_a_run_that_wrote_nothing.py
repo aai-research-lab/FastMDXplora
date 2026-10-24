@@ -169,6 +169,7 @@ def test_a_slow_disk_loses_nothing_across_two_runs(tmp_path, monkeypatch) -> Non
                 status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
             page.wait_for_selector("#agent-request", state="visible")
+            _ready(page)
 
             def say(text):
                 page.fill("#agent-request", text)
@@ -178,6 +179,7 @@ def test_a_slow_disk_loses_nothing_across_two_runs(tmp_path, monkeypatch) -> Non
             page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
             page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
             say("how is it going?")
+            _sent_once_offered(page)
             page.wait_for_selector("#agent-thread .agent-answer:has-text('just begun')")
             say("make it 4 ns")
             page.wait_for_function(
@@ -401,6 +403,7 @@ def _page_on(session, replies):
         status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
     page.goto(session.url + "#agent", wait_until="domcontentloaded")
     page.wait_for_selector("#agent-request", state="visible")
+    _ready(page)
     return page, errors, close
 
 
@@ -409,9 +412,29 @@ _RETRY = ("button:has-text('Retry'), button[aria-label='Retry'], "
           "button[title^='Send this again']")
 
 
+def _ready(page):
+    """Send waits until the page has read its study and conversation
+    (CI-774 round 4): a message typed at once is sent once it has."""
+    page.wait_for_function("() => window.FastMDXAgentPanel && !window.FastMDXAgentPanel.waits",
+                           timeout=30000)
+
+
 def _say(page, text):
     page.fill("#agent-request", text)
     page.keyboard.press("Enter")
+
+
+def _sent_once_offered(page, timeout=30000):
+    """Send sends nothing while a run starts, and says so (CI-774 round 3):
+    the words stay in the box, and the person sends them once Send is
+    offered again. Nothing left in the box: it was sent at once."""
+    page.wait_for_function(
+        "() => !document.getElementById('agent-request').value.trim()"
+        " || document.getElementById('agent-propose').getAttribute('aria-disabled') === 'false'",
+        timeout=timeout)
+    if page.input_value("#agent-request").strip():
+        page.focus("#agent-request")
+        page.keyboard.press("Enter")
 
 
 _CONFIG = {"ok": True, "cycles": 1, "yaml": "systems:\n- system: 1UAO\n",
@@ -573,8 +596,9 @@ def test_the_thread_is_left_alone_while_its_run_starts(tmp_path, monkeypatch):
                 ".length === n", arg=n)
             page.click("#agent-thread .agent-study:not([hidden]) [data-role=run] >> nth=-1")
             if n == 2:
-                # Asked while it starts: its answer is shown (eighteenth
-                # review, 10-08: without the guard it never was).
+                # Asked while it starts: sent once Send is offered again,
+                # and its answer is shown (eighteenth review, 10-08: without
+                # the guard it never was).
                 _say(page, "asked while it starts")
             # Asked for the GUI's state again and again while the run
             # starts: one answer falls between the switch and the move.
@@ -584,6 +608,10 @@ def test_the_thread_is_left_alone_while_its_run_starts(tmp_path, monkeypatch):
             page.wait_for_function(
                 "n => document.querySelectorAll('#agent-thread .agent-running').length"
                 " >= n", arg=n, timeout=20000)
+            if n == 2:
+                _sent_once_offered(page)
+                page.wait_for_selector("#agent-thread .agent-answer:has-text('While it starts.')",
+                                       timeout=20000)
         # The fake runs have no process, so their summaries soon say they
         # ended: their lines stay, said as run.
         lines = page.locator("#agent-thread .agent-running").count()
@@ -666,6 +694,7 @@ def test_a_reload_while_a_run_starts_keeps_what_was_said(tmp_path, monkeypatch):
         page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         _say(page, "asked while it starts")
+        _sent_once_offered(page)
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Starting.')")
         # The run is asked for once the saves before it are in: reloaded
         # while it starts, not before it was asked for.
@@ -676,6 +705,7 @@ def test_a_reload_while_a_run_starts_keeps_what_was_said(tmp_path, monkeypatch):
         assert made, "the run was not asked for"
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         page.wait_for_timeout(4000)
         _say(page, "after the reload")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('After.')")
@@ -717,16 +747,22 @@ def test_a_second_tab_keeps_the_run_the_first_started(tmp_path, monkeypatch):
             a, b = tabs["a"], tabs["b"]
             a.goto(session.url + "#agent", wait_until="domcontentloaded")
             a.wait_for_selector("#agent-request", state="visible")
+            _ready(a)
             _say(a, "chignolin")
             a.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
             a.wait_for_timeout(800)
             b.goto(session.url + "#agent", wait_until="domcontentloaded")
             b.wait_for_selector("#agent-thread .agent-study:not([hidden])")
+            _ready(b)
             a.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
+            # Tab B's page may be reading where A's run took the GUI: Send
+            # then waits, and B sends once it is offered (CI-774 round 4).
             _say(b, "from tab B")
+            _sent_once_offered(b)
             b.wait_for_selector("#agent-thread .agent-answer:has-text('B one.')")
             a.wait_for_selector("#agent-thread .agent-running")
             _say(b, "again from tab B")
+            _sent_once_offered(b)
             b.wait_for_selector("#agent-thread .agent-answer:has-text('B two.')")
             b.wait_for_timeout(1500)
             browser.close()
@@ -991,6 +1027,7 @@ def test_a_page_closed_with_saves_waiting_keeps_them_in_a_long_thread(tmp_path, 
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Two.')")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         store = workspace / ".fastmdxplora_agent_conversations" / f"{cid}.json"
         kept = _wait_for(lambda: "Two." in json.dumps(
             json.loads(store.read_text(encoding="utf-8"))["entries"]), 20.0)
@@ -1055,6 +1092,7 @@ def test_a_retry_in_one_tab_is_not_undone_by_the_other(tmp_path, monkeypatch):
             a, b = tabs["a"], tabs["b"]
             a.goto(session.url + "#agent", wait_until="domcontentloaded")
             a.wait_for_selector("#agent-request", state="visible")
+            _ready(a)
             _say(a, "q1")
             a.wait_for_selector("#agent-thread .agent-answer:has-text('A1.')")
             _say(a, "q2")
@@ -1062,6 +1100,7 @@ def test_a_retry_in_one_tab_is_not_undone_by_the_other(tmp_path, monkeypatch):
             a.wait_for_timeout(800)
             b.goto(session.url + "#agent", wait_until="domcontentloaded")
             b.wait_for_selector("#agent-thread .agent-answer:has-text('A2.')")
+            _ready(b)
             a.locator("#agent-thread .agent-msg-user").last.hover()
             a.locator("#agent-thread .agent-msg-user").last.locator(
                 _RETRY).click()
@@ -1226,11 +1265,13 @@ def test_a_retry_with_its_save_waiting_is_kept_beside_another_tab(tmp_path, monk
             a, b = tabs["a"], tabs["b"]
             a.goto(session.url + "#agent", wait_until="domcontentloaded")
             a.wait_for_selector("#agent-request", state="visible")
+            _ready(a)
             _say(a, "A first")
             a.wait_for_selector("#agent-thread .agent-answer:has-text('A0.')")
             a.wait_for_timeout(800)
             b.goto(session.url + "#agent", wait_until="domcontentloaded")
             b.wait_for_selector("#agent-thread .agent-answer:has-text('A0.')")
+            _ready(b)
             _say(a, "A x")
             a.wait_for_selector("#agent-thread .agent-answer:has-text('A ans.')")
             a.wait_for_timeout(800)
@@ -1267,6 +1308,7 @@ def test_a_retry_then_a_reload_keeps_the_cut(tmp_path, monkeypatch):
         page.wait_for_selector("#agent-thread .agent-answer:has-text('A2 again.')")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         page.wait_for_timeout(9000)
         close()
     finally:
@@ -1293,6 +1335,7 @@ def test_new_then_a_reload_keeps_what_was_typed_in_one_thread(tmp_path, monkeypa
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Fresh.')")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Fresh.')",
                                timeout=20000)
         close()
@@ -1362,11 +1405,13 @@ def test_a_reply_being_written_survives_another_tab_s_change(tmp_path, monkeypat
             a, b = tabs["a"], tabs["b"]
             b.goto(session.url + "#agent", wait_until="domcontentloaded")
             b.wait_for_selector("#agent-request", state="visible")
+            _ready(b)
             _say(b, "first")
             b.wait_for_selector("#agent-thread .agent-answer:has-text('Zero.')")
             b.wait_for_timeout(800)
             a.goto(session.url + "#agent", wait_until="domcontentloaded")
             a.wait_for_selector("#agent-thread .agent-answer:has-text('Zero.')")
+            _ready(a)
             _say(b, "a slow one")
             b.wait_for_timeout(300)
             _say(a, "from tab A")
@@ -1740,6 +1785,7 @@ def test_a_chat_of_no_study_is_made_in_chats_by_a_closing_page(tmp_path, monkeyp
         page.wait_for_selector("#agent-thread .agent-answer:has-text('ans:in a chat')")
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         chats = tmp_path / "workspace" / WORKSPACE_CONVERSATIONS_DIR
 
         def kept():
@@ -1842,7 +1888,7 @@ def test_an_answer_to_a_question_cut_while_written_is_not_kept(tmp_path, monkeyp
 def test_a_retry_as_a_run_starts_then_no_answer_keeps_the_run(tmp_path, monkeypatch):
     """Found by the nineteenth review (10-08): Retry above a run as it
     started, then an answer the page could not read: the run ran, and the
-    thread had no run."""
+    thread had no run. Retry then waits, as Send does, and cuts nothing."""
     workspace, made, session = _gui(tmp_path, monkeypatch, taking=0.0)
 
     def lost(route):
@@ -1865,7 +1911,10 @@ def test_a_retry_as_a_run_starts_then_no_answer_keeps_the_run(tmp_path, monkeypa
         _say(page, "chignolin")
         page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
-        page.wait_for_selector("#agent-thread .agent-answer:has-text('A1 again.')")
+        page.wait_for_selector("text=I could not read the software's answer", timeout=30000)
+        # Retry while the run started sends nothing and cuts nothing (Send
+        # waits, CI-774 round 4): the run stays in the thread.
+        _ready(page)
         page.wait_for_timeout(3000)
         close()
     finally:
@@ -1905,6 +1954,7 @@ def test_a_reload_as_a_run_starts_says_nothing_of_its_answer(tmp_path, monkeypat
         page.wait_for_timeout(700)
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
+        _ready(page)
         page.wait_for_timeout(4000)
         close()
     finally:
@@ -2194,11 +2244,13 @@ def test_another_tab_s_words_do_not_bring_a_deleted_thread_back(tmp_path, monkey
                 tab.unroute("**/api/agent/propose*")
             a.goto(session.url + "#agent", wait_until="domcontentloaded")
             a.wait_for_selector("#agent-request", state="visible")
+            _ready(a)
             _say(a, "a1")
             a.wait_for_selector("#agent-thread .agent-answer:has-text('ans:a1')")
             a.wait_for_timeout(800)
             b.goto(session.url + "#agent", wait_until="domcontentloaded")
             b.wait_for_selector("#agent-thread .agent-answer:has-text('ans:a1')")
+            _ready(b)
             _say(b, "b1")
             b.wait_for_selector("#agent-thread .agent-answer:has-text('ans:b1')")
             b.wait_for_timeout(800)
@@ -2984,11 +3036,12 @@ def test_a_thread_whose_new_was_answered_gone_keeps_a_question_as_it_closes(
                                      KEPT_AFTER_DELETE]]
 
 
-def _a_study_opened_again_as_its_run_starts(tmp_path, monkeypatch):
+def _a_study_opened_again_as_its_run_starts(tmp_path, monkeypatch, then=None):
     """A run started from the study ``here``, with words typed as it starts;
     another window opens ``here`` again before the launch answers, and this
-    page never sees the run's study. Then what is in the box is sent. Gives
-    the page, after the send, and the workspace."""
+    page never sees the run's study. Then what is in the box is sent, and
+    ``then(page, session, workspace)`` is asked. Gives the page, after the
+    send, and the workspace."""
     import json
     import tempfile
     import time
@@ -3059,6 +3112,8 @@ def _a_study_opened_again_as_its_run_starts(tmp_path, monkeypatch):
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Said here.')")
         page.wait_for_timeout(1500)
+        if then is not None:
+            shown["then"] = then(page, session, workspace)
         shown["errors"] = list(errors)
     finally:
         close()

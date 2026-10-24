@@ -484,7 +484,21 @@ def _written_as_it_goes(complete: Any, emit: Any) -> Any:
 
 def _active_view_error(view_hints: Any, runtime: Any, path_for: Any) -> str | None:
     """Reject a stale or changed study before an Agent call begins."""
-    if not isinstance(view_hints, dict) or not view_hints.get("study"):
+    if not isinstance(view_hints, dict):
+        return None
+    if "study" in view_hints and not view_hints["study"]:
+        # The page shows no study (none open, or a folder that is not one):
+        # refused when the GUI has a study open now, as another study would
+        # be (CI-774 review L18: asked with that study open, it was filed in
+        # the workspace's chats). A study as the GUI shows one: a folder
+        # holding only a conversation moved there is none (review L19 L1:
+        # every message there was refused).
+        active = getattr(runtime, "active_root", None)
+        if (active is not None and not getattr(runtime, "data_stale", False)
+                and _is_study(active)):
+            return "The current view changed. Select it again before asking the Agent."
+        return None
+    if not view_hints.get("study"):
         return None
     if getattr(runtime, "data_stale", False):
         return "Reload the current study before asking the Agent about its view."
@@ -956,7 +970,7 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             head = f"The study was prepared once, for its {prepared} windows"
         return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
-    if not _is_study(root):
+    if not _wrote_records(root):
         # It ended before it wrote a record of the study. One forgotten by
         # this server (another folder opened, or a restart) that wrote
         # nothing cannot have finished.
@@ -1407,10 +1421,16 @@ def _results_summary(root: Any, first: str | None = None) -> str:
 
     # Each row is its folder, its name and its parts; a part is what it says
     # before a reason, how the reason is joined on, and the reason (or None).
+    from fastmdxplora import record_access
+    from fastmdxplora.image_note import note_of, paragraph_of, said_short
+
     rows: list[tuple[str, str, list[tuple[str, str, str | None]]]] = []
+    # Each analysis's image note in full, said once for the analysis where
+    # one of its means carries it.
+    paragraphs: dict[str, str] = {}
     for options in sorted(analysis.glob("*/options.json")):
         try:
-            data = json.loads(options.read_text(encoding="utf-8"))
+            data = json.loads(record_access.read_text(options, encoding="utf-8"))
         except (OSError, ValueError):
             continue
         name = str(data.get("analysis") or options.parent.name)
@@ -1465,6 +1485,12 @@ def _results_summary(root: Any, first: str | None = None) -> str:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
+            # Its image note beside its verdict, which it does not change, as
+            # every page says it; the analysis's paragraph once, below.
+            noted = said_short(note_of(f))
+            if noted:
+                piece += f" -- {noted}"
+                paragraphs.setdefault(options.parent.name, paragraph_of(findings))
             parts.append((piece, " -- not determined: ", str(withheld) if withheld else None))
         if parts:
             rows.append((options.parent.name, name, parts))
@@ -1490,6 +1516,11 @@ def _results_summary(root: Any, first: str | None = None) -> str:
                 said_parts.append(head + joiner + " ".join(withheld.split()))
             else:
                 said_parts.append(head + joiner + _reason_said_once(withheld, notes))
+        paragraph = paragraphs.get(folder)
+        if paragraph:
+            said_parts.append(("the image note: " + " ".join(paragraph.split()))
+                              if folder == first else
+                              "the image note: " + _reason_said_once(paragraph, notes))
         lines.append(f"  {name}: " + "; ".join(said_parts))
     said = "what the analyses found:\n" + "\n".join(lines)
     if notes:
@@ -1543,12 +1574,29 @@ CONTEXT_RECEIPTS_DIR = Path("receipts")
 
 
 def _is_study(path: Any) -> bool:
-    """A folder FastMDXplora wrote: a manifest or a phase directory."""
+    """A study, as the GUI says it (`browse.is_study`): a folder the GUI
+    opens as a study is one the Agent reads and writes for. The Agent had a
+    rule of its own (a manifest or a phase folder), and a run the Config
+    Builder started, its config written, was a study to the GUI and none to
+    the Agent until its first phase: its messages went into a chat of no
+    study, or waited for good where the run ended first (CI-774 reviews L13,
+    L14)."""
+    from fastmdxplora.gui.browse import is_study
+
     if not path:
         return False
     p = Path(path)
-    return p.is_dir() and any((p / m).exists()
-                              for m in ("manifest.json", "simulation", "analysis", "report", "setup"))
+    return p.is_dir() and is_study(p)
+
+
+#: What a run writes once it has begun: a record of a study to summarise.
+_RUN_RECORDS = ("manifest.json", "setup", "simulation", "analysis", "report")
+
+
+def _wrote_records(path: Path) -> bool:
+    """Whether a run wrote any record of its own: its config alone, written
+    before it began, is not one."""
+    return any((path / m).exists() for m in _RUN_RECORDS)
 
 
 def _holds_conversations(path: Any) -> bool:

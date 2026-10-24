@@ -55,6 +55,15 @@ MAX_PAIRS_FOR_SHELL = 200_000
 PAIRS_PER_PASS = 2_000_000
 
 
+def _complete_shells_reach(traj: md.Trajectory) -> float:
+    """How far a shell is complete in every frame: half the shortest lattice
+    vector, which half the shortest cell edge overstates in a squashed cell.
+    A frame whose cell is empty or not a number is refused."""
+    from fastmdxplora.analysis.rdf import _reach_or_refuse
+
+    return _reach_or_refuse(traj)
+
+
 def _shell_counts(traj: md.Trajectory, cutoff: float, a: np.ndarray,
                   b: np.ndarray) -> np.ndarray:
     """Atoms of ``b`` within ``cutoff`` of each atom of ``a``, summed over
@@ -87,49 +96,99 @@ def _shell_counts(traj: md.Trajectory, cutoff: float, a: np.ndarray,
     return counts
 
 
-def _scatter_at(radius: float, radii: np.ndarray, g: np.ndarray) -> float:
-    """The noise g(r) carries at ``radius``, scaled from the bulk.
 
-    The scatter of a radial distribution function is not constant in r, and
-    treating it as though it were is how a structureless liquid comes to
-    report a first shell. The number of pairs falling in a bin at radius r
-    goes as the shell volume, r^2 dr, so the relative counting scatter goes
-    as 1/sqrt(N) and therefore as 1/r. A peak at 0.16 nm is measured against
-    roughly eight times the noise of the bulk at 1.3 nm, and comparing it
-    against the bulk figure instead makes the first noisy bin look like a
-    hydration shell.
-
-    Measured on randomly placed points in a 4 nm box: the standard deviation
-    of g(r) was 0.569 over r in [0.15, 0.30) and 0.071 over [1.5, 2.0),
-    a ratio of 8.0 against the 1/r prediction of 7.8. The model is used
-    rather than a fitted threshold because it follows from the geometry.
-    """
-    bulk_mask = radii >= radii[int(len(radii) * 2 / 3)]
-    bulk = g[bulk_mask & np.isfinite(g)]
-    if bulk.size < 3:
-        return 0.0
-    bulk_radius = float(np.mean(radii[bulk_mask]))
-    if radius <= 0.0 or bulk_radius <= 0.0:
-        return 0.0
-    return float(np.std(bulk)) * (bulk_radius / radius)
+def _smoothed(values: np.ndarray, bins: int) -> np.ndarray:
+    """A running mean over ``bins`` bins (an odd number) along the last
+    axis, the ends padded with their own values (zero padding pulled the
+    first bins below bulk)."""
+    values = np.asarray(values, dtype=np.float64)
+    if bins <= 1:
+        return values
+    half = bins // 2
+    padded = np.pad(values, [(0, 0)] * (values.ndim - 1) + [(half, half)], mode="edge")
+    # Each window summed on its own, so a level stretch stays exactly level.
+    windows = np.lib.stride_tricks.sliding_window_view(padded, bins, axis=-1)
+    return windows.sum(axis=-1) / bins
 
 
-def _first_minimum(radii: np.ndarray, g: np.ndarray) -> tuple[float, str]:
+#: The width, in nm, the first minimum is looked for over: a running mean
+#: across it, so a noisy bin in a shallow trough does not set the cutoff.
+#: Seven bins at the 0.005 nm width.
+MINIMUM_SMOOTHING_NM = 0.035
+
+#: A trough wider than this, in nm, over which the count changes, has no
+#: minimum to read.
+FLAT_TROUGH_NM = 0.1
+
+#: A share of the count below which where the cutoff falls in a trough
+#: does not matter: an empty gap between a crystal's shells.
+LEVEL_COUNT = 0.01
+
+#: Scatters of a difference of two smoothed values that the stretch of
+#: trough indistinct from its minimum is drawn at.
+LEVEL_SCATTERS = 2.0
+
+#: Scatters of a difference of two smoothed values that a dip has to be
+#: climbed out of to be a minimum.
+RESOLVED_SCATTERS = 3.0
+
+
+def _smoothing_bins(radii: np.ndarray) -> int:
+    width = float(radii[1] - radii[0]) if len(radii) > 1 else SHELL_BIN_WIDTH
+    return max(1, int(round(MINIMUM_SMOOTHING_NM / width))) | 1
+
+
+def _running(radii: np.ndarray, g: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Bin edges and the integral of g(r) over the shells up to each, which
+    is the coordination number up to a density."""
+    width = float(radii[1] - radii[0]) if len(radii) > 1 else SHELL_BIN_WIDTH
+    edges = np.concatenate([[radii[0] - width / 2], radii + width / 2])
+    shells = (4.0 / 3.0) * np.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
+    return edges, np.concatenate([[0.0], np.cumsum(np.nan_to_num(g) * shells)])
+
+
+def _out_of(floor: float, resolved: float) -> float:
+    """What a curve at ``floor`` has to climb above to be out of its trough:
+    clear of the floor by ``resolved``, and back at bulk within it. A climb
+    that stays below bulk is a wiggle inside one trough, and in a long
+    trough noise makes such wiggles somewhere."""
+    return max(floor + resolved, 1.0 - resolved)
+
+
+def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
+                   smooth_noise: np.ndarray | None = None,
+                   record: dict[str, Any] | None = None) -> tuple[float, str]:
     """Where the first solvation shell ends, or why it cannot be said.
 
     Returns ``(cutoff_nm, "")`` on success and ``(nan, reason)`` otherwise.
+    ``noise`` is the scatter of g(r) in each bin and ``smooth_noise`` that
+    of its running mean over :data:`MINIMUM_SMOOTHING_NM`
+    (:meth:`PairHistogram.scatter`; ``noise`` over the root of the bins
+    when not given). ``record``, if given, takes the stretch of trough the
+    minimum is not distinct from (``range_nm``) and whether the count is
+    level across it.
 
     A first minimum is only meaningful after a first maximum: the curve has
     to rise into a shell before it can fall out of one. So the peak is
-    located first, and the minimum is the lowest point after it and before
-    the curve has climbed back to the second shell. Taking a global argmin
-    instead would return the r-axis origin on every trajectory, where g(r)
-    is zero because no two atoms are on top of each other.
+    located first, and must stand above bulk by more than its own scatter
+    times the bar a 1% chance of noise reaching it in any of the bins
+    searched sets (about 3.9 for 300 bins, never under 3). The minimum is
+    then the first dip clear below bulk after it that the curve climbs
+    back out of before going lower, back to bulk and by more than a
+    difference of two smoothed values could by noise (three of its
+    scatters, more where a long trough is searched): the lowest point after
+    the peak could lie past the second shell, and a shallow trough can run
+    on to a second, lower dip.
 
-    The same guard `rdf` applies to peaks applies here, with one correction:
-    the scatter is measured at the peak's own radius rather than in the
-    bulk. See :func:`_scatter_at`.
+    The trough around it that is within two scatters of a difference (or a
+    tenth of its depth) of it is where the minimum could be. Where the count
+    changes by under 1% across it, as across the empty gap between a
+    crystal's shells, its middle is the cutoff; where it is wider than
+    :data:`FLAT_TROUGH_NM` and the count does change, there is no minimum
+    to read.
     """
+    from statistics import NormalDist
+
     finite = np.isfinite(g)
     if finite.sum() < 8:
         return float("nan"), (
@@ -152,20 +211,23 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray) -> tuple[float, str]:
         return float("nan"), "g(r) is empty over the searchable range."
 
     height = float(g[peak]) - 1.0
-    noise = _scatter_at(float(radii[peak]), radii, g)
-    if noise > 0.0 and height <= 3.0 * noise:
+    scatter = float(noise[peak]) if np.isfinite(noise[peak]) else np.inf
+    searched = max(1, int(np.count_nonzero(searchable & finite)))
+    bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
+    if height <= bar * scatter:
         return float("nan"), (
             f"g(r) rises {height:+.3f} above bulk at its tallest point "
-            f"({radii[peak]:.3f} nm), against a scatter of {noise:.3f} at "
-            "that separation -- counting noise grows as 1/r, so a bin this "
-            "close in is far noisier than the bulk. There is no first shell "
-            "resolved here, so there is no first minimum to take a cutoff "
-            "from. Give `cutoff` explicitly, or run for longer."
+            f"({radii[peak]:.3f} nm), against a scatter of {scatter:.3f} at "
+            "that separation, from its own counts and from how much it "
+            f"varies over the run, and {bar:.1f} times that is needed where "
+            f"the tallest of {searched} bins is taken. There is no first "
+            "shell resolved here, so "
+            "there is no first minimum to take a cutoff from. Give `cutoff` "
+            "explicitly, or run for longer."
         )
 
-    after = g[peak:]
     after_r = radii[peak:]
-    if after.size < 3:
+    if after_r.size < 3:
         return float("nan"), (
             f"The tallest point of g(r) is at {radii[peak]:.3f} nm, at the "
             "edge of the range the box resolves, so the curve never falls out of "
@@ -173,12 +235,100 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray) -> tuple[float, str]:
             "it."
         )
 
-    minimum = int(np.argmin(np.where(np.isfinite(after), after, np.inf)))
-    if minimum == len(after) - 1:
+    bins = _smoothing_bins(radii)
+    smooth = _smoothed(np.where(finite, g, 1.0), bins)[peak:]
+    if smooth_noise is None:
+        smooth_noise = np.asarray(noise, dtype=np.float64) / np.sqrt(bins)
+    # A scatter that is not a number is not resolved by anything.
+    spread = np.nan_to_num(np.asarray(smooth_noise, dtype=np.float64)[peak:],
+                           nan=np.inf, posinf=np.inf)
+    # Clearing bulk, or climbing out of a trough, by noise alone happens
+    # somewhere in a long range, so the bar is the one a 1% chance over the
+    # independent stretches searched sets, as for the peak, never under
+    # RESOLVED_SCATTERS.
+    stretches = max(1, int(np.count_nonzero(searchable & finite)) // bins)
+    climb = max(RESOLVED_SCATTERS, NormalDist().inv_cdf(1.0 - 0.01 / stretches))
+    resolved = climb * np.sqrt(2.0) * spread
+
+    # A trough is where the curve stands clear below bulk, and the second
+    # shell begins where, having done so, it stands clear above it again.
+    n = len(smooth)
+    below = np.nonzero(smooth < 1.0 - climb * spread)[0]
+    end = n
+    if below.size:
+        rising = np.nonzero((np.arange(n) > below[0]) & (smooth > 1.0 + climb * spread))[0]
+        if rising.size:
+            end = int(rising[0]) + 1
+
+    minimum = -1
+    for k in range(1, min(end, n - 1)):
+        if not (smooth[k] <= smooth[k - 1] and smooth[k] < smooth[k + 1]
+                and smooth[k] < 1.0 - climb * spread[k]):
+            continue
+        later = smooth[k + 1:]
+        lower = np.nonzero(later < smooth[k])[0]
+        out = np.nonzero(later > _out_of(smooth[k], resolved[k]))[0]
+        if out.size and (not lower.size or out[0] < lower[0]):
+            minimum = k
+            break
+    if minimum < 0:
+        if not below.size:
+            reached = np.nonzero(smooth - 1.0 <= climb * spread)[0]
+            ended = (f"; the shell has ended by {after_r[reached[0]]:.3f} nm, "
+                     "where the curve is back at bulk" if reached.size else "")
+            return float("nan"), (
+                f"After its first peak at {radii[peak]:.3f} nm g(r) does not "
+                "fall below bulk by more than its scatter within the range "
+                "the cell resolves, so there is no trough and no minimum to "
+                "read, and the count goes on rising with the bulk past the "
+                f"shell. Give `cutoff` explicitly{ended}."
+            )
+        if int(np.argmin(smooth)) >= n - bins:
+            return float("nan"), (
+                "g(r) is still falling where the box runs out, so the lowest "
+                "point after the first peak is the end of the range rather than "
+                "a shell boundary. Give `cutoff` explicitly."
+            )
+        lowest = int(np.argmin(smooth[:end]))
         return float("nan"), (
-            "g(r) is still falling where the box runs out, so the lowest "
-            "point after the first peak is the end of the range rather than "
-            "a shell boundary. Give `cutoff` explicitly."
+            f"After its first peak g(r) falls to {1.0 - smooth[lowest]:.3f} "
+            f"below bulk (at {after_r[lowest]:.3f} nm) and does not climb back "
+            "out of the trough by more than its scatter before going lower, "
+            "so the trough has no minimum to read, and a cutoff in it would "
+            "be a choice rather than a measurement. Give `cutoff` "
+            "explicitly, or run for longer."
+        )
+
+    # The basin the minimum lies in, up to where the curve climbs out of it
+    # on either side, and the part of it not distinct from the minimum.
+    floor = float(smooth[minimum])
+    left, right = minimum, minimum
+    while left > 0 and smooth[left - 1] - floor <= resolved[minimum]:
+        left -= 1
+    while right < n - 1 and smooth[right + 1] <= _out_of(floor, resolved[minimum]):
+        right += 1
+    depth = 1.0 - floor
+    # Two smoothed values are told apart at LEVEL_SCATTERS scatters of
+    # their difference, which is root two of one's.
+    level = floor + max(0.1 * depth, LEVEL_SCATTERS * np.sqrt(2.0) * float(spread[minimum]))
+    near = left + np.nonzero(smooth[left:right + 1] <= level)[0]
+    low, high = float(after_r[near[0]]), float(after_r[near[-1]])
+    edges, running = _running(radii, g)
+    counted = np.interp([low, float(after_r[minimum]), high], edges, running)
+    change = float(counted[2] - counted[0]) / max(float(counted[1]), 1e-300)
+    flat = change <= LEVEL_COUNT
+    if record is not None:
+        record.update(range_nm=(low, high), level=flat)
+    if flat:
+        return 0.5 * (low + high), ""
+    if high - low > FLAT_TROUGH_NM:
+        return float("nan"), (
+            f"After its first peak g(r) stays within its scatter of its "
+            f"lowest point ({depth:.3f} below bulk) from {low:.3f} to "
+            f"{high:.3f} nm, and the count changes by {100.0 * change:.0f}% "
+            "across that, so the trough has no minimum to read, and a cutoff "
+            "anywhere in it would be a choice rather than a measurement. "
+            "Give `cutoff` explicitly, or run for longer."
         )
     return float(after_r[minimum]), ""
 
@@ -300,33 +450,114 @@ class CoordinationNumber(Analysis):
         self, traj: md.Trajectory, a: np.ndarray, b: np.ndarray
     ) -> float:
         """The first minimum of g(r) between the two groups, in nm."""
-        half_box = float(np.min(traj.unitcell_lengths)) / 2.0
-        rng = np.random.default_rng(0)
-        pairs = np.array(
-            [(int(i), int(j)) for i in a for j in b if int(i) != int(j)],
-            dtype=int)
+        half_box = _complete_shells_reach(traj)
+        from fastmdxplora.analysis.rdf import PairHistogram, _pairs_between
+
+        # Drawn as the RDF analysis draws them, without listing every pair
+        # first: a protein against its water is tens of millions of them.
+        pairs, available = _pairs_between(a, b, np.random.default_rng(0),
+                                          limit=MAX_PAIRS_FOR_SHELL)
         if len(pairs) == 0:
             raise StudyError(
                 "The two selections name the same single atom, so there are "
                 "no pairs to build a g(r) from.",
                 code="analysis.selection.arity",
             )
-        if len(pairs) > MAX_PAIRS_FOR_SHELL:
-            keep = rng.choice(len(pairs), MAX_PAIRS_FOR_SHELL, replace=False)
-            pairs = pairs[np.sort(keep)]
 
-        radii, g = md.compute_rdf(
-            traj, pairs, r_range=(0.0, half_box), bin_width=SHELL_BIN_WIDTH)
-        cutoff, reason = _first_minimum(radii, g)
+        histogram = PairHistogram(traj, pairs, half_box, SHELL_BIN_WIDTH)
+        radii = histogram.radii
+        bins = _smoothing_bins(radii)
+
+        def read(frames):
+            found: dict[str, Any] = {}
+            cutoff, reason = _first_minimum(
+                radii, histogram.g(frames), histogram.scatter(frames),
+                histogram.scatter(frames, window=bins), found)
+            return cutoff, reason, found
+
+        cutoff, reason, found = read(slice(None))
         if reason:
             raise StudyError(reason, code="analysis.sampling.no_variance")
-        self.findings.setdefault("shell", {})["cutoff_from_rdf_nm"] = cutoff
-        self.findings["shell"]["read_from"] = (
-            "the first minimum of g(r) between these two selections on this "
-            "trajectory, computed at a "
-            f"{SHELL_BIN_WIDTH:g} nm bin width over 0 to "
-            f"{half_box:.3g} nm."
-        )
+
+        # Neighbours per atom of `a` up to r, from the curve: the pairs in a
+        # shell are g times all the pairs times the shell over the volume.
+        edges, running = _running(radii, histogram.g())
+        density = available / float(len(a)) * float(np.mean(1.0 / histogram.volumes))
+
+        def count(r: float) -> float:
+            return float(density * np.interp(r, edges, running))
+
+        low, high = found["range_nm"]
+        shell = self.findings.setdefault("shell", {})
+        shell.update({
+            "cutoff_from_rdf_nm": cutoff,
+            "read_from": (
+                "the first minimum of g(r) between these two selections on "
+                "this trajectory, computed at a "
+                f"{SHELL_BIN_WIDTH:g} nm bin width over 0 to {half_box:.3g} nm "
+                f"and smoothed over {bins} bins ({bins * SHELL_BIN_WIDTH:.3g} nm)."),
+            "cutoff_range_nm": [low, high],
+            "coordination_number_range": [count(low), count(high)],
+        })
+        if found["level"]:
+            said = (
+                f"The cutoff, {cutoff:.3f} nm, is the middle of the trough "
+                f"between the first two shells of g(r), which is level from "
+                f"{low:.3f} to {high:.3f} nm: the count is the same anywhere "
+                "in it.")
+        else:
+            said = (
+                f"The cutoff, {cutoff:.3f} nm, is the first minimum of g(r). "
+                f"The curve is within its scatter of that minimum from "
+                f"{low:.3f} to {high:.3f} nm, over which the count runs from "
+                f"{count(low):.2f} to {count(high):.2f} neighbours per atom of "
+                "`selection_a`.")
+
+        # Read again from each half of the run: a minimum that moves with
+        # the frames read, outside where the whole run places it, is not one
+        # the run measures (O-O in 1 M NaCl; the halves of a slowly moving
+        # gas), and neither is one no half finds on its own.
+        if traj.n_frames >= 2:
+            half = traj.n_frames // 2
+            halves = []
+            for frames in (np.arange(half), np.arange(half, traj.n_frames)):
+                value, failed, _ = read(frames)
+                halves.append(None if failed else value)
+            shell["cutoff_from_each_half_nm"] = halves
+            read_in = [v for v in halves if v is not None]
+            if not read_in:
+                raise StudyError(
+                    f"g(r) over the whole run has a first minimum at "
+                    f"{cutoff:.3f} nm, but neither half of the run resolves "
+                    "one on its own, so the minimum rests on too few frames "
+                    "to be a measurement. Give `cutoff` explicitly, or run "
+                    "for longer.", code="analysis.sampling.no_variance")
+            margin = SHELL_BIN_WIDTH
+            outside = [v for v in read_in if not low - margin <= v <= high + margin]
+            if outside:
+                said_halves = " and ".join(
+                    f"{v:.3f}" if v is not None else "none" for v in halves)
+                raise StudyError(
+                    f"g(r) over the whole run has a first minimum at "
+                    f"{cutoff:.3f} nm, within its scatter from {low:.3f} to "
+                    f"{high:.3f} nm, but the two halves of the run put it at "
+                    f"{said_halves} nm: the cutoff moves with the frames read, "
+                    "so it is not one the run measures. Give `cutoff` "
+                    "explicitly, or run for longer.",
+                    code="analysis.sampling.no_variance")
+            if len(read_in) == 2:
+                counts = [count(v) for v in halves]
+                shell["coordination_number_at_each_half_s_cutoff"] = counts
+                said += (
+                    f" Read from each half of the run the minimum falls at "
+                    f"{halves[0]:.3f} and {halves[1]:.3f} nm, where the count "
+                    f"is {counts[0]:.2f} and {counts[1]:.2f}.")
+            else:
+                which = "first" if halves[0] is None else "second"
+                said += (
+                    f" The {which} half of the run alone resolves no minimum; "
+                    f"the other puts it at {read_in[0]:.3f} nm.")
+        shell["said"] = said
         return cutoff
 
     def compute(self, traj: md.Trajectory) -> np.ndarray:
@@ -346,11 +577,11 @@ class CoordinationNumber(Analysis):
             if self.cutoff == "rdf" else float(self.cutoff)
         )
 
-        half_box = float(np.min(traj.unitcell_lengths)) / 2.0
+        half_box = _complete_shells_reach(traj)
         if cutoff > half_box:
             raise StudyError(
-                f"A cutoff of {cutoff:g} nm is larger than half the smallest "
-                f"box dimension ({half_box:.3g} nm). Past that the "
+                f"A cutoff of {cutoff:g} nm is larger than half the cell's "
+                f"shortest lattice vector ({half_box:.3g} nm). Past that the "
                 "minimum-image convention supplies only part of each shell, "
                 "so the count would be of an incomplete sphere and would "
                 "still look like a coordination number.",

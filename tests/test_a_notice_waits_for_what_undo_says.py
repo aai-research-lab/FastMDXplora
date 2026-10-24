@@ -80,7 +80,7 @@ def _tags_kept(page, session):
     page.click(f"{card} .study-tag-edit")
     page.fill(f"{card} .study-tag-input", "slip")
     page.click(f"{card} .study-tag-editor button:has-text('Save')")
-    page.wait_for_selector("#dashboard-toast.show:has-text('Kept the tags') .dashboard-toast-action")
+    page.wait_for_selector("#dashboard-toast.show:has-text('Saved the tags') .dashboard-toast-action")
     page.evaluate(_HEARD)
     # On the Undo, so it is still offered however long the page takes to see
     # the other window's study.

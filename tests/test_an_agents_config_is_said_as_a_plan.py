@@ -43,7 +43,7 @@ class TestThePlan:
         assert plan["Conditions"] == {"label": "Conditions", "value": "300 K, 1 bar",
                                       "default": True}
         assert plan["Solvent"]["value"] == (
-            "dodecahedron box, 1 nm padding, 0.15 M Na+/Cl-")
+            "dodecahedron box, 2 nm padding, 0.15 M Na+/Cl-")
         assert plan["Force field"]["value"] == "chosen for the structure"
         assert plan["Analyses"]["value"] == "the default set"
 
@@ -116,7 +116,7 @@ class TestThePlan:
         bilayer; the plan said the dodecahedron `box_shape` defaults to."""
         plan = _lines({"systems": [{"system": "1AFO"}], "setup": {"membrane": "POPC"}})
         assert plan["Solvent"]["value"] == (
-            "rectangular box of whole bilayer patches, 1 nm padding, 0.15 M Na+/Cl-")
+            "rectangular box of whole bilayer patches, 2 nm padding, 0.15 M Na+/Cl-")
 
     @pytest.mark.parametrize("setup,said", [
         ({"ligand_name": "BNZ"}, "BNZ, as the structure holds it"),
@@ -245,7 +245,9 @@ def test_the_plan_ends_with_what_it_would_build_and_take(tmp_path) -> None:
         f"{0.0:8.3f}{0.0:8.3f}  1.00  0.00           {name[0]}\n"
         for i in range(3) for k, name in enumerate(("N", "CA", "C", "O"))) + "END\n",
         encoding="utf-8")
+    # At 1.0 nm of padding, which three residues' box grows from.
     config = {"systems": [{"id": "p", "system": str(structure)}],
+              "setup": {"solvent_padding_nm": 1.0},
               "simulation": {"duration_ns": 1}}
     session = start_dashboard_session(output=str(tmp_path / "study"), host="127.0.0.1", port=0)
     entries = [
@@ -297,7 +299,9 @@ def test_a_reply_that_arrives_before_the_builder_is_ready_still_gets_it(tmp_path
         f"{0.0:8.3f}{0.0:8.3f}  1.00  0.00           {name[0]}\n"
         for i in range(3) for k, name in enumerate(("N", "CA", "C", "O"))) + "END\n",
         encoding="utf-8")
+    # At 1.0 nm of padding, which three residues' box grows from.
     config = {"systems": [{"id": "p", "system": str(structure)}],
+              "setup": {"solvent_padding_nm": 1.0},
               "simulation": {"duration_ns": 1}}
     session = start_dashboard_session(output=str(tmp_path / "study"), host="127.0.0.1", port=0)
     entries = [

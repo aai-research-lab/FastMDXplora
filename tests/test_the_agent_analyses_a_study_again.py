@@ -143,6 +143,11 @@ def test_the_agent_asks_then_writes_the_report_again(tmp_path, monkeypatch) -> N
                 route.fulfill(json={"ok": True})
             page.route("**/api/again", answer)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Enter sends nothing until the page has read its study and thread
+            # (CI-774 L12): pressed sooner, the words stay in the box, unsent.
+            page.wait_for_function(
+                "() => window.FastMDXAgentPanel && !window.FastMDXAgentPanel.waits",
+                timeout=30000)
             page.fill("#agent-request", "write its report again")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-confirm")

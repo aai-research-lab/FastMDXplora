@@ -1,6 +1,6 @@
 # The FastMDXplora analyses
 
-Twenty-seven analyses of the trajectory, and three more that read what a biased
+Twenty-eight analyses of the trajectory, and three more that read what a biased
 run itself produced.
 
 Each writes its data, its figure, and the settings it actually used:
@@ -58,6 +58,118 @@ minimum in g(r) — never assumed, because the radius decides the number.
 | `pair_distance` | The separation of two selections, by centre of mass or closest approach, by the minimum image in a periodic cell of any shape |
 | `end_to_end` | The distance between the two ends of a chain, the coarsest description of extension there is |
 | `moments_of_inertia` | The three principal moments, which separate a rod from a disc where the radius of gyration cannot, and the asphericity, acylindricity and relative shape anisotropy of the gyration tensor |
+| `image_check` | The solute's closest approach to its own periodic images in every frame, with the frames within the cutoff counted |
+
+`image_check` runs first on every study with a solute in a periodic box,
+a study that lists its analyses (`include`) too, unless excluded by name
+(`exclude: [image_check]`, said in the log, the analysis manifest and the
+report: the solute is then not checked, and no mean says whether it met its
+copy, except the end-to-end distance, which checks its own chain against the
+run's cutoff and says it as its own check, there being no Image check section
+to point to). It does the check as
+`gmx mindist -pi` does the check: in each frame, made whole along its bonds,
+the closest approach of any heavy atom of the solute to any heavy atom of its
+images, every image the
+solute could reach searched (the shifts enumerated from the closest approach
+plus the solute's diameter, however many cells that is), in a cell of any
+shape, found with a k-d tree; kept as a series
+(`image_check.dat`), with the frames under the cutoff and under 0.5 nm
+counted, and the closest
+approach with its frame, its time and its two atoms (`findings.solute_image`).
+The solute is the macromolecules: every protein and nucleic
+acid residue and every other polymer chain (a molecule bonded across two or
+more residues; in a topology with no bonds, a chain of two or more residues),
+so an RNA, a DNA duplex or a peptide of non-standard residues is checked as a
+protein is; a ligand or cofactor is counted with them only where it is in the
+solute the analyses already use (the scope's, `protein or resname LIG` with a
+ligand); water, ions and lipids never. Its molecules are grouped into
+complexes in the first frame the check reads: molecules bonded to each other,
+or in contact (any heavy atoms within 0.5 nm, at the nearest image), are one
+complex, kept whole from frame to frame. The grouping is not made again as the
+run goes: a complex that parts, a ligand that unbinds, or molecules that join
+during the run are grouped as in the first frame read, so a parted dimer may
+be noted and an oligomer formed later is checked as its molecules. Each
+complex is checked against its own periodic images only. A copy meeting another copy's image (eight
+peptides in a box, an aggregation study) is contact between molecules in the
+box, their concentration, not a self-image, and is not counted: eight 2.2 nm
+peptides on a grid in a 6 nm cube each come 3.80 nm from their own images,
+though taken together they came 0.80 nm from theirs. The finding says how
+they were grouped (`complexes`, `grouped`). Heavy atoms only, where
+`gmx mindist -pi` counts every atom, so the distance reads about 0.1 nm longer
+than the closest pair of atoms that interact.
+The cutoff is the run's own real-space cutoff: its `nonbonded_cutoff_nm` as
+set or as setup resolved it, read from the setup record of the system the run
+simulated, found as the report and the GUI find it (the study's own
+`setup/setup_parameters.json`, or the one its `setup_from` names, an umbrella
+window's shared setup among them); else the cutoff of the force field that
+record names (1.2 nm for CHARMM36, 1.0 nm for AMBER); else 1.0 nm, taken, and
+why. The finding says which and from where ("The cutoff is 1.2 nm, read from
+the run's `nonbonded_cutoff_nm` as setup resolved it, in ...", `cutoff_from`),
+and `cutoff_nm` under `options: {image_check: ...}` sets another.
+Where the solute comes within the cutoff of its image, it is interacting with
+its own copy in those frames. That may bias a mean over them; it does not
+make the mean's statistical error unknown. So every mean keeps its error bar,
+and every analysis of those frames carries a note, counted over the frames it
+uses (after its mean's discarded equilibration, or from its `start` as its
+record of the frames read says it; for an analysis without a main mean, the
+moments' or the secondary structure's, over the frames its means use, said as
+the union where they differ; for the thermodynamics, over the energy rows
+each mean averages, on the energy record's own interval, each read at the
+trajectory frame nearest its time), once in
+its `findings.solute_image` ("The solute came within 1 nm of its own periodic
+image in 105 of 280 frames used (38%); the closest, 0.580 nm at frame 299,
+2.99 ns. ..."), with its numbers on each mean record it holds (SASA's
+hydrophobic and polar, the moments' shape descriptors), and on each reweighted
+average of a biased run. For an analysis of the solute's shape or
+conformation the note says its shape may be biased; for the thermodynamics
+and the solvent's analyses, that a mean may be. The report says the check's
+finding once, in its own section, and under each analysis one line pointing
+there. Every page that shows the mean (the Overview's tiles and production
+means, the Analysis page's table, the line over each card, its caption and its
+convergence, the Report page's table, the runs of a study compared and the
+Report page's table of runs, the written comparison and the slides) and the
+Agent (the means cited under its answers too) say the note beside the
+mean's verdict, which it does not change ("may be biased: in 54 of 270
+frames used (20%) the solute was within 1 nm of its own image"), the analysis's
+paragraph a click away, all read from the record by one reader
+(`fastmdxplora.image_note`); an analysis with no mean over its frames (RMSF,
+the order parameters, the dihedrals, clustering, the projections) says its
+note on its row of the Analysis page's table and over its card, and RMSF's
+caption beside its mean over residues; the image check's own row and card
+give its finding in a sentence.
+Frames where no mean is used (the discarded equilibration) do not count, and
+an analysis whose frames never met the image carries no note. `end_to_end`
+alone withholds its error for it, as it did before the whole chain was
+checked (where an end came within 1.0 nm of the other end's image): it reads
+the same note rather than checking the chain's two ends alone, which passed
+a chignolin chain that came to 0.261 nm of its own copy. Grading the note by
+how often and how close (a note only under a small share of frames never in
+contact; past it, the mean over the frames clear of the image given beside
+it) waits for thresholds fixed in a registered check. A larger box, in a new study, is what
+changes it; setup's default padding is 2.0 nm for this reason (see
+[Config reference](config_reference.md)).
+Within the cutoff the solute sees its image (it interacts with its copy in
+direct space); it is in contact with it only under 0.5 nm, and the finding
+counts both. The report's Convergence part says how many frames were within
+the cutoff and in contact; where the solute was in contact with its image in
+every frame, it lists any claim about the solute's shape among what the run
+cannot support, since a longer run in the same box samples the same contact,
+and says that the longer run it asks for may determine the means without
+lifting that bias, as the Overview's lead and the Agent's answers on run
+length and on what would strengthen the run say beside the longer run they
+advise (`image_note.longer_run_said`), with or without a figure of how much
+longer. Where every mean is determined, the lead and those answers say that
+the means may still be biased by the image and that a larger box lifts it,
+never "determined" or "yes" alone, and replicas are advised in a larger box
+(`image_note.determined_said`).
+Not done yet: complexes are not grouped again frame by frame (above); the
+check is not said while the run goes; a ligand's approach
+to an image of the protein is not recorded apart from the complex's; the
+note is not graded by thresholds (above); the GUI's map of time against time
+plots its last block a full block wide where the figure plots it its own
+width; several workers clustering at once each plan on the same memory; and
+no frame cap is set by default (a cap is the person's choice); and fetching a
+study from another machine does not yet give its sizes by kind.
 
 ### The bilayer
 
@@ -96,7 +208,46 @@ others) as `cluster_<method>_populations.csv`, and each medoid as a
 structure without its water (`cluster_<method>_medoid_<k>.pdb`); and the
 frame-to-frame RMSD it clustered on, with the frames' times, as
 `cluster_rmsd_matrix.npz` and as a map of time against time
-(`cluster_rmsd_matrix.png`).
+(`cluster_rmsd_matrix.png`). The map is at most 1,000 cells across: past
+1,000 frames its rows and columns are means over blocks of consecutive
+frames, the block recorded in the file (`block`) and in `options.json`
+(`findings.matrix`) and said in the figure's title and the report's
+caption. The GUI and the report read that one file. The whole matrix is
+written only when asked, with `cluster: {save_full_matrix: true}` under the
+analysis phase's `options`, as `cluster_rmsd_matrix_full.npy` (float32, its
+size said in the log first).
+
+The matrix grows with the square of the frames clustered: 31,000 frames make
+7.7 GB of it in float64 and 128,000 frames 131 GB, before the copies a
+method makes. So before it is made, its peak (the matrix and the largest copy
+the methods asked for make, `findings.memory`) is checked against the memory
+this process can take, of which clustering plans on three quarters: the least
+of the machine's available memory, its control group's limit less its usage
+(`memory.max` less `memory.current` under cgroup v2, `memory.limit_in_bytes`
+less `memory.usage_in_bytes` under v1, the tightest of the group and those
+above it: a SLURM job's, a container's; its reclaimable page cache,
+`inactive_file` in `memory.stat` (`total_inactive_file` under v1), not
+counted as used, as the kernel takes it back before it kills anything in the
+group), and its address-space or data limit (`ulimit -v`) less what it
+holds, the record saying which was least and the refusal saying it in words
+("the container allows", "this machine has", "the process may use"). The
+peak is counted as resident memory measured it, compiled code's copies
+included (17 n^2 bytes beside the matrix for an average or complete
+linkage). Several workers clustering at once each read the same memory, and
+one's matrix is not seen by another until it is written: that is not planned
+for yet.
+Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
+with the stride that fits, then the frames, the bytes needed and available,
+and last where the memory was read, and said in the log;
+`stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
+the other analyses still read every frame. On `features: coordinates`,
+k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
+matrix and is checked the same way (16 n^2 bytes, the matrix and its centred
+square), checked before any of its methods runs and refused past it with the
+stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA,
+t-SNE and UMAP make none, and asked for beside a refused MDS they still run
+and their projections are saved, the refusal recorded (`findings.mds_refused`)
+and said in the report.
 
 `dimred`, with PCA, writes the free-energy landscape on the first two
 components: G = -kT ln P, with P the histogram over `landscape_bins` bins
@@ -238,7 +389,15 @@ against another tool.
   `equilibrated` by default). A loop relaxing 0.4 nm
   in the first fifth of a run read 0.082 nm averaged over every frame, against
   0.052 nm once relaxed. Results change from earlier releases on any run that
-  relaxed.
+  relaxed. `bfactor_comparison` takes the same frames, with the same `start`,
+  so with the default selection and `ref` its simulated column is the RMSF's;
+  `ligand_rmsf` starts after the later of the receptor's equilibration and the
+  ligand's, the ligand's found on its heavy-atom, symmetry-corrected RMSD in
+  the receptor frame (over every frame, a ligand settling 0.4 nm over the
+  first fifth of a run read 1.7 times its fluctuation over the settled
+  frames). Where that start leaves out more than a third of the run, which a
+  change of pose or an unbinding also causes, it is said, and the value over
+  every frame is recorded beside it.
 
 - **Radius of gyration** is mass-weighted by default, which is the physical
   definition; `mass_weighted: false` gives the geometric one. A virtual site
@@ -317,9 +476,10 @@ against another tool.
   from one residue to the next along the chain, so it is the same whether the
   chain was stored whole or wrapped into the cell, and it is not limited to
   half the box. Taken between the two ends directly, a straight chain 3.42 nm
-  long in a 4.62 nm cube read 1.20 nm. Where an end comes within 1.0 nm of a
-  periodic image of the other end, the chain is interacting with its own copy;
-  the run is marked and the mean carries no error bar.
+  long in a 4.62 nm cube read 1.20 nm. Where the chain comes within the run's
+  cutoff of its own periodic image in the frames its mean uses (the image
+  check's note), it is interacting with its own copy; the run is marked and
+  the mean carries no error bar.
 
 - **Moments of inertia** are marked as describing a broken molecule only where a
   bond of the selection is longer than half the cell's narrowest width, which a
@@ -338,7 +498,9 @@ against another tool.
   one's mean after equilibration is recorded in `options.json` under its name.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
-  periodic copy. The protein and nucleic chains are kept together, and every
+  periodic copy; an analysis given a trajectory some other way (straight from
+  `md.load`, or edited after loading) measures its bonds and makes a split
+  one whole on a copy first, and says so. The protein and nucleic chains are kept together, and every
   other solute molecule (a ligand, an ion) is moved to the copy whose centre
   is nearest theirs, searched exactly for any box shape. So a radius of
   gyration, SASA or RMSD of a selection that includes a ligand which has left
@@ -398,7 +560,8 @@ against another tool.
   both phi and psi, and a histogram of each angle otherwise; the angles
   chosen are written to `options.json`.
 
-- **g(r)** stops at half the smallest box dimension. Past that the
+- **g(r)** stops at half the cell's shortest lattice vector (for the boxes
+  setup builds, half the smallest box dimension). Past that the
   minimum-image convention supplies only part of each shell, so the curve falls
   away for a reason belonging to the box rather than the liquid — and it falls
   smoothly enough to read as structure.
@@ -540,6 +703,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.moments_of_inertia
+   :members:
+
+.. automodule:: fastmdxplora.analysis.image_check
    :members:
 
 .. automodule:: fastmdxplora.analysis.area_per_lipid

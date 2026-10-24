@@ -216,3 +216,49 @@ class TestReadingOneMember:
         (out / "analysis" / "broken" / "options.json").write_text(
             "{not json", encoding="utf-8")
         assert read_member_findings(out) == {}
+
+
+def test_replicas_from_the_models_of_an_ensemble_are_said_so_not_seed_alone(tmp_path):
+    """Runs prepared from different models of an ensemble (`setup.model`)
+    are replicas, independent starts of one molecule, and were said to
+    "differ only by random seed" by the aggregate, the plan, the runs'
+    table and a stopping rule's verdict. One function says how replicas
+    differ, and every one of them uses it."""
+    from fastmdxplora.gui.plan import plan_of
+    from fastmdxplora.gui.runs_compared import runs_compared
+    from fastmdxplora.simulation.stopping import Verdict, _said_met
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "setup.model", [1, 5, 12])
+    summary = aggregate_members(study, share=False)
+    assert summary["replicas"] is True
+    assert summary["why"].startswith(
+        "the members are replicas started from different models of the ensemble, so they "
+        "are repeats of one estimate"), summary["why"]
+    assert "random seed" not in summary["why"]
+    answer = runs_compared(study)
+    assert answer["replicas"] is True
+    assert answer["replicas_said"] == "started from different models of the ensemble"
+    plan = {line["label"]: line["value"] for line in plan_of(
+        {"systems": [{"system": "1L2Y"}], "sweep": {"setup.model": [1, 5, 12]}})}
+    assert plan["Replicas"] == "3, started from models 1, 5, 12 of the ensemble"
+    # Models and seeds together: one line, never a second "differing only by
+    # random seed" of runs that also differ by model.
+    lines = [(line["label"], line["value"]) for line in plan_of(
+        {"systems": [{"system": "1L2Y"}],
+         "sweep": {"setup.model": [1, 5, 12], "simulation.random_seed": [1, 2]}})
+        if line["label"] in ("Replicas", "Varied")]
+    assert lines == [("Replicas", "6, started from models 1, 5, 12 of the ensemble, "
+                                  "each with a seed of its own")], lines
+    met = _said_met([Verdict("rmsd", True, "rmsd 0.150 ± 0.001 nm")], 2.0, 3, "required",
+                    axes=["setup.model"])
+    assert "The 3 replicas started from different models of the ensemble, so" in met
+    assert "seed" not in met and "one structure" not in met
+
+    from fastmdxplora.batch.aggregate import how_replicas_differ
+
+    assert how_replicas_differ(["simulation.random_seed"]) == "that differ only by random seed"
+    assert how_replicas_differ(["setup.random_seed"], as_participle=True) == \
+        "differing only by random seed"
+    assert how_replicas_differ(["setup.model", "simulation.random_seed"]) == \
+        "started from different models of the ensemble, each with a seed of its own"

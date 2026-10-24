@@ -52,8 +52,10 @@ class TestAStatedValueIsKept:
                                                else (1.0, False, None))
         assert "with nothing stated" in said
 
-    def test_an_xml_list_falls_back_as_before(self) -> None:
-        assert _scheme(None)[:3] == (1.0, True, None)
+    def test_nothing_to_read_takes_openmm_s_own_default(self) -> None:
+        """It was switched at nine tenths of the cutoff, which OpenMM itself
+        does not do and AMBER must not have."""
+        assert _scheme(None)[:3] == (1.0, False, None)
 
 
 class TestTheRecordSaysWhatWasUsed:

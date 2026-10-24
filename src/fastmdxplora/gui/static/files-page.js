@@ -518,14 +518,23 @@
           again = false;
           setTimeout(function () { refresh(false); }, 0);
         }
-        if (!said || !said.ok) return;
+        if (!said || !said.ok) {
+          couldNot((said && (said.error || said.reason)) || "The server could not read them.");
+          return;
+        }
         can = said.can || {};
         word = said.reveal_word || "folder";
         if (said.html === shown) return;
+        // A question open in the page (Clear the scratch?, confirm.js) is
+        // not drawn over: the page is drawn once it is answered
+        // (files-actions.js asks again). Another study drops it (shown "").
+        if (shown && host.querySelector(".fmx-ask")) return;
         var column = document.querySelector(".main");
         var top = column ? column.scrollTop : 0;
         var focused = document.activeElement && host.contains(document.activeElement)
           ? document.activeElement.getAttribute("data-find") !== null : false;
+        var clearing = document.activeElement && host.contains(document.activeElement)
+          && document.activeElement.hasAttribute("data-clear");
         shown = said.html;
         host.innerHTML = said.html;
         restore();
@@ -534,13 +543,29 @@
           var find = host.querySelector("[data-find]");
           if (find) { find.focus(); find.setSelectionRange(find.value.length, find.value.length); }
         }
+        if (clearing && host.querySelector("[data-clear]")) host.querySelector("[data-clear]").focus();
         window.dispatchEvent(new CustomEvent("files:rendered", { detail: { can: can } }));
       })
       .catch(function () {
         asking = null;
         if (again) { again = false; setTimeout(function () { refresh(false); }, 2600); }
+        else couldNot("The server did not answer.");
       });
     asking = asked;
+  }
+
+  /* Not read: said, with Try again, where nothing was shown yet. A page
+   * already drawn stays as it was (the next change asks again); it was
+   * left at "Reading the study's files..." for ever. */
+  function couldNot(why) {
+    if (shown || !window.FastMDXPageState) return;
+    window.FastMDXPageState.show(host, {
+      kind: "error", title: "The study's files could not be read", detail: why,
+      action: { label: "Try again", run: function () {
+        window.FastMDXPageState.show(host, { kind: "loading", title: "Reading the study's files…" });
+        refresh(true);
+      } },
+    });
   }
 
   function start() {
@@ -553,7 +578,10 @@
         if (event.detail && event.detail.page === "files" && stale) refresh(true);
       });
       window.addEventListener("dashboard:results-updated", function () { refresh(false); });
-      window.addEventListener("dashboard:run-changed", function () {
+      window.addEventListener("dashboard:run-changed", function (event) {
+        // The page's first word of the open study is no change of it: the
+        // page was read from the same one, and a question open in it stays.
+        if (event.detail && event.detail.first && !event.detail.previousRun) { refresh(false); return; }
         shown = "";
         kept.run = "*";
         kept.expanded = {};

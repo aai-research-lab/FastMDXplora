@@ -69,8 +69,10 @@
   }
 
   /* Through the place's way to another study, which asks first whether
-   * the switch would lose work here (place.js). */
+   * the switch would lose work here (place.js). Beyond loopback a switch
+   * is a post the server refuses: none is made. */
   function open(run) {
+    if (beyondLoopback()) return;
     if (window.FastMDXPlace) window.FastMDXPlace.open(run.path, "overview");
   }
 
@@ -101,22 +103,35 @@
       row.dataset.state = run.state;
       var name = el("th", "overview-runs-name");
       name.scope = "row";
-      var link = el("button", "overview-runs-open");
-      link.type = "button";
+      // Beyond loopback opening a run is a switch of study, a post the
+      // server refuses, and Compare is not answered (/api/compared):
+      // the run is named as text, and nothing that posts is offered.
+      var outside = beyondLoopback();
+      var link = el(outside ? "span" : "button", outside ? "overview-runs-named" : "overview-runs-open");
       var dot = el("span", "status-dot " + (DOT[run.state] || "status-dot-stale"));
       dot.setAttribute("aria-hidden", "true");
       link.appendChild(dot);
       link.appendChild(el("span", "", run.label || run.run_id));
-      link.title = "Open " + (run.label || run.run_id) + "\n" + run.run_id;
-      link.addEventListener("click", function () { open(run); });
-      var pick = el("input", "overview-runs-pick");
-      pick.type = "checkbox";
-      pick.checked = picked.indexOf(run.path) >= 0;
-      pick.dataset.path = run.path;
-      pick.setAttribute("aria-label", "Choose " + (run.label || run.run_id) + " to compare");
-      pick.title = "Choose two runs to compare";
-      pick.addEventListener("change", function () { choose(run.path, pick.checked); });
-      name.appendChild(pick);
+      if (outside) {
+        // Laid out as the button is (dashboard.css), without its pointer.
+        link.style.cssText = "display: inline-flex; align-items: center; gap: 8px;";
+        dot.style.cssText = "width: 7px; height: 7px; margin: 0;";
+        link.title = (run.label || run.run_id) + "\n" + run.run_id;
+      } else {
+        link.type = "button";
+        link.title = "Open " + (run.label || run.run_id) + "\n" + run.run_id;
+        link.addEventListener("click", function () { open(run); });
+      }
+      if (!outside) {
+        var pick = el("input", "overview-runs-pick");
+        pick.type = "checkbox";
+        pick.checked = picked.indexOf(run.path) >= 0;
+        pick.dataset.path = run.path;
+        pick.setAttribute("aria-label", "Choose " + (run.label || run.run_id) + " to compare");
+        pick.title = "Choose two runs to compare";
+        pick.addEventListener("change", function () { choose(run.path, pick.checked); });
+        name.appendChild(pick);
+      }
       name.appendChild(link);
       row.appendChild(name);
       var state = el("td", "overview-runs-state");
@@ -147,6 +162,13 @@
           td.title = "Not determined: " + cell.withheld;
         } else {
           td.textContent = withError(cell.mean, cell.error);
+        }
+        if (cell.mean != null && cell.noted) {
+          // Its image note beside it, as the Analysis page says it.
+          td.appendChild(document.createTextNode(" \u2020"));
+          td.classList.add("is-noted");
+          td.title = (td.title ? td.title + " " : "") + cell.noted.charAt(0).toUpperCase()
+            + cell.noted.slice(1) + ".";
         }
         row.appendChild(td);
       });
@@ -187,6 +209,13 @@
         } else {
           td.textContent = "\u2014";
         }
+        if (m.ensemble && m.ensemble.noted) {
+          // Replicas share the box: their means' image notes are in the
+          // mean of them (runs_compared.mean_of_replicas), said under the table.
+          td.appendChild(document.createTextNode(" \u2020"));
+          td.classList.add("is-noted");
+          td.title += " " + m.ensemble.noted.charAt(0).toUpperCase() + m.ensemble.noted.slice(1) + ".";
+        }
         together.appendChild(td);
       });
       foot.appendChild(together);
@@ -195,7 +224,8 @@
     if (focusRun) {
       Array.prototype.some.call(table.querySelectorAll(".overview-runs-row"), function (row) {
         if (row.dataset.run !== focusRun) return false;
-        row.querySelector(".overview-runs-open").focus();
+        var again = row.querySelector(".overview-runs-open");
+        if (again) again.focus();
         return true;
       });
     }
@@ -222,12 +252,16 @@
     if (!button) return;
     var runs = (data && data.runs) || [];
     picked = picked.filter(function (p) { return runs.some(function (r) { return r.path === p; }); });
-    button.hidden = picked.length !== 2;
+    button.hidden = beyondLoopback() || picked.length !== 2;
   }
 
   function compare() {
+    if (beyondLoopback()) return;
     if (picked.length === 2 && window.FastMDXCompare) window.FastMDXCompare.open(picked[0], picked[1]);
   }
+
+  /* A page bound beyond loopback (the server says so on the body). */
+  function beyondLoopback() { return document.body.dataset.beyondLoopback === "true"; }
 
   function renderSaid() {
     var runs = data.runs || [];
@@ -237,13 +271,42 @@
     var waiting = runs.filter(function (r) { return r.state === "waiting"; }).length;
     if (waiting) parts.push(waiting + " waiting");
     var axes = (data.axes || []).map(function (a) { return a.label.replace(/^random_/, ""); });
-    parts.push(data.replicas ? "replicas, differing by " + axes.join(" and ")
+    // Replicas as every page says how they differ (batch/aggregate.py).
+    parts.push(data.replicas ? "replicas, " + data.replicas_said
       : axes.length ? "differing by " + axes.join(" and ") + ": compared, not averaged" : "");
     byId("overview-runs-said").textContent = parts.filter(Boolean).join("; ") + ".";
     var more = (data.measures || []).length - shownMeasures().length;
     var note = byId("overview-runs-note");
     note.textContent = more > 0 ? more + " more measure" + (more === 1 ? "" : "s")
       + " on the Analysis page, compared run against run." : "";
+    renderNoted(note);
+  }
+
+  /* What † in the table means, a line for each mean it marks, as the
+   * Analysis page's runs compared say it (runs-compared.js): the note on a
+   * cell's title alone was not reached by keyboard or touch. */
+  function renderNoted(after) {
+    var host = byId("overview-runs-noted");
+    if (!host) {
+      host = el("div", "overview-runs-noted");
+      host.id = "overview-runs-noted";
+      after.parentNode.insertBefore(host, after.nextSibling);
+    }
+    host.innerHTML = "";
+    var labels = {};
+    (data.runs || []).forEach(function (run) { labels[run.run_id] = run.label || run.run_id; });
+    shownMeasures().forEach(function (m) {
+      m.cells.forEach(function (c) {
+        if (c.mean == null || !c.noted) return;
+        host.appendChild(el("p", "muted small runs-compared-noted", "† " +
+          (labels[c.run_id] || c.run_id) + ", " + m.label + ": " + c.noted + "."));
+      });
+      if (data.replicas && m.ensemble && m.ensemble.noted) {
+        host.appendChild(el("p", "muted small runs-compared-noted", "† The runs together, " +
+          m.label + ": " + m.ensemble.noted + "."));
+      }
+    });
+    host.hidden = !host.childNodes.length;
   }
 
   /* What is not determined, and in which runs: the reason's first words

@@ -380,7 +380,7 @@ def _setup_bullets(project_root: Path) -> list[str]:
     xmls = r.get("xmls")
     field = ", ".join(xmls) if isinstance(xmls, list) else r.get("forcefield")
     if field:
-        water = r.get("water_model")
+        water = r.get("water_name") or r.get("water_model")
         bullets.append(f"Force field: {field}"
                        + (f", {water} water" if water else ""))
     if r.get("ligand") and r.get("ligand_forcefield"):
@@ -434,7 +434,9 @@ def _simulation_bullets(project_root: Path) -> list[str]:
     if r.get("constraints"):
         bullets.append(f"Constraints: {r['constraints']}")
     if r.get("restrain"):
-        bullets.append("Restraints applied during equilibration and released")
+        bullets.append("Restraints kept through production: the trajectory is biased"
+                       if r.get("restrain_production")
+                       else "Restraints applied during equilibration and released")
     for method in ("umbrella", "steered", "metadynamics"):
         if r.get(method):
             bullets.append(f"Enhanced sampling: {method}")
@@ -461,20 +463,43 @@ def _findings_bullets(project_root: Path) -> list[str]:
 
     from fastmdxplora.statistics import independent_samples_said, with_its_error
 
+    noted = _image_notes(project_root)
     bullets: list[str] = []
-    for record in assessed["observables"].values():
+    for name, record in assessed["observables"].items():
         error = record["standard_error"]
         value = with_its_error(record["mean"], error)
         note = {True: "", False: " (still drifting)",
                 None: " (too short to say if equilibrated)"}[record.get("equilibrated", record.get("settled"))]
+        # Its image note beside it, as every page says it.
+        image = f"; {noted[name]}" if noted.get(name) else ""
         bullets.append(
             f"{record['observable']}: {value}"
-            f"  [{independent_samples_said(record['effective_samples'])}]{note}")
+            f"  [{independent_samples_said(record['effective_samples'])}]{note}{image}")
 
     for finding in (assessed.get("findings") or [])[:3]:
         bullets.append("")
         bullets.append(str(finding))
     return bullets
+
+
+def _image_notes(project_root: Path) -> dict[str, str]:
+    """Each observable's image note in a line, from the record of its mean
+    the report's assessment reads (:func:`fastmdxplora.image_note.said_short`)."""
+    from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.report.document import _load_json_safely
+
+    def findings(name: str) -> dict:
+        found = (_load_json_safely(project_root / "analysis" / name / "options.json")
+                 or {}).get("findings")
+        return found if isinstance(found, dict) else {}
+
+    notes = {name: said_short(note_of(findings(name).get("mean")))
+             for name in ("rmsd", "rg", "sasa")}
+    thermo = findings("thermodynamics").get("thermodynamics")
+    for name in ("potential_energy", "temperature", "density"):
+        notes[name] = said_short(note_of((thermo or {}).get(name)
+                                         if isinstance(thermo, dict) else None))
+    return {name: said for name, said in notes.items() if said}
 
 
 def _load_analysis_manifest(analysis_dir: Path) -> dict:

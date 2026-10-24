@@ -137,6 +137,19 @@
     return box;
   }
 
+  /* A round of a study run until what it asks is determined: the
+   * production it judged, and where it falls in time, which its record
+   * does not give (study_timeline.py places it by the steps around it). */
+  function roundFacts(event) {
+    var placed = event.placed;
+    return [
+      event.production_said ? "judged after " + event.production_said + " of production" : "",
+      "its time not recorded" + (!placed ? ""
+        : placed.before ? ": placed just before the pieces it began"
+        : ": placed after the last step before it"),
+      event.where || "", event.detail || ""];
+  }
+
   /* A study of several runs takes no steps of its own: its runs' steps
    * are listed, each named by its run, and a run that recorded none is
    * said, never the study as one that recorded nothing. */
@@ -182,9 +195,12 @@
         head.appendChild(when);
       }
       item.appendChild(head);
-      var facts = [tookSaid(event.seconds),
-                   event.version ? event.version + (event.host ? " on " + event.host : "") : "",
-                   event.where || "", event.detail || ""].filter(Boolean);
+      var facts = event.kind === "round" ? roundFacts(event) : [
+        tookSaid(event.seconds),
+        event.version ? event.version + (event.host ? " on " + event.host : "") : "",
+        event.where || "", event.detail || ""];
+      facts = facts.filter(Boolean);
+      if (event.stopped_by) item.dataset.stoppedBy = event.stopped_by;
       if (facts.length) item.appendChild(make("div", "tl-facts", facts.join(" \u00b7 ")));
       [changes(event), settings(event)].forEach(function (box) { if (box) item.appendChild(box); });
       list.appendChild(item);

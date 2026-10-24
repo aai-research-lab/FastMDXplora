@@ -73,6 +73,9 @@ ANALYSIS_NAMES = (
     # measured where there is one: what a membrane run is checked against
     # before anything about the protein in it is believed.
     "area_per_lipid", "bilayer_thickness", "lipid_order",
+    # Every frame's solute against its own periodic images, where there is
+    # a box: run first, and read by every other analysis of the frames.
+    "image_check",
 )
 
 
@@ -496,12 +499,14 @@ SETUP = PhaseSchema(
               "elsewhere. Needs `membrane_orientation_checked: true`. "
               "Unset, the centre is fitted, or taken from an OPM file.",
               example=0.0),
-        Field("solvent_padding_nm", float, 1.0,
+        Field("solvent_padding_nm", float, 2.0,
               "Least distance (nm) between the solute and its nearest periodic "
               "image, as OpenMM sizes a padded box: the box is the solute's "
               "bounding sphere plus this, so the water between the solute "
-              "and the box's wall is about half of it. Grown by setup where "
-              "the box would be too narrow for the cutoff.",
+              "and the box's wall is about half of it. The default, 2.0, is "
+              "about 1.0 nm of water between the solute and the box's wall, "
+              "as `gmx editconf -d 1.0` gives. Grown by setup where the box "
+              "would be too narrow for the cutoff.",
                     minimum=0.0),
         Field("box_shape", str, "dodecahedron",
               "Periodic box geometry: cube, dodecahedron, or octahedron. "
@@ -537,7 +542,9 @@ SETUP = PhaseSchema(
         Field("nonbonded_cutoff_nm", float, None,
               "Real-space nonbonded cutoff in nm (cutoff/PME/Ewald methods). "
               "Default: the force field's own, 1.0 nm for AMBER and 1.2 nm "
-              "for CHARMM36; 1.0 nm for an explicit `force_field` list.",
+              "for CHARMM36; for an explicit `force_field` list, its files' "
+              "family's (1.2 nm for CHARMM36 files), otherwise 1.0 nm "
+              "(OpenMM's default).",
               example=1.0,
                     minimum=0.0),
         Field("ewald_error_tolerance", float, 0.0005,
@@ -546,8 +553,9 @@ SETUP = PhaseSchema(
         Field("use_switching_function", bool, None,
               "Apply a switching function near the cutoff (cutoff methods). "
               "Default: as the force field is developed, none for AMBER and "
-              "from 1.0 nm for CHARMM36; on for an explicit `force_field` "
-              "list.",
+              "from 1.0 nm for CHARMM36; for an explicit `force_field` list, "
+              "as its files' family is developed where they name one, and "
+              "otherwise none (OpenMM's own default).",
               example=False),
         Field("switch_distance_nm", (int, float), None,
               "Switching-function turn-on distance in nm. "
@@ -555,8 +563,13 @@ SETUP = PhaseSchema(
               "0.9 × cutoff.",
               example=0.9,
               minimum=0.0, exclusive_minimum=True),
-        Field("dispersion_correction", bool, True,
-              "Apply the long-range dispersion (vdW tail) correction."),
+        Field("dispersion_correction", bool, None,
+              "Apply the long-range dispersion (vdW tail) correction. "
+              "Default: as the force field is developed, off for CHARMM36 "
+              "(its lipids were fitted without one), and otherwise as its "
+              "files leave it: OpenMM turns it on where a file says nothing, "
+              "as the AMBER files do. The value used is recorded.",
+              example=True),
         Field("remove_cm_motion", bool, True,
               "Add a center-of-mass motion remover. Matches OpenMM's own "
               "default; without it the system is free to drift as a whole."),
@@ -729,7 +742,11 @@ SIMULATION = PhaseSchema(
               "Run energy minimization before equilibration."),
         Field("integrator", str, "langevin_middle",
               "Integrator: langevin_middle, langevin, brownian, verlet, "
-              "variable_langevin, or variable_verlet.",
+              "variable_langevin, or variable_verlet. verlet and "
+              "variable_verlet have no thermostat while every stage holds a "
+              "temperature, so they are refused; brownian needs a friction of "
+              "about 100 per ps at 2 fs and 300 K (it scales with the "
+              "timestep and temperature) and is refused below it.",
               choices=("langevin_middle", "langevin", "brownian", "verlet",
                        "variable_langevin", "variable_verlet")),
         Field("integrator_error_tolerance", float, 0.001,
@@ -834,25 +851,36 @@ SIMULATION = PhaseSchema(
               "is sent fewer, ten million atoms times frames at most.",
               example=2000,
               minimum=1),
-        Field("restrain", str, None,
+        Field("restrain", (str, list, dict), None,
               "What to hold still during equilibration, as an atom selection "
-              "-- 'protein and not element H' is the usual choice. A "
-              "structure that has just been minimised is not at equilibrium, "
-              "and heating it lets the solute move as well as the solvent: "
-              "side chains relax into the space crystal packing left, and a "
-              "ligand drifts out of the experimental pose. Restraints "
-              "are released in stages and are off for production."),
+              "-- 'protein and not element H' is the usual choice -- or a "
+              "list of blocks with `kind` (position, distance, angle, "
+              "torsion), `selection`, `force_constant` and `target`. Every "
+              "kind is E = k x^2 with no half (a torsion 2k(1 - cos x)); with "
+              "no `target` a restraint is held where it is in the prepared "
+              "structure (before minimisation, which runs restrained), and an "
+              "angle or torsion takes its atoms in the "
+              "order an `index` selection writes them. A structure that has "
+              "just been minimised is not at equilibrium, and heating it lets "
+              "the solute move as well as the solvent: side chains relax into "
+              "the space crystal packing left, and a ligand drifts out of the "
+              "experimental pose. Restraints are released in stages and are "
+              "off for production."),
         Field("restraint_release", list, None,
               "Force constants in kJ/mol/nm^2 stepped through during "
-              "equilibration, ending at zero. Defaults to 1000, 500, 100, 0, "
-              "which is the shape standard protocols use. Letting go all at "
-              "once releases the solute into a solvent arrangement that "
-              "formed around a rigid structure."),
+              "equilibration. Defaults to 1000, 500, 100, 0, which is the "
+              "shape standard protocols use. A restraint with no force "
+              "constant of its own runs at these; one with its own is stepped "
+              "down in the same proportions. Production is free whatever the "
+              "last step. Letting go all at once releases the solute into a "
+              "solvent arrangement that formed around a rigid structure."),
         Field("restrain_production", bool, False,
-              "Keep the restraints on during production. Off, because a "
-              "biased production run samples the bias: RMSF, clustering and "
-              "dimensionality reduction would describe the restraint as much "
-              "as the system. Turning it on is recorded with the results."),
+              "Keep the restraints on during production, at their full force "
+              "constants, and do not release them during equilibration. Off, "
+              "because a biased production run samples the bias: RMSF, "
+              "clustering and dimensionality reduction would describe the "
+              "restraint as much as the system. Turning it on is recorded "
+              "with the results."),
         Field("umbrella", dict, None,
               "Umbrella sampling: a free energy along a coordinate, from "
               "equilibrium sampling at a series of positions. A block with "
@@ -955,18 +983,28 @@ ANALYSIS = PhaseSchema(
               example="simulation/topology.pdb"),
         Field("include", list, None,
               "Subset of analyses to run. Default: every analysis the "
-              "system supports -- eleven always, the fraction of native "
+              "system supports -- eleven always, the check of the solute "
+              "against its own periodic images where there is a box, the "
+              "fraction of native "
               "contacts where the chain is long enough to have a fold, "
               "water sites where the "
               "trajectory has water, five more where there is a ligand, and "
               "the potential of mean force where an umbrella study produced "
               "one, the free energy surface where a metadynamics run "
-              "did, and the work done where a pull was steered. "
-              "Mutually exclusive with `exclude`.",
+              "did, and the work done where a pull was steered. A listed "
+              "plan is run as listed, except that where there is a box and a "
+              "solute the image check (`image_check`) joins it and runs first, "
+              "so every mean is read against how close the solute came to its "
+              "own images. Mutually exclusive with `exclude`.",
               choices=ANALYSIS_NAMES,
               example=["rmsd", "rmsf", "rg", "cluster"]),
         Field("exclude", list, None,
-              "Analyses to skip. Mutually exclusive with `include`.",
+              "Analyses to skip. Mutually exclusive with `include`. "
+              "`image_check` runs with any plan, a listed one too, where "
+              "there is a box and a solute. Excluding it leaves the solute "
+              "unchecked against its own periodic images: no mean is noted "
+              "where it saw its image, and none says whether it did, which the "
+              "log, the analysis manifest and the report then say.",
               choices=ANALYSIS_NAMES,
               example=["dimred"]),
         Field("select_atoms", str, None,
@@ -1312,7 +1350,8 @@ UNSET_MEANS: dict[str, str] = {
     "setup.hydrogen_mass_amu": "off",
     "setup.mutation_chain": "the first chain",
     "simulation.duration_ns": "2 ns",
-    "simulation.nvt_duration_ns": "500 ps",
+    # In the box's own unit: "500 ps" over a box in ns read as 500.
+    "simulation.nvt_duration_ns": "0.5 ns (500 ps)",
     "simulation.npt_duration_ns": "1 ns",
     "simulation.ensemble": "as the NPT stage implies",
     "simulation.random_seed": "a different seed each run",

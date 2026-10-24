@@ -48,7 +48,7 @@ __all__ = [
 
 #: The hydrogen-bond criterion :func:`hydrogen_bonds` applies, by name.
 HBOND_CRITERION = ("donor-acceptor distance < 3.5 A and D-H...A angle > 120 deg "
-                   "(McDonald and Thornton 1994)")
+                   "(a common heavy-atom criterion, with ProLIF's distance)")
 
 #: The two directions of a hydrogen bond, as the kind of its contact.
 HBOND_LIGAND_DONOR = "hydrogen_bond_ligand_donor"
@@ -370,9 +370,11 @@ def hydrogen_bonds(
     """Hydrogen bonds between ligand and protein, in every frame.
 
     The criterion: donor heavy atom to acceptor within 3.5 A, and the
-    donor-hydrogen-acceptor angle above 120 degrees, the heavy-atom form
-    McDonald and Thornton use (J Mol Biol 238:777, 1994) and ProLIF's
-    distance. It is not Baker and Hubbard's (Prog Biophys Mol Biol 44:97,
+    donor-hydrogen-acceptor angle above 120 degrees: a common heavy-atom
+    criterion, with ProLIF's distance. It is not McDonald and Thornton's
+    HBPLUS (J Mol Biol 238:777, 1994), whose limits are wider (D-A 3.9 A,
+    H-A 2.5 A, angles above 90 degrees), and an earlier version attributed
+    it to them. Nor is it Baker and Hubbard's (Prog Biophys Mol Biol 44:97,
     1984), which bounds the hydrogen to acceptor distance at 2.5 A; that is
     the ``hbonds`` analysis's default. ``pl_hbonds`` uses a third,
     Wernet-Nilsson's angle-dependent distance. The three are recorded by

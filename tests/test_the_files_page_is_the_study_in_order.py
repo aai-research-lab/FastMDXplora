@@ -356,15 +356,11 @@ def test_a_run_is_chosen_in_a_browser(tmp_path: Path):
         with playwright.sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1400, "height": 900})
-            # The page is drawn again once the study's first state arrives
-            # (its run, as far as the page knows, changed): a run chosen
-            # before then goes back to every run. So the checks wait for it.
-            page.add_init_script("""window.addEventListener('dashboard:run-changed', () => {
-                window.addEventListener('files:rendered', () => { window.fmxFilesDrawn = true; },
-                                        {once: true});
-            });""")
+            # The study's first state arriving is no change of its run: the
+            # page is not drawn again then, and a run chosen before it stays.
             page.goto(session.url + "#files", wait_until="domcontentloaded")
-            page.wait_for_function("() => window.fmxFilesDrawn === true", timeout=30000)
+            page.wait_for_function("() => !!document.querySelector('[data-run-pick]') && Object.keys("
+                                   "window.FastMDXDashboard.state.appState || {}).length > 0", timeout=30000)
             tiles = ("() => [...document.querySelectorAll('.files-tile')].filter(e => e.offsetParent"
                      " !== null).map(e => e.dataset.run + ':' + e.getAttribute('data-key')).join() === '{}'")
             # Every run: the first run's key files, each run's rows.

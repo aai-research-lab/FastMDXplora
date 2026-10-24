@@ -428,10 +428,12 @@ class TestThePopupItemsAct(unittest.TestCase):
         # placeholder to keep in step.
         self.assertIn('el("cite-version")', _script())
 
-    def test_the_preferences_are_named_for_what_they_hold(self):
-        # "Browser settings" read as configuring the browser. They are how
-        # studies are shown, in this browser.
-        self.assertIn("Preferences&hellip;", _page())
+    def test_the_settings_are_named_for_what_they_hold(self):
+        # "Browser settings" read as configuring the browser. Preferences,
+        # how studies are shown in this browser, are one part of Settings,
+        # with this folder's defaults (IMDE 2.9).
+        self.assertIn("Settings&hellip;", _page())
+        self.assertNotIn("Preferences&hellip;", _page())
 
     def test_pause_is_one_word(self):
         # "Pause updates" overlapped Refresh in a 232px sidebar; now an

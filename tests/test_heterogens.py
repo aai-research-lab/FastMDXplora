@@ -603,6 +603,37 @@ class TestAGlycanWithNoLinkToItsAsparagine:
         with pytest.raises(AmbiguousStructureError, match="free sugar"):
             resolve(_structure(lines))
 
+    def test_an_asparagine_a_link_bonds_to_a_sugar_takes_no_second_by_distance(self) -> None:
+        # An amide nitrogen carries one sugar. NAG B500 at 2.5 A from an ND2
+        # already LINKed to NAG A400 was read as a second glycan on ASN A2,
+        # "bonded by distance; no LINK record names it".
+        lines = list(PROTEIN) + ASPARAGINE
+        lines += [
+            "LINK         ND2 ASN A   2                 C1  NAG A 400",
+            _atom("HETATM", 300, "C1", " ", "NAG", "A", 400, 11.45, 0, 0),
+            _atom("HETATM", 310, "C1", " ", "NAG", "B", 500, 10, 2.5, 0),
+        ]
+        with pytest.raises(AmbiguousStructureError, match="NAG B500 is bonded to no glycosylated"):
+            resolve(_structure(lines))
+
+    @pytest.mark.parametrize("near, far", [("A400", "B500"), ("B500", "A400")])
+    def test_of_two_sugars_near_one_asparagine_only_the_nearer_is_its_glycan(self, near, far) -> None:
+        # No LINK: NAG at 1.45 A and NAG at 2.50 A from the ND2 of ASN A2 were
+        # both read as glycans on it. The nearer is; the other is a free sugar.
+        place = {near: (11.45, 0, 0), far: (10, 2.5, 0)}
+        lines = list(PROTEIN) + ASPARAGINE
+        lines += [
+            _atom("HETATM", 300, "C1", " ", "NAG", "A", 400, *place["A400"]),
+            _atom("HETATM", 310, "C1", " ", "NAG", "B", 500, *place["B500"]),
+        ]
+        with pytest.raises(AmbiguousStructureError) as raised:
+            resolve(_structure(lines))
+        said = str(raised.value)
+        assert (f"NAG {near} is part of a glycan on ASN A2 (bonded by distance, 1.45 A; "
+                "no LINK record names it)") in said
+        assert f"NAG {far} is bonded to no glycosylated residue, so a free sugar" in said
+        assert "2.50 A" not in said
+
     def test_only_the_anomeric_carbon_bonds_a_sugar_to_the_asparagine(self) -> None:
         lines = list(PROTEIN) + ASPARAGINE
         lines += [

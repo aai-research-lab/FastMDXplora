@@ -37,6 +37,7 @@ FastMDXplora/
 │       ├── naming.py              # One rule for the name of a study's output folder
 │       ├── refusals.py            # What a refusal is, in a word a program can read
 │       ├── record_access.py       # Request-local admission of actual record reads
+│       ├── image_note.py          # How a mean's image note is said, read from its record, by every page and the Agent
 │       ├── remedies.py            # What would fix a refusal, and what the fix costs here
 │       ├── marking.py             # Marking what nothing checked, where the mark has to survive
 │       ├── uncertainty.py         # An error bar on a quantity that is not a mean
@@ -119,6 +120,7 @@ FastMDXplora/
 │       │   ├── pair_distance.py end_to_end.py moments_of_inertia.py rdf.py
 │       │   ├── coordination_number.py order_parameters.py bfactor_comparison.py
 │       │   ├── thermodynamics.py  # Density, energy and temperature, from the run's own record
+│       │   ├── image_check.py     # Every frame's solute against its own periodic images, read by every analysis
 │       │   ├── interaction_summary.py  # How often an interaction was there, and over how much
 │       │   ├── joining.py         # A study's pieces put back together, refused where they do not fit
 │       │   ├── residues.py        # How a residue is named in what the analyses write
@@ -202,16 +204,19 @@ FastMDXplora/
 │       │   ├── hosting.py         # The GUI served to someone else, behind a signing-in proxy
 │       │   ├── route_imports.py   # The package's modules the GUI's routes can reach
 │       │   ├── files_page.py      # The Files page: the study's files in the order it ran, for the GUI and the report
+│       │   ├── settings_page.py   # Settings' This folder: the workspace's defaults file, shown and changed
 │       │   ├── report_dashboard.py  # Static dashboard written into a report
 │       │   ├── static/            # theme.css (shared tokens), dashboard.css, dashboard.js,
 │       │   │                      #   frame.js (columns, side panel, theme), theme-first.js
-│       │   │                      #   (the scheme before the first paint), problems.js and
+│       │   │                      #   (the scheme and the Display size before the first paint), problems.js and
 │       │   │                      #   problems.css (the read-only Problems tab), study-tabs.js
 │       │   │                      #   and study-tabs.css (open studies and their last pages),
 │       │   │                      #   fonts/ (Inter and
 │       │   │                      #   JetBrains Mono, SIL OFL 1.1), studies.js,
-│       │   │                      #   preferences.js (the dialogs, preferences kept),
-│       │   │                      #   run-builder.js, file-picker.js, report-page.js, analyze-again.js,
+│       │   │                      #   preferences.js (the dialogs, preferences saved),
+│       │   │                      #   settings.js and settings.css (every setting on one page),
+│       │   │                      #   run-builder.js, new-study.js (a refused or changed defaults
+│       │   │                      #   file said on New study), file-picker.js, report-page.js, analyze-again.js,
 │       │   │                      #   series-chart.js, figure-chart.js, analysis-page.js, files-page.js, files-actions.js, runs-compared.js, stopping.js,
 │       │   │                      #   fixes.js, agent-panel.js, agent-beside.js (the Agent
 │       │   │                      #   beside any page), icons.js (the line icons for the
@@ -245,6 +250,10 @@ FastMDXplora/
 │       │   │                      #   rows with their molecules, the gallery, a phone's rows,
 │       │   │                      #   the bar for the studies chosen), run-progress.js (a run's
 │       │   │                      #   progress and time left as the status bar says them),
+│       │   │                      #   notices.js and notices.css (notices saved, behind the
+│       │   │                      #   status bar's bell), confirm.js (one confirmation),
+│       │   │                      #   page-states.js and page-states.css (one empty, loading and
+│       │   │                      #   error block; the confirmation's look),
 │       │   │                      #   run-notice.js
 │       │   │                      #   (progress in the tab's title, a notice at the end);
 │       │   │                      #   remote.js and remote.css (Run on one of your machines,
@@ -281,7 +290,7 @@ FastMDXplora/
 │       │   ├── languages.py       # One study as a config file, a command and a script
 │       │   ├── diff.py            # What differs between two studies' settings
 │       │   ├── recorded.py        # A study's recorded settings, as the base for its phases run again
-│       │   ├── defaults_file.py   # Your defaults: fastmdx-defaults.yml filling what a new study leaves unset
+│       │   ├── defaults_file.py   # Your defaults: fastmdx-defaults.yml filling what a new study leaves unset; written from Settings
 │       │   ├── phase_settings.py, phase_settings_types.py  # Each phase's settings, from the schema
 │       │   └── agent_modes.py     # Which phases a model wrote, and which were checked
 │       ├── validation/            # Checks of the software against independent references

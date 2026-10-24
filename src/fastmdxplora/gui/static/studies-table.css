@@ -103,6 +103,12 @@ html[data-page="studies"] .page-shell { max-width: 1280px; }
 .studies-mean-item:has(.studies-mean-of) { flex-wrap: wrap; }
 .studies-mean-of { flex-basis: 100%; padding-left: 17px; font-size: var(--text-2xs); white-space: nowrap; }
 .studies-table-wrap.is-tight .studies-mean-of { grid-column: 2; padding-left: 0; }
+/* Its image note: its own lines under the value, wrapped at a measure
+ * that does not widen the column. */
+.studies-mean-item:has(.studies-mean-noted) { flex-wrap: wrap; }
+.studies-mean-noted { flex-basis: 100%; max-width: 30em; padding-left: 17px; font-size: var(--text-2xs);
+    white-space: normal; }
+.studies-table-wrap.is-tight .studies-mean-noted { grid-column: 2; padding-left: 0; }
 .studies-mean-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; transform: translateY(-1px);
     border: 1.5px solid var(--accent-orange); }
 .studies-mean-item[data-determined="true"] .studies-mean-dot { background: var(--status-completed); border-color: var(--status-completed); }
@@ -129,6 +135,13 @@ html[data-page="studies"] .page-shell { max-width: 1280px; }
     background: color-mix(in srgb, var(--text-primary) 3%, transparent); }
 .studies-group b { color: var(--text-secondary); font-weight: 600; }
 .studies-table.is-compact td { padding-top: 4px; padding-bottom: 4px; }
+/* Why a study did not open, said in a row: wrapped, on a line of its own
+   under Open, Tag and Files. One line beside them widened the table past
+   its column (studies.js `sayNotOpened` fits the table again). */
+.studies-table-wrap:not(.is-lines) .studies-actions:has(.study-open-said) { flex-wrap: wrap; justify-content: flex-end; }
+.studies-table-wrap:not(.is-lines) .study-open-said { flex: 0 0 auto; width: 14em; white-space: normal;
+    overflow-wrap: anywhere; }
+.studies-table-wrap:not(.acts-over) .studies-row .studies-acts .studies-actions:has(.study-open-said) { opacity: 1; }
 
 /* A column narrower than the table wants (studies.js `fitTheList`), given
    way to in turn: Active (said under the name), the molecule, the name and

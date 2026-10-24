@@ -322,3 +322,16 @@ study's record as an AI app is given it, where it stands first. The suite's
 three digests of what is sent were set again; every verdict of the three
 recordings replays as recorded. Whether the Agent answers better with the
 new looks is for a run asked again, not claimed here.
+
+### What is sent, changed again (`core-bounds`, 2026-10-22)
+
+The analyses `include` and `exclude` accept gained `image_check`, the check
+of each frame's solute against its own periodic images: a setting's
+choices, in the schema's structure. The suite's three digests of what is
+sent were set again; every verdict of the three recordings replays as
+recorded. Then setup's default padding (`solvent_padding_nm`) became
+2.0 nm, where it was 1.0 (about 1.0 nm of water between the solute and the
+box's wall, decided 10-18): a setting's default, in the schema's
+structure. The digests were set again, and every verdict of the three
+recordings still replays as recorded, so the runs stand; what the Agent
+would now propose of a box is for a run asked again, not claimed here.

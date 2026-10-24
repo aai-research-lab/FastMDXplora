@@ -55,7 +55,8 @@ class TestWhatItSays:
     def test_the_system_and_the_box(self, tmp_path) -> None:
         path = tmp_path / "peptide.pdb"
         path.write_text(_peptide() + "END\n", encoding="utf-8")
-        answer = system_preview(_state(str(path)))
+        # At 1.0 nm of padding, which three residues' box grows from.
+        answer = system_preview(_state(str(path), solvent_padding_nm=1.0))
         assert answer["ok"], answer
         estimate = answer["estimate"]
         assert estimate["residues"] == 3 and estimate["particles"] > estimate["solute_atoms"]
@@ -260,7 +261,8 @@ class TestInTheBrowser:
         assert "nm from face to face" in headline
         rows = page.text_content(".system-preview-rows")
         assert "3 residues in chain A" in rows and "Na+" in rows
-        assert "grown from 1 to" in rows
+        # The default padding, 2.0 nm, boxes three residues without growing.
+        assert "2 nm between the solute and its nearest periodic image" in rows
         # Drawn beside the numbers: a rhombic dodecahedron has 24 edges.
         page.wait_for_selector('#run-system-preview-view[data-edges="24"]')
         assert page.is_visible("#run-system-preview-view canvas")

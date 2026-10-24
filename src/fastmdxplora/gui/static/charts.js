@@ -60,10 +60,12 @@
         // No unit here either: the title carries it.
         target.textContent = mean.number;
         if (note) {
-          note.textContent = mean.determined
+          // Its image note beside the verdict, which it does not change.
+          note.textContent = (mean.determined
             ? `production mean, ${Math.round(mean.samples)} independent samples`
-            : "production mean, not determined";
-          note.title = mean.determined ? "" : (mean.why || "");
+            : "production mean, not determined") + (mean.noted ? `; ${mean.noted}` : "");
+          note.title = [mean.determined ? "" : (mean.why || ""), mean.noted ? (mean.noted_why || "") : ""]
+            .filter(Boolean).join("\n\n");
         }
         return;
       }

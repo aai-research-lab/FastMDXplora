@@ -277,15 +277,15 @@ def test_a_dialog_closed_after_another_study_opened_keeps_it(browser, session) -
     page = _open(browser, session)
     _named(page, session.first)
     page.click("#settings-open")
-    page.click("[data-dialog-open='prefs-dialog']")
-    page.wait_for_selector("#prefs-dialog:not([hidden])")
+    page.click("[data-dialog-open='cite-dialog']")
+    page.wait_for_selector("#cite-dialog:not([hidden])")
     page.evaluate("""(folder) => fetch('/api/explore/switch', {method: 'POST',
         headers: {'content-type': 'application/json'}, body: JSON.stringify({folder})})""",
                   str(session.second))
     page.wait_for_function("(key) => window.FastMDXDashboard.state.studyShown === key",
                            arg=study_key(session.second))
     page.keyboard.press("Escape")
-    page.wait_for_selector("#prefs-dialog", state="hidden")
+    page.wait_for_selector("#cite-dialog", state="hidden")
     page.wait_for_timeout(2000)
     _named(page, session.second)
     page.evaluate("""(folder) => fetch('/api/explore/switch', {method: 'POST',

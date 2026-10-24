@@ -4,7 +4,9 @@
 authors, licence and the profile it keeps) and what each file in it is: its
 path in the study, its size, its SHA-256, the phase that wrote it and its
 role, and for a trajectory the topology it is read with. Each phase that ran
-is a `CreateAction`, as Process Run Crate describes a run of a program. The
+is a `CreateAction`, as Process Run Crate describes a run of a program; in a
+study of several runs, each run is a `Dataset` of its files, and a prepared
+system carried from outside the study is one too. The
 rules are given in full in `docs/sharing.md`; :func:`check` holds an archive
 to them before anything in it is opened.
 """
@@ -66,7 +68,11 @@ def role_of(path: str, *, phase: str, kind: str, topologies: frozenset[str]) -> 
     suffix = PurePosixPath(path).suffix.lower()
     if name == "resolved_config.yml":
         return "config"
-    if name == "manifest.json" and "/" not in path.strip("/"):
+    parts = PurePosixPath(path).parts
+    if name == "batch_manifest.json" and len(parts) == 1:
+        return "manifest"
+    if name == "manifest.json" and (len(parts) == 1 or (len(parts) == 3
+                                                       and parts[0] == "runs")):
         return "manifest"
     if path in topologies:
         return "topology"
@@ -103,12 +109,16 @@ def build(*, name: str, description: str, published: str, license_id: str,
           authors: list[tuple[str, str]], files: list[dict[str, Any]],
           actions: list[dict[str, Any]], software: dict[str, Any], package: str,
           placeholders: dict[str, list[str]], identifier: str = "",
-          based_on: str = "") -> dict[str, Any]:
+          based_on: str = "", runs: list[dict[str, Any]] | None = None,
+          prepared: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The packing list, as JSON. ``files`` are the study's files, each with
-    its `path`, `name`, `size`, `sha256`, `phase` and `role`, and for a
-    trajectory `read_with`, `frames`, `atoms`, `interval_ps` where known;
-    ``actions`` each phase that ran, with its `name`, `start`, `end`,
-    `object` and `result` (paths)."""
+    its `path`, `name`, `size`, `sha256`, `phase` and `role`, the `run` it is
+    of in a study of several, and for a trajectory `read_with`, `frames`,
+    `atoms`, `interval_ps` where known; ``actions`` each phase that ran, with
+    its `id`, `name`, `run`, `start`, `end`, `object` and `result` (paths);
+    ``runs`` each run of a study of several, with its `id` and `system`;
+    ``prepared`` each prepared system carried from outside the study, with
+    the folder it is `at` and the `runs` that simulated from it."""
     graph: list[dict[str, Any]] = [
         {"@id": METADATA, "@type": "CreativeWork",
          "conformsTo": {"@id": CRATE_SPEC}, "about": {"@id": "./"}},
@@ -127,9 +137,13 @@ def build(*, name: str, description: str, published: str, license_id: str,
         "fmx:package": package,
         "fmx:placeholders": [{"fmx:placeholder": key, "fmx:in": [{"@id": p} for p in held]}
                              for key, held in sorted(placeholders.items()) if held],
-        "hasPart": [{"@id": f["path"]} for f in files],
-        "mentions": [{"@id": f"#{a['name']}"} for a in actions],
+        "hasPart": [{"@id": f["path"]} for f in files]
+        + [{"@id": f"runs/{r['id']}/"} for r in runs or []]
+        + [{"@id": f"{c['at']}/"} for c in prepared or []],
+        "mentions": [{"@id": f"#{a.get('id') or a['name']}"} for a in actions],
     }
+    if runs:
+        root["fmx:runs"] = [{"@id": f"runs/{r['id']}/"} for r in runs]
     if identifier:
         root["identifier"] = identifier
     if based_on:
@@ -140,6 +154,8 @@ def build(*, name: str, description: str, published: str, license_id: str,
             "@id": f["path"], "@type": "File", "name": f["name"],
             "encodingFormat": encoding_of(f["path"]), "contentSize": str(f["size"]),
             "sha256": f["sha256"], "fmx:phase": f["phase"], "fmx:role": f["role"]}
+        if f.get("run"):
+            entity["fmx:run"] = f["run"]
         if f.get("read_with"):
             entity["fmx:readWith"] = {"@id": f["read_with"]}
         for key, term in (("frames", "fmx:frames"), ("atoms", "fmx:atoms"),
@@ -147,6 +163,25 @@ def build(*, name: str, description: str, published: str, license_id: str,
             if f.get(key) is not None:
                 entity[term] = f[key]
         graph.append(entity)
+    for r in runs or []:
+        mine = [f["path"] for f in files if f.get("run") == r["id"]]
+        member: dict[str, Any] = {
+            "@id": f"runs/{r['id']}/", "@type": "Dataset", "name": f"The run {r['id']}",
+            "hasPart": [{"@id": path} for path in mine],
+            "mentions": [{"@id": f"#{a['id']}"} for a in actions if a.get("run") == r["id"]]}
+        if f"runs/{r['id']}/resolved_config.yml" in mine:
+            member["mainEntity"] = {"@id": f"runs/{r['id']}/resolved_config.yml"}
+        if r.get("system"):
+            member["fmx:system"] = r["system"]
+        graph.append(member)
+    for c in prepared or []:
+        graph.append({
+            "@id": f"{c['at']}/", "@type": "Dataset",
+            "name": "A prepared system the runs simulated from, carried into the study",
+            "hasPart": [{"@id": f["path"]} for f in files
+                        if f["path"].startswith(f"{c['at']}/")],
+            "fmx:usedBy": [{"@id": f"runs/{run}/" if run else "./"}
+                           for run in c.get("runs") or []]})
     graph.extend(people)
     graph.append({"@id": licence, "@type": "CreativeWork", "name": license_id,
                   "identifier": license_id})
@@ -154,8 +189,9 @@ def build(*, name: str, description: str, published: str, license_id: str,
                   "name": "FastMDXplora", **software})
     for a in actions:
         action: dict[str, Any] = {
-            "@id": f"#{a['name']}", "@type": "CreateAction",
-            "name": a["name"].capitalize(), "instrument": {"@id": "#fastmdxplora"},
+            "@id": f"#{a.get('id') or a['name']}", "@type": "CreateAction",
+            "name": a["name"].capitalize() + (f" of the run {a['run']}" if a.get("run") else ""),
+            "instrument": {"@id": "#fastmdxplora"},
             "object": [{"@id": p} for p in a["object"]],
             "result": [{"@id": p} for p in a["result"]]}
         if a.get("start"):

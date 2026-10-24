@@ -429,11 +429,15 @@ def test_a_replicas_spread_is_said_from_the_runs_that_recorded_it(tmp_path):
     assert "replicas' spread)" not in shown["rg"][3].replace("larger than the replicas' spread)", "")
 
 
-def test_two_replicas_whose_spread_is_of_those_two_alone_keep_their_own_errors(tmp_path):
+def test_two_replicas_whose_spread_is_of_those_two_alone_are_not_said_to_differ(tmp_path):
     """Of two runs differing only by seed, the spread of the two means is
     their difference over the square root of 2, so the difference set
-    against it equals its error whatever the two are: it was always "within
-    the errors". Each is set against the error the run estimated itself."""
+    against it equals its error whatever the two are. They were set against
+    their own errors and said "resolved": two repeats of one measurement
+    said to differ. Their spread is set against their own errors as
+    `batch/aggregate.py` sets replicas', and said as it says it; and "only
+    these two runs' means were read" was said of a study of two runs."""
+    from fastmdxplora.batch.aggregate import CALIBRATION_FACTOR, spread_against_own
     from fastmdxplora.gui.compare_view import compared
     from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
 
@@ -444,8 +448,58 @@ def test_two_replicas_whose_spread_is_of_those_two_alone_keep_their_own_errors(t
     said = compared(first, second)
     rg = next(m for m in said["measures"] if m["analysis"] == "rg")["versus"]
     assert rg["error"] == pytest.approx((2 * 0.001 ** 2) ** 0.5)
-    assert rg["error_of"] == "alone" and rg["resolved"] is True and "errors" not in rg
-    assert said["replicas"]["runs"] == 2
+    assert rg["error_of"] == "alone" and rg["resolved"] is None and "errors" not in rg
+    check = rg["spread_against_own"]
+    assert check == spread_against_own([1.20, 1.25], [0.001, 0.001])
+    assert check["ratio"] == pytest.approx(0.05 / 2 ** 0.5 / 0.001)
+    assert check["too_tight"] is True and check["factor"] == CALIBRATION_FACTOR
+    assert said["replicas"]["runs"] == 2 and said["replicas"]["of"] == 2
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => ({
+            note: document.querySelector('.compare-replicas').textContent,
+            rule: [...document.querySelectorAll('.page[data-page="compare"] p')]
+                .map((n) => n.textContent)
+                .find((t) => t.startsWith("The difference is the second's mean")),
+            resolved: !!document.querySelector(
+                '.compare-means-table tr[data-analysis="rg"].is-resolved'),
+            rg: [...document.querySelectorAll(
+                '.compare-means-table tr[data-analysis="rg"] td')].map((n) => n.textContent),
+        })""")
+
+    shown = _browse(study, look)
+    assert shown["rg"][3].endswith(", their spread 35 times their own errors: those errors are "
+                                   "too tight"), shown["rg"]
+    assert "resolved" not in shown["rg"][3] and shown["resolved"] is False
+    # Neither the error the cell calls too tight, nor the rule for two
+    # measurements beside rows that are repeats of one, every one of them.
+    assert "\u00b1" not in shown["rg"][3], shown["rg"]
+    assert "resolved past" not in shown["rule"], shown["rule"]
+    assert "only these two runs' means were read" not in shown["note"], shown["note"]
+    assert ("the study has these two runs alone, and the spread of two means is their "
+            "difference over the square root of 2") in shown["note"], shown["note"]
+    assert "past 2 times those, the errors are too tight" in shown["note"], shown["note"]
+
+
+def test_only_two_runs_means_read_is_said_where_the_study_has_more(tmp_path):
+    """Of three replicas, only two recorded Rg: "only these two runs' means
+    were read", and the two, within twice their own errors, are said so."""
+    from fastmdxplora.gui.compare_view import compared
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2, 3])
+    first, second, third = _runs(study)
+    _mean_of(first, "rg", 1.200, 0.002)
+    _mean_of(second, "rg", 1.203, 0.002)
+    (third / "analysis" / "rg" / "options.json").unlink()
+    said = compared(first, second)
+    rg = next(m for m in said["measures"] if m["analysis"] == "rg")["versus"]
+    assert rg["spread_against_own"]["too_tight"] is False
+    assert said["replicas"]["of"] == 3
 
     def look(page, url):
         place = (urllib.parse.quote(str(first), safe="") + "|"
@@ -459,11 +513,27 @@ def test_two_replicas_whose_spread_is_of_those_two_alone_keep_their_own_errors(t
         })""")
 
     shown = _browse(study, look)
-    assert shown["rg"][3].endswith(", resolved (each run's own error: the spread is of these "
-                                   "two alone)"), shown["rg"]
-    assert "the spread of the 2 runs' means" not in shown["note"], shown["note"]
-    assert ("only these two runs' means were read, and the spread of two means is their "
-            "difference over the square root of 2") in shown["note"], shown["note"]
+    assert "Radius of gyration: only these two runs' means were read" in shown["note"], \
+        shown["note"]
+    assert shown["rg"][3].endswith(", their spread 1.1 times their own errors, within the "
+                                   "factor of 2"), shown["rg"]
+
+
+def test_a_study_s_runs_are_counted_by_its_plan_not_those_written_so_far(tmp_path):
+    """A run not yet begun is not yet in the batch manifest's `runs`: of
+    three replicas planned, two written, Compare said "the study has these
+    two runs alone" while the Overview listed three."""
+    from fastmdxplora.gui.compare_view import compared
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2, 3])
+    manifest = json.loads((study / "batch_manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["planned"]) == 3
+    manifest["runs"] = manifest["runs"][:2]
+    (study / "batch_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    first, second = _runs(study)[:2]
+    said = compared(first, second)
+    assert said["replicas"]["runs"] == 2 and said["replicas"]["of"] == 3, said["replicas"]
 
 
 def test_two_replicas_whose_settings_differ_otherwise_say_what_differs(tmp_path):
@@ -976,3 +1046,116 @@ def test_beyond_loopback_neither_compare_nor_the_timeline_is_offered(variants, p
         assert "Timeline" in tabs and pane == ["timeline"]
         assert "Compare with…" in listed
         assert compare_link is True
+
+
+def test_a_length_under_one_nanosecond_is_said_in_ps(variants):
+    """Settings that differ said a 250 ps production "0.25" beside "1.0",
+    where every page says a length under 1 ns in ps."""
+    from fastmdxplora.gui.compare_view import compared
+
+    first, second = _runs(variants)
+    config = second / "resolved_config.yml"
+    config.write_text(config.read_text(encoding="utf-8").replace(
+        "duration_ns: 1.0", "duration_ns: 0.25"), encoding="utf-8")
+    said = compared(first, second)
+    length = next(d for d in said["settings"] if d["setting"] == "simulation.duration_ns")
+    assert (length["first_said"], length["second_said"]) == ("1 ns", "250 ps")
+    # Said by one public function, as the Timeline says a piece's settings.
+    from fastmdxplora.gui.exploration import lengths_said
+
+    assert lengths_said({"setting": "simulation.duration_ns", "first": 1.0, "second": 0.25}) == {
+        "setting": "simulation.duration_ns", "first": 1.0, "second": 0.25,
+        "first_said": "1 ns", "second_said": "250 ps"}
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => [...document.querySelectorAll(
+            '.compare-settings-table tr')].map((r) => [...r.children].map((c) => c.textContent))
+            .find((cells) => cells[0] === 'simulation.duration_ns')""")
+
+    assert _browse(variants, look) == ["simulation.duration_ns", "1 ns", "250 ps"]
+
+
+def test_runs_that_differ_by_a_length_under_one_nanosecond_are_named_in_ps(tmp_path):
+    """Runs swept over their length were named "duration 0.25 ns" in
+    Compare's title, its column heads and each side's name, and their
+    column "duration (ns)" on the runs' table, where every page says a
+    length under 1 ns in ps."""
+    import re
+
+    from fastmdxplora.gui.compare_view import compared
+    from fastmdxplora.gui.runs_compared import runs_compared
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.duration_ns", [0.25, 0.5])
+    first, second = _runs(study)
+    said = compared(first, second)
+    assert (said["first"]["said"], said["second"]["said"]) == (
+        "study, duration 250 ps", "study, duration 500 ps")
+    table = runs_compared(study)
+    assert [run["label"] for run in table["runs"]] == ["duration 250 ps", "duration 500 ps"]
+    assert table["axes"] == [{"axis": "simulation.duration_ns", "label": "duration"}]
+    assert [run["values_said"] for run in table["runs"]] == [
+        {"simulation.duration_ns": "250 ps"}, {"simulation.duration_ns": "500 ps"}]
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => ({
+            text: document.querySelector('.page[data-page="compare"]').innerText,
+            heads: [...document.querySelectorAll('.compare-head-name')].map((n) => n.textContent),
+        })""")
+
+    shown = _browse(study, look)
+    assert shown["heads"] == ["study, duration 250 ps", "study, duration 500 ps"], shown["heads"]
+    assert re.findall(r"(?<![\d.])0?\.\d+\s*ns\b", shown["text"]) == []
+
+
+def test_two_replicas_from_models_of_an_ensemble_are_said_so(tmp_path):
+    """Two runs of a study swept over the models of an ensemble are
+    replicas, set against the replicas' spread as `batch/aggregate.py` sets
+    them, and the page said they "differ only by random seed"."""
+    from fastmdxplora.batch.aggregate import aggregate_members
+    from fastmdxplora.gui.compare_view import compared
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "setup.model", [1, 5, 12])
+    first, second, _ = _runs(study)
+    said = compared(first, second)
+    assert said["replicas"]["differ"] == "started from different models of the ensemble"
+    rmsd = next(m for m in said["measures"] if m["analysis"] == "rmsd")["versus"]
+    entry = aggregate_members(study)["analyses"]["rmsd"]
+    errors = [row["error_as_a_replica"] for row in entry["members"][:2]]
+    assert rmsd["error_of"] == "replicas" and rmsd["errors"] == pytest.approx(errors)
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("() => document.querySelector('.compare-replicas').textContent")
+
+    note = _browse(study, look)
+    assert note.startswith("These are two of 3 runs started from different models of the "
+                           "ensemble: repeats of one measurement."), note
+    assert "random seed" not in note
+
+
+def test_two_replicas_from_two_models_read_alone_are_not_said_to_differ(tmp_path):
+    """Two runs from two models of an ensemble, the only two: their spread
+    against their own errors (`spread_against_own`), never "resolved"."""
+    from fastmdxplora.gui.compare_view import compared
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "setup.model", [1, 5])
+    first, second = _runs(study)
+    _mean_of(first, "rg", 1.20, 0.001)
+    _mean_of(second, "rg", 1.25, 0.001)
+    rg = next(m for m in compared(first, second)["measures"] if m["analysis"] == "rg")["versus"]
+    assert rg["error_of"] == "alone" and rg["resolved"] is None
+    assert rg["spread_against_own"]["too_tight"] is True

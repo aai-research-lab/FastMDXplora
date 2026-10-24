@@ -103,11 +103,14 @@ def mean_said(side: dict[str, Any] | None) -> str:
     if not side:
         return "not recorded"
     if side.get("withheld"):
-        return f"not determined ({side['withheld']})"
+        noted = f"; {side['noted']}" if side.get("noted") else ""
+        return f"not determined ({side['withheld']}){noted}"
     mean, error, unit = side.get("mean"), side.get("error"), side.get("unit") or ""
     if mean is None:
         return "not recorded"
-    return f"{with_error(mean, error)} {unit}".strip()
+    # Its image note beside it, as every page says it (`image_note`).
+    noted = f"; {side['noted']}" if side.get("noted") else ""
+    return f"{with_error(mean, error)} {unit}".strip() + noted
 
 
 def why_not(row: dict[str, Any]) -> str:

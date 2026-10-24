@@ -68,6 +68,15 @@ def _interval_ns(table: dict[str, np.ndarray]) -> float | None:
     return None
 
 
+def _row_times_ps(table: dict[str, np.ndarray]) -> np.ndarray | None:
+    """Each row's time in ps, from the state record's own time column, or
+    None where it has none."""
+    for name, values in table.items():
+        if "time" in name.lower() and "(ps)" in name.lower():
+            return np.asarray(values, dtype=float)
+    return None
+
+
 def read_state_table(path: str | Path) -> dict[str, np.ndarray]:
     """The state record, by column, with the units left in the header.
 
@@ -360,6 +369,8 @@ class Thermodynamics(Analysis):
                 "that stopped before its first report does this."
             , code="analysis.data.absent")
 
+        # When each row was written, to read the image check's frame at it.
+        self._row_times = _row_times_ps(table)
         found = {}
         for key, (needle, _units) in COLUMNS.items():
             for name, values in table.items():
@@ -381,7 +392,10 @@ class Thermodynamics(Analysis):
             "source": str(path),
             **({"pieces": [str(piece["path"]) for piece in pieces]} if pieces else {}),
             "samples": int(len(next(iter(found.values())))) if found else 0,
-            "ensemble": ("constant volume" if constant_volume
+            # Unknown without a volume column (a record another engine
+            # wrote), rather than called constant pressure.
+            "ensemble": ("unknown" if volume is None
+                         else "constant volume" if constant_volume
                          else "constant pressure"),
         }
 
@@ -448,6 +462,66 @@ class Thermodynamics(Analysis):
         if not rows:
             return np.empty((0, 4))
         return np.array(rows, dtype=float)
+
+    _row_times: np.ndarray | None = None
+
+    def _rows_at_frames(self, traj: Any, discard: int) -> tuple[np.ndarray | None, str, str]:
+        """The image check's frames at the energy rows a mean averages (those
+        from ``discard``), one for each row, the trajectory frame nearest its
+        time: the rows are the energy record's, on its own interval, not the
+        trajectory's frames. A row with no frame within one frame interval
+        of it (before or after the trajectory) is not counted, and said.
+        Where either record carries no time, over every frame, and said."""
+        n = len(self.solute_image_series)
+        rows = self._row_times
+        frames = getattr(traj, "time", None)
+        frames = None if frames is None else np.asarray(frames, dtype=float)
+        if (rows is None or frames is None or frames.size != n or n == 0
+                or not np.all(np.isfinite(frames))
+                or (n > 1 and not np.all(np.diff(frames) > 0))):
+            return (None, "frames", " (the energy rows carry no time to read the "
+                    "trajectory's frames at, so over every frame)")
+        used = rows[max(int(discard), 0):]
+        used = used[np.isfinite(used)]
+        if n == 1:
+            nearest = np.zeros(used.size, dtype=np.int64)
+            spacing = np.inf
+        else:
+            spacing = float(np.median(np.diff(frames)))
+            after = np.clip(np.searchsorted(frames, used), 1, n - 1)
+            nearest = np.where(np.abs(used - frames[after - 1]) <= np.abs(frames[after] - used),
+                               after - 1, after)
+        within = np.abs(frames[nearest] - used) <= spacing * (1 + 1e-6)
+        how = ", each read at the trajectory frame nearest its time"
+        left = int(np.count_nonzero(~within))
+        if left:
+            how += (f", {left:,} {'row' if left == 1 else 'rows'} with no frame within one "
+                    "frame interval not counted")
+        return nearest[within], "energy rows", how
+
+    def _frames_of(self, traj: Any, record: dict[str, Any] | None
+                   ) -> tuple[np.ndarray | None, str, str]:
+        """A thermodynamic mean's energy rows, after its discard, each at the
+        trajectory frame nearest its time (:meth:`_rows_at_frames`)."""
+        if isinstance(record, dict) and "units" in record and "discard" in record:
+            discard = record.get("discard")
+            whole = isinstance(discard, int) and not isinstance(discard, bool)
+            return self._rows_at_frames(traj, discard if whole else 0)
+        return super()._frames_of(traj, record)
+
+    def _union_of_means(self, traj: Any, records: list[dict[str, Any]]
+                        ) -> tuple[np.ndarray | None, str, str]:
+        """The energy rows any of the means averages: from the least
+        discard, said as the union where the discards differ."""
+        discards = sorted({record.get("discard") for record in records
+                           if isinstance(record.get("discard"), int)
+                           and not isinstance(record.get("discard"), bool)})
+        if not discards:
+            return super()._union_of_means(traj, records)
+        used, over, how = self._rows_at_frames(traj, discards[0])
+        if len(discards) > 1 and over == "energy rows":
+            how = ", the union of the rows its means average, which differ" + how
+        return used, over, how
 
     def save_data(self, result: np.ndarray, path: Path) -> Path:
         import pandas as pd

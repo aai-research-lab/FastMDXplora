@@ -197,8 +197,18 @@ def test_a_failed_read_is_visible_and_can_be_retried(browser, sessions):
         expect(page.locator("#problems-summary")).to_have_text("1 recorded problem")
         page.route("**/api/problems?*", lambda route: route.fulfill(status=500, body="unavailable"))
         page.get_by_role("button", name="Refresh problems", exact=True).click()
-        expect(page.locator("#problems-summary")).to_contain_text("Could not read problems")
+        # Said once, in the page's one block (its title; no reason was given).
+        expect(page.locator("#problems-body .fmx-state[data-kind='error']")).to_have_text(
+            "The problems could not be readTry again")
+        expect(page.locator("#problems-summary")).to_have_text("")
         assert page.locator(".problem-item").count() == 0
+        # The server's reason, where it gives one, is what the block says.
+        page.unroute("**/api/problems?*")
+        page.route("**/api/problems?*", lambda route: route.fulfill(
+            status=503, json={"ok": False, "reason": "The records are being written."}))
+        page.get_by_role("button", name="Refresh problems", exact=True).click()
+        expect(page.locator("#problems-body .fmx-state-detail")).to_have_text(
+            "The records are being written.")
         page.unroute("**/api/problems?*")
         page.get_by_role("button", name="Refresh problems", exact=True).click()
         expect(page.locator("#problems-summary")).to_have_text("1 recorded problem")
@@ -232,7 +242,7 @@ def test_a_late_response_cannot_restore_the_previous_study(browser, sessions):
         })""")
         assert page.locator(".problem-item").count() == 0
         page.evaluate("() => window.__releaseProblems()")
-        expect(page.locator("#problems-summary")).to_contain_text("Reading the study's records")
+        expect(page.locator("#problems-body .fmx-state")).to_contain_text("Reading the study's records")
         assert page.locator(".problem-item").count() == 0
         expect(page.get_by_role("button", name="Refresh problems", exact=True)).to_be_enabled()
     finally:
@@ -244,7 +254,8 @@ def test_no_study_does_not_claim_a_clean_bill_of_health(browser, sessions):
 
     page = _open(browser, sessions[0]["not-a-study"])
     try:
-        expect(page.locator("#problems-summary")).to_have_text("Open a study to read its problems.")
+        expect(page.locator("#problems-body .fmx-state")).to_have_text("Open a study to read its problems.")
+        expect(page.locator("#problems-summary")).to_have_text("")
         assert page.locator(".problem-item").count() == 0
     finally:
         page.context.close()

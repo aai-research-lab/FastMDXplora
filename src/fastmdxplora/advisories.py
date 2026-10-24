@@ -135,12 +135,20 @@ def _a_box_too_small_for_the_cutoff(structure: dict[str, Any],
         # Not stated: the force field's own, as setup will use it.
         from fastmdxplora.setup.forcefields import FALLBACK_CUTOFF_NM, _REGISTRY
 
-        choice = _REGISTRY.get(str(settings.get("forcefield") or "auto").lower())
-        if choice is None and str(settings.get("forcefield") or "auto").lower() == "auto":
-            from fastmdxplora.setup.forcefields import AUTO_FORCEFIELD
+        if settings.get("force_field"):
+            # An explicit list, read as setup reads it.
+            from fastmdxplora.setup.forcefields import nonbonded_scheme
 
-            choice = _REGISTRY.get(AUTO_FORCEFIELD)
-        cutoff = choice.nonbonded[0] if choice is not None else FALLBACK_CUTOFF_NM
+            cutoff = nonbonded_scheme(list(settings["force_field"]), cutoff_nm=None,
+                                      use_switching_function=None,
+                                      switch_distance_nm=None)[0]
+        else:
+            choice = _REGISTRY.get(str(settings.get("forcefield") or "auto").lower())
+            if choice is None and str(settings.get("forcefield") or "auto").lower() == "auto":
+                from fastmdxplora.setup.forcefields import AUTO_FORCEFIELD
+
+                choice = _REGISTRY.get(AUTO_FORCEFIELD)
+            cutoff = choice.nonbonded[0] if choice is not None else FALLBACK_CUTOFF_NM
     extents = structure.get("extents_angstrom")
     if padding is None or not extents or settings.get("membrane"):
         # A bilayer's box is rectangular and made of whole patches about

@@ -85,24 +85,24 @@ def _medoids(root: Path) -> list[dict[str, Any]]:
 
 def _judgements(root: Path) -> list[dict[str, Any]]:
     from fastmdxplora.gui.stopping_view import _record_of
-    from fastmdxplora.simulation.stopping import _DECIDED
+    from fastmdxplora.simulation.stopping import round_decided
 
     found = _record_of(root)
     if not found:
         return []
-    rounds = found["record"].get("rounds") or []
+    record = found["record"]
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
     marks = []
     for number, entry in enumerate(rounds, start=1):
-        if not isinstance(entry, dict):
-            continue
         at = _number(entry.get("production_ns"))
         if at is None:
             continue
-        # In the words the report says them in.
-        word = entry.get("decision")
-        decision = _DECIDED.get(word, str(word or "")).format(more=entry.get("more_ns") or 0.0)
+        # As every page and the report say a round (`stopping.round_decided`):
+        # a stopped one by what stopped it, the last still said running as
+        # extending, lengths in ps under 1 ns.
+        decided = round_decided(entry, last=number == len(rounds), record=record)["said"]
         marks.append({"kind": "check", "frame": None, "time_ns": at,
-                      "label": f"Judged after round {number}" + (f": {decision}" if decision else "")})
+                      "label": f"Judged after round {number}: {decided}"})
     return marks
 
 

@@ -60,8 +60,10 @@ class TestAgainstSetup:
         assert guess.particles == pytest.approx(record["n_atoms_solvated"], rel=0.04)
 
     def test_a_small_solute_whose_box_setup_grows(self, tmp_path) -> None:
-        record = _prepared(tmp_path, TRIPEPTIDE, heterogens="drop")
-        guess = estimate_system(tmp_path / "structure.pdb", {"heterogens": "drop"})
+        # At the padding of 1.0 nm the default was: 2.0 boxes it without growing.
+        record = _prepared(tmp_path, TRIPEPTIDE, heterogens="drop", solvent_padding_nm=1.0)
+        guess = estimate_system(tmp_path / "structure.pdb",
+                                {"heterogens": "drop", "solvent_padding_nm": 1.0})
         assert guess.grows
         assert guess.padding_used_nm == pytest.approx(record["resolved"]["solvent_padding_nm"],
                                                       abs=1e-3)
@@ -116,7 +118,7 @@ class TestAgainstOpenMM:
                             boxShape="dodecahedron", ionicStrength=0.15 * unit.molar)
         names = [r.name for r in modeller.topology.residues()]
 
-        guess = estimate_system(structure, {})
+        guess = estimate_system(structure, {"solvent_padding_nm": 1.0})
         assert guess.solute_atoms == solute
         assert (guess.ions_positive, guess.ions_negative) == (names.count("NA"), names.count("CL"))
 
@@ -280,8 +282,10 @@ class TestTheAssembly:
     def test_the_copies_its_operators_make_are_counted_and_boxed(self, tmp_path) -> None:
         text = self.OPERATORS + _residue(1, "GLY", "A", 1, 0.0) + "END\n"
         alone = estimate_system(_file(tmp_path, _residue(1, "GLY", "A", 1, 0.0) + "END\n",
-                                      "one.pdb"), {"nonbonded_method": "NoCutoff"})
-        both = estimate_system(_file(tmp_path, text), {"nonbonded_method": "NoCutoff"})
+                                      "one.pdb"),
+                                {"nonbonded_method": "NoCutoff", "solvent_padding_nm": 1.0})
+        both = estimate_system(_file(tmp_path, text),
+                               {"nonbonded_method": "NoCutoff", "solvent_padding_nm": 1.0})
         assert both.solute_atoms == 2 * alone.solute_atoms
         assert both.narrowest_nm > alone.narrowest_nm + 2.0, "the copy sits 4 nm away"
         assert any("2 copies" in note for note in both.notes)
@@ -356,17 +360,21 @@ class TestTheBox:
 
     def test_without_a_periodic_cutoff_nothing_grows(self, tmp_path) -> None:
         path = _file(tmp_path, _residue(1, "GLY", "A", 1, 0.0) + "END\n")
-        assert not estimate_system(path, {"nonbonded_method": "NoCutoff"}).grows
-        assert estimate_system(path, {}).grows
+        # At 1.0 nm of padding, which a lone residue's box grows from.
+        assert not estimate_system(path, {"nonbonded_method": "NoCutoff",
+                                          "solvent_padding_nm": 1.0}).grows
+        assert estimate_system(path, {"solvent_padding_nm": 1.0}).grows
 
     def test_the_cutoff_is_the_force_field_s_own(self, tmp_path) -> None:
         path = _file(tmp_path, _residue(1, "GLY", "A", 1, 0.0) + "END\n")
-        charmm = estimate_system(path, {"forcefield": "charmm36"})
-        amber = estimate_system(path, {"forcefield": "amber14"})
+        # At 1.0 nm of padding, so each box is grown to its own cutoff.
+        padded = {"solvent_padding_nm": 1.0}
+        charmm = estimate_system(path, {"forcefield": "charmm36", **padded})
+        amber = estimate_system(path, {"forcefield": "amber14", **padded})
         assert charmm.narrowest_nm == pytest.approx(amber.narrowest_nm * 1.2, rel=1e-6)
-        assert estimate_system(path, {"force_field": ["x.xml"]}).narrowest_nm == \
+        assert estimate_system(path, {"force_field": ["x.xml"], **padded}).narrowest_nm == \
             pytest.approx(amber.narrowest_nm)
-        assert estimate_system(path, {"forcefield": "nonsense"}).narrowest_nm == \
+        assert estimate_system(path, {"forcefield": "nonsense", **padded}).narrowest_nm == \
             pytest.approx(amber.narrowest_nm)
 
 
@@ -494,3 +502,14 @@ DECAPEPTIDE = (
     "ATOM     71  O   GLY A  10      15.311  42.745  20.642  1.00 18.88           O\n"
     "END\n"
 )
+
+
+class TestAGivenPaddingIsKept:
+    def test_zero_is_a_padding_not_an_unset_one(self, tmp_path) -> None:
+        """The schema's least padding is 0.0; read with `or`, it became the
+        default (now 2.0 nm)."""
+        text = _residue(1, "LYS", "A", 1, 0.0) + "END\n"
+        given = estimate_system(_file(tmp_path, text), {"solvent_padding_nm": 0.0})
+        unset = estimate_system(_file(tmp_path, text, "other.pdb"), {})
+        assert given.padding_nm == 0.0
+        assert unset.padding_nm == 2.0

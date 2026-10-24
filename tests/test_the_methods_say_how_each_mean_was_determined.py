@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from fastmdxplora.report.context import PhaseContext
 from fastmdxplora.report.methods import methods_paragraphs
@@ -160,3 +161,150 @@ def test_one_of_a_campaign_s_runs_reads_the_campaign_s_rule(tmp_path):
     other = _study(tmp_path / "runs" / "elsewhere")
     assert "in 2 replicas that agree" in _methods(named)
     assert "replicas that agree" not in _methods(other)
+
+
+def _a_run_of_a_campaign(where: Path, sweep: dict) -> Path:
+    run = where / "campaign" / "runs" / "run0"
+    run.mkdir(parents=True)
+    (where / "campaign" / "batch_manifest.json").write_text(
+        json.dumps({"sweep": sweep, "runs": []}), encoding="utf-8")
+    return run
+
+
+def _shared(run: Path, *, rule: bool = True) -> str:
+    text = methods_paragraphs(run, {}, {}, means={
+        "rmsd": _record(_relaxing(6), start_shared_with_replicas=600)},
+        stopping=_rule([run.name, "run1"]) if rule else None)
+    [paragraph] = [p for p in text.split("\n\n") if p.startswith("**Analysis.**")]
+    return paragraph
+
+
+def test_replicas_from_the_models_of_an_ensemble_share_no_one_structure(tmp_path):
+    """Every replica set run until it knew shares a start, models of an
+    ensemble too: their methods said "started from one structure", "where
+    the relaxation they share shows through", a protocol that did not
+    happen, written to go into a manuscript."""
+    said = _shared(_a_run_of_a_campaign(tmp_path, {"setup.model": [1, 2, 3]}))
+    assert "As one of a set of replicas started from different models of the ensemble, it was " \
+           "averaged from no earlier than frame 600" in said, said
+    assert "one structure" not in said and "relaxation they share" not in said
+    assert "each run kept the later of that start and the one detected on its own" in said
+
+
+def test_replicas_by_seed_are_said_from_one_structure(tmp_path):
+    said = _shared(_a_run_of_a_campaign(tmp_path, {"simulation.random_seed": [1, 2]}))
+    assert ("As one of a set of replicas started from one structure, differing only by random "
+            "seed, it was averaged from no earlier than frame 600") in said, said
+    assert "relaxation they share shows through less noise" in said
+
+
+def test_a_campaign_not_read_is_not_said_from_one_structure(tmp_path):
+    from fastmdxplora import record_access
+
+    run = _a_run_of_a_campaign(tmp_path, {"simulation.random_seed": [1, 2]})
+    with record_access.confined_records(run, lambda path: True):
+        said = _shared(run)
+    assert "As one of a set of replicas, it was averaged from no earlier than frame 600" in said
+    assert "one structure" not in said
+
+
+def test_a_campaign_whose_rule_was_not_read_is_not_said_from_one_structure(tmp_path):
+    """The campaign's sweep is read only with the record of the rule that
+    shared the start, which the report reads only where it may read the
+    campaign (`document._stopping_record_of`)."""
+    said = _shared(_a_run_of_a_campaign(tmp_path, {"simulation.random_seed": [1, 2]}),
+                   rule=False)
+    assert "As one of a set of replicas, it was averaged from no earlier than frame 600" in said
+    assert "one structure" not in said
+
+
+def _a_campaign_served(where: Path, sweep: dict, *, shared: bool = True) -> Path:
+    """A campaign of two runs run until it knew, the first with its mean
+    averaged from the start its replicas share."""
+    run = _a_run_of_a_campaign(where, sweep)
+    (run / "analysis" / "rmsd").mkdir(parents=True)
+    extra = {"start_shared_with_replicas": 600} if shared else {}
+    (run / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+        {"findings": {"mean": _record(_relaxing(6), unit="nm", **extra)}}), encoding="utf-8")
+    (run / "manifest.json").write_text(json.dumps({"phases": []}), encoding="utf-8")
+    (run.parent.parent / "stopping.json").write_text(
+        json.dumps(_rule([run.name, "run1"])), encoding="utf-8")
+    return run
+
+
+def _methods_served(run: Path) -> dict:
+    import urllib.request
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(run), host="127.0.0.1", port=0)
+    try:
+        with urllib.request.urlopen(session.url.rstrip("/") + "/api/methods") as answer:
+            return json.loads(answer.read())
+    finally:
+        session.server.shutdown()
+
+
+@pytest.mark.parametrize("sweep, words", [
+    ({"simulation.random_seed": [1, 2]},
+     "As one of a set of replicas started from one structure, differing only by random seed, "
+     "it was averaged from no earlier than frame 600"),
+    ({"setup.model": [1, 2], "simulation.random_seed": [1, 2]},
+     "As one of a set of replicas started from different models of the ensemble, each with a "
+     "seed of its own, it was averaged from no earlier than frame 600"),
+], ids=["seeds", "models x seeds"])
+def test_a_run_of_a_campaign_shows_its_methods_in_the_gui(tmp_path, sweep, words):
+    """The run's methods read its campaign's batch manifest, which the
+    GUI's read held to the study refused: every run of a study of several
+    showed "../../batch_manifest.json was not read: it is a link to a file
+    outside the study", of a file that is no link, in place of its methods."""
+    answer = _methods_served(_a_campaign_served(tmp_path, sweep))
+    assert answer["ok"] is True, answer
+    assert "<strong>Analysis.</strong>" in answer["html"]
+    assert words in answer["plain"], answer["plain"]
+    assert "in 2 replicas that agree within their errors" in answer["plain"]
+
+
+def test_a_run_whose_start_is_its_own_reads_nothing_of_its_campaign_s_sweep(tmp_path):
+    from fastmdxplora import record_access
+    from fastmdxplora.report.methods import _campaign_axes
+
+    run = _a_campaign_served(tmp_path, {"simulation.random_seed": [1, 2]}, shared=False)
+    assert _methods_served(run)["ok"] is True
+    read: list[str] = []
+    with record_access.confined_records(run.parent.parent,
+                                        lambda path: read.append(path.name) or True):
+        assert _campaign_axes(run, {"rmsd": _record(_relaxing(6))}, _rule([run.name])) is None
+    assert "batch_manifest.json" not in read
+
+
+def test_a_campaign_s_batch_manifest_linked_out_is_said_a_link(tmp_path):
+    """Linked out of the study, the manifest is still refused, and said a
+    link; a file of the study that is not one of its results is never said
+    to be a link."""
+    from fastmdxplora.gui import server
+
+    run = _a_campaign_served(tmp_path / "in", {"simulation.random_seed": [1, 2]})
+    outside = tmp_path / "outside.json"
+    manifest = run.parent.parent / "batch_manifest.json"
+    outside.write_text(manifest.read_text(encoding="utf-8"), encoding="utf-8")
+    manifest.unlink()
+    manifest.symlink_to(outside)
+    answer = _methods_served(run)
+    assert answer["ok"] is False
+    assert answer["reason"] == ("../../batch_manifest.json was not read: it is a link to a file "
+                                "outside the study, so what it says is not shown."), answer
+    manifest.unlink()
+    (run.parent.parent / "study_notes.json").write_text("{}", encoding="utf-8")
+    from fastmdxplora import record_access
+
+    def read(inside: Path) -> dict:
+        try:
+            record_access.read_text(inside.parent.parent / "study_notes.json")
+        except OSError:
+            pass
+        return {"ok": True}
+
+    said = server._refusals_said(server._confined(run, read))
+    assert said == ("../../study_notes.json was not read: it is a file of the study that is not "
+                    "one of its results, so what it says is not shown."), said

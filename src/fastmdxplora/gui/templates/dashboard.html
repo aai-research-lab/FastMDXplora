@@ -13,12 +13,15 @@
   <link rel="stylesheet" href="/static/study-tabs.css">
   <link rel="stylesheet" href="/static/place.css">
   <link rel="stylesheet" href="/static/statusbar.css">
+  <link rel="stylesheet" href="/static/notices.css">
+  <link rel="stylesheet" href="/static/page-states.css">
   <link rel="stylesheet" href="/static/compare.css">
   <link rel="stylesheet" href="/static/study-timeline.css">
   <link rel="stylesheet" href="/static/report-outline.css">
   <link rel="stylesheet" href="/static/builder-cost.css">
   <link rel="stylesheet" href="/static/studies-table.css">
   <link rel="stylesheet" href="/static/analysis-cells.css">
+  <link rel="stylesheet" href="/static/settings.css">
   <!--__FASTMDX_LAB_ICON__-->
   <meta name="fastmdx-expansion" content="Fully Automated SysTem for Molecular Dynamics eXploration">
 </head>
@@ -57,6 +60,7 @@
         <div>
           <div class="builder-label">Agent settings</div>
           <div class="builder-card-note" id="agent-model-current"></div>
+          <a href="#settings" class="settings-part-link small" data-settings-part-link="agent">All settings</a>
         </div>
         <button type="button" id="agent-settings-close" class="line-btn dialog-x" aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
       </div>
@@ -169,80 +173,6 @@
       </div>
     </div>
   </div>
-  <!-- Preferences: how this browser shows things, kept in it and applied
-       as they change. Nothing here changes a study or its files. -->
-  <div id="prefs-dialog" class="agent-dialog" hidden>
-    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
-         aria-labelledby="prefs-title">
-      <div class="agent-dialog-head">
-        <div>
-          <div class="builder-label" id="prefs-title">Preferences</div>
-          <div class="builder-card-note">Kept in this browser. They change how
-            studies are shown, never a study or its files.</div>
-        </div>
-        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
-      </div>
-      <div class="agent-dialog-body">
-        <div class="pref-group">
-          <div class="pref-group-title">The Viewer, as it opens</div>
-          <div class="pref-rows">
-            <label class="pref-row"><span>Representation</span>
-              <select id="setting-protein-rep">
-                <option value="cartoon" selected>Cartoon</option>
-                <option value="backbone">Backbone</option>
-                <option value="sticks">Sticks</option>
-                <option value="ballAndStick">Ball and stick</option>
-                <option value="surface">Surface</option>
-                <option value="lines">Lines</option>
-                <option value="spacefill">Spheres</option>
-              </select>
-            </label>
-            <label class="pref-row"><span>Ground</span>
-              <select id="setting-ground">
-                <option value="scheme" selected>As the scheme</option>
-                <option value="dark">Dark</option>
-                <option value="white">White</option>
-              </select>
-            </label>
-            <label class="pref-row"><span>Water</span><input type="checkbox" id="setting-show-water"></label>
-            <label class="pref-row"><span>Ions</span><input type="checkbox" id="setting-show-ions"></label>
-            <label class="pref-row"><span>Spin</span><input type="checkbox" id="setting-spin"></label>
-            <label class="pref-row"><span>Keep the camera as frames change<small>Off, each frame is fitted to the view</small></span><input type="checkbox" id="setting-preserve-camera" checked></label>
-            <label class="pref-row"><span>Pocket cutoff (&Aring;)<small>Residues this close to the ligand</small></span>
-              <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
-            </label>
-          </div>
-        </div>
-        <div class="pref-group">
-          <div class="pref-group-title">Display</div>
-          <div class="pref-rows">
-            <label class="pref-row"><span>Time</span>
-              <select id="setting-time-format">
-                <option value="24h" selected>24-hour</option>
-                <option value="12h">12-hour</option>
-              </select>
-            </label>
-            <label class="pref-row"><span>Chart history<small>Samples a live chart keeps</small></span>
-              <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
-            </label>
-          </div>
-        </div>
-        <div class="pref-group">
-          <div class="pref-group-title">While a study runs</div>
-          <div class="pref-rows">
-            <label class="pref-row"><span>Notify when a run ends<small>A notice from the browser, as it
-              completes, stops or fails; how far it is shows in the tab's title either way</small></span>
-              <input type="checkbox" id="setting-notify">
-            </label>
-            <p class="muted small" id="setting-notify-note" role="status" hidden></p>
-          </div>
-        </div>
-      </div>
-      <div class="agent-dialog-foot">
-        <button type="button" class="ghost-btn" id="prefs-restore">Restore defaults</button>
-      </div>
-    </div>
-  </div>
   <!-- A data deposit of the study (files-actions.js, deposit.py): the
        sets ticked, the README written from the records, then one zip. -->
   <div id="files-deposit-dialog" class="agent-dialog" hidden>
@@ -271,28 +201,6 @@
         <span class="files-dep-total" id="files-deposit-said"></span>
         <button type="button" class="ghost-btn" data-dialog-close>Cancel</button>
         <button type="button" class="primary-btn" id="files-deposit-go" disabled>Write the deposit</button>
-      </div>
-    </div>
-  </div>
-  <!-- Clearing the scratch of the Viewer and the live view
-       (files-actions.js): what would go is asked for first, and said. -->
-  <div id="files-clear-dialog" class="agent-dialog" hidden>
-    <div class="agent-dialog-panel dialog-narrow" role="dialog" aria-modal="true"
-         aria-labelledby="files-clear-title">
-      <div class="agent-dialog-head">
-        <div>
-          <div class="builder-label" id="files-clear-title">Clear the scratch?</div>
-          <div class="builder-card-note">What the Viewer wrote and the live view kept, on this computer.</div>
-        </div>
-        <button type="button" class="line-btn dialog-x" data-dialog-close aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
-      </div>
-      <div class="agent-dialog-body">
-        <p class="files-dialog-said" id="files-clear-said">Looking at what can go…</p>
-        <ul class="files-dialog-kept" id="files-clear-kept" hidden></ul>
-      </div>
-      <div class="agent-dialog-foot">
-        <button type="button" class="ghost-btn" data-dialog-close>Cancel</button>
-        <button type="button" class="primary-btn" id="files-clear-go" disabled>Clear</button>
       </div>
     </div>
   </div>
@@ -386,7 +294,7 @@
     <div class="settings-row"><span>Mode</span><span class="settings-value" id="settings-mode">Seeker: built-in, assisted</span></div>
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip;</a>
     <div class="settings-divider"></div>
-    <button type="button" class="settings-item" data-dialog-open="prefs-dialog" aria-haspopup="dialog">Preferences&hellip; <span class="settings-hint">viewer, time, charts</span></button>
+    <a href="#settings" class="settings-item" id="settings-page-link">Settings&hellip; <span class="settings-hint">every setting, in one place</span></a>
     <button type="button" class="settings-item" data-dialog-open="cite-dialog" aria-haspopup="dialog">Cite FastMDXplora&hellip; <span class="mono settings-hint" id="settings-version"></span></button>
     <a href="https://fastmdxplora.readthedocs.io/en/latest/gui.html" class="settings-item" target="_blank" rel="noopener">Documentation <span class="mono settings-hint">&#8599;</span></a>
     <a href="https://github.com/aai-research-lab/FastMDXplora" class="settings-item" target="_blank" rel="noopener">GitHub <span class="mono settings-hint">&#8599;</span></a>
@@ -527,17 +435,9 @@
       <!-- The open study's conversations with the Agent, the one talked in
            last first; then the chats of no study. Each opens in the Agent
            beside the page (chats.js). -->
-      <div class="sidebar-convs" id="sidebar-study-convs" hidden>
-        <div class="sidebar-convs-head">
-          <span class="sidebar-convs-title">Conversations</span>
-          <button type="button" class="line-btn" id="sidebar-study-new" title="A new conversation about this study"
-                  aria-label="A new conversation about this study"><!--icon:new:line-icon--></button>
-        </div>
-        <div class="sidebar-convs-list" id="sidebar-study-convs-list"></div>
-      </div>
       <details class="sidebar-chats" id="sidebar-chats" open>
-        <summary class="nav-link sidebar-chats-head" title="Chats about no study" aria-label="Chats">
-          <!--icon:chat:nav-icon chats-icon--><span>Chats</span>
+        <summary class="nav-link sidebar-chats-head" title="Conversations with the Agent" aria-label="Conversations">
+          <!--icon:chat:nav-icon chats-icon--><span>Conversations</span>
           <button type="button" class="line-btn" id="sidebar-chat-new" title="A new chat, about no study"
                   aria-label="A new chat, about no study"><!--icon:new:line-icon--></button>
           <!--icon:chevron:recent-chevron-->
@@ -661,7 +561,7 @@
             </div>
             <div class="studies-bar-in studies-bar-said" id="studies-bar-said" role="status" hidden></div>
           </div>
-          <p class="muted studies-empty" id="studies-empty" hidden></p>
+          <div class="studies-empty" id="studies-empty" hidden></div>
           <p class="studies-keys muted small" id="studies-keys" hidden><kbd>/</kbd> search
             <kbd>j</kbd> <kbd>k</kbd> move <kbd>Enter</kbd> open <kbd>x</kbd> choose
             <kbd>c</kbd> compare two <kbd>t</kbd> tag the chosen <kbd>Esc</kbd> clear
@@ -683,7 +583,7 @@
                       title="Open the first in the Viewer, the second played beside it">Play them beside in the Viewer</button>
             </div>
           </div>
-          <p class="muted compare-empty" id="compare-empty" role="status"></p>
+          <div class="compare-empty" id="compare-empty"></div>
           <p class="muted small compare-not-read" id="compare-not-read" hidden></p>
           <div class="compare-heads" id="compare-heads" hidden></div>
           <section class="card compare-section" id="compare-settings" hidden></section>
@@ -709,6 +609,8 @@
                       title="Reset: every setting back to its default"><!--icon:undo:line-icon--></button>
             </div>
           </div>
+          <!-- The workspace's defaults file, refused, said (new-study.js). -->
+          <p class="builder-defaults-refused" id="run-defaults-refused" role="status" hidden></p>
 
           <div class="builder-layout">
             <div class="builder-main">
@@ -781,7 +683,7 @@
                   <div class="builder-field builder-field-wide" id="run-output-field">
                     <div class="builder-head"><span class="builder-label">Results folder</span></div>
                     <input type="text" id="run-output" autocomplete="off" data-picks="folder" class="mono"
-                           placeholder="fastmdxplora_<system>_study_<timestamp>">
+                           placeholder="fastmdxplora_<system>_study_<UTC timestamp>">
                     <span class="builder-help" id="run-output-note"></span>
                   </div>
                   <div class="builder-field builder-field-wide" id="run-phases-card">
@@ -1309,7 +1211,7 @@
                       <button class="icon-btn ctl-btn" type="button" data-action="publication" aria-label="Publication look" aria-pressed="false" title="Publication look: outlines and shading on white, for a figure; turned off, the ground chosen comes back"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></button>
                     </div>
                     <div class="control-group picture-tools" role="group" aria-label="Picture">
-                      <!-- The ground behind the molecule now; Preferences says
+                      <!-- The ground behind the molecule now; Settings says
                            the one it opens on. -->
                       <label class="select-field">Ground
                         <select id="viewer-ground" aria-label="Ground behind the molecule">
@@ -1858,7 +1760,145 @@
                standalone dashboard carries; files-page.js finds, filters,
                sorts and folds it, files-actions.js deposits and clears. -->
           <div id="files-page" class="files-page" data-source="/api/files-page">
-            <div class="files-empty">Reading the study's files…</div>
+            <div class="fmx-state" data-kind="loading" role="status"><span class="fmx-spin" aria-hidden="true"></span><span class="fmx-state-title">Reading the study's files…</span></div>
+          </div>
+        </section>
+
+        <!-- Settings (settings.js, IMDE 2.9): every setting on one page, found
+             by its words, each applied as it is changed. You: saved in this
+             browser (preferences.js, frame.js, theme-first.js, the Agent's
+             own dialog). This folder: the workspace's fastmdx-defaults.yml,
+             which new studies made here start from in every interface
+             (settings_page.py). -->
+        <section class="page settings-page" data-page="settings" hidden>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Settings</h1>
+              <div class="page-subtitle">Each applies as it is changed.</div>
+            </div>
+            <div class="page-header-actions">
+              <span class="search-field"><!--icon:search:search-icon-->
+              <input type="search" id="settings-find" autocomplete="off" spellcheck="false"
+                     placeholder="Find a setting" aria-label="Find a setting"></span>
+            </div>
+          </div>
+          <div class="settings-scopes" role="tablist" aria-label="Whose settings">
+            <button type="button" role="tab" class="settings-scope" id="settings-scope-you"
+                    data-settings-scope="you" aria-selected="true" aria-controls="settings-you">You
+              <span class="settings-scope-said">this computer</span>
+              <span class="settings-count" hidden></span></button>
+            <button type="button" role="tab" class="settings-scope" id="settings-scope-folder"
+                    data-settings-scope="folder" aria-selected="false" aria-controls="settings-folder"
+                    tabindex="-1">This folder
+              <span class="settings-scope-said mono">fastmdx-defaults.yml</span>
+              <span class="settings-count" hidden></span></button>
+          </div>
+          <div class="settings-panel" id="settings-you" role="tabpanel" aria-labelledby="settings-scope-you">
+            <p class="settings-lead muted small">Saved in this browser. They change how studies are shown,
+              never a study or its files.</p>
+            <div class="pref-group" data-settings-part="appearance">
+              <div class="pref-group-title">Appearance</div>
+              <div class="pref-rows">
+                <div class="pref-row"><span id="settings-page-theme">Theme</span>
+                  <!-- The gear's menu's buttons, copied here (settings.js). -->
+                  <div class="seg" role="group" aria-labelledby="settings-page-theme" id="settings-page-themes"></div>
+                </div>
+                <div class="pref-row"><span id="settings-page-accent">Accent</span>
+                  <div class="accent-swatches" role="group" aria-labelledby="settings-page-accent" id="settings-page-accents"></div>
+                </div>
+                <label class="pref-row"><span>Display size<small id="setting-display-size-note">Everything
+                  at once, text included</small></span>
+                  <select id="setting-display-size">
+                    <option value="auto" selected>Auto</option>
+                    <option value="90">90%</option>
+                    <option value="100">100%</option>
+                    <option value="110">110%</option>
+                    <option value="125">125%</option>
+                    <option value="150">150%</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="pref-group" data-settings-part="viewer">
+              <div class="pref-group-title">The Viewer, as it opens</div>
+              <div class="pref-rows">
+                <label class="pref-row"><span>Representation</span>
+                  <select id="setting-protein-rep">
+                    <option value="cartoon" selected>Cartoon</option>
+                    <option value="backbone">Backbone</option>
+                    <option value="sticks">Sticks</option>
+                    <option value="ballAndStick">Ball and stick</option>
+                    <option value="surface">Surface</option>
+                    <option value="lines">Lines</option>
+                    <option value="spacefill">Spheres</option>
+                  </select>
+                </label>
+                <label class="pref-row"><span>Ground</span>
+                  <select id="setting-ground">
+                    <option value="scheme" selected>As the scheme</option>
+                    <option value="dark">Dark</option>
+                    <option value="white">White</option>
+                  </select>
+                </label>
+                <label class="pref-row"><span>Water</span><input type="checkbox" id="setting-show-water"></label>
+                <label class="pref-row"><span>Ions</span><input type="checkbox" id="setting-show-ions"></label>
+                <label class="pref-row"><span>Spin</span><input type="checkbox" id="setting-spin"></label>
+                <label class="pref-row"><span>Keep the camera as frames change<small>Off, each frame is fitted to the view</small></span><input type="checkbox" id="setting-preserve-camera" checked></label>
+                <label class="pref-row"><span>Pocket cutoff (&Aring;)<small>Residues this close to the ligand</small></span>
+                  <input type="number" id="setting-pocket-cutoff" min="3" max="15" step="0.5" value="5">
+                </label>
+              </div>
+            </div>
+            <div class="pref-group" data-settings-part="time">
+              <div class="pref-group-title">Time and charts</div>
+              <div class="pref-rows">
+                <label class="pref-row"><span>Time</span>
+                  <select id="setting-time-format">
+                    <option value="24h" selected>24-hour</option>
+                    <option value="12h">12-hour</option>
+                  </select>
+                </label>
+                <label class="pref-row"><span>Chart history<small>Samples a live chart keeps</small></span>
+                  <input type="number" id="setting-chart-history" min="60" max="5000" step="60" value="600">
+                </label>
+              </div>
+            </div>
+            <div class="pref-group" data-settings-part="runs">
+              <div class="pref-group-title">While a study runs</div>
+              <div class="pref-rows">
+                <label class="pref-row"><span>Notify when a run ends<small>A notice from the browser, as it
+                  completes, stops or fails; how far it is shows in the tab's title either way</small></span>
+                  <input type="checkbox" id="setting-notify">
+                </label>
+                <p class="muted small" id="setting-notify-note" role="status" hidden></p>
+              </div>
+            </div>
+            <div class="pref-group" data-settings-part="agent">
+              <div class="pref-group-title">Agent</div>
+              <div class="pref-rows">
+                <div class="pref-row"><span>Engine<small>Whose AI the Agent asks</small></span>
+                  <span class="settings-value" id="settings-page-engine">none</span></div>
+                <div class="pref-row"><span>Mode<small>With the engine and the GPU-hour ceiling,
+                  in the Agent's settings</small></span>
+                  <span class="settings-value" id="settings-page-mode">Seeker: built-in, assisted</span></div>
+                <div class="pref-row settings-row-end">
+                  <button type="button" class="ghost-btn" id="settings-page-agent"
+                          aria-haspopup="dialog">Change the Agent's settings&hellip;</button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-foot">
+              <button type="button" class="ghost-btn" id="prefs-restore"
+                      title="The Display size, the Viewer, time, charts and notices as FastMDXplora sets them; not the theme, the accent or the Agent">Restore defaults</button>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-folder" role="tabpanel"
+               aria-labelledby="settings-scope-folder" hidden>
+            <p class="settings-lead muted small" id="settings-folder-lead">New studies made in this
+              folder start from these, from the GUI, the command line and the Agent alike.</p>
+            <div id="settings-folder-body">
+              <p class="muted small">Reading the folder's defaults&hellip;</p>
+            </div>
           </div>
         </section>
 
@@ -1929,7 +1969,7 @@
               <button id="agent-conversations" class="line-btn" type="button" aria-label="Conversations"
                       title="Conversations: open an earlier one"><!--icon:chat:line-icon--></button>
               <button id="agent-new" class="line-btn" type="button" aria-label="New conversation"
-                      title="New conversation: this one is kept"><!--icon:new:line-icon--></button>
+                      title="New conversation: this one is saved"><!--icon:new:line-icon--></button>
             </div>
           </div>
 
@@ -2048,10 +2088,10 @@
       </div>
       <div class="side-pane" id="problems-pane" data-side-pane="problems" role="tabpanel" aria-labelledby="problems-tab" hidden>
         <div class="problems-toolbar">
-          <span id="problems-summary" role="status">Open a study to read its problems.</span>
+          <span id="problems-summary" role="status"></span>
           <button type="button" class="line-btn" id="problems-refresh" aria-label="Refresh problems" title="Refresh problems"><!--icon:refresh:line-icon--></button>
         </div>
-        <div class="problems-body" id="problems-body"></div>
+        <div class="problems-body" id="problems-body"><div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">Open a study to read its problems.</span></div></div>
       </div>
       <!-- What happened to the study, newest first (study-timeline.js,
            study_timeline.py). -->
@@ -2100,6 +2140,8 @@
     <span class="sb-remote" id="sb-remote"></span>
     <span class="sb-spacer"></span>
     <button type="button" class="sb-item sb-problems" id="sb-problems" hidden></button>
+    <button type="button" class="sb-item sb-notices" id="sb-notices" aria-haspopup="dialog" aria-expanded="false"
+            aria-label="Notices" title="Every notice, refusal and run that ended" hidden><!--icon:bell:sb-icon--><span class="sb-text">Notices</span><span class="sb-count" hidden></span></button>
     <button type="button" class="sb-item sb-agent" id="sb-agent" hidden></button>
     <span class="sb-live" id="sb-live">
       <span class="sidebar-refreshed" id="refreshed-indicator">updated <span id="refreshed-at">just now</span></span>
@@ -2128,6 +2170,7 @@
   <script src="/static/agent-beside.js"></script>
   <script src="/static/chats.js"></script>
     <script src="/static/preferences.js"></script>
+    <script src="/static/settings.js"></script>
     <script src="/static/frame.js"></script>
     <script src="/static/report-outline.js"></script>
     <script src="/static/report-page.js"></script>
@@ -2144,6 +2187,7 @@
     <script src="/static/files-actions.js"></script>
     <script src="/static/file-picker.js"></script>
     <script src="/static/run-builder.js"></script>
+    <script src="/static/new-study.js"></script>
     <script src="/static/study-tabs.js"></script>
   <script src="/static/charts.js"></script>
   <script src="/static/overview.js"></script>
@@ -2155,6 +2199,8 @@
   <script src="/static/runs-compared.js"></script>
   <script src="/static/stopping.js"></script>
   <script src="/static/fixes.js"></script>
+  <script src="/static/confirm.js"></script>
+  <script src="/static/page-states.js"></script>
   <script src="/static/stop-run.js"></script>
   <script src="/static/run-progress.js"></script>
   <script src="/static/studies.js"></script>
@@ -2163,6 +2209,7 @@
   <script src="/static/viewer-rail.js"></script>
   <script src="/static/palette.js"></script>
   <script src="/static/run-notice.js"></script>
+  <script src="/static/notices.js"></script>
   <script src="/static/viewer-sequence.js"></script>
   <script src="/static/viewer-selections.js"></script>
   <script src="/static/frame-series.js"></script>

@@ -289,6 +289,15 @@ class QValue(Analysis):
                 f"with {n_frames} frames."
             , code="analysis.option.out_of_range")
 
+        # Which frame S is taken from, for either scheme: of the trajectory as
+        # given, after any `first` or stride, not the deposited structure.
+        self.findings["native_frame"] = {
+            "frame": int(ref), "n_frames": int(n_frames),
+            "time_ps": (float(traj.time[ref]) if getattr(traj, "time", None) is not None
+                        and len(traj.time) == n_frames else None),
+            "said": (f"The native contacts are those of frame {ref} of the "
+                     f"{n_frames} frames analysed, as given (after any `first` "
+                     "or stride), not of the deposited structure.")}
         if self.scheme == "heavy-atom-pairs":
             pair_idx, r0 = self._native_atom_pairs(traj, ref)
             if len(pair_idx) == 0:

@@ -56,8 +56,6 @@ def _open(browser, session):
     page.goto("about:blank")
     page.goto(session.url + "#overview", wait_until="domcontentloaded")
     page.wait_for_function("() => document.body.classList.contains('state-ready')")
-    # Its first route put in its address too, a step it may write.
-    page.wait_for_function("() => window.FastMDXDashboard.state.initialRouteResolved")
     return page
 
 
@@ -103,21 +101,21 @@ def test_back_closes_a_dialog_before_it_leaves_the_page(browser, session) -> Non
     page.click("[data-view-link='viewer']")
     _on(page, "viewer")
     page.click("#settings-open")
-    page.click("[data-dialog-open='prefs-dialog']")
-    assert _shown(page, "prefs-dialog")
+    page.click("[data-dialog-open='cite-dialog']")
+    assert _shown(page, "cite-dialog")
     page.go_back()
-    page.wait_for_function("() => document.getElementById('prefs-dialog').hidden")
+    page.wait_for_function("() => document.getElementById('cite-dialog').hidden")
     _on(page, "viewer")
     page.go_forward()
-    page.wait_for_function("() => !document.getElementById('prefs-dialog').hidden")
+    page.wait_for_function("() => !document.getElementById('cite-dialog').hidden")
     _on(page, "viewer")
     # Closed by its own Close: its step goes with it, so Back is the page
     # before, not the dialog's step again.
-    page.click("#prefs-dialog [data-dialog-close]")
+    page.click("#cite-dialog [data-dialog-close]")
     _quiet(page)
     page.go_back()
     _on(page, "overview")
-    shown = _shown(page, "prefs-dialog")
+    shown = _shown(page, "cite-dialog")
     errors = page.errors
     page.context.close()
     assert not shown
@@ -197,14 +195,14 @@ def test_an_analysis_opened_is_a_place_a_reload_opens_again(browser, session) ->
 
 
 def test_a_link_to_a_dialog_opened_first_closes_into_the_gui(browser, session) -> None:
-    """The GUI opened at `#settings` (a bookmark, a link in the docs): its
+    """The GUI opened at `#cite` (a bookmark, a link in the docs): its
     first step was the dialog's, and closing it went back out of the GUI."""
     page = browser.new_context(viewport={"width": 1440, "height": 900}).new_page()
     page.set_default_timeout(60000)
     page.goto("about:blank")
-    page.goto(session.url + "#settings", wait_until="domcontentloaded")
-    page.wait_for_function("() => !document.getElementById('prefs-dialog').hidden")
-    page.click("#prefs-dialog [data-dialog-close]")
+    page.goto(session.url + "#cite", wait_until="domcontentloaded")
+    page.wait_for_function("() => !document.getElementById('cite-dialog').hidden")
+    page.click("#cite-dialog [data-dialog-close]")
     page.wait_for_timeout(1000)
     here = page.url
     page.context.close()
@@ -243,12 +241,10 @@ def test_back_puts_the_keyboard_on_the_page_shown(browser, session) -> None:
 def test_a_reload_with_a_dialog_open_opens_it_again(browser, session) -> None:
     page = _open(browser, session)
     page.click("#settings-open")
-    page.click("[data-dialog-open='prefs-dialog']")
-    # Reloaded once the dialog's step is in the history it is opened from.
-    page.wait_for_function("() => (history.state || {}).fmxDialog === 'prefs-dialog'")
+    page.click("[data-dialog-open='cite-dialog']")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => document.body.classList.contains('state-ready')")
-    page.wait_for_function("() => !document.getElementById('prefs-dialog').hidden")
+    page.wait_for_function("() => !document.getElementById('cite-dialog').hidden")
     page.go_back()
-    page.wait_for_function("() => document.getElementById('prefs-dialog').hidden")
+    page.wait_for_function("() => document.getElementById('cite-dialog').hidden")
     page.context.close()

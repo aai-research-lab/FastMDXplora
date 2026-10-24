@@ -37,6 +37,7 @@ logger = get_logger("gui.report_dashboard")
 ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("The run's ensemble", (
         ("thermodynamics", "Energy, temperature and density"),
+        ("image_check", "Closest approach to its own image"),
     )),
     ("Structure and stability", (
         ("rmsd", "RMSD"),
@@ -131,6 +132,7 @@ DASHBOARD_ASSET_TITLE_ALIASES: dict[str, tuple[str, ...]] = {
     "Secondary structure": ("Secondary structure", "SS heatmap"),
     "Fraction of native contacts": ("Fraction of native contacts", "Q-value"),
     "Dihedrals": ("Dihedrals",),
+    "Image check": ("Image check",),
 }
 
 # Title, data file, and how to summarise it. The report used to redraw
@@ -154,6 +156,7 @@ DASHBOARD_SUMMARY_SPECS: tuple[tuple[str, str, str], ...] = (
     ("Secondary structure", "analysis/ss/ss.dat", "ss"),
     ("Fraction of native contacts", "analysis/qvalue/qvalue.dat", "line"),
     ("Dihedrals", "analysis/dihedrals/dihedrals.dat", "dihedrals"),
+    ("Image check", "analysis/image_check/image_check.dat", "image"),
 )
 
 
@@ -218,6 +221,10 @@ class MetricRow:
     status: str
     #: Why a mean was not determined.
     why: str = ""
+    #: Its image note beside the verdict (:func:`fastmdxplora.image_note.said_short`),
+    #: and the analysis's paragraph of it.
+    noted: str = ""
+    noted_why: str = ""
 
 
 def _system_label(system: object) -> str:
@@ -638,6 +645,9 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
                              f"to {_format_metric_value(max(values))})"),
                     samples="—",
                     status=f"per {each}",
+                    # Its image note, as its row on the Analysis page says it.
+                    noted=str((by_name.get("rmsf") or {}).get("noted") or ""),
+                    noted_why=str((by_name.get("rmsf") or {}).get("noted_why") or ""),
                 ))
             continue
         row = by_name.get(name)
@@ -671,6 +681,8 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
             status=("Not read" if quantity.get("unavailable")
                     else "Determined" if quantity.get("determined") else "Not determined"),
             why=str(quantity.get("why") or ""),
+            noted=str(quantity.get("noted") or ""),
+            noted_why=str(quantity.get("noted_why") or ""),
         ))
 
     if reweighted and reweighted.get("applies", True):
@@ -841,9 +853,16 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
         if not _records.is_file(data_path):
             continue
         try:
-            summary = (_biased_caption(data_path, corrected) if biased else None) \
-                or (_what_the_analysis_found(data_path) if kind == "line" else None) \
-                or _summarise_data_file(data_path, kind)
+            if kind == "image":
+                summary = _image_check_caption(data_path)
+            else:
+                summary = ((_biased_caption(data_path, corrected) if biased else None)
+                           or (_what_the_analysis_found(data_path) if kind == "line"
+                               else None))
+                if not summary:
+                    # A profile, map or table: its analysis's image note
+                    # beside it, as its row on the Analysis page says it.
+                    summary = _summarise_data_file(data_path, kind) + _analysis_noted(data_path)
         except Exception as exc:  # noqa: BLE001 - a caption must never fail a report
             logger.debug("dashboard: no summary for %s: %s", title, exc)
             continue
@@ -857,7 +876,8 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
 _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
           "qvalue": "", "end_to_end": "nm", "pair_distance": "nm", "ligand_rmsd": "nm",
           "area_per_lipid": "nm\u00b2", "bilayer_thickness": "nm",
-          "moments_of_inertia": "amu nm\u00b2", "coordination_number": ""}
+          "moments_of_inertia": "amu nm\u00b2", "coordination_number": "",
+          "image_check": "nm"}
 
 
 def unit_of(name: str, found: dict[str, Any] | None = None) -> str:
@@ -907,7 +927,13 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
     if not _finite(mean):
         return "no mean: too short to determine" if found.get("not_a_measurement") else None
     if found.get("not_a_measurement"):
-        return f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
+        # Why, as the record says it: a reason the analysis found (the chain
+        # meeting its own image) is not a series too short.
+        because = found.get("error_withheld_because")
+        return (f"mean {_format_metric_value(mean)}{unit}, not determined: {because}"
+                if because else
+                f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
+                ) + _image_noted(record)
     error = found.get("standard_error")
     text = (f"mean {_with_its_error(mean, error)}{unit}" if _finite(error) and error > 0
             else f"mean {_format_metric_value(mean)}{unit}")
@@ -922,7 +948,45 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
         text += f", {count} independent sample{'s' if count != 1 else ''}"
         if samples < MINIMUM_EFFECTIVE_SAMPLES:
             text += ", too few to determine the mean"
-    return text
+    return text + _image_noted(record)
+
+
+def _image_noted(record: Any) -> str:
+    """The note of a mean whose frames the solute came within the cutoff of
+    its own image in, beside its verdict in a caption, as every page says it
+    (:func:`fastmdxplora.image_note.said_short`): the main mean's own note,
+    else the analysis's."""
+    from fastmdxplora.image_note import note_of, said_short
+
+    found = (record.get("findings") or {}) if isinstance(record, dict) else {}
+    found = found if isinstance(found, dict) else {}
+    short = said_short(note_of(found.get("mean")) or note_of(found))
+    return f"; {short}" if short else ""
+
+
+def _analysis_noted(data_path: Path) -> str:
+    """The image note of the analysis whose data file this is, for a caption
+    without a recorded mean (:func:`_image_noted`); empty where it has none."""
+    try:
+        record = json.loads(_records.read_text(data_path.parent / "options.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return _image_noted(record)
+
+
+def _image_check_caption(data_path: Path) -> str | None:
+    """The image check's card: its finding in a sentence, as its row on the
+    Analysis page says it (:func:`fastmdxplora.image_note.finding_said`)."""
+    from fastmdxplora.image_note import finding_said
+
+    try:
+        record = json.loads(_records.read_text(data_path.parent / "options.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    found = (record.get("findings") or {}) if isinstance(record, dict) else {}
+    return finding_said(found.get("solute_image") if isinstance(found, dict) else None) or None
 
 
 def _biased_caption(data_path: Path, corrected: dict[Any, Any]) -> str:
@@ -934,7 +998,8 @@ def _biased_caption(data_path: Path, corrected: dict[Any, Any]) -> str:
     unit = _UNITS.get(name, "")
     unit = f" {unit}" if unit else ""
     if item is not None and _finite(item.get("reweighted_mean")):
-        return f"reweighted mean {_format_metric_value(item['reweighted_mean'])}{unit}"
+        return (f"reweighted mean {_format_metric_value(item['reweighted_mean'])}{unit}"
+                + _image_noted({"findings": {"solute_image": item.get("solute_image")}}))
     if name in _UNITS:
         return "biased ensemble: no unbiased mean"
     return ""
@@ -1105,6 +1170,12 @@ def _analysis_sections(
         href = _href(source, output_dir)
         mode = "analysis figure"
         summary = asset.summary if asset is not None else ""
+        if not summary and folder != "image_check":
+            # A figure with no caption of its own (the order parameters, the
+            # cluster matrix, a landscape): its analysis's image note, as
+            # its row on the Analysis page says it.
+            noted = _analysis_noted(project_root / "analysis" / folder / source.name).removeprefix("; ")
+            summary = noted[:1].upper() + noted[1:] + "." if noted else ""
         grouped[section].append(
             DashboardPanel(
                 title=title,
@@ -1278,6 +1349,7 @@ def _figure_title_from_path(path: Path) -> str:
         "apo_holo_comparison": "Apo/holo comparison",
         "qvalue": "Fraction of native contacts",
         "dihedrals": "Dihedrals",
+        "image_check": "Image check",
     }
     if stem in special:
         return special[stem]
@@ -1503,9 +1575,11 @@ def _gui_stylesheet() -> str:
     styled by the GUI's own rules rather than by a second set written to
     look like them: the two looked different for as long as there were two.
     """
-    sheet = Path(__file__).resolve().parent / "static" / "dashboard.css"
+    static = Path(__file__).resolve().parent / "static"
     try:
-        return sheet.read_text(encoding="utf-8")
+        # With the one empty, loading and error block every page says it in.
+        return "\n".join((static / name).read_text(encoding="utf-8")
+                         for name in ("dashboard.css", "page-states.css"))
     except OSError:  # pragma: no cover - only if the installed package is incomplete
         return ""
 
@@ -2115,7 +2189,8 @@ def _render_report_page(report: dict[str, Any]) -> str:
 
 
 def _render_files_page(files_html: str) -> str:
-    body = files_html or '<div class="files-empty">This study has not written any files yet.</div>'
+    body = files_html or ('<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
+                          'This study has not written any files yet.</span></div>')
     return ('<section class="page" data-page="files" hidden>'
             + _page_header("Files", "Everything the study wrote, in the order it ran")
             + f'<div id="files-page" class="files-page">{body}</div></section>')
@@ -2285,12 +2360,16 @@ def _render_phase_row(row: PhaseRow) -> str:
 
 def _render_metric_row(row: MetricRow) -> str:
     why = f' title="{escape(row.why)}"' if row.why else ""
+    # The verdict is the record's; its image note beside it, the analysis's
+    # paragraph on hover.
+    noted = (f'<div class="metric-noted" title="{escape(row.noted_why)}">'
+             f"{escape(row.noted)}</div>" if row.noted else "")
     return (
         "<tr>"
         f"<td>{escape(row.metric)}</td>"
         f'<td class="mono">{escape(row.average)}</td>'
         f'<td class="mono">{escape(row.samples)}</td>'
-        f'<td class="muted"{why}>{escape(row.status)}</td>'
+        f'<td class="muted"{why}>{escape(row.status)}{noted}</td>'
         "</tr>"
     )
 

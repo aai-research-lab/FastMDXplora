@@ -65,7 +65,7 @@ class TestTheHalfBoxLimit:
 
         assert analysis.findings["rdf"]["r_max_nm"] == pytest.approx(2.0)
         assert float(np.max(result[:, 0])) <= 2.0
-        assert "half the smallest box dimension" in (
+        assert "half the cell's shortest lattice vector" in (
             analysis.findings["rdf"]["capped"])
 
     def test_a_request_inside_the_box_is_left_alone(self):
@@ -152,12 +152,30 @@ class TestTheOutputs:
         plt.close("all")
 
     def test_the_first_peak_is_reported(self):
+        """Six oxygens 0.3 nm from each CA, the rest at random."""
+        traj = _gas()
+        rng = np.random.default_rng(5)
+        for frame in traj.xyz:
+            for i in range(40):
+                way = rng.normal(size=(6, 3))
+                way /= np.linalg.norm(way, axis=1)[:, None]
+                frame[40 + 6 * i:46 + 6 * i] = frame[i] + 0.3 * way
+        traj.xyz %= 4.0
+        analysis = RadialDistribution(
+            selection_a="name CA", selection_b="name O", bin_width=0.05)
+        analysis.compute(traj)
+        record = analysis.findings["rdf"]
+        assert record["first_peak_nm"] == pytest.approx(0.3, abs=0.05)
+
+    def test_a_gas_has_no_first_peak(self):
+        """The tallest of many bins of noise, with the bulk's spread as its
+        scatter, was reported as a first peak."""
         analysis = RadialDistribution(
             selection_a="name CA", selection_b="name O", bin_width=0.05)
         analysis.compute(_gas())
         record = analysis.findings["rdf"]
-        assert "first_peak_nm" in record
-        assert record["first_peak_nm"] > 0.15
+        assert "first_peak_nm" not in record
+        assert "not distinguishable from the noise" in record["not_a_measurement"]
 
 
 def _every_pair_then_a_draw(a, b, limit, seed=0):
@@ -199,11 +217,18 @@ class TestThePairsAreDrawnWithoutListingThemAll:
 
         calls = []
 
-        def counted(traj, pairs, **kwargs):
-            calls.append(np.asarray(pairs))
-            return np.array([0.1]), np.array([1.0])
+        class Counted:
+            def __init__(self, traj, pairs, r_max, bin_width):
+                calls.append(np.asarray(pairs))
+                self.radii = np.array([0.1])
 
-        monkeypatch.setattr(rdf_module.md, "compute_rdf", counted)
+            def g(self):
+                return np.array([1.0])
+
+            def scatter(self):
+                return np.array([0.0])
+
+        monkeypatch.setattr(rdf_module, "PairHistogram", Counted)
         traj = _gas(n_a=3000, n_b=10000, frames=1)
         analysis = RadialDistribution(selection_a="name CA", selection_b="name O")
         started = time.perf_counter()

@@ -295,9 +295,10 @@ class TestCluster:
             assert (result.output_dir / f"cluster_{m}_counts.png").exists()
         dendrogram = result.output_dir / "cluster_hierarchical_dendrogram.png"
         skipped = result.output_dir / "cluster_hierarchical_dendrogram_skipped.json"
-        distance_matrix = result.output_dir / "hierarchical_distance_matrix.npy"
         linkage_matrix = result.output_dir / "hierarchical_linkage.npy"
-        assert distance_matrix.exists()
+        # The dendrogram is the linkage's; the whole matrix is not written
+        # again beside it.
+        assert not (result.output_dir / "hierarchical_distance_matrix.npy").exists()
         assert dendrogram.exists() or skipped.exists()
         if dendrogram.exists():
             assert linkage_matrix.exists()

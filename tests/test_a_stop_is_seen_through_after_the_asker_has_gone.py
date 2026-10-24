@@ -134,7 +134,8 @@ def test_stop_study_leaves_the_watching_to_a_process_of_its_own(study, monkeypat
         assert said["content"][0]["text"].endswith(
             "One that has not stopped 10 s from now is ended, whether or not this "
             "AI app is still open.")
-        assert started == [(process.pid, study.resolve(), None, 10.0)]
+        # Given the run's process record, by which it is told again.
+        assert started == [(process.pid, study.resolve(), {"pid": process.pid}, 10.0)]
         # Nothing in this process waits on it.
         assert not [t for t in threading.enumerate() if t.name == "fastmdx-mcp-stop"]
         wire.close()

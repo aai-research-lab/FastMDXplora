@@ -103,7 +103,8 @@ def _primary_sweep_axis(manifest: dict[str, Any]) -> str | None:
 
     Uses the first axis in the sweep definition that is not a random seed.
     Returns None if there is no such axis (a multi-system batch with no
-    parameter axes, or replicas that differ only by seed): a "trend" of a
+    parameter axes, or replicas, which differ only by seed or by the model
+    of an ensemble they start from): a "trend" of a
     mean against the seed that drew the velocities is noise read as a
     relationship, and replicas are compared in their own section instead.
     """
@@ -263,7 +264,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
                 fn, _flabel = _SUMMARY_FNS[summary_kind]
                 try:
                     mean = {"mean": float(fn(series)), "error": None, "discard": None,
-                            "qualified": None, "recorded": False}
+                            "qualified": None, "recorded": False, "noted": None}
                 except Exception:  # noqa: BLE001
                     continue
             per_run_means[rid][analysis] = mean
@@ -351,8 +352,11 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
         if axis is not None:
             header.append(_short_axis(axis))
         for a in summary_scalar_keys:
+            # Its image note (`image_note.said_short`), as the Analysis
+            # page's CSV gives it: empty where the mean has none.
             header += [f"{a}_{_SUMMARY_FNS[_OVERLAY_ANALYSES[a][2]][1]}",
-                       f"{a}_standard_error", f"{a}_frames_discarded", f"{a}_over"]
+                       f"{a}_standard_error", f"{a}_frames_discarded", f"{a}_over",
+                       f"{a}_noted"]
         writer.writerow(header)
         for run in runs:
             rid = run["run_id"]
@@ -363,12 +367,12 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
             for a in summary_scalar_keys:
                 mean = per_run_means.get(rid, {}).get(a)
                 if mean is None:
-                    row += ["", "", "", ""]
+                    row += ["", "", "", "", ""]
                     continue
                 row += [f"{mean['mean']:.6g}",
                         "" if mean["error"] is None else f"{mean['error']:.6g}",
                         "" if mean["discard"] is None else mean["discard"],
-                        _over(mean)]
+                        _over(mean), mean.get("noted") or ""]
             writer.writerow(row)
 
     _write_what_was_plotted(cmp_dir, plotted_from)
@@ -530,6 +534,7 @@ def _write_markdown(
     lines.append("| " + " | ".join(header) + " |")
     lines.append("|" + "|".join(["---"] * len(header)) + "|")
     whole = qualified = False
+    noted: list[str] = []
     for run in runs:
         rid = run["run_id"]
         cells = [rid]
@@ -548,6 +553,9 @@ def _write_markdown(
             if mean["qualified"]:
                 cell += " \\*"
                 qualified = True
+            if mean.get("noted"):
+                cell += " \u2020"
+                noted.append(f"{rid}, {_OVERLAY_ANALYSES[a][0]}: {mean['noted']}.")
             cells.append(cell)
         lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
@@ -558,6 +566,8 @@ def _write_markdown(
     if qualified:
         lines += ["", "\\* Not determined: the run's analysis found the series too "
                   "short, or with too few independent samples, for its mean to be determined."]
+    for line in noted:
+        lines += ["", f"\u2020 {line}"]
     lines.append("")
     lines.append(f"Full table: `{csv_path.name}`.")
     lines.append("")
@@ -594,11 +604,11 @@ def _trend_takeaway(
         x = _axis_numeric_value(run, axis)
         mean = per_run_means.get(run["run_id"], {}).get(analysis)
         if x is not None and mean is not None:
-            pts.append((x, mean["mean"], mean["error"]))
+            pts.append((x, mean["mean"], mean["error"], bool(mean.get("noted"))))
     if len(pts) < 2:
         return None
     pts.sort(key=lambda p: p[0])
-    (x_lo, y_lo, e_lo), (x_hi, y_hi, e_hi) = pts[0], pts[-1]
+    (x_lo, y_lo, e_lo, n_lo), (x_hi, y_hi, e_hi, n_hi) = pts[0], pts[-1]
     unit_str = f" {unit}" if unit else ""
     where = f"From `{_short_axis(axis)}` {x_lo:g} to {x_hi:g}, the {flabel} {label.lower()}"
     change = y_hi - y_lo
@@ -613,8 +623,13 @@ def _trend_takeaway(
     by = f"{with_its_error(abs(change), combined)}{unit_str}"
     if abs(change) > bound:
         direction = "increases" if change > 0 else "decreases"
+        # An end whose solute saw its own image: the change may be that.
+        who = "Both ends' means" if n_lo and n_hi else "One end's mean"
+        biased = (f" {who} may be biased by the solute's own image (the note in the "
+                  "summary), so the change may be that bias and not the setting."
+                  if n_lo or n_hi else "")
         return (f"{where} {direction} from {ends}, a change of {by}, "
-                "more than twice its error.")
+                "more than twice its error." + biased)
     return (f"{where} goes from {ends}: the change, {by}, is within "
             "twice its error, so these runs do not tell the two ends apart.")
 
@@ -642,6 +657,8 @@ def _times(run_out: Path, n: int) -> np.ndarray | None:
 def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     """The mean an analysis recorded (`findings.mean`), or None where it
     recorded none."""
+    from fastmdxplora.image_note import note_of, said_short
+
     record = (findings or {}).get("mean") if isinstance(findings, dict) else None
     if not isinstance(record, dict):
         return None
@@ -654,7 +671,9 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     discard = record.get("discard")
     return {"mean": float(value), "error": error,
             "discard": int(discard) if isinstance(discard, (int, float)) else None,
-            "qualified": record.get("not_a_measurement") or None, "recorded": True}
+            "qualified": record.get("not_a_measurement") or None, "recorded": True,
+            # Its image note (`image_note`), said beside it in the table.
+            "noted": said_short(note_of(record)) or None}
 
 
 def _the_run(root: Path, run: dict[str, Any], axis: str | None,
@@ -704,7 +723,7 @@ def _over(mean: dict[str, Any]) -> str:
 
 
 def _across_the_replicas(root: Path) -> list[str]:
-    """For replicas, which differ only by seed: the spread of their means
+    """For replicas (`batch.aggregate.how_replicas_differ`): the spread of their means
     against the error each run estimated for itself, which is the only check
     a single run's error gets (`fastmdxplora.batch.aggregate`)."""
     from fastmdxplora.batch.aggregate import aggregate_members
@@ -720,15 +739,25 @@ def _across_the_replicas(root: Path) -> list[str]:
              "here against the error each run estimated for itself.", "",
              "| Analysis | mean of the means | spread of the means | error each run estimated |",
              "|---|---|---|---|"]
-    said = []
+    from fastmdxplora.image_note import replicas_said
+
+    said, noted = [], []
     for name, entry in summary.get("analyses", {}).items():
         predicted = entry.get("predicted_standard_error")
+        # Replicas share the box: a mean of means whose replicas' means may
+        # be biased by the solute's own image is marked, and said below.
+        note = replicas_said([row.get("solute_image") for row in entry.get("members") or []
+                              if isinstance(row, dict)])
+        mark = " \u2020" if note else ""
         lines.append(
-            f"| {name} | {entry['mean_of_means']:.4g} | {entry['spread_of_means']:.2g} | "
+            f"| {name} | {entry['mean_of_means']:.4g}{mark} | "
+            f"{entry['spread_of_means']:.2g} | "
             + ("" if predicted is None else f"{predicted:.2g}") + " |")
+        if note:
+            noted.append(f"\u2020 {name}: {note}.")
         if entry.get("calibration"):
             said.append(f"**{name}.** {entry['calibration']}")
     lines.append("")
-    for sentence in said:
+    for sentence in noted + said:
         lines += [sentence, ""]
     return lines

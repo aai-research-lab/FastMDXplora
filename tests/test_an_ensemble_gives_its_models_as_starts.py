@@ -91,7 +91,7 @@ class TestBeforeSetup:
 
         plan = {line["label"]: line["value"] for line in plan_of(
             {"systems": [{"system": "1L2Y"}], "sweep": {"setup.model": [1, 5, 12]}})}
-        assert plan["Replicas"] == "3, from models 1, 5, 12 of the ensemble"
+        assert plan["Replicas"] == "3, started from models 1, 5, 12 of the ensemble"
 
     def test_a_stopping_rule_counts_them_as_independent_starts(self):
         from fastmdxplora.config.loader import validate_config

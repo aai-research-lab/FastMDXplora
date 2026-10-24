@@ -118,14 +118,16 @@ class TestTheOtherThreeKinds:
         assert force.energy == "restraint_k_0*(r - r0)^2"
         assert force.terms == [(0, 1, [0.2])]
 
-    def test_a_distance_without_a_target_holds_at_zero_stated(
+    def test_a_distance_without_a_target_is_held_where_it_is(
             self, peptide) -> None:
+        """It was held at zero, pulling the two atoms onto each other, while
+        ``target: None`` was documented as "where it is now"."""
         topology, positions = peptide
         spec = [{"kind": "distance", "selection": "name N CA",
                  "force_constant": 500.0}]
         [(force, _)] = build_restraint_forces(
             _OpenMM, topology, positions, parse_restraints(spec))
-        assert force.terms[0][-1] == [0.0]
+        assert force.terms[0][-1] == [pytest.approx(0.15)]
 
     def test_an_angle_restraint_takes_three(self, peptide) -> None:
         topology, positions = peptide
@@ -146,6 +148,17 @@ class TestTheOtherThreeKinds:
             _OpenMM, topology, positions, parse_restraints(spec))
         assert "1 - cos(theta - theta0)" in force.energy
         assert force.terms == [(0, 1, 2, 3, [3.1])]
+
+    def test_the_torsion_is_as_stiff_as_the_angle_given_the_same_number(
+            self, peptide) -> None:
+        """2k(1 - cos x) has the curvature 2k of k x^2; k(1 - cos x) had
+        half of it, so one number meant two springs."""
+        topology, positions = peptide
+        spec = [{"kind": "torsion", "selection": "name N CA C O",
+                 "force_constant": 50.0, "target": 3.1}]
+        [(force, _)] = build_restraint_forces(
+            _OpenMM, topology, positions, parse_restraints(spec))
+        assert force.energy == "2*restraint_k_0*(1 - cos(theta - theta0))"
 
     def test_each_restraint_gets_its_own_dial(self, peptide) -> None:
         """One global parameter per restraint is what staged release is: a

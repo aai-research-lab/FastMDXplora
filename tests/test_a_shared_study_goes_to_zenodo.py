@@ -44,21 +44,29 @@ class _Zenodo(http.server.BaseHTTPRequestHandler):
         return f"http://127.0.0.1:{self.server.server_port}"
 
     def _deposition(self, number):
-        return {"id": number, "submitted": type(self).submitted,
+        # Draft 8 is the new version begun (Zenodo's latest_draft): a draft.
+        return {"id": number, "submitted": type(self).submitted and number != 8,
+                "conceptrecid": "c7",
                 "metadata": {"prereserve_doi": {"doi": f"10.5072/zenodo.{number}"}},
                 "links": {"bucket": f"{self._base()}/files/b{number}",
                           "html": f"{self._base()}/uploads/{number}",
                           "latest_draft": f"{self._base()}/api/deposit/depositions/8"},
-                "files": [{"id": "f1"}] if type(self).stored.get("archive") else []}
+                "files": [{"id": "f1", "filename": type(self).stored.get("name")}]
+                if type(self).stored.get("archive") else []}
 
     def do_POST(self):  # noqa: N802
         type(self).calls.append(("POST", self.path, self.headers.get("Authorization")))
-        self._body()
+        body = self._body()
         if self.path == "/api/deposit/depositions":
-            return self._json(self._deposition(7), 201)
+            # Answered, as Zenodo answers, with the draft under the title asked.
+            made = self._deposition(7)
+            made["metadata"]["title"] = (json.loads(body or b"{}").get("metadata")
+                                         or {}).get("title")
+            return self._json(made, 201)
         if self.path.endswith("/actions/newversion"):
-            return self._json(self._deposition(7))
-        self._json({}, 404)
+            # Answered, as Zenodo answers, with the deposition it is of.
+            return self._json(self._deposition(int(self.path.split("/")[-3])))
+        self._json({"status": 404, "message": "not found"}, 404)
 
     def do_PUT(self):  # noqa: N802
         body = self._body()
@@ -66,9 +74,18 @@ class _Zenodo(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/files/"):
             type(self).stored["archive"] = body
             type(self).stored["name"] = self.path.rsplit("/", 1)[1]
+            # Held before it is answered, as Zenodo holds it.
+            self._uploaded()
             return self._json({"key": self.path.rsplit("/", 1)[1]})
         type(self).stored["metadata"] = json.loads(body)["metadata"]
-        self._json(self._deposition(int(self.path.rsplit("/", 1)[1])))
+        # Answered, as Zenodo answers, with the draft holding what was sent.
+        answer = self._deposition(int(self.path.rsplit("/", 1)[1]))
+        answer["metadata"].update({k: v for k, v in type(self).stored["metadata"].items()
+                                   if k != "prereserve_doi"})
+        self._json(answer)
+
+    def _uploaded(self):
+        """What a stand-in records of an upload, before it is answered."""
 
     def do_DELETE(self):  # noqa: N802
         type(self).calls.append(("DELETE", self.path, self.headers.get("Authorization")))
@@ -77,6 +94,9 @@ class _Zenodo(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         type(self).calls.append(("GET", self.path, self.headers.get("Authorization")))
+        if self.path.startswith("/api/deposit/depositions?"):
+            # The person's drafts: none besides the study's.
+            return self._json([])
         if self.path.startswith("/api/deposit/depositions/"):
             number = int(self.path.rsplit("/", 1)[1])
             if number not in (7, 8):
@@ -96,7 +116,7 @@ class _Zenodo(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(archive)
             return
-        self._json({}, 404)
+        self._json({"status": 404, "message": "not found"}, 404)
 
     def log_message(self, *args):
         return
@@ -138,10 +158,13 @@ def test_a_draft_is_made_with_its_doi_in_the_archive(tmp_path, zenodo):
     assert all(auth == "Bearer sandbox-token" for _, _, auth in zenodo.calls)
     assert not any("publish" in path for _, path, _ in zenodo.calls)
     assert json.loads((study / "shared_to.json").read_text())["zenodo-sandbox"]["id"] == "7"
-    # Shared again before it was published: the same draft, its file replaced.
+    # Shared again before it was published: the same draft, its file
+    # replaced by the upload of the same name, never taken away first.
+    zenodo.calls.clear()
+    zenodo.stored["archive"] = b"the archive it had"
     assert _share_to_zenodo(study, out) == 0
-    assert ("DELETE", "/api/deposit/depositions/7/files/f1", "Bearer sandbox-token") \
-        in zenodo.calls
+    assert not any(method == "DELETE" for method, _, _ in zenodo.calls)
+    assert zenodo.stored["archive"] == out.read_bytes()
     # Shared again once published: a new version of the record.
     zenodo.submitted = True
     assert _share_to_zenodo(study, out) == 0

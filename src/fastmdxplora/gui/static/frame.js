@@ -530,11 +530,13 @@
       }
     });
     if (!shown) {
-      var empty = document.createElement("div");
-      empty.className = "side-log-empty";
-      empty.textContent = events.length
-        ? "Nothing matches this filter."
-        : "Nothing yet. The run's narration appears here as it happens.";
+      // The page's one block (page-states.js), found by its class.
+      var said = events.length
+        ? { kind: "empty", title: "Nothing matches this filter" }
+        : { kind: "empty", title: "Nothing yet", detail: "The run's narration appears here as it happens." };
+      var empty = window.FastMDXPageState ? window.FastMDXPageState.block(said) : document.createElement("div");
+      if (!window.FastMDXPageState) empty.textContent = said.title + (said.detail ? ". " + said.detail : ".");
+      empty.classList.add("side-log-empty");
       box.appendChild(empty);
     }
     var follow = el("side-follow");
@@ -546,6 +548,9 @@
     return fetch("/api/events").then(function (r) { return r.json(); }).then(function (d) {
       cachedEvents = Array.isArray(d.events) ? d.events : [];
       renderLog(cachedEvents);
+      // A refusal written since is saved with the page's notices (notices.js).
+      window.dispatchEvent(new CustomEvent("fmx:events", { detail: {
+        events: cachedEvents, refused: function (ev) { return classify(ev).kind === "refused"; } } }));
       nothingNarrated = !cachedEvents.length;
       closeIfSilent();
     }).catch(function () { /* the panel is not load-bearing */ });
@@ -1003,9 +1008,10 @@
     if (!box) return;
     box.innerHTML = "";
     if (!items.length) {
-      var empty = document.createElement("div");
-      empty.className = "side-log-empty";
-      empty.textContent = "Nothing written yet.";
+      var empty = window.FastMDXPageState ? window.FastMDXPageState.block({ kind: "empty", title: "Nothing written yet" })
+        : document.createElement("div");
+      if (!window.FastMDXPageState) empty.textContent = "Nothing written yet.";
+      empty.classList.add("side-log-empty");
       box.appendChild(empty);
       return;
     }
@@ -1390,6 +1396,13 @@
     if (version && cite) {
       version.textContent = cite.textContent.trim();
       version.title = version.textContent;
+    }
+
+    /* "Settings…" leads to the Settings page (settings.js), every setting
+     * there; the popup closes as it goes, as it does for the Agent's. */
+    var settingsLink = el("settings-page-link");
+    if (settingsLink) {
+      settingsLink.addEventListener("click", function () { setPopup(false); });
     }
 
     /* "Agent settings…" opens the Agent's own dialog. Landing on the page

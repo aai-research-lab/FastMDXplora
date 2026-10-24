@@ -380,6 +380,8 @@ RULE = {"measures": [{"analysis": "rmsd", "standard_error": 0.01}], "max_duratio
 class TestTheLoop:
     def test_extends_until_known_and_records_each_round(self, tmp_path, replicas):
         made = replicas([0.20, 0.201, 0.199], 0.04)
+        (tmp_path / "batch_manifest.json").write_text(json.dumps(
+            {"sweep": {"simulation.random_seed": [1, 2, 3]}}), encoding="utf-8")
         said = []
         record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
                                  extend_all=made.extend_all, say=said.append)
@@ -393,7 +395,7 @@ class TestTheLoop:
         assert final["error"] <= 0.01 and final["agree"] is True
         written = json.loads((tmp_path / "stopping.json").read_text(encoding="utf-8"))
         assert written == record
-        assert "differ by seed" in record["said"]
+        assert "started from one structure, differing only by random seed" in record["said"]
         assert any("Extending every run" in line for line in said)
 
     def test_stops_at_the_ceiling_and_says_it_is_not_known(self, tmp_path, replicas):
@@ -448,6 +450,7 @@ class TestTheLoop:
         assert record["outcome"] == "stopped" and made.calls == []
         assert "rmsd recorded no mean in seed1" in record["said"]
         assert record["rounds"][0]["verdicts"][0]["unrecorded"] is True
+        assert record["rounds"][0]["stopped_by"] == "no mean"
 
     def test_no_whole_frame_left_below_the_ceiling(self, tmp_path, replicas, monkeypatch):
         made = replicas([0.20, 0.201], 0.5)
@@ -474,12 +477,16 @@ class TestTheLoop:
                                  extend_all=made.extend_all, say=lambda _: None)
         assert record["outcome"] == "stopped"
         assert "seed0 failed at simulation: the card fell over" in record["said"]
+        # What stopped the round, kept with it: a resumed study writes the
+        # record's sentence over.
+        assert record["rounds"][-1]["stopped_by"] == "error"
 
     def test_asked_to_stop_says_how_to_go_on(self, tmp_path, replicas):
         made = replicas([0.20, 0.201], 0.04, fail_at=1, stopped=True)
         record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
                                  extend_all=made.extend_all, say=lambda _: None)
         assert record["outcome"] == "stopped" and "Resuming the study" in record["said"]
+        assert record["rounds"][-1]["stopped_by"] == "asked"
 
 
 class TestTheReport:
@@ -490,12 +497,28 @@ class TestTheReport:
         text = "\n".join(stopping_section(tmp_path))
         assert "## How long it ran, and why" in text
         assert "rmsd to ±0.01 nm" in text
-        assert "| 1 | 2 | " in text and "extended by 6 ns" in text
-        assert "stopped: determined as asked" in text
+        assert "| 1 | 2 ns | " in text and "extended by 6 ns" in text
+        assert "| determined as asked, so stopped |" in text
         assert "**Determined as asked.**" in text
         assert "A state none of the runs left is not in the error" in text
         # Nor a relaxation slower than the runs: only other structures show it.
         assert "Runs from different structures are what show it." in text
+
+    def test_a_length_under_1_ns_is_said_in_ps_where_the_record_is_written(self, tmp_path):
+        """The record's sentences, shown by the Timeline and the Overview,
+        said "After 0.8 ns of production" and "the 0.0012 ns ceiling"."""
+        from fastmdxplora.simulation.stopping import Verdict, _said_met
+
+        said = _said_met([Verdict("rmsd", True, "rmsd 0.150 ± 0.001 nm")], 0.8, 1,
+                         "not_required")
+        assert said.startswith("After 800 ps of production: rmsd"), said
+        (tmp_path / "stopping.json").write_text(json.dumps({
+            "targets": [{"analysis": "rmsd", "standard_error": 0.01}],
+            "max_duration_ns": 0.0012, "runs": ["study"], "outcome": "ceiling",
+            "rounds": [{"production_ns": 0.0012, "decision": "ceiling", "verdicts": []}],
+            "said": "Stopped at the 1.2 ps ceiling."}), encoding="utf-8")
+        text = "\n".join(stopping_section(tmp_path))
+        assert "with at most 1.2 ps of production" in text and "0.0012 ns" not in text
 
     def test_nothing_where_the_length_was_fixed(self, tmp_path):
         assert stopping_section(tmp_path) == []
@@ -829,7 +852,7 @@ def test_a_real_study_is_run_until_its_ceiling(tmp_path):
     assert (study / "segment-001").is_dir() and (study / "joined" / "production.dcd").is_file()
     report = (study / "report" / "report.md").read_text(encoding="utf-8")
     assert "## How long it ran, and why" in report
-    assert f"| {len(produced)} | 0.0012 | " in report and "stopped at the ceiling" in report
+    assert f"| {len(produced)} | 1.2 ps | " in report and "stopped at the ceiling" in report
     # Writing the report again leaves the record of what the study ran as
     # the study, at its whole length: not as one step that wrote a report,
     # and not as its last extension.

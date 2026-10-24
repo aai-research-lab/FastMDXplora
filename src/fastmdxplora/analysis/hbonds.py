@@ -8,9 +8,11 @@ fractions.
 
 Methods
 -------
-**Baker-Hubbard** (default) — D–H···A angle > 120°, H···A distance < 2.5 Å,
-applied with a 10% occupancy threshold by default. Standard choice for
-protein backbone H-bonds.
+**Baker-Hubbard** (default): D-H···A angle > 120°, H···A distance < 2.5 Å.
+Every bond seen in any frame is counted in the per-frame series
+(``candidate_freq`` 0); ``freq`` (0.1) only says how many are persistent,
+present in more than that share of frames. Standard choice for protein
+backbone H-bonds.
 
 **Wernet-Nilsson** — Geometric criterion designed for water; the cutoff
 distance is dynamically adjusted by the D–H–A angle. Useful for protein-
@@ -51,7 +53,8 @@ class HBonds(Analysis):
         protein backbone; Wernet-Nilsson is better for water hydrogen
         bonding.
     freq : float, default 0.1
-        Occupancy above which a bond is called persistent. Every bond is
+        Occupancy above which (strictly, as MDTraj's ``freq``) a bond is
+        called persistent. Every bond is
         counted in the per-frame series whatever its occupancy; this decides
         only how many are reported as persistent, alongside the total number
         found, in ``n_persistent_bonds``. Has no effect on Wernet-Nilsson.
@@ -259,7 +262,7 @@ class HBonds(Analysis):
             # this, freq decided which bonds were proposed and nothing else,
             # and once every bond is proposed it would decide nothing at all.
             self.options["n_persistent_bonds"] = int(
-                (occupancy >= self.freq).sum()
+                (occupancy > self.freq).sum()
             )
             self.options["n_candidate_bonds"] = int(len(bonds))
             counts = self.count_multiplier * counts

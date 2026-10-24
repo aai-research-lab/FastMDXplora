@@ -225,3 +225,77 @@ def test_a_service_s_gui_does_not_open_one():
     said = DashboardRuntime.open_shared_study(
         SimpleNamespace(hosting=object(), snapshot=dict), "10.5281/zenodo.1")
     assert said["ok"] is False and "your own computer" in said["error"]
+
+
+def test_an_opened_folder_s_name_keeps_its_letters_plain():
+    """Hands-on review of the forty-third commit: a ligature, a full-width or
+    an accented letter in a shared study's name was dropped from the folder
+    it opened in."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("Ｔｈｅ “ﬁrst” café study (A)") == \
+        "the-first-cafe-study-a"
+    assert _slug("naïve") == "naive"
+    assert _slug("“”") == "shared-study"
+
+
+def test_an_opened_folder_s_name_writes_letters_of_no_decomposition_plainly():
+    """Hands-on review of the forty-seventh commit: letters no decomposition
+    writes plainly (sharp s, ash, slashed o, stroked l) were dropped."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("Straße Æsir Øre ǅemal Łódź") == \
+        "strasse-aesir-ore-dzemal-lodz"
+
+
+def test_an_opened_folder_s_name_writes_more_letters_plainly():
+    """Review of the forty-ninth commit: barred h and t, eng and kra were
+    dropped."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("Ħal Far ŋga Ŧree ĸ") == "hal-far-ngga-tree-k"
+
+
+def test_an_opened_folder_s_name_writes_still_more_letters_plainly():
+    """Hands-on review of the fifty-second commit: a capital sharp s alone,
+    a slashed o with an accent, schwa and hooked letters were dropped."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("\u1e9e") == "ss"
+    assert _slug("\u01fere") == "ore"
+    assert _slug("\u018fliyev \u0259razi") == "eliyev-erazi"
+    assert _slug("\u0181ello \u0257an \u0199asa") == "bello-dan-kasa"
+
+
+def test_an_opened_folder_s_name_writes_greek_plainly():
+    """Hands-on review of the fifty-fourth commit: Greek letters, the micro
+    sign among them, were dropped."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("x² H₂O µM Ω α-helix ΔG") == \
+        "x2-h2o-um-o-a-helix-dg"
+
+
+def test_an_opened_folder_s_name_tells_mu_from_the_micro_sign():
+    """Review of the fifty-eighth commit: a Greek mu was written u, as the
+    micro sign is."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("μ-opioid in µM") == "m-opioid-in-um"
+    assert _slug("ƒoo ɔ ɛ ʒ ɖ ʉ ꜳ") == "foo-o-e-z-d-u-aa"
+
+
+def test_an_opened_folder_s_name_writes_capitals_and_more_plainly():
+    """Review of the fifty-ninth commit: the capitals of letters written
+    plainly were dropped, and esh and phi with them."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("Ƒ Ɖx Ʉ ʃa ɸi") == "f-dx-u-sha-phi"
+
+
+def test_an_opened_folder_s_name_writes_a_unit_s_micro_as_u():
+    """Review of the sixty-first commit: a micrometre's sign was written as
+    millimetres."""
+    from fastmdxplora.sharing.opening import _slug
+
+    assert _slug("10 ㎛ beads, 5 ㎍") == "10-um-beads-5-ug"

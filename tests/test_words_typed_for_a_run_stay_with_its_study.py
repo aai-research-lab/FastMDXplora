@@ -73,6 +73,15 @@ def _other(workspace):
     return other
 
 
+def _when_known(page):
+    """Once the page has read which study is open after a launch: Send is
+    offered then, not while the run starts (CI-774 round 3)."""
+    page.wait_for_function("() => { const d = window.FastMDXDashboard;"
+                           " return d.studyKnown() && d.viewKnown()"
+                           " && !window.FastMDXAgentPanel.waits; }", timeout=30000)
+    page.wait_for_timeout(300)
+
+
 def _said(page):
     return page.evaluate("() => (document.getElementById('agent-unsent-note') || {}).textContent || ''")
 
@@ -110,7 +119,7 @@ def test_words_typed_once_a_first_run_started_stay_with_it(tmp_path, monkeypatch
     assert kept.get(run) == words, kept
     assert words not in box
     assert words not in kept.get(study_key(other), "")
-    assert "is kept for it, not put here" in said, said
+    assert "is saved for it, not put here" in said, said
     assert errors == []
 
 
@@ -129,6 +138,7 @@ def test_words_typed_once_a_run_from_a_study_started_stay_with_it(tmp_path, monk
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         _shows(page, study_key(workspace / "run1"))
         page.wait_for_selector("#agent-thread .agent-running")
+        _when_known(page)
         _say(page, "again")
         page.wait_for_function(
             "() => document.querySelectorAll('#agent-thread .agent-study:not([hidden])').length === 2")
@@ -151,13 +161,15 @@ def test_words_typed_once_a_run_from_a_study_started_stay_with_it(tmp_path, monk
     assert kept.get(run) == words, kept
     assert words not in box
     assert words not in kept.get(study_key(other), "")
-    assert "is kept for it, not put here" in said, said
+    assert "is saved for it, not put here" in said, said
     assert errors == []
 
 
 def test_a_study_another_window_opens_during_a_launch_takes_no_words(tmp_path, monkeypatch):
     """Another window opens a study while the run is being launched: the
-    words typed meanwhile are not the other study's (K4)."""
+    words typed meanwhile are not the other study's (K4). Typed after Run
+    into the thread the run took with it, they are the run's study's
+    (L2: they were kept for the study the launch began in)."""
     from fastmdxplora.gui.workspace import study_key
 
     workspace, made, session = _gui(tmp_path, monkeypatch, taking=5.0)
@@ -171,6 +183,7 @@ def test_a_study_another_window_opens_during_a_launch_takes_no_words(tmp_path, m
         left = study_key(workspace / "run1")
         _shows(page, left)
         page.wait_for_selector("#agent-thread .agent-running")
+        _when_known(page)
         _say(page, "again")
         page.wait_for_function(
             "() => document.querySelectorAll('#agent-thread .agent-study:not([hidden])').length === 2")
@@ -181,7 +194,11 @@ def test_a_study_another_window_opens_during_a_launch_takes_no_words(tmp_path, m
         time.sleep(1.0)
         _switch_elsewhere(session, other)
         _shows(page, study_key(other))
-        page.wait_for_selector("#agent-thread .agent-running >> nth=1", timeout=30000)
+        # The page on `other` reads its own thread, not the run's: what it
+        # says once the launch has answered is where the words went.
+        page.wait_for_function(
+            "(key) => !!sessionStorage.getItem('fmx.agentUnsent:' + key)",
+            arg=study_key(workspace / "run2"), timeout=30000)
         page.wait_for_timeout(1500)
         box = page.input_value("#agent-request")
         kept = _unsent(page)
@@ -189,8 +206,12 @@ def test_a_study_another_window_opens_during_a_launch_takes_no_words(tmp_path, m
         close()
     finally:
         session.server.shutdown()
+    run = study_key(workspace / "run2")
     assert words not in box
     assert words not in kept.get(study_key(other), "")
-    assert kept.get(left) == words, kept
-    assert "is kept for it, not put here" in said, said
+    assert words not in kept.get(left, ""), kept
+    assert kept.get(run) == words, kept
+    # Named by its folder alone, as every note names a study (L12 F8, L20).
+    assert "The unsent message typed for run2 is saved for it, not put here" \
+        in said, said
     assert errors == []

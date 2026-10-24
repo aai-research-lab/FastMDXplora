@@ -151,10 +151,10 @@ def test_a_page_left_in_the_frame_it_opened_is_the_one_gone_back_to(browser, ses
 
 def test_a_dialog_keeps_the_keyboard_and_closing_keeps_the_focus(browser, session) -> None:
     tab = _open(browser, session, "#overview")
-    tab.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
+    tab.evaluate("() => window.FastMDXDialog.open('cite-dialog')")
     tab.keyboard.press("Control+j")
     behind = tab.evaluate("() => !document.getElementById('agent-drawer').hidden")
-    tab.evaluate("() => window.FastMDXDialog.close('prefs-dialog')")
+    tab.evaluate("() => window.FastMDXDialog.close('cite-dialog')")
     tab.keyboard.press("Control+j")
     tab.wait_for_function("() => document.activeElement.id === 'agent-request'")
     # Escape in the drawer closes it, and the focus goes back to its button.
@@ -208,3 +208,28 @@ def test_new_study_opens_the_builder_and_the_agent_only_when_asked(browser, sess
     # once it closes.
     assert again["beside"] and placeholder == "Ask, or describe a study"
     assert closed != placeholder
+
+
+def test_beside_a_short_page_the_agent_ends_above_the_status_bar(browser, session) -> None:
+    """In a window 720 tall the Agent's opening words did not shrink, and
+    pushed its box and the line under it below the drawer, under the status
+    bar: the words scroll instead, and the box stays where it is seen."""
+    context = browser.new_context(viewport={"width": 1000, "height": 720})
+    tab = context.new_page()
+    tab.set_default_timeout(60000)
+    try:
+        tab.goto(session.url + "#overview", wait_until="domcontentloaded")
+        tab.wait_for_function("() => window.FastMDXAgentBeside && "
+                              "document.body.classList.contains('state-ready')")
+        tab.keyboard.press("Control+j")
+        tab.wait_for_selector("#agent-drawer:not([hidden]) .agent-composer")
+        tab.wait_for_timeout(300)
+        said = tab.evaluate("""() => {
+            const drawer = document.getElementById('agent-drawer');
+            const bar = document.querySelector('.status-bar').getBoundingClientRect();
+            const box = drawer.querySelector('.agent-composer').getBoundingClientRect();
+            return [box.bottom - bar.top, drawer.getBoundingClientRect().bottom - bar.top,
+                    box.height]; }""")
+    finally:
+        context.close()
+    assert said[1] <= 0.5 and said[0] <= 0.5 and said[2] > 20, said

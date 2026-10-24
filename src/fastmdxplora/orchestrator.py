@@ -1819,6 +1819,20 @@ def this_machine() -> dict[str, str]:
     return {"host": socket.gethostname(), "boot": boot, "pidns": space}
 
 
+def process_start_ticks(pid: int) -> int | None:
+    """When the process ``pid`` began, in clock ticks since this machine
+    booted (field 22 of ``/proc/<pid>/stat``), where the system says
+    (Linux); None elsewhere. With the boot it is counted from, it names one
+    process exactly: a number given to another process since comes with
+    another start, and, unlike a time of day, it does not move when the
+    clock is stepped or the machine is paused."""
+    try:
+        stat = Path(f"/proc/{int(pid)}/stat").read_text(encoding="utf-8")
+        return int(stat.rsplit(")", 1)[1].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def record_is_from_elsewhere(record: dict) -> bool:
     """Whether a run record was written on another machine, or before this
     one last booted, so the process it names is not one here.
@@ -1863,12 +1877,16 @@ def _record_run_process(output_dir: Path) -> None:
     import sys
 
     path = Path(output_dir) / RUN_PROCESS_FILE
+    # Its start in ticks since boot, beside the boot (`this_machine`): the
+    # process is the run only while its number and start both match.
+    ticks = process_start_ticks(os.getpid())
     try:
         path.write_text(json.dumps({
             "pid": os.getpid(),
             "argv": list(sys.argv),
             "started_at": datetime.now(timezone.utc).isoformat(),
             **this_machine(),
+            **({"start_ticks": ticks} if ticks is not None else {}),
         }), encoding="utf-8")
     except OSError:
         return

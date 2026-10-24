@@ -172,7 +172,7 @@ def test_the_page_follows_a_change_without_waiting_for_its_poll(tmp_path) -> Non
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#overview", wait_until="domcontentloaded")
             page.wait_for_function("() => document.getElementById('stopping-outcome')"
-                                   ".textContent === 'Still running'")
+                                   ".textContent === 'Not finished when this was written'")
             page.wait_for_function("() => window.FastMDXDashboard.state.streaming === true")
             (root / "stopping.json").write_text(finished, encoding="utf-8")
             began = time.monotonic()

@@ -167,5 +167,5 @@ def test_a_selection_changed_before_the_window_sees_another_study_is_refused(ses
             _post(session, "/api/explore/switch", {"folder": str(session.first)})
     assert shown == study_key(session.first)
     assert selections_of(mutant)["selections"] == [], "written into the other study"
-    assert said == "The change was not kept: another study is open now.", said
+    assert said == "The change was not saved: another study is open now.", said
     assert errors == []

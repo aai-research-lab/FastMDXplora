@@ -80,7 +80,12 @@ class TestTheLoaderAcceptsExactlyWhatTheSchemaDeclares:
     def test_every_declared_value_is_accepted(self, block, field) -> None:
         for value in field.choices:
             given = [value] if field.type is list else value
-            validate_config(_config(block, field.name, given))
+            # Declared and accepted by the schema; whether an integrator can
+            # run at the default friction is a rule over several settings,
+            # tested in test_an_integrator_holds_the_temperature.py, and a
+            # record holding one is read as a record.
+            validate_config(_config(block, field.name, given),
+                            as_record=field.name == "integrator")
 
     @pytest.mark.parametrize(
         "block,field",

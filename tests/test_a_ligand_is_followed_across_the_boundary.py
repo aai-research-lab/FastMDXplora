@@ -262,7 +262,9 @@ def test_a_bound_ligand_on_a_face_has_its_own_fluctuation():
     traj = md.Trajectory(xyz.astype(np.float32), top)
     traj.unitcell_vectors = np.tile(np.eye(3) * box, (200, 1, 1)).astype(np.float32)
 
-    result = LigandRMSF(ligand_resname="LIG", align_selection="name CA").compute(traj)
+    # Every frame, as the truth below is taken over every frame.
+    result = LigandRMSF(ligand_resname="LIG", align_selection="name CA",
+                        start=0).compute(traj)
 
     true_rmsf = np.sqrt(((truth - truth.mean(axis=0)) ** 2).sum(axis=1).mean())
     assert result[0, 1] == pytest.approx(true_rmsf, abs=1e-4)

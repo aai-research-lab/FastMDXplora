@@ -761,11 +761,18 @@ def reweight_results(
     n_frames: int,
     frame_times_ps: Any,
     output_dir: Path,
+    solute_image: dict[str, Any] | None = None,
+    solute_image_series: Any = None,
 ) -> dict[str, Any] | None:
     """Recompute every reweightable average against the metadynamics bias.
 
     Returns the record written to disk, or ``None`` where no bias applies and
-    there is nothing to correct.
+    there is nothing to correct. ``solute_image`` and ``solute_image_series``
+    are the image check's finding and series over the same frames: where the
+    solute met its own image in them, each reweighted average carries the
+    note every mean of those frames carries
+    (:func:`fastmdxplora.analysis.image_check.note_on_frames`), its error
+    kept.
     """
     # Placing a frame in the deposition history compares this clock against
     # PLUMED's, and PLUMED's is real simulated time. A DCD read through
@@ -872,6 +879,14 @@ def reweight_results(
         for key in ("not_a_measurement", "refusal", "is_a_floor", "note"):
             if key in estimate:
                 item[key] = estimate[key]
+        # Over every frame, as the reweighting weighs them all.
+        if solute_image is not None and solute_image.get("reaches_its_image"):
+            from fastmdxplora.analysis.image_check import note_on_frames
+
+            image = note_on_frames(solute_image, solute_image_series, None,
+                                   times_ps=frame_times_ps, analysis=name)
+            if image:
+                item["solute_image"] = image
         quantities.append(item)
 
     occupancies: list[dict[str, Any]] = []

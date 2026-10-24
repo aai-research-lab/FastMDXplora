@@ -730,6 +730,14 @@ def _execute_run(
         def __enter__(self):
             self.previous = _os.environ.get("FASTMDX_LOG_STYLE")
             _os.environ["FASTMDX_LOG_STYLE"] = "plain"
+            # The presenter reads the style once, when it is made. One made
+            # while the run goes is quiet and is set aside when it ends, and
+            # the one from before comes back: a presenter first made inside a
+            # batch run in process said nothing for everything after it.
+            from fastmdxplora.utils import presenter as _presenter
+
+            self.presenter = _presenter._PRESENTER
+            _presenter._PRESENTER = None
 
             self.saved = None
             try:
@@ -775,6 +783,9 @@ def _execute_run(
                 _os.environ.pop("FASTMDX_LOG_STYLE", None)
             else:
                 _os.environ["FASTMDX_LOG_STYLE"] = self.previous
+            from fastmdxplora.utils import presenter as _presenter
+
+            _presenter._PRESENTER = self.presenter
             return False
 
     # Imported here so the subprocess sets up its own logging/imports.
@@ -1559,12 +1570,17 @@ class BatchExplorer:
     def _run_until_known(self, targets: list) -> None:
         """Extend the runs until what the study asked for is determined, then
         write the study's report again with the record of how long it ran."""
-        from fastmdxplora.simulation.stopping import RECORD, run_until_known
+        from fastmdxplora.simulation.stopping import (RECORD, STOPPED_BEFORE_THE_RULE,
+                                                      STOPPED_BEFORE_THE_RULE_AGAIN,
+                                                      run_until_known)
 
         stop_when = (self._raw.get("simulation") or {}).get("stop_when") or {}
 
         def ended(outcome: str, said: str) -> None:
-            """The planned record, told why no round was judged."""
+            """The planned record, told why no round was judged: the study's
+            sentence, never a round's (`stopping.study_ended`). A resumed
+            study keeps its rounds, each with its own sentence, and is said
+            stopped before its rule was applied again."""
             where = self.output_dir / RECORD
             try:
                 record = json.loads(where.read_text(encoding="utf-8"))
@@ -1572,14 +1588,15 @@ class BatchExplorer:
                 record = {}
             if not isinstance(record, dict):
                 record = {}
+            if said == STOPPED_BEFORE_THE_RULE and record.get("rounds"):
+                said = STOPPED_BEFORE_THE_RULE_AGAIN
             record.update({"outcome": outcome, "said": said})
             record.setdefault("rounds", [])
             where.write_text(json.dumps(record, indent=2), encoding="utf-8")
             print(said)
 
         if any(_was_stopped(result) for result in self.results):
-            ended("stopped", "Stopped when asked, before the rule was applied. Resuming "
-                             "the study applies it.")
+            ended("stopped", STOPPED_BEFORE_THE_RULE)
             return
         finished = [result for result in self.results
                     if result.status == "ok" and result.output_dir is not None]

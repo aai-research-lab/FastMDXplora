@@ -16,8 +16,9 @@ from fastmdxplora.refusals import CodedError
 __all__ = ["HOME", "HOST", "PLACEHOLDERS", "PROFILE", "PROFILE_VERSION", "STUDY",
            "ShareRefused"]
 
-#: The profile an archive keeps, and its version (MAJOR.MINOR).
-PROFILE_VERSION = "1.0"
+#: The profile an archive keeps, and its version (MAJOR.MINOR): 1.1 adds a
+#: study of several runs and a prepared system carried from outside it.
+PROFILE_VERSION = "1.1"
 PROFILE = f"https://w3id.org/fastmdxplora/study/{PROFILE_VERSION}"
 
 #: What a packed record says in place of the study's folder, any home
@@ -33,3 +34,11 @@ class ShareRefused(CodedError, RuntimeError):
     be opened as one."""
 
     default_code = "environment.share.not_a_study"
+
+
+def said_size(size: float) -> str:
+    """A file's size as said to the person: in MB, in kB under 0.1 MB, in
+    bytes under 1 kB."""
+    if size < 1000:
+        return f"{int(size)} byte" + ("" if int(size) == 1 else "s")
+    return f"{size / 1e6:.1f} MB" if size >= 100_000 else f"{size / 1e3:.1f} kB"

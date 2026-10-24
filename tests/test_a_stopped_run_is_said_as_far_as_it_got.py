@@ -432,3 +432,24 @@ def test_a_length_under_a_nanosecond_is_said_in_picoseconds():
                              sidecar={}, planned_steps=10000,
                              trajectory_interval_steps=500, timestep_fs=2.0)
     assert "at step 4,600 (9.2 ps of 20 ps)" in str(raised.value), str(raised.value)
+
+
+def test_a_run_stopped_in_equilibration_is_priced_at_its_equilibration_s_rate(tmp_path):
+    """Stopped six minutes into NVT, a run's fix said no speed had been
+    measured here: its equilibration's steps had measured one."""
+    from datetime import datetime, timedelta, timezone
+
+    from fastmdxplora.remedies import _speed
+
+    root = _stopped_study(tmp_path / "study")
+    start = datetime(2026, 10, 18, 23, 49, tzinfo=timezone.utc)
+    lines = ["timestamp,stage,step,simulation_time_ns,temperature,speed",
+             f"{start.isoformat()},minimization,0,0.0,300,0.0"]
+    for k in range(1, 7):
+        when = (start + timedelta(seconds=15 * k)).isoformat()
+        lines.append(f"{when},NVT equilibration,{1000 * k},{1000 * k * 2e-6},300,9.2")
+    (root / "simulation" / "live_metrics.csv").write_text("\n".join(lines) + "\n")
+    seconds, _ = _speed(root, root)
+    # 1000 steps of 2 fs every 15 s, from the first NVT sample: minimisation
+    # is not in it.
+    assert seconds == pytest.approx(15 / 0.002)

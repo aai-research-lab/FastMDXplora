@@ -507,8 +507,9 @@ def test_dashboard_html_has_aai_branding(tmp_path: Path) -> None:
     # "live" was a page of its own; its panels are on the overview now.
     for page in ("overview", "viewer", "analysis", "files"):
         assert f'data-page="{page}"' in html
-    # Preferences and the citation are dialogs over any page.
-    assert 'id="prefs-dialog"' in html and 'id="cite-dialog"' in html
+    # The citation is a dialog over any page; Preferences are on the Settings page.
+    assert 'data-page="settings"' in html and 'id="cite-dialog"' in html
+    assert 'id="prefs-dialog"' not in html
 
     # Loading screen + branded particles
     assert "loading-screen" in html
@@ -2293,11 +2294,15 @@ class TestASettingShowsWhatItWillDo:
             # for the same reason (`requires_naming`), so the absent default
             # is never silently filled in -- a study that wants it says
             # which two things.
+            # `image_check.cutoff_nm` is the run's own real-space cutoff,
+            # read from its setup record, as `r_max` is the box's: no
+            # literal can state it.
             and o.name not in {"ligand_resname", "ligand_net_charge",
                                "ligand_chemistry", "structure", "state_csv",
                                "r_max", "reference", "reference_exclude"}
             and f"{name}.{o.name}" not in {"pair_distance.selection_a",
-                                           "pair_distance.selection_b"}
+                                           "pair_distance.selection_b",
+                                           "image_check.cutoff_nm"}
         }
         assert not silent, f"these cannot say what they would do: {sorted(silent)}"
 
@@ -3027,7 +3032,7 @@ class TestWhereTheResultsGo:
                 / "dashboard.html").read_text(encoding="utf-8")
         assert 'id="run-output"' in page
         marker = page[page.index('id="run-output"'):][:220]
-        assert 'placeholder="fastmdxplora_<system>_study_<timestamp>"' in marker
+        assert 'placeholder="fastmdxplora_<system>_study_<UTC timestamp>"' in marker
 
 
 class TestPanelsForPhasesThatAreNotRunning:
@@ -3376,14 +3381,14 @@ class TestTheWordsMatchTheSoftware:
         root = pathlib.Path(server.__file__).parent
         page = (root / "templates" / "dashboard.html").read_text(encoding="utf-8")
         script = (root / "static" / "run-builder.js").read_text(encoding="utf-8")
-        assert 'placeholder="fastmdxplora_<system>_study_<timestamp>"' in page
+        assert 'placeholder="fastmdxplora_<system>_study_<UTC timestamp>"' in page
         # The default is built by a function now -- timestamped, like the
         # CLI's -- so a second run does not collide with the first. The
         # name is still the software's.
         # The browser no longer names the folder; the server does, by one
         # rule. The note shows the pattern.
         assert '"fastmdxplora_output_"' not in script
-        assert '_study_<timestamp>' in script
+        assert '_study_<UTC timestamp>' in script
 
 
 class TestEveryPathFieldCanBeBrowsed:
@@ -4368,7 +4373,13 @@ class TestTheLiveTabDoesNotPretendToHaveData:
         block = block[:block.index("\n  function ", 10)]
 
         assert "live-panels" in block and "live-absent" in block
-        assert "if (nothing) return;" in block
+        assert "if (nothing) {" in block
+        # Emptied as it returns: the Overview's line under the study's name
+        # reads these cells, and a study just opened said the last one's.
+        nothing = block[block.index("if (nothing) {"):]
+        nothing = nothing[:nothing.index("return;")]
+        for cell in ("live-simtime-cell", "live-elapsed-cell", "live-lastupdate-cell"):
+            assert cell in nothing
 
     def test_and_the_page_has_somewhere_to_put_the_reason(self) -> None:
         import pathlib

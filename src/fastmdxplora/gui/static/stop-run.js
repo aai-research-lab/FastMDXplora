@@ -29,35 +29,30 @@
       return "It ends at its next frame with a checkpoint there, and can be carried on from it.";
     }
     if (stage === "analysis" || stage === "report") {
-      return "The simulation is finished and kept; the " + stage + " can be run again.";
+      return "The simulation is finished and saved; the " + stage + " can be run again.";
     }
     return "It has not reached production, so it leaves no checkpoint: carrying it on runs it again.";
   }
 
-  /* Ask in ``host``, then stop. ``done`` is told the answer's words. */
+  /* Bound beyond this computer, where a stop's POST is refused: not offered. */
+  function beyondLoopback() { return document.body.dataset.beyondLoopback === "true"; }
+
+  /* Ask in ``host`` (confirm.js), then stop. ``done`` is told the answer's
+   * words, or null for Not now. */
   function ask(host, done) {
-    if (!host) return;
-    host.hidden = false;
-    host.innerHTML = "";
-    host.appendChild(el("span", "fix-said", "Stop the run? " + whatItLeaves()));
-    var row = el("span", "stop-run-answers");
-    var yes = el("button", "danger-btn stop-run-yes", "Yes, stop it");
-    yes.type = "button";
-    var no = el("button", "ghost-btn stop-run-no", "Not now");
-    no.type = "button";
-    no.addEventListener("click", function () {
-      host.innerHTML = "";
-      host.hidden = true;
-      if (done) done(null);
-    });
-    yes.addEventListener("click", function () {
-      yes.disabled = true;
-      no.disabled = true;
-      host.innerHTML = "";
-      host.appendChild(el("span", "fix-said", "Stopping…"));
+    if (!host || !window.FastMDXConfirm || beyondLoopback()) return;
+    window.FastMDXConfirm.ask(host, {
+      title: "Stop the run?", detail: whatItLeaves(), yes: "Yes, stop it",
+      yesClass: "stop-run-yes", noClass: "stop-run-no",
+    }).then(function (yes) {
+      if (!yes) {
+        window.FastMDXConfirm.done(host);
+        if (done) done(null);
+        return;
+      }
+      host.replaceChildren(el("span", "fix-said", "Stopping…"));
       stop().then(function (said) {
-        host.innerHTML = "";
-        host.appendChild(el("span", "fix-said stop-run-answer", said));
+        host.replaceChildren(el("span", "fix-said stop-run-answer", said));
         if (done) done(said);
         // What would fix it, once the stop is in the study's records: it
         // came only with a reload.
@@ -68,19 +63,6 @@
         }
       });
     });
-    row.appendChild(yes);
-    row.appendChild(no);
-    host.appendChild(row);
-    // Escape answers "Not now", as a dialog's would.
-    host.onkeydown = function (event) {
-      if (event.key === "Escape" && !no.disabled && host.contains(no)) {
-        event.stopPropagation();
-        no.click();
-      }
-    };
-    // The answer that does nothing has the keyboard: Enter after Ctrl+K,
-    // "stop", Enter stopped the run with no further thought.
-    no.focus();
   }
 
   function stop() {
@@ -97,7 +79,7 @@
   /* The controls this offers, shown only while a run goes here. */
   function show() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-stop-run]"), function (button) {
-      button.hidden = !running;
+      button.hidden = !running || beyondLoopback();
       button.disabled = false;
     });
     var started = running && !wasRunning;
@@ -157,6 +139,6 @@
   window.FastMDXStop = {
     ask: ask,
     stop: stop,
-    running: function () { return running; }
+    running: function () { return running && !beyondLoopback(); }
   };
 }());

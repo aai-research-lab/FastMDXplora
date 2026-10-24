@@ -53,7 +53,7 @@ class TestWhatIsCited:
         """Whatever the answer said: here it misquotes the RMSD."""
         (cite,) = cited_findings("The RMSD settled at 1.1 Angstrom.", study)
         assert cite == {"analysis": "rmsd", "label": "RMSD",
-                        "value": "0.1120 ± 0.0020 nm", "withheld": ""}
+                        "value": "0.1120 ± 0.0020 nm", "withheld": "", "noted": ""}
 
     def test_a_mean_that_is_not_a_measurement_says_so(self, study):
         (cite,) = cited_findings("Rg was 0.33 nm.", study)
@@ -67,7 +67,8 @@ class TestWhatIsCited:
 
     def test_an_analysis_with_no_mean_is_cited_for_its_figure(self, study):
         (cite,) = cited_findings("The RMSF peaks at the loop.", study)
-        assert cite == {"analysis": "rmsf", "label": "RMSF", "value": "", "withheld": ""}
+        assert cite == {"analysis": "rmsf", "label": "RMSF", "value": "", "withheld": "",
+                        "noted": ""}
 
     def test_the_ligands_rmsd_is_not_also_the_proteins(self, study):
         assert [c["analysis"] for c in cited_findings("The ligand RMSD stayed low.", study)] == [

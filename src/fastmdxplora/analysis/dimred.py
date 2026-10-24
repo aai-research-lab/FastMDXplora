@@ -13,9 +13,15 @@ RMSD.
   - **t-SNE**: t-distributed stochastic neighbor embedding. Non-linear,
     preserves local neighborhood structure, useful for visualizing
     metastable basins. Stochastic — set ``random_state`` for reproducibility.
+  - **MDS**: classical (Torgerson) multidimensional scaling of the
+    pairwise RMSD matrix: the leading eigenvectors of its double-centred
+    squared distances, an arrangement whose distances match the RMSDs
+    exactly where they are Euclidean, and approximately otherwise.
   - **UMAP** (optional): uniform manifold approximation and projection.
-    Non-linear, generally faster than t-SNE, also preserves global
-    structure better. Requires the optional ``umap-learn`` package.
+    Non-linear and generally faster than t-SNE; how much more of the
+    global structure it keeps is debated, so distances between its
+    clusters are not to be read as RMSDs. Requires the optional
+    ``umap-learn`` package.
 
 Every frame is projected by default, the equilibration from the starting
 structure included; ``start`` begins later, and the record says how many
@@ -52,6 +58,9 @@ from fastmdxplora.analysis.plotting import (
 from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
+from fastmdxplora.utils.logging import get_logger
+
+logger = get_logger("analysis.dimred")
 
 
 VALID_METHODS = ("pca", "mds", "tsne", "umap")
@@ -63,7 +72,8 @@ class DimRed(Analysis):
     Parameters
     ----------
     methods : sequence of str, default ``("pca",)``
-        Which methods to run. Choices: ``"pca"``, ``"tsne"``, ``"umap"``.
+        Which methods to run. Choices: ``"pca"``, ``"mds"``, ``"tsne"``,
+        ``"umap"``.
     n_components : int, default 2
         Dimensionality of the embedding. For visualization keep at 2 (or 3).
     perplexity : float, default 30.0
@@ -204,8 +214,26 @@ class DimRed(Analysis):
                 "trajectory that samples."
             , code="analysis.sampling.no_variance")
 
+        # MDS's matrix checked before any method runs: refused, the other
+        # methods asked for still run and are kept, the refusal recorded; a
+        # refusal of MDS alone refuses the analysis.
+        methods = list(self.methods)
+        if "mds" in methods:
+            try:
+                _refuse_mds_past_memory(self, traj.n_frames)
+            except StudyError as refused:
+                if len(methods) == 1:
+                    raise
+                methods.remove("mds")
+                self.findings["mds_refused"] = {
+                    "code": "analysis.memory.matrix_too_large", "said": str(refused),
+                    "kept": list(methods)}
+                logger.warning("%s The other methods asked for (%s) still run.",
+                               refused, ", ".join(methods))
+        self._methods_run = methods
+
         results: dict[str, np.ndarray] = {}
-        for method in self.methods:
+        for method in methods:
             if method == "pca":
                 model = PCA(n_components=self.n_components)
                 embedding = model.fit_transform(coords)
@@ -223,7 +251,7 @@ class DimRed(Analysis):
                     "frames": np.int64(traj.n_frames),
                 }
             elif method == "mds":
-                # Metric MDS on the pairwise RMSD between frames, which is
+                # Classical MDS on the pairwise RMSD between frames, which is
                 # what version 1 offered and what a reader comparing against
                 # it needs. It answers a different question from PCA: PCA
                 # finds the directions of largest variance in the
@@ -232,8 +260,10 @@ class DimRed(Analysis):
                 # possible -- and the distance between two frames is their
                 # RMSD, which is what a structural biologist means by how
                 # different two conformations are.
+                # Its memory checked above, before any method ran.
                 distances = _pairwise_rmsd(traj, self.select_atoms(traj))
                 embedding = _classical_mds(distances, self.n_components)
+                del distances
                 # PCA's variance shares stay where PCA put them: MDS has
                 # none of its own, and clearing the one attribute both
                 # shared took "(98.5%)" off the PCA axes whenever MDS ran
@@ -325,7 +355,7 @@ class DimRed(Analysis):
                 # Once more, so the landscape's record is kept with the rest.
                 self._write_options_manifest()
             finished = datetime.now(timezone.utc).isoformat()
-            primary = self.methods[0]
+            primary = next(iter(self.result))
             return AnalysisResult(
                 name=self.name,
                 status="ok",
@@ -335,7 +365,9 @@ class DimRed(Analysis):
                 data_path=self.output_dir / f"dimred_{primary}.dat",
                 options_path=options_path,
                 artifacts=artifacts,
-                message=f"{self.name}: ok ({', '.join(self.methods)})",
+                message=f"{self.name}: ok ({', '.join(self.result)})" + (
+                    "; MDS refused for memory, the rest run and saved"
+                    if "mds_refused" in self.findings else ""),
                 started_at=started,
                 finished_at=finished,
             )
@@ -541,6 +573,51 @@ def _plot_dimred_scatter(
 register_analysis(DimRed.name, DimRed)
 
 
+def mds_memory_needed(n: int) -> int:
+    """The peak bytes, of order n squared, MDS of ``n`` frames makes: the
+    pairwise RMSD matrix in float64 (8 n^2) and its doubly centred square,
+    whose leading eigenvectors are found in place (8 n^2), as clustering's
+    k-means makes them (:func:`fastmdxplora.analysis.cluster.memory_needed`)."""
+    return int(16 * float(n) * float(n))
+
+
+def _refuse_mds_past_memory(self: "DimRed", n: int) -> None:
+    """Refuse MDS of ``n`` frames where its matrix would not fit in the
+    memory this process can take (:func:`fastmdxplora.analysis.cluster.memory_available`),
+    with the stride that fits; record the check either way."""
+    from fastmdxplora.analysis.cluster import (
+        MEMORY_SHARE,
+        _gigabytes,
+        _ordinal,
+        memory_available,
+        room_said,
+    )
+
+    needed = mds_memory_needed(n)
+    available, read_from = memory_available()
+    check: dict[str, Any] = {"frames": n, "bytes_needed": needed,
+                             "bytes_available": available, "available_read_from": read_from,
+                             "share_usable": MEMORY_SHARE, "method": "mds"}
+    self.findings["memory"] = check
+    if available is None or needed <= MEMORY_SHARE * available:
+        return
+    stride = 2
+    while stride < n and mds_memory_needed(-(-n // stride)) > MEMORY_SHARE * available:
+        stride += 1
+    check["stride_that_fits"] = stride
+    raise StudyError(
+        f"MDS of {n:,} frames needs about {_gigabytes(needed)} for their "
+        f"frame-by-frame RMSD matrix and its centred square, and "
+        f"{room_said(available, read_from)}, of which an analysis "
+        f"plans on {MEMORY_SHARE:.0%}. PCA, t-SNE and UMAP make no such matrix "
+        f"(`methods: [pca]`); or load every {_ordinal(stride)} frame for the analyses "
+        f"(`analysis: {{stride: {stride}}}`, which every analysis then reads), "
+        f"{-(-n // stride):,} frames, which fits. Read as {read_from}.",
+        code="analysis.memory.matrix_too_large", frames=n,
+        bytes_needed=needed, bytes_available=available, stride=stride)
+
+
+
 def _pairwise_rmsd(traj: Any, atom_indices: Any = None) -> np.ndarray:
     """RMSD between every pair of frames, each pair superposed optimally.
 
@@ -559,16 +636,12 @@ def _pairwise_rmsd(traj: Any, atom_indices: Any = None) -> np.ndarray:
     on this analysis's behalf, and because the test that covers MDS uses a
     solvent-free peptide, where every atom *is* the selection.
     """
-    import mdtraj as md
+    # Clustering's, which symmetrises in place: `0.5 * (d + d.T)` made two
+    # more matrices.
+    from fastmdxplora.analysis.cluster import _pairwise_rmsd as rows_in_place
 
-    n = traj.n_frames
-    distances = np.zeros((n, n), dtype=np.float64)
-    for index in range(n):
-        distances[index] = md.rmsd(traj, traj, index,
-                                   atom_indices=atom_indices)
-    # md.rmsd is not exactly symmetric to floating point, and an asymmetric
-    # matrix would give MDS a slightly complex eigenspectrum.
-    return 0.5 * (distances + distances.T)
+    atoms = np.arange(traj.n_atoms) if atom_indices is None else np.asarray(atom_indices)
+    return rows_in_place(traj, atoms)
 
 
 def _classical_mds(distances: np.ndarray, n_components: int) -> np.ndarray:
@@ -579,13 +652,10 @@ def _classical_mds(distances: np.ndarray, n_components: int) -> np.ndarray:
     kept separate because that one embeds for k-means and this one is the
     result being reported.
     """
-    squared = np.asarray(distances, dtype=np.float64) ** 2
-    n = squared.shape[0]
-    centring = np.eye(n) - np.ones((n, n)) / n
-    gram = -0.5 * centring @ squared @ centring
-    values, vectors = np.linalg.eigh(gram)
-    order = np.argsort(values)[::-1][:n_components]
-    # Negative eigenvalues mean the distances are not exactly Euclidean,
-    # which pairwise RMSD need not be. Clipping is the standard remedy.
-    kept = np.clip(values[order], 0.0, None)
-    return vectors[:, order] * np.sqrt(kept)
+    # Clustering's, which centres in place and finds only the leading
+    # eigenpairs: the centring matrix written out, its two products and a
+    # full eigendecomposition made five more matrices. Negative eigenvalues
+    # (pairwise RMSD need not be exactly Euclidean) are clipped there too.
+    from fastmdxplora.analysis.cluster import _classical_mds as in_place
+
+    return in_place(np.asarray(distances, dtype=np.float64), n_components)

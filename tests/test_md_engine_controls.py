@@ -33,22 +33,31 @@ class TestIntegratorFactory:
         openmm = MagicMock()
         return {"openmm": openmm, "unit": unit}
 
-    @pytest.mark.parametrize("name,attr", [
-        ("langevin_middle", "LangevinMiddleIntegrator"),
-        ("langevin", "LangevinIntegrator"),
-        ("brownian", "BrownianIntegrator"),
-        ("verlet", "VerletIntegrator"),
-        ("variable_langevin", "VariableLangevinIntegrator"),
-        ("variable_verlet", "VariableVerletIntegrator"),
+    @pytest.mark.parametrize("name,attr,friction", [
+        ("langevin_middle", "LangevinMiddleIntegrator", 1.0),
+        ("langevin", "LangevinIntegrator", 1.0),
+        ("brownian", "BrownianIntegrator", 200.0),
+        ("variable_langevin", "VariableLangevinIntegrator", 1.0),
     ])
-    def test_each_integrator_constructs(self, name, attr):
+    def test_each_integrator_constructs(self, name, attr, friction):
         omm = self._fake_omm()
         _runner._make_integrator(
-            omm, name=name, temperature_K=300.0, friction_per_ps=1.0,
+            omm, name=name, temperature_K=300.0, friction_per_ps=friction,
             timestep_fs=2.0, error_tolerance=0.001, random_seed=None,
         )
         # The matching OpenMM constructor was called
         assert getattr(omm["openmm"], attr).called
+
+    @pytest.mark.parametrize("name", ["verlet", "variable_verlet"])
+    def test_an_integrator_with_no_thermostat_is_refused(self, name):
+        omm = self._fake_omm()
+        with pytest.raises(ValueError, match="no thermostat"):
+            _runner._make_integrator(
+                omm, name=name, temperature_K=300.0, friction_per_ps=1.0,
+                timestep_fs=2.0, error_tolerance=0.001, random_seed=None,
+            )
+        assert not omm["openmm"].VerletIntegrator.called
+        assert not omm["openmm"].VariableVerletIntegrator.called
 
     def test_unknown_integrator_raises(self):
         omm = self._fake_omm()
@@ -463,7 +472,7 @@ class TestMDEngineCLIRouting:
         rc = cli_main([
             "explore", "--system", str(pdb), "--output", str(out),
             "--include", "simulation",
-            "--simulate-integrator", "brownian",
+            "--simulate-integrator", "langevin",
             "--simulate-pressure-atm", "1.0",
             "--simulate-checkpoint-interval-steps", "2500",
         ])
@@ -473,7 +482,7 @@ class TestMDEngineCLIRouting:
         params = json.loads(
             (out / "simulation" / "simulation_parameters.json").read_text(encoding="utf-8")
         )["parameters"]
-        assert params["integrator"] == "brownian"
+        assert params["integrator"] == "langevin"
         assert params["pressure_atm"] == 1.0
         assert params["checkpoint_interval_steps"] == 2500
 

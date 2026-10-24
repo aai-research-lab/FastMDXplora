@@ -52,7 +52,7 @@
   }
 
   /* A dialog over the page has the keyboard: the drawer opened behind
-   * Preferences took its focus. */
+   * a dialog took its focus. */
   function aDialogIsOpen() {
     return !!document.querySelector(".agent-dialog:not([hidden])");
   }

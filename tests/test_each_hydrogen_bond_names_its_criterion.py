@@ -39,8 +39,10 @@ def test_each_names_it_on_its_axis() -> None:
 def test_the_interactions_rule_does_not_credit_its_distance_to_baker_hubbard() -> None:
     doc = hydrogen_bonds.__doc__
     first = doc.split("\n\n")[1]
-    assert "3.5 A" in first and "McDonald" in first
-    assert "not Baker and Hubbard" in doc
+    assert "3.5 A" in first and "ProLIF" in first
+    # Nor credited to HBPLUS, whose limits are wider.
+    assert "not McDonald and Thornton" in first
+    assert "Nor is it Baker and Hubbard" in doc
 
 
 def test_the_two_criteria_differ_where_the_records_say_they_do() -> None:

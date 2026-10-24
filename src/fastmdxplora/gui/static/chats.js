@@ -1,17 +1,21 @@
-/* The Agent's conversations in the sidebar: the open study's, under its
- * pages, and the chats of no study after them.
+/* The Agent's conversations in the sidebar, in one list (IMDE 2.10):
+ * the open study's first, then the chats of no study.
  *
- * A conversation belongs to the study it is about and is kept in its
- * folder; a chat begun with no study, or begun here as one, is kept in the
- * workspace and stays a chat while a study is open, until it starts a
- * study of its own. Each list gives the ones talked in last, the one open
- * in the Agent marked; a click opens it in the Agent beside the page, a +
- * begins another, and More lists them all in the Agent's Conversations.
+ * A conversation belongs to the study it is about and is saved in its
+ * folder; a chat begun with no study, or begun here as one, is saved in
+ * the workspace and stays a chat while a study is open, until it starts a
+ * study of its own. They were two lists, Conversations under the study's
+ * pages and Chats after them; one now, each part named where both have
+ * some, the ones talked in last first, the one open in the Agent marked; a
+ * click opens it in the Agent beside the page, the head's + begins one
+ * about the open study (a chat where none is open), New chat begins a
+ * chat of no study while one is, and All lists them all in the Agent's
+ * Conversations.
  */
 (function () {
   "use strict";
 
-  var SHOWN = 5;
+  var SHOWN = 6;
   var asking = null;
 
   function el(id) { return document.getElementById(id); }
@@ -50,36 +54,54 @@
     agent.open(c.id, group.study, group.loaded || group.chats);
   }
 
-  function rows(host, group, shown) {
+  function row(c, group, now) {
+    var item = make("button", "sidebar-conv");
+    item.type = "button";
+    item.dataset.id = c.id;
+    item.dataset.group = group.chats ? "chats" : "study";
+    var here = now && now.id === c.id && (now.study || null) === (c.study || null);
+    if (here) item.setAttribute("aria-current", "true");
+    item.title = c.title + "\n" + c.entries + (c.entries === 1 ? " message" : " messages");
+    item.append(make("span", "sidebar-conv-title", c.title),
+                make("span", "sidebar-conv-when", ago(c.updated)));
+    item.addEventListener("click", function () { open(c, group); });
+    return item;
+  }
+
+  /* One list: the open study's, then the chats; each part named where
+   * both have some. */
+  function rows(host, study, chats) {
     var now = panel() ? panel().current : {};
-    var all = group ? group.conversations : [];
+    var mine = study ? study.conversations : [];
+    var others = chats ? chats.conversations : [];
     host.replaceChildren();
-    if (group && group.chats) {
-      // Beside the folded strip the head's + is not shown: the list
-      // begins with it (hidden in the sidebar shown, by the CSS).
-      var fresh = make("button", "sidebar-conv-new", "New chat");
-      fresh.type = "button";
-      fresh.addEventListener("click", function () { begin(null); });
-      host.appendChild(fresh);
+    // Beside the folded strip the head's + is not shown: the list begins
+    // with it (hidden in the sidebar shown, by the CSS).
+    var fresh = make("button", "sidebar-conv-new", study ? "New conversation" : "New chat");
+    fresh.type = "button";
+    fresh.addEventListener("click", function () { begin(openStudy()); });
+    host.appendChild(fresh);
+    // With a study open the head's + is about it: a chat of no study is
+    // begun here, in the sidebar shown and beside the folded strip alike.
+    if (openStudy()) {
+      var chat = make("button", "sidebar-conv-new sidebar-conv-chat", "New chat, about no study");
+      chat.type = "button";
+      chat.addEventListener("click", function () { begin(null); });
+      host.appendChild(chat);
     }
-    // None yet: the head and its + say enough, and the sidebar keeps its
-    // height for the pages.
-    if (!all.length) return;
-    all.slice(0, shown).forEach(function (c) {
-      var item = make("button", "sidebar-conv");
-      item.type = "button";
-      item.dataset.id = c.id;
-      var here = now && now.id === c.id && (now.study || null) === (c.study || null);
-      if (here) item.setAttribute("aria-current", "true");
-      item.title = c.title + "\n" + c.entries + (c.entries === 1 ? " message" : " messages");
-      item.append(make("span", "sidebar-conv-title", c.title),
-                  make("span", "sidebar-conv-when", ago(c.updated)));
-      item.addEventListener("click", function () { open(c, group); });
-      host.appendChild(item);
-    });
-    if (all.length > shown) {
-      var more = make("button", "sidebar-conv sidebar-conv-more",
-        "All " + all.length + (group.chats ? " chats" : " conversations"));
+    var both = mine.length && others.length;
+    var each = both ? Math.ceil(SHOWN / 2) + 1 : SHOWN + 1;
+    if (mine.length) {
+      if (both) host.appendChild(make("div", "sidebar-conv-part", "This study"));
+      mine.slice(0, each).forEach(function (c) { host.appendChild(row(c, study, now)); });
+    }
+    if (others.length) {
+      if (both) host.appendChild(make("div", "sidebar-conv-part", "Not about a study"));
+      others.slice(0, each).forEach(function (c) { host.appendChild(row(c, chats, now)); });
+    }
+    var all = mine.length + others.length;
+    if (all > Math.min(mine.length, each) + Math.min(others.length, each)) {
+      var more = make("button", "sidebar-conv sidebar-conv-more", "All " + all + "…");
       more.type = "button";
       more.addEventListener("click", function () {
         besideThePage();
@@ -87,6 +109,11 @@
       });
       host.appendChild(more);
     }
+  }
+
+  function openStudy() {
+    var board = window.FastMDXDashboard;
+    return (board && board.state && board.state.appState ? board.state.appState.active_run : "") || null;
   }
 
   function show() {
@@ -97,12 +124,13 @@
         var groups = (d && d.groups) || [];
         var study = groups.find(function (g) { return g.loaded && !g.chats; }) || null;
         var chats = groups.find(function (g) { return g.chats; }) || { chats: true, conversations: [] };
-        var block = el("sidebar-study-convs");
-        if (block) {
-          block.hidden = !study;
-          if (study) rows(el("sidebar-study-convs-list"), study, SHOWN);
+        rows(el("sidebar-chats-list"), study, chats);
+        var add = el("sidebar-chat-new");
+        if (add) {
+          var words = study ? "A new conversation about this study" : "A new chat, about no study";
+          add.title = words;
+          add.setAttribute("aria-label", words);
         }
-        rows(el("sidebar-chats-list"), chats, SHOWN);
       })
       .catch(function () { /* the lists stay as they were */ })
       .then(function () { asking = null; });
@@ -120,18 +148,12 @@
   }
 
   function wire() {
-    var forStudy = el("sidebar-study-new");
-    if (forStudy) forStudy.addEventListener("click", function () {
-      var board = window.FastMDXDashboard;
-      var open = board && board.state && board.state.appState ? board.state.appState.active_run : "";
-      begin(open || null);
-    });
     var chat = el("sidebar-chat-new");
     if (chat) chat.addEventListener("click", function (event) {
-      // In the Chats head: begins a chat and does not fold the list.
+      // In the list's head: begins one and does not fold the list.
       event.preventDefault();
       event.stopPropagation();
-      begin(null);
+      begin(openStudy());
     });
     var fold = el("sidebar-chats");
     if (fold) {

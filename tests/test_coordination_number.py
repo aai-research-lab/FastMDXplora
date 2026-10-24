@@ -63,9 +63,15 @@ def _gas(n_a=30, n_b=300, box=4.0, frames=20, seed=5):
     return traj
 
 
+#: No bulk water comes nearer a solute atom than this, so the shell has a
+#: trough after it, as a liquid's does.
+EXCLUDED_NM = 0.40
+
+
 def _hydrated(n_solute=25, shell_n=6, d=0.29, n_bulk=900, box=4.0,
               frames=25, seed=11):
-    """Solute atoms each carrying six waters at ``d``, in a bulk of others.
+    """Solute atoms each carrying six waters at ``d``, in a bulk of others
+    kept :data:`EXCLUDED_NM` from every solute atom.
 
     A first shell that is actually there, so the cutoff search has
     something to find and the refusal above is shown to be about the
@@ -91,7 +97,13 @@ def _hydrated(n_solute=25, shell_n=6, d=0.29, n_bulk=900, box=4.0,
             direction /= np.linalg.norm(direction, axis=1)[:, None]
             radius = d + rng.normal(0.0, 0.01, size=(shell_n, 1))
             shell.append(centre + direction * radius)
-        bulk = rng.random((n_bulk, 3)) * box
+        bulk = np.zeros((0, 3))
+        while len(bulk) < n_bulk:
+            drawn = rng.random((2 * n_bulk, 3)) * box
+            apart = drawn[:, None, :] - centres[None]
+            apart -= box * np.round(apart / box)
+            clear = (np.linalg.norm(apart, axis=2) > EXCLUDED_NM).all(axis=1)
+            bulk = np.vstack([bulk, drawn[clear]])[:n_bulk]
         frames_xyz.append(
             np.vstack([centres, np.vstack(shell), bulk]) % box)
 
@@ -211,7 +223,7 @@ class TestWhatItRefuses:
         with pytest.raises(StudyError) as raised:
             analysis.compute(_octahedron(box=4.0))
 
-        assert "half the smallest box" in str(raised.value)
+        assert "half the cell's shortest lattice vector" in str(raised.value)
         assert raised.value.code == "analysis.option.out_of_range"
 
     def test_a_trajectory_without_a_box_is_refused(self):
@@ -270,8 +282,9 @@ class TestReadingTheCutoffOffTheCurve:
         Six waters were placed around each solute, and the number that
         comes out is larger -- because the rest of the box is also in there.
         Integrating g(r) to a cutoff never subtracts the bulk, so the
-        expected count is the placed shell plus the uniform background
-        occupying the same sphere. Checking against the shell alone would
+        expected count is the placed shell plus the background occupying the
+        same sphere: here the other solutes' shells, the bulk being kept
+        further off than the cutoff. Checking against the shell alone would
         have marked a correct implementation wrong.
         """
         box, n_solute, shell_n, n_bulk = 4.0, 25, 6, 900
@@ -282,12 +295,25 @@ class TestReadingTheCutoffOffTheCurve:
                       box=box))
 
         cutoff = analysis.findings["shell"]["cutoff_from_rdf_nm"]
-        # Every water except this solute's own six is background.
-        others = (n_solute * shell_n + n_bulk) - shell_n
+        assert cutoff < EXCLUDED_NM
+        others = (n_solute - 1) * shell_n
         background = (others / box ** 3) * (4.0 / 3.0) * np.pi * cutoff ** 3
         expected = shell_n + background
 
         assert float(np.mean(result)) == pytest.approx(expected, rel=0.05)
+
+    def test_a_shell_with_no_trough_after_it_has_no_minimum(self):
+        """Bulk right up to the shell: past it the curve sits at bulk and the
+        count rises with the bulk, and where to stop is not measured."""
+        global EXCLUDED_NM
+        kept, EXCLUDED_NM = EXCLUDED_NM, 0.0
+        try:
+            traj = _hydrated()
+        finally:
+            EXCLUDED_NM = kept
+        with pytest.raises(StudyError, match="no trough and no minimum to read"):
+            CoordinationNumber(selection_a="name CA", selection_b="name O",
+                               cutoff="rdf").compute(traj)
 
     def test_it_records_where_the_cutoff_came_from(self):
         """A derived cutoff that did not say so would read as a given one."""

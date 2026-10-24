@@ -35,6 +35,7 @@ WHERE_IT_WAS_WRITTEN = frozenset({"output", "agent_model"})
 WORKED_OUT_BY_THE_RUN = frozenset({
     "setup.force_field", "setup.water_model", "setup.ligand_forcefield",
     "setup.nonbonded_cutoff_nm", "setup.use_switching_function", "setup.random_seed",
+    "setup.dispersion_correction", "setup.switch_distance_nm",
     "simulation.nvt_steps", "simulation.npt_steps", "simulation.production_steps",
     "simulation.ensemble", "simulation.pressure_bar",
     "simulation.trajectory_interval_steps",

@@ -167,6 +167,11 @@
       // badge said only "Not determined", nineteen times over.
       link.appendChild(make("div", "tile-reason", tile.reason));
     }
+    if (!perResidue && !unread && tile.noted) {
+      // Its image note beside the verdict, which it does not change: the
+      // badge is the record's, Determined or not.
+      link.appendChild(make("div", "tile-noted", tile.noted));
+    }
     if (perResidue) {
       link.appendChild(bars(tile.values));
     } else if (tile.series) {
@@ -177,14 +182,25 @@
       sparks.push(plot);
       want(tile.series);
     }
-    if (!perResidue && !tile.determined && tile.why) {
+    var whyNot = !perResidue && !tile.determined && tile.why;
+    var whyNoted = !perResidue && !unread && tile.noted && tile.noted_why;
+    if (whyNot || whyNoted) {
       // Shown on hover or focus, and the tile's description for a screen
-      // reader, which does not read what is not displayed.
+      // reader, which does not read what is not displayed: why it is not
+      // determined, and the analysis's paragraph of its image note.
       tileCount += 1;
       var why = make("div", "tile-why");
       why.id = "tile-why-" + tileCount;
-      why.appendChild(make("b", "", unread ? "Not read. " : "Not determined. "));
-      why.appendChild(document.createTextNode(tile.why));
+      if (whyNot) {
+        why.appendChild(make("b", "", unread ? "Not read. " : "Not determined. "));
+        why.appendChild(document.createTextNode(tile.why));
+      }
+      if (whyNoted) {
+        var paragraph = make("span", "tile-why-noted");
+        paragraph.appendChild(make("b", "", "May be biased. "));
+        paragraph.appendChild(document.createTextNode(tile.noted_why));
+        why.appendChild(paragraph);
+      }
       link.appendChild(why);
       link.setAttribute("aria-describedby", why.id);
     }

@@ -139,7 +139,11 @@ def shortest_vector(delta: np.ndarray, cell: np.ndarray) -> np.ndarray:
     applies the convention; anything checking PLUMED has to as well.
 
     The fractional reduction alone is not shortest in a skewed cell, so the
-    twenty-six neighbouring translations are compared against it. A rhombic
+    neighbouring translations two cells out in each direction (124) are
+    compared against it. One cell out (26) is enough for the reduced
+    dodecahedron and octahedron setup builds, and was 0.115 nm long in a
+    cell GROMACS and OpenMM both accept as reduced (a=(3,0,0),
+    b=(1.5,2.7,0), c=(1.5,1.35,0.9) nm), whose shortest vector is c - b. A rhombic
     dodecahedron is skewed. `test_seeding` checks this against an exhaustive
     search over several cells, because a reduction that is quietly wrong
     gives distances that look entirely reasonable.
@@ -158,9 +162,9 @@ def shortest_vector(delta: np.ndarray, cell: np.ndarray) -> np.ndarray:
     base = np.einsum("fij,fj->fi", matrix, fractional)
     best = base.copy()
     shortest = np.linalg.norm(best, axis=1)
-    for i in (-1, 0, 1):
-        for j in (-1, 0, 1):
-            for k in (-1, 0, 1):
+    for i in (-2, -1, 0, 1, 2):
+        for j in (-2, -1, 0, 1, 2):
+            for k in (-2, -1, 0, 1, 2):
                 if (i, j, k) == (0, 0, 0):
                     continue
                 shift = np.array([i, j, k], dtype=float)

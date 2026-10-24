@@ -1,4 +1,5 @@
-"""Preferences and the citation open as dialogs, as the Agent's settings do.
+"""The citation opens as a dialog, as the Agent's settings do; Preferences,
+a dialog until IMDE 2.9, are rows of the Settings page.
 
 Asked for (10-05): "the settings need modernizing ... Citation, Display
 preference should not be pages but popups like Agent settings". Found
@@ -9,6 +10,9 @@ threshold), two of its three blacks were one colour, and its polling
 interval only set the poll the page falls back to. Decided by the user:
 the six removed, the study's display name and ligand residue moved to the
 study card's menu; the polling interval removed (left to this session).
+The Settings page (IMDE 2.9, user 10-21) put every setting on one page
+again, Preferences' rows among them, each applied as it is changed and
+saved: `test_one_settings_page.py`.
 """
 
 from __future__ import annotations
@@ -32,9 +36,10 @@ def test_the_settings_that_changed_nothing_are_gone():
     page = _load_template()
     for gone in GONE:
         assert gone not in page, gone
-    assert 'data-page="settings"' not in page and 'data-page="cite"' not in page
-    # Each preference the Preferences dialog keeps is a field of it.
-    dialog = page[page.index('id="prefs-dialog"'):page.index('id="cite-dialog"')]
+    assert 'data-page="cite"' not in page and 'id="prefs-dialog"' not in page
+    # Each preference saved in this browser is a field of the Settings page.
+    start = page.index('data-page="settings"')
+    dialog = page[start:page.index("</section>", start)]
     for kept in ("setting-protein-rep", "setting-ground", "setting-show-water",
                  "setting-show-ions", "setting-spin", "setting-preserve-camera",
                  "setting-pocket-cutoff", "setting-time-format", "setting-chart-history"):
@@ -86,7 +91,7 @@ def test_the_menu_opens_each_dialog_over_the_page(browser, session):
     started, _ = session
     page = _open(browser, started.url, "#analysis")
     seen = {}
-    for dialog in ("prefs-dialog", "cite-dialog"):
+    for dialog in ("cite-dialog",):
         page.click("#settings-open")
         page.click(f'#settings-popup [data-dialog-open="{dialog}"]')
         page.wait_for_selector(f"#{dialog}:not([hidden])")
@@ -117,24 +122,28 @@ def test_the_menu_opens_each_dialog_over_the_page(browser, session):
 
 def test_an_old_link_opens_the_dialog(browser, session):
     started, _ = session
-    for where, dialog in (("#cite", "cite-dialog"), ("#settings", "prefs-dialog")):
+    page = _open(browser, started.url, "#cite")
+    page.wait_for_selector("#cite-dialog:not([hidden])")
+    shown = page.evaluate("() => [document.documentElement.dataset.page, location.hash]")
+    page.context.close()
+    assert shown == ["overview", "#overview"]
+    # Preferences' old addresses are the Settings page.
+    for where in ("#settings", "#preferences"):
         page = _open(browser, started.url, where)
-        page.wait_for_selector(f"#{dialog}:not([hidden])")
+        page.wait_for_selector('.page[data-page="settings"]:not([hidden])')
         shown = page.evaluate("() => [document.documentElement.dataset.page, location.hash]")
         page.context.close()
-        assert shown == ["overview", "#overview"], where
+        assert shown == ["settings", "#settings"], where
 
 
-def test_the_preferences_are_kept_and_put_back(browser, session):
+def test_the_preferences_are_saved_and_put_back(browser, session):
     started, _ = session
-    page = _open(browser, started.url, "#viewer")
-    page.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
+    page = _open(browser, started.url, "#settings")
     page.select_option("#setting-time-format", "12h")
     page.select_option("#setting-ground", "white")
     page.check("#setting-show-water")
     page.fill("#setting-pocket-cutoff", "7.5")
     page.dispatch_event("#setting-pocket-cutoff", "change")
-    page.keyboard.press("Escape")
     told = page.evaluate("() => window.FastMDXDashboard.settings()")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => window.FastMDXDashboard")
@@ -144,8 +153,7 @@ def test_the_preferences_are_kept_and_put_back(browser, session):
         document.getElementById('setting-show-water').checked,
         document.getElementById('setting-pocket-cutoff').value,
         document.getElementById('viewer-ground').value]""")
-    # Restore defaults puts the release's back and keeps nothing.
-    page.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
+    # Restore defaults puts the release's back and saves nothing.
     page.click("#prefs-restore")
     page.wait_for_timeout(100)
     restored = page.evaluate("""() => [document.getElementById('setting-time-format').value,
@@ -311,7 +319,7 @@ def test_the_docs_say_the_menu_names_the_provider_and_mode_not_the_model():
     from pathlib import Path
 
     text = (Path(__file__).resolve().parent.parent / "docs" / "gui.md").read_text(encoding="utf-8")
-    said = text[text.index("**The settings**"):text.index("**Preferences** are how")]
+    said = text[text.index("**The settings**"):text.index("**Settings** is one page")]
     assert "the Agent's AI model and its mode" not in said
     assert "whose AI the Agent asks (its provider) and its mode" in said
     assert "where alone its AI model is said" in said

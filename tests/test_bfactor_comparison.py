@@ -110,8 +110,11 @@ class TestTheComparisonItself:
             np.sum((xyz - xyz.mean(axis=0)) ** 2, axis=2), axis=0))
         b = (rmsf_nm * 10.0) ** 2 / B_TO_MSF
 
+        # Every frame, as the expected column is taken over every frame;
+        # which frames are read is tested in
+        # test_a_fluctuation_is_over_the_settled_frames.py.
         analysis = BFactorComparison(
-            structure=str(_pdb(tmp_path, b)), align_selection="name CA")
+            structure=str(_pdb(tmp_path, b)), align_selection="name CA", start=0)
         table = analysis.compute(traj)
 
         assert np.allclose(table[:, 1], table[:, 2], atol=2e-3)

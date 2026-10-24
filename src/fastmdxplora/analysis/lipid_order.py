@@ -279,6 +279,11 @@ class LipidOrder(Analysis):
                 if not templates[key][0]:
                     no_chain.add(templates[key][1])
             chains, _ = templates[key]
+            if chains and not any(h for chain in chains for _c, _p, h in chain.carbons):
+                # Chains found, and no hydrogen on any of their carbons: a
+                # united-atom lipid that keeps its polar hydrogens (GROMOS or
+                # Berger, the NH3+ explicit).
+                no_hydrogen.add("-".join(r.name for r in molecule))
             for chain in chains:
                 for carbon, position, hydrogens in chain.carbons:
                     if hydrogens:
@@ -288,9 +293,10 @@ class LipidOrder(Analysis):
         if not pairs:
             if no_hydrogen:
                 raise StudyError(
-                    "The lipids in this trajectory have no hydrogens, and S_CD "
-                    "is the order of the C-H bonds. A united-atom model, or a "
-                    "trajectory saved without hydrogens, cannot report it.",
+                    "The lipids' acyl chains in this trajectory carry no "
+                    "hydrogens, and S_CD is the order of the C-H bonds. A "
+                    "united-atom model (whatever polar hydrogens it keeps), or "
+                    "a trajectory saved without hydrogens, cannot report it.",
                     code="analysis.data.absent")
             raise StudyError(
                 "No acyl chain was found in these lipids: no carbonyl carbon "

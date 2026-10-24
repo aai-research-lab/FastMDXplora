@@ -197,6 +197,19 @@ class Analysis(ABC):
     #: Human-readable description used in figure titles.
     description: str = ""
 
+    #: How close the solute came to its own periodic images in these frames,
+    #: as the image check found it (``findings.solute_image`` of
+    #: :mod:`fastmdxplora.analysis.image_check`), and its series of closest
+    #: approaches, one a frame. The orchestrator hands both to every analysis
+    #: of the same frames; where the solute met its image in the frames a
+    #: mean uses, the mean carries a note of it, its error kept
+    #: (:meth:`_qualify_by_the_solute_image`).
+    solute_image: dict[str, Any] | None = None
+    solute_image_series: Any = None
+    #: The study whose analysis folder this is, where the orchestrator runs
+    #: it (its setup record gives the run's cutoff); None run alone.
+    study_dir: Path | None = None
+
 
     #: True for analyses that only apply to protein-ligand complexes (e.g.
     #: ligand pose RMSD). The orchestrator runs these automatically when a
@@ -425,8 +438,16 @@ class Analysis(ABC):
         options_path = self._write_options_manifest()
 
         try:
+            # Said before `compute`, and written again below if `compute`
+            # then fails, so a failed run still says it; cleared first, so
+            # an instance run again does not carry it.
+            self.findings.pop("made_whole", None)
+            traj, made_whole = _whole_if_broken(traj)
+            if made_whole:
+                self.findings["made_whole"] = made_whole
             self.result = self.compute(traj)
             self._record_what_the_mean_is_worth(traj)
+            self._qualify_by_the_solute_image(traj)
             # Written again, because an analysis can only record some things
             # once it has looked at the trajectory: how confidently it knew
             # the ligand's chemistry, which measurements it could not make and
@@ -470,6 +491,11 @@ class Analysis(ABC):
             # earlier and said only that something failed.
             logger.error("Analysis '%s' failed", self.name, exc_info=True,
                          extra={"to_console": False})
+            if self.findings.get("made_whole"):
+                try:
+                    options_path = self._write_options_manifest()
+                except Exception:  # noqa: BLE001 -- the failure being reported matters more
+                    logger.debug("Could not rewrite %s's options", self.name, exc_info=True)
             return AnalysisResult(
                 name=self.name,
                 status="error",
@@ -553,6 +579,138 @@ class Analysis(ABC):
         record["error_withheld_because"] = because
         if "standard_error" in record:
             record["standard_error"] = float("nan")
+
+    def _frames_used_by_all(self, n: int) -> "np.ndarray | None":
+        """The frames, of the ``n`` analysed, that an analysis uses where it
+        has no mean over the frames of its own: from its ``start``, at its
+        ``stride``, as the record of which frames it read says
+        (``findings.frames``, written by
+        :func:`fastmdxplora.analysis.starting_frame.first_frame` where the
+        frames are set: RMSF, ``ligand_rmsf``, ``bfactor_comparison``,
+        clustering, the projections); every frame where None."""
+        frames = self.findings.get("frames")
+        frames = frames if isinstance(frames, dict) else {}
+
+        def whole(value: Any) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+        first = whole(frames.get("first_frame"))
+        if first is None:
+            first = whole(getattr(self, "_first_frame", None)) or 0
+        stride = whole(frames.get("stride")) or whole(getattr(self, "stride", 1)) or 1
+        stride = stride if stride > 0 else 1
+        if first <= 0 and stride == 1:
+            return None
+        return np.arange(max(first, 0), n, stride)
+
+    def _frames_of(self, traj: md.Trajectory, record: dict[str, Any] | None
+                   ) -> tuple["np.ndarray | None", str, str]:
+        """The frames of the check's series that ``record`` (a mean record,
+        or the analysis where None) uses, what the count is of and how they
+        were found (:func:`fastmdxplora.analysis.image_check.note_on_frames`):
+        those after its discard where it is a mean over the frames analysed,
+        else those the analysis used (:meth:`_frames_used_by_all`)."""
+        n = len(self.solute_image_series)
+        if isinstance(record, dict) and record.get("n_frames") == n:
+            discard = record.get("discard")
+            discard = discard if isinstance(discard, int) and not isinstance(discard, bool) else 0
+            return np.arange(min(max(discard, 0), n), n), "frames", ""
+        return self._frames_used_by_all(n), "frames", ""
+
+    def _union_of_means(self, traj: md.Trajectory, records: list[dict[str, Any]]
+                        ) -> tuple["np.ndarray | None", str, str]:
+        """The frames the means of an analysis without a main mean use: the
+        same frames where they agree, else every frame any of them uses,
+        said as the union."""
+        n = len(self.solute_image_series)
+        found = [self._frames_of(traj, record) for record in records]
+        arrays = [np.arange(n) if used is None else np.asarray(used, dtype=np.int64)
+                  for used, _, _ in found]
+        if all(np.array_equal(array, arrays[0]) for array in arrays[1:]):
+            return arrays[0], found[0][1], found[0][2]
+        return (np.unique(np.concatenate(arrays)), "means' frames",
+                ", the union of their frames, which differ")
+
+    def _image_note_for(self, traj: md.Trajectory,
+                        record: dict[str, Any] | None, *,
+                        union: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+        """The note on ``record`` (a mean record, or the analysis where None)
+        of the frames it uses in which the solute met its own image
+        (:meth:`_frames_of`), or, given ``union``, of the frames those means
+        use (:meth:`_union_of_means`). None where there is nothing to note."""
+        from fastmdxplora.analysis.image_check import note_on_frames
+
+        series = self.solute_image_series
+        if series is None:
+            return None
+        used, over, how = (self._union_of_means(traj, union) if union
+                           else self._frames_of(traj, record))
+        times = getattr(traj, "time", None)
+        return note_on_frames(self.solute_image, series, used, times_ps=times,
+                              analysis=self.name, counted_over=over, how=how)
+
+    def _mean_records(self) -> list[dict[str, Any]]:
+        """Every mean the findings hold: the analysis's own, each further one
+        (SASA's hydrophobic and polar, the moments' shape descriptors), and
+        those of a group read from another record (thermodynamics). A record
+        holding only the reason it has no mean (the moments' own, of a
+        molecule broken across the box) is not one."""
+        found: list[dict[str, Any]] = []
+        for key, value in self.findings.items():
+            if key == "solute_image" or not isinstance(value, dict):
+                continue
+            if "n_frames" in value and ("mean" in value or "not_a_measurement" in value):
+                if "mean" in value:
+                    found.append(value)
+                else:
+                    value.pop("solute_image", None)
+                continue
+            for inner in value.values():
+                if isinstance(inner, dict) and "mean" in inner and (
+                        "units" in inner or "discard" in inner):
+                    found.append(inner)
+        return found
+
+    def _qualify_by_the_solute_image(self, traj: md.Trajectory) -> None:
+        """Where the solute met its own periodic image in the frames this
+        analysis uses, say so: once for the analysis, in
+        ``findings.solute_image`` (counted over the frames its mean uses, or
+        every frame it used where it has no mean), and on each mean record,
+        its numbers counted over that mean's own frames. Every error bar is
+        kept: seeing its copy may bias a mean, it does not make its error
+        unknown. One function for every mean
+        (:func:`fastmdxplora.analysis.image_check.note_on_frames`); said
+        once, however often this is called. An analysis without a main mean
+        says it over the frames its means use (the union where they
+        differ). The image check notes nothing of itself: its series is the
+        finding."""
+        self._qualified_by_the_image = True
+        if self.name == "image_check":
+            return
+        finding = self.solute_image
+        if not isinstance(finding, dict) or not finding.get("reaches_its_image"):
+            return
+        main = self.findings.get("mean")
+        records = self._mean_records()
+        if isinstance(main, dict) and "mean" in main:
+            note = self._image_note_for(traj, main)
+        else:
+            # No main mean (the moments' shape descriptors, the secondary
+            # structure's fractions, the thermodynamics): over the frames its
+            # means use, never every frame.
+            note = self._image_note_for(traj, None, union=records or None)
+        if note:
+            self.findings["solute_image"] = note
+        else:
+            self.findings.pop("solute_image", None)
+        from fastmdxplora.analysis.image_check import note_numbers
+
+        for record in records:
+            own = self._image_note_for(traj, record)
+            if own:
+                record["solute_image"] = note_numbers(own)
+            else:
+                record.pop("solute_image", None)
 
     def _mark_what_the_mean_rests_on(self, ax: plt.Axes) -> None:
         """Draw the equilibrated region, its mean, and the error bar or its absence.
@@ -861,6 +1019,152 @@ class Analysis(ABC):
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2)
         return path
+
+
+#: Frames whose bonds are measured at once when looking for a molecule
+#: split across the box: every frame is looked at, in pieces this size.
+FRAMES_PER_SPLIT_CHECK = 100
+
+#: Set on a trajectory whose molecules could not be made whole, by the
+#: loader or here, so the attempt is not repeated for every analysis.
+IMAGING_FAILED = "_fastmdxplora_imaging_failed"
+
+#: Set by the loader on a trajectory it has measured and found whole, so an
+#: analysis does not measure every bond of every frame again: 5 ms a frame
+#: for 108,000 atoms, in every analysis of a study. It holds a fingerprint
+#: of the coordinates and cell measured (:func:`_fingerprint`), so
+#: coordinates changed since, wrapped into the cell by a caller, say, are
+#: measured again rather than trusted.
+WHOLE_CHECKED = "_fastmdxplora_whole_checked"
+
+
+def _fingerprint(traj) -> tuple:
+    """The shape and two sums of the coordinates and of the cell: 22 ms for
+    100 frames of 108,000 atoms, against 580 ms to measure every bond."""
+    xyz = np.asarray(traj.xyz)
+    cell = getattr(traj, "unitcell_vectors", None)
+    cell = np.zeros(0) if cell is None else np.asarray(cell, dtype=np.float64)
+    return (xyz.shape, float(xyz.sum(dtype=np.float64)),
+            float(np.square(xyz, dtype=np.float64).sum()), float(cell.sum()))
+
+
+def _mark(traj, name: str, value: Any = True) -> None:
+    try:
+        setattr(traj, name, value)
+    except AttributeError:  # pragma: no cover - a stand-in with slots
+        pass
+
+
+def _checked_whole(traj) -> bool:
+    mark = getattr(traj, WHOLE_CHECKED, None)
+    return isinstance(mark, tuple) and mark == _fingerprint(traj)
+
+
+def carry_wholeness(source, copy):
+    """``copy`` with what is known of ``source``'s wholeness: an MDTraj
+    slice is a new object and keeps none of it."""
+    if getattr(source, IMAGING_FAILED, False):
+        _mark(copy, IMAGING_FAILED)
+    mark = getattr(source, WHOLE_CHECKED, None)
+    if mark is not None:
+        _mark(copy, WHOLE_CHECKED, mark)
+    return copy
+
+
+def _bonds_and_widths(traj):
+    widths = narrowest_width(traj)
+    if widths is None or traj.topology.n_bonds == 0:
+        return None, None
+    bonds = np.array([[a.index, b.index] for a, b in traj.topology.bonds],
+                     dtype=np.int64).reshape(-1, 2)
+    return bonds, widths
+
+
+def mark_wholeness(traj) -> None:
+    """Measure once, after loading, whether every molecule is whole, and
+    mark the trajectory either way (:data:`WHOLE_CHECKED`,
+    :data:`IMAGING_FAILED`)."""
+    if getattr(traj, "unitcell_vectors", None) is None:
+        return
+    bonds, widths = _bonds_and_widths(traj)
+    if bonds is None:
+        return
+    if _split_frames(traj, bonds, widths).any():
+        _mark(traj, IMAGING_FAILED)
+    else:
+        _mark(traj, WHOLE_CHECKED, _fingerprint(traj))
+
+
+def _split_bonds(traj, bonds: np.ndarray, widths: np.ndarray) -> np.ndarray:
+    """How many bonds, in each frame, are longer than half the cell's
+    narrowest width: a molecule split across a face."""
+    split = np.zeros(traj.n_frames, dtype=np.int64)
+    for first in range(0, traj.n_frames, FRAMES_PER_SPLIT_CHECK):
+        xyz = traj.xyz[first:first + FRAMES_PER_SPLIT_CHECK]
+        lengths = np.linalg.norm(xyz[:, bonds[:, 0]] - xyz[:, bonds[:, 1]], axis=2)
+        split[first:first + len(xyz)] = np.count_nonzero(
+            lengths > 0.5 * widths[first:first + len(xyz), None], axis=1)
+    return split
+
+
+def _split_frames(traj, bonds: np.ndarray, widths: np.ndarray) -> np.ndarray:
+    """Whether, in each frame, a molecule is split across a face."""
+    return _split_bonds(traj, bonds, widths) > 0
+
+
+def _whole_if_broken(traj) -> tuple[Any, str | None]:
+    """The trajectory with its molecules whole, and a sentence if it had to
+    be made so.
+
+    The loader makes molecules whole, and every analysis that reads raw
+    coordinates (RMSD, RMSF, radius of gyration, the moments, clustering)
+    relies on it. One handed a trajectory straight from ``md.load``, as the
+    docstrings' examples do, was not checked: a rigid body wrapped atom by
+    atom in a dodecahedron read an RMSD of 2.7 nm, a ligand RMSF of 1.4 nm,
+    for an exact answer of 0. A bond longer than half the cell's narrowest
+    width in any frame (every frame is measured: a molecule straddling a
+    face in 16 of 200 frames read a radius of gyration of 2.88 nm against
+    0.91) is a molecule split across a face, and the loader's imaging is
+    then applied, to a copy. Where it fails, the trajectory is left as given
+    and marked, so the next analysis does not try again; the mark skips only
+    the attempt, not the measurement, so a trajectory whose imaging failed
+    but which is whole (pure water the loader found no anchor for, or one a
+    caller has since made whole) is not said to be split.
+    """
+    if getattr(traj, "unitcell_vectors", None) is None or traj.topology.n_bonds == 0:
+        return traj, None
+    if _checked_whole(traj):
+        return traj, None
+    bonds, widths = _bonds_and_widths(traj)
+    if bonds is None:
+        return traj, None
+    split = int(_split_bonds(traj, bonds, widths).sum())
+    if not split:
+        return traj, None
+    if getattr(traj, IMAGING_FAILED, False):
+        return traj, _NOT_MADE_WHOLE
+    from fastmdxplora.analysis.loading import _made_whole
+
+    # On a copy: the caller's trajectory is theirs, and imaging is in place.
+    whole = _made_whole(traj.slice(np.arange(traj.n_frames), copy=True))
+    left = int(_split_bonds(whole, bonds, widths).sum())
+    if left:
+        _mark(traj, IMAGING_FAILED)
+        # What could be made whole is, as the loader leaves it: a molecule
+        # running through the boundary does not keep a ligand in pieces.
+        return (whole if left < split else traj), _NOT_MADE_WHOLE
+    return whole, (
+        "The trajectory was given with molecules split across the periodic "
+        "boundary, and they were made whole before this analysis, as the "
+        "loader makes them.")
+
+
+_NOT_MADE_WHOLE = (
+    "Molecules are split across the periodic boundary and could not all be "
+    "made whole (a topology the imaging cannot anchor, or a molecule running "
+    "through the boundary): an analysis reading raw coordinates (RMSD, RMSF, "
+    "radius of gyration, shape) may describe the pieces rather than the "
+    "molecule.")
 
 
 def narrowest_width(traj) -> "np.ndarray | None":

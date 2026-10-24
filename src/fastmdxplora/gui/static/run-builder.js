@@ -1744,7 +1744,7 @@
         event.preventDefault();
         state.values[phase] = state.values[phase] || {};
         state.values[phase][field.name] = said.suggestion;
-        state.refused = null;
+        clearRefusal();
         redrawField(phase, field.name);
         afterChange();
       });
@@ -2598,7 +2598,7 @@
       : ((el("run-topology") && el("run-topology").value.trim()) || "");
     const slug = system ? system.split(/[\\/]/).pop().replace(/\.[^.]+$/, "")
       .replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 40) : "";
-    return "fastmdxplora" + (slug ? "_" + slug : "") + "_study_<timestamp>";
+    return "fastmdxplora" + (slug ? "_" + slug : "") + "_study_<UTC timestamp>";
   }
 
   function ready() {
@@ -3747,6 +3747,8 @@
     button.disabled = true;
     text(el("run-note"), "Starting…");
     launchesPending += 1;
+    // The study the run opens is this window's own change, as Start's is.
+    window.FastMDXDashboard?.studyChangeAsked?.();
     let started;
     try {
       const response = await fetch("/api/run-config", {
@@ -3756,7 +3758,14 @@
         body: JSON.stringify({ path }),
       });
       started = await response.json();
+    } catch (error) {
+      // No answer read, as Start says it: the button is offered again.
+      window.FastMDXDashboard?.studyChangeAnswered?.(null);
+      text(el("run-note"), "Could not reach the server.");
+      button.disabled = false;
+      return;
     } finally { launchesPending -= 1; }
+    window.FastMDXDashboard?.studyChangeAnswered?.(started && started.ok ? started.study_key || "" : "");
     if (!started.ok) {
       text(el("run-note"), started.error || "Could not start.");
       button.disabled = false;
@@ -3848,8 +3857,9 @@
     text(el("run-note"), "Starting…");
     let started;
     launchesPending += 1;
-    // The study the run opens is this window's own change, not another's.
-    window.FastMDXDashboard?.studyChangeComing?.();
+    // The study the run opens is this window's own change, and no other
+    // study opened meanwhile is (CI-774 reviews L1 and L2).
+    window.FastMDXDashboard?.studyChangeAsked?.();
     try {
       const response = await fetch("/api/run", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -3857,7 +3867,8 @@
       });
       started = await response.json();
     } catch (error) {
-      window.FastMDXDashboard?.studyChangeNotComing?.();
+      // No answer read: whether a run started, and where, is not known.
+      window.FastMDXDashboard?.studyChangeAnswered?.(null);
       text(el("run-note"), "Could not reach the server.");
       // Kept when the summary's check comes back.
       el("run-note").dataset.ok = "false";
@@ -3866,8 +3877,8 @@
       backToTyping();
       return;
     } finally { launchesPending -= 1; }
+    window.FastMDXDashboard?.studyChangeAnswered?.(started && started.ok ? started.study_key || "" : "");
     if (!started.ok) {
-      window.FastMDXDashboard?.studyChangeNotComing?.();
       text(el("run-note"), started.error || "Could not start.");
       el("run-note").dataset.ok = "false";
       sayRefusal(started);
@@ -4280,6 +4291,16 @@
     renderPreview, describeCost, previewCost, boxVectors, periodicCell, pickResidue,
     sayRefusal, renderSettings, showSetting, forLoaded, bodyOf, snapshotOfLoaded,
     beforeStudySwitch: () => draftHeld(),
+    /* The settings the form is drawn with; `again`, read again and the form
+     * drawn from them (new-study.js, when the folder's defaults changed). */
+    schema: (again) => (again ? fetch("/api/schema").then((response) => response.json())
+      .then((schema) => {
+        state.schema = schema;
+        schemaAsked = Promise.resolve(schema);
+        describeOutput();
+        renderAll();
+        return schema;
+      }) : loadSchema()),
   };
 
   /* A Config draft this browser could not keep, or changed here since

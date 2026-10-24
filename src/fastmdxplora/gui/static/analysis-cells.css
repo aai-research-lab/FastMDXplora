@@ -9,11 +9,19 @@
 /* Only an Analyze again not offered now (a run going): no empty line. */
 .analysis-cell-head:not(:has(> :not([hidden]))) { display: none; }
 .cell-values { display: flex; flex-wrap: wrap; gap: 4px 14px; min-width: 0; }
-.cell-value { white-space: nowrap; }
+/* Each value on a line of its own where there is room; at a phone's width
+ * it wraps between its name and its value, and within the value, so a
+ * quantity the same in every frame does not run past a 390 page. */
+.cell-value { min-width: 0; max-width: 100%; }
+.cell-value > b { white-space: nowrap; }
+.cell-value > .mono { overflow-wrap: anywhere; }
 .cell-value b { font-weight: 500; color: var(--text-muted); margin-right: 4px; }
 .cell-value .mono { color: var(--text-primary); }
 .cell-value[data-determined="false"] .mono { color: var(--text-secondary); }
-.cell-value[data-determined="false"]::after { content: " not determined"; color: var(--text-muted); }
+.cell-value[data-determined="false"] > .mono::after { content: " not determined"; color: var(--text-muted); }
+/* A mean's image note under it; the verdict is the record's. */
+.cell-value:has(.cell-noted) > .mono { white-space: nowrap; }
+.cell-noted { display: block; color: var(--text-secondary); font-size: var(--text-2xs); }
 .cell-params { color: var(--text-muted); min-width: 0; overflow-wrap: anywhere; }
 .cell-params code { font-size: var(--text-2xs); }
 .cell-again { margin-left: auto; }

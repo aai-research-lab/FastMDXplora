@@ -66,9 +66,19 @@
   var ERROR_OF = {
     replicas: " (replicas' spread)",
     own: " (each run's own error, larger than the replicas' spread)",
-    alone: " (each run's own error: the spread is of these two alone)",
     mixed: " (the replicas' spread, or a run's own error where larger)",
   };
+
+  /* Two replicas, the only two read: their spread against the errors they
+   * estimated for themselves (`spread_against_own`), past its factor the
+   * errors too tight. */
+  function spreadSaid(check) {
+    if (!check) return ", not set against their own errors: neither gave one above zero";
+    var times = Number(check.ratio.toPrecision(2));
+    return ", their spread " + times + " times their own errors" +
+      (check.too_tight ? ": those errors are too tight"
+        : ", within the factor of " + check.factor);
+  }
 
   /* A cell of a table, with the column it is in for a phone, where the
    * table is laid out one quantity under another. */
@@ -90,7 +100,11 @@
     return cell;
   }
 
-  function settingSaid(value) {
+  /* A setting's value; a length in ns as the pages say one, in ps under
+   * 1 ns, where the server said it so (compare_view.py). */
+  function settingSaid(d, side) {
+    if (d[side + "_said"]) return d[side + "_said"];
+    var value = d[side];
     return value == null ? "not set" : JSON.stringify(value);
   }
 
@@ -123,11 +137,14 @@
     }
   }
 
-  function say(text) {
+  /* Nothing to compare, comparing, or not compared: one block, as every
+   * page says it (page-states.js). */
+  function say(state) {
     var empty = byId("compare-empty");
     if (!empty) return;
-    empty.hidden = !text;
-    empty.textContent = text || "";
+    if (!state) { empty.hidden = true; empty.replaceChildren(); return; }
+    if (window.FastMDXPageState) window.FastMDXPageState.show(empty, state);
+    else { empty.hidden = false; empty.textContent = state.title + (state.detail ? " " + state.detail : ""); }
   }
 
   /* The records of the two that were not read, each with why. */
@@ -163,11 +180,12 @@
     shown = null;
     if (!pair) {
       byId("compare-said").textContent = "Two studies, or two runs, side by side.";
-      say("Choose two studies in All studies, two runs on a study's Overview, or Compare " +
-          "with\u2026 in the palette (\u2318K).");
+      say({ kind: "empty", title: "Nothing to compare yet",
+            detail: "Choose two studies in All studies, two runs on a study's Overview, or Compare " +
+                    "with\u2026 in the palette (\u2318K)." });
       return Promise.resolve(null);
     }
-    say("Comparing\u2026");
+    say({ kind: "loading", title: "Comparing\u2026" });
     var asked = location.hash;
     asking = asked;
     return fetch("/api/compared?" + new URLSearchParams({ a: pair[0], b: pair[1] }),
@@ -185,12 +203,14 @@
   function draw(pair, data) {
     var page = document.querySelector('.page[data-page="compare"]');
     if (!data || !data.ok) {
-      say((data && (data.reason || data.error)) || "They could not be compared.");
+      say({ kind: "error", title: "They could not be compared",
+            detail: (data && (data.reason || data.error)) || "The server gave no reason.",
+            action: { label: "Try again", run: function () { shown = null; asking = ""; load(); } } });
       if (page) page.setAttribute("data-compared", "no");
       return;
     }
     shown = { pair: pair, data: data, hash: location.hash };
-    say("");
+    say(null);
     sayNotRead(data.not_read || "");
     byId("compare-said").textContent = data.first.said + " and " + data.second.said;
     byId("compare-swap").hidden = false;
@@ -249,8 +269,8 @@
         var row = make("tr");
         if (i >= SHOWN_FIRST) row.hidden = true;
         row.appendChild(settingName(d.setting));
-        row.appendChild(cell("mono", settingSaid(d.first), data.first.said));
-        row.appendChild(cell("mono", settingSaid(d.second), data.second.said));
+        row.appendChild(cell("mono", settingSaid(d, "first"), data.first.said));
+        row.appendChild(cell("mono", settingSaid(d, "second"), data.second.said));
         table.appendChild(row);
       });
       host.appendChild(table);
@@ -289,7 +309,7 @@
       top.appendChild(make("th", "", label));
     });
     table.appendChild(top);
-    var noMean = [];
+    var noMean = [], noted = [], notedResolved = [];
     found.forEach(function (m) {
       var row = make("tr");
       row.dataset.analysis = m.analysis;
@@ -300,6 +320,16 @@
         var node = cell("mono", meanSaid(side, used[i]), said);
         if (used[i] != null && side && side.error != null && used[i] !== side.error) {
           node.title = "Its own error: " + withError(side.error, null, m.unit);
+        }
+        if (side && side.mean != null && side.noted) {
+          // Its image note beside it (image_note.py), said in full under
+          // the table: a difference from it may be that bias.
+          var line = side.noted.charAt(0).toUpperCase() + side.noted.slice(1) + ".";
+          node.appendChild(document.createTextNode(" †"));
+          node.classList.add("is-noted");
+          node.title = (node.title ? node.title + ". " : "") + line;
+          noted.push("† " + said + ", " + (m.label || m.analysis) + ": " + side.noted + ".");
+          if (m.versus && m.versus.resolved && notedResolved.indexOf(m) < 0) notedResolved.push(m);
         }
         row.appendChild(node);
         if (side && side.mean == null && side.withheld) {
@@ -312,7 +342,17 @@
         }
       });
       var difference = cell("mono", "", "Difference");
-      if (m.versus) {
+      if (m.versus && m.versus.error_of === "alone") {
+        // Two repeats of one measurement, the only two read: never said
+        // to differ; their spread against their own errors, as the
+        // study's replicas are aggregated (batch/aggregate.py).
+        // Without the error the same cell calls too tight.
+        var check = m.versus.spread_against_own;
+        difference.textContent = withError(m.versus.difference,
+                                           check && check.too_tight ? null : m.versus.error, m.unit) +
+          spreadSaid(check);
+        difference.dataset.errorOf = "alone";
+      } else if (m.versus) {
         difference.textContent = withError(m.versus.difference, m.versus.error, m.unit) +
           (m.versus.resolved ? ", resolved" : ", within the errors") +
           (ERROR_OF[m.versus.error_of] || "");
@@ -332,10 +372,25 @@
           return e.said + ", " + e.what.join(", ") + ": " + e.why;
         }).join("; ") + "."));
     }
-    host.appendChild(make("p", "muted small",
-      "The difference is the second's mean less the first's. It is resolved past " +
-      data.resolved_at + " times the two's combined standard error. A mean an analysis " +
-      "did not stand behind is not compared."));
+    noted.forEach(function (line) {
+      host.appendChild(make("p", "muted small compare-noted", line));
+    });
+    if (notedResolved.length) {
+      // As the runs compared say it (runs_compared.py).
+      var one = notedResolved.length === 1;
+      host.appendChild(make("p", "muted small compare-noted",
+        (one ? "One resolved difference has" : notedResolved.length + " resolved differences have") +
+        " a mean that may be biased by the solute's own image: " + (one ? "it" : "each") +
+        " may be that bias and not the setting."));
+    }
+    // Resolved or not is said of two measurements; of two replicas read
+    // alone no row is judged so, and the rule is not said beside them.
+    var judged = found.some(function (m) { return m.versus && m.versus.error_of !== "alone"; });
+    host.appendChild(make("p", "muted small compare-difference-said",
+      "The difference is the second's mean less the first's." + (judged || !found.some(
+        function (m) { return m.versus; }) ? " It is resolved past " + data.resolved_at +
+        " times the two's combined standard error." : "") +
+      " A mean an analysis did not stand behind is not compared."));
     if (data.replicas) {
       // Two repeats of one measurement (batch/aggregate.py): their spread
       // is its error, and each run's own estimate can understate it.
@@ -363,12 +418,14 @@
       if (k === n) every = true;
     });
     var also = data.replicas.also_differ || [];
+    // How the study's replicas differ, as every page says it
+    // (batch/aggregate.py, how_replicas_differ).
+    var differ = data.replicas.differ, differing = data.replicas.differing;
     var said = also.length
       ? "These are two of " + n + " runs the study ran as repeats of one measurement, " +
-        "differing only by random seed; these two also differ in " + also.join(", ") +
+        differing + "; these two also differ in " + also.join(", ") +
         " (Settings that differ, above)."
-      : "These are two of " + n + " runs that differ only by random seed: repeats of one " +
-        "measurement.";
+      : "These are two of " + n + " runs " + differ + ": repeats of one measurement.";
     if (spread) {
       var counts = Object.keys(fewer).map(Number).sort(function (a, b) { return b - a; });
       var of = counts.length
@@ -381,12 +438,25 @@
         "which it was set against.";
     }
     if (alone.length) {
-      said += " " + alone.join(", ") + ": only these two runs' means were read, and the " +
-        "spread of two means is their difference over the square root of 2, so a difference " +
-        "set against it would equal its error whatever the two are. Each is set against the " +
-        "error the run estimated for itself, which replicas can show too tight.";
+      // "Only these two read" where the study has more runs than the two.
+      var of = data.replicas.of || n;
+      said += " " + alone.join(", ") + (of > 2 ? ": only these two runs' means were read"
+        : ": the study has these two runs alone") + ", and the spread of two means is their " +
+        "difference over the square root of 2, so a difference set against it would equal " +
+        "its error whatever the two are. As the study's replicas are aggregated, their spread " +
+        "is set against the errors the two estimated for themselves instead" +
+        (factorOf(data) ? ": past " + factorOf(data) + " times those, the errors are too tight"
+          : "") + ". Two repeats of one measurement are not said to differ.";
     }
     return said;
+  }
+
+  /* The factor the replicas' spread is held to (batch/aggregate.py). */
+  function factorOf(data) {
+    var found = (data.measures || []).map(function (m) {
+      return m.versus && m.versus.spread_against_own;
+    }).filter(Boolean)[0];
+    return found ? found.factor : null;
   }
 
   function colourOf(i) {

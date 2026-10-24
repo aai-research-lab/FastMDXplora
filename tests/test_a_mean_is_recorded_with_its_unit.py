@@ -131,7 +131,7 @@ class TestTheGUIReadsIt:
             "mean": {"mean": 0.62, "standard_error": 0.004, "unit": "nm²"}}}), encoding="utf-8")
         runs = [{"run_id": "a", "path": str(run), "values": {}}]
         text = _so_far(tmp_path, runs, runs)
-        assert "area_per_lipid mean (nm²)" in text
+        assert "Area per lipid mean (nm²)" in text
 
 
 class TestTheAgentIsTold:

@@ -83,6 +83,139 @@ def _pairs_between(a: np.ndarray, b: np.ndarray, rng: np.random.Generator,
     return np.column_stack([a[row], b[column]]), total
 
 
+#: Pair distances held at once while histogramming, as pairs times frames.
+DISTANCES_PER_PASS = 10_000_000
+
+#: Fewer frames than this and the spread over frames is not trusted as a
+#: variance: the counting noise alone is used.
+FRAMES_FOR_A_SPREAD = 10
+
+#: Bins a correlation time is read over (:meth:`PairHistogram.scatter`).
+INEFFICIENCY_BINS = 7
+
+
+class PairHistogram:
+    """Pair distances counted per frame and per bin, once.
+
+    g(r) is made from these counts exactly as ``md.compute_rdf`` makes it
+    (``N_pairs sum_f 1/V_f`` times each shell's volume normalises the
+    total), and so is the noise it carries (:meth:`scatter`), from the
+    counts' spread over frames, without a second pass over the distances.
+    """
+
+    def __init__(self, traj: md.Trajectory, pairs: np.ndarray, r_max: float,
+                 bin_width: float) -> None:
+        n_bins = int(r_max / bin_width)
+        self.edges = np.linspace(0.0, r_max, n_bins + 1)
+        self.radii = 0.5 * (self.edges[1:] + self.edges[:-1])
+        self.shells = (4.0 / 3.0) * np.pi * (self.edges[1:] ** 3 - self.edges[:-1] ** 3)
+        self.volumes = np.asarray(traj.unitcell_volumes, dtype=np.float64)
+        self.n_pairs = len(pairs)
+        self.counts = np.zeros((traj.n_frames, n_bins), dtype=np.int32)
+        step = max(1, DISTANCES_PER_PASS // max(1, len(pairs)))
+        span = np.array([0.0, r_max])
+        for first in range(0, traj.n_frames, step):
+            distances = md.compute_distances(traj[first:first + step], pairs)
+            # The binning `md.compute_rdf` gives its one histogram, frame by
+            # frame.
+            for k, frame in enumerate(distances):
+                self.counts[first + k] = np.histogram(frame, bins=n_bins, range=span)[0]
+        # A pair listed in both orders, as a selection paired with itself
+        # lists it, is one independent count, not two: (sum m)^2 / sum m^2
+        # of the listings are independent, m being how often each is listed.
+        if len(pairs):
+            _unique, listed = np.unique(np.sort(np.asarray(pairs), axis=1), axis=0,
+                                        return_counts=True)
+            self.independent = float(listed.sum()) ** 2 / float((listed ** 2).sum())
+        else:
+            self.independent = 0.0
+
+    def g(self, frames: np.ndarray | slice = slice(None)) -> np.ndarray:
+        norm = self.n_pairs * float(np.sum(1.0 / self.volumes[frames])) * self.shells
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return self.counts[frames].sum(axis=0) / norm
+
+    def scatter(self, frames: np.ndarray | slice = slice(None),
+                window: int = 1) -> np.ndarray:
+        """The standard error of g(r), or of its running mean over ``window``
+        bins, in each bin.
+
+        Two estimates, the larger taken. The counting one: with this
+        normalisation a bin at r expects, at g = 1, N sum_f (V_shell / V_f)
+        pairs, N the independent pairs, so g has a Poisson variance of
+        g / expected (g taken as at least 1, the safe side close in). The
+        measured one: g in each frame, and its variance over the frames
+        divided by their number. Either is multiplied by that bin's
+        statistical inefficiency, from the same per-frame series, a frozen
+        configuration counting as one frame. The measured spread is what
+        the counting one misses where neighbours come and go together; with
+        fewer than :data:`FRAMES_FOR_A_SPREAD` frames it is not trusted and
+        the counting estimate stands alone. Measured against repeats it is
+        1.0 to 1.2 times the true scatter of an ideal gas and up to a
+        quarter wide in TIP3P water.
+
+        It used to be the counting estimate widened by the correlation of
+        the count around the first peak alone, and the spread of g(r) in the
+        bulk before that, which was right for a liquid and wrong wherever
+        g(r) has structure there. A correlation longer than the run cannot
+        be seen from inside it, by this or any estimate.
+        """
+        from fastmdxplora.analysis.coordination_number import _smoothed
+        from fastmdxplora.statistics import statistical_inefficiency
+
+        counts = self.counts[frames].astype(np.float64)
+        volumes = self.volumes[frames]
+        n = len(counts)
+        inverse = 1.0 / volumes
+        g = self.g(frames)
+        expected = self.independent * float(inverse.sum()) * self.shells
+        with np.errstate(divide="ignore", invalid="ignore"):
+            counting = np.clip(np.nan_to_num(g), 1.0, None) / expected
+        counting[~np.isfinite(counting)] = np.inf
+        per_frame = counts * volumes[:, None] / (self.n_pairs * self.shells[None])
+        if window > 1:
+            counting = _smoothed(counting, window) / window
+            per_frame = _smoothed(per_frame, window)
+        variance = counting
+        if n >= FRAMES_FOR_A_SPREAD:
+            weights = inverse / inverse.sum()
+            spread = per_frame.var(axis=0, ddof=1) * float(np.sum(weights ** 2))
+            variance = np.maximum(counting, spread)
+        if 1 < n < 3 and np.all(counts == counts[:1]):
+            # Frames that agree in every bin are one configuration.
+            variance = variance * n
+        if n >= 3:
+            # Taken over the bins around each, INEFFICIENCY_BINS of them: a
+            # correlation time is the dynamics', shared by neighbouring
+            # bins, and one bin's own estimate scatters so widely that the
+            # tallest bin of a slowly moving gas was often one whose
+            # estimate had come out low.
+            around = (_smoothed(per_frame, INEFFICIENCY_BINS)
+                      if window < INEFFICIENCY_BINS else per_frame)
+            inefficiency = np.array([statistical_inefficiency(around[:, k])
+                                     for k in range(around.shape[1])])
+            variance = variance * np.maximum(1.0, inefficiency)
+        return np.sqrt(variance)
+
+
+def _reach_or_refuse(traj: md.Trajectory) -> float:
+    """Half the cell's shortest lattice vector over the run, refused where a
+    frame's cell is empty or not a number (a zero box written for a frame
+    with none)."""
+    from fastmdxplora.analysis.pair_distance import _unambiguous_reach
+
+    reach = np.asarray(_unambiguous_reach(traj.unitcell_vectors), dtype=np.float64)
+    bad = ~np.isfinite(reach) | (reach <= 0.0)
+    if bad.any():
+        raise StudyError(
+            f"The unit cell is empty or not a number in {int(bad.sum())} of "
+            f"{len(reach)} frames (the first, frame {int(np.argmax(bad))}), so "
+            "there is no volume to normalise against and no minimum image to "
+            "measure in there.",
+            code="analysis.system.inapplicable")
+    return float(reach.min())
+
+
 def _what_would_fix_it(selection: str, traj: md.Trajectory) -> str:
     """The setting to change, where the empty selection has a known cause.
 
@@ -109,7 +242,8 @@ def _what_would_fix_it(selection: str, traj: md.Trajectory) -> str:
     )
 
 
-def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int) -> str:
+def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int,
+                    noise: np.ndarray | None = None) -> str:
     """Why the tallest point is not a first peak, or empty if it is one.
 
     The tallest point of a curve always exists. On a trajectory too short
@@ -125,22 +259,39 @@ def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int) -> str:
     * A peak is a local maximum. The last bins are the edge of the
       measurable range, and the tallest point sitting there means the curve
       was still climbing, or flat, when the box ran out.
-    * A peak stands above the bulk by more than the bulk's own scatter.
-      g(r) tends to 1 at large r, so the spread there is this curve's noise
-      level, measured on this run rather than assumed.
+    * A peak stands above the bulk by more than its own scatter (``noise``,
+      :meth:`PairHistogram.scatter`, from the counts in that bin) times the
+      bar a 1% chance of noise reaching it in any bin past 0.15 nm sets
+      (about 3.9 for 300 bins, never under 3), as `coordination_number`
+      asks of the same curve. The spread of the outer third used to stand
+      in for the scatter, and is still used for a curve given without its
+      counts: on an ideal gas of 300 atoms in a 3 nm cube it is smallest
+      where the shells are largest, and a first peak of 2.0 at 0.25 nm was
+      reported on 15 gases out of 15.
 
     The wording follows `not_a_measurement` elsewhere: say what cannot be
     concluded and why, rather than reporting a number with a caveat nobody
     reads.
     """
     n = len(radii)
-    # The bulk: the outer third, where g(r) should be 1 and its scatter is
-    # this curve's noise.
-    bulk = g[int(n * 2 / 3):]
-    bulk = bulk[np.isfinite(bulk)]
-    if bulk.size < 3:
-        return ""
-    noise = float(np.std(bulk))
+    bar = 3.0
+    if noise is None:
+        # The bulk: the outer third, where g(r) should be 1.
+        bulk = g[int(n * 2 / 3):]
+        bulk = bulk[np.isfinite(bulk)]
+        if bulk.size < 3:
+            return ""
+        scatter = float(np.std(bulk))
+        where = "in the bulk region itself"
+    else:
+        from statistics import NormalDist
+
+        scatter = float(noise[peak]) if np.isfinite(noise[peak]) else 0.0
+        searched = max(1, int(np.count_nonzero((radii > 0.15) & np.isfinite(g))))
+        bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
+        where = (f"at that separation, from its own counts and how much they "
+                 f"vary over the run, {bar:.1f} times which is needed where "
+                 f"the tallest of {searched} bins is taken")
 
     if peak >= n - max(2, int(n * 0.05)):
         return (
@@ -154,10 +305,10 @@ def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int) -> str:
         )
 
     height = float(g[peak]) - 1.0
-    if height <= 3.0 * noise:
+    if height <= bar * scatter:
         return (
             f"g(r) rises {height:+.3f} above bulk at its tallest point, "
-            f"against a scatter of {noise:.3f} in the bulk region itself, so "
+            f"against a scatter of {scatter:.3f} {where}, so "
             "the tallest point is not distinguishable from the noise of this "
             "curve. No hydration structure is resolved here. A longer run is "
             "the only remedy."
@@ -176,8 +327,9 @@ class RadialDistribution(Analysis):
         The second group. Water oxygens by default, which is the pairing
         a solvation shell is usually read from.
     r_max : float, optional
-        Where to stop, in nm. Capped at half the smallest box dimension,
-        and defaults to it.
+        Where to stop, in nm. Capped at half the cell's shortest lattice
+        vector (for the boxes setup builds, half the smallest box
+        dimension), and defaults to it.
     bin_width : float, default 0.005
         Histogram bin width in nm.
     **kwargs
@@ -228,6 +380,14 @@ class RadialDistribution(Analysis):
         self.selection_b = str(selection_b)
         self.r_max = None if r_max is None else float(r_max)
         self.bin_width = float(bin_width)
+        if not np.isfinite(self.bin_width) or self.bin_width <= 0.0:
+            raise StudyError(
+                f"`bin_width` must be a positive distance in nm; got {bin_width!r}.",
+                code="analysis.option.out_of_range")
+        if self.r_max is not None and (not np.isfinite(self.r_max) or self.r_max <= 0.0):
+            raise StudyError(
+                f"`r_max` must be a positive distance in nm; got {r_max!r}.",
+                code="analysis.option.out_of_range")
         self.options.update(
             selection_a=self.selection_a,
             selection_b=self.selection_b,
@@ -256,16 +416,25 @@ class RadialDistribution(Analysis):
                     + _what_would_fix_it(selection, traj)
                 , code="analysis.selection.empty")
 
-        half_box = float(np.min(traj.unitcell_lengths)) / 2.0
+        # Half the shortest lattice vector, not of the shortest cell edge: in a
+        # squashed cell the two differ (0.811 against 1.105 nm), and between
+        # them the shells are incomplete and g(r) falls to 0.74.
+
+        half_box = _reach_or_refuse(traj)
         requested = self.r_max if self.r_max is not None else half_box
         r_max = min(requested, half_box)
         capped = self.r_max is not None and self.r_max > half_box
+        if int(r_max / self.bin_width) < 1:
+            raise StudyError(
+                f"r_max of {r_max:g} nm is less than one bin of "
+                f"{self.bin_width:g} nm, so there is no curve to plot.",
+                code="analysis.option.out_of_range")
 
         pairs, available = _pairs_between(a, b, np.random.default_rng(0))
         subsampled = available > len(pairs)
 
-        radii, g = md.compute_rdf(
-            traj, pairs, r_range=(0.0, r_max), bin_width=self.bin_width)
+        histogram = PairHistogram(traj, pairs, r_max, self.bin_width)
+        radii, g = histogram.radii, histogram.g()
 
         record: dict[str, Any] = {
             "pairs": int(len(pairs)),
@@ -276,7 +445,7 @@ class RadialDistribution(Analysis):
         if capped:
             record["capped"] = (
                 f"r_max was asked for at {self.r_max:g} nm and stopped at "
-                f"{half_box:.3g} nm, half the smallest box dimension. Past "
+                f"{half_box:.3g} nm, half the cell's shortest lattice vector. Past "
                 "that the minimum-image convention supplies only part of "
                 "each shell, so the curve falls away for a reason belonging "
                 "to the box rather than to the liquid, and it does so "
@@ -294,7 +463,7 @@ class RadialDistribution(Analysis):
         inside = radii > 0.15
         if inside.any() and np.isfinite(g[inside]).any():
             peak = int(np.argmax(np.where(inside, g, -np.inf)))
-            verdict = _is_that_a_peak(radii, g, peak)
+            verdict = _is_that_a_peak(radii, g, peak, histogram.scatter())
             if verdict:
                 record["not_a_measurement"] = verdict
             else:

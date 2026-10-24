@@ -69,7 +69,9 @@ def workspace(tmp_path, monkeypatch):
     root = tmp_path / "work"
     root.mkdir()
     _structure(root / "ghg.pdb")
-    (root / "ghg.yml").write_text("systems:\n  - system: ghg.pdb\nsimulation:\n"
+    # Its padding given, the 1.0 nm the preview's particle count was worked out with.
+    (root / "ghg.yml").write_text("systems:\n  - system: ghg.pdb\nsetup:\n"
+                                  "  solvent_padding_nm: 1.0\nsimulation:\n"
                                   "  duration_ns: 5\n", encoding="utf-8")
     _study(root / "ubq_10ns", duration=10, means={"rmsd": (0.1234, 0.0056), "rg": (1.18, 0.002)},
            started="2026-09-02T10:00:00+00:00")

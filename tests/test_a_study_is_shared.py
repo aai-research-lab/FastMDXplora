@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -155,7 +156,8 @@ def test_no_path_home_or_computer_is_left(tmp_path):
                 assert left not in text, (name, left)
         config = archive.read("resolved_config.yml").decode()
         assert f"output: {STUDY}" in config and f"ligand: {HOME}/ligands/x.sdf" in config
-        assert HOST in archive.read("report/report.md").decode()
+        # Its underscores escaped in Markdown, so that it shows as written.
+        assert "on \\_\\_FASTMDX_HOST\\_\\_" in archive.read("report/report.md").decode()
     assert "resolved_config.yml" in said["placeholders"][STUDY]
 
 
@@ -181,7 +183,9 @@ def test_the_same_study_packs_to_the_same_bytes(tmp_path):
 def test_a_study_that_did_not_finish_is_not_shared(tmp_path, how):
     study = _study(tmp_path / "study", phase_status="error" if how == "stopped" else "ok")
     if how == "several":
-        (study / "batch_manifest.json").write_text("{}", encoding="utf-8")
+        # A study of several runs one of which never ran.
+        (study / "batch_manifest.json").write_text(
+            json.dumps({"planned": [{"run_id": "r1"}]}), encoding="utf-8")
     if how == "none":
         (study / "manifest.json").unlink()
     with pytest.raises(ShareRefused) as refused:
@@ -254,3 +258,23 @@ def test_the_archive_is_a_zip(tmp_path, capsys):
     assert main(["report", "--output", str(study), "--share", str(tmp_path / "s.tar"),
                  "--share-author", "A Person"]) == 2
     assert "ending in .zip" in capsys.readouterr().err
+
+
+def test_a_folder_never_shared_kept_as_a_link_does_not_stop_it(tmp_path):
+    """Review of the series of several runs: what `--rerun` set aside, kept as
+    a link to scratch, refused a study that never carries it."""
+    root = _study(tmp_path / "study")
+    scratch = tmp_path / "scratch" / "previous"
+    scratch.parent.mkdir()
+    (root / "previous").rename(scratch)
+    (root / "previous").symlink_to(scratch)
+    share_study(root, tmp_path / "shared.zip", authors=AUTHORS)
+    assert not any(n.startswith("previous") for n in
+                   zipfile.ZipFile(tmp_path / "shared.zip").namelist())
+
+
+def test_a_link_leading_nowhere_where_nothing_is_shared_does_not_stop_it(tmp_path):
+    root = _study(tmp_path / "study")
+    shutil.rmtree(root / "previous")
+    (root / "previous").symlink_to(tmp_path / "purged")
+    share_study(root, tmp_path / "shared.zip", authors=AUTHORS)

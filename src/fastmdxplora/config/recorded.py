@@ -27,7 +27,7 @@ def phase_settings(source: Path, phase: str, *, study: Path | None = None) -> di
     from fastmdxplora.config.loader import load_config_file, phase_options, validate_config
 
     data = load_config_file(source)
-    validate_config(data)
+    validate_config(data, as_record=True)
     settings = dict(phase_options(data).get(phase, {}))
     if study is not None:
         leave_the_study_s_own_files(settings, data.get("output"), study)

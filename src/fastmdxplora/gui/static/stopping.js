@@ -25,7 +25,7 @@
     waiting: "first piece running"
   };
   var PILL = { met: "completed", running: "live", ceiling: "waiting", rounds: "waiting",
-               stopped: "error", not_applied: "stale" };
+               stopped: "error", not_applied: "stale", interrupted: "waiting" };
   var DECIDED = { extend: "extended", met: "stopped, determined", ceiling: "stopped at the ceiling",
                   stopped: "stopped" };
 
@@ -67,8 +67,22 @@
     return String(+Number(value).toPrecision(3));
   }
 
-  function ns(value) {
-    return value === null || value === undefined ? "" : +Number(value).toPrecision(3) + " ns";
+  /* A length as every page says one, in ps under 1 ns: as the server
+   * said it (`length_said`) where it did, else from the number alike. */
+  function ns(value, said) {
+    if (said) return said;
+    if (value === null || value === undefined) return "";
+    var ps = Number(value) * 1000;
+    if (Math.abs(Math.round(ps * 10) / 10) >= 1000) return +Number(value).toPrecision(4) + " ns";
+    if (ps !== 0 && Math.abs(ps) < 0.05) return +ps.toPrecision(1) + " ps";
+    return +(Math.round(ps * 10) / 10) + " ps";
+  }
+
+  /* The production axis in the unit its lengths read in: ps where the
+   * whole of it is under 1 ns. Set for each card drawn. */
+  var axis = { factor: 1, unit: "ns" };
+  function axisFor(xMax) {
+    axis = xMax < 1 ? { factor: 1000, unit: "ps" } : { factor: 1, unit: "ns" };
   }
 
   function duration(seconds) {
@@ -98,8 +112,9 @@
       t.textContent = +v.toPrecision(3);
       svg.appendChild(t);
     });
-    ticks(0, xMax, 5).forEach(function (v) {
-      var t = svgEl("text", { x: px(v), y: H - B + 15, "text-anchor": "middle" }, "stopping-tick");
+    ticks(0, xMax * axis.factor, 5).forEach(function (v) {
+      var t = svgEl("text", { x: px(v / axis.factor), y: H - B + 15, "text-anchor": "middle" },
+                    "stopping-tick");
       t.textContent = +v.toPrecision(3);
       svg.appendChild(t);
     });
@@ -133,7 +148,8 @@
     }
     if (!(top > 0)) top = 1;
     var f = frame(m.label + ": standard error after each round, against the " + m.asked +
-                  " asked", xMax, 0, top * 1.18, "Production per run (ns)", "Standard error" + unit);
+                  " asked", xMax, 0, top * 1.18, "Production per run (" + axis.unit + ")",
+                  "Standard error" + unit);
     ceilingLine(f, data.ceiling_ns, xMax);
 
     // The target: a level for an absolute error; for a relative one it
@@ -168,10 +184,10 @@
       }
       f.svg.appendChild(titled(svgEl("polyline", { points: path.join(" ") }, "stopping-projection"),
         "If the error keeps falling as one over the root of the frames, it reaches the " +
-        m.asked + " asked at about " + ns(proj.to_ns) + " per run"));
+        m.asked + " asked at about " + ns(proj.to_ns, proj.to_said) + " per run"));
       if (proj.to_ns <= xMax) {
         f.svg.appendChild(titled(svgEl("circle", { cx: f.px(proj.to_ns), cy: f.py(proj.allowed), r: 3.5 },
-                                       "stopping-projected"), "Projected: " + ns(proj.to_ns)));
+                                       "stopping-projected"), "Projected: " + ns(proj.to_ns, proj.to_said)));
       }
     }
 
@@ -180,12 +196,14 @@
         var x0 = f.px(p.production_ns), y0 = f.H - f.B;
         f.svg.appendChild(titled(svgEl("path", {
           d: "M" + (x0 - 5) + "," + (y0 + 1) + " L" + (x0 + 5) + "," + (y0 + 1) + " L" + x0 + "," + (y0 - 8) + " Z"
-        }, "stopping-withheld"), "Round " + p.round + ", " + ns(p.production_ns) + ": " + p.said));
+        }, "stopping-withheld"), "Round " + p.round + ", " + ns(p.production_ns, p.production_said) +
+          ": " + p.said));
         return;
       }
       var cls = "stopping-point " + (p.met ? "is-met" : p.agree === false ? "is-disagree" : "is-short");
       f.svg.appendChild(titled(svgEl("circle", { cx: f.px(p.production_ns), cy: f.py(p.error), r: 4.5 }, cls),
-        "Round " + p.round + ", " + ns(p.production_ns) + ": error " + plain(p.error) + unit.replace(/[()]/g, "") +
+        "Round " + p.round + ", " + ns(p.production_ns, p.production_said) + ": error " +
+        plain(p.error) + unit.replace(/[()]/g, "") +
         (p.allowed !== null ? ", asked " + plain(p.allowed) : "") +
         (p.agree === false ? "; the replicas disagree" : "")));
     });
@@ -210,7 +228,7 @@
     var pad = (high - low) * 0.12 || Math.abs(high) * 0.05 || 1;
     var unit = m.unit ? " (" + m.unit + ")" : "";
     var f = frame(m.label + ": the mean after each round, with each replica's own mean",
-                  xMax, low - pad, high + pad, "Production per run (ns)", m.label + unit);
+                  xMax, low - pad, high + pad, "Production per run (" + axis.unit + ")", m.label + unit);
     ceilingLine(f, data.ceiling_ns, xMax);
     // Each replica just to the right of the pooled mean it went into, so
     // the one does not hide the others.
@@ -249,7 +267,10 @@
     var head = el("div", "stopping-measure-head");
     head.appendChild(el("h3", "stopping-measure-title", m.label));
     head.appendChild(el("span", "stopping-asked mono", "asked " + m.asked));
-    var chip = el("span", "stopping-chip", STATE_WORDS[m.state] || m.state);
+    // Stopped without finishing before any round was judged: not running.
+    var stopped = data.outcome === "interrupted";
+    var chip = el("span", "stopping-chip", stopped && m.state === "waiting" ? "not judged"
+      : STATE_WORDS[m.state] || m.state);
     chip.setAttribute("data-state", m.state);
     head.appendChild(chip);
     block.appendChild(head);
@@ -257,11 +278,14 @@
     var now = m.points.length ? m.points[m.points.length - 1] : null;
     var line = el("p", "stopping-now");
     if (!now) {
-      line.textContent = "Judged when the first piece's analyses are done.";
+      line.textContent = stopped ? "Not judged: the study stopped without finishing its first piece."
+        : "Judged when the first piece's analyses are done.";
     } else if (now.measured) {
-      line.textContent = "Now " + withError(now.value, now.error) + (m.unit ? " " + m.unit : "") +
-        " after " + ns(now.production_ns) + (now.replicas.length ? " per run, " + now.replicas.length + " replicas pooled" : "") +
-        (m.projection ? "; at the rate it has fallen, " + m.asked + " at about " + ns(m.projection.to_ns) : "") + ".";
+      line.textContent = (stopped ? "Last judged " : "Now ") + withError(now.value, now.error) +
+        (m.unit ? " " + m.unit : "") + " after " + ns(now.production_ns, now.production_said) +
+        (now.replicas.length ? " per run, " + now.replicas.length + " replicas pooled" : "") +
+        (m.projection && !stopped ? "; at the rate it has fallen, " + m.asked + " at about " +
+          ns(m.projection.to_ns, m.projection.to_said) : "") + ".";
     } else {
       line.textContent = now.said + ".";
     }
@@ -316,14 +340,17 @@
       div.appendChild(dd);
       dl.appendChild(div);
     };
-    add("Production per run", ns(data.production_ns) + (data.ceiling_ns ? " of " + ns(data.ceiling_ns) : ""));
+    add("Production per run", ns(data.production_ns, data.production_said) +
+        (data.ceiling_ns ? " of " + ns(data.ceiling_ns, data.ceiling_said) : ""));
     add("Runs", data.runs.length > 1
       ? data.runs.length + " replicas" : "1 run",
       data.independent_starts === "required" ? "The replicas must agree before the rule is met"
         : "One run's own precision; not checked against independent starts");
     add("Rounds judged", String(data.rounds.length));
     if (data.next) {
-      add("Now running", "+" + ns(data.next.more_ns) + " each, to " + ns(data.next.to_ns) +
+      // "Now running" only where the study's process is known to be.
+      add(data.live ? "Now running" : "Asked for next", "+" + ns(data.next.more_ns, data.next.more_said) + " each, to " +
+          ns(data.next.to_ns, data.next.to_said) +
           (data.next.seconds ? ", about " + duration(data.next.seconds) : ""),
           data.next.seconds ? "At the speed this study has run" +
             (data.next.platform ? " (" + data.next.platform + ")" : "") : "");
@@ -343,7 +370,7 @@
     data.rounds.forEach(function (r, i) {
       var row = el("tr");
       row.appendChild(el("td", "", String(r.round)));
-      row.appendChild(el("td", "mono", ns(r.production_ns)));
+      row.appendChild(el("td", "mono", ns(r.production_ns, r.production_said)));
       data.measures.forEach(function (m) {
         var p = m.points.filter(function (q) { return q.round === r.round; })[0];
         var text = !p ? "" : p.measured
@@ -351,8 +378,9 @@
           : "not yet determined";
         row.appendChild(el("td", "mono", text));
       });
-      var decided = DECIDED[r.decision] || r.decision;
-      if (r.decision === "extend" && r.more_ns) decided += " by " + ns(r.more_ns);
+      // As the report and the Timeline say it (stopping.round_decided).
+      var decided = r.decided || DECIDED[r.decision] || r.decision;
+      if (!r.decided && r.decision === "extend" && r.more_ns) decided += " by " + ns(r.more_ns);
       row.appendChild(el("td", "", decided));
       body.appendChild(row);
     });
@@ -360,28 +388,82 @@
     document.getElementById("stopping-rounds").hidden = data.rounds.length === 0;
   }
 
+  /* A record the card would have read, not read (`not_read`: linked out of
+   * the study), said under what the card says; "" takes the note away. */
+  function notRead(said) {
+    var note = document.getElementById("stopping-not-read");
+    if (!said) {
+      if (note) note.hidden = true;
+      return;
+    }
+    if (!note) {
+      var after = document.getElementById("stopping-said");
+      note = el("p", "stopping-said stopping-not-read");
+      note.id = "stopping-not-read";
+      after.parentNode.insertBefore(note, after.nextSibling);
+    }
+    note.textContent = said;
+    note.hidden = false;
+  }
+
+  /* Its record of its rounds not read: the card says so, and nothing of
+   * the record, where it would be. */
+  function renderNotRead(card, data) {
+    card.hidden = false;
+    card.setAttribute("data-outcome", "not-read");
+    var title = card.querySelector(".card-title");
+    if (title) title.textContent = "Run until it is determined";
+    var pill = document.getElementById("stopping-outcome");
+    pill.textContent = "Not read";
+    pill.setAttribute("data-state", "stale");
+    document.getElementById("stopping-said").textContent = data.not_read;
+    notRead("");
+    document.getElementById("stopping-strip").innerHTML = "";
+    document.getElementById("stopping-measures").innerHTML = "";
+    document.getElementById("stopping-key").hidden = true;
+    document.getElementById("stopping-rounds").hidden = true;
+  }
+
   function render(data) {
     var card = document.getElementById("stopping-card");
     if (!card) return;
+    if (data && !data.ok && data.not_read) {
+      last = data;
+      renderNotRead(card, data);
+      return;
+    }
     if (!data || !data.ok) {
       card.hidden = true;
       last = data;
       return;
     }
-    if (last && last.ok && last.version === data.version) return;
+    if (last && last.ok && last.version === data.version
+        && (last.not_read || "") === (data.not_read || "")) return;
     last = data;
     card.hidden = false;
     card.setAttribute("data-outcome", data.outcome);
+    // The rule's name: said running only of a study known to be running
+    // (its process), as its pill says it.
+    var title = card.querySelector(".card-title");
+    if (title) {
+      title.textContent = data.live ? "Running until it is determined"
+        : "Run until it is determined";
+    }
     var pill = document.getElementById("stopping-outcome");
     pill.textContent = data.outcome_label;
-    pill.setAttribute("data-state", PILL[data.outcome] || "stale");
+    pill.setAttribute("data-state", data.outcome === "running" && !data.live ? "waiting"
+      : PILL[data.outcome] || "stale");
     document.getElementById("stopping-said").textContent = data.said;
+    // Read, with a record it names not read (a batch manifest or a process
+    // record linked out of the study): said under it.
+    notRead(data.not_read || "");
     strip(data);
     var produced = data.production_ns || 0;
     data.measures.forEach(function (m) {
       if (m.projection) produced = Math.max(produced, m.projection.to_ns);
     });
     var xMax = data.ceiling_ns || produced * 1.15 || 1;
+    axisFor(xMax);
     var host = document.getElementById("stopping-measures");
     host.innerHTML = "";
     data.measures.forEach(function (m) { host.appendChild(measureBlock(m, data, xMax)); });
@@ -412,7 +494,8 @@
   window.addEventListener("dashboard:live-page-opened", loadNow);
   window.addEventListener("dashboard:status-updated", function () {
     if (last && last.ok) {
-      if (last.outcome === "running") loadNow();
+      // Running, or stopped without finishing and so resumable.
+      if (last.outcome === "running" || last.outcome === "interrupted") loadNow();
     } else if (Date.now() - askedAt > RECHECK_MS) {
       loadNow();
     }

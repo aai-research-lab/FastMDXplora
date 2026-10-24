@@ -40,7 +40,13 @@ class ForceFieldChoice:
         ``openmm.app.ForceField(*xmls)``.
     water_model : str | None
         Default water model name for ``Modeller.addSolvent(model=...)``.
-        ``None`` means "let Modeller infer it from the force field".
+        ``None`` means "let Modeller infer it from the force field". It is
+        the geometry the box is built from, which the force field's water
+        file then parameterises, so it is not always the water's own name.
+    water_name : str | None
+        The water model as a methods section names it, where that differs
+        from ``water_model``: TIP3P-FB is built from Modeller's ``tip3p``
+        box and parameterised by ``tip3pfb.xml``.
     supports_ligand : bool
         Whether this force field can parameterize small-molecule ligands
         (via the OpenFF small-molecule generator). Used by the ligand
@@ -70,6 +76,17 @@ class ForceFieldChoice:
     #: truncation near 0.8-1.0 nm and must not be run with a switch. CHARMM36
     #: is developed at 1.2 nm with switching from 1.0.
     nonbonded: tuple[float, float | None] = (1.0, None)
+    #: The isotropic long-range dispersion correction the force field was
+    #: fitted with, or ``None`` to leave it to the file (and OpenMM, which
+    #: turns it on where the file says nothing). Part of the scheme for the
+    #: same reason the cutoff is.
+    dispersion_correction: bool | None = None
+    #: See ``water_name`` above; ``None`` means it is ``water_model``.
+    water_name: str | None = None
+    #: The files this name resolved to in earlier releases. A study's record
+    #: holds the name and its files together; one prepared then is carried
+    #: on with the files it was prepared with, not the name's present ones.
+    earlier_xmls: tuple[tuple[str, ...], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -87,12 +104,16 @@ _REGISTRY: dict[str, ForceFieldChoice] = {
         water_model=None,  # CHARMM36 water XML supplies the model
         supports_ligand=False,
         small_molecule_forcefield=None,
-        description="CHARMM36 protein force field with CHARMM-style water.",
-        # Lee et al., CHARMM-GUI Input Generator, J Chem Theory Comput 2016:
-        # OpenMM offers only the potential-based switch, not CHARMM's
-        # force-based one, and this is the protocol they tested against
-        # CHARMM's own results for each program.
+        description=("CHARMM36 (OpenMM's charmm36.xml, an older release without "
+                     "the CHARMM36m protein parameters) with CHARMM-style water."),
+        # CHARMM36 is developed at 1.2 nm, switched from 1.0 nm with CHARMM's
+        # force-based switch. OpenMM's built-in switch acts on the potential,
+        # so this is close to that protocol and not the same function. The
+        # same holds for the long-range dispersion correction: the C36
+        # lipids were fitted without one, `charmm36.xml` says so, and
+        # `charmm36_2024.xml` says nothing, which OpenMM reads as on.
         nonbonded=(1.2, 1.0),
+        dispersion_correction=False,
     ),
     "amber14": ForceFieldChoice(
         name="amber14",
@@ -104,11 +125,22 @@ _REGISTRY: dict[str, ForceFieldChoice] = {
     ),
     "amber-fb15": ForceFieldChoice(
         name="amber-fb15",
-        xmls=("amberfb15.xml", "tip3p.xml"),
+        # TIP3P-FB, the water AMBER-FB15 was developed with (Wang et al., J
+        # Phys Chem B 121, 4023, 2017), rather than plain TIP3P: its charges
+        # (O -0.848 against -0.834) and Lennard-Jones are refitted, and the
+        # protein's were fitted beside them. Modeller has no `tip3pfb` box,
+        # so the box is its 3-site `tip3p` one and `tip3pfb.xml` gives the
+        # parameters, as `Modeller.addSolvent`'s docstring describes for
+        # TIP3P-FB. Ions come from
+        # `amberfb15.xml`, as they did.
+        xmls=("amberfb15.xml", "tip3pfb.xml"),
+        earlier_xmls=(("amberfb15.xml", "tip3p.xml"),),
         water_model="tip3p",
+        water_name="TIP3P-FB",
         supports_ligand=False,
         small_molecule_forcefield=None,
-        description="AMBER-FB15 protein force field with TIP3P water.",
+        description="AMBER-FB15 protein force field with TIP3P-FB water, the "
+                    "model it was developed with.",
     ),
     "amber-openff": ForceFieldChoice(
         name="amber-openff",
@@ -190,12 +222,71 @@ def resolve_forcefield(name: str | None) -> ForceFieldChoice:
     return choice
 
 #: The cutoff where neither the config nor the force field says one: an
-#: explicit `force_field` XML list, which cannot be looked up.
+#: explicit `force_field` XML list whose files name no one family.
 FALLBACK_CUTOFF_NM = 1.0
+
+#: The registered scheme an explicit list of files takes, by the family its
+#: files belong to, read from each file's name and folder. Water and ion
+#: files OpenMM keeps at the top of its data folder (`tip3p.xml`) belong to
+#: no family and do not decide; a CHARMM file outside CHARMM36 (the Drude
+#: `charmm_polar_*`) is a family with no scheme here.
+_FAMILIES = (("amber", "amber14"), ("charmm36", "charmm36"))
+
+#: The folders a force field's files sit in, in OpenMM and openmmforcefields.
+#: A folder decides only if it is one of these and the name is relative and
+#: two parts long, as those files are written.
+_DATA_FOLDERS = {"amber14": "amber", "amber19": "amber", "amber": "amber",
+                 "charmm36": "charmm36", "charmm36_2024": "charmm36",
+                 "charmm": None}
+
+
+def _family_of(files: list[str] | tuple[str, ...]) -> tuple[str, ForceFieldChoice] | None:
+    """The one family an explicit list of force field files belongs to."""
+    found: set[str] = set()
+    for given in files:
+        parts = str(given).replace("\\", "/").lower().split("/")
+        family = next((label for label, _ in _FAMILIES
+                       if parts[-1].startswith(label)), None)
+        # A folder decides only in a relative two-part name, the way
+        # OpenMM's and openmmforcefields' own files are written
+        # (`amber14/tip3p.xml`); a person's `/home/u/amber/lig.xml` does not.
+        if family is None and len(parts) == 2:
+            family = _DATA_FOLDERS.get(parts[0])
+        # Judged on the file's own name: openmmforcefields keeps CHARMM36's
+        # water beside it in a folder called `charmm`.
+        if family is None and parts[-1].startswith("charmm"):
+            family = "other"
+        if family is not None:
+            found.add(family)
+    if len(found) != 1 or "other" in found:
+        return None
+    family = found.pop()
+    return family, _REGISTRY[dict(_FAMILIES)[family]]
+
+
+def dispersion_correction_of(
+        name: str | list[str] | tuple[str, ...] | None) -> tuple[bool | None, str | None]:
+    """The dispersion correction a force field's scheme asks for where a run
+    does not state one, and a sentence if it is decided here. ``None`` leaves
+    it to the force field's file."""
+    if isinstance(name, (list, tuple)):
+        family = _family_of(name)
+        choice = family[1] if family else None
+    else:
+        choice = _REGISTRY.get(str(name or "").lower())
+    if choice is None or choice.dispersion_correction is None:
+        return None, None
+    named = ("CHARMM36, its lipids among it," if choice.name == "charmm36"
+             else choice.name)
+    return choice.dispersion_correction, (
+        f"{named} is fitted "
+        f"{'with' if choice.dispersion_correction else 'without'} the isotropic "
+        f"long-range dispersion correction; with nothing stated, this run has it "
+        f"{'on' if choice.dispersion_correction else 'off'}."),
 
 
 def nonbonded_scheme(
-    name: str | None,
+    name: str | list[str] | tuple[str, ...] | None,
     *,
     cutoff_nm: float | None,
     use_switching_function: bool | None,
@@ -207,21 +298,55 @@ def nonbonded_scheme(
     the rest of its parameters compensate for it, so the scheme belongs to the
     force field rather than beside it. AMBER is developed with hard truncation
     and should not be switched at all; CHARMM36 is developed at 1.2 nm with
-    switching from 1.0, and OpenMM offers the potential-based switch rather
-    than CHARMM's force-based one -- close enough to be the protocol
-    CHARMM-GUI prescribes for OpenMM, and not the same function.
+    switching from 1.0, and OpenMM's built-in switch acts on the potential
+    rather than the force as CHARMM's does -- close to that protocol, and not
+    the same function.
 
     A stated setting always wins; ``None`` means not stated, and only then
     does the force field decide. The schema used to hand over 1.0 nm and a
     switch whether or not anybody wrote them, so a stated 1.0 nm could not
     be told from silence and became CHARMM36's 1.2, and a stated switch was
     replaced by the force field's either way, each with only a log line.
+
+    ``name`` may be an explicit list of files. Those were switched at nine
+    tenths of a 1 nm cutoff whatever they were, so ``amber14-all.xml`` listed
+    by hand ran AMBER switched, which named ``amber14`` is not, and CHARMM36
+    files ran at 1 nm rather than 1.2. A list whose files belong to one
+    family takes that family's scheme; any other takes OpenMM's own default,
+    a 1 nm cutoff and no switch, and says that nothing chose it.
     """
-    choice = _REGISTRY.get(str(name or "").lower())
+    label = None
+    if isinstance(name, (list, tuple)):
+        family = _family_of(name)
+        if family is None:
+            cutoff = float(cutoff_nm) if cutoff_nm is not None else FALLBACK_CUTOFF_NM
+            # A switch distance named without the flag asks for a switch.
+            switching = (switch_distance_nm is not None
+                         if use_switching_function is None
+                         else bool(use_switching_function))
+            decided = []
+            if cutoff_nm is None:
+                decided.append(f"a {cutoff:g} nm cutoff")
+            if use_switching_function is None and switch_distance_nm is None:
+                decided.append("no switching function")
+            said = None
+            if decided:
+                said = ("The force field files given do not belong to one "
+                        "family this package knows the cutoff scheme of, so "
+                        f"this run uses OpenMM's own default, {' and '.join(decided)}. "
+                        "State `nonbonded_cutoff_nm` and `use_switching_function` "
+                        "for the scheme the force field was developed with.")
+            return cutoff, switching, switch_distance_nm, said
+        family_name, choice = family
+        label = (f"The {'AMBER' if family_name == 'amber' else 'CHARMM36'} files "
+                 f"given ({', '.join(str(f) for f in name)}) are")
+    else:
+        choice = _REGISTRY.get(str(name or "").lower())
     if choice is None:
-        # An explicit XML list: nothing to consult, so the fallbacks.
+        # A name with no entry: nothing to consult, so the fallbacks.
         cutoff = float(cutoff_nm) if cutoff_nm is not None else FALLBACK_CUTOFF_NM
-        switching = True if use_switching_function is None else bool(use_switching_function)
+        switching = (switch_distance_nm is not None if use_switching_function is None
+                     else bool(use_switching_function))
         return cutoff, switching, switch_distance_nm, None
 
     wanted_cutoff, wanted_switch = choice.nonbonded
@@ -250,12 +375,12 @@ def nonbonded_scheme(
            f"{wanted_switch:g} nm" if wanted_switch is not None
            else f"developed with hard truncation at {wanted_cutoff:g} nm and no "
                 "switching function")
-    said = (f"{choice.name} is {how}; with nothing stated, this run uses "
-            f"{' and '.join(decided)}.")
+    said = (f"{label or choice.name + ' is'} {how}; with nothing stated, this "
+            f"run uses {' and '.join(decided)}.")
     if wanted_switch is not None and switching:
-        said += (" OpenMM offers the potential-based switch rather than "
-                 "CHARMM's force-based one; it is the protocol CHARMM-GUI "
-                 "prescribes for OpenMM, and it is not the same function.")
+        said += (" OpenMM's switch is potential-based, where CHARMM's is "
+                 "force-based, so this is close to the CHARMM protocol and "
+                 "not the same function.")
     elif wanted_switch is None and not switching:
         said += (" A switch here would move the run away from the "
                  "parameterisation rather than towards it.")

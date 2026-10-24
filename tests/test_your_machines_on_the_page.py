@@ -723,7 +723,7 @@ def test_a_plan_kept_past_its_time_is_let_go(session) -> None:
         page.wait_for_selector(".remote-plan-title")
         named = page.input_value("#run-output")
         page.wait_for_function("() => document.querySelector('#run-remote-planned')"
-                               ".textContent.includes('no longer kept')")
+                               ".textContent.includes('no longer saved')")
         page.wait_for_timeout(1000)
         emptied = page.input_value("#run-output")
         said = page.text_content("#run-remote-note")
@@ -756,7 +756,7 @@ def test_a_plan_no_longer_kept_says_so_once_and_an_edit_after_says_nothing(sessi
         page.click("#run-remote-plan")
         page.wait_for_selector(".remote-plan-title")
         page.wait_for_function("() => document.querySelector('#run-remote-planned')"
-                               ".textContent.includes('no longer kept')")
+                               ".textContent.includes('no longer saved')")
         expired = page.text_content("#run-remote-note")
         closed = page.text_content("#run-remote-planned .ghost-btn")
         page.evaluate("""() => { const box = document.getElementById('run-output');
@@ -765,7 +765,7 @@ def test_a_plan_no_longer_kept_says_so_once_and_an_edit_after_says_nothing(sessi
         page.wait_for_timeout(700)
         after = page.text_content("#run-remote-note")
         browser.close()
-    assert expired == after == "Not sent: the plan is no longer kept. Plan the send again."
+    assert expired == after == "Not sent: the plan is no longer saved. Plan the send again."
     assert closed == "Close"
     assert errors == []
 
@@ -834,6 +834,53 @@ def test_a_window_whose_studies_go_in_home_says_why_before_the_click(session) ->
     assert errors == []
 
 
+def test_an_older_machines_answer_cannot_remove_a_newer_home_restriction() -> None:
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    why = "Studies built in the form would be saved in your home folder."
+    script = Path(__file__).resolve().parents[1] / "src/fastmdxplora/gui/static/remote.js"
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        page = browser.new_page()
+        errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.set_content("""<section class="page" data-page="run">
+          <div id="run-config-field"><div class="builder-actions-row"></div></div>
+          <div id="run-actions-card"><button id="run-start-button">Run</button>
+            <div id="run-remote" hidden></div></div></section>""")
+        page.evaluate("""() => {
+          window.__machinesAnswers = [];
+          window.fetch = () => new Promise(resolve => window.__machinesAnswers.push(resolve));
+          window.FastMDXDashboard = {on() {}};
+          window.FastMDXRun = {state: {start: 'structure'}, currentState: () => ({})};
+          window.__answerMachines = async (index, why) => {
+            window.__machinesAnswers[index]({ok: true, json: async () => ({ok: true,
+              machines: [{name: 'box', ready: true}], jobs: [], not_built_here: why})});
+            // A rendering frame follows the answer's entire promise chain.
+            await new Promise(requestAnimationFrame);
+          };
+        }""")
+        page.add_script_tag(path=str(script))
+        page.evaluate("() => window.__answerMachines(0, '')")
+        page.evaluate("""() => {
+          window.FastMDXRemote.refresh('run');
+          window.FastMDXRemote.refresh('run');
+        }""")
+        page.evaluate("why => window.__answerMachines(2, why)", why)
+        page.focus("#run-remote-machine")
+        page.evaluate("() => window.__answerMachines(1, '')")
+        kept = (page.is_disabled("#run-remote-plan"),
+                page.is_hidden("#run-remote-why"), page.text_content("#run-remote-why"),
+                page.get_attribute("#run-remote-plan", "aria-describedby"))
+        focused = page.evaluate("() => document.activeElement.id")
+        browser.close()
+    assert kept == (True, False, why, "run-remote-why")
+    assert focused == "run-remote-machine"
+    assert errors == []
+
+
 def test_the_results_name_written_in_the_form_is_the_bare_name(session) -> None:
     """Round 1 of the next round: the empty Results box was filled with the
     results folder's full path."""
@@ -861,7 +908,7 @@ def test_the_results_name_written_in_the_form_is_the_bare_name(session) -> None:
 
 
 def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
-    """Round 3 of the last round: Close on a plan no longer kept said only
+    """Round 3 of the last round: Close on a plan no longer saved said only
     "Not sent.", and where Plan the send was held back by then the note
     asked to plan the send again beside a button that could not."""
     import json
@@ -882,7 +929,7 @@ def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
         page.click("#run-remote-plan")
         page.wait_for_selector(".remote-plan-title")
         page.wait_for_function("() => document.querySelector('#run-remote-planned')"
-                               ".textContent.includes('no longer kept')")
+                               ".textContent.includes('no longer saved')")
         page.click("#run-remote-planned .ghost-btn")
         closed = (page.is_hidden("#run-remote-planned"),
                   page.text_content("#run-remote-note"),
@@ -896,7 +943,7 @@ def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
           {configurable: true, get() { return true; }, set() {}})""")
         page.wait_for_selector("#run-remote-plan[disabled]")
         page.wait_for_function("() => document.querySelector('#run-remote-planned')"
-                               ".textContent.includes('no longer kept')")
+                               ".textContent.includes('no longer saved')")
         page.wait_for_timeout(100)
         held = (page.text_content("#run-remote-note"),
                 page.evaluate("() => document.activeElement.id"),
@@ -909,7 +956,7 @@ def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
         page.click("#run-remote-plan")
         page.wait_for_selector(".remote-plan-title")
         page.wait_for_function("() => document.querySelector('#run-remote-planned')"
-                               ".textContent.includes('no longer kept')")
+                               ".textContent.includes('no longer saved')")
         page.evaluate("""() => Object.defineProperty(
           document.getElementById('run-start-button'), 'disabled',
           {configurable: true, get() { return true; }, set() {}})""")
@@ -919,10 +966,10 @@ def test_a_plan_kept_past_its_time_and_closed_still_says_why(session) -> None:
         later = (page.text_content("#run-remote-note"),
                  page.evaluate("() => document.activeElement.id"))
         browser.close()
-    assert closed == (True, "Not sent: the plan is no longer kept. Plan the send again.",
+    assert closed == (True, "Not sent: the plan is no longer saved. Plan the send again.",
                       "run-remote-plan")
-    assert held == ("Not sent: the plan is no longer kept.", "run-remote-note", "status")
-    assert later == ("Not sent: the plan is no longer kept.", "run-remote-note")
+    assert held == ("Not sent: the plan is no longer saved.", "run-remote-note", "status")
+    assert later == ("Not sent: the plan is no longer saved.", "run-remote-note")
     assert errors == []
 
 

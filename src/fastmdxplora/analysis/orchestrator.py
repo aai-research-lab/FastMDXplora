@@ -33,7 +33,7 @@ from typing import Any
 
 import mdtraj as md
 
-from fastmdxplora.analysis.base import Analysis, AnalysisResult
+from fastmdxplora.analysis.base import Analysis, AnalysisResult, carry_wholeness
 from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
 from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
@@ -107,6 +107,20 @@ def _resolve_scope(scope: str, ligand_resname: str | None) -> str | None:
 _WATER_RESIDUES = frozenset({"HOH", "WAT", "TIP", "TIP3", "SOL", "H2O"})
 
 _REGISTRY: dict[str, type[Analysis]] = {}
+
+#: The check of the solute against its own periodic images, registered
+#: first (at the foot of this module) and run first, in every plan with a box
+#: and a solute, a listed one (``include``) too, unless excluded by name.
+_IMAGE_CHECK = "image_check"
+
+#: What is said, in the log, the analysis manifest and the report, where a
+#: study excludes the check by name.
+IMAGE_CHECK_EXCLUDED = (
+    "The image check was excluded by name (`exclude: [image_check]`), so the "
+    "solute was not checked against its own periodic images: no mean of these "
+    "frames is noted where the solute came within the cutoff of its image, and "
+    "none of them says whether it did, except the end-to-end distance, which "
+    "checks its own chain against the run's cutoff.")
 
 
 def register_analysis(name: str, cls: type[Analysis]) -> None:
@@ -245,9 +259,17 @@ class AnalysisOrchestrator:
             trajectory, topology, stride=stride, first=first, last=last,
             saving_interval_ps=saving_interval_ps,
         )
+        # The insertion codes read with this topology, put back when it is
+        # run: the table holds the codes of the topology read last, so an
+        # orchestrator built after this one and before its run() left this
+        # one's 184A and 184 as two residues numbered 184.
+        from fastmdxplora.analysis import residues
+        self._insertion_codes = dict(residues._INSERTION_CODES)
 
         # Results from the most recent run() call.
         self.results: dict[str, AnalysisResult] = {}
+        #: Said where the plan leaves the image check out by name.
+        self.image_check_left_out: str | None = None
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -280,12 +302,25 @@ class AnalysisOrchestrator:
             Mapping from analysis name to result, in execution order.
             Also stored on ``self.results``.
         """
+        from fastmdxplora.analysis import residues
+        # An orchestrator made without its constructor read no topology of
+        # its own, so it has no codes to put back and leaves the table be.
+        codes = getattr(self, "_insertion_codes", None)
+        if codes is not None:
+            residues._INSERTION_CODES.clear()
+            residues._INSERTION_CODES.update(codes)
+
         plan = self._build_plan(include, exclude, options)
+        # The image check first, so its finding is there for every analysis
+        # of the same frames after it.
+        plan.sort(key=lambda name: name != _IMAGE_CHECK)
         merged_options = self._merge_options(plan, options)
 
         logger.debug("Plan: %s", ", ".join(plan))
 
         self.results = {}
+        solute_image: dict[str, Any] | None = None
+        image_series: Any = None
         for name in plan:
             cls = get_analysis_class(name)
             raw_opts = dict(merged_options[name])
@@ -329,7 +364,19 @@ class AnalysisOrchestrator:
                 )
                 continue
 
+            if name == _IMAGE_CHECK:
+                # Against the run's own cutoff, from the study's setup record
+                # beside this analysis folder, unless one was set for it.
+                analysis.use_the_run_s_cutoff(self.output_dir.parent)
+
             logger.debug("--> running analysis '%s'", name)
+            # The one finding of how close the solute came to its own images,
+            # read by every analysis of these frames.
+            analysis.solute_image = solute_image
+            analysis.solute_image_series = image_series
+            # The study this analysis folder is in, whose setup record an
+            # analysis may read (the run's cutoff, through `record_access`).
+            analysis.study_dir = self.output_dir.parent
             # Its own trajectory, not the shared one. Superposition in
             # mdtraj rotates coordinates in place, so an analysis that
             # aligns leaves every later analysis reading rotated
@@ -339,13 +386,27 @@ class AnalysisOrchestrator:
             # `pl_interactions` reported 252 hydrophobic contacts after
             # rmsf and ligand_rmsd had aligned the frames, and 10 when run
             # by itself. The 10 was right.
-            self.results[name] = analysis.run(self.traj[:])
+            self.results[name] = analysis.run(carry_wholeness(self.traj, self.traj[:]))
+            if name == _IMAGE_CHECK and self.results[name].status == "ok":
+                solute_image = analysis.findings.get("solute_image")
+                image_series = analysis.result
+            elif solute_image and self.results[name].status == "ok" \
+                    and not getattr(analysis, "_qualified_by_the_image", False):
+                # An analysis whose `run` is its own (clustering, the
+                # projections) is noted after it, and its record written
+                # again with it.
+                analysis._qualify_by_the_solute_image(self.traj)
+                try:
+                    analysis._write_options_manifest()
+                except OSError:
+                    logger.debug("Could not rewrite %s's options", name, exc_info=True)
 
-        self._reweight()
+        self._reweight(solute_image, image_series)
         self._write_manifest()
         return dict(self.results)
 
-    def _reweight(self) -> None:
+    def _reweight(self, solute_image: dict[str, Any] | None = None,
+                  image_series: Any = None) -> None:
         """Correct the averages of a biased run, where a correction exists.
 
         Runs after the analyses rather than as one of them because it reads
@@ -365,6 +426,8 @@ class AnalysisOrchestrator:
                 n_frames=int(self.traj.n_frames),
                 frame_times_ps=getattr(self.traj, "time", []),
                 output_dir=self.output_dir,
+                solute_image=solute_image,
+                solute_image_series=image_series,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Reweighting failed")
@@ -595,6 +658,24 @@ class AnalysisOrchestrator:
             except Exception:
                 return False
 
+        def _solute_ok(name: str) -> bool:
+            """A check of the solute against its own images needs a solute:
+            the macromolecules, with what of the scope's solute is not water,
+            an ion or a lipid (``image_check.solute_atoms``)."""
+            cls = _REGISTRY[name]
+            if not getattr(cls, "requires_solute", False):
+                return True
+            traj = getattr(self, "traj", None)
+            if traj is None:
+                return True
+            from fastmdxplora.analysis.image_check import solute_atoms
+
+            # Read as the other gates read what they need: a plan is also
+            # built on an orchestrator made without its constructor.
+            selection = (getattr(self, "default_selection", None)
+                         or getattr(self, "scope_selection", None))
+            return len(solute_atoms(traj.topology, selection)[0]) > 0
+
         def _box_ok(name: str) -> bool:
             """A g(r) divides by the bulk density, which needs a volume.
 
@@ -712,7 +793,15 @@ class AnalysisOrchestrator:
                 , code="analysis.unknown")
             # Explicit include is honored as-is (even ligand analyses — they
             # will raise a clear error if no ligand is actually present).
-            return [n for n in all_names if n in include]
+            planned = [n for n in all_names if n in include]
+            # With the check of the solute against its own images, wherever
+            # there is a box and a solute: every analysis of these frames is
+            # read against what it found, and a study listing its analyses
+            # (as the GUI writes them) was otherwise never checked.
+            if (_IMAGE_CHECK not in planned and _IMAGE_CHECK in _REGISTRY
+                    and _box_ok(_IMAGE_CHECK) and _solute_ok(_IMAGE_CHECK)):
+                planned.insert(0, _IMAGE_CHECK)
+            return planned
 
         if exclude is not None:
             unknown = [n for n in exclude if n not in _REGISTRY]
@@ -721,6 +810,10 @@ class AnalysisOrchestrator:
                     f"Unknown analyses in exclude: {unknown}. "
                     f"Available: {all_names}"
                 , code="analysis.unknown")
+            if (_IMAGE_CHECK in exclude and _IMAGE_CHECK in _REGISTRY
+                    and _box_ok(_IMAGE_CHECK) and _solute_ok(_IMAGE_CHECK)):
+                self.image_check_left_out = IMAGE_CHECK_EXCLUDED
+                logger.info("%s", IMAGE_CHECK_EXCLUDED)
             return [
                 n for n in all_names
                 if n not in exclude and _ligand_ok(n) and _water_ok(n)
@@ -728,7 +821,7 @@ class AnalysisOrchestrator:
                 and _box_ok(n) and _named_ok(n) and _bilayer_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
                 and _steered_ok(n) and _fold_ok(n)
-                and _alignable(n)
+                and _alignable(n) and _solute_ok(n)
             ]
 
         # Default plan: everything except ligand-only analyses when there is
@@ -738,7 +831,7 @@ class AnalysisOrchestrator:
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
-                and _fold_ok(n) and _alignable(n)]
+                and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
 
     def _merge_options(
         self,
@@ -892,6 +985,8 @@ class AnalysisOrchestrator:
             "n_protein_residues": int(sum(
                 1 for r in self.traj.topology.residues if r.is_protein)),
             "plan": list(self.results.keys()),
+            **({"image_check_left_out": self.image_check_left_out}
+               if getattr(self, "image_check_left_out", None) else {}),
             # The same facts under the names a config uses, so the run's
             # resolved config can carry them. `include` is the one that
             # matters: left unset it means "the default set of measures",
@@ -930,3 +1025,9 @@ def _separation_for(cls: type, asked: dict[str, Any]) -> int:
     except (KeyError, TypeError, ValueError):
         return 4
     return 4 if declared is inspect.Parameter.empty else int(declared)
+
+
+# The check of the solute against its own periodic images registers here,
+# before any other analysis, so it is first in every plan and its finding is
+# there for each analysis of the same frames.
+from fastmdxplora.analysis import image_check as _image_check  # noqa: E402, F401

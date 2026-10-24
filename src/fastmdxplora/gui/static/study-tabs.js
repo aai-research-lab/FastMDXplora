@@ -6,6 +6,9 @@
   var api, host, list, note, unkept, goneNotice, storageKey = "", tabs = [], closed = [];
   var active = "", pending = false, hydrated = false;
   var lastRender = "", explicitKey = "", roving = "", shownActive = null;
+  // Whether the open study's tab is being kept in view: true until the
+  // strip is moved so that it is not (a wheel, a drag, the keyboard).
+  var following = true, tabsSized = null;
   var focusOnOpen = "";
   /* A switch asked another way (Recent, All studies, Load study, Back):
    * the strip is busy until it is answered. */
@@ -53,7 +56,7 @@
   function unkeptSaid(failed) {
     if (!unkept) return;
     unkept.hidden = !failed;
-    unkept.textContent = failed ? "Open studies are not kept in this window: this browser does not allow it to store them." : "";
+    unkept.textContent = failed ? "Open studies are not saved in this window: this browser does not allow it to store them." : "";
   }
   function save() {
     if (!storageKey) return;
@@ -301,9 +304,24 @@
       var restored = Array.from(list.querySelectorAll(selector)).find(function (el) { return el.dataset.studyKey === focusKey; });
       if (restored) restored.focus({preventScroll: true});
     }
-    // The open study's tab is kept in view as it changes or first shows.
-    if (active !== shownActive) { shownActive = active; showCurrent(); }
+    // The open study's tab is kept in view as it changes or first shows,
+    // and as the names before it change (a study's id read late, a tab
+    // found gone): the strip's own box keeps its size then, so the
+    // observer on it does not see that.
+    if (active !== shownActive) { shownActive = active; following = true; showCurrent(); }
+    else if (following && !list.contains(document.activeElement)) showCurrent();
+    if (tabsSized) {
+      tabsSized.disconnect();
+      Array.prototype.forEach.call(list.children, function (item) { tabsSized.observe(item); });
+    }
     edges();
+  }
+  /* Whether the open study's tab lies wholly inside the strip's view. */
+  function currentShown() {
+    var current = list.querySelector(".study-tab.is-current");
+    if (!current) return false;
+    var box = current.getBoundingClientRect(), room = list.getBoundingClientRect();
+    return box.left >= room.left - 1 && box.right <= room.right + 1;
   }
   /* The open study's tab scrolled into the strip's view, without taking
    * the keyboard to it. */
@@ -333,7 +351,7 @@
     };
     var goneOthers = document.getElementById("study-gone-studies");
     if (goneOthers) goneOthers.onclick = function () { api.navigate("studies"); };
-    list.addEventListener("scroll", edges, {passive: true});
+    list.addEventListener("scroll", function () { following = currentShown(); edges(); }, {passive: true});
     // A plain mouse wheel moves a strip longer than its room along it.
     list.addEventListener("wheel", function (event) {
       if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
@@ -341,7 +359,12 @@
       var step = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * list.clientWidth : event.deltaY;
       var before = list.scrollLeft;
       list.scrollLeft += step;
-      if (list.scrollLeft !== before) event.preventDefault();
+      if (list.scrollLeft !== before) {
+        event.preventDefault();
+        // Moved away now, not at the scroll event a frame later: a redraw
+        // in between (a study's id read) brought the open tab back.
+        following = currentShown();
+      }
     }, {passive: false});
     // The page's own sticky header and bars stay below the strip, its note
     // included, whatever its height (study-tabs.css, dashboard.css). Under
@@ -371,6 +394,15 @@
       if (!list.contains(document.activeElement)) showCurrent();
       edges();
     }).observe(list);
+    // A tab that changes width without the strip doing so (its name drawn
+    // once the page's font has come) keeps the open tab in view too.
+    if (window.ResizeObserver) {
+      tabsSized = new ResizeObserver(function () {
+        if (following && !list.contains(document.activeElement)) showCurrent();
+        edges();
+      });
+      Array.prototype.forEach.call(list.children, function (item) { tabsSized.observe(item); });
+    }
     list.onkeydown = function (event) {
       var key = event.target.dataset.studyKey;
       var tab = tabs.find(function (t) { return t.key === key; });

@@ -424,7 +424,14 @@ def write_resolved_config(
             # the same run. Written as a default beside a duration the user
             # set, it would not have been -- which is why only a recorded
             # resolution is allowed to do this.
-            block.update(recorded.get(phase) or {})
+            found = dict(recorded.get(phase) or {})
+            if phase == "analysis" and block.get("exclude"):
+                # Analyses left out by name: the record holds that choice,
+                # not also the plan it resolved to (`include`), which the
+                # loader refuses beside it, so every later run of the study
+                # from its record stopped. The plan is in the manifest.
+                found.pop("include", None)
+            block.update(found)
             doc[phase] = block
     else:
         for phase, block in options.items():

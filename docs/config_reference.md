@@ -113,7 +113,7 @@ refused, and the barostat that is chosen for you.
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `water_model` | str | from the force field | e.g. `tip3p`, `tip4pew` |
-| `solvent_padding_nm` | float | `1.0` | Minimum distance from solute to box wall |
+| `solvent_padding_nm` | float | `2.0` | Least distance from the solute to its nearest periodic image, as OpenMM sizes the box: about 1.0 nm of water between the solute and the box's wall |
 | `box_shape` | str | `dodecahedron` | `cube`, `dodecahedron` or `octahedron` |
 | `neutralize` | bool | `true` | Add ions to neutralise the net solute charge |
 | `ion_positive` | str | `Na+` | Counter-ion cation |
@@ -152,7 +152,7 @@ Defaults suit a solvated protein. Changing one changes the physics.
 | `ewald_error_tolerance` | float | `0.0005` | Ewald/PME error tolerance |
 | `use_switching_function` | bool | the force field's | Apply a switching function near the cutoff |
 | `switch_distance_nm` | int or float | the force field's, else 0.9 × cutoff | Where the switching function turns on |
-| `dispersion_correction` | bool | `true` | Long-range dispersion (vdW tail) correction |
+| `dispersion_correction` | bool | the force field's | Long-range dispersion (vdW tail) correction: off for CHARMM36, otherwise as its files leave it (on for AMBER, OpenMM's default) |
 | `remove_cm_motion` | bool | `true` | Add a centre-of-mass motion remover |
 
 The cutoff and the switch are taken from the force field when you do not set
@@ -258,7 +258,7 @@ this for you — see [Continuing a study that stopped](agent.md#continuing-a-stu
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `verlet`, `variable_langevin`, `variable_verlet` |
+| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `verlet`, `variable_langevin`, `variable_verlet`. The two Verlet ones have no thermostat and are refused; `brownian` needs a friction of about 100 per ps at 2 fs and 300 K |
 | `timestep_fs` | int or float | `2.0` | Integrator timestep |
 | `integrator_error_tolerance` | float | `0.001` | Variable-timestep integrators only |
 | `random_seed` | int | unset | Integrator seed. Fixes the dynamics, not the solvation |
@@ -357,14 +357,14 @@ Nothing leaves the machine: these are files in the run directory that the
 | `exclude` | list | — | Everything but these. Mutually exclusive with `include` |
 | `options` | mapping | — | Per-analysis settings, keyed by analysis name |
 
-The 30 names `include` and `exclude` accept:
+The 31 names `include` and `exclude` accept:
 
 ```
 rmsd  rmsf  rg  hbonds  ss  sasa  dihedrals  qvalue  cluster  dimred
 water_sites  ligand_rmsd  ligand_rmsf  pl_contacts  pl_hbonds  pl_interactions
 order_parameters  bfactor_comparison  thermodynamics  rdf  coordination_number
 end_to_end  moments_of_inertia  pair_distance  pmf  metad_surface  steered_work
-area_per_lipid  bilayer_thickness  lipid_order
+area_per_lipid  bilayer_thickness  lipid_order  image_check
 ```
 
 Several do not run by default and are gated on what the run contains — a

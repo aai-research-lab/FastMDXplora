@@ -552,9 +552,15 @@ class TestTwoReplicasOfOnePreparedSystem:
         for member in replicas.members:
             analyses = json.loads((member / "analysis" / "analysis_manifest.json")
                                   .read_text(encoding="utf-8"))
+            # The image check joins a listed plan, and reads the run's
+            # cutoff from the named setup's record, as every reader does.
             assert {name: result["status"] for name, result
                     in analyses["results"].items()} == {
-                "rmsd": "ok", "ligand_rmsd": "ok", "pl_interactions": "ok"}
+                "image_check": "ok", "rmsd": "ok", "ligand_rmsd": "ok",
+                "pl_interactions": "ok"}
+            image = json.loads((member / "analysis" / "image_check" / "options.json")
+                               .read_text(encoding="utf-8"))["findings"]["solute_image"]
+            assert image["cutoff_from"].startswith("read from"), image["cutoff_from"]
             options = json.loads((member / "analysis" / "pl_interactions" / "options.json")
                                  .read_text(encoding="utf-8"))
             chemistry = options["findings"]["ligand_chemistry"]

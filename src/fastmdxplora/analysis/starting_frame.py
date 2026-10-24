@@ -33,8 +33,9 @@ EQUILIBRATED = "equilibrated"
 def start_as_given(start: Any) -> float | str | None:
     """``start`` as an analysis keeps it: None for the first frame (0, the
     default, needs no clock to find it), ``"equilibrated"``, or a time in ns
-    after zero. Refused here, at construction, rather than when the frames
-    are read."""
+    on the trajectory's own clock, the one its figures are plotted against
+    (a continuation whose clock begins at 100 ns starts at 100). Refused
+    here, at construction, rather than when the frames are read."""
     if start is None:
         return None
     if isinstance(start, str):
@@ -61,7 +62,7 @@ def start_as_given(start: Any) -> float | str | None:
             code="analysis.option.wrong_type") from None
     if not np.isfinite(value) or value < 0:
         raise StudyError(
-            f"`start` is a time in ns from the start of the trajectory, so it "
+            f"`start` is a time in ns on the trajectory's clock, so it "
             f"cannot be {value:g}.",
             code="analysis.option.out_of_range")
     return None if value == 0 else value
@@ -163,3 +164,27 @@ def first_frame(traj: md.Trajectory, atom_idx: np.ndarray,
                 "period to leave out.")
     record["said"] = said
     return first, record
+
+
+def which_frames(record: Any) -> str | None:
+    """The frames a figure's numbers are over, said on the figure."""
+    if not isinstance(record, dict):
+        return None
+    frames, n = record["first_frame"], record["n_frames_given"]
+    if not frames:
+        return f"over all {n:,} frames"
+    span = (f" ({record['first_time_ns']:.4g} ns)"
+            if record.get("first_time_ns") is not None else "")
+    left = "left out as equilibration" if record.get("start") == EQUILIBRATED \
+        else "left out"
+    return f"over frames {frames:,} to {n - 1:,}; the first {frames:,}{span} {left}"
+
+
+def too_few_frames(n: int) -> None:
+    """Refuse a fluctuation over fewer than two frames, as the RMSF does."""
+    if n < 2:
+        raise StudyError(
+            f"{n} frame: a fluctuation is a spread over frames, and one "
+            "frame has none, so every RMSF would read zero. At least two "
+            "frames are needed.",
+            code="analysis.sampling.too_few_frames", found=n, needed=2)

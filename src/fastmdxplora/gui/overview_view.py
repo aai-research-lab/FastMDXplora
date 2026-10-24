@@ -210,6 +210,10 @@ def _tiles(root: Path) -> dict[str, Any]:
                 "from_ns": quantity.get("from_ns"),
                 "reweighted": bool(quantity.get("reweighted")),
                 "series": series,
+                # Its image note beside the verdict, which it does not change,
+                # and the analysis's paragraph of it on hover.
+                "noted": quantity.get("noted") or "",
+                "noted_why": quantity.get("noted_why") or "",
             })
     shown = tiles[:MOST_TILES]
     # The means not shown, as the heading counts means: the RMSF tile is
@@ -259,9 +263,15 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
             return None
         return {"said": unread.strip(), "undetermined": 0, "means": 0, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
+    from fastmdxplora.image_note import determined_said, longer_run_said, recorded_finding
+
     if determined >= means:
         said = ("Its mean is determined." if means == 1
                 else f"All {means} means are determined.")
+        # Determined, and still biased where the solute met its own image
+        # in every frame: never said determined alone.
+        image = determined_said(recorded_finding(root), means)
+        said += f" {image}" if image else ""
         return {"said": said + unread, "undetermined": 0, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
     from fastmdxplora import record_access
@@ -289,6 +299,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     if ask is None:
         why = (f"is not said: {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} "
                f"not read." if refused else "is not in the records: each says why below.")
+        lifted = longer_run_said(recorded_finding(root))
+        why += f" {lifted}" if lifted else ""
         return {"said": f"{counted}. How much longer would determine {them} {why}" + unread,
                 "undetermined": undetermined, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
@@ -308,7 +320,9 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
         said += (f" {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} not read, "
                  f"so what {'it says' if len(refused) == 1 else 'they say'} is not counted "
                  f"here.")
-    said += unread
+    # Not a longer run alone, where the solute met its image in every frame.
+    lifted = longer_run_said(recorded_finding(root))
+    said += (f" {lifted}" if lifted else "") + unread
     return {"said": said, "undetermined": undetermined, "means": means,
             "more_ns": ask.more_ns, "seconds": ask.seconds, "platform": ask.platform,
             "lower_bound": ask.lower_bound}
@@ -433,6 +447,17 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
         entry = recorded.get(key)
         if isinstance(entry, dict) and ("mean" in entry or "not_a_measurement" in entry):
             means[key] = _said(entry, unit, _count(recorded.get("samples")))
+            if means[key] is not None:
+                # Its image note beside its verdict, as every page says it.
+                from fastmdxplora.image_note import note_of, paragraph_beside, said_short
+
+                short = said_short(note_of(entry))
+                means[key]["noted"] = short or None
+                # The analysis's paragraph, said as its where it counts the
+                # union of the rows, not this mean's.
+                means[key]["noted_why"] = (paragraph_beside(note_of(entry), {
+                    "solute_image": recorded.get("solute_image_of_analysis")}) or None
+                    if short else None)
             if means[key] is None and entry.get("not_a_measurement"):
                 why = entry["not_a_measurement"]
                 if isinstance(why, dict):
@@ -566,7 +591,13 @@ def _recorded_thermodynamics(root: Path) -> dict[str, Any] | NotRead:
     except (OSError, ValueError, AttributeError):
         return {}
     record = found.get("thermodynamics") if isinstance(found, dict) else None
-    return record if isinstance(record, dict) else {}
+    if not isinstance(record, dict):
+        return {}
+    from fastmdxplora.image_note import paragraph_of
+
+    # The analysis's paragraph of its image note, said where a mean's is.
+    return {**record, "solute_image_said": paragraph_of(found) or None,
+            "solute_image_of_analysis": found.get("solute_image")}
 
 
 def _count(value: Any) -> int | None:

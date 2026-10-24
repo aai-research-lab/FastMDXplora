@@ -6,6 +6,14 @@ Viewer's and the live view's scratch (`fastmdxplora.study_files`). The bundle is
 suitable for attaching to a publication's supplementary materials or sharing
 with a collaborator.
 
+It holds results and records, not working matrices (:func:`left_out`): the
+clustering's whole frame-by-frame matrix, and any matrix the analyses saved
+past :data:`MOST_MATRIX_BYTES`, stay in the study's folder, and
+``left_out_of_bundle.txt`` inside the bundle lists each with where it is. A
+chignolin study's bundle was 7.3 GB, most of it two copies of one matrix
+the dendrogram never needed. The report says the same list where it names
+the bundle.
+
 The top-level ``manifest.json`` and ``resolved_config.yml`` are added by the
 orchestrator once every phase has finished, because they do not exist while
 this runs. Until they were, the archive went out with thirteen megabytes of
@@ -19,7 +27,7 @@ from fastmdxplora.replaced import PREVIOUS
 from fastmdxplora.study_files import is_scratch
 from fastmdxplora.utils.logging import get_logger
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -46,6 +54,76 @@ EXCLUDE_SUFFIXES: tuple[str, ...] = (
     ".swp",
     "~",
 )
+
+
+#: Past this, a matrix the analyses saved (``.npy``, ``.npz``) is a working
+#: file the bundle leaves in the study's folder, and says so. 100 MB: the
+#: clustering's own map is at most about 4 MB now, and its whole matrix was
+#: 3.3 GB for 31,000 frames in a study clustered before.
+MOST_MATRIX_BYTES = 100 * 10**6
+
+#: The clustering's whole frame-by-frame matrix: written only when asked
+#: (``save_full_matrix``), or by a study clustered before, and left out
+#: whatever its size.
+WORKING_MATRICES = frozenset({"cluster_rmsd_matrix_full.npy",
+                              "hierarchical_distance_matrix.npy"})
+
+#: The list of what was left out, written inside the bundle.
+LEFT_OUT_LIST = "left_out_of_bundle.txt"
+
+
+def left_out(rel: str, size: int) -> str | None:
+    """Why the study's file at ``rel`` (``size`` bytes) is left out of the
+    bundle, or None where it goes in."""
+    path = PurePosixPath(rel)
+    if "analysis" not in path.parts[:-1]:
+        return None
+    if path.name in WORKING_MATRICES:
+        return "the clustering's whole frame-by-frame matrix, a working file"
+    if path.suffix.lower() in (".npy", ".npz") and size > MOST_MATRIX_BYTES:
+        return (f"a matrix the analyses saved, past the bundle's bound of "
+                f"{size_said(MOST_MATRIX_BYTES)}")
+    return None
+
+
+def size_said(n_bytes: int) -> str:
+    """Bytes as a person reads them: 7.7 GB, 98 MB, 512 KB."""
+    for unit, scale in (("GB", 10**9), ("MB", 10**6), ("KB", 10**3)):
+        if n_bytes >= scale:
+            value = n_bytes / scale
+            return f"{value:.1f} {unit}" if value < 10 else f"{value:.0f} {unit}"
+    return f"{n_bytes} bytes"
+
+
+def left_out_of_bundle(root: Path) -> list[tuple[str, int, str]]:
+    """What a bundle of the study at ``root`` leaves out: each file's path in
+    the study's folder, its size and why, in path order. Read by the bundle
+    and by the report, so the two give one list."""
+    bundle_path = root / "report" / "project_bundle.zip"
+    return _split(root, bundle_path)[1]
+
+
+def _split(root: Path, bundle_path: Path) -> tuple[list[Path], list[tuple[str, int, str]]]:
+    files: list[Path] = []
+    left: list[tuple[str, int, str]] = []
+    for path in _iter_project_files(root, bundle_path):
+        rel = path.relative_to(root).as_posix()
+        size = path.stat().st_size
+        why = left_out(rel, size)
+        if why is None:
+            files.append(path)
+        else:
+            left.append((rel, size, why))
+    return files, sorted(left)
+
+
+def left_out_said(left: list[tuple[str, int, str]]) -> str:
+    """The list written inside the bundle."""
+    lines = ["These files of the study were left out of this bundle. They are "
+             "working matrices the analyses saved, which its results and records "
+             "do not need; each is in the study's folder at the path given.", ""]
+    lines += [f"{rel}\t{size_said(size)}\t{why}" for rel, size, why in left]
+    return "\n".join(lines) + "\n"
 
 
 def _iter_project_files(root: Path, bundle_path: Path) -> list[Path]:
@@ -92,7 +170,7 @@ def build_bundle(
     project_root = orchestrator.output_dir
     bundle_path = output_dir / "project_bundle.zip"
 
-    files = _iter_project_files(project_root, bundle_path)
+    files, left = _split(project_root, bundle_path)
 
     with zipfile.ZipFile(
         bundle_path,
@@ -102,6 +180,11 @@ def build_bundle(
         for f in files:
             arcname = f.relative_to(project_root).as_posix()
             zf.write(f, arcname=str(arcname))
+        if left:
+            zf.writestr(LEFT_OUT_LIST, left_out_said(left))
 
+    if left:
+        logger.info("bundle: left out %d working file(s), %s, listed in %s inside it",
+                    len(left), size_said(sum(size for _, size, _ in left)), LEFT_OUT_LIST)
     logger.debug("bundle: wrote %s (%d files)", bundle_path, len(files))
     return ["project_bundle.zip"]

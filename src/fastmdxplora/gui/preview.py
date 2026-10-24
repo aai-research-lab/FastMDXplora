@@ -168,8 +168,10 @@ def _forcefield_said(setup: dict[str, Any]) -> dict[str, Any]:
         choice = resolve_forcefield(setup.get("forcefield"))
     except Exception:  # noqa: BLE001 - a name the validator refuses says itself
         return {"name": str(setup.get("forcefield")), "description": ""}
+    # The water's own name where the box is filled with another's geometry
+    # (TIP3P-FB in a TIP3P box), for the preview's Water row to say.
     return {"name": choice.name, "description": choice.description,
-            "water_model": choice.water_model}
+            "water_model": choice.water_model, "water_name": choice.water_name}
 
 
 #: How close a metal must be to a side chain's nitrogen or oxygen to be said

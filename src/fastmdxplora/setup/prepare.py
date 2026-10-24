@@ -63,7 +63,7 @@ logger = get_logger("setup.prepare")
 # (The default force field now lives in setup/forcefields.py, the single
 # source of truth for the named force-field registry.)
 # ---------------------------------------------------------------------------
-DEFAULT_PADDING_NM = 1.0
+DEFAULT_PADDING_NM = 2.0
 DEFAULT_IONIC_STRENGTH_M = 0.15
 # DEFAULT_PH is deliberately absent. It existed here, unread by anything, and
 # stayed at 7.0 when the pH default became 7.4 -- an unused constant stating a
@@ -250,8 +250,8 @@ def _solvate_with_room_for_the_cutoff(
     below that a particle sees its own image and the physics is wrong, which
     is why OpenMM refuses. Padding is measured from the solute, and a
     dodecahedron's smallest dimension is shorter than a cube's for the same
-    padding, so a small solute at the default 1.0 nm padding and 1.0 nm
-    cutoff now lands under the limit where a cube did not.
+    padding, so a small solute at 1.0 nm of padding (the default before
+    2.0 nm) and a 1.0 nm cutoff lands under the limit where a cube did not.
 
     Growing the padding is the only remedy that keeps what was asked for:
     the alternative is shrinking the cutoff, which changes the physics rather
@@ -268,9 +268,9 @@ def _solvate_with_room_for_the_cutoff(
 
     Where the padding sizes the box (a solute smaller than the padding),
     the box grown to is the smallest the cutoff allows for any solute, and
-    it is grown to whatever the amount. The defaults, 1.0 nm of padding in
-    a dodecahedron with a 1.0 nm cutoff, need 1.56 nm for a peptide of a few
-    residues; refusing that stopped every such study at setup.
+    it is grown to whatever the amount. 1.0 nm of padding (the default before
+    2.0 nm) in a dodecahedron with a 1.0 nm cutoff needs 1.56 nm for a peptide
+    of a few residues; refusing that stopped every such study at setup.
     """
     kwargs = dict(add_solvent_kwargs)
     padding = float(padding_nm)
@@ -513,7 +513,7 @@ def prepare_system(
     ewald_error_tolerance: float = 0.0005,
     use_switching_function: bool | None = None,
     switch_distance_nm: float | None = None,
-    dispersion_correction: bool = True,
+    dispersion_correction: bool | None = None,
     remove_cm_motion: bool = True,
     constraints: str = "HBonds",
     rigid_water: bool = True,
@@ -539,9 +539,10 @@ def prepare_system(
         Water model name (``"tip3p"``, ``"tip4pew"``, ``"spce"``, etc.)
         used by Modeller. When ``None`` (the default), Modeller picks the
         model that matches the supplied water-model XML.
-    solvent_padding_nm : float, default 1.0
-        Minimum distance in nm between any solute atom and the periodic
-        box wall.
+    solvent_padding_nm : float, default 2.0
+        Least distance in nm between the solute and its nearest periodic
+        image, as OpenMM's padding is: about 1.0 nm of water between the
+        solute and the box's wall by default.
     box_shape : {"cube", "dodecahedron", "octahedron"}, default "cube"
         Periodic box geometry. Not used with a membrane, whose box is
         rectangular and made of whole patches.
@@ -571,6 +572,14 @@ def prepare_system(
         field's own (:func:`~fastmdxplora.setup.forcefields.nonbonded_scheme`).
     use_switching_function : bool, optional
         ``None``, the default, switches as the force field is developed.
+    dispersion_correction : bool, optional
+        The isotropic long-range dispersion correction. ``None``, the
+        default, takes the force field's scheme: off for CHARMM36, whose
+        lipids were fitted without it (``charmm36.xml`` says so, and
+        ``charmm36_2024.xml`` says nothing, which OpenMM would read as on),
+        and otherwise what the files leave it at: OpenMM turns it on where a
+        file says nothing, as the AMBER files do. A stated value wins, with a
+        warning where it departs from the force field's scheme.
     constraints : {"None", "HBonds", "AllBonds", "HAngles"}, default "HBonds"
         Bond constraints. ``HBonds`` is the standard choice for 2 fs
         timesteps with water.
@@ -611,10 +620,12 @@ def prepare_system(
     if force_field:
         force_field = list(force_field)
         (nonbonded_cutoff_nm, use_switching_function,
-         switch_distance_nm, _) = nonbonded_scheme(
-            None, cutoff_nm=nonbonded_cutoff_nm,
+         switch_distance_nm, said) = nonbonded_scheme(
+            force_field, cutoff_nm=nonbonded_cutoff_nm,
             use_switching_function=use_switching_function,
             switch_distance_nm=switch_distance_nm)
+        if said:
+            logger.info("%s", said)
     else:
         ff_choice = resolve_forcefield(forcefield)
         force_field = list(ff_choice.xmls)
@@ -931,7 +942,33 @@ def prepare_system(
     # Cutoff/PME/Ewald methods take a cutoff distance + dispersion correction.
     if is_cutoff_method:
         create_system_kwargs["nonbondedCutoff"] = nonbonded_cutoff_nm * unit.nanometer
-        create_system_kwargs["useDispersionCorrection"] = bool(dispersion_correction)
+        # Passed only when stated. Always passing it overrode the file:
+        # `charmm36.xml` declares the correction off, OpenMM takes a keyword
+        # over the file with a warning nobody saw, and every CHARMM36 run --
+        # its bilayers among them -- ran with a tail correction its
+        # parameterisation never had (-75 bar in CHARMM water at 1.2 nm).
+        if dispersion_correction is not None:
+            create_system_kwargs["useDispersionCorrection"] = bool(dispersion_correction)
+            from fastmdxplora.setup.forcefields import dispersion_correction_of
+
+            wanted, _why = dispersion_correction_of(
+                ff_choice.name if ff_choice is not None else force_field)
+            if wanted is not None and wanted != bool(dispersion_correction):
+                logger.warning(
+                    "Long-range dispersion correction %s as stated; this force "
+                    "field is fitted %s it.", "on" if dispersion_correction else "off",
+                    "with" if wanted else "without")
+        else:
+            # The force field's scheme where it has one: `charmm36_2024.xml`
+            # says nothing, which OpenMM reads as on, and its lipids are the
+            # C36 lipids fitted without it.
+            from fastmdxplora.setup.forcefields import dispersion_correction_of
+
+            wanted, why = dispersion_correction_of(
+                ff_choice.name if ff_choice is not None else force_field)
+            if wanted is not None:
+                create_system_kwargs["useDispersionCorrection"] = wanted
+                logger.info("%s", why)
     # PME / Ewald take an Ewald error tolerance.
     if method_key in ("PME", "Ewald"):
         create_system_kwargs["ewaldErrorTolerance"] = float(ewald_error_tolerance)
@@ -958,7 +995,7 @@ def prepare_system(
     # cutoff to be <= half the smallest box dimension, otherwise it raises a
     # cryptic NonbondedForce error at Context construction. Catch it here
     # with an actionable message. (This normally can't happen with the
-    # default 1.0 nm padding + 1.0 nm cutoff, but a user with a small
+    # default 2.0 nm padding + 1.0 nm cutoff, but a user with a small
     # padding or large cutoff could trip it.)
     if method_key in ("CutoffPeriodic", "PME", "Ewald"):
         box_vectors = modeller.topology.getPeriodicBoxVectors()
@@ -997,6 +1034,16 @@ def prepare_system(
     except ValueError as exc:
         raise _explain_unparameterized(exc, ff, modeller.topology) from exc
     _refuse_masses_not_positive(system, modeller.topology, hydrogen_mass_amu, unit)
+    # Only under periodic boundaries: OpenMM applies the tail correction
+    # there alone, whatever the flag says for a non-periodic cutoff.
+    dispersion_used = _dispersion_correction_of(omm["openmm"], system) \
+        if method_key in ("CutoffPeriodic", "PME", "Ewald") else None
+    if dispersion_correction is None and dispersion_used is not None \
+            and "useDispersionCorrection" not in create_system_kwargs:
+        logger.info(
+            "Long-range dispersion correction %s, as the force field's files "
+            "leave it (OpenMM turns it on where a file says nothing).",
+            "on" if dispersion_used else "off")
 
     # ----- 5. Capture initial State -----
     # Use a no-op integrator just to obtain a Context for State serialization.
@@ -1081,6 +1128,11 @@ def prepare_system(
                 ("nonbonded_cutoff_nm", nonbonded_cutoff_nm),
                 ("use_switching_function", bool(use_switching_function)))
                if stated[name] is None},
+            # What the system holds, read from it: the force field's file
+            # decides where nobody stated it.
+            **({"dispersion_correction": bool(dispersion_used)}
+               if dispersion_correction is None and dispersion_used is not None
+               else {}),
         },
     }
 
@@ -1425,6 +1477,25 @@ def _drop_ion_coordination_bonds(topology) -> list[str]:
             ", ".join(sorted(set(dropped))),
         )
     return dropped
+
+
+def _dispersion_correction_of(openmm: Any, system: Any) -> bool | None:
+    """Whether the system's Lennard-Jones carries the isotropic tail
+    correction: the NonbondedForce's, or a CustomNonbondedForce's long-range
+    correction where the force field puts its LJ there (CHARMM's NBFIX).
+    ``None`` where the system cannot be read so."""
+    try:
+        forces = list(system.getForces())
+        # Where the force field puts its Lennard-Jones in a custom force, the
+        # NonbondedForce's LJ is zeroed and its flag says nothing.
+        found = [bool(force.getUseLongRangeCorrection())
+                 for force in forces if isinstance(force, openmm.CustomNonbondedForce)]
+        if not found:
+            found = [bool(force.getUseDispersionCorrection())
+                     for force in forces if isinstance(force, openmm.NonbondedForce)]
+    except (TypeError, AttributeError):  # a stand-in for OpenMM, as in tests
+        return None
+    return any(found) if found else None
 
 
 def _explain_unparameterized(exc: ValueError, ff, topology) -> Exception:

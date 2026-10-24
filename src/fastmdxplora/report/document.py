@@ -60,6 +60,17 @@ def _code_text(value: object, *, limit: int = 1000) -> str:
     return _one_line(value, limit=limit).replace("`", "'")
 
 
+def _md_with_code(value: object, *, limit: int = 1000) -> str:
+    """``value`` as Markdown text whose code spans stay code: the rest
+    escaped as :func:`_md_text` escapes it. A setting named in backticks
+    read "\\`exclude: \\[image\\_check\\]\\`"."""
+    import re
+
+    parts = re.split(r"(`[^`]+`)", _one_line(value, limit=limit))
+    return "".join(f"`{_code_text(part[1:-1])}`" if part.startswith("`") and part.endswith("`")
+                   and len(part) > 1 else _md_text(part) for part in parts)
+
+
 def _link_target(path: str) -> str:
     return quote(path, safe="/._-")
 
@@ -81,6 +92,19 @@ def _caption_of(analysis: str, stem: str) -> str:
     rest = stem[len(analysis):] if stem.startswith(analysis) else stem
     rest = rest.strip("_").replace("_", " ")
     return f"{analysis}: {rest}" if rest else analysis
+
+
+def _caption_of_figure(folder: Path, analysis: str, stem: str) -> str:
+    """The caption, with what the figure's numbers are where the analysis
+    recorded it beside the figure: the clustering's map of time against time
+    is of means over blocks of frames on a long run."""
+    caption = _caption_of(analysis, stem)
+    if analysis == "cluster" and stem == "cluster_rmsd_matrix":
+        found = (_load_json_safely(folder / "options.json") or {}).get("findings") or {}
+        block = (found.get("matrix") or {}).get("block") if isinstance(found, dict) else None
+        if isinstance(block, int) and not isinstance(block, bool) and block > 1:
+            caption += f", rows and columns averaged in blocks of {block} frames"
+    return caption
 
 
 def _load_json_safely(path: Path) -> dict | None:
@@ -604,6 +628,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         )
     lines.append(f"Analyses performed: {', '.join(_md_text(a) for a in plan)}.")
     lines.append("")
+    if analysis_manifest.get("image_check_left_out"):
+        # What is then not known of every mean below.
+        lines.append(_md_with_code(analysis_manifest["image_check_left_out"]))
+        lines.append("")
 
     # The corrected averages come before the analyses they correct. A reader
     # who meets the RMSD heading first has already read the raw number by the
@@ -662,7 +690,8 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         if analysis == "reweighted" and reweighted_record:
             continue
         # Pretty heading: uppercase short names, title-case longer ones
-        heading = analysis.upper() if len(analysis) <= 4 else analysis.title()
+        heading = _HEADINGS.get(analysis) or (
+            analysis.upper() if len(analysis) <= 4 else analysis.title())
         heading = _md_text(heading)
         lines.append(f"### {heading}")
         # What this analysis measures, in a sentence, before its parameters.
@@ -752,7 +781,7 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         figures = sorted(figs_dir.glob("*.png")) if figs_dir.exists() else []
         if figures:
             for fig in figures:
-                lines.append(f"![{_md_text(_caption_of(analysis, fig.stem))}]"
+                lines.append(f"![{_md_text(_caption_of_figure(figs_dir, analysis, fig.stem))}]"
                              f"({_link_from(report_dir, fig)})")
                 lines.append("")
         else:
@@ -761,6 +790,26 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
 
     return "\n".join(lines)
 
+
+
+def _bundle_section(project_root: Path) -> str:
+    """What the project bundle leaves out and where each file is, from the
+    list the bundle itself is built by; nothing where it leaves nothing out."""
+    from fastmdxplora.report.bundle import LEFT_OUT_LIST, left_out_of_bundle, size_said
+
+    left = left_out_of_bundle(project_root)
+    if not left:
+        return ""
+    total = sum(size for _, size, _ in left)
+    lines = ["## The project bundle", "",
+             "The project bundle (`project_bundle.zip`, beside this report where one "
+             "is written) holds the study's results and records. It leaves out "
+             f"{len(left)} working {'file' if len(left) == 1 else 'files'}, "
+             f"{size_said(total)} in all, which stay in the study's folder at the "
+             f"paths below; `{LEFT_OUT_LIST}` inside the bundle lists them too.", ""]
+    lines += [f"- `{_code_text(rel)}` ({size_said(size)}): {_md_text(why)}"
+              for rel, size, why in left]
+    return "\n".join(lines)
 
 
 def _scene_said(view: dict[str, Any], frame: Any) -> str:
@@ -968,6 +1017,7 @@ def _convergence_section(project_root: Path) -> str:
         "| equilibrated |"
     )
     lines.append("|---|---|---|---|---|---|---|")
+    from fastmdxplora.image_note import share_said
     from fastmdxplora.report.convergence import said_as
     from fastmdxplora.statistics import four_figures, with_its_error
 
@@ -1004,11 +1054,38 @@ def _convergence_section(project_root: Path) -> str:
                          f"| {check['detail']} |")
         lines.append("")
 
+    # How close the solute came to its own images: the means above over the
+    # frames where it did may be biased, and a run in contact with its image
+    # in every frame supports no claim about its shape, however long it runs.
+    image = _image_finding(project_root)
+    cannot = list(assessed["findings"])
+    if image:
+        under, close, n = image["under"], image["close"], image["frames"]
+        lines.append(
+            f"The solute came within the {image['cutoff']:g} nm cutoff of its own "
+            f"periodic image in {under:,} of {n:,} frames ({share_said(under, n)}), in "
+            f"contact with it (under 0.5 nm) in {close:,}: a mean above over those "
+            "frames may be biased by it (see Image check).")
+        lines.append("")
+        if close == n:
+            cannot.append(
+                "Any claim about the solute's shape: it was in contact with its own "
+                f"periodic image (under 0.5 nm) in every one of the {n:,} frames, so its "
+                "shape describes the box as much as the molecule, and a longer run in "
+                "the same box samples the same contact. A larger box, in a new study "
+                "(a box cannot grow mid-run), is what would support one.")
     asked = _what_more_sampling_needs(project_root)
-    if assessed["findings"]:
+    if asked and image:
+        from fastmdxplora.image_note import longer_run_said, recorded_finding
+
+        # One sentence for the report, the Overview and the Agent.
+        lifted = longer_run_said(recorded_finding(project_root))
+        if lifted:
+            asked += "\n\n" + lifted
+    if cannot:
         lines.append("### What this run cannot support")
         lines.append("")
-        for finding in assessed["findings"]:
+        for finding in cannot:
             lines.append(f"- {finding}")
         lines.append("")
         if asked:
@@ -1023,6 +1100,23 @@ def _convergence_section(project_root: Path) -> str:
         )
         lines.append("")
     return "\n".join(lines)
+
+
+def _image_finding(project_root: Path) -> dict[str, Any] | None:
+    """The image check's finding where the solute came within the cutoff of
+    its own image in some frame: its frames under the cutoff and under
+    0.5 nm, of how many, and the cutoff; None otherwise (read through
+    `record_access`, as every record of the report is)."""
+    record = _load_json_safely(project_root / "analysis" / "image_check" / "options.json")
+    found = ((record or {}).get("findings") or {}).get("solute_image")
+    if not isinstance(found, dict) or not found.get("reaches_its_image"):
+        return None
+    counts = [found.get(key) for key in ("frames_under_cutoff", "frames_under_close", "frames")]
+    if not all(isinstance(c, int) and not isinstance(c, bool) for c in counts) or not counts[2]:
+        return None
+    cutoff = found.get("cutoff_nm")
+    return {"under": counts[0], "close": counts[1], "frames": counts[2],
+            "cutoff": float(cutoff) if isinstance(cutoff, (int, float)) else 1.0}
 
 
 def _stopping_section(project_root: Path) -> str:
@@ -1055,6 +1149,41 @@ def _what_more_sampling_needs(project_root: Path) -> str:
     return (f"**What would support it.** {text[0].upper()}{text[1:]} This extends "
             f"the study in place, joins the segments and reruns the analyses:\n\n"
             f"```yaml\n{config}\n```")
+
+
+#: Headings said otherwise than the analysis's name.
+_HEADINGS = {"image_check": "Image check"}
+
+
+def image_note_said(image: Any) -> str | None:
+    """What the report says of how close the solute came to its own
+    periodic images: the image check's finding in full, in its own section,
+    and on another analysis whose frames it met its image in, one line
+    pointing there, from that analysis's note (its frames, not the run's)."""
+    if not isinstance(image, dict):
+        return None
+    if "frames_used" not in image:
+        # The image check's own finding.
+        return str(image["said"]) if image.get("said") else None
+    from fastmdxplora.image_note import COUNTED_OVER, note_of, share_said
+
+    if note_of({"solute_image": image}) is None:
+        return None
+    used, under = int(image["frames_used"]), int(image["frames_under_cutoff"])
+
+    noun = COUNTED_OVER.get(str(image.get("counted_over") or "frames"), "frames used")
+    cutoff = image.get("cutoff_nm")
+    within = (f"within the {float(cutoff):g} nm cutoff of"
+              if isinstance(cutoff, (int, float)) else "within the cutoff of")
+    what = ("its shape over them, and a mean of it, may be biased"
+            if image.get("may_bias") == "shape" else "a mean over them may be biased")
+    # Where the image check ran, its section has the paragraph; the
+    # end-to-end distance's own check of its chain has no section to point to.
+    where = (" (see Image check)" if str(image.get("read_from") or "image_check")
+             == "image_check" else ", as the end-to-end distance's own check of its "
+             "chain found, the image check not having run")
+    return (f"The solute came {within} its own periodic image in {under:,} of the "
+            f"{used:,} {noun} ({share_said(under, used)}), so {what}{where}.")
 
 
 def _findings_notes(findings: dict[str, Any]) -> list[str]:
@@ -1090,7 +1219,43 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
                 "frame" if discarded == 1 else "frames")
         notes.append(said + ".")
     if isinstance(measured, dict) and measured.get("not_a_measurement"):
-        notes.append(str(measured["not_a_measurement"]))
+        reason = str(measured["not_a_measurement"])
+        # "The remedy is a longer run, or better, replicas": neither lifts
+        # the bias of a solute in contact with its image in every frame the
+        # mean uses, as the Convergence part says of the run.
+        from fastmdxplora.image_note import note_of
+
+        note = note_of(measured)
+        if ("remedy is a longer run" in reason and note is not None
+                and note.get("frames_under_close") == note.get("frames_used")):
+            reason += (" Neither lifts the bias of the solute's own image, in contact with "
+                       "it in every frame this mean uses: a larger box, in a new study, does.")
+        notes.append(reason)
+    if findings.get("made_whole"):
+        notes.append(str(findings["made_whole"]))
+    # How close the solute came to its own images: the image check's own
+    # paragraph, said once, in its section; on each other analysis whose
+    # frames it met its image in, a line pointing there.
+    image = findings.get("solute_image")
+    pointer = image_note_said(image)
+    # Once: the end-to-end distance's reason holds the note's own sentence.
+    said = image.get("said") if isinstance(image, dict) and "frames_used" in image else None
+    if pointer and not any(pointer in note or (said and said in note) for note in notes):
+        notes.append(pointer)
+    shell = findings.get("shell")
+    if isinstance(shell, dict) and shell.get("said"):
+        notes.append(str(shell["said"]))
+    # MDS refused for memory, the projections asked for beside it run.
+    mds = findings.get("mds_refused")
+    if isinstance(mds, dict) and mds.get("said"):
+        named = {"pca": "PCA", "tsne": "t-SNE", "umap": "UMAP"}
+        run = [named.get(str(m).lower(), str(m)) for m in mds.get("kept") or []]
+        ran = (" and ".join([", ".join(run[:-1]), run[-1]]) if len(run) > 1
+               else run[0] if run else "")
+        notes.append(f"MDS was not run: {mds['said']}" + (
+            f" {ran} {'were' if len(run) > 1 else 'was'} run and "
+            f"{'their projections' if len(run) > 1 else 'its projection'} saved."
+            if ran else ""))
 
     chemistry = findings.get("ligand_chemistry")
     if isinstance(chemistry, dict):
@@ -1340,6 +1505,9 @@ def build_document(
     stopping = _stopping_section(project_root)
     if stopping:
         sections.append(stopping)
+    bundle = _bundle_section(project_root)
+    if bundle:
+        sections.append(bundle)
 
     sections.append(
         "## Discussion\n\n"

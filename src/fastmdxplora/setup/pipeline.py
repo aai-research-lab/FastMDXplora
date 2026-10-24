@@ -71,6 +71,24 @@ def _the_list_is_the_name(name: Any, xmls: Any) -> bool:
         return False
 
 
+def _files_of(name: Any) -> tuple[str, ...]:
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    return tuple(resolve_forcefield(str(name)).xmls)
+
+
+def _the_list_was_the_name(name: Any, xmls: Any) -> bool:
+    """Whether a raw force-field list is what a named one resolved to in an
+    earlier release: a study prepared then, carried on."""
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    try:
+        given = tuple(str(x) for x in xmls)
+        return given in resolve_forcefield(str(name)).earlier_xmls
+    except Exception:  # noqa: BLE001 - an unknown name is refused below
+        return False
+
+
 def _classify_input(system: str | None) -> str:
     """Return one of ``{"pdb_file", "pdb_id", "sequence"}``.
 
@@ -1340,6 +1358,26 @@ def _run(
         params["force_field"] = None
     elif named is not None and str(named).strip().lower() == "auto":
         pass  # the default beside a list of other files: the list is the study's
+    elif (named is not None and options.get("force_field")
+          and _the_list_was_the_name(named, options["force_field"])):
+        # What the name resolved to when the study was prepared: kept, so a
+        # study carried on is the system it was (`amber-fb15` with plain
+        # TIP3P before its own TIP3P-FB). The name still gives the cutoff
+        # scheme where the record does not state it, as it did then.
+        from fastmdxplora.setup.forcefields import nonbonded_scheme
+
+        cutoff, switching, distance, _said = nonbonded_scheme(
+            str(options["forcefield"]), cutoff_nm=params.get("nonbonded_cutoff_nm"),
+            use_switching_function=params.get("use_switching_function"),
+            switch_distance_nm=params.get("switch_distance_nm"))
+        params["nonbonded_cutoff_nm"] = cutoff
+        params["use_switching_function"] = switching
+        params["switch_distance_nm"] = distance
+        logger.info(
+            "The study was prepared with %s for `forcefield: %s`, which now "
+            "resolves to %s; it keeps the files it was prepared with.",
+            ", ".join(map(str, options["force_field"])), options["forcefield"],
+            ", ".join(_files_of(options["forcefield"])))
     elif named is not None and options.get("force_field"):
         raise StudyError(
             "Specify either `forcefield` (a named force field) or "
@@ -1714,7 +1752,8 @@ def _run(
             use_switching_function=(None if params.get("use_switching_function") is None
                                     else bool(params["use_switching_function"])),
             switch_distance_nm=params["switch_distance_nm"],
-            dispersion_correction=bool(params["dispersion_correction"]),
+            dispersion_correction=(None if params.get("dispersion_correction") is None
+                                   else bool(params["dispersion_correction"])),
             remove_cm_motion=bool(params["remove_cm_motion"]),
             constraints=str(params["constraints"]),
             rigid_water=bool(params["rigid_water"]),
@@ -1897,6 +1936,11 @@ def _write_manifest(
             "source": "explicit_xml_list",
             "xmls": list(params["force_field"]),
             "water_model": params.get("water_model"),
+            # A study carried on with the files its name gave when it was
+            # prepared keeps the name it was recorded under.
+            **({"name": str(params["forcefield"])}
+               if params.get("forcefield") and _the_list_was_the_name(
+                   params["forcefield"], params["force_field"]) else {}),
         }
     else:
         from fastmdxplora.setup.forcefields import resolve_forcefield
@@ -1908,6 +1952,14 @@ def _write_manifest(
                 "name": choice.name,
                 "xmls": list(choice.xmls),
                 "water_model": params.get("water_model") or choice.water_model,
+                # The water by its own name, where the box it was built from
+                # has another (TIP3P-FB from a `tip3p` box). Only while the
+                # box is the force field's own: a resolved_config.yml states
+                # it as `water_model: tip3p`, and that is the same water.
+                **({"water_name": choice.water_name}
+                   if choice.water_name and str(
+                       params.get("water_model") or choice.water_model).lower()
+                   == str(choice.water_model).lower() else {}),
                 "supports_ligand": choice.supports_ligand,
                 "small_molecule_forcefield": choice.small_molecule_forcefield,
             }

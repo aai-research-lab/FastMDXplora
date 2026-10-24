@@ -98,7 +98,8 @@ class TestTheCards:
         assert (card["system"], card["kind"], card["state"]) == ("1UBQ", "one run", "completed")
         assert card["production_ns"] == 10 and card["forcefield"] == "amber14"
         assert card["means"][0] == {"analysis": "rmsd", "label": "RMSD", "mean": 0.1234,
-                                    "error": 0.0056, "unit": "nm", "withheld": None}
+                                    "error": 0.0056, "unit": "nm", "withheld": None,
+                                    "noted": None}
         # Its figure is the thumbnail route's, no longer read for each card.
         assert "thumbnail" not in card and thumbnail_of(workspace / "ubiquitin")
 
@@ -364,4 +365,237 @@ def test_the_page(workspace) -> None:
     assert "0.0266 ± 0.0069 nm, resolved" in rmsd and "is-resolved" in (resolved or "")
     assert switched == [{"folder": str(workspace / "stopped")}]
     assert heard == ["Not in this test.", True]
+    assert errors == []
+
+
+def test_why_a_study_did_not_open_outlasts_the_cards_drawn_again(workspace) -> None:
+    """The cards are drawn again while a switch's answer is on its way (the
+    page shown again on going back, a search typed). Why the study did not
+    open went beside the old card's button, gone with that card, so nothing
+    said it (CI, after Back from Compare). It is kept by the study's folder
+    and said on the card drawn again, until the study is asked again."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(workspace / "ubiquitin"), host="127.0.0.1",
+                                      port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            # The studies as cards: All studies opens on its list.
+            page.add_init_script("try { localStorage.setItem('fmx.studiesView', 'cards'); } catch (e) {}")
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            # The switch's answer waits until the test lets it go.
+            page.add_init_script("""
+                const fetch = window.fetch;
+                let release;
+                window.__answer = new Promise(done => { release = done; });
+                window.__release = () => release();
+                window.fetch = (url, ...rest) => new URL(url, location.href).pathname === '/api/explore/switch'
+                    ? window.__answer.then(() => fetch(url, ...rest)) : fetch(url, ...rest);
+            """)
+            page.route("**/api/explore/switch",
+                       lambda route: route.fulfill(json={"ok": False, "error": "Not in this test."}))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.evaluate(f"() => window.FastMDXStudies.load({str(workspace)!r})")
+            stopped = '.study-card[data-path$="stopped"]'
+            page.wait_for_selector(stopped + " .study-open")
+            old = page.query_selector(stopped)
+            page.click(stopped + " .study-open")
+            # Drawn again while the answer is on its way.
+            page.fill("#studies-search", "zzz-no-study")
+            page.fill("#studies-search", "")
+            page.wait_for_selector(stopped + " .study-open")
+            redrawn = not old.evaluate("card => card.isConnected")
+            page.evaluate("() => window.__release()")
+            said = page.locator(stopped + ' .study-open-said:has-text("Not in this test.")')
+            said.wait_for()
+            # Drawn once more, it is still said.
+            page.fill("#studies-search", "stopped")
+            kept = page.locator(stopped + " .study-open-said").text_content()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert redrawn
+    assert kept == "Not in this test."
+    assert errors == []
+
+
+def test_why_a_study_did_not_open_wraps_in_the_table(workspace) -> None:
+    """In the table at 1440 with the side panel open, the reason was said on
+    one line beside Open, Tag and Files: the table grew past its wrapper and
+    the reason ran out of sight on the right."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    why = "ubiquitin does not look like a study now: its records were moved."
+    measure = """() => {
+        const wrap = document.getElementById('studies-table-wrap');
+        const said = wrap.querySelector('.study-open-said');
+        const box = said && said.getBoundingClientRect();
+        const edge = wrap.getBoundingClientRect();
+        return {over: wrap.scrollWidth - wrap.clientWidth,
+                inside: !box || (box.left >= edge.left - 1 && box.right <= edge.right + 1),
+                lines: box ? Math.round(box.height / parseFloat(getComputedStyle(said).lineHeight)) : 0,
+                shown: !said || getComputedStyle(said.closest('.studies-actions')).opacity === '1',
+                page: document.documentElement.scrollWidth - document.documentElement.clientWidth};
+    }"""
+    session = start_dashboard_session(output=str(workspace / "ubiquitin"), host="127.0.0.1",
+                                      port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(60000)
+            page.add_init_script("try { localStorage.setItem('fmx.studiesView', 'table');"
+                                 " localStorage.setItem('fmx.panelCollapsed', '0'); } catch (e) {}")
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/explore/switch",
+                       lambda route: route.fulfill(json={"ok": False, "error": why}))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.evaluate(f"() => window.FastMDXStudies.load({str(workspace)!r})")
+            row = 'tr.studies-row[data-path$="/stopped"]'
+            page.wait_for_selector(row + " .study-open", state="attached")
+            page.wait_for_timeout(300)
+            panel = page.evaluate("() => !document.body.classList.contains('panel-collapsed')")
+            before = page.evaluate(measure)
+            page.hover(row)
+            page.click(row + " .study-open")
+            page.wait_for_selector(row + ' .study-open-said:has-text("records were moved")')
+            # Said with the pointer and the focus away from the row too.
+            page.mouse.move(5, 5)
+            page.evaluate("() => document.activeElement && document.activeElement.blur()")
+            page.wait_for_timeout(500)
+            after = page.evaluate(measure)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert panel
+    assert before["over"] <= 1
+    assert after["over"] <= 1, after
+    assert after["inside"] and after["lines"] >= 2 and after["page"] <= 0, after
+    assert after["shown"], after
+
+
+def test_why_a_study_did_not_open_is_not_said_once_it_has_passed(workspace) -> None:
+    """Why a study did not open was kept until that study was asked again. A
+    hold of the page's own (unsent Agent words) was still said on the card
+    after the words were cleared, the page left and drawn again; and a
+    server's answer, said, was said again on coming back to the page."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(workspace / "ubiquitin"), host="127.0.0.1",
+                                      port=0)
+    card = '.study-card[data-path$="stopped"]'
+
+    def typed(page, words):
+        page.evaluate("words => { const box = document.getElementById('agent-request'); "
+                      "box.value = words; box.dispatchEvent(new Event('input', {bubbles: true})); }",
+                      words)
+
+    def said(page):
+        return page.eval_on_selector_all(card + " .study-open-said", "s => s.map(x => x.textContent)")
+
+    def away_and_back(page):
+        old = page.query_selector(card)
+        page.evaluate("() => window.FastMDXDashboard.navigate('overview')")
+        page.wait_for_selector('.page[data-page="overview"]:not([hidden])')
+        page.evaluate("() => window.FastMDXDashboard.navigate('studies')")
+        page.wait_for_function("card => !card.isConnected", arg=old)
+        page.wait_for_selector(card + " .study-open")
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.add_init_script("try { localStorage.setItem('fmx.studiesView', 'cards'); } catch (e) {}")
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/explore/switch",
+                       lambda route: route.fulfill(json={"ok": False, "error": "Not in this test."}))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.wait_for_selector("body.state-ready")
+            page.evaluate(f"() => window.FastMDXStudies.load({str(workspace)!r})")
+            page.wait_for_selector(card + " .study-open")
+
+            # Held by the page's own work: said, then passed.
+            typed(page, "hello")
+            page.click(card + " .study-open")
+            page.wait_for_selector(card + " .study-open-said")
+            held = said(page)
+            typed(page, "")
+            away_and_back(page)
+            after_the_hold = said(page)
+            page.fill("#studies-search", "stopped")
+            page.wait_for_selector(card + " .study-open")
+            searched_after_the_hold = said(page)
+            page.fill("#studies-search", "")
+
+            # Answered by the server: said while the page stays, not after.
+            page.wait_for_selector(card + " .study-open")
+            page.click(card + " .study-open")
+            page.locator(card + ' .study-open-said:has-text("Not in this test.")').wait_for()
+            page.fill("#studies-search", "stopped")
+            page.wait_for_selector(card + " .study-open")
+            searched_after_the_answer = said(page)
+            away_and_back(page)
+            back_after_the_answer = said(page)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert held and "Agent" in held[0]
+    assert after_the_hold == []
+    assert searched_after_the_hold == []
+    assert searched_after_the_answer == ["Not in this test."]
+    assert back_after_the_answer == []
+    assert errors == []
+
+
+def test_all_studies_opened_on_is_listed_once(workspace) -> None:
+    """A page opened on All studies listed its studies as it loaded, and again
+    when its first route was put in its address once its state was read: the
+    cards were drawn again under whatever had been done to them."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(workspace / "ubiquitin"), host="127.0.0.1",
+                                      port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            listed: list[str] = []
+            page.on("request", lambda request: listed.append(request.url)
+                    if "/api/studies" in request.url else None)
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.wait_for_selector("body.state-ready")
+            page.wait_for_function("() => !!window.FastMDXDashboard?.state.appState.mode")
+            first = page.wait_for_selector(
+                "#studies-grid .study-card, #studies-table-wrap .studies-row")
+            page.wait_for_timeout(1500)
+            kept = first.evaluate("drawn => drawn.isConnected")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # Listed again, it was asked for the folder its first list was read from.
+    assert [url for url in listed if "path=" in url] == []
+    assert kept, "the cards first drawn are the cards shown"
     assert errors == []

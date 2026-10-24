@@ -26,6 +26,13 @@
   // had been added was gone.
   var draft = null;
   var tagsUsed = [];
+  // Why a study did not open, as the server answered, by its folder: said on
+  // the card or row drawn again while that answer was on its way and while
+  // All studies stays shown after it (a search typed, the list read again),
+  // and no longer once the page is left after it was said there. A hold of
+  // this page's own (unsent Agent words, a draft not saved) is said beside
+  // the button pressed and not kept: it passes when the work is sent or saved.
+  var notOpenedWhy = {};
   var TAG_LENGTH = 40;
   var NOTE_LENGTH = 200;
 
@@ -91,7 +98,7 @@
     // Tags once it has some, marked so on the icon; the count to a reader.
     var tag = ICONS.button("tag", some ? "Tags" + (count ? " (" + count + ")" : "") : "Tag",
                            "study-tag-edit" + (some ? " has-tags" : ""));
-    tag.title = (some ? "Tags" : "Tag") + ": words and a note of your own, kept in the study's folder";
+    tag.title = (some ? "Tags" : "Tag") + ": words and a note of your own, saved in the study's folder";
     tag.addEventListener("click", function () {
       editing = study.path;
       draft = null;
@@ -234,7 +241,7 @@
       }).then(function (r) { return r.json(); }).then(function (d) {
         save.disabled = false;
         if (!d || !d.ok) {
-          said.textContent = (d && (d.reason || d.error)) || "The tags could not be kept.";
+          said.textContent = (d && (d.reason || d.error)) || "The tags could not be saved.";
           return;
         }
         // The card as listed now, as Undo does: a list answered while the
@@ -291,7 +298,7 @@
   function offerUndoOfTags(study, before) {
     var board = window.FastMDXDashboard;
     if (!board || !board.toast) return;
-    board.toast("Kept the tags and note of " + (study.name || "the study") + ".", "ok", { label: "Undo", run: function () {
+    board.toast("Saved the tags and note of " + (study.name || "the study") + ".", "ok", { label: "Undo", run: function () {
       // Settled once its answer is said: a notice waiting on the Undo comes after it.
       return fetch("/api/study-tags", {
         method: "POST",
@@ -508,12 +515,20 @@
     if (m.replicas && m.of) {
       item.appendChild(make("span", "studies-mean-of muted", "from " + m.replicas + " of " + m.of + " replicas"));
     }
+    // Its image note beside its verdict, which it does not change
+    // (image_note.py): said on the item, not on hover only.
+    var noted = m.mean != null && m.noted ? m.noted.charAt(0).toUpperCase() + m.noted.slice(1) + "." : "";
+    if (noted) {
+      item.dataset.noted = "true";
+      item.appendChild(make("span", "studies-mean-noted muted", noted));
+    }
     var from = m.of ? "from " + m.replicas + " of the study's " + m.of + " replicas"
       : m.replicas ? "from its " + m.replicas + " replicas" : "";
-    item.title = m.withheld ? "Not determined: " + firstSentence(m.withheld) + (from ? " Its mean is " + from + "." : "") + " (M for why)"
+    item.title = (m.withheld ? "Not determined: " + firstSentence(m.withheld) + (from ? " Its mean is " + from + "." : "") + " (M for why)"
       : m.error != null && m.replicas ? "Determined: the mean of the means " + from
         + ", its error their spread over √" + m.replicas
-      : m.error != null ? "Determined, with its standard error" : "Recorded without an error";
+      : m.error != null ? "Determined, with its standard error" : "Recorded without an error")
+      + (noted ? ". " + noted : "");
     return item;
   }
 
@@ -830,6 +845,8 @@
     }
     actions.append.apply(actions, [openButton(study), tagButton(study), openButton(study, "files"), pick]
       .filter(Boolean));
+    var opened = actions.querySelector(".study-open");
+    if (opened && notOpenedWhy[study.path]) sayKept(opened, study.path);
     body.appendChild(actions);
     item.appendChild(body);
     return item;
@@ -1095,6 +1112,8 @@
     var acts = make("div", "studies-actions");
     acts.append.apply(acts, [openButton(study), tagButton(study), openButton(study, "files")]
       .filter(Boolean));
+    var opened = acts.querySelector(".study-open");
+    if (opened && notOpenedWhy[study.path]) sayKept(opened, study.path);
     tr.appendChild(cell("studies-acts", acts));
     return tr;
   }
@@ -1606,6 +1625,8 @@
       return;
     }
     if (document.querySelector(".agent-dialog:not([hidden])")) return;
+    // Keys pressed in a list over the page (the Notices) are its own.
+    if (target && target.closest && target.closest('[role="dialog"]')) return;
     var rows = rowsShown();
     var here = rowOf(document.activeElement);
     var at = here ? rows.indexOf(here) : -1;
@@ -1733,10 +1754,21 @@
     }
     var keysSaid = el("studies-keys");
     if (keysSaid) keysSaid.hidden = !shown.length;
+    // One block for none, none matching, and a list not read
+    // (page-states.js).
     empty.hidden = shown.length > 0;
-    empty.textContent = studies.length
-      ? "No study matches that."
-      : "No studies here. Look in another folder, or start one from the Agent or the Config page.";
+    if (!shown.length && window.FastMDXPageState) {
+      window.FastMDXPageState.show(empty, listRefused ? {
+        kind: "error", title: "The studies could not be listed", detail: listRefused,
+        action: { label: "Try again", run: function () { load(refusedIn); } },
+      } : studies.length ? {
+        kind: "empty", title: "No study matches that",
+        detail: "Clear the search, the chips or the tag to see them all.",
+      } : {
+        kind: "empty", title: "No studies here",
+        detail: "Look in another folder, or start one from New study or the Agent.",
+      });
+    }
     sayChosen();
   }
 
@@ -1958,7 +1990,7 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ path: one.path, add: one.add, remove: one.remove })
       }).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d || !d.ok) return { path: one.path, reason: (d && (d.reason || d.error)) || "not kept" };
+        if (!d || !d.ok) return { path: one.path, reason: (d && (d.reason || d.error)) || "not saved" };
         var study = studyAt(one.path);
         if (study) { study.tags = d.tags; study.note = d.note; }
         edited += 1;
@@ -2109,10 +2141,10 @@
       return fetch("/api/study-tags", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // Archived alone: the tags as kept are not sent, nor touched.
+        // Archived alone: the tags as saved are not sent, nor touched.
         body: JSON.stringify({ path: one.path, archived: on })
       }).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d || !d.ok) return { path: one.path, reason: (d && (d.reason || d.error)) || "not kept" };
+        if (!d || !d.ok) return { path: one.path, reason: (d && (d.reason || d.error)) || "not saved" };
         // A server that does not pass "archived" on keeps the tags alone.
         if (!!d.archived !== on) return { path: one.path, reason: "this GUI's server does not keep Archive yet" };
         one.archived = on;
@@ -2150,6 +2182,7 @@
     // Work a switch would lose holds it: said beside what was pressed.
     // One that goes on is in flight until answered (the strip is busy).
     var dashboard = window.FastMDXDashboard;
+    delete notOpenedWhy[path];
     var held = switchBegun();
     if (held) { notOpened(button, held); return; }
     button.disabled = true;
@@ -2163,12 +2196,12 @@
         dashboard.studyOpened(d, page);
       } else {
         switchEnded();
-        notOpened(button, (d && d.error) || "Could not open it.");
+        notOpened(button, (d && d.error) || "Could not open it.", path);
       }
     }).catch(function () {
       button.disabled = false;
       switchEnded();
-      notOpened(button, "The server did not answer.");
+      notOpened(button, "The server did not answer.", path);
     });
   }
 
@@ -2184,20 +2217,84 @@
 
   /* Why a study did not open, said beside its button, which is an icon (the
    * page's notice reads it out, so this is not a second one). */
-  function notOpened(button, why) {
+  function notOpened(button, why, path) {
+    // Kept by the study's folder: the list drawn again while the answer
+    // was on its way (the page shown again, a search typed) made a new
+    // card, and the reason went with the old one.
+    if (path) {
+      notOpenedWhy[path] = { why: why, said: false };
+      if (!button.isConnected) button = liveOpenButton(path) || button;
+    }
     ICONS.flash(button, false, why);
+    if (path) sayKept(button, path);
+    else sayNotOpened(button, why);
+  }
+
+  /* A kept reason said on a card or row; said on the page shown, it goes
+   * once the page is left (forgetSaid). */
+  function sayKept(button, path) {
+    var kept = notOpenedWhy[path];
+    sayNotOpened(button, kept.why);
+    if (onStudiesPage()) kept.said = true;
+  }
+
+  function forgetSaid() {
+    Object.keys(notOpenedWhy).forEach(function (path) {
+      if (notOpenedWhy[path].said) delete notOpenedWhy[path];
+    });
+  }
+
+  /* The reason beside a study's Open button, without a second flash. */
+  function sayNotOpened(button, why) {
     var host = button.parentNode;
+    if (!host) return;
     var said = host.querySelector(".study-open-said");
     if (!said) {
       said = make("span", "study-open-said muted small");
       host.appendChild(said);
     }
     said.textContent = why;
+    // In the table it is a line under the row's buttons, and the table is
+    // fitted again: said beside them, it widened the table past its column.
+    var wrap = host.closest ? host.closest("#studies-table-wrap") : null;
+    if (wrap) {
+      fitTheList(wrap);
+      moreToTheRight(wrap);
+    }
   }
 
-  /* Tags or an archive kept from this page, counted: a list asked for
-   * before one was kept, and answered after, is not drawn over it. */
+  /* Tags or an archive saved from this page, counted: a list asked for
+   * before one was saved, and answered after, is not drawn over it. */
   var edited = 0;
+  // Why the list could not be read, said in the page's empty block.
+  var listRefused = null;
+  // The folder it was asked of (none: the workspace's).
+  var refusedIn;
+  // Whether the list was ever answered: until it is, the block says it is
+  // being read.
+  var answered = false;
+
+  /* Where the list was not read, the subtitle says where it looked, or
+   * nothing: the block under it says what went wrong. */
+  function notListed(where, why) {
+    answered = true;
+    studies = [];
+    listRefused = why;
+    // Try again reads the folder asked, not the last one listed.
+    refusedIn = where || undefined;
+    // The folder whole on hover, where the head is too narrow to show it.
+    var head = el("studies-where");
+    head.textContent = where ? "Looked in " + where + "." : "";
+    head.title = head.textContent;
+    draw();
+  }
+
+  /* The Open button now shown for a study, on its card or its row. */
+  function liveOpenButton(path) {
+    var holders = document.querySelectorAll("#studies-grid .study-card, #studies-table-wrap .studies-row");
+    var holder = Array.prototype.find.call(holders, function (h) { return h.dataset.path === path; });
+    return holder ? holder.querySelector(".study-open") : null;
+  }
 
   function load(where) {
     if (loading) return loading;
@@ -2207,16 +2304,15 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         loading = null;
-        // Read before tags were kept here: read again rather than draw
-        // the tags as they were over those just kept.
+        // Read before tags were saved here: read again rather than draw
+        // the tags as they were over those just saved.
         if (began !== edited) return load(where);
         if (!data || !data.ok) {
-          studies = [];
-          el("studies-where").textContent = (data && (data.reason || data.error)) ||
-            "The studies could not be listed.";
-          draw();
+          notListed(where, (data && (data.reason || data.error)) || "The server could not list them.");
           return;
         }
+        answered = true;
+        listRefused = null;
         lookedIn = data.root;
         studies = data.studies || [];
         // Listed again: a study's runs may have new numbers since.
@@ -2229,22 +2325,24 @@
           return studies.some(function (s) { return s.path === path; });
         });
         // The count kept whole, the folder shortened where the head is
-        // narrow (the Agent beside): the count was what was cut. Not named
-        // `where`: so named it hid the folder asked for, and a list read
-        // again, or counted, was of the workspace instead.
-        var said = el("studies-where");
+        // narrow (the Agent beside): the count was what was cut.
+        // Not "where": that names the folder asked for, in this function.
+        var head = el("studies-where");
         var count = make("span", "studies-where-n", studies.length + " stud" +
           (studies.length === 1 ? "y" : "ies"));
         var folder = make("span", "studies-where-in", "\u00a0in " + data.root +
           (data.more ? ", the newest first; there are more than this shows." : "."));
-        said.title = count.textContent + folder.textContent;
-        said.replaceChildren(count, folder);
+        head.title = count.textContent + folder.textContent;
+        head.replaceChildren(count, folder);
         draw();
       })
       .catch(function () {
         loading = null;
-        el("studies-where").textContent = "The server did not answer.";
+        notListed(where, "The server did not answer.");
       });
+    if (!answered && !studies.length && window.FastMDXPageState) {
+      window.FastMDXPageState.show(el("studies-empty"), { kind: "loading", title: "Listing the studies\u2026" });
+    }
     return loading;
   }
 
@@ -2294,7 +2392,10 @@
     var notLeftSinceLoaded = false;
     var opened = function (detail) {
       var page = detail && detail.page ? detail.page : detail;
-      if (page !== "studies") notLeftSinceLoaded = false;
+      if (page !== "studies") {
+        notLeftSinceLoaded = false;
+        forgetSaid();
+      }
       if (page === "studies" && notLeftSinceLoaded) {
         if (listedAsItLoaded) listedAsItLoaded.then(returnToThePlace, returnToThePlace);
         listedAsItLoaded = null;

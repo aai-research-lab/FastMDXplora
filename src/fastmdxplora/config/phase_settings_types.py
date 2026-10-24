@@ -107,7 +107,7 @@ class SimulateSettings(TypedDict, total=False):
     dashboard_ligand_resname: str
     dashboard_binding_pocket_cutoff_A: float
     dashboard_max_playback_frames: int
-    restrain: str
+    restrain: str | list[Any] | dict[str, Any]
     restraint_release: list[Any]
     restrain_production: bool
     umbrella: dict[str, Any]
@@ -127,14 +127,14 @@ class AnalyzeSettings(TypedDict, total=False):
         'water_sites', 'ligand_rmsd', 'ligand_rmsf', 'pl_contacts', 'pl_hbonds', 'pl_interactions',
         'order_parameters', 'bfactor_comparison', 'thermodynamics', 'rdf', 'pmf', 'metad_surface',
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
-        'area_per_lipid', 'bilayer_thickness', 'lipid_order'
+        'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'image_check'
     ]]
     exclude: list[Literal[
         'rmsd', 'rmsf', 'rg', 'hbonds', 'ss', 'sasa', 'dihedrals', 'qvalue', 'cluster', 'dimred',
         'water_sites', 'ligand_rmsd', 'ligand_rmsf', 'pl_contacts', 'pl_hbonds', 'pl_interactions',
         'order_parameters', 'bfactor_comparison', 'thermodynamics', 'rdf', 'pmf', 'metad_surface',
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
-        'area_per_lipid', 'bilayer_thickness', 'lipid_order'
+        'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'image_check'
     ]]
     select_atoms: str
     selection: str

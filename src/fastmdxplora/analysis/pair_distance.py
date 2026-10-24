@@ -55,9 +55,9 @@ def _minimum_image(delta: np.ndarray, box: np.ndarray) -> np.ndarray:
     rectangular box. In the rhombic dodecahedron the setup builds it gave the
     wrong copy for 28% of random pairs, by up to 4.68 nm, and two centres
     0.5 nm apart across a slanted face read 5.416 nm. Here the fractional
-    coordinates are rounded and the 26 neighbouring translations of the
-    result are compared, keeping the shortest, which is exact for the reduced
-    cells MD engines write (:func:`~fastmdxplora.simulation.seeding.shortest_vector`).
+    coordinates are rounded and the translations of the result up to two
+    cells out in each direction (124 of them) are compared, keeping the
+    shortest (:func:`~fastmdxplora.simulation.seeding.shortest_vector`).
     """
     from fastmdxplora.simulation.seeding import shortest_vector
 
@@ -72,10 +72,16 @@ def _unambiguous_reach(box: np.ndarray) -> np.ndarray:
     Half the shortest lattice vector: the radius of the largest sphere inside
     the region of points nearer the origin than any of its copies. Past it,
     in some direction, the minimum image is a different copy. Half the
-    smallest of ``unitcell_lengths`` is the same number for a reduced cell
-    and an overestimate for any other, so the lattice is searched instead.
+    smallest of ``unitcell_lengths`` overestimates it in a squashed cell,
+    even a reduced one (1.105 against 0.811 nm), so the lattice is searched
+    instead, two cells out; that is exact unless the cell is very flat (its
+    narrowest width under a fifth of its longest edge).
     """
     box = np.asarray(box, dtype=np.float64)
+    # Once per distinct cell: a constant-volume run is one.
+    cells, which = np.unique(box.reshape(len(box), 9), axis=0, return_inverse=True)
+    if len(cells) < len(box):
+        return _unambiguous_reach(cells.reshape(-1, 3, 3))[np.ravel(which)]
     shifts = np.array([s for s in np.ndindex(5, 5, 5) if s != (2, 2, 2)],
                       dtype=np.float64) - 2.0
     reach = np.empty(len(box))

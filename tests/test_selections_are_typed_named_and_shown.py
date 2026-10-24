@@ -426,6 +426,14 @@ def test_a_named_selection_is_picked_centred_and_forgotten(page, study):
         page.session_url + "/api/viewer-atoms?of=frames&expression="
         + urllib.parse.quote("resname BEN")).read())
     assert answer["ok"] and len(answer["atoms"]) == 9
+    # Forgotten with nothing asked, and Undo puts it back (10-21: what can
+    # be undone asks nothing).
+    page.wait_for_selector("#dashboard-toast.show:has-text('Forgot the selection ligand.')")
+    page.click("#dashboard-toast .dashboard-toast-action")
+    page.wait_for_function("() => !!document.querySelector('.sel-item[data-name=\"ligand\"]')")
+    back = json.loads((study / "viewer_selections.json").read_text(encoding="utf-8"))
+    assert [s["name"] for s in back["selections"]] == ["sele1", "ligand"]
+    assert back["selections"][1]["expression"] == "resname BEN"
     assert page.errors == []
 
 

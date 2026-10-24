@@ -179,7 +179,7 @@ class TestTheRootReportsTheCollective(unittest.TestCase):
         self.assertEqual((page["runs"], page["pending"]), (2, 1))
         self.assertIn("1 of 2 runs completed", page["html"])
         self.assertIn("1 still to run", page["html"])
-        self.assertIn("rmsd mean (nm)", page["html"])
+        self.assertIn("RMSD mean (nm)", page["html"])
         # The finished run's mean, 300 K, with its error, to the place it allows.
         self.assertIn("0.16001 ± 0.00011", page["html"])
         self.assertNotIn("0.1603", page["html"])     # the running one's is not there

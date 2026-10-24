@@ -78,6 +78,9 @@ ICONS: dict[str, str] = {
     "unpack": ('<rect x="3" y="4" width="18" height="4" rx="1"/>'
                '<path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/>'
                '<path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/>'),
+    # Notices saved, behind it in the status bar.
+    "bell": ('<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9z"/>'
+             '<path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/>'),
     # Archive the studies chosen: a box put away, its handle and no arrow.
     "archive": ('<rect x="3" y="4" width="18" height="4.5" rx="1"/>'
                 '<path d="M5 8.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5"/><path d="M10 12.5h4"/>'),

@@ -42,10 +42,10 @@ def test_the_title_and_the_notice(tmp_path) -> None:
             }""")
             page.wait_for_function("() => /^\\d+% · /.test(document.title)")
             running = page.title()
-            # Asked for, in Preferences.
-            page.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
+            # Asked for, in Settings.
+            page.evaluate("() => window.FastMDXDashboard.navigate('settings')")
             page.check("#setting-notify")
-            page.evaluate("() => window.FastMDXDialog.close('prefs-dialog')")
+            page.evaluate("() => window.FastMDXDashboard.navigate('overview')")
             (study / "simulation" / "live_status.json").write_text(json.dumps(
                 {"status": "completed", "stage": "production", "current_step": 2500,
                  "total_steps": 2500}), encoding="utf-8")
@@ -385,7 +385,7 @@ def test_refused_by_the_browser_it_is_unticked_and_says_why(tmp_path) -> None:
                 window.Notification = function () {};
                 window.Notification.permission = 'denied';
             }""")
-            page.evaluate("() => window.FastMDXDialog.open('prefs-dialog')")
+            page.evaluate("() => window.FastMDXDashboard.navigate('settings')")
             page.click("#setting-notify")
             page.wait_for_selector("#setting-notify-note:not([hidden])")
             ticked = page.is_checked("#setting-notify")

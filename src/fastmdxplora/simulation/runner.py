@@ -81,6 +81,71 @@ SUPPORTED_INTEGRATORS = (
     *VARIABLE_STEP_INTEGRATORS,
 )
 
+#: The integrators with no thermostat. Every stage this runner has holds a
+#: temperature (the NVT stage, NPT, and production in either ensemble), and
+#: nothing else in the system keeps one, so with these each of them is
+#: constant-energy dynamics instead: a "300 K" run from a minimised structure
+#: settles near 175 K as the kinetic energy it starts with fills the
+#: potential, and a Monte Carlo barostat over it samples no defined ensemble.
+WITHOUT_A_THERMOSTAT = ("verlet", "variable_verlet")
+
+#: How far a hydrogen's random displacement in one Brownian step may go,
+#: in nm. The step is sqrt(2 kT dt / (m gamma)) and the dynamics has no
+#: inertia to soften it, so the friction must grow with the timestep. On a
+#: water box at 300 K this bound separated every case that ran from every
+#: case that went to NaN (0.5, 2 and 4 fs, frictions 12 to 200 per ps): the
+#: least friction it allows ran and half of it did not. It is a floor below
+#: which the run fails, not a promise above it.
+BROWNIAN_LARGEST_STEP_NM = 0.01
+_HYDROGEN_AMU = 1.008
+_GAS_CONSTANT_KJMOL_PER_K = 0.0083144626
+
+
+def least_brownian_friction(temperature_K: float, timestep_fs: float) -> float:
+    """The friction, per ps, below which a Brownian step moves a hydrogen
+    more than :data:`BROWNIAN_LARGEST_STEP_NM`: 2 kT dt / (m s^2)."""
+    kT = _GAS_CONSTANT_KJMOL_PER_K * float(temperature_K)
+    return 2.0 * kT * (float(timestep_fs) / 1000.0) / (
+        _HYDROGEN_AMU * BROWNIAN_LARGEST_STEP_NM ** 2)
+
+
+def check_integrator(name: str, *, temperature_K: float, friction_per_ps: float,
+                     timestep_fs: float) -> None:
+    """Refuse an integrator that cannot do what every stage asks of it.
+
+    Raised before anything runs, from the config check and again where the
+    integrator is built, so a direct call is held to the same rule.
+    """
+    key = str(name).lower()
+    if key in WITHOUT_A_THERMOSTAT:
+        raise StudyError(
+            f"The {key} integrator has no thermostat, and every stage of a run "
+            "holds a temperature: the NVT stage, NPT, and production in either "
+            "ensemble. With it each would be constant-energy dynamics, settling "
+            "well below the temperature asked for, and a barostat over it "
+            "samples no defined ensemble. Use `langevin_middle`.",
+            code="config.option.not_permitted", option="integrator",
+            context="simulation", given=key,
+            # The suggestion first; brownian left out, as it needs a friction
+            # the default does not have.
+            permitted=["langevin_middle", "langevin", "variable_langevin"],
+            suggestion="langevin_middle")
+    if key == "brownian":
+        least = least_brownian_friction(temperature_K, timestep_fs)
+        if float(friction_per_ps) < least:
+            raise StudyError(
+                f"Brownian dynamics at {float(timestep_fs):g} fs and "
+                f"{float(temperature_K):g} K needs a friction of at least "
+                f"{math.ceil(least)} per ps; {float(friction_per_ps):g} was given. "
+                "Its random step is sqrt(2 kT dt / (m gamma)), with no inertia "
+                f"to soften it, and below that a hydrogen moves more than "
+                f"{BROWNIAN_LARGEST_STEP_NM:g} nm a step and the run goes to "
+                "NaN within a few hundred steps. Raise `friction_per_ps` or "
+                "shorten `timestep_fs`, or use `langevin_middle`.",
+                code="config.option.conflicting",
+                options=["simulation.integrator", "simulation.friction_per_ps",
+                         "simulation.timestep_fs"])
+
 
 def chose_its_own_step(simulation_dir: str | Path) -> bool:
     """Whether the run in ``simulation_dir`` had an integrator that chose its
@@ -432,18 +497,24 @@ def _make_integrator(
         configurational sampling, the modern recommendation)
       - ``langevin``        -- LangevinIntegrator (legacy)
       - ``brownian``        -- BrownianIntegrator (overdamped)
-      - ``verlet``          -- VerletIntegrator (NVE; no thermostat)
+      - ``verlet``          -- VerletIntegrator (constant energy)
       - ``variable_langevin`` -- VariableLangevinIntegrator (adaptive dt)
       - ``variable_verlet``   -- VariableVerletIntegrator (adaptive dt)
 
     The fixed-timestep integrators take ``timestep_fs``; the variable
     ones take ``error_tolerance`` instead. The thermostatted integrators
-    take ``temperature_K`` and ``friction_per_ps``; Verlet variants don't
-    (a thermostat must come from a separate force / barostat coupling).
+    take ``temperature_K`` and ``friction_per_ps``. The Verlet variants
+    have no thermostat and nothing here adds one, so
+    :func:`check_integrator` refuses them while every stage holds a
+    temperature. Their branches below are kept for constant-energy
+    production after a thermostatted equilibration, which needs the
+    integrator swapped between stages and is not offered yet.
     """
     unit = omm["unit"]
     openmm = omm["openmm"]
     key = str(name).lower()
+    check_integrator(key, temperature_K=temperature_K,
+                     friction_per_ps=friction_per_ps, timestep_fs=timestep_fs)
 
     T = temperature_K * unit.kelvin
     gamma = friction_per_ps / unit.picoseconds
@@ -2110,43 +2181,93 @@ def run_simulation(
     # schedule below can weaken them without rebuilding anything.
     #
     # The reference positions come from the state the setup phase wrote --
-    # the minimised structure -- rather than from wherever the run has got
-    # to, so "hold it where it is" means where it started rather than where
-    # it drifted.
+    # the prepared structure, before minimisation, which runs with the
+    # restraints on and so relaxes toward it -- rather than from wherever the
+    # run has got to, so "hold it where it is" means where it started rather
+    # than where it drifted.
+    from dataclasses import replace as _with
+
     from fastmdxplora.simulation.restraints import (
         ReleaseSchedule,
-        build_restraint_forces,
+        build_resolved_restraint_forces,
         parse_restraints,
     )
-
-    wanted_restraints = parse_restraints(restrain)
-    restraint_parameters: list[str] = []
-    if wanted_restraints:
-        reference = state.getPositions(asNumpy=True)
-        for force, parameter in build_restraint_forces(
-                omm["openmm"], topology, reference, wanted_restraints):
-            system.addForce(force)
-            restraint_parameters.append(parameter)
-        logger.info(
-            "Restraints: %s",
-            "; ".join(f"{r.kind} on {r.selection} at {r.force_constant:g} "
-                      f"{r.units}" for r in wanted_restraints),
-        )
 
     release = ReleaseSchedule(
         steps=tuple(float(x) for x in restraint_release)
         if restraint_release else ReleaseSchedule().steps
     )
+    wanted_restraints = parse_restraints(restrain)
+    # Each restraint's parameter and the force constant it holds at full
+    # strength. The ladder used to be written into every parameter as it
+    # stood, so a torsion asked for at 50 kJ/mol/rad^2 ran at 1000, 500, 100
+    # and a position restraint asked for at 200 at 1000: each restraint's
+    # own constant was never applied. The ladder now steps each down in its
+    # proportions, and one with no constant of its own starts at its first
+    # step, which is what a ladder written in kJ/mol/nm^2 always meant.
+    restraint_parameters: list[str] = []
+    restraint_constants: dict[str, float] = {}
+    resolved_restraints: list[dict[str, Any]] = []
+    if wanted_restraints and restrain_production and restraint_release \
+            and release.steps != ReleaseSchedule().steps:
+        # Kept through production, the restraints are never stepped down, so
+        # a ladder would be ignored; a study giving both meant something
+        # neither reading of them does.
+        raise StudyError(
+            "`restraint_release` and `restrain_production` were both given. "
+            "Restraints kept through production are held at their full force "
+            "constants from the first step, so the ladder would not be used. "
+            "To hold production at a weaker restraint, give that restraint "
+            "the force constant wanted and leave out `restraint_release`.",
+            code="config.option.conflicting",
+            options=["simulation.restraint_release", "simulation.restrain_production"])
+    if wanted_restraints:
+        release.check()
+        wanted_restraints = [
+            r if r.stated else _with(r, force_constant=float(release.steps[0]))
+            for r in wanted_restraints]
+        reference = state.getPositions(asNumpy=True)
+        # Each molecule is written wrapped into the box, so a separation
+        # between two of them is the nearest image, as the forces measure it.
+        box = (state.getPeriodicBoxVectors(asNumpy=True)
+               if system.usesPeriodicBoundaryConditions() else None)
+        for force, parameter, restraint, atoms in build_resolved_restraint_forces(
+                omm["openmm"], topology, reference, wanted_restraints, box=box):
+            system.addForce(force)
+            restraint_parameters.append(parameter)
+            restraint_constants[parameter] = float(restraint.force_constant)
+            resolved_restraints.append({
+                **restraint.as_record(),
+                # The atoms in the order that defines the restraint; a count
+                # for a position restraint, which may hold thousands.
+                "atoms": len(atoms) if restraint.kind == "position"
+                else [int(a) for a in atoms]})
+        logger.info(
+            "Restraints: %s",
+            "; ".join(f"{r['kind']} on {r['selection']} at "
+                      f"{r['force_constant']:g} {r['units']}"
+                      + (f", target {r['target']:.4g}" if r["target"] is not None
+                         else "")
+                      for r in resolved_restraints),
+        )
 
     def _hold_at(fraction: float) -> float:
-        """Set every restraint to the strength this point in equilibration
-        calls for, and report it."""
+        """Set every restraint to the share of its own force constant this
+        point in equilibration calls for, and return that share. With the
+        restraints kept through production nothing is released at all:
+        letting go during equilibration only to take hold again at full
+        strength when production starts is the sudden change a ladder is
+        there to avoid."""
         if not restraint_parameters:
             return 0.0
-        strength = release.force_at(fraction)
+        share = 1.0 if restrain_production else release.fraction_at(fraction)
+        _hold_by(share)
+        return share
+
+    def _hold_by(share: float) -> None:
         for parameter in restraint_parameters:
-            simulation.context.setParameter(parameter, strength)
-        return strength
+            simulation.context.setParameter(
+                parameter, restraint_constants[parameter] * share)
 
     if umbrella:
         # One window. The set of them is expanded above, so what arrives here
@@ -2692,10 +2813,15 @@ def run_simulation(
         # not be moving while it does.
         _hold_at(0.0)
         if restraint_parameters and plan["nvt_steps"] + plan["npt_steps"] > 0:
-            _log_step("The solute is held by its restraints while the "
-                      "water equilibrates")
-            if on_explain:
-                on_explain("restraints")
+            if restrain_production:
+                # Not let go in stages, which is what the explanation says.
+                _log_step("The solute is held by its restraints, through "
+                          "production as asked")
+            else:
+                _log_step("The solute is held by its restraints while the "
+                          "water equilibrates")
+                if on_explain:
+                    on_explain("restraints")
 
         # The ladder was sampled at two points -- once before NVT and once
         # before NPT -- so a four-rung ladder reached 1000 and 100 and never
@@ -2718,12 +2844,13 @@ def run_simulation(
             def _hook(fraction_of_stage: float) -> None:
                 through = (already_done + fraction_of_stage * stage_steps) / (
                     _equilibration_steps)
-                strength = _hold_at(min(1.0, through))
-                if not last_reported or last_reported[-1] != strength:
-                    last_reported.append(strength)
+                share = _hold_at(min(1.0, through))
+                if not last_reported or last_reported[-1] != share:
+                    last_reported.append(share)
                     logger.info(
-                        "Restraints now %g kJ/mol/nm^2 (%.0f%% through "
-                        "equilibration).", strength, 100.0 * through)
+                        "Restraints now at %.0f%% of their force constants "
+                        "(%.0f%% through equilibration).", 100.0 * share,
+                        100.0 * through)
 
             return _hook
 
@@ -2930,16 +3057,21 @@ def run_simulation(
         # no way to know.
         if restraint_parameters:
             if restrain_production:
-                held = _hold_at(0.0)
+                _hold_by(1.0)
                 logger.warning(
-                    "Restraints are still applied during production at %g. "
-                    "The trajectory is biased and flexibility analyses "
-                    "run on it -- RMSF, clustering, dimensionality "
-                    "reduction -- describe the restraint as much as the "
-                    "system.", held,
+                    "Restraints are still applied during production, at "
+                    "their full force constants (%s), and were not released "
+                    "during equilibration. The trajectory is biased and "
+                    "flexibility analyses run on it -- RMSF, clustering, "
+                    "dimensionality reduction -- describe the restraint as "
+                    "much as the system.",
+                    ", ".join(f"{r['kind']} {r['force_constant']:g} {r['units']}"
+                              for r in resolved_restraints),
                 )
             else:
-                _hold_at(1.0)
+                # Zero, not the ladder's last step: a ladder ending above
+                # zero ended equilibration there, and production is free.
+                _hold_by(0.0)
                 logger.info("Restraints released for production.")
 
         # ---- The clock starts here ------------------------------------
@@ -3296,7 +3428,12 @@ def run_simulation(
             # restrained nothing has no schedule to record -- writing one
             # would put a setting into the config of a study that never
             # used it.
-            **({"restraint_release": [float(s) for s in release.steps]}
+            **({**({} if restrain_production else
+                   {"restraint_release": [float(s) for s in release.steps]}),
+                # What was held, at what full strength, toward what target
+                # and in which energy form: the targets a restraint given
+                # none was held at are found here and nowhere else.
+                "restraints_resolved": resolved_restraints}
                if restraint_parameters else {}),
         },
     )

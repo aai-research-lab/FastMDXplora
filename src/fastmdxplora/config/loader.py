@@ -580,7 +580,8 @@ def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> None:
+def validate_config(data: dict[str, Any], *, require_systems: bool = False,
+                    as_record: bool = False) -> None:
     """Strictly validate a parsed config dict against the schema.
 
     Parameters
@@ -591,6 +592,10 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
         If True, the config must define a non-empty ``systems`` list.
         The full pipeline (CLI / BatchExplorer) sets this; unit tests that
         validate fragments leave it False.
+    as_record : bool, default False
+        The config is a study's record, read to report or analyse what ran
+        rather than to run it: a choice refused since (an integrator with no
+        thermostat) describes the study and is not refused again.
 
     Raises
     ------
@@ -717,6 +722,15 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
     # went unchecked: `minimum_ovelap: 0.15` was accepted, ignored, and the
     # study stitched at the default while its author believed otherwise.
     simulation = data.get("simulation")
+    # An integrator that cannot hold the temperature every stage asks for,
+    # or Brownian dynamics too weakly damped for its step, refused with the
+    # config rather than at the first step of a run: for each run the study
+    # expands to, and only where the simulation phase runs, so a record of
+    # an older study can still be read and reported.
+    if not as_record:
+        _check_integrators(data)
+    if isinstance(simulation, dict):
+        _check_restraints(simulation, where="")
     if isinstance(simulation, dict) and isinstance(simulation.get("umbrella"), dict):
         from fastmdxplora.simulation.umbrella import check_umbrella_keys
 
@@ -724,6 +738,22 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False) -> N
 
     # analysis include/exclude mutual exclusion (nested)
     analysis = data.get("analysis", {})
+    if (as_record and isinstance(analysis, dict) and analysis.get("include")
+            and analysis.get("exclude")):
+        # A study's record written with both: the analyses left out by name
+        # and, beside them, the plan they resolved to. That plan is what ran,
+        # so it is read as the record's and the study is not refused; said
+        # in the log, since a run it starts runs the plan, which the image
+        # check joins, its exclusion not kept.
+        left = analysis.pop("exclude")
+        named = [str(name) for name in left] if isinstance(left, list) else [str(left)]
+        from fastmdxplora.utils.logging import get_logger
+
+        get_logger("config").info(
+            "The study's record lists the analyses that ran and those left out (%s); "
+            "it is read as the analyses that ran%s.", ", ".join(named),
+            ", which the image check joins, its exclusion not kept"
+            if "image_check" in named else "")
     if isinstance(analysis, dict) and analysis.get("include") and analysis.get("exclude"):
         raise ConfigError(
             "The 'analysis' block sets both 'include' and 'exclude'; "
@@ -1074,9 +1104,12 @@ def _check_one_run(options: dict[str, dict[str, Any]], *, where: str) -> None:
         # that gave one: it names no force field.
         named = None
     if named is not None and setup.get("force_field"):
-        from fastmdxplora.setup.pipeline import _the_list_is_the_name
+        from fastmdxplora.setup.pipeline import _the_list_is_the_name, _the_list_was_the_name
 
-        if not _the_list_is_the_name(setup["forcefield"], setup["force_field"]):
+        # The list a name resolved to in an earlier release is the record of
+        # a study prepared then, carried on with the files it was prepared with.
+        if not (_the_list_is_the_name(setup["forcefield"], setup["force_field"])
+                or _the_list_was_the_name(setup["forcefield"], setup["force_field"])):
             raise ConfigError(
                 f"The setup gives both `forcefield` ({setup['forcefield']!r}, a "
                 "named force field) and `force_field` (a list of OpenMM XML "
@@ -1087,6 +1120,8 @@ def _check_one_run(options: dict[str, dict[str, Any]], *, where: str) -> None:
 
     simulation = options.get("simulation") or {}
     _check_lengths_agree(simulation, where=where)
+    # A system's or a sweep's restraints, read as the study's are above.
+    _check_restraints(simulation, where=where)
     interval = simulation.get("trajectory_interval_steps")
     if (isinstance(interval, int) and not isinstance(interval, bool)
             and not simulation.get("resume_from")):
@@ -1130,6 +1165,56 @@ def _check_one_run(options: dict[str, dict[str, Any]], *, where: str) -> None:
             options=["analysis.first", "analysis.last"])
 
 
+def _check_restraints(simulation: dict[str, Any], *, where: str) -> None:
+    """The long form of `restrain` read as the run will read it, and its
+    release ladder, so a block with an unknown kind or no force constant is
+    refused with the config rather than after setup has run."""
+    if simulation.get("restrain") in (None, ""):
+        return
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.restraints import ReleaseSchedule, parse_restraints
+
+    def said(exc: Exception) -> str:
+        return f"The restraints{where}: {exc}" if where else str(exc)
+
+    try:
+        parse_restraints(simulation["restrain"])
+    except StudyError as exc:
+        raise ConfigError(said(exc), **_rewrapped(exc)) from exc
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ConfigError(
+            f"simulation option 'restrain'{where} could not be read: {exc}",
+            code="config.option.wrong_type", option="restrain",
+            context="simulation") from exc
+    if simulation.get("restraint_release"):
+        try:
+            steps = tuple(float(x) for x in simulation["restraint_release"])
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(
+                f"simulation option 'restraint_release'{where} could not be read "
+                f"as force constants: {exc}",
+                code="config.option.wrong_type", option="restraint_release",
+                context="simulation") from exc
+        # The default ladder, written out, asks for nothing the kept
+        # restraints would not do; any other is a ladder that would be
+        # ignored.
+        if simulation.get("restrain_production") and steps != ReleaseSchedule().steps:
+            raise ConfigError(
+                f"`restraint_release` and `restrain_production` were both given{where}. "
+                "Restraints kept through production are held at "
+                "their full force constants from the first step, so the "
+                "ladder would not be used. To hold production at a weaker "
+                "restraint, give that restraint the force constant wanted "
+                "and leave out `restraint_release`.",
+                code="config.option.conflicting",
+                options=["simulation.restraint_release",
+                         "simulation.restrain_production"])
+        try:
+            ReleaseSchedule(steps=steps).check()
+        except StudyError as exc:
+            raise ConfigError(said(exc), **_rewrapped(exc)) from exc
+
+
 def _check_lengths_agree(simulation: dict[str, Any], *, where: str) -> None:
     """Refuse a stage given as steps and as a duration that disagree.
 
@@ -1160,6 +1245,57 @@ def _check_lengths_agree(simulation: dict[str, Any], *, where: str) -> None:
             f"duration. Give one of them.",
             code="config.option.conflicting",
             options=[f"simulation.{steps_key}", f"simulation.{ns_key}"])
+
+
+def _check_integrators(data: dict[str, Any]) -> None:
+    """`check_integrator` on every run's simulation settings, defaults filled."""
+    from fastmdxplora.config.schema import SIMULATION
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.runner import check_integrator
+    from fastmdxplora.simulation.stopping import phases_of
+
+    if "simulation" not in phases_of(data):
+        return
+    top = data.get("simulation") if isinstance(data.get("simulation"), dict) else {}
+    blocks: list[tuple[str | None, dict[str, Any]]] = []
+    if data.get("systems"):
+        from fastmdxplora.batch.sweep import expand_runs, normalize_sweep, normalize_systems
+
+        try:
+            specs = expand_runs(
+                systems=normalize_systems(data["systems"]),
+                sweep=normalize_sweep(data["sweep"]) if data.get("sweep") else None,
+                base_options=phase_options(data))
+        except Exception:  # noqa: BLE001 - the batch check above says what is wrong
+            specs = []
+        blocks = [(spec.run_id, dict(spec.options.get("simulation") or {}))
+                  for spec in specs]
+    if not blocks:
+        blocks = [(None, dict(top))]
+    defaults = SIMULATION.defaults()
+    for run_id, block in blocks:
+        if block.get("integrator") is None:
+            continue
+        given = {name: defaults.get(name) if block.get(name) is None else block[name]
+                 for name in ("temperature_K", "friction_per_ps", "timestep_fs")}
+        try:
+            check_integrator(str(block["integrator"]),
+                             temperature_K=float(given["temperature_K"]),
+                             friction_per_ps=float(given["friction_per_ps"]),
+                             timestep_fs=float(given["timestep_fs"]))
+        except (TypeError, ValueError) as exc:
+            if not isinstance(exc, StudyError):
+                continue  # a value of the wrong type is refused by its own check
+            # The run is named where the settings the refusal rests on are
+            # its own rather than the top-level ones: the integrator alone for
+            # one with no thermostat, all four for Brownian dynamics.
+            rests_on = (("integrator",) if exc.refusal.code == "config.option.not_permitted"
+                        else ("integrator", "friction_per_ps", "timestep_fs",
+                              "temperature_K"))
+            own = run_id is not None and any(block.get(k) != top.get(k) for k in rests_on)
+            where = (f"Run {run_id} (its own settings, from `systems` or "
+                     f"`sweep`): ") if own else ""
+            raise ConfigError(where + str(exc), **_rewrapped(exc)) from exc
 
 
 #: What a decision may say about the setting it is recorded for.

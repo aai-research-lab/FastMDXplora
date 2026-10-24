@@ -1,0 +1,38 @@
+/* One empty, loading and error state (page-states.js), and one confirmation
+ * (confirm.js), the same on every page. */
+.fmx-state, .empty-state {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+    padding: 32px 20px; border: 1px dashed var(--border-primary); border-radius: 12px;
+    color: var(--text-secondary); font-size: var(--text-sm);
+}
+.fmx-state[hidden], .empty-state[hidden] { display: none; }
+.fmx-state-title, .empty-state .empty-title { color: var(--text-primary); font-weight: 600; }
+.fmx-state-detail, .empty-state .empty-detail { max-width: 52ch; font-size: var(--text-xs); line-height: 1.5; }
+.fmx-state[data-kind="error"] { border-style: solid; border-color: color-mix(in srgb, var(--accent-red) 45%, transparent); }
+.fmx-state[data-kind="error"] .fmx-state-title { color: var(--accent-red); }
+.fmx-state-act { margin-top: 6px; }
+.fmx-spin { width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%;
+    border: 2px solid var(--border-primary); border-top-color: var(--accent); animation: fmx-spin .8s linear infinite; }
+@keyframes fmx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fmx-spin { animation-duration: 2.4s; } }
+/* In a side tab: no frame, less room. */
+.side-panel .fmx-state { border: 0; padding: 18px 8px; }
+
+.fmx-ask {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 10px 12px;
+    border-radius: 10px; border: 1px solid color-mix(in srgb, var(--accent-red) 35%, var(--border-primary));
+    background: var(--background-elevated); color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.45;
+}
+/* In the status bar's card (statusbar.css), which is its frame: one frame. */
+.sb-stop-ask .fmx-ask { border: 0; padding: 0; background: none; }
+.fmx-ask-title { color: var(--text-primary); font-weight: 600; }
+.fmx-ask-list { flex-basis: 100%; margin: 2px 0 0; padding-left: 18px; font-size: var(--text-xs); }
+.fmx-ask-answers { flex-basis: 100%; display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.fmx-ask-answers [hidden] { display: none; }
+.files-clear-ask { margin-top: 10px; }
+.files-clear-ask[hidden] { display: none; }
+
+/* Conversations and chats in one list in the sidebar (chats.js): each part
+   named where both have some. */
+.sidebar-conv-part { padding: 8px 8px 2px; font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: .06em; color: var(--text-muted); }

@@ -74,6 +74,10 @@ def ui():
 
 
 def _send(page, text):
+    # Enter sends nothing until the page has read its study and thread
+    # (CI-774 L12): pressed sooner, the words stay in the box, unsent.
+    page.wait_for_function("() => window.FastMDXAgentPanel && !window.FastMDXAgentPanel.waits",
+                           timeout=30000)
     page.fill("#agent-request", text)
     page.keyboard.press("Enter")
 

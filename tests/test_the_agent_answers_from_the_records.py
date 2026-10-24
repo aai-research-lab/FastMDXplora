@@ -109,9 +109,15 @@ def test_a_study_never_analysed_is_told_so_and_a_stopped_one_to_carry_on(tmp_pat
     monkeypatch.setattr(records_answer, "_supports", lambda base: THIN)
     monkeypatch.setattr(telemetry, "status_as_it_stands", lambda base: {"status": "stopped"})
     said = answer_from_the_records(study, "long_enough")
-    assert "it has not been analysed" in said and "What would fix it, on the Overview, says what to do first" in said
+    assert "it has not been analysed" in said and "To carry it on, on the Overview, says what to do first" in said
+    assert "What would fix it" not in said
     assert records_answer.NO_FIGURE not in said and "Convergence" not in said
     assert said.endswith(TRAPPED)
+    # A run that failed is sent to the card by the name it has then.
+    monkeypatch.setattr(telemetry, "status_as_it_stands", lambda base: {"status": "failed"})
+    said = answer_from_the_records(study, "long_enough")
+    assert "What would fix it, on the Overview, says what to do first" in said
+    assert "To carry it on" not in said
 
 
 def test_what_would_strengthen_it(tmp_path, monkeypatch):

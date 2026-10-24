@@ -477,7 +477,10 @@ itself, then the Config as a version of the study, or an answer, or a
 question. Newest at the bottom, where the message box is. Enter sends;
 Shift+Enter breaks a line. Every message can be copied, edited or retried,
 and an edit or a retry cuts the thread from that message on, so the
-conversation continues from there rather than with a fork in it.
+conversation continues from there rather than with a fork in it. An edit
+changes the words alone, and an edit or a retry sends the message's files
+with it again, read as they are now: one gone or changed since is said, and
+nothing is sent.
 
 **The page speaks as the Agent.** The AI model it thinks with is its own and
 is named only in its settings (and by `fastmdx agent model`): the page and
@@ -795,9 +798,11 @@ terminal speak as the Agent: its AI model is named only in its settings. It is k
 `agent/conversations/receipts/<sha256>.json` (the newest 100, the system
 prompt once in `receipts/systems/`), each text bounded to 64,000 characters
 with the cut marked, read only when the fold is opened and checked against
-its SHA-256 then. A message about a study that is no longer the one open, or
-a reply that comes back after another study was opened, is refused
-(`agent.view.changed`); what was sent is kept with the study it was about.
+its SHA-256 then. A message about a study that is no longer the one open, one
+sent with no study shown once a study is open, or a reply that comes back
+after another study was opened, is refused (`agent.view.changed`); the page
+puts the message back in the box, or saves it for the study it was written
+in, and says so.
 
 #### Tools from outside
 

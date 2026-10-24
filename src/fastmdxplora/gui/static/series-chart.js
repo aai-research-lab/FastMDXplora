@@ -129,7 +129,8 @@
     var mean = data.mean;
     if (mean && mean.value != null) {
       parts.push("mean " + withUnit(mean.value, data.unit)
-        + (mean.error != null ? " plus or minus " + format(mean.error) : ""));
+        + (mean.error != null ? " plus or minus " + format(mean.error) : "")
+        + (mean.noted ? ", " + mean.noted : ""));
     }
     return parts.join("; ");
   }

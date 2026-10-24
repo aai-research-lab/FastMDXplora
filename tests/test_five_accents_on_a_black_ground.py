@@ -375,8 +375,11 @@ def test_graphite_underlines_its_links_and_the_swatches_take_the_keyboard(browse
     try:
         page = _page(browser, session)
         page.click("#settings-open")
+        # The gear's menu's, and the same five on the Settings page.
         names = page.eval_on_selector_all(
-            ".accent-swatch", "els => els.map(e => [e.tagName, e.textContent.trim()])")
+            "#settings-popup .accent-swatch", "els => els.map(e => [e.tagName, e.textContent.trim()])")
+        copied = page.eval_on_selector_all(
+            "#settings-page-accents .accent-swatch", "els => els.map(e => [e.tagName, e.textContent.trim()])")
         page.focus(".accent-swatch[data-accent='blue']")
         page.keyboard.press("Tab")
         page.keyboard.press("Tab")
@@ -427,8 +430,8 @@ def test_graphite_underlines_its_links_and_the_swatches_take_the_keyboard(browse
         page.context.close()
     finally:
         session.server.shutdown()
-    assert names == [["BUTTON", "Cyan"], ["BUTTON", "Blue"], ["BUTTON", "Violet"],
-                     ["BUTTON", "Magenta"], ["BUTTON", "Graphite"]]
+    assert names == copied == [["BUTTON", "Cyan"], ["BUTTON", "Blue"], ["BUTTON", "Violet"],
+                               ["BUTTON", "Magenta"], ["BUTTON", "Graphite"]]
     assert focused == chosen == "magenta"
     assert line == ["underline"] * 3
     assert bold == ["600", "600"]

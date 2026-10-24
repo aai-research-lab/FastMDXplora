@@ -68,10 +68,13 @@ def cited_findings(answer: str, root: Any) -> list[dict[str, Any]]:
     """The analyses ``answer`` names that the study at ``root`` holds, in
     the order the answer first names them.
 
-    Each is ``{"analysis", "label", "value", "withheld"}``: ``value`` is the
-    recorded mean as its caption gives it ("0.0130 ± 0.0021 nm"), or empty
-    for an analysis with no mean (a per-residue profile, a map); ``withheld``
-    is the analysis's reason where its mean is not a measurement.
+    Each is ``{"analysis", "label", "value", "withheld", "noted"}``:
+    ``value`` is the recorded mean as its caption gives it ("0.0130 ± 0.0021
+    nm", its image note after it where it has one), or empty for an analysis
+    with no mean (a per-residue profile, a map); ``withheld`` is the
+    analysis's reason where its mean is not a measurement; ``noted`` is the
+    mean's image note alone (`image_note.said_short`), empty where it has
+    none.
     """
     if not answer or not root:
         return []
@@ -102,8 +105,11 @@ def cited_findings(answer: str, root: Any) -> list[dict[str, Any]]:
     cites = []
     for name in sorted(found, key=found.__getitem__)[:MOST]:
         mean = _recorded_mean(held[name])
+        value, noted = _value(name, mean), _noted(mean)
         cites.append({"analysis": name, "label": _label(name),
-                      "value": _value(name, mean), "withheld": _withheld(mean)})
+                      # Its image note beside the value, as every page says it.
+                      "value": f"{value}; {noted}" if value and noted else value,
+                      "withheld": _withheld(mean), "noted": noted})
     return cites
 
 
@@ -151,6 +157,13 @@ def _value(name: str, mean: dict[str, Any] | None) -> str:
     if _finite(error) and error > 0 and not mean.get("not_a_measurement"):
         return f"{_with_its_error(value, error)}{unit}"
     return f"{_format_metric_value(value)}{unit}"
+
+
+def _noted(mean: dict[str, Any] | None) -> str:
+    """The mean's image note in a line (:func:`fastmdxplora.image_note.said_short`)."""
+    from fastmdxplora.image_note import note_of, said_short
+
+    return said_short(note_of(mean))
 
 
 def _withheld(mean: dict[str, Any] | None) -> str:

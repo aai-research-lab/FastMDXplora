@@ -16,6 +16,7 @@ would not do.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -124,15 +125,23 @@ def _plan_of_one(config: dict[str, Any]) -> list[dict[str, Any]]:
         if len(names) > 1:
             lines[-1]["settings"] = ["systems"]
     sweep = config.get("sweep") if isinstance(config.get("sweep"), dict) else {}
-    for axis, values in sweep.items():
-        values = values if isinstance(values, list) else [values]
-        if str(axis).endswith("random_seed"):
-            line("Replicas", f"{len(values)}, differing only by random seed")
-        elif str(axis) == "setup.model":
-            line("Replicas", f"{len(values)}, from models "
-                             + ", ".join(str(v) for v in values) + " of the ensemble")
-        else:
+    from fastmdxplora.batch.aggregate import how_replicas_differ
+
+    # The axes that make runs replicas said together, in one line where the
+    # first of them is: 3 models with 2 seeds each are 6 replicas, every one
+    # from a model with a seed of its own, not 3 and then 2 "differing only
+    # by random seed".
+    swept = {str(axis): values if isinstance(values, list) else [values]
+             for axis, values in sweep.items()}
+    seeds = [axis for axis in swept
+             if axis.endswith("random_seed") or axis == "setup.model"]
+    for axis, values in swept.items():
+        if axis not in seeds:
             line("Varied", f"{axis}: " + ", ".join(str(v) for v in values))
+        elif axis == seeds[0]:
+            count = math.prod(len(swept[each]) for each in seeds)
+            line("Replicas", f"{count}, " + how_replicas_differ(
+                seeds, models=swept.get("setup.model"), as_participle=True))
 
     if "setup" in phases:
         forcefield, chosen = _value(setup, "setup", "forcefield")

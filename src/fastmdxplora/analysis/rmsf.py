@@ -124,6 +124,10 @@ class RMSF(Analysis):
         from fastmdxplora.analysis.starting_frame import start_as_given
 
         self.start: float | str | None = start_as_given(start)
+        # Fitted once, onto frame `ref`, as `gmx rmsf` and cpptraj do by
+        # default, not iteratively onto the average structure (which reads
+        # about 1% lower on a flexible selection).
+        self.options["fit"] = "each frame onto frame ref, once, on the selected atoms"
         self.options.update(ref=self.ref, per_residue=self.per_residue,
                             start=self.start if self.start is not None else 0)
         if self.per_residue:
@@ -196,13 +200,9 @@ class RMSF(Analysis):
                 f"with {n} frames."
             , code="analysis.option.out_of_range")
 
-        if n < 2:
-            raise StudyError(
-                f"{n} frame: a fluctuation is a spread over frames, and one "
-                "frame has none, so every RMSF would read zero. At least two "
-                "frames are needed.",
-                code="analysis.sampling.too_few_frames", found=n, needed=2)
+        from fastmdxplora.analysis.starting_frame import too_few_frames
 
+        too_few_frames(n)
         start = self._start(traj, ref, atom_idx)
         aligned = superposed(traj[start:], frame=ref, atom_indices=atom_idx,
                              reference=traj)
@@ -277,17 +277,9 @@ class RMSF(Analysis):
 
     def _which_frames(self) -> str | None:
         """The frames the fluctuations are over, for the figure."""
-        record = self.findings.get("frames")
-        if not isinstance(record, dict):
-            return None
-        frames, n = record["first_frame"], record["n_frames_given"]
-        if not frames:
-            return f"over all {n:,} frames"
-        span = (f" ({record['first_time_ns']:.4g} ns)"
-                if record.get("first_time_ns") is not None else "")
-        left = "left out as equilibration" if record.get("start") == "equilibrated" \
-            else "left out"
-        return f"over frames {frames:,} to {n - 1:,}; the first {frames:,}{span} {left}"
+        from fastmdxplora.analysis.starting_frame import which_frames
+
+        return which_frames(self.findings.get("frames"))
 
     def default_xlabel(self) -> str | None:
         return "Residue" if self.per_residue else "Atom serial"

@@ -595,28 +595,46 @@ def _glycan_residues(
 
     A sugar with no such LINK whose C1 is bonded to an asparagine's ND2 by
     distance (`N_GLYCOSIDIC_CUTOFF_A`) is the first sugar of an N-glycan
-    too, and is said to be one by distance.
+    too, and is said to be one by distance. An amide nitrogen carries one
+    sugar: an ND2 a LINK bonds to a sugar already takes none by distance,
+    and of two sugars near one ND2 only the one whose C1 is nearer is its
+    glycan. The other is not a second glycan on that asparagine; reached by
+    no other way, it is a free sugar and asked about.
     """
     sugars = {het.key: het for het in heterogens if het.resname in SUGARS}
-    amides = [a for a in polymer if a.resname == "ASN" and a.name == "ND2"]
+    linked = {(end[1], end[2], end[3].strip()) for het in sugars.values()
+              for end in het.linked_to if end[0] == "ASN"}
+    amides = [a for a in polymer if a.resname == "ASN" and a.name == "ND2"
+              and (a.chain, a.resseq, a.icode.strip()) not in linked]
     carried: dict[tuple, str] = {}
     queue: list[tuple] = []
+    unlinked: list[tuple] = []
     for key, het in sorted(sugars.items()):
         sites = sorted(f"{end[0]} {end[1]}{end[2]}{end[3].strip()}"
                        for end in het.linked_to if end[0] in GLYCOSYLATION_RESIDUES)
-        if not sites:
-            distances = [(math.dist((c1.x, c1.y, c1.z), (n.x, n.y, n.z)), n)
-                         for c1 in het.atoms if c1.name == "C1" for n in amides]
-            bonded = sorted((pair for pair in distances
-                             if pair[0] <= N_GLYCOSIDIC_CUTOFF_A),
-                            key=lambda pair: pair[0])
-            if bonded:
-                distance, n = bonded[0]
-                sites = [f"ASN {n.chain}{n.resseq}{n.icode.strip()} (bonded by "
-                         f"distance, {distance:.2f} A; no LINK record names it)"]
         if sites:
             carried[key] = sites[0]
             queue.append(key)
+        else:
+            unlinked.append(key)
+    # Paired by distance once, nearest first: each sugar and each ND2 has at
+    # most one partner. Each sugar was given its nearest ND2 on its own, so
+    # two sugars near one ND2 were both read as glycans on it.
+    pairs = sorted(
+        (math.dist((c1.x, c1.y, c1.z), (n.x, n.y, n.z)), key, index)
+        for key in unlinked for c1 in sugars[key].atoms if c1.name == "C1"
+        for index, n in enumerate(amides))
+    taken: set[int] = set()
+    for distance, key, index in pairs:
+        if distance > N_GLYCOSIDIC_CUTOFF_A:
+            break
+        if key in carried or index in taken:
+            continue
+        n = amides[index]
+        taken.add(index)
+        carried[key] = (f"ASN {n.chain}{n.resseq}{n.icode.strip()} (bonded by "
+                        f"distance, {distance:.2f} A; no LINK record names it)")
+        queue.append(key)
     while queue:
         key = queue.pop(0)
         for end in sugars[key].linked_to:

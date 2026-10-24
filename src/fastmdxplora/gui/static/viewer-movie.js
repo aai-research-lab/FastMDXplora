@@ -316,7 +316,7 @@
       if (making.cancelled || outcome) {
         await post("/api/movies/" + id + "/cancel");
         id = null;
-        return fail(outcome || "The movie was cancelled; nothing was kept.");
+        return fail(outcome || "The movie was cancelled; nothing was saved.");
       }
       say("Encoding the movie…");
       var done = await post("/api/movies/" + id + "/finish");

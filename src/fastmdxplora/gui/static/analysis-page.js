@@ -221,6 +221,17 @@
     return (Math.round(ns * 10000) / 10000) + " ns";
   }
 
+  /* A mean's image note under its value, the analysis's paragraph a click
+   * away; the verdict beside it stays the record's (Determined or not). */
+  function notedHtml(quantity) {
+    if (quantity.unavailable || !quantity.noted) return "";
+    if (!quantity.noted_why) {
+      return '<span class="analysis-results-noted">' + escapeHTML(quantity.noted) + "</span>";
+    }
+    return '<details class="analysis-results-noted"><summary>' + escapeHTML(quantity.noted) +
+      "</summary><p>" + escapeHTML(quantity.noted_why) + "</p></details>";
+  }
+
   function quantityRow(row, quantity, label, indented) {
     var status = statusOf(quantity);
     var from = quantity.from_ns != null && quantity.from_frame
@@ -234,7 +245,8 @@
       '<th scope="row" class="analysis-results-name">' + label + "</th>" +
       // Not read: the chip says so; no value is set in the value's place.
       '<td class="analysis-results-value mono">' + escapeHTML(quantity.unavailable ? "" : quantity.said) +
-        (quantity.reweighted ? ' <span class="analysis-results-note">reweighted</span>' : "") + "</td>" +
+        (quantity.reweighted ? ' <span class="analysis-results-note">reweighted</span>' : "") +
+        notedHtml(quantity) + "</td>" +
       '<td class="analysis-results-frames mono" data-label="Frames averaged">' + escapeHTML(frames) +
         (from ? '<span class="analysis-results-from">' + escapeHTML(from) + "</span>" : "") + "</td>" +
       '<td class="analysis-results-samples mono" data-label="Independent samples">' +
@@ -250,8 +262,20 @@
         : row.status === "running" ? "running" : row.status === "not read" ? "unread" : "result";
       var said = { failed: "Failed", skipped: "Skipped", running: "Running", unread: "Not read",
                    result: "In its section" }[key];
-      var what = key === "result" ? "A profile, map or table"
+      var what = key === "result" ? (row.finding || "A profile, map or table")
         : key === "running" ? "Being analysed" : (row.message || "");
+      if (key === "result" && row.finding) {
+        // The image check: its finding as a sentence, its paragraph a
+        // click away.
+        return '<tr data-analysis="' + escapeHTML(row.analysis) + '" data-status="' + key + '">' +
+          '<th scope="row" class="analysis-results-name">' + nameLink(row) + "</th>" +
+          '<td colspan="3" class="analysis-results-other analysis-results-finding">' +
+          (row.finding_why && row.finding_why !== row.finding
+            ? "<details><summary>" + escapeHTML(row.finding) + "</summary><p>" +
+              escapeHTML(row.finding_why) + "</p></details>"
+            : escapeHTML(row.finding)) + "</td>" +
+          statusCell(key, said, "") + "</tr>";
+      }
       // A failure's first sentence in the row; the chip opens to the rest.
       var cut = what.search(/[.:]\s/);
       var plain = key === "result" || key === "running" || key === "unread";
@@ -259,7 +283,9 @@
       var rest = plain || cut < 0 ? "" : what.slice(cut + 1).trim();
       return '<tr data-analysis="' + escapeHTML(row.analysis) + '" data-status="' + key + '">' +
         '<th scope="row" class="analysis-results-name">' + nameLink(row) + "</th>" +
-        '<td colspan="3" class="analysis-results-other">' + escapeHTML(head) + "</td>" +
+        // A profile, map or table: its image note under it, as a mean's.
+        '<td colspan="3" class="analysis-results-other">' + escapeHTML(head) +
+        (key === "result" ? notedHtml(row) : "") + "</td>" +
         statusCell(key, said, rest) + "</tr>";
     }
     if (quantities.length === 1 && quantities[0].key === "mean") {
@@ -379,14 +405,14 @@
 
   function tableAsRows() {
     var rows = [["Analysis", "Quantity", "Mean", "Standard error", "Unit", "Frames analysed",
-      "From (ns)", "Independent samples", "Determined", "Why not"]];
+      "From (ns)", "Independent samples", "Determined", "Why not", "Image note"]];
     ((overview && overview.rows) || []).forEach(function (row) {
       (row.quantities || []).forEach(function (q) {
         rows.push([row.title, q.key === "mean" ? "Mean" : q.label,
           q.value == null ? "" : String(q.value), q.error == null ? "" : String(q.error),
           q.unit || "", q.of_frames == null ? "" : String(q.of_frames - (q.from_frame || 0)),
           q.from_ns == null ? "" : String(q.from_ns), q.samples == null ? "" : String(q.samples),
-          q.unavailable ? "not read" : q.determined ? "yes" : "no", q.why || ""]);
+          q.unavailable ? "not read" : q.determined ? "yes" : "no", q.why || "", q.noted || ""]);
       });
     });
     return rows;
@@ -548,11 +574,13 @@
     // only where the record stands behind it.
     if (recorded.mean != null && recorded.standard_error != null) {
       parts.push("Recorded mean " + (recorded.said ||
-        format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit) + ".");
+        format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit) +
+        (recorded.noted ? "; " + recorded.noted : "") + ".");
     } else if (recorded.mean != null) {
       var why = recorded.not_a_measurement || eq.withheld;
       parts.push("Recorded mean " + (recorded.said || format(recorded.mean) + unit) +
-        ", not determined" + (why ? ": " + firstSentence(why) : "") + ".");
+        ", not determined" + (why ? ": " + firstSentence(why) : "") +
+        (recorded.noted ? "; " + recorded.noted : "") + ".");
     }
     if (recorded.start_shared_with_replicas) {
       parts.push("The recorded mean starts where the study's replicas equilibrate together, at frame " +
@@ -856,5 +884,7 @@
     tableAsRows: tableAsRows,
     /* What the results table was drawn from, for each analysis's cell. */
     overviewRows: function () { return (overview && overview.rows) || []; },
+    /* Whether the analyses' own records have been read for this study. */
+    overviewRead: function () { return !!overview; },
   };
 }());

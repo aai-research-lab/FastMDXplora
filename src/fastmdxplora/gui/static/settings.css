@@ -1,0 +1,217 @@
+/* Settings (settings.js, IMDE 2.9): one page, two scopes as tabs, the
+   rows of the former Preferences dialog (dashboard.css .pref-*) as its
+   rows. A row is its words on the left and its control on the right; a
+   setting of This folder has its reason and what was said of it below. */
+
+/* Narrow as its own column is narrow, not as the window is: beside the
+   Agent, with the sidebar open, or at a large Display size, a wide window
+   gives the page the room of a narrow one (the rules at the end). */
+.settings-page { container: settings / inline-size; }
+
+.settings-page .settings-scopes,
+.settings-page .settings-panel { max-width: 860px; }
+
+/* The scopes on one line, or wrapped each whole. */
+.settings-scopes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.settings-scope {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-bottom: -1px;
+    padding: 8px 12px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-secondary);
+    font: 500 var(--text-sm) var(--font-stack);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.settings-scope:hover { color: var(--text-primary); }
+.settings-scope[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--accent); }
+.settings-scope-said { color: var(--text-muted); font-size: var(--text-2xs); font-weight: 400; }
+.settings-count {
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--text-primary);
+    font-size: var(--text-2xs);
+    text-align: center;
+}
+
+/* The search, as All studies' is (dashboard.css .studies-search). */
+#settings-find {
+    width: 100%;
+    min-width: 0;
+    min-height: 26px;
+    padding: 3px 10px 3px 30px;
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
+    font: inherit;
+    font-size: var(--text-xs);
+    outline: none;
+}
+#settings-find:focus {
+    border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.settings-lead { margin: 0 0 14px; line-height: 1.5; }
+.settings-path { color: var(--text-secondary); overflow-wrap: anywhere; }
+.settings-none { margin: 12px 0; }
+.settings-page .link-btn {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+/* The rows of You: the popup's theme and accent, as a row each. The
+   accents give way before their name does, onto a second line, never over
+   it. */
+.settings-page .pref-row .seg { flex: none; }
+#settings-page-accent { flex: none; }
+.settings-page .pref-row .accent-swatches {
+    flex: 0 1 340px;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
+}
+.settings-page .pref-row .settings-value { font-size: var(--text-sm); text-align: right; }
+.settings-row-end { justify-content: flex-end; cursor: default; }
+.settings-foot { display: flex; margin-top: 18px; }
+/* A part of the page led to from a dialog shows where it is, once. */
+.pref-group.settings-part-shown .pref-rows { animation: settings-part 1.4s ease-out 1; }
+@keyframes settings-part {
+    from { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+    to { box-shadow: 0 0 0 3px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pref-group.settings-part-shown .pref-rows { animation: none; outline: 2px solid var(--accent); }
+}
+
+/* This folder */
+.settings-folder-head { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.settings-only { color: var(--text-secondary); font-size: var(--text-xs); cursor: pointer; }
+.settings-only input { accent-color: var(--accent); vertical-align: -2px; }
+.settings-cannot {
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+.settings-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 16px;
+    align-items: start;
+    cursor: default;
+}
+.settings-field.is-set { box-shadow: inset 3px 0 0 var(--accent); }
+.settings-field[aria-busy="true"] { opacity: .6; }
+.settings-words { grid-column: 1; }
+.settings-label { color: var(--text-primary); font-weight: 500; cursor: pointer; }
+.settings-unit { color: var(--text-muted); font-weight: 400; }
+.settings-theirs { color: var(--text-secondary) !important; }
+.settings-name { color: var(--text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+.settings-side {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+.settings-page .settings-side .settings-control:not(details),
+.settings-why {
+    width: 200px;
+    min-height: 32px;
+    padding: 4px 8px;
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
+    font-family: inherit;
+    font-size: var(--text-sm);
+}
+.settings-control[aria-invalid="true"] { border-color: var(--status-error, #d64545); }
+.settings-fixed {
+    max-width: 260px;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+.settings-by-hand { color: var(--text-muted); font-size: var(--text-2xs); }
+.settings-several {
+    grid-column: 1 / -1;
+    max-width: none;
+    max-height: 240px;
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    overflow: auto;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--background-soft);
+    text-align: left;
+    white-space: pre-wrap;
+}
+.settings-use-theirs { font-size: var(--text-xs); }
+.settings-why { grid-column: 1 / -1; width: 100%; margin-top: 8px; font-size: var(--text-xs); }
+.settings-why-said { grid-column: 1 / -1; margin-top: 6px; color: var(--text-secondary); font-size: var(--text-xs); }
+.settings-status { grid-column: 1 / -1; margin: 0; color: var(--text-muted); }
+.settings-status:empty { display: none; }
+.settings-status.is-saved { margin-top: 4px; color: var(--text-secondary); }
+.settings-status.is-refused { margin-top: 6px; color: var(--status-error, #d64545); }
+.settings-multi { width: 200px; }
+.settings-multi > summary {
+    padding: 5px 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 7px;
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.settings-multi-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 10px;
+    max-height: 220px;
+    margin-top: 6px;
+    overflow: auto;
+}
+.settings-multi-item { display: flex; gap: 6px; align-items: center; font-size: var(--text-xs); }
+.settings-multi-item input { accent-color: var(--accent); }
+
+/* From the Agent's dialog, its part of the page. */
+.settings-part-link { display: inline-block; margin-top: 4px; color: var(--accent); }
+
+@container settings (width < 560px) {
+    /* The search under the name, so what the page is stays whole. */
+    .page-header { flex-wrap: wrap; row-gap: 6px; padding-bottom: 8px; }
+    .page-header > .page-header-actions { flex: 1 1 100%; }
+    .page-header .page-header-actions > .search-field { flex: 1 1 auto; max-width: none; }
+    .settings-field { grid-template-columns: minmax(0, 1fr); }
+    .settings-side { grid-column: 1; align-items: stretch; margin-top: 8px; }
+    .settings-page .settings-side .settings-control:not(details),
+    .settings-multi { width: 100%; }
+    .settings-page .pref-row:not(.settings-field) { flex-wrap: wrap; }
+    .settings-scope-said { display: none; }
+}

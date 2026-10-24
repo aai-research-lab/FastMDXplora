@@ -279,7 +279,7 @@
     selection.representation = existing ? existing.representation : "sticks";
     selection.labelled = existing ? existing.labelled : false;
     post({ name: name, selection: selection }).then(function (answer) {
-      if (!answer || !answer.ok) { said(notMade(answer, "The selection was not kept")); return; }
+      if (!answer || !answer.ok) { said(notMade(answer, "The selection was not saved")); return; }
       state.named = answer.selections;
       if (input) input.value = "";
       said("Named " + name + ".");
@@ -300,11 +300,14 @@
     var body = Object.assign({}, one);
     delete body.name;
     post({ name: name, selection: body }).then(function (answer) {
-      if (!answer || !answer.ok) said(notMade(answer, "The change was not kept"));
+      if (!answer || !answer.ok) said(notMade(answer, "The change was not saved"));
     });
   }
 
+  /* Forgotten at once, with Undo: it asks nothing, as what can be undone
+   * does not (one confirmation is for what cannot, confirm.js). */
   function forget(name) {
+    var was = state.named.find(function (one) { return one.name === name; });
     post({ action: "delete", name: name }).then(function (answer) {
       if (!answer || !answer.ok) { said(notMade(answer, "The selection was not forgotten")); return; }
       var shown = state.named.some(function (one) { return one.name === name && shows(one); });
@@ -314,6 +317,19 @@
       said("Forgot " + name + ".");
       var v = viewer();
       if (shown && v) v.restyle();
+      var board = window.FastMDXDashboard;
+      if (was && board && board.toast) {
+        board.toast("Forgot the selection " + name + ".", "ok", { label: "Undo", run: function () {
+          var body = Object.assign({}, was);
+          delete body.name;
+          post({ name: name, selection: body }).then(function (back) {
+            if (!back || !back.ok) { said((back && back.reason) || "Not saved."); return; }
+            state.named = back.selections;
+            resolve();
+            said(name + " is back.");
+          });
+        } });
+      }
     });
   }
 

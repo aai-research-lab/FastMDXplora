@@ -6,6 +6,7 @@ They intentionally parse commands rather than executing MD-heavy workflows.
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import sys
@@ -708,32 +709,192 @@ class TestNobodyCountsTheAnalysesTwice:
             "a count in the opening paragraph is a copy that goes stale")
 
 
+# The browser as a thing of its own: its tabs, windows, storage, cache, keys,
+# console, settings and Back and Forward; the flag that keeps it closed and the
+# variable that chooses it; a browser, any browser, browsers; and the few
+# things it does by itself that the docs describe (asks before a page is left,
+# loads a page, does not allow or keep storage). Each is the literal browser,
+# not the interface, and keeps the word. Words are joined by any whitespace,
+# so a phrase wrapped onto an indented line is read whole.
+_ITS_PARTS = (
+    r"tabs?|windows?|(?:session\s+|local\s+)?storage|localStorage|sessionStorage|cache"
+    r"|console|zoom|settings|history|extensions?|notifications?|address\s+bar"
+    r"|back(?:\s+and\s+forward|\s+button)?|forward(?:\s+button)?|downloads?(?:\s+folder)?"
+    r"|download\s+folder|print\s+dialog|support|compatibility"
+)
+# A browser named for a page, view or panel of the GUI is the interface again.
+_NOT_A_GUI_PART = r"(?!\s+(?:pages?|views?|panels?|layouts?|features?|screens?|interfaces?"
+_NOT_A_GUI_PART += r"|buttons?|menus?|named|called|label(?:l)?ed)\b)"
+_THE_BROWSER_ITSELF = re.compile(
+    rf"\bbrowser\s+(?:{_ITS_PARTS})\b{_NOT_A_GUI_PART}"
+    rf"|\bbrowser['’]s\s+(?:{_ITS_PARTS})\b{_NOT_A_GUI_PART}"
+    r"|\bare\s+the\s+browser['’]s\s+own\s*:"
+    r"|\bbrowser-based\b|#browser[\w-]*"
+    r"|\bbrowsers\b"
+    r"|\b(?:your|a|an|any|each|every|another|other|one|which|the\s+same)\s+"
+    r"(?:(?:default|different|headless|modern|supported|current|separate|new|private"
+    rf"|other|web)\s+)?browser\b{_NOT_A_GUI_PART}"
+    rf"|\b(?:web|file|default)\s+browser\b{_NOT_A_GUI_PART}"
+    r"|--no-browser\b|\bno_browser\b"
+    r"|\b(?:close|quit|reload|restart|refresh)\s+the\s+browser\b"
+    r"|\bthe\s+browser\s+on\s+(?:your|this|that|another|the\s+other)\s+"
+    r"(?:laptop|machine|computer|desktop|workstation|phone|tablet)\b"
+    r"|\bthe\s+browser\s+asks\s+before\s+the\s+page\s+is\s+left\b"
+    r"|\bpage\s+the\s+browser\s+loads\b"
+    r"|\bwhere\s+the\s+browser\s+(?:does\s+not|doesn['’]t)\s+(?:allow\s+it|keep\s+them)\s*[,.;]"
+    r"|\bthis\s+browser\s+could\s+not\s+(?:save|keep)\b",
+    re.IGNORECASE,
+)
+_ENVIRONMENT_VARIABLE = re.compile(
+    r"\$BROWSER\b|\bBROWSER=|`BROWSER`|\bBROWSER\s+(?:environment\s+)?variable\b")
+_QUOTED = re.compile(r'"[^"]*"|“[^”]*”')
+_COMMENTS = re.compile(r"/\*.*?\*/|<!--.*?-->|(?:^|(?<=\s))//[^\n]*", re.DOTALL)
+
+
+def _gui_text(source: str) -> str:
+    """The GUI's source with its comments taken out and its whitespace
+    folded: a quote of the docs is the GUI's own words only where the GUI
+    writes them, not where a comment says them."""
+    return " ".join(_COMMENTS.sub(" ", source).split())
+
+
+def _gui_writes(words: str, gui_text: str) -> bool:
+    """Whether the GUI writes `words` whole as a string or as text between
+    tags (a full stop, inside the docs' quote or the GUI's, is allowed
+    either side)."""
+    words = words.rstrip(".!?")
+    return bool(re.search(r"[\"'`>]\s?" + re.escape(words) + r"[.!?]?\s?[\"'`<](?!\w)",
+                          gui_text))
+
+
+def _browser_named_as_the_interface(text: str, gui_source: str = "") -> list[int]:
+    """Where `text` says "browser" for something other than the browser
+    itself, by line. Every whitespace is a space here, so a phrase wrapped
+    across lines is read whole. A quote is the GUI's own words, and is not
+    judged, only where `gui_source` writes those words outside a comment."""
+    flat = re.sub(r"\s", " ", text)
+    allowed = [m.span() for m in _THE_BROWSER_ITSELF.finditer(flat)]
+    allowed += [m.span() for m in _ENVIRONMENT_VARIABLE.finditer(flat)]
+    gui_text = _gui_text(gui_source)
+    for quoted in _QUOTED.finditer(flat):
+        words = " ".join(quoted.group(0)[1:-1].split())
+        if "browser" in words.lower() and _gui_writes(words, gui_text):
+            allowed.append(quoted.span())
+    lines = []
+    for word in re.finditer(r"\bbrowser", flat, re.IGNORECASE):
+        if not any(a <= word.start() and word.end() <= b for a, b in allowed):
+            lines.append(text.count("\n", 0, word.start()) + 1)
+    return sorted(set(lines))
+
+
 class TestTheInterfaceIsCalledTheGUI:
     """The GUI is the interface; a browser is where it happens to render.
 
     Documentation and comments used "the browser" for both, so the product and
     its rendering surface had the same name -- and the three interfaces read
-    as "the command line, a config file, and the browser".
+    as "the command line, a config file, and the browser". The browser as a
+    thing of its own (its tabs, windows and storage, what it does by itself)
+    keeps the word.
     """
 
     def test_the_docs_name_the_interface_consistently(self) -> None:
         import pathlib
-        import re
 
-        # The browser itself keeps the word: its tab, its windows, its
-        # session storage, the flag that suppresses it, and what it does on
-        # its own (asks before a page is left, loads a page, keeps or does
-        # not keep what the page stores). The study tabs' description
-        # (10-17, 10-18) says all of these.
-        literal = re.compile(
-            r"browser (tab|windows?|session storage)|--no-browser|this browser"
-            r"|the browser (does not|asks|loads)|the browser's own")
         root = pathlib.Path(__file__).resolve().parents[1]
+        gui_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for folder in ("static", "templates")
+            for path in sorted((root / "src" / "fastmdxplora" / "gui" / folder).iterdir())
+            if path.suffix in {".js", ".html"})
         for page in ("docs/gui.md", "docs/studies.md", "README.md"):
             text = (root / page).read_text(encoding="utf-8")
-            for line in text.splitlines():
-                assert "browser" not in literal.sub("", line), (
-                    f"{page}: {line.strip()[:80]}")
+            lines = text.split("\n")
+            said = _browser_named_as_the_interface(text, gui_source)
+            assert said == [], [f"{page}:{n}: {lines[n - 1].strip()[:80]}" for n in said]
+
+    @pytest.mark.parametrize("line", [
+        "Results open in the browser.",
+        "the command line, a config file, and the browser",
+        "Start a study from the browser, then watch it.",
+        "The browser shows the Overview first.",
+        "In this browser, click Run.",
+        "Studies can be compared via browser or CLI.",
+        "The data browser lists every frame.",
+        "The browser allows you to compare two studies.",
+        "The browser keeps a list of your recent studies.",
+        "The browser asks for a study name before it starts.",
+        "The browser asks before deleting a study.",
+        "The browser loads your results and plots RMSD.",
+        "Open the browser tab named Analysis to see RMSD.",
+        "A new browser page opens for each analysis.",
+        "Results appear in the browser on this page.",
+        "Deleting it? The browser does not allow it.",
+        "The plots are the browser's own.",
+        "THE BROWSER SHOWS RESULTS.",
+        "The browser does not allow it to start without a topology.",
+        "the browser\ndoes not allow editing a finished study",
+        'The header says "Not saved in this browser".',
+        'Results open in "the browser".',
+        'It says "the browser keeps it".',
+    ])
+    def test_the_browser_as_the_interface_is_still_refused(self, line) -> None:
+        # Words a comment of the GUI's source says, quoted or not, are not
+        # words the GUI shows, so quoting them does not pass.
+        gui_source = ('// the browser keeps it\n/* "the browser keeps it" */\n'
+                      '<!-- "the browser" -->\nsay("Not saved");')
+        assert _browser_named_as_the_interface(line, gui_source) != []
+
+    @pytest.mark.parametrize("line", [
+        "A browser tab open on the GUI.",
+        "Run it with --no-browser, or set no_browser: true.",
+        "Set BROWSER=firefox to choose which browser opens.",
+        "It uses Python's webbrowser module.",
+        "See [browser support](#browser-support).",
+        "the studies opened in this browser\nwindow",
+        "- Open a new browser\n  window for each study.",
+        "A browser tab opens.\r\nThe browser\r\ntab closes.",
+        "while browser session storage is available",
+        "where the browser does not allow it, the strip says so",
+        "Set the BROWSER variable, or `BROWSER`, to choose it.",
+        "Where the browser does not keep them, the box says so",
+        "and the browser asks before the page is left",
+        "a page the browser loads for another study",
+        "A Config draft this browser could not save",
+        "In a browser tab \u23181 to \u23189 are the browser's own: there",
+        "Browser Back and Forward continue to work",
+        "Use the browser Back button to return to the study list.",
+        "Use the browser\u2019s Back button to return.",
+        "If plots are blank, see the browser console.",
+        "The draft is kept in the browser's localStorage.",
+        "The browser\u2019s print dialog saves the report as a PDF.",
+        "Open http://127.0.0.1:8765 in your browser.",
+        "`fastmdx gui` opens your default browser.",
+        "Try a different browser if the Viewer is blank.",
+        "Movies are rendered in a headless browser.",
+        "Then open the forwarded address in the browser on your laptop.",
+        "Open the URL in a web browser.",
+        "The GUI works in any modern browser.",
+        "Supported browsers: Chrome, Firefox and Safari.",
+        "The GUI is browser-based, so nothing is installed.",
+        "Close the browser and the study keeps running.",
+        "Clear the browser cache if the page looks stale.",
+        "Use the file browser to pick a topology.",
+    ])
+    def test_the_browser_itself_keeps_the_word(self, line) -> None:
+        assert _browser_named_as_the_interface(line) == []
+
+    @pytest.mark.parametrize("line", [
+        'The header says "Not saved in this browser".',
+        'The header says "Not saved in this browser."',
+        'The header says "Not saved\nin this browser".',
+        'The header says \u201cNot saved in this browser\u201d.',
+        'Click "Save", then the header says "Not saved in this browser".',
+        'The page says "Kept in this browser".',
+    ])
+    def test_a_quote_of_the_gui_keeps_its_words(self, line) -> None:
+        gui_source = ('    sayDraftState("Not saved in this browser");\n'
+                      '    <p class="note">Kept in this browser.</p>')
+        assert _browser_named_as_the_interface(line, gui_source) == []
 
 
 def test_the_source_names_the_software_too():

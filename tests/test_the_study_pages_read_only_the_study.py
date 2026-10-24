@@ -402,3 +402,91 @@ def test_a_joined_study_is_read_as_its_pieces_where_it_holds_them(tmp_path):
         assert study_trajectory(root) == expected
         assert len(state_record_pieces(root)) == 2
     assert scope.denied == set()
+
+
+def _a_study_of_runs_its_manifest_linked_out(tmp_path: Path) -> Path:
+    """Two runs of a study whose batch manifest is a link to one outside
+    it, giving each run a value of its own."""
+    from tests.test_a_study_running_until_it_knows_is_drawn import _linked_out
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    root = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2])
+
+    def outside_values(manifest):
+        for entry in [*(manifest.get("planned") or []), *(manifest.get("runs") or [])]:
+            entry["sweep_values"] = {"simulation.random_seed": "OUTSIDE-" + entry["run_id"][-1]}
+    _linked_out(root, "batch_manifest.json", tmp_path / "elsewhere" / "batch.json",
+                outside_values)
+    return root
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_batch_manifest_linked_out_names_no_run(tmp_path, public):
+    """`/api/runs-compared` and `/api/app-state` read a study's batch
+    manifest linked out of it, beyond loopback too: the runs table and the
+    breadcrumb said "seed OUTSIDE-1" beside a line saying it was not read."""
+    from fastmdxplora.gui.runs_compared import runs_compared
+
+    root = _a_study_of_runs_its_manifest_linked_out(tmp_path)
+    runs = sorted(folder.name for folder in (root / "runs").iterdir())
+    # What the link leads to, read without holding the read to the study.
+    assert "OUTSIDE-1" in json.dumps(runs_compared(root))
+    for served, named in ((root, "batch_manifest.json"),
+                          (root / "runs" / runs[1], "../../batch_manifest.json")):
+        code, body = _ask(served, tmp_path, "/api/app-state", public=public)
+        state = json.loads(body)
+        assert code == 200 and "OUTSIDE" not in body.decode()
+        assert state["unavailable_why"] == {named: "outside"}, state.get("unavailable_why")
+        assert f"{named} was not read" in state["not_read"]
+        # Its runs named by their folders.
+        listed = state["runs"] if served == root else state["run_of"]["runs"]
+        assert [run["label"] for run in listed] == runs
+        if served != root:
+            assert (state["run_of"]["study"], state["run_of"]["label"]) == (root.name, runs[1])
+    code, body = _ask(root, tmp_path, "/api/runs-compared", public=public)
+    page = json.loads(body)
+    assert code == 200 and "OUTSIDE" not in body.decode()
+    assert page["ok"] and [run["label"] for run in page["runs"]] == runs
+    assert page["unavailable_why"] == {"batch_manifest.json": "outside"}
+    assert "batch_manifest.json was not read" in page["not_read"]
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").is_file(), reason="reads /proc")
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_process_record_linked_out_is_never_adopted(tmp_path, public):
+    """The adoption read the study's process record through a link out of
+    it: a live process named there was taken for the study's run, said
+    running, and was what Stop signalled."""
+    import shutil
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, this_machine
+
+    root = _study(tmp_path)
+    stand_in = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)",
+                                 "fastmdx", "run", str(root)])
+    try:
+        outside = _write(tmp_path, "elsewhere/run.json", {
+            "pid": stand_in.pid, "argv": ["-c", "fastmdx", "run", str(root)],
+            "started_at": datetime.now(timezone.utc).isoformat(), **this_machine()})
+        _link(root / RUN_PROCESS_FILE, outside)
+        code, body = _ask(root, tmp_path, "/api/app-state", public=public)
+        state = json.loads(body)
+        assert code == 200 and state["process_running"] is False
+        assert state["status"] != "running"
+        runtime = DashboardRuntime(workspace_root=root, exploration_root=tmp_path,
+                                   active_root=root)
+        assert runtime.process is None
+        assert runtime.stop()["stopped"] is False and stand_in.poll() is None
+        # The same record in the study names its run.
+        (root / RUN_PROCESS_FILE).unlink()
+        shutil.copyfile(outside, root / RUN_PROCESS_FILE)
+        runtime = DashboardRuntime(workspace_root=root, exploration_root=tmp_path,
+                                   active_root=root)
+        assert runtime.process is not None and runtime.process.pid == stand_in.pid
+    finally:
+        stand_in.kill()
+        stand_in.wait()

@@ -149,18 +149,19 @@ def test_the_sidebar_lists_them_and_opens_one_beside_the_page(tmp_path) -> None:
                     "id": begun["id"], "study": where, "entries": [{"role": "user", "text": text}]}])
             page.evaluate("() => window.FastMDXChats.show()")
             page.wait_for_selector("#sidebar-chats-list .sidebar-conv")
+            # One list since 10-21: the study's, then the chats.
             lists = page.evaluate("""() => ({
-                chats: [...document.querySelectorAll('#sidebar-chats-list .sidebar-conv-title')]
+                chats: [...document.querySelectorAll('#sidebar-chats-list [data-group="chats"] .sidebar-conv-title')]
                     .map((t) => t.textContent),
-                study: [...document.querySelectorAll('#sidebar-study-convs-list .sidebar-conv-title')]
+                study: [...document.querySelectorAll('#sidebar-chats-list [data-group="study"] .sidebar-conv-title')]
                     .map((t) => t.textContent),
                 after: document.getElementById('sidebar-chats').compareDocumentPosition(
                     document.querySelector('.sidebar-study')) & Node.DOCUMENT_POSITION_PRECEDING})""")
-            page.click("#sidebar-chats-list .sidebar-conv")
+            page.click('#sidebar-chats-list .sidebar-conv[data-group="chats"]')
             page.wait_for_function("() => !document.getElementById('agent-drawer').hidden")
             page.wait_for_selector("#agent-thread :text('A chat about nothing open')")
             current = page.evaluate("() => window.FastMDXAgentPanel.current")
-            marked = page.get_attribute("#sidebar-chats-list .sidebar-conv", "aria-current")
+            marked = page.get_attribute('#sidebar-chats-list .sidebar-conv[data-group="chats"]', "aria-current")
             # The Conversations list: found by typing, named in place.
             page.click("#agent-conversations")
             page.wait_for_selector("#agent-conv-list .conv-search input")

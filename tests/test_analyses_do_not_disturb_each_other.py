@@ -169,8 +169,8 @@ class TestAnAnalysisGivesTheSameAnswerInCompany:
         from fastmdxplora.analysis import orchestrator
 
         text = Path(inspect.getfile(orchestrator)).read_text(encoding="utf-8")
-        assert "analysis.run(self.traj[:])" in text, (
+        handed = "analysis.run(carry_wholeness(self.traj, self.traj[:]))"
+        assert handed in text, (
             "each analysis must receive its own trajectory copy")
-        assert "analysis.run(self.traj)" not in text.replace(
-            "analysis.run(self.traj[:])", ""), (
+        assert "analysis.run(self.traj" not in text.replace(handed, ""), (
             "the shared trajectory must not be handed to any analysis")

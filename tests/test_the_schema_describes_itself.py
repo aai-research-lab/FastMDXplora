@@ -32,6 +32,7 @@ from fastmdxplora.config.describe import (
 from fastmdxplora.config.loader import ConfigError, validate_config
 from fastmdxplora.config.schema import PHASE_SCHEMAS
 from fastmdxplora.refusals import refusal_of
+from fastmdxplora.simulation.runner import WITHOUT_A_THERMOSTAT
 
 
 class TestTheDescriptionMatchesWhatValidationAccepts(unittest.TestCase):
@@ -85,8 +86,15 @@ class TestTheDescriptionMatchesWhatValidationAccepts(unittest.TestCase):
             for name, entry in block.items():
                 for value in entry.get("enum", []):
                     with self.subTest(phase=phase, setting=name, value=value):
+                        # An integrator with no thermostat stays a choice so a
+                        # study's record holding one is read; a new study is
+                        # refused it, and the description says so.
+                        as_record = (phase, name) == ("simulation", "integrator") \
+                            and value in WITHOUT_A_THERMOSTAT
+                        if as_record:
+                            self.assertIn("refused", entry.get("description", ""))
                         try:
-                            validate_config({phase: {name: value}})
+                            validate_config({phase: {name: value}}, as_record=as_record)
                         except ConfigError as exc:
                             self.assertNotEqual(
                                 refusal_of(exc).code,

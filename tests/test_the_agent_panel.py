@@ -2082,7 +2082,7 @@ class TestEditIsInPlace(unittest.TestCase):
         # Enter sends; Escape restores; blur restores.
         self.assertIn('e.key === "Enter" && !e.shiftKey', edit)
         self.assertIn('e.key === "Escape"', edit)
-        self.assertIn("body.textContent = before;", edit)
+        self.assertIn("body.textContent = send && edited ? edited : before;", edit)
         # Not the old detour through the composer.
         self.assertNotIn("Put this back in the composer", edit)
 

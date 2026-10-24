@@ -384,7 +384,84 @@ def _merge_groups(z: Any, cut: float, labels: list[int]) -> list[int | None]:
     return found
 
 
+#: About how much of an older study's whole matrix is held at a time, read
+#: from its archive a quarter of a megabyte at a time (a larger read of a compressed
+#: member takes three or four times what it returns while it inflates).
+READ_BYTES = 2 * 2**20
+PIECE_BYTES = 2**18
+
+
+def _block_means_read(found: Any) -> tuple[Any, int, int]:
+    """An older study's whole matrix (no ``block`` saved), averaged in blocks
+    of frames to at most :data:`MOST_CELLS` cells as it is read, a few rows
+    at a time from the archive (:data:`READ_BYTES`), every frame weighing
+    the same, the last block what is left: the means, the block, the
+    frames. ``(None, 1, 0)`` where it is not a square matrix; read whole
+    where its header is not one read here (a Fortran-ordered array)."""
+    import numpy as np
+
+    with found.zip.open("rmsd_nm.npy") as stream:
+        version = np.lib.format.read_magic(stream)
+        read_header = (np.lib.format.read_array_header_1_0 if version == (1, 0)
+                       else np.lib.format.read_array_header_2_0)
+        shape, fortran, dtype = read_header(stream)
+        if len(shape) != 2 or shape[0] != shape[1] or dtype.hasobject:
+            return None, 1, 0
+        n = int(shape[0])
+        further = max(1, math.ceil(n / MOST_CELLS))
+        if fortran:
+            pieces: Any = [np.asarray(found["rmsd_nm"], dtype=np.float32)]
+        else:
+            row_bytes = n * dtype.itemsize
+            # Whole blocks of rows at a time, so each piece's blocks line up.
+            chunk = max(1, READ_BYTES // max(row_bytes * further, 1)) * further
+
+            def rows_of() -> Iterator[Any]:
+                left = n
+                while left > 0:
+                    take = min(chunk, left)
+                    rows = np.empty((take, n), dtype=dtype)
+                    into, at = memoryview(rows).cast("B"), 0
+                    while at < into.nbytes:
+                        piece = stream.read(min(PIECE_BYTES, into.nbytes - at))
+                        if not piece:
+                            from fastmdxplora.refusals import StudyError
+
+                            raise StudyError(
+                                "The clustering's matrix file ends before its rows do.",
+                                code="analysis.data.absent", analysis="cluster",
+                                needs="cluster_rmsd_matrix.npz")
+                        into[at:at + len(piece)] = piece
+                        at += len(piece)
+                    yield rows
+                    left -= take
+
+            pieces = rows_of()
+        starts = np.arange(0, n, further)
+        sizes = np.diff(np.append(starts, n)).astype(np.float64)
+        summed = np.zeros((starts.size, starts.size), dtype=np.float64)
+        first = 0
+        for rows in pieces:
+            # Summed in the file's own type (a sum of a block's few values),
+            # then carried on in float64: a dtype here would copy the rows.
+            columns = np.add.reduceat(rows, starts, axis=1).astype(np.float64)
+            local = np.arange(0, rows.shape[0], further)
+            summed[first // further:first // further + local.size] += np.add.reduceat(
+                columns, local, axis=0)
+            first += rows.shape[0]
+    return (summed / np.outer(sizes, sizes)).astype(np.float32), further, n
+
+
 def _rmsd_matrix(root: Path) -> dict[str, Any] | None:
+    """The clustering's map of time against time, from the file the analysis
+    wrote and plotted its own figure from.
+
+    It holds the matrix averaged in blocks of ``block`` clustered frames (the
+    last block takes what is left), with every clustered frame's index and
+    time; a study clustered before kept the whole matrix there, with no
+    ``block``, and is read as blocks of one. Past :data:`MOST_CELLS` cells it
+    is averaged again, each cell weighted by the frames it holds.
+    """
     import numpy as np
 
     path = root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz"
@@ -393,19 +470,37 @@ def _rmsd_matrix(root: Path) -> dict[str, Any] | None:
         return kept
     payload = None
     with _npz(path) as found:
-        values = np.asarray(found["rmsd_nm"], dtype=np.float32)
         times = np.asarray(found["time_ns"], dtype=float) if "time_ns" in found.files else None
         loaded = np.asarray(found["frames"], dtype=int) if "frames" in found.files else None
-    n = values.shape[0]
-    if values.ndim == 2 and n >= 2 and values.shape[1] == n:
-        block = max(1, math.ceil(n / MOST_CELLS))
-        if block > 1:
-            # Averaged in blocks of frames, in float32: a 10,000-frame
-            # matrix is not copied in float64 to be shown 200 cells across.
-            starts = np.arange(0, n, block)
-            sizes = np.diff(np.append(starts, n)).astype(np.float32)
-            rows = np.add.reduceat(values, starts, axis=0)
-            values = np.add.reduceat(rows, starts, axis=1) / np.outer(sizes, sizes)
+        saved_block = int(found["block"]) if "block" in found.files else 1
+        if saved_block > 1:
+            # At most about a thousand cells across: read whole.
+            values = np.asarray(found["rmsd_nm"], dtype=np.float32)
+        else:
+            # A study clustered before kept the whole matrix here: averaged
+            # as it is read, a few rows at a time, so a 31,000-frame matrix
+            # (3.8 GB) is neither held whole nor copied.
+            values, block, n = _block_means_read(found)
+    if saved_block > 1:
+        cells = values.shape[0]
+        n = loaded.size if loaded is not None else cells
+        fits = (values.ndim == 2 and cells >= 2 and values.shape[1] == cells
+                and -(-n // saved_block) == cells)
+        further = max(1, math.ceil(cells / MOST_CELLS)) if fits else 1
+        if fits and further > 1:
+            # Averaged in blocks of cells, in float32, each cell weighted by
+            # its frames (the last block holds what is left).
+            weights = np.full(cells, float(saved_block), dtype=np.float32)
+            weights[-1] = float(n - saved_block * (cells - 1))
+            starts = np.arange(0, cells, further)
+            rows = np.add.reduceat(values * weights[:, None], starts, axis=0)
+            rows *= weights[None, :]
+            summed = np.add.reduceat(weights, starts)
+            values = np.add.reduceat(rows, starts, axis=1) / np.outer(summed, summed)
+        block = saved_block * further
+    else:
+        fits = values is not None and n >= 2
+    if fits:
         timed = times is not None and len(times) == n and bool(np.all(np.isfinite(times)))
         if timed:
             axis = times
@@ -413,12 +508,12 @@ def _rmsd_matrix(root: Path) -> dict[str, Any] | None:
             indices = loaded.tolist() if loaded is not None and len(loaded) == n else list(range(n))
             axis = np.asarray(_clock(root, indices)[0], dtype=float)
         step = float(np.median(np.diff(axis))) if n > 1 else 1.0
-        cells = math.ceil(n / block)
+        shown = math.ceil(n / block)
         payload = {
             "kind": "matrix", "title": "RMSD between frames",
             "values": _grid(values),
             # Each cell is `block` frames wide, the last one too.
-            "extent": [float(axis[0]) - step / 2, float(axis[0]) + (cells * block - 0.5) * step],
+            "extent": [float(axis[0]) - step / 2, float(axis[0]) + (shown * block - 0.5) * step],
             "axis_label": "Time (ns)" if timed else "Frame", "label": "RMSD", "unit": "nm",
             "block": block if block > 1 else None, "low": 0.0,
         }

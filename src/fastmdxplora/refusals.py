@@ -781,6 +781,11 @@ CODES: tuple[Code, ...] = (
          "What the analysis reads was not produced by this study.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("analysis", "needs")),
+    Code("analysis.memory.matrix_too_large",
+         "The frames' pairwise matrix, and the copies clustering or MDS makes "
+         "of it, would not fit in the memory this process can take.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
+         detail_keys=("frames", "bytes_needed", "bytes_available", "stride")),
     Code("analysis.data.not_this_system",
          "The prepared system found where a run's record points is not the "
          "one the run simulated.",
