@@ -4045,7 +4045,7 @@ body.sidebar-collapsed .sidebar-expand { display: inline-flex; }
     flex: none; display: inline-flex; align-items: center; justify-content: center;
     width: 28px; height: 28px; margin: 0; padding: 0; font-size: var(--text-2xs);
 }
-/* Its right edge on the buttons under it (the Agent beside, New in a
+/* Its right edge on the buttons' under it (the Agent beside, New in a
    list's head): the brand row is padded 16px, the rows under it 10px and
    their buttons 1px in. */
 @media (min-width: 801px) {
@@ -4264,7 +4264,13 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
    fixed-position descendants, and the dialogs on other pages are those. */
 .page[data-page="viewer"] { container-type: inline-size; container-name: viewerpage; }
 /* The least width each page needs, read by frame.js, which folds the
-   sidebar and then the side panel before a page has less. */
+   sidebar and then the side panel before a page has less (user, 10-15).
+   The Viewer's tools and the Config Builder's summary are the pages' own
+   right panels: they stay beside the page down to its least, and go under
+   it below. The tools take their widest, 390px, before the molecule takes
+   any, so at 788px of page the molecule's column is about 380px (the
+   canvas a little less, by the column's scroll gutter); the builder's
+   784px, above. */
 .page { --page-least: 480px; --own-right-panel: 0; }
 .page[data-page="viewer"] { --page-least: 788px; --own-right-panel: 1; }
 .page[data-page="run"] { --page-least: 784px; --own-right-panel: 1; }
@@ -5703,6 +5709,9 @@ body.agent-beside { --panel-width: 0px; }
 body.agent-beside .side-panel,
 body.agent-beside .col-handle[data-handle="panel"],
 body.agent-beside .side-expand { visibility: hidden; overflow: hidden; }
+/* Beside the page, not over it, wherever the strip of icons (56px), the
+   Agent at its least (340px) and a page at its least (480px) with its
+   margins (28px a side) fit: from 932px. */
 @media (min-width: 932px) {
     .agent-drawer { box-shadow: none; }
     body.agent-beside .app-shell { padding-right: var(--agent-width); }
@@ -6843,8 +6852,9 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 
 /* One column where the page is narrow, by the page's own width: the Agent
    opened beside the builder takes the window's room, not the page's rules.
-   The summary stays beside the form down to a page of 784px; frame.js folds
-   the sidebar and side panel to keep it there (--page-least). */
+   The summary stays beside the form down to a page of 784px: the summary
+   at its widest, 380px, and the gap leave the form 380px; frame.js folds
+   the sidebar and the side panel to keep it there (--page-least). */
 .page[data-page="run"] { container: builder / inline-size; }
 @container builder (width < 784px) {
     .page[data-page="run"] .builder-layout { grid-template-columns: minmax(0, 1fr); }
@@ -6860,7 +6870,7 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     .page[data-page="run"] .builder-phone-bar .primary-btn { margin-left: auto; min-height: 36px; }
 }
 /* The form by its own width: beside the summary at the page's least it has
-   380px, as narrow as on a phone, so lay it out as on a phone there. */
+   380px, as narrow as on a phone, so it is laid out as on a phone there. */
 .page[data-page="run"] .builder-main { container: builderform / inline-size; }
 @container builderform (width < 680px) {
     .page[data-page="run"] .builder-start,
@@ -6873,8 +6883,8 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
     .page[data-page="run"] .builder-system-head { display: none; }
     .page[data-page="run"] .builder-stopping-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-/* The steps' names take 540px: under that, show numbers while keeping the
-   names available to assistive technology. */
+/* The steps' names take 540px: under that, the numbers alone show, the
+   names still read out. */
 @container builderform (width < 560px) {
     .page[data-page="run"] .builder-step-link span {
         position: absolute; width: 1px; height: 1px; overflow: hidden;

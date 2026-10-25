@@ -3019,7 +3019,11 @@
     sendReady();
   }
 
-  /* Send stays quiet until the composer contains a nonblank message. */
+  /* Send is in the accent once there is something to send (user, 10-15:
+   * "enter/send button accent should not come up until the user start
+   * typing in the composer"). With nothing written, or only spaces, it is
+   * a quiet control: still reached by the keyboard, and saying why it
+   * does nothing. Stop, while a reply is written, is always ready. */
   function sendReady() {
     var button = el("agent-propose");
     var area = el("agent-request");
@@ -3558,8 +3562,9 @@
   /* The message box's words follow the situation (user, 10-07: "This
    * default should be adaptive"). */
   var studyState = "none";
-  /* On the Agent page the full prompt fits; beside a page it is shortened
-   * for the narrower drawer. Keep each pair in sync with the two layouts. */
+  /* What the box asks for, by where the conversation stands: on the Agent
+   * page, and in the narrower column beside a page (340 to 440 pixels),
+   * where each wording is short enough for the box's one line. */
   var PROMPTS = {
     writing: ["I am working on it; you can write your next message", "Write your next message"],
     answer: ["Answer above, or type yes or no", "Answer above: yes or no"],
@@ -3600,6 +3605,9 @@
     }
     var beside = document.body.classList.contains("agent-beside");
     area.placeholder = PROMPTS[said][beside ? 1 : 0];
+    // A wording that runs to a second line has the box's room for it; a box
+    // not shown (the Agent page's, as the Agent beside closes) is sized as
+    // it is shown again.
     if (!area.value && area.offsetParent !== null) autosize(area);
   }
 
@@ -5598,15 +5606,15 @@
       if (!event.detail || event.detail.page !== "agent") return;
       requestAnimationFrame(sizedWhereItIs);
     });
-    // Values supplied by page controls also update Send's ready state.
-    var nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
-    if (nativeValue && nativeValue.get && nativeValue.set) {
-      Object.defineProperty(area, "value", {
-        configurable: true,
-        get: function () { return nativeValue.get.call(this); },
-        set: function (value) { nativeValue.set.call(this, value); sendReady(); },
-      });
-    }
+    /* Text put in the box by the page (a starter, an edit, a reply asked
+     * again) readies Send as typing does: the box's own value setter,
+     * then this. */
+    var own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+    Object.defineProperty(area, "value", {
+      configurable: true,
+      get: function () { return own.get.call(this); },
+      set: function (text) { own.set.call(this, text); sendReady(); },
+    });
     sendReady();
     area.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
