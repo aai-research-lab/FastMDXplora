@@ -47,7 +47,7 @@
  * (an element's box, where the pointer is, the window's width) while the
  * page lays itself out and is positioned in its own: every popover, menu
  * and tooltip placed from a box would land a quarter off at 125%, and the
- * Viewer's canvas would draw at the page's pixels, not the screen's. The
+ * Viewer's canvas would render at the page's pixels, not the screen's. The
  * Display size is one zoom, applied the same to every rule and script:
  * while the page is zoomed, what it is told of the screen (a box, the
  * pointer, the window's width and height however read) is said in its own

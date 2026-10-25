@@ -146,8 +146,14 @@ def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
     run and held by a test that measures the peak:
 
     - k-means and Ward on ``rmsd``: the classical MDS embedding's doubly
-      centred matrix (8 n^2; :func:`_classical_mds` finds the leading
-      eigenvectors in it, in place).
+      centred matrix (8 n^2; :func:`_classical_mds` asks for the leading
+      eigenvectors in it, in place), and the copy LAPACK can make of it all
+      the same (8 n^2): 16 n^2. Where it copies is the platform's, not this
+      code's. On Linux with Python 3.13, NumPy 2.5 and SciPy 1.18 (GitHub's
+      ubuntu-latest) k-means and Ward peaked at 25 n^2 in tracemalloc and 24
+      n^2 resident, where the same versions elsewhere make no copy (18 n^2),
+      and the 8 n^2 counted for the step had the check plan on two thirds of
+      what they took.
     - an average or complete linkage: scikit-learn's condensed copy in
       float64 and the index pairs it is read with, two int64 arrays of
       n^2/2, and the mask they are found with (13 n^2), and SciPy's own
@@ -175,14 +181,14 @@ def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
     each = [0.0]
     for method in methods:
         if method == "kmeans" and features != "coordinates":
-            each.append(8 * n2)
+            each.append(16 * n2)
         elif method == "hierarchical":
             if linkage in ("average", "complete"):
                 each.append(17 * n2)
             elif linkage != "ward":
                 each.append(13 * n2)
             else:
-                each.append(8 * n2 if features != "coordinates" else 4 * n2)
+                each.append(16 * n2 if features != "coordinates" else 4 * n2)
         elif method == "dbscan":
             each.append(8 * n2 if features == "coordinates"
                         else 21 * n2 + min(2**30, 9 * n2))

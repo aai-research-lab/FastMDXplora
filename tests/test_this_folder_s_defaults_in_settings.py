@@ -176,10 +176,12 @@ def test_beyond_loopback_the_config_handed_back_neither_shows_nor_says_the_folde
 
     here = answered(True)
     public = answered(False)
-    # Bound to an address beyond loopback, as `fastmdx gui --host` does.
-    started = start_dashboard_session(output=str(study), host="192.0.2.2", port=0)
+    # Bound beyond loopback, as `fastmdx gui --host` does: every address, so
+    # it can be bound on any machine (192.0.2.2 is none's), and asked on
+    # loopback, as test_exploration's beyond-loopback test asks it.
+    started = start_dashboard_session(output=str(study), host="0.0.0.0", port=0)
     try:
-        bound = _config(started.url, body)
+        bound = _config(f"http://127.0.0.1:{started.port}", body)
     finally:
         started.stop()
     assert here["ok"] and ph(here) == 6.5 and "our assay buffer" in json.dumps(here)
@@ -571,13 +573,13 @@ def test_new_study_follows_the_defaults_file_it_was_drawn_with(browser, session)
     page.context.close()
     assert errors == []
     assert drawn == "Your default 6.5"
-    assert changed[0].startswith("Your defaults changed since this form was drawn."), changed[0]
+    assert changed[0].startswith("Your defaults changed since this form was filled in."), changed[0]
     assert "FastMDXplora's own values" not in changed[0] and changed[1] == "Your default 6.5"
     assert redrawn[1] and redrawn[2] == "Your default 6.8", redrawn
     assert "page-title" in focused
     assert refused[0].startswith("Your defaults are not used. "), refused[0]
     assert "sets setup.mutations, which says what one study simulates" in refused[0], refused[0]
-    assert "drawn with the file's values" in refused[0], refused[0]
+    assert "filled in with the file's values" in refused[0], refused[0]
     assert "runs with the file" not in refused[0] and "until the file is put right" not in refused[0]
     assert refused[1] == "Your default 6.8"
     assert refused_again[0].startswith("Your defaults are not used. "), refused_again

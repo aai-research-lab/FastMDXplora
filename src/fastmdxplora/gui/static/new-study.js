@@ -47,7 +47,7 @@
     note.appendChild(make("b", "", "Your defaults are not used. "));
     words(note, refused);
     note.appendChild(document.createTextNode(drawnFromFile
-      ? " This form was drawn with the file's values; read the defaults again to offer"
+      ? " This form was filled in with the file's values; read the defaults again to offer"
         + " FastMDXplora's own. "
       : " This form offers FastMDXplora's own values until the file is put right. "));
     var link = make("a", "", "This folder in Settings");
@@ -105,9 +105,9 @@
 
   function changed(note) {
     note.textContent = "";
-    note.appendChild(make("b", "", "Your defaults changed since this form was drawn. "));
+    note.appendChild(make("b", "", "Your defaults changed since this form was filled in. "));
     note.appendChild(document.createTextNode(
-      "Its fields say the defaults it was drawn with, and a study runs with the file as it is now."));
+      "Its fields say the defaults it was filled in with, and a study runs with the file as it is now."));
     note.appendChild(againButton(note));
     note.hidden = false;
   }
