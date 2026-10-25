@@ -240,6 +240,10 @@ def test_back_puts_the_keyboard_on_the_page_shown(browser, session) -> None:
 
 def test_a_reload_with_a_dialog_open_opens_it_again(browser, session) -> None:
     page = _open(browser, session)
+    # The page's first page is put in its address once its state is read,
+    # over the step: a dialog's step made before then was not kept.
+    page.wait_for_function("() => window.FastMDXDashboard"
+                           " && window.FastMDXDashboard.state.initialRouteResolved")
     page.click("#settings-open")
     page.click("[data-dialog-open='cite-dialog']")
     # Its step is made after any step under way (`afterHistory`): reloaded
