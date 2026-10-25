@@ -242,6 +242,9 @@ def test_a_reload_with_a_dialog_open_opens_it_again(browser, session) -> None:
     page = _open(browser, session)
     page.click("#settings-open")
     page.click("[data-dialog-open='cite-dialog']")
+    # Its step is made after any step under way (`afterHistory`): reloaded
+    # before then, there was nothing to open again.
+    page.wait_for_function("() => history.state && history.state.fmxDialog === 'cite-dialog'")
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => document.body.classList.contains('state-ready')")
     page.wait_for_function("() => !document.getElementById('cite-dialog').hidden")
