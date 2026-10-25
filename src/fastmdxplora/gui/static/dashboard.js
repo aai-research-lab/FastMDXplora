@@ -1363,8 +1363,12 @@
   const launchedHere = new Set();
 
   function readStatusNow() {
-    if (polling) changedWhilePolling = true;
-    else pollNow().catch((error) => console.warn("dashboard poll error", error));
+    if (polling) {
+      // An Agent read refused during a study switch needs the new status
+      // before the outstanding poll's results finish.
+      readStatusAlone();
+      changedWhilePolling = true;
+    } else pollNow().catch((error) => console.warn("dashboard poll error", error));
   }
 
   /* Opened once the page is shown (Back or Forward to a step naming

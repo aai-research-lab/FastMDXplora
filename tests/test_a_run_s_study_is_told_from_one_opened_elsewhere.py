@@ -1577,6 +1577,86 @@ def test_send_and_the_notice_do_not_wait_for_the_study_s_results(tmp_path, monke
     assert errors == []
 
 
+def test_a_refused_conversation_read_recovers_before_results(tmp_path, monkeypatch):
+    """A read of the study left, refused after the new status, cannot wait for results."""
+    from fastmdxplora.gui.workspace import study_key
+
+    workspace, here, other, made, session = _here_and_other(tmp_path, monkeypatch)
+    apps, statuses, conversations, results, asked = [], [], [], [], []
+    page, errors, close = _page_on(session, [_answer("Answered on other.")])
+    try:
+        _shows(page, study_key(here))
+        page.wait_for_function("() => window.FastMDXDashboard.state.lastUpdateMs > 0")
+        _asking(page, asked)
+        page.evaluate(_HEARD)
+        page.evaluate("() => { window.__recoveredResults = [];"
+                      " window.addEventListener('dashboard:results-updated', e =>"
+                      " window.__recoveredResults.push(e.detail.output_dir)); }")
+
+        def app(route):
+            if apps:
+                route.continue_()
+            else:
+                apps.append(route)
+
+        def status(route):
+            if statuses:
+                route.continue_()
+            else:
+                statuses.append(route)
+
+        def conversation(route):
+            conversations.append((route, route.fetch()))
+
+        page.route("**/api/app-state*", app)
+        page.route("**/api/status*", status)
+        page.route("**/api/results*", lambda route: results.append((route, route.fetch())))
+        page.route("**/api/agent/conversation?study=" + study_key(here), conversation)
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        deadline = time.monotonic() + 10
+        while not (apps and statuses and results):
+            assert time.monotonic() < deadline, "The controlled poll did not start"
+            page.wait_for_timeout(10)
+        _switch_elsewhere(session, other)
+        apps[0].continue_()
+        while not conversations:
+            assert time.monotonic() < deadline, "The old study's conversation was not read"
+            page.wait_for_timeout(10)
+        assert conversations[0][1].json().get("study_changed") is True
+        statuses[0].continue_()
+        _shows(page, study_key(other))
+        shown = time.monotonic()
+        conversations[0][0].fulfill(response=conversations[0][1])
+        page.fill("#agent-request", "about other")
+        page.wait_for_function("() => document.getElementById('agent-propose')"
+                               ".getAttribute('aria-disabled') === 'false'", timeout=3000)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#agent-thread .agent-answer:has-text('Answered on other.')",
+                               timeout=3000)
+        page.wait_for_function("() => window.__said.some(s => /opened elsewhere/.test(s))",
+                               timeout=3000)
+        assert time.monotonic() - shown < 3.0
+        assert len(asked) == 1 and asked[0]["current_view"]["study"].endswith("other"), asked
+        assert results, "Results must remain held until after the message and notice"
+        assert page.evaluate("() => window.__recoveredResults") == []
+        # The status-only read supersedes this poll. Its old results must
+        # stay ignored, and the queued full poll must still read the new study.
+        page.unroute("**/api/results*")
+        for route, response in results:
+            route.fulfill(response=response)
+        results.clear()
+        page.wait_for_function("(folder) => window.__recoveredResults.includes(folder)",
+                               arg=str(other))
+        assert str(here) not in page.evaluate("() => window.__recoveredResults")
+    finally:
+        page.unroute("**/api/results*")
+        for route, response in results:
+            route.fulfill(response=response)
+        close()
+        session.server.shutdown()
+    assert errors == []
+
+
 def _where(workspace, text):
     """The conversations on disk that hold `text`, by their path."""
     return sorted(str(f.relative_to(workspace)) for f in workspace.rglob("conv-*.json")
