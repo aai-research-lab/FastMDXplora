@@ -113,6 +113,10 @@ def test_the_agent_is_offered_the_fix(tmp_path, monkeypatch) -> None:
             page.on("request", lambda r: asked.append(json.loads(r.post_data or "{}"))
                     if r.url.endswith(("/api/agent/propose", "/api/agent/propose-stream")) else None)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                                   " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "ubiquitin")
             page.keyboard.press("Enter")
             run = "#agent-thread .agent-msg-agent [data-role=run]"
