@@ -131,8 +131,12 @@ def test_a_study_opened_another_way_keeps_the_page_gone_to_just_before(browser, 
             const answer = await (await fetch('/api/explore/switch', {
                 method: 'POST', headers: {'content-type': 'application/json'},
                 body: JSON.stringify({folder: path})})).json();
-            window.FastMDXDashboard.navigate('analysis/rmsd');
-            window.FastMDXDashboard.studyOpened(answer, 'overview');
+            // Both in one task, before the frame; after this returns, as the
+            // page they leave would take the answer with it on a slow machine.
+            setTimeout(() => {
+                window.FastMDXDashboard.navigate('analysis/rmsd');
+                window.FastMDXDashboard.studyOpened(answer, 'overview');
+            });
         }""", str(site["studies"][1]))
         _active(page, site["keys"][1])
         _link(page, site["keys"][0]).click()
