@@ -2107,16 +2107,6 @@ body.agent-beside .dashboard-toast.show {
 
 /* The Agent's settings: choices in the page's font, the key field styled as
    the others (it had the browser's own); an address and a key in mono. */
-#agent-settings .builder-field-wide { grid-column: 1 / -1; }
-#agent-settings .agent-dialog-head,
-#agent-settings .agent-dialog-foot { flex-shrink: 0; }
-#agent-settings .agent-dialog-head > div { min-width: 0; }
-#agent-settings .agent-dialog-body { min-height: 0; }
-#agent-settings .builder-card-note {
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-}
-#agent-model-summary { white-space: pre-line; }
 #agent-settings .builder-field select,
 #agent-settings .builder-field input[type="number"] { font-family: var(--font-stack); }
 #agent-settings .builder-field input[type="password"] {
@@ -2125,6 +2115,7 @@ body.agent-beside .dashboard-toast.show {
     background: color-mix(in srgb, var(--text-primary) 2.8%, transparent);
     font-family: var(--font-mono);
 }
+
 .builder-field input:focus,
 .builder-field select:focus {
     border-color: color-mix(in srgb, var(--accent) 62%, transparent);

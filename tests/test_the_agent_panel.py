@@ -19,9 +19,9 @@ import json
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 import pytest
+from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -34,10 +34,6 @@ def _the_stack_is_taken_as_installed(monkeypatch):
     preflight itself is tested in test_exploration.py."""
     from fastmdxplora.gui import exploration
 
-    # Model discovery is allowed to ask a configured provider. These tests
-    # use local HTTP stubs and must never contact a real service.
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("FASTMDX_MODEL_API_KEY", raising=False)
     monkeypatch.setattr(exploration, "exploration_environment_error", lambda _config: None)
 
 from fastmdxplora.gui.agent_panel import model_endpoint, propose_endpoint
@@ -67,9 +63,9 @@ class TestChoosingAModel(unittest.TestCase):
         self.assertIsNone(model_endpoint({})["current"])
 
     def test_a_choice_is_stored_and_reported_back(self):
-        model_endpoint({"provider": "openai", "model": "gpt-5"})
+        model_endpoint({"provider": "anthropic", "model": "claude-sonnet-4-6"})
         self.assertEqual(model_endpoint({})["current"]["provider"],
-                         "openai")
+                         "anthropic")
 
     def test_the_key_never_comes_back(self):
         # The property that matters. A page that never receives a key
@@ -107,7 +103,8 @@ class TestProposing(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
         os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(self.root)
-        model_endpoint({"provider": "openai", "model": "gpt-5"})
+        model_endpoint({"provider": "anthropic",
+                        "model": "claude-sonnet-4-6", "api_key": "x"})
 
     def tearDown(self):
         if self.before is None:
@@ -257,8 +254,9 @@ class TestThePageCarriesIt(unittest.TestCase):
         from unittest import mock
 
         import fastmdxplora.agent as agent
-        from fastmdxplora.gui.exploration import DashboardRuntime
         from fastmdxplora.orchestrator import FastMDXplora
+
+        from fastmdxplora.gui.exploration import DashboardRuntime
 
         started = []
         original = agent.completion_for
@@ -550,12 +548,12 @@ class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):
         loaded = state_from_config({
             "systems": [{"id": "wt", "system": "1UBQ"}],
             "agent": "unvalidated",
-            "agent_model": "openai/x",
+            "agent_model": "anthropic/x",
             "setup": {"ph": 6.5},
         })
         self.assertEqual(
             loaded["state"]["study"],
-            {"agent": "unvalidated", "agent_model": "openai/x"})
+            {"agent": "unvalidated", "agent_model": "anthropic/x"})
 
         # And back out again, the way the form sends it.
         rebuilt = build_config({
@@ -565,7 +563,7 @@ class TestAConfigThatWasNeverOnDiskCanBeOpened(unittest.TestCase):
             **{"setup": loaded["state"]["phases"]["setup"]},
         })
         self.assertEqual(rebuilt["agent"], "unvalidated")
-        self.assertEqual(rebuilt["agent_model"], "openai/x")
+        self.assertEqual(rebuilt["agent_model"], "anthropic/x")
 
 
 class TestTheOtherTwoModesRunHere(unittest.TestCase):
@@ -703,19 +701,6 @@ class TestTheOtherTwoModesRunHere(unittest.TestCase):
         self.assertIn('mode === "autonomous"', script)
 
 
-def _agent_section(page):
-    """Read the entire Agent section, including nested Config review sections."""
-    import re
-
-    start = page.index('<section class="page" data-page="agent"')
-    depth = 0
-    for tag in re.finditer(r"<(/?)section\b[^>]*>", page[start:]):
-        depth += -1 if tag.group(1) else 1
-        if depth == 0:
-            return page[start:start + tag.end()]
-    raise AssertionError("The Agent section is not closed")
-
-
 class TestThePageIsATextareaAndButtons(unittest.TestCase):
     """What the page says and what it does not.
 
@@ -804,9 +789,11 @@ class TestThePageIsATextareaAndButtons(unittest.TestCase):
     def test_the_key_field_says_where_to_get_one(self):
         script = self.script()
         help_text = script[script.index("KEY_HELP"):script.index("IN_THE_GUI")]
+        self.assertIn("platform.claude.com", help_text)
         self.assertIn("platform.openai.com", help_text)
-        self.assertIn("A local server usually needs none", help_text)
-        self.assertIn("leave this blank", help_text)
+        # And that a subscription is not an API account, which is the thing
+        # people get wrong.
+        self.assertIn("not the same thing", help_text)
 
     def test_the_actions_are_the_ones_asked_for(self):
         # The builder's own set, under the Agent: there is no need to go
@@ -883,7 +870,7 @@ class TestTheModelFollowsTheProvider(unittest.TestCase):
 
     It was a free-text field. Somebody had to know how a provider spells
     its model, and switching provider left the previous one's model in
-    place — Other selected with gpt-5 still showing, which is
+    place — OpenAI selected with claude-sonnet-4-6 still showing, which is
     a configuration that cannot work and looked fine.
 
     Not a closed list. A model released next month will not be on it, so
@@ -974,7 +961,8 @@ class TestWhatBelongsInSettings(unittest.TestCase):
 
         page = (pathlib.Path(gui.__file__).parent / "templates"
                 / "dashboard.html").read_text(encoding="utf-8")
-        return _agent_section(page)
+        return page[page.index('data-page="agent"'):
+                    page.index("</section>", page.index('data-page="agent"'))]
 
     def dialog(self):
         import pathlib
@@ -1003,7 +991,7 @@ class TestWhatBelongsInSettings(unittest.TestCase):
 class TestTheModelsComeFromTheProvider(unittest.TestCase):
     """A list of model names written into this repository is stale the week
     after it is written, and a model released next month would be missing
-    with nothing to explain why. OpenAI publishes one at
+    with nothing to explain why. Both hosted providers publish one at
     `/v1/models`, and an OpenAI-compatible server serves the same path
     relative to its base URL -- so a local Ollama answers it too.
 
@@ -1066,8 +1054,8 @@ class TestTheModelsComeFromTheProvider(unittest.TestCase):
         from fastmdxplora.agent import ModelChoice
         from fastmdxplora.agent.models import PROVIDERS, list_models
 
-        found = list_models(ModelChoice("openai", "gpt-5"))
-        self.assertEqual(found, PROVIDERS["openai"]["models"])
+        found = list_models(ModelChoice("anthropic", "claude-sonnet-4-6"))
+        self.assertEqual(found, PROVIDERS["anthropic"]["models"])
 
     def test_a_provider_with_no_way_to_ask_gives_nothing(self):
         from fastmdxplora.agent import ModelChoice
@@ -1079,15 +1067,11 @@ class TestTheModelsComeFromTheProvider(unittest.TestCase):
         # So the dropdown fills from the provider the moment there is a key
         # to ask with, without a second round trip the panel has to know to
         # make.
-        from unittest.mock import patch
-
         from fastmdxplora.gui.agent_panel import model_endpoint
 
-        with patch("fastmdxplora.agent.models.list_model_options",
-                   return_value=[{"id": "gpt-5", "label": "gpt-5"}]):
-            answer = model_endpoint({"provider": "openai",
-                                     "model": "gpt-5",
-                                     "api_key": "sk-not-real"})
+        answer = model_endpoint({"provider": "anthropic",
+                                 "model": "claude-sonnet-4-6",
+                                 "api_key": "sk-not-real"})
         self.assertTrue(answer["ok"])
         self.assertTrue(answer["models"])
 
@@ -1098,7 +1082,7 @@ class TestTheModelsComeFromTheProvider(unittest.TestCase):
 
         script = (pathlib.Path(gui.__file__).parent / "static"
                   / "agent-panel.js").read_text(encoding="utf-8")
-        self.assertIn("An API key is needed. Open Settings to add one.",
+        self.assertIn("API key required. Open Settings and paste one.",
                       script)
 
 
@@ -1178,7 +1162,7 @@ class TestAFailedRunSaysWhy(unittest.TestCase):
 class TestTheModelListIsAskedForRatherThanGuessed(unittest.TestCase):
     """A guessed name in a dropdown is worse than no dropdown.
 
-    The fallback held an invented model name rather
+    The fallback held `claude-opus-4-1`, invented from a pattern rather
     than read from anywhere. Choosing it returned 404 from the provider —
     and it looked chosen rather than typed, so the obvious reading was that
     the software was broken.
@@ -1252,10 +1236,10 @@ class TestTheModelListIsAskedForRatherThanGuessed(unittest.TestCase):
     def test_a_model_the_list_does_not_have_still_saves(self):
         from fastmdxplora.gui.agent_panel import model_endpoint
 
-        answer = model_endpoint({"provider": "openai",
-                                 "model": "gpt-fable-5-1"})
+        answer = model_endpoint({"provider": "anthropic",
+                                 "model": "claude-fable-5-1"})
         self.assertTrue(answer["ok"])
-        self.assertEqual(answer["current"]["model"], "gpt-fable-5-1")
+        self.assertEqual(answer["current"]["model"], "claude-fable-5-1")
 
     def test_typing_one_is_offered_in_words(self):
         # It said "Other…", and was reported as "I still can't choose any
@@ -1476,10 +1460,10 @@ class TestAConfigRemembersWhoWroteIt(unittest.TestCase):
     def test_an_agent_drafted_config_says_so(self):
         text = self.yaml_for({"systems": [{"system": "1UAO"}],
                               "agent": "assisted",
-                              "agent_model": "openai/gpt-5"})
+                              "agent_model": "anthropic/claude-opus-5"})
         self.assertIn("Written by the FastMDXplora Agent", text)
         self.assertIn("agent: assisted", text)
-        self.assertIn("agent_model: openai/gpt-5", text)
+        self.assertIn("agent_model: anthropic/claude-opus-5", text)
 
     def test_a_hand_written_config_says_the_gui(self):
         text = self.yaml_for({"systems": [{"system": "1UAO"}]})
@@ -1674,7 +1658,7 @@ class TestRunHereActuallyRuns(unittest.TestCase):
         answer = run_endpoint({"config": {
             "systems": [{"system": "1UAO"}],
             "simulation": {"duration_ns": 2},
-            "agent": "assisted", "agent_model": "openai/x",
+            "agent": "assisted", "agent_model": "anthropic/x",
         }}, self.runtime())
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
@@ -1727,11 +1711,12 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
     def test_explore_routes_a_budgeted_config_through_the_staged_runner(self):
         # A study carrying a budget runs in stages -- setup, a price, the
         # rest only if it fits -- and never straight through the orchestrator.
-        import importlib
         from types import SimpleNamespace
         from unittest import mock
 
         from fastmdxplora.cli.main import _build_parser, _cmd_explore
+
+        import importlib
 
         # The class `explore` runs a study with, from the package, patched by
         # the module object: a dotted target resolves to the wrong one on
@@ -1913,7 +1898,7 @@ class TestTheLaunchedConfigIsTheWrittenConfig(unittest.TestCase):
             "simulation": {"duration_ns": 5, "setup_from": "/runs/first"},
             "setup": {"solvent_padding_nm": 1.5},
             "exclude": ["setup"],
-            "agent": "assisted", "agent_model": "openai/x",
+            "agent": "assisted", "agent_model": "anthropic/x",
         }}, runtime)
         self.assertTrue(answer["ok"], answer.get("error"))
         written = Path(answer["config_path"]).read_text(encoding="utf-8")
@@ -2360,11 +2345,8 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         self.assertTrue((self.ws / WORKSPACE_CONVERSATIONS_DIR).is_dir())
 
     def test_a_studys_conversations_live_inside_it(self):
-        from fastmdxplora.gui.agent_panel import (
-            CONVERSATIONS_SUBDIR,
-            read_conversation,
-            write_conversation,
-        )
+        from fastmdxplora.gui.agent_panel import (CONVERSATIONS_SUBDIR, read_conversation,
+                                                   write_conversation)
 
         self.rt.active_root = self.chig
         self.assertEqual(read_conversation(self.rt)["study_label"], "1UAO")
@@ -2390,12 +2372,8 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         # and where it was, so the move finds it. Without those the move
         # looked in the new study, found nothing, and the config exchange
         # was lost from the thread that landed there.
-        from fastmdxplora.gui.agent_panel import (
-            CONVERSATIONS_SUBDIR,
-            attach_conversation,
-            read_conversation,
-            write_conversation,
-        )
+        from fastmdxplora.gui.agent_panel import (CONVERSATIONS_SUBDIR, attach_conversation,
+                                                   read_conversation, write_conversation)
 
         self.rt.active_root = self.chig
         saved = write_conversation(self.rt, [
@@ -2437,11 +2415,8 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         self.assertIn("1UAO", [g["label"] for g in groups])
 
     def test_opening_across_studies_loads_that_study(self):
-        from fastmdxplora.gui.agent_panel import (
-            open_conversation,
-            read_conversation,
-            write_conversation,
-        )
+        from fastmdxplora.gui.agent_panel import (open_conversation, read_conversation,
+                                                   write_conversation)
 
         self.rt.active_root = self.chig
         write_conversation(self.rt, [{"role": "user", "text": "chig thread"}])
@@ -2461,13 +2436,9 @@ class TestConversationsBelongToStudies(unittest.TestCase):
         self.assertFalse(delete_conversation(self.rt, "conv-nope", None)["ok"])
 
     def test_new_keeps_the_old_and_delete_is_one(self):
-        from fastmdxplora.gui.agent_panel import (
-            delete_conversation,
-            list_conversations,
-            new_conversation,
-            read_conversation,
-            write_conversation,
-        )
+        from fastmdxplora.gui.agent_panel import (delete_conversation, list_conversations,
+                                                   new_conversation, read_conversation,
+                                                   write_conversation)
 
         self.rt.active_root = self.chig
         write_conversation(self.rt, [{"role": "user", "text": "first"}])

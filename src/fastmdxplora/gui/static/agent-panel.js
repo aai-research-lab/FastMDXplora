@@ -2,6 +2,8 @@
  *
  * The subject of this page is the FastMDXplora Agent. Which AI model
  * it drafts with is an engine setting -- chosen once, then out of the way.
+ * An earlier version led with "Asking anthropic, claude-sonnet-4-6", which
+ * put another company's product in the primary status line of this one.
  *
  * Help is progressive. The mode note says one short thing about the mode
  * actually selected rather than explaining all three at once, and the key
@@ -32,6 +34,9 @@
    * because this is where somebody needs it; a GUI that tells you to run
    * a command is a GUI that has given up. */
   var KEY_HELP = {
+    anthropic: "Get one at platform.claude.com, under Settings \u2192 API " +
+               "keys. A developer account: a chat subscription is " +
+               "not the same thing.",
     openai: "Get one at platform.openai.com, under API keys.",
     compatible: "A local server usually needs none; leave this blank."
   };
@@ -43,7 +48,7 @@
     "environment.model.unset":
       "I am not set up yet. Open Settings to set me up.",
     "environment.credentials.absent":
-      "An API key is needed. Open Settings to add one."
+      "API key required. Open Settings and paste one."
   };
 
   function el(id) { return document.getElementById(id); }
@@ -426,10 +431,13 @@
   }
 
   function usageSaid(u) {
-    if (!u || !(u.input_tokens || u.cache_read_tokens)) return "";
-    var sent = (u.input_tokens || 0) + (u.cache_read_tokens || 0);
+    if (!u || !(u.input_tokens || u.cache_read_tokens || u.cache_write_tokens)) return "";
+    var sent = (u.input_tokens || 0) + (u.cache_read_tokens || 0) + (u.cache_write_tokens || 0);
     var kept = [];
     if (u.cache_read_tokens) kept.push(u.cache_read_tokens.toLocaleString("en-US") + " from the cache");
+    if (u.cache_write_tokens) {
+      kept.push(u.cache_write_tokens.toLocaleString("en-US") + " written to the cache");
+    }
     return sent.toLocaleString("en-US") + " tokens in" + (kept.length ? " (" + kept.join(", ") + ")" : "")
       + " \u00b7 " + (u.output_tokens || 0).toLocaleString("en-US") + " out";
   }
@@ -609,72 +617,14 @@
     return line;
   }
 
-  function providerSpec(id) {
-    return providers.filter(function (p) { return p.id === id; })[0] || null;
-  }
-
-  function engineLabelParts(choice) {
-    var spec = providerSpec(choice.provider);
-    var label = spec ? spec.label : choice.provider;
-    var location = choice.base_url ? " at " + choice.base_url : "";
-    return [label + " · ", choice.model || "no model", location];
-  }
-
-  function engineLabel(choice) {
-    return engineLabelParts(choice).join("");
-  }
-
-  var savedEngineChoice = null;
-  var savedKeyIsSet = false;
-
-  function updateKeyHelp(id) {
-    var spec = providerSpec(id);
-    if (!spec) return;
-    var help = KEY_HELP[id] || "";
-    if (help) help += " ";
-    var baseUrl = spec.needs_url ? (el("agent-base-url").value || "").trim() : "";
-    var matches = savedEngineChoice && savedEngineChoice.provider === id &&
-      (savedEngineChoice.base_url || "") === baseUrl;
-    var status = matches && savedKeyIsSet
-      ? " An API key is set for this choice; its value is never shown."
-      : "";
-    el("agent-key-help").textContent = help +
-      "Saved keys stay in your owner-only model.json file. " +
-      spec.environment_variable + " takes precedence; the key is never shown again." + status;
-  }
-
-  function updateEngineSummary(error) {
-    var saved = savedEngineChoice;
-    var provider = el("agent-provider").value;
-    var spec = providerSpec(provider);
-    var selected = { provider: provider,
-      model: chosenModel(), base_url: spec && spec.needs_url
-        ? el("agent-base-url").value.trim() : "" };
-    var parts = saved && engineLabelParts(saved);
-    var before = saved ? "Saved for Agent requests: " + parts[0]
-      : "No AI model is set.";
-    var after = saved ? (saved.model ? "" : "no model") + parts[2] : "";
-    var same = saved && saved.provider === selected.provider && saved.model === selected.model &&
-      (saved.base_url || "") === selected.base_url;
-    if (!same && (selected.model || selected.provider)) {
-      after += "\nCurrent selection (unsaved): " + engineLabel(selected);
-    }
-    if (typeof error === "string" && error) after += "\n" + error;
-    var current = el("agent-model-current");
-    current.textContent = saved && saved.model || "";
-    el("agent-model-summary").replaceChildren(document.createTextNode(before),
-      current, document.createTextNode(after));
-  }
-
-  function applyModelOptions(options) {
-    if (!Array.isArray(options) || !options.length) return;
-    var spec = providerSpec(el("agent-provider").value);
-    if (!spec) return;
-    spec.model_options = options;
-    spec.models = options.map(function (item) { return item.id; });
-    var selected = chosenModel();
-    fillModels(spec, selected);
-    updateEngineSummary();
+  /* Ready or not, and nothing else. The AI model is recorded on the study --
+   * `agent_model` in the config and the manifest -- which is where a
+   * reader needs it. It does not belong in the chrome. */
+  function describeEngine(current) {
+    /* Inside the settings dialog, where somebody is choosing. It was on
+     * the page itself, as "Ready. Drafting with <model>." -- a status line
+     * about an engine, on a page about a study. */
+    return current ? current.model : "Nothing set yet.";
   }
 
   var OTHER = "__other__";
@@ -687,13 +637,10 @@
   function fillModels(spec, chosen) {
     var select = el("agent-model");
     select.innerHTML = "";
-    var modelOptions = spec.model_options || (spec.models || []).map(function (name) {
-      return {id: name, label: name};
-    });
-    modelOptions.forEach(function (item) {
+    (spec.models || []).forEach(function (name) {
       var option = document.createElement("option");
-      option.value = item.id;
-      option.textContent = item.label || item.id;
+      option.value = name;
+      option.textContent = name;
       select.appendChild(option);
     });
     var other = document.createElement("option");
@@ -724,26 +671,26 @@
   }
 
   function showProvider(id, chosen) {
-    var spec = providerSpec(id);
+    var spec = providers.filter(function (p) { return p.id === id; })[0];
     if (!spec) return;
-    /* A pasted key belongs to the provider that was selected when it was
-     * entered. Never carry it across a provider switch. */
-    el("agent-key").value = "";
     el("agent-url-field").hidden = !spec.needs_url;
+    /* Only Anthropic is told how long to keep its cache. */
+    el("agent-cache-field").hidden = id !== "anthropic";
+    /* The AI model follows the provider. It used to be filled only when the
+     * field was empty, so switching provider left the previous one's AI model
+     * in place -- OpenAI selected and claude-sonnet-4-6 still showing. */
     fillModels(spec, chosen || spec.default_model || "");
-    updateKeyHelp(id);
+    el("agent-key-help").textContent =
+      (KEY_HELP[id] || "") + " Stored in a file of its own, readable only " +
+      "by you, and never written into a config, a manifest or a log.";
     el("agent-url-examples").textContent =
       (spec.examples || []).map(function (e) {
         return e.label + ": " + e.url;
-      }).join("  ·  ");
-    updateEngineSummary();
+      }).join("  \u00b7  ");
   }
 
-  function engineIsSet(current, keyIsSet) {
-    savedEngineChoice = current ? Object.assign({}, current) : null;
-    savedKeyIsSet = !!keyIsSet;
-    updateKeyHelp(current ? current.provider : el("agent-provider").value);
-    updateEngineSummary();
+  function engineIsSet(current) {
+    el("agent-model-current").textContent = describeEngine(current);
     engineChosen = !!current;
     syncStart();
   }
@@ -1226,26 +1173,26 @@
         select.value = data.current.provider;
         el("agent-base-url").value = data.current.base_url || "";
       }
+      el("agent-cache").value = data.cache_for || "auto";
       showProvider(select.value, data.current && data.current.model);
-      engineIsSet(data.current, data.key_set);
+      engineIsSet(data.current);
     });
   }
 
-  function saveEngine(keepOpen) {
+  function saveEngine() {
     var button = el("agent-save-model");
     button.disabled = true;
-    var provider = el("agent-provider").value;
-    var spec = providerSpec(provider);
-    return post("/api/agent/model", {
-      provider: provider,
+    post("/api/agent/model", {
+      provider: el("agent-provider").value,
       model: chosenModel(),
-      base_url: spec && spec.needs_url ? el("agent-base-url").value.trim() : "",
-      api_key: el("agent-key").value
+      base_url: el("agent-base-url").value,
+      api_key: el("agent-key").value,
+      cache_for: el("agent-cache").value
     }).then(function (data) {
       button.disabled = false;
       if (!data.ok) {
-        updateEngineSummary(data.error || "The provider settings could not be saved.");
-        return false;
+        el("agent-model-current").textContent = data.error;
+        return;
       }
       /* Cleared rather than left in the field: a key sitting in an input
        * survives a screenshot and a shoulder. */
@@ -1256,21 +1203,10 @@
         var spec = providers.filter(function (p) {
           return p.id === el("agent-provider").value;
         })[0];
-        if (spec) {
-          spec.models = data.models;
-          spec.model_options = data.model_options || data.models.map(function (model) {
-            return {id: model, label: model};
-          });
-          fillModels(spec, data.current.model);
-        }
+        if (spec) spec.models = data.models;
       }
-      engineIsSet(data.current, data.key_set);
-      if (!keepOpen) closeSettings();
-      return true;
-    }).catch(function () {
-      button.disabled = false;
-      updateEngineSummary("The provider settings could not be saved.");
-      return false;
+      engineIsSet(data.current);
+      closeSettings();
     });
   }
 
@@ -5577,16 +5513,8 @@
     el("agent-provider").addEventListener("change", function () {
       showProvider(this.value);
     });
-    el("agent-model").addEventListener("change", function () {
-      modelChanged();
-      updateEngineSummary();
-    });
-    el("agent-model-other").addEventListener("input", updateEngineSummary);
-    el("agent-base-url").addEventListener("input", function () {
-      updateKeyHelp(el("agent-provider").value);
-      updateEngineSummary();
-    });
-    el("agent-save-model").addEventListener("click", function () { saveEngine(false); });
+    el("agent-model").addEventListener("change", modelChanged);
+    el("agent-save-model").addEventListener("click", saveEngine);
     el("agent-settings-open").addEventListener("click", openSettings);
     el("agent-settings-close").addEventListener("click", closeSettings);
     el("agent-propose").addEventListener("click", function () {

@@ -59,7 +59,7 @@
       <div class="agent-dialog-head">
         <div>
           <div class="builder-label">Agent settings</div>
-          <div class="builder-card-note" id="agent-model-summary"><span id="agent-model-current"></span></div>
+          <div class="builder-card-note" id="agent-model-current"></div>
           <a href="#settings" class="settings-part-link small" data-settings-part-link="agent">All settings</a>
         </div>
         <button type="button" id="agent-settings-close" class="line-btn dialog-x" aria-label="Close" title="Close"><!--icon:close:line-icon--></button>
@@ -94,6 +94,19 @@
             <input id="agent-key" type="password"
                    placeholder="paste your key">
             <p class="builder-card-note" id="agent-key-help"></p>
+          </label>
+          <label class="builder-field builder-field-wide" id="agent-cache-field" hidden>
+            <span class="builder-label">Keep the instructions cached</span>
+            <select id="agent-cache">
+              <option value="auto">An hour on this page, five minutes from the command line</option>
+              <option value="1h">An hour</option>
+              <option value="5m">Five minutes</option>
+            </select>
+            <p class="builder-card-note">Every message starts with the same
+              instructions. Read again from the provider's cache they cost a
+              tenth of the usual price. Kept for an hour, writing them costs
+              twice the price instead of 1.25 times, and a reply after a pause
+              still reads them. Anthropic only.</p>
           </label>
           <label class="builder-field">
             <span class="builder-label">Mode</span>

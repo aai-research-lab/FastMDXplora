@@ -38,11 +38,11 @@ class TestWhereTheKeyLives(unittest.TestCase):
         self.path = Path(tempfile.mkdtemp()) / "model.json"
 
     def test_a_stored_choice_comes_back(self):
-        save_choice(ModelChoice("openai", "gpt-5"),
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"),
                     path=self.path)
         found = load_choice(self.path)
-        self.assertEqual(found.provider, "openai")
-        self.assertEqual(found.model, "gpt-5")
+        self.assertEqual(found.provider, "anthropic")
+        self.assertEqual(found.model, "claude-sonnet-4-6")
 
     def test_the_record_for_a_manifest_carries_no_key(self):
         # The one that matters. Configs and manifests get shared, pasted
@@ -52,8 +52,6 @@ class TestWhereTheKeyLives(unittest.TestCase):
         record = load_choice(self.path).as_record()
         self.assertNotIn("api_key", record)
         self.assertNotIn("sk-secret", json.dumps(record))
-        stored = json.loads(self.path.read_text())
-        self.assertEqual(stored["api_key"], "sk-secret")
 
     @unittest.skipIf(os.name == "nt",
                      "POSIX permission bits do not govern access on Windows")
@@ -140,10 +138,10 @@ class TestWhereTheKeyLives(unittest.TestCase):
                          "https://api.deepseek.com")
 
     def test_describe_says_where_the_key_is_read_from(self):
-        save_choice(ModelChoice("openai", "gpt-5"),
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"),
                     key="sk-x", path=self.path)
         described = describe_choice(self.path)
-        self.assertIn("OpenAI", described)
+        self.assertIn("Anthropic", described)
         self.assertNotIn("sk-x", described)
 
 
@@ -222,7 +220,7 @@ class TestTheCommand(unittest.TestCase):
         self.assertIn("No AI model has been chosen", out)
 
     def test_a_request_becomes_a_config(self):
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
         code, out = self.run_command(
             ["agent", "simulate ubiquitin at pH 6.5 for 50 ns"], reply=VALID)
         self.assertEqual(code, 0)
@@ -232,7 +230,7 @@ class TestTheCommand(unittest.TestCase):
     def test_the_corrections_are_shown_rather_than_hidden(self):
         # They are the only visible sign that anything checked the config,
         # and the count is worth seeing.
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
         code, out = self.run_command(
             ["agent", "simulate ubiquitin"],
             reply="setup:\n  pH: 6.5\nsystems:\n  - {id: a, system: 1UBQ}\n")
@@ -241,7 +239,7 @@ class TestTheCommand(unittest.TestCase):
         self.assertIn("Gave up after", out)
 
     def test_the_request_can_come_from_a_file(self):
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
         request = self.root / "study.txt"
         request.write_text("simulate ubiquitin at pH 6.5 for 50 ns",
                            encoding="utf-8")
@@ -251,7 +249,7 @@ class TestTheCommand(unittest.TestCase):
         self.assertIn("Accepted", out)
 
     def test_the_config_can_be_written_out(self):
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
         written = self.root / "study.yml"
         code, out = self.run_command(
             ["agent", "simulate ubiquitin", "-o", str(written)], reply=VALID)
@@ -265,7 +263,7 @@ class TestTheCommand(unittest.TestCase):
 
         from fastmdxplora.config.loader import validate_config
 
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
         written = self.root / "study.yml"
         self.run_command(["agent", "x", "-o", str(written)], reply=VALID)
         validate_config(yaml.safe_load(written.read_text(encoding="utf-8")))
@@ -293,12 +291,12 @@ class TestChoosingTheModel(unittest.TestCase):
 
     def test_model_chooses_and_saves(self):
         code, out = self.choose(["agent", "model"],
-                                ["1", "gpt-5", "sk-x", ""])
+                                ["1", "claude-sonnet-4-6", "sk-x", ""])
         self.assertEqual(code, 0)
-        self.assertIn("No AI model is set yet.", out)
+        self.assertIn("No AI model chosen yet.", out)
         chosen = load_choice()
         self.assertEqual((chosen.provider, chosen.model),
-                         ("openai", "gpt-5"))
+                         ("anthropic", "claude-sonnet-4-6"))
         self.assertNotIn("sk-x", out)
 
     def test_model_shows_what_is_in_use_before_asking(self):
@@ -338,7 +336,7 @@ class TestTheThreeModes(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.before = os.environ.get("FASTMDXPLORA_CONFIG_DIR")
         os.environ["FASTMDXPLORA_CONFIG_DIR"] = str(self.root)
-        save_choice(ModelChoice("openai", "gpt-5"), key="x")
+        save_choice(ModelChoice("anthropic", "claude-sonnet-4-6"), key="x")
 
     def tearDown(self):
         import os

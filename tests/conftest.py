@@ -27,7 +27,7 @@ import pytest
 def _provider_credentials_are_not_inherited(monkeypatch):
     """Provider tests use local stubs; ambient credentials must not turn
     model discovery into a real network request."""
-    for name in ("OPENAI_API_KEY", "FASTMDX_MODEL_API_KEY"):
+    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FASTMDX_MODEL_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 

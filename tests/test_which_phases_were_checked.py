@@ -178,7 +178,7 @@ class TestTheRecordSaysWhichModel(unittest.TestCase):
     reasoned about: the answer to "why did this study pick 300 K" differs
     depending on whether a frontier model or a 7B on a laptop proposed it.
 
-    And an alias is not a version. `gpt-5` names different
+    And an alias is not a version. `claude-sonnet-4-6` names different
     software at different times, because it moves when a new snapshot
     lands. Anyone who needs the record to identify what ran should pin a
     dated string, and the field's help says so.
@@ -209,7 +209,7 @@ class TestTheRecordSaysWhichModel(unittest.TestCase):
         validate_config({
             "systems": [{"id": "a", "system": "x.pdb"}],
             "agent": "assisted",
-            "agent_model": "openai/gpt-5-2025-09-29",
+            "agent_model": "anthropic/claude-sonnet-4-5-20250929",
         })
 
     def test_a_hand_written_study_carries_no_model(self):
@@ -244,7 +244,7 @@ class TestTheStudyLevelValueSurvivesTheRun(unittest.TestCase):
 
         options = phase_options({
             "agent": "assisted",
-            "agent_model": "openai/gpt-5",
+            "agent_model": "anthropic/x",
             "setup": {"ph": 7.0},
         })
         self.assertEqual(options, {"setup": {"ph": 7.0}})
@@ -255,10 +255,10 @@ class TestTheStudyLevelValueSurvivesTheRun(unittest.TestCase):
         self.assertEqual(
             study_options({
                 "agent": "assisted",
-                "agent_model": "openai/gpt-5",
+                "agent_model": "anthropic/x",
                 "setup": {"ph": 7.0},
             }),
-            {"agent": "assisted", "agent_model": "openai/gpt-5"},
+            {"agent": "assisted", "agent_model": "anthropic/x"},
         )
 
     def test_a_hand_written_study_carries_nothing(self):
