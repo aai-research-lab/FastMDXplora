@@ -126,6 +126,9 @@ def test_the_agent_is_offered_the_fix(tmp_path, monkeypatch) -> None:
             fix.locator(".agent-fix-ask").wait_for()
             said = fix.text_content()
             code = fix.locator(".fix-fix code").text_content()
+            # A launch answered, the page reads the study open again, and
+            # a button's words wait for it as Send does.
+            page.wait_for_function("() => !window.FastMDXAgentPanel.waits")
             fix.locator(".agent-fix-ask").click()
             page.wait_for_function("() => document.querySelectorAll("
                                    "'#agent-thread .agent-msg-agent [data-role=run]').length > 1"
