@@ -1270,7 +1270,11 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
             const key = Object.keys(localStorage).find(k => k.startsWith('fmx.builderDraft'));
             localStorage.setItem(key, localStorage.getItem(key).replace('7.2', '7.4'));
         }""")
-        _link(page, site["keys"][1]).click()
+        # Pressed in one go: a press's mousedown lets go of the field, whose
+        # change saves the draft 300 ms later, and on a slow machine its
+        # mouseup came after that save had written over the newer draft. The
+        # switch lets go of the field itself.
+        _link(page, site["keys"][1]).evaluate("link => link.click()")
         note = page.locator("#study-tabs-note")
         expect(note).to_contain_text("another window saved a newer Config draft")
         assert "could not be saved" not in note.text_content()
