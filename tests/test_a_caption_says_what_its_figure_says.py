@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from fastmdxplora.gui.report_dashboard import _dashboard_summaries, _metric_rows
 
 #: Twenty frames of equilibration at 0.5 nm, then a plateau at 0.2 nm.
@@ -127,17 +129,21 @@ class TestTheTable:
             _analysis(root, "rmsd", RMSD, _measured(effective_samples=samples))
             assert _row(root, "RMSD").samples == expected
 
-    def test_samples_below_the_error_bar_threshold_are_not_rounded_up(self, tmp_path) -> None:
+    @pytest.mark.parametrize("samples", [24.99, 24.999999999999996])
+    def test_samples_below_the_error_bar_threshold_are_not_rounded_up(
+            self, tmp_path, samples) -> None:
         _analysis(tmp_path, "rmsd", RMSD, _measured(
-            effective_samples=24.99, standard_error=None))
+            effective_samples=samples, standard_error=None))
         row = _row(tmp_path, "RMSD")
-        assert row.samples == "24.99"
-        assert row.why == "About 24.99 independent samples, fewer than the 25 an error bar needs."
+        assert row.samples == str(samples)
+        assert row.why == (
+            f"About {samples} independent samples, fewer than the 25 an error bar needs.")
         from fastmdxplora.gui.analysis_overview import overview_of
 
         [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
-        assert page["mean"]["samples"] == 24.99
+        assert page["mean"]["samples"] == samples
         assert page["mean"]["why"] == row.why
+        assert page["mean"]["determined"] is False
 
     def test_a_profile_is_said_over_its_residues(self, tmp_path) -> None:
         """One value per residue, not a series: no error, and its range."""

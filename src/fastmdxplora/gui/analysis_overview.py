@@ -325,7 +325,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         if samples is not None and samples < RESOLVED_SAMPLES:
             count_said = independent_samples_said(samples, about=True)
             if round(samples) >= RESOLVED_SAMPLES > samples:
-                count_said = f"about {samples:g} independent samples"
+                count_said = f"about {samples} independent samples"
             why = (f"{count_said.capitalize()}, fewer than the "
                    f"{RESOLVED_SAMPLES:g} an error bar needs.")
         else:
