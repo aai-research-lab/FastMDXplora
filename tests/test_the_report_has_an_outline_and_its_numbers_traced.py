@@ -517,6 +517,12 @@ def test_a_number_s_card_and_the_outline_are_reached_by_the_keyboard(tmp_path):
             page.evaluate("() => window.FastMDXFrame.setCollapsed(true)")
             page.wait_for_function("() => getComputedStyle(document.getElementById("
                                    "'report-layout')).display === 'grid'")
+            # The card is brought into view once, as it opens: a page still
+            # being laid out, or figures above it still loading, moved it out
+            # again on a slow machine.
+            page.wait_for_selector("body.state-ready")
+            page.wait_for_function("() => [...document.querySelectorAll('#report-document img')]"
+                                   ".every(i => i.complete)")
             wide = page.evaluate(KEYS)
             # A number near the window's foot, by the keyboard.
             number = page.locator('#report-document .report-number:text-is("4.7592")')

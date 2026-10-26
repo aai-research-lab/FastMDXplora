@@ -418,7 +418,7 @@ there. Two scopes:
   setting, and the file is left as it was. **Use FastMDXplora's** takes it out
   again, a reason given is saved with it in the file's `decisions` (a study's
   report says it under **Why these settings**), and **Undo** puts back what
-  was there. A setting no control draws (a stopping rule, the
+  was there. A setting no control shows (a stopping rule, the
   analyses' options), or a value its control cannot say (restraints
   written as blocks), is set only by hand in the file and shown under its
   words as the file holds it, and a file with comments is shown and changed
@@ -628,12 +628,12 @@ The file is changed in **Settings**, under **This folder**. A file that is
 refused (a setting of one study in it, or a value the schema refuses)
 fills nothing: New study says why above the form, with the way to This
 folder, and offers FastMDXplora's own values until it is put right. The
-form keeps the defaults it was drawn with: where the file has changed
+form keeps the defaults it was filled in with: where the file has changed
 since (in This folder or put right), New study says so above the form,
 where it is refused since, the refusal, and **Read the defaults again**
-draws the form from the file as it is. Bound beyond loopback, the folder's
+fills the form in from the file as it is. Bound beyond loopback, the folder's
 file is neither shown nor said, as This folder is not offered there: the
-form offers FastMDXplora's own values, and the config handed back is drawn
+form offers FastMDXplora's own values, and the config handed back is made
 from them. A full config gives your default only to the systems that take
 it, and each run records your reason only where it took your value.
 

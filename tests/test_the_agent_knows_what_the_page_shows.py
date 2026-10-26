@@ -288,6 +288,10 @@ def test_names_chips_and_a_plan_s_ticks_in_a_browser(tmp_path, monkeypatch):
         with sync_playwright() as pw:
             browser, page = _browser(pw)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "Did @rmsd settle? Write to a@b.org about @study.")
             page.wait_for_selector("#agent-mentions:not([hidden]) .agent-chip")
             chips = page.locator("#agent-mentions .agent-chip").all_text_contents()

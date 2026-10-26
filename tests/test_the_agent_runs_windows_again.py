@@ -261,6 +261,10 @@ def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
                 route.fulfill(json={"ok": True})
             page.route("**/api/fix", answer)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                                   " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "rerun window 2 at 6000")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-confirm")
