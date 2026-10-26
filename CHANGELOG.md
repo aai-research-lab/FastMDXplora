@@ -9,6 +9,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The Viewer's molecule takes the window's room again: the timeline under
+  it, its ruler and three tracks counted whole, left it 420px wide in a
+  1280px window and 373px in one 800px high. It is fitted to leave the
+  transport in view, and the ruler and tracks follow under it as the column
+  scrolls. A window resized to a width now fits the molecule as one opened
+  at it (a 900px window had 420px or 373px by the width it came from).
+- On the narrowest phones the bar across the top leaves the study its name:
+  "1L2Y" read "1L..." and Completed "Com" at 360px between five icons 12px
+  apart, and the pages' tabs ran past the edge. Files' tiles are as many
+  across as the page has room for, not three by the window's width, which
+  left them 155px each beside the side panel.
 - The GUI answers a request it cannot use as the caller's mistake, not its
   own failure: a POST body that is not JSON, or JSON that is not an object,
   is a 400 saying so on every route (it was a 500, "Dashboard request

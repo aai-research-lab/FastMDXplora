@@ -1325,7 +1325,10 @@ button {
 .files-keys[hidden], .files-section[hidden], .files-tile[hidden], .files-row[hidden],
 .files-arow[hidden], .files-theme[hidden], .files-legend [hidden] { display: none; }
 .files-keys-title { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); margin: 4px 2px 10px; }
-.files-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+/* As many across as the page has room for, each at least 210px: three
+   to a row by the window's width left them 155px each beside the side
+   panel, a word to a line (10-26). */
+.files-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 10px; }
 .files-tile {
     border: 1px solid var(--border-primary); border-radius: 12px; padding: 12px 14px;
     background: var(--panel-glass); display: flex; flex-direction: column; gap: 8px; min-width: 0;
@@ -1455,7 +1458,6 @@ button {
 .files-dialog-said { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; }
 
 @media (max-width: 760px) {
-    .files-tiles { grid-template-columns: 1fr; }
     .files-search { max-width: none; flex-basis: 100%; }
     .files-view, .files-sort { display: none !important; }
     .files-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
@@ -5655,6 +5657,16 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
     .sidebar .sidebar-account-gear { display: none; }
     .sidebar .sidebar-foot .sidebar-account { padding: 4px; }
 }
+/* On the narrowest phones the five icons, 12px apart, left the study 38px:
+   "1L2Y" read "1L..." and Completed "Com" (10-26). Closer icons give the
+   name its room, and the pages' tabs, 8px in, all fit on the line. */
+@media (max-width: 420px) {
+    .sidebar { column-gap: 2px; }
+    .sidebar .sidebar-study { margin-right: 6px; }
+    .sidebar .sidebar-start .nav-link, .sidebar .sidebar-workspace .nav-link,
+    .sidebar .line-btn.phone-convs, .sidebar .line-btn.problems-phone { padding: 6px; }
+    .sidebar .sidebar-nav.sidebar-pages .nav-link { padding-left: 8px; padding-right: 8px; }
+}
 
 /* ===========================================================================
    The Agent beside any page (agent-beside.js), in the side panel's place:
@@ -6049,6 +6061,16 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 /* Go to anything (palette.js): a field and what it finds, near the top. */
 .palette { place-items: start center; }
 .palette-panel { width: min(600px, calc(100vw - 32px)); margin-top: 12vh; padding: 0; overflow: hidden; }
+/* On a phone the palette stays a panel near the top, as tall as what it
+   finds: a dialog there is the screen's height, which under the palette's
+   12vh ran the panel past the screen's foot, empty below its list (10-26). */
+@media (max-width: 800px) {
+    .agent-dialog-panel.palette-panel {
+        height: auto; max-height: calc(100% - 12vh - 16px);
+        border: 1px solid var(--border-primary); border-radius: 12px;
+    }
+    .palette-panel .palette-list { flex: 1 1 auto; min-height: 0; }
+}
 .palette-input {
     width: 100%; box-sizing: border-box; padding: 14px 16px; border: none;
     border-bottom: 1px solid var(--border-primary); background: transparent;
