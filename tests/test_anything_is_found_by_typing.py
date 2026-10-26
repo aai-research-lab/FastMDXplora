@@ -41,6 +41,18 @@ def _found(page) -> list[str]:
                                      "(all) => all.map((i) => i.textContent)")
 
 
+def test_empty_compare_names_the_palette_shortcut_for_this_platform(page) -> None:
+    page.goto(page.url.split("#", 1)[0] + "#compare", wait_until="domcontentloaded")
+    page.wait_for_function("() => document.documentElement.dataset.page === 'compare'")
+    keys = page.evaluate("() => window.FastMDXKeys.of('palette')")
+    joiner = "" if page.evaluate("() => window.FastMDXKeys.mac") else " "
+    detail = page.text_content("#compare-empty")
+    assert f"palette ({joiner.join(keys)})" in detail, detail
+
+    page.keyboard.press(("Meta+" if joiner == "" else "Control+") + "k")
+    page.wait_for_selector("#palette:not([hidden])")
+
+
 def test_a_page_is_gone_to_by_its_name(page) -> None:
     page.keyboard.press("Control+k")
     page.wait_for_selector("#palette:not([hidden])")
