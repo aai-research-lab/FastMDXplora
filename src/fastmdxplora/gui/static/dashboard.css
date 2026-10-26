@@ -458,6 +458,10 @@ button {
 .page-header > .page-header-actions {
     flex: 0 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;
     gap: 6px 8px;
+    /* Room above and below once they wrap: on Analysis at about 820 px its
+       three rows filled the band, the first against the rule above it. On
+       one row this adds nothing to the band's height. */
+    padding: 6px 0;
 }
 .page-header > .page-header-actions > .ghost-btn,
 .page-header > .page-header-actions > .primary-btn,
@@ -6271,7 +6275,8 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
 .menu-btn[open] > summary::after { margin-top: 3px; transform: rotate(-135deg); }
 .menu-list {
     position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
-    min-width: 260px; padding: 6px; display: flex; flex-direction: column; gap: 1px;
+    min-width: min(260px, calc(100vw - 16px)); max-width: calc(100vw - 16px);
+    padding: 6px; display: flex; flex-direction: column; gap: 1px;
     border: 1px solid var(--border-primary); border-radius: 10px;
     background: var(--background-elevated); box-shadow: 0 12px 32px var(--shadow-color);
 }

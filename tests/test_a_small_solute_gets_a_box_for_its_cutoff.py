@@ -37,12 +37,16 @@ def prepared(tmp_path_factory):
 
 
 def test_the_defaults_prepare_a_tripeptide(prepared) -> None:
-    assert prepared["box"]["smallest_width_nm"] == pytest.approx(2.2, abs=1e-3)
+    # At least 2.2, twice the cutoff with room for the barostat, and more as
+    # the box is under-filled: a box this small is solvated below the density
+    # the barostat brings it to, and one of 2.2 was shrunk under the cutoff's
+    # floor in production (1L2Y, GPU campaign 2026-10-26).
+    assert 2.2 - 1e-3 <= prepared["box"]["smallest_width_nm"] < 2.4
 
 
 def test_the_padding_used_is_recorded(prepared) -> None:
-    # 1.1 / (sqrt(2) / 2): half the size the cutoff needs.
-    assert prepared["resolved"]["solvent_padding_nm"] == pytest.approx(1.5556, abs=1e-4)
+    # At least 1.1 / (sqrt(2) / 2): half the size the cutoff needs.
+    assert 1.5556 - 1e-4 <= prepared["resolved"]["solvent_padding_nm"] < 1.75
 
 
 class TestTheMethodsSayIt:
@@ -117,10 +121,11 @@ class TestARetryStartsFromTheSolute:
             counts = {}
             for residue in topology.residues():
                 counts[residue.name] = counts.get(residue.name, 0) + 1
-            return made["box"]["smallest_width_nm"], counts
+            return made["box"]["smallest_width_nm"], counts, made["resolved"]
 
-        return {"grown": build("grown", 1.0), "again": build("again", 1.0),
-                "direct": build("direct", 1.5556)}
+        grown = build("grown", 1.0)
+        return {"grown": grown, "again": build("again", 1.0),
+                "direct": build("direct", grown[2]["solvent_padding_nm"])}
 
     def test_the_same_study_builds_the_same_box(self, built) -> None:
         assert built["grown"][0] == pytest.approx(built["again"][0], abs=1e-9)

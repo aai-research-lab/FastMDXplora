@@ -540,8 +540,10 @@ class TestRealSetup:
 
         made = prepare_system(prepared, tmp_path / "out",
                               solvent_padding_nm=0.4, nonbonded_cutoff_nm=1.5)
-        assert made["box"]["smallest_width_nm"] == pytest.approx(3.3, abs=1e-3)
-        assert made["resolved"]["solvent_padding_nm"] == pytest.approx(1.65)
+        # At least twice the cutoff with room for the barostat, and more as
+        # a box this small is under-filled.
+        assert 3.3 - 1e-3 <= made["box"]["smallest_width_nm"] < 3.7
+        assert 1.65 - 1e-3 <= made["resolved"]["solvent_padding_nm"] < 1.9
 
     def test_cutoff_larger_than_half_box_raises_clear_error(self, tmp_path):
         """A cutoff > half the box yields an actionable error, not OpenMM's.

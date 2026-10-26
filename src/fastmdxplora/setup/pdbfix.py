@@ -218,6 +218,35 @@ def report_removed_heterogens(
         )
 
 
+#: The twenty, as a trace is counted among them.
+_AMINO_ACIDS = frozenset(
+    "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split())
+
+
+def _refuse_a_trace(fixer) -> None:
+    """Refuse a chain given as a trace rather than build a protein on it.
+
+    A file of alpha carbons alone (a coarse model, a trace from low-resolution
+    density) had every other atom placed by PDBFixer from its templates, and
+    1UBQ's 76 alpha carbons were prepared, simulated and reported as though
+    they were a deposited structure, with nothing said.
+    """
+    residues = [residue for residue in fixer.topology.residues()
+                if residue.name.upper() in _AMINO_ACIDS]
+    bare = [residue for residue in residues
+            if len(fixer.missingAtoms.get(residue, ())) >= 3
+            and sum(1 for atom in residue.atoms()
+                    if atom.element is None or atom.element.symbol != "H") <= 1]
+    if len(bare) >= 3 and 2 * len(bare) >= len(residues):
+        raise StudyError(
+            f"{len(bare)} of the structure's {len(residues)} amino acids hold one "
+            "atom each, the alpha carbon: it is a trace of the chain, not a "
+            "structure of it, and the rest of every residue would be built from "
+            "templates rather than read. Build a full-atom model from the trace "
+            "first (PULCHRA, MODELLER, or a structure predictor), and give that.",
+            code="setup.structure.trace_only", residues=len(bare))
+
+
 def _standard_residue_names() -> frozenset[str]:
     """Amino acids and nucleotides, which are not heterogens."""
     amino = (
@@ -675,6 +704,48 @@ def fix_pdb_with_pdbfixer(
                       {"chain": chain_id, "applied": applied})
 
     around = frozenset(str(name).upper() for name in reinstated)
+    # Modified residues are part of the polymer, not ligands: a selenomethionine
+    # or an oxidised cysteine belongs in the chain. Left in place they reach the
+    # heterogen classifier, which can only refuse them, and a structure with a
+    # single modified cysteine becomes unusable. PDBFixer substitutes the
+    # standard equivalent, which is the ordinary preparation choice and what
+    # every comparable tool does. Before the heterogens go: removing them
+    # took 1HVR's two CSO with them, and the gap was then built as a CYS of
+    # new coordinates rather than the deposited residue made standard.
+    if replace_nonstandard:
+        fixer.findNonstandardResidues()
+        # Of a chain, not alone: chains B of 1HVR kept carries chain A's
+        # CSO67 beside it, which made standard is a cysteine of no chain and
+        # no template, where it went with the heterogens.
+        substitutions = [(residue, standard) for residue, standard
+                         in getattr(fixer, "nonstandardResidues", []) or []
+                         if residue.name.upper() not in around
+                         and any(other.name.upper() in _AMINO_ACIDS
+                                 for other in residue.chain.residues())]
+        fixer.nonstandardResidues = substitutions
+        if substitutions:
+            described = ", ".join(
+                f"{residue.name}{getattr(residue, 'id', '')}->{standard}"
+                for residue, standard in substitutions
+            )
+            logger.info(
+                "Replaced %d modified residue(s) with their standard "
+                "equivalents: %s", len(substitutions), described,
+            )
+            observe_fixer(
+                audit,
+                "nonstandard_substitution_requests",
+                fixer,
+                lambda: {
+                    "substitutions": [
+                        {"residue": residue_identity(residue), "standard": standard}
+                        for residue, standard in substitutions
+                    ]
+                },
+            )
+            fixer.replaceNonstandardResidues()
+            observe_fixer(audit, "replace_nonstandard_residues", fixer)
+
     if not keep_heterogens:
         removed = _heterogen_residue_counts(fixer.topology)
         with _protect_capping_groups(fixer.topology) as caps:
@@ -729,41 +800,6 @@ def fix_pdb_with_pdbfixer(
                       "note": "Existing missing-residue filters have already run.",
                   })
 
-    # Modified residues are part of the polymer, not ligands: a selenomethionine
-    # or an oxidised cysteine belongs in the chain. Left in place they reach the
-    # heterogen classifier, which can only refuse them, and a structure with a
-    # single modified cysteine becomes unusable. PDBFixer substitutes the
-    # standard equivalent, which is the ordinary preparation choice and what
-    # every comparable tool does.
-    if replace_nonstandard:
-        fixer.findNonstandardResidues()
-        substitutions = [(residue, standard) for residue, standard
-                         in getattr(fixer, "nonstandardResidues", []) or []
-                         if residue.name.upper() not in around]
-        fixer.nonstandardResidues = substitutions
-        if substitutions:
-            described = ", ".join(
-                f"{residue.name}{getattr(residue, 'id', '')}->{standard}"
-                for residue, standard in substitutions
-            )
-            logger.info(
-                "Replaced %d modified residue(s) with their standard "
-                "equivalents: %s", len(substitutions), described,
-            )
-            observe_fixer(
-                audit,
-                "nonstandard_substitution_requests",
-                fixer,
-                lambda: {
-                    "substitutions": [
-                        {"residue": residue_identity(residue), "standard": standard}
-                        for residue, standard in substitutions
-                    ]
-                },
-            )
-            fixer.replaceNonstandardResidues()
-            observe_fixer(audit, "replace_nonstandard_residues", fixer)
-
     fixer.findMissingAtoms()
     observe_fixer(audit, "missing_atom_requests", fixer,
                   lambda: {
@@ -777,6 +813,7 @@ def fix_pdb_with_pdbfixer(
                           for residue, atoms in fixer.missingTerminals.items()
                       ],
                   })
+    _refuse_a_trace(fixer)
     fixer.addMissingAtoms(seed=seed)
     observe_fixer(audit, "add_missing_atoms", fixer)
     if complex_pdb is not None:

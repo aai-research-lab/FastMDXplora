@@ -73,6 +73,13 @@
     menu.appendChild(list);
     menu.addEventListener("toggle", function () {
       if (!menu.open) return;
+      // Kept on the screen: under the button at its right edge, it ran off
+      // the left of a phone's, its downloads cut to "DF" and "lides".
+      list.style.transform = "";
+      var box = list.getBoundingClientRect();
+      var room = document.documentElement.clientWidth;
+      var shift = box.left < 8 ? 8 - box.left : Math.min(0, room - 8 - box.right);
+      if (shift) list.style.transform = "translateX(" + shift + "px)";
       var first = list.querySelector(".menu-item");
       if (first && document.activeElement === head) first.focus();
     });

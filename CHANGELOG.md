@@ -43,6 +43,36 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Extending a study that ran no production (`duration_ns: 0`) is refused
   before a segment is simulated: the segment ran and the join then refused
   it as "segments [0] are missing".
+- A `water_model` other than a named force field's own water is refused
+  with the config (`config.option.conflicting`), with the `force_field`
+  files that pair them: the force field's water file was used whatever the
+  setting, so `tip4pew` beside AMBER14 stopped setup on "no parameters for
+  HOH", and `spce` would have run TIP3P under the name SPC/E.
+- A ligand on a chain the assembly's operators build is fetched from the
+  copy the entry deposits and placed where the built structure has it:
+  1STP's biotin was asked of RCSB at B300, which the entry does not hold,
+  and its four copies then had one pose to share. The pose is read from the
+  chains kept or the assembly built, not the deposited file.
+- A cyclic peptide (a LINK from a chain's first N to its last C, as 1JBL's
+  Gly1 to Asp14) is refused (`setup.structure.cyclic_backbone`): it was
+  prepared, simulated and reported as a linear peptide with two charged
+  ends, with nothing said.
+- A structure of alpha carbons alone is refused
+  (`setup.structure.trace_only`): every other atom was built from templates
+  and the result simulated as though it had been deposited.
+- A modified residue of the chain (1HVR's oxidised cysteines) is made
+  standard where it was deposited: it went with the heterogens, its gap was
+  built as a residue of new coordinates, and the log said a heterogen that
+  might be the ligand had been removed.
+- A small box is solvated with room for the density it will reach: 1L2Y at
+  0.1 nm of padding was solvated at 0.82 g/mL, the barostat shrank it under
+  twice the cutoff, and production stopped.
+- A study with `budget_hours` whose setup fails says setup's own refusal:
+  it said setup had "finished without recording how many particles", and
+  that its output was kept for reuse.
+- The report's Download menu stays on the screen of a phone, where it ran
+  off the left edge; and a page's actions, wrapped onto several rows in a
+  narrow window, no longer sit against the rule above them.
 
 - Clustering checks its frame-by-frame RMSD matrix against the memory this
   process can take before it makes it: the least of the machine's available
