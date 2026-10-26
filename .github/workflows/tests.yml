@@ -131,8 +131,10 @@ jobs:
     # browser tests it took 86 minutes at 0bcdf122 and was cancelled at 90
     # in run #729. The macOS legs took 35-52 minutes on 10-21 and, with
     # the arm64 runners short of capacity, two were cancelled at 83% and
-    # 86% at 60 with nothing failed: 90 for them.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 150 || matrix.os == 'macos-latest' && 90 || 60 }}
+    # 86% at 60 with nothing failed: 90 for them. The other ubuntu legs
+    # took 47-57 minutes on 10-25, and on 10-26 two were cancelled at 60,
+    # at 51% and 97%, with nothing failed: 90 for them too.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 150 || 90 }}
     strategy:
       fail-fast: false
       matrix:
