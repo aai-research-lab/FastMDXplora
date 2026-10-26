@@ -634,7 +634,8 @@ def test_giving_up_says_how_far_the_download_got(tmp_path, unsteady):
     assert size < 100_000
     assert str(refused.value).endswith(
         f"HTTP 503, still after {zenodo.TRIES} tries, with "
-        f"{(size - size * 2 // 3) / 1e3:.1f} of {size / 1e3:.1f} kB downloaded. Nothing was "
+        # The cut sends a third of the file, rounded down.
+        f"{size // 3 / 1e3:.1f} of {size / 1e3:.1f} kB downloaded. Nothing was "
         "kept; open it again later.")
 
 

@@ -69,6 +69,9 @@ def _report(browser, session, scheme="light"):
     page.set_default_timeout(60000)
     page.goto(session.url + "#report", wait_until="domcontentloaded")
     page.wait_for_selector("#report-document:not([hidden]) h2")
+    # The loading screen is over the page until its study is read, the
+    # report shown beneath it: printed then, the PDF was the loading screen.
+    page.wait_for_selector("body.state-ready")
     return page
 
 

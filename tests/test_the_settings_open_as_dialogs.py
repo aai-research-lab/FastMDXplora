@@ -282,6 +282,10 @@ def test_the_menu_says_the_agent_s_provider_and_mode_and_its_model_only_in_its_s
         # Nowhere on the page but in the Agent's settings: its words, its
         # tooltips and its labels, shown or not, on the Agent's page too.
         page.goto(started.url + "#agent", wait_until="domcontentloaded")
+        # Send waits for the page's study and its conversation (9787cefd):
+        # Enter before then sends nothing.
+        page.wait_for_function("() => window.FastMDXAgentPanel"
+                           " && !window.FastMDXAgentPanel.waits")
         page.wait_for_function(
             "() => document.getElementById('settings-engine').textContent !== 'none'")
         elsewhere = page.evaluate("""() => {

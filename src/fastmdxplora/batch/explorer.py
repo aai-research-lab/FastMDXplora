@@ -1414,6 +1414,17 @@ class BatchExplorer:
     # ------------------------------------------------------------------
     def run(self) -> list[dict[str, Any]]:
         """Execute every run. Returns per-run result records."""
+        # The study's process record, removed once the runs end, not only
+        # once the process does (`_record_run_process`).
+        self._forget_process: Any = None
+        try:
+            return self._run_every_run()
+        finally:
+            if self._forget_process is not None:
+                self._forget_process()
+                self._forget_process = None
+
+    def _run_every_run(self) -> list[dict[str, Any]]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         n = len(self.run_specs)
@@ -1449,7 +1460,7 @@ class BatchExplorer:
             # can; the GUI and an AI app refuse it by `runs_here`).
             from fastmdxplora.orchestrator import _record_run_process
 
-            _record_run_process(self.output_dir)
+            self._forget_process = _record_run_process(self.output_dir)
 
         shared = self._maybe_prepare_once(include, exclude)
         if shared is not None:

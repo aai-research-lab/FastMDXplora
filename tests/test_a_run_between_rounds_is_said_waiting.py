@@ -275,11 +275,14 @@ def test_a_study_s_runs_are_read_once_each(tmp_path, done_so_far, monkeypatch):
     _write(study / "batch_manifest.json", manifest)
     real = telemetry.read_study_status
     read = []
+    # Only this study's: a GUI an earlier test left polling in the process
+    # reads its own (17 on the ubuntu job).
     monkeypatch.setattr(telemetry, "read_study_status",
-                        lambda root: read.append(root) or real(root))
+                        lambda root: (read.append(Path(root)) if Path(root).is_relative_to(study)
+                                      else None) or real(root))
     runs = runs_of_a_study(study)
     assert sum(run["state"] == "waiting" for run in runs) == 15
-    assert len(read) == 16
+    assert len(read) == len(set(read)) == 16
 
 
 def test_between_two_runs_extensions_the_run_behind_is_named(tmp_path, monkeypatch):

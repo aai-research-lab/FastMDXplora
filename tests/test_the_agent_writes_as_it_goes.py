@@ -225,6 +225,10 @@ def test_the_page_shows_it_and_stops_it(tmp_path, monkeypatch) -> None:
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "Tell me a long story.")
             page.keyboard.press("Enter")
             # Written into the thread as it arrives, without its marker.

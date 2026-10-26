@@ -328,7 +328,9 @@ class Hosting:
         if isinstance(value, os.PathLike):
             return self._scrub_text(os.fspath(value))
         if isinstance(value, dict):
-            return {key: self.scrub(item) for key, item in value.items()}
+            # Keys too: an answer may be keyed by the folders it is about.
+            return {self.scrub(key) if isinstance(key, str) else key: self.scrub(item)
+                    for key, item in value.items()}
         if isinstance(value, (list, tuple)):
             return [self.scrub(item) for item in value]
         return value
@@ -338,9 +340,11 @@ class Hosting:
         # the machine's layout, not the person's folder.
         text = text.replace(sys.executable, "python")
         for prefix in self._prefixes():
-            if text == prefix:
-                return HOME_MARK
-            text = text.replace(prefix + "/", HOME_MARK + "/")
+            # The workspace itself as well as what is in it: a sentence that
+            # names it ("No such file: /srv/ws", "/srv/ws is not a study.")
+            # showed it whole. Not a sibling whose name it begins
+            # (`/srv/ws2`, `/srv/ws.yml`), which is outside it.
+            text = re.sub(re.escape(prefix) + r"(?=/|$|\.(?!\w)|[^\w.\-])", HOME_MARK, text)
         return text
 
     def _prefixes(self) -> tuple[str, ...]:

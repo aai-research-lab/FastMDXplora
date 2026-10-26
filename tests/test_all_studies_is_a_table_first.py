@@ -340,6 +340,9 @@ def test_the_list_first_with_views_molecules_means_and_keys(tmp_path):
             # Settled: the list read again as the page opens is drawn before
             # the keys go to a row.
             page.wait_for_selector("body.state-ready")
+            # And its first page known, which reads the list again.
+            page.wait_for_function("() => window.FastMDXDashboard"
+                                   " && window.FastMDXDashboard.state.initialRouteResolved")
             page.evaluate(f"() => window.FastMDXStudies.load({str(tmp_path)!r})")
             page.wait_for_selector("#studies-table tbody tr.studies-row")
             page.click('#studies-views .studies-view-tab:has-text("Trp-cage")')

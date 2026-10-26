@@ -284,7 +284,14 @@ class TestTheEstimateIsWhatTheMethodsMake:
             tracemalloc.stop()
         estimate = memory_needed(n, analysis.methods, analysis.features, analysis.linkage)
         assert peak <= estimate + 2000 * n, (peak / n**2, estimate / n**2)
-        assert estimate <= 1.35 * peak, (peak / n**2, estimate / n**2)
+        # The copy of the MDS matrix LAPACK makes on some platforms and not
+        # others (GitHub's ubuntu-latest on Python 3.13 makes it) is counted
+        # where it is not made.
+        mds = analysis.features != "coordinates" and analysis.methods in (
+            ["kmeans"], ["hierarchical"]) and (analysis.methods == ["kmeans"]
+                                               or analysis.linkage == "ward")
+        copy = 8 * n * n if mds else 0
+        assert estimate - copy <= 1.35 * peak, (peak / n**2, estimate / n**2)
 
     def test_k_means_on_coordinates_makes_no_matrix(self):
         analysis = Cluster(features="coordinates", methods=["kmeans", "dbscan"],
@@ -385,6 +392,11 @@ class TestTheBudgetIsTheProcesss:
         import sys
         from pathlib import Path
 
+        if not Path("/proc/self/status").exists():
+            # What the process holds is read from Linux's /proc, and macOS
+            # refuses an address space set below what a process has mapped
+            # ("current limit exceeds maximum limit"): every macOS job failed.
+            pytest.skip("the address space held is read from Linux's /proc")
         script = (
             "import resource, sys\n"
             "sys.path.insert(0, sys.argv[1])\n"
