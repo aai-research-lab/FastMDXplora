@@ -233,7 +233,7 @@ class TestWhatCannotBeRead:
             convergence_of(np.arange(20.0), times=np.arange(10.0))
 
 
-def test_a_million_values_take_under_a_second() -> None:
+def test_a_million_values_take_seconds_not_hours() -> None:
     """Processor time, so another process on the machine does not decide
     it. The correlations of every candidate start and every running-mean
     prefix come from one pass over the series each."""
@@ -243,4 +243,7 @@ def test_a_million_values_take_under_a_second() -> None:
     record = convergence_of(series)
     spent = time.process_time() - began
     assert record["ok"]
-    assert spent < 1.0, f"{spent:.2f} s"
+    # A third of a second on a workstation, and 1.33 s on a busy macOS
+    # runner (10-24), whose processor time is a slower processor's too. A
+    # pass for each start, which this guards against, takes hours.
+    assert spent < 3.0, f"{spent:.2f} s"

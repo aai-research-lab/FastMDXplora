@@ -48,8 +48,11 @@ def test_another_study_opened_while_a_run_starts_is_the_one_opened(tmp_path, mon
         _say(page, "chignolin")
         page.wait_for_selector("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         page.wait_for_timeout(800)
-        page.on("request", lambda r: asked.append(r.url.split("/api/")[-1])
-                if "/api/agent/run" in r.url or "/api/agent/conversation/open" in r.url else None)
+        # The run and the open by their routes: `agent/run-summary`, asked
+        # once a run has started, has the run's in its name.
+        page.on("request", lambda r: asked.append(r.url.split("/api/")[-1].split("?")[0])
+                if r.url.split("/api/")[-1].split("?")[0] in (
+                    "agent/run", "agent/conversation/open") else None)
         _slow_disk(monkeypatch, 1.0)
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
         page.click("#agent-conversations")

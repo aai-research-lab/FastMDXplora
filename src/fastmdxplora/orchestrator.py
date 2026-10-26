@@ -242,9 +242,16 @@ def _logging_to_its_folder(method: Callable[_P, _R]) -> Callable[_P, _R]:
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
         study = args[0]
         study._attach_its_log()  # type: ignore[attr-defined]
+        # Which process is running the study, for the outermost call alone
+        # (`_record_run_process`), as the log is.
+        folder = getattr(study, "output_dir", None)
+        outermost = study._log_depth == 1 and folder is not None  # type: ignore[attr-defined]
+        forget = _record_run_process(folder) if outermost else None
         try:
             return method(*args, **kwargs)
         finally:
+            if forget is not None:
+                forget()
             study._detach_its_log()  # type: ignore[attr-defined]
     return wrapper
 
@@ -417,12 +424,8 @@ class FastMDXplora:
                 {"systems": [{"id": self._system_id, "system": self.system}]})))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Which process this study is, so a GUI opened on the folder later
-        # can adopt the run: show it as running and stop it if asked. The
-        # file goes when the process exits; a crash leaves it, and an
-        # adopter checks the process is alive and is this run before
-        # believing it.
-        _record_run_process(self.output_dir)
+        # Which process is running this study is recorded while a call runs
+        # it (`_logging_to_its_folder`), not from here to the process's end.
 
         self.options: dict[str, dict[str, Any]] = options or {}
         # Study-level settings (`agent`, `agent_model`), which describe the
@@ -1870,7 +1873,20 @@ def _was_a_stop(result: Any) -> bool:
             and refusal.get("code") == STOPPED_CODE)
 
 
-def _record_run_process(output_dir: Path) -> None:
+def _record_run_process(output_dir: Path) -> Callable[[], None]:
+    """Record which process runs the study in ``output_dir``, so a GUI
+    opened on the folder can adopt the run: show it as running and stop it
+    if asked. Returns what removes the record once the run ends; it goes
+    when the process exits too, and a crash leaves it, which an adopter
+    checks is alive and is this run before believing it.
+
+    Removed at the run's end, not only the process's: a study run from a
+    notebook or a script left its record for as long as Python stayed open,
+    and on Linux, where the process's start is matched, the GUI took the
+    notebook for the run. It showed the finished study as running, refused
+    every fix as "already running", and Stop would have signalled the
+    notebook.
+    """
     import atexit
     import json
     import os
@@ -1889,7 +1905,7 @@ def _record_run_process(output_dir: Path) -> None:
             **({"start_ticks": ticks} if ticks is not None else {}),
         }), encoding="utf-8")
     except OSError:
-        return
+        return lambda: None
 
     def _remove(p: Path = path, pid: int = os.getpid()) -> None:
         # Only this process's record: a child that inherited this hook must not
@@ -1901,6 +1917,7 @@ def _record_run_process(output_dir: Path) -> None:
             pass
 
     atexit.register(_remove)
+    return _remove
 
 
 def _phase_selection(

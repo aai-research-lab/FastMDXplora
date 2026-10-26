@@ -390,7 +390,7 @@ class TestTheRunsOfAStudy:
         pytest.importorskip("matplotlib")
         from fastmdxplora.batch.compare import build_comparison_report
 
-        md = (build_comparison_report(two_runs) / "comparison_report.md").read_text()
+        md = (build_comparison_report(two_runs) / "comparison_report.md").read_text(encoding="utf-8")
         row = next(line for line in md.splitlines() if line.startswith("| t310 |"))
         assert row.endswith(" \u2020 |")
         assert f"\u2020 t310, RMSD: {said_short(_NOTE)}." in md
