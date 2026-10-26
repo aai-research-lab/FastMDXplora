@@ -129,6 +129,10 @@ def test_a_reply_by_tool_calls_shows_what_each_turn_was_sent(study, monkeypatch)
         with sync_playwright() as pw:
             browser, page = _browser(pw)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                                   " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "What does this study hold?")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-answer")

@@ -141,6 +141,32 @@ def pytest_configure(config):
     root = tempfile.mkdtemp(prefix="fastmdx-suite-")
     os.environ["FASTMDXPLORA_CONFIG_DIR"] = os.path.join(root, "settings")
     os.environ["FASTMDXPLORA_CACHE_DIR"] = os.path.join(root, "cache")
+    _pathlib_calls_what_a_test_patches()
+
+
+def _pathlib_calls_what_a_test_patches():
+    """On Python 3.10, `Path.open`, `Path.stat` and `Path.iterdir` call the
+    `io.open`, `os.stat` and `os.scandir` pathlib held when it was imported,
+    so a test that patches those to make a file unreadable or a disk full
+    patched nothing a `Path` used: eleven sharing tests failed on 3.10
+    alone, "DID NOT RAISE ShareRefused". From 3.11 pathlib looks them up as
+    it calls them, and this has 3.10 do the same."""
+    import io
+    import os
+    import pathlib
+
+    accessor = getattr(pathlib, "_NormalAccessor", None)
+    if accessor is None:
+        return
+
+    def looked_up(module, name):
+        return staticmethod(lambda *args, **kwargs: getattr(module, name)(*args, **kwargs))
+
+    for name, value in list(vars(accessor).items()):
+        if value is io.open:
+            setattr(accessor, name, looked_up(io, "open"))
+        elif not name.startswith("_") and getattr(os, name, None) is value:
+            setattr(accessor, name, looked_up(os, name))
 
 
 @pytest.fixture(scope="module", autouse=True)

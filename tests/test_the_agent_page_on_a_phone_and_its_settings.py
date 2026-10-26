@@ -57,6 +57,10 @@ def _page(pw, url, width, hash_="#agent"):
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(url + hash_, wait_until="domcontentloaded")
     page.wait_for_selector("#agent-request", state="visible")
+    # Send waits for the page's study and its conversation (9787cefd):
+    # Enter before then sends nothing.
+    page.wait_for_function("() => window.FastMDXAgentPanel"
+                           " && !window.FastMDXAgentPanel.waits")
     return browser, page, errors
 
 

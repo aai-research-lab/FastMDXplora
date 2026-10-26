@@ -425,6 +425,11 @@
     });
     api.on("results-updated", function () { rememberShown(false); });
     api.on("study-opening", function (study) {
+      // Opened another way than by its tab (Recent, All studies, the
+      // Agent): the page gone to just before announces itself on the next
+      // frame, after this page has gone, and was not kept as the study's.
+      // Kept now, as a tab chosen keeps it.
+      if (!pending) rememberShown(false);
       if (validKey(study.key)) closed = closed.filter(function (key) { return key !== study.key; });
       save();
     });

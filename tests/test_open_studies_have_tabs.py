@@ -56,7 +56,18 @@ def _open(browser, site, width=1440, theme="dark", context=None):
     page.errors = errors
     page.goto(site["session"].url + "#overview", wait_until="domcontentloaded")
     page.locator('.study-tab-link[aria-current="page"]').wait_for()
+    _ready(page)
     return page
+
+
+def _ready(page):
+    # Under the loading screen until the study is read, and its first page
+    # put in its address once its state is: a page gone to before then was
+    # the one a person could not yet reach, and kept as the study's last.
+    page.wait_for_function("() => document.body.classList.contains('state-ready')"
+                           " && window.FastMDXDashboard"
+                           " && window.FastMDXDashboard.state.initialRouteResolved",
+                           timeout=20000)
 
 
 def _link(page, key):
@@ -73,14 +84,17 @@ def _active(page, key):
     expect(_link(page, key)).to_have_attribute("aria-current", "page", timeout=20000)
     page.wait_for_function("key => new URL(location.href).searchParams.get('study') === key", arg=key,
                            timeout=20000)
+    _ready(page)
 
 
 def _outside_open(page, site, index, route="overview"):
-    page.evaluate("""async ({path, route}) => {
-        const answer = await (await fetch('/api/explore/switch', {
+    # Not waited for: the study opened loads the page again, and a script
+    # still waited for as it goes has no page to answer from.
+    page.evaluate("""({path, route}) => {
+        fetch('/api/explore/switch', {
             method: 'POST', headers: {'content-type': 'application/json'},
-            body: JSON.stringify({folder: path})})).json();
-        window.FastMDXDashboard.studyOpened(answer, route);
+            body: JSON.stringify({folder: path})})
+            .then((r) => r.json()).then((answer) => window.FastMDXDashboard.studyOpened(answer, route));
     }""", {"path": str(site["studies"][index]), "route": route})
     _active(page, site["keys"][index])
 
@@ -102,6 +116,32 @@ def test_tabs_restore_each_studys_last_page_and_survive_reload(browser, site):
         _link(page, site["keys"][1]).click()
         _active(page, site["keys"][1])
         assert page.url.endswith("#overview")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_a_study_opened_another_way_keeps_the_page_gone_to_just_before(browser, site):
+    """A page is announced on the frame after it is gone to. A study opened
+    from Recent, All studies or the Agent before that frame went with the
+    page: the study before kept the page it had been on before that one."""
+    page = _open(browser, site)
+    try:
+        page.evaluate("""async (path) => {
+            const answer = await (await fetch('/api/explore/switch', {
+                method: 'POST', headers: {'content-type': 'application/json'},
+                body: JSON.stringify({folder: path})})).json();
+            // Both in one task, before the frame; after this returns, as the
+            // page they leave would take the answer with it on a slow machine.
+            setTimeout(() => {
+                window.FastMDXDashboard.navigate('analysis/rmsd');
+                window.FastMDXDashboard.studyOpened(answer, 'overview');
+            });
+        }""", str(site["studies"][1]))
+        _active(page, site["keys"][1])
+        _link(page, site["keys"][0]).click()
+        _active(page, site["keys"][0])
+        assert page.url.endswith("#analysis/rmsd")
         assert page.errors == []
     finally:
         page.context.close()
@@ -372,12 +412,30 @@ def test_an_attachment_still_loading_holds_the_switch(browser, site):
         page.context.close()
 
 
+def _form_ready(page):
+    # Its draft read and the form drawn from it: typed into before, the
+    # field was drawn again over what was typed.
+    page.wait_for_function("() => window.FastMDXRun && window.FastMDXRun.ready")
+
+
+def _structure_read(page):
+    # The structure's facts and its preview are read after the form is
+    # drawn, and each draws the settings again: a fill begun as one lands
+    # lost its selection and put its text after what the field held.
+    page.wait_for_function("""() => {
+        const state = window.FastMDXRun.state;
+        return state.systems.length && state.systems[0].facts && state.estimate
+            && !document.getElementById('run-system-preview').classList.contains('is-loading');
+    }""")
+
+
 def _builder(page, site):
     pdb = site["root"] / "peptide.pdb"
     pdb.write_text("ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00  0.00           N\n"
                    "ATOM      2  CA  GLY A   1       1.450   0.000   0.000  1.00  0.00           C\n"
                    "ATOM      3  C   GLY A   1       2.900   0.000   0.000  1.00  0.00           C\nEND\n")
     page.evaluate("window.FastMDXDashboard.navigate('run')")
+    _form_ready(page)
     page.click("#run-start [data-start='structure']")
     page.fill("#run-system", str(pdb))
     page.locator('#run-settings [data-setting="ph"] input').fill("6.5")
@@ -732,6 +790,9 @@ def test_many_tabs_fit_the_page_and_work_by_keyboard(browser, site, width, besid
             page.click("#agent-beside-open")
             page.locator("#agent-drawer").wait_for()
         page.wait_for_function("document.getElementById('study-tabs').matches('.more-before, .more-after')")
+        # The strip narrowed by the Agent beside it brings the open study
+        # back into view once it is laid out, after the drawer is shown.
+        page.wait_for_function(f"() => ({LAYOUT})().currentInView")
         facts = page.evaluate(LAYOUT)
         # The open study is in view at the end of a long strip; a fade says
         # more tabs lie past the edge; nothing runs past the page or under
@@ -1198,7 +1259,10 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         page.evaluate("document.activeElement.blur()")
         page.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('6.5'))")
         other.goto(site["session"].url + "#run", wait_until="domcontentloaded")
+        _ready(other)
+        _form_ready(other)
         expect(_ph(other)).to_have_value("6.5")
+        _structure_read(other)
         _ph(other).fill("7.2")
         other.keyboard.press("Tab")
         other.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('7.2'))")
@@ -1211,13 +1275,19 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         # Changes here not saved, a newer draft from the other window: held,
         # and said as that, not as a draft that could not be saved.
         page.evaluate("window.FastMDXDashboard.navigate('run')")
+        _form_ready(page)
         expect(_ph(page)).to_have_value("7.2")
+        _structure_read(page)
         _ph(page).fill("6.1")
         other.evaluate("""() => {
             const key = Object.keys(localStorage).find(k => k.startsWith('fmx.builderDraft'));
             localStorage.setItem(key, localStorage.getItem(key).replace('7.2', '7.4'));
         }""")
-        _link(page, site["keys"][1]).click()
+        # Pressed in one go: a press's mousedown lets go of the field, whose
+        # change saves the draft 300 ms later, and on a slow machine its
+        # mouseup came after that save had written over the newer draft. The
+        # switch lets go of the field itself.
+        _link(page, site["keys"][1]).evaluate("link => link.click()")
         note = page.locator("#study-tabs-note")
         expect(note).to_contain_text("another window saved a newer Config draft")
         assert "could not be saved" not in note.text_content()

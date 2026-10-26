@@ -95,7 +95,13 @@ def test_one_ask_one_state_and_one_list(tmp_path):
             page.fill("#studies-search", "")
             page.route("**/api/studies*", lambda route: route.fulfill(
                 json={"ok": False, "reason": "Permission denied"}))
-            page.evaluate(f"() => window.FastMDXStudies.load({str(tmp_path)!r})")
+            # A list still being read when the route was made (the page reads
+            # it again when its first page is known) is answered as it was
+            # asked; the list asked for after it is refused.
+            page.evaluate(f"""async () => {{
+                await window.FastMDXStudies.load({str(tmp_path)!r});
+                await window.FastMDXStudies.load({str(tmp_path)!r});
+            }}""")
             page.wait_for_selector('#studies-empty .fmx-state[data-kind="error"]')
             listed = page.inner_text("#studies-empty")
             # Read again, it is listed.

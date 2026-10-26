@@ -272,6 +272,9 @@ def _page(pw, url):
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(url + "#agent", wait_until="domcontentloaded")
     page.wait_for_selector("#agent-thread .agent-study:not([hidden])")
+    # A retry, as Send, waits for the page's study and its conversation
+    # (9787cefd): pressed before then, it asks nothing.
+    page.wait_for_function("() => window.FastMDXAgentPanel && !window.FastMDXAgentPanel.waits")
     return browser, page, errors
 
 
