@@ -773,6 +773,20 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
         else continuation_of(study, from_segment=last)
     if not plan.possible:
         return plan
+    from fastmdxplora.analysis.joining import survey_segments
+
+    if not any(piece.index == 0 for piece in survey_segments(Path(study))):
+        # A study run with no production (`duration_ns: 0`) still writes a
+        # production checkpoint, at step zero. Its segment was simulated and
+        # then refused by the join as "segments [0] are missing", which was
+        # true of nothing it had lost: there was never a trajectory to go on.
+        return Continuation(parent=plan.parent, checkpoint=plan.checkpoint,
+                            production_done_ns=done,
+                            production_planned_ns=plan.production_planned_ns,
+                            config={},
+                            refusal="the study ran no production of its own, so a "
+                                    "segment would have no trajectory to be joined to; "
+                                    "run it again with a production length")
     index = next_segment_index(study)
     config = dict(plan.config)
     config["output"] = str(Path(study) / f"segment-{index:03d}")

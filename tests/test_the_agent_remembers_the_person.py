@@ -1905,6 +1905,10 @@ def test_the_page_says_what_it_remembered_under_the_reply_and_in_settings(
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
             page.fill("#agent-request", "I am a structural biologist and I mostly study kinases")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-memory-note")
@@ -2018,6 +2022,10 @@ def test_the_memory_on_a_phone_scrolls_with_its_dialog_and_shows_its_groups(
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
             page.evaluate("document.getElementById('agent-settings-open').click()")
             page.wait_for_selector("#agent-memory .agent-memory-line")
             groups = page.locator("#agent-memory .agent-memory-group").all_text_contents()

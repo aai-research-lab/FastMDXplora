@@ -74,6 +74,12 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
     except yaml.YAMLError as exc:
         raise ConfigError(f"Failed to parse YAML in {p}: {exc}",
                           code="config.file.unparseable", path=str(p)) from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"{p} is not a text file: a config is YAML, written in UTF-8.",
+                          code="config.file.unparseable", path=str(p)) from exc
+    except RecursionError as exc:
+        raise ConfigError(f"The YAML in {p} is nested too deeply to be a config.",
+                          code="config.file.unparseable", path=str(p)) from exc
 
     if data is None:
         # Empty file — treat as empty config (valid; everything defaults)
@@ -729,6 +735,7 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
     # an older study can still be read and reported.
     if not as_record:
         _check_integrators(data)
+        _check_barostat_has_a_box(data)
     if isinstance(simulation, dict):
         _check_restraints(simulation, where="")
     if isinstance(simulation, dict) and isinstance(simulation.get("umbrella"), dict):
@@ -1296,6 +1303,66 @@ def _check_integrators(data: dict[str, Any]) -> None:
             where = (f"Run {run_id} (its own settings, from `systems` or "
                      f"`sweep`): ") if own else ""
             raise ConfigError(where + str(exc), **_rewrapped(exc)) from exc
+
+
+#: The nonbonded methods with no periodic box, which a barostat cannot scale.
+_NON_PERIODIC = ("NoCutoff", "CutoffNonPeriodic")
+
+
+def _check_barostat_has_a_box(data: dict[str, Any]) -> None:
+    """A non-periodic nonbonded method refused where a run would add a barostat.
+
+    OpenMM refuses the pair once the system is built: "A barostat cannot be
+    used with a non-periodic system", after setup had prepared, solvated and
+    minimised the system, for a choice the config already made. Said here, for
+    each run the study expands to, with the settings that would fix it.
+    """
+    from fastmdxplora.simulation.ensembles import NPT, _npt_stage_steps, resolve_ensemble
+    from fastmdxplora.simulation.stopping import phases_of
+
+    if "simulation" not in phases_of(data):
+        return
+    top = {phase: dict(data.get(phase) or {}) if isinstance(data.get(phase), dict) else {}
+           for phase in ("setup", "simulation")}
+    runs: list[tuple[str | None, dict[str, Any], dict[str, Any]]] = []
+    if data.get("systems"):
+        from fastmdxplora.batch.sweep import expand_runs, normalize_sweep, normalize_systems
+
+        try:
+            specs = expand_runs(
+                systems=normalize_systems(data["systems"]),
+                sweep=normalize_sweep(data["sweep"]) if data.get("sweep") else None,
+                base_options=phase_options(data))
+        except Exception:  # noqa: BLE001 - the batch check above says what is wrong
+            specs = []
+        runs = [(spec.run_id, dict(spec.options.get("setup") or {}),
+                 dict(spec.options.get("simulation") or {})) for spec in specs]
+    if not runs:
+        runs = [(None, top["setup"], top["simulation"])]
+    for run_id, setup, simulation in runs:
+        method = setup.get("nonbonded_method")
+        if method not in _NON_PERIODIC:
+            continue
+        try:
+            barostat = _npt_stage_steps(simulation) > 0 or resolve_ensemble(simulation) == NPT
+        except (TypeError, ValueError):
+            continue  # a value of the wrong type is refused by its own check
+        if not barostat:
+            continue
+        own = run_id is not None and (
+            setup.get("nonbonded_method") != top["setup"].get("nonbonded_method")
+            or any(simulation.get(k) != top["simulation"].get(k)
+                   for k in ("ensemble", "npt_steps", "npt_duration_ns")))
+        where = (f"Run {run_id} (its own settings, from `systems` or `sweep`): "
+                 if own else "")
+        raise ConfigError(
+            f"{where}setup.nonbonded_method is {method}, which has no periodic box, and "
+            "the simulation would hold the pressure with a barostat, which scales one: "
+            "OpenMM refuses the pair. Run at constant volume (`simulation.ensemble: nvt` "
+            "with `npt_duration_ns: 0`), or use a periodic method such as PME.",
+            code="config.option.conflicting",
+            options=["setup.nonbonded_method", "simulation.ensemble"],
+            context="setup")
 
 
 #: What a decision may say about the setting it is recorded for.

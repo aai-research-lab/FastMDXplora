@@ -46,6 +46,7 @@ def test_config_launch_clears_stale_data_state(tmp_path: Path) -> None:
     )
     fake_process = SimpleNamespace(pid=43, poll=lambda: None)
     (tmp_path / "new-run").mkdir()
+    (tmp_path / "run.yml").write_text("systems:\n- system: 1L2Y\n", encoding="utf-8")
     prepared = {
         "ok": True,
         "command": ["python", "-m", "fastmdxplora.cli.main", "explore"],
@@ -629,6 +630,15 @@ def test_the_orchestrator_records_its_pid_and_removes_it_on_exit(tmp_path):
     assert result.stdout.strip().endswith("True"), result.stderr
     # Gone once the process has exited.
     assert not (out / RUN_PROCESS_FILE).exists()
+
+
+def test_a_record_that_cannot_be_written_has_nothing_to_remove(tmp_path):
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, _record_run_process
+
+    # No folder to write it in: the run goes on, and its end removes nothing.
+    forget = _record_run_process(tmp_path / "not made")
+    forget()
+    assert not (tmp_path / "not made" / RUN_PROCESS_FILE).exists()
 
 
 def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():

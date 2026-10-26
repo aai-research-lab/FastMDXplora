@@ -124,7 +124,10 @@ def batch_manifest(batch_dir: str | Path) -> dict[str, Any]:
     manifest = json.loads(record_access.read_text(Path(batch_dir) / "batch_manifest.json",
                                                   encoding="utf-8"))
     if not isinstance(manifest, dict):
-        raise ValueError("a batch manifest is an object")
+        from fastmdxplora.refusals import StudyError
+
+        # A ValueError, as the docstring says, and one that names itself.
+        raise StudyError("a batch manifest is an object", code="analysis.data.absent")
     return manifest
 
 

@@ -16,6 +16,7 @@
   var chosen = [];
   var lookedIn = "";
   var loading = null;
+  var loadingWhere;
   // Tags: the one the cards are narrowed to, the card being tagged, and
   // the tags the studies here carry (offered as one is typed).
   var tagged = null;
@@ -2297,7 +2298,14 @@
   }
 
   function load(where) {
-    if (loading) return loading;
+    if (loading && loadingWhere === where) return loading;
+    // Another folder asked for while one is read: it was answered with that
+    // one's list. It is read once that one is.
+    if (loading) {
+      var again = function () { return load(where); };
+      return loading.then(again, again);
+    }
+    loadingWhere = where;
     var query = where ? "?" + new URLSearchParams({ path: where }) : "";
     var began = edited;
     loading = fetch("/api/studies" + query)

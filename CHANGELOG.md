@@ -9,6 +9,41 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The GUI answers a request it cannot use as the caller's mistake, not its
+  own failure: a POST body that is not JSON, or JSON that is not an object,
+  is a 400 saying so on every route (it was a 500, "Dashboard request
+  failed."); a study named by something other than a path is "No such
+  study." for a new or moved conversation; a deposit's `sets` and Settings'
+  `unset` given as one value are read as none; a config file that is not
+  UTF-8 text, or YAML nested past what the parser follows, is said as that
+  by Check and Open (and by `fastmdx explore`, which repeated Python's
+  words); and Check with no config named says so, not "That is a folder,
+  not a config: .".
+- `/api/run` checks the config it writes as `fastmdx explore` will, before
+  a process starts: one with no system, or naming a structure that cannot
+  be read, made a study folder and started a run that stopped at once,
+  leaving the folder in the workspace's list.
+- The status bar names the platform a study here runs on: in `auto`'s
+  order, and only one that computes a force at the default mixed precision.
+  A Mac's OpenCL, single precision only, was named while every study ran on
+  the CPU.
+- A checkout run from its source with no `_version.py` is
+  `0.0.0+unknown-version`, as the build's fallback is, not `0.1.0`, which the
+  banner of every such run and Cite showed.
+- `setup.nonbonded_method: NoCutoff` or `CutoffNonPeriodic` with an NPT
+  stage, or NPT production, is refused with the config
+  (`config.option.conflicting`), naming the run where a sweep or a system
+  gives it: it was prepared, solvated and minimised before OpenMM refused
+  the barostat.
+- An analysis whose atoms are none in this system is left out of the plan
+  as not applying, as one with no water or too few atoms to align is: a DNA
+  duplex (1BNA) had eight analyses refused, "Atom selection 'protein'
+  matched zero atoms", backbone dihedrals among them. The check against the
+  solute's own images still runs on it.
+- Extending a study that ran no production (`duration_ns: 0`) is refused
+  before a segment is simulated: the segment ran and the join then refused
+  it as "segments [0] are missing".
+
 - Clustering checks its frame-by-frame RMSD matrix against the memory this
   process can take before it makes it: the least of the machine's available
   memory (psutil where installed, else `/proc/meminfo` or `os.sysconf`; on a

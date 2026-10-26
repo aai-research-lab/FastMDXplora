@@ -559,6 +559,43 @@ class AnalysisOrchestrator:
                 or (parent / "simulation" / "metadynamics_surface.json").is_file()
                 for parent in (here, here.parent))
 
+        def _selects_atoms(name: str) -> bool:
+            """An analysis needs atoms to read.
+
+            A system of DNA or RNA alone has no protein, and the selection
+            most analyses read where they have none of their own is the
+            scope's, `protein` with no ligand. Eight analyses of 1BNA each
+            refused "Atom selection 'protein' matched zero atoms", so a
+            duplex read as a study whose analysis phase broke rather than
+            one these do not apply to. The selection is the one the
+            analysis will be given (`_run_one`'s precedence); one MDTraj
+            cannot parse is left for the analysis to refuse, naming it.
+            """
+            cls = _REGISTRY[name]
+            traj = getattr(self, "traj", None)
+            if traj is None:
+                return True
+            try:
+                if getattr(cls, "requires_protein", False) \
+                        and not len(traj.topology.select("protein")):
+                    return False
+                if (not getattr(cls, "honours_selection", True)
+                        or getattr(cls, "requires_solute", False)):
+                    # Its own atoms, or the macromolecules the solute gate
+                    # finds (DNA among them), with the selection only added.
+                    return True
+                selection = ((options or {}).get(name) or {}).get("selection")
+                if selection is None:
+                    selection = getattr(self, "default_selection", None)
+                if selection is None:
+                    selection = (getattr(cls, "default_selection", None)
+                                 or getattr(self, "scope_selection", None))
+                if selection is None:
+                    return True
+                return bool(len(traj.topology.select(selection)))
+            except Exception:  # noqa: BLE001 - a selection this cannot make
+                return True
+
         def _fold_ok(name: str) -> bool:
             """A fold analysis needs a chain long enough to have one.
 
@@ -821,7 +858,7 @@ class AnalysisOrchestrator:
                 and _box_ok(n) and _named_ok(n) and _bilayer_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
                 and _steered_ok(n) and _fold_ok(n)
-                and _alignable(n) and _solute_ok(n)
+                and _alignable(n) and _solute_ok(n) and _selects_atoms(n)
             ]
 
         # Default plan: everything except ligand-only analyses when there is
@@ -831,7 +868,8 @@ class AnalysisOrchestrator:
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
-                and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
+                and _fold_ok(n) and _alignable(n) and _solute_ok(n)
+                and _selects_atoms(n)]
 
     def _merge_options(
         self,

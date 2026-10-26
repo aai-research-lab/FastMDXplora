@@ -96,6 +96,9 @@ def _page(browser, session, width=1440, scheme=None, page="overview", stored=Non
     tab.goto(session.url + "#" + page, wait_until="domcontentloaded")
     tab.wait_for_function("() => window.FastMDXFrame && window.FastMDXAgentBeside"
                           " && document.documentElement.dataset.page === '" + page + "'")
+    # The loading screen lies over the page until the study is read: a seam
+    # pressed under it was not pressed, and the drag widened nothing.
+    tab.wait_for_function("() => document.body.classList.contains('state-ready')")
     if not set(stored or ()) & {"panelCollapsed", "builderPanelOpen", "viewerPanelOpen"}:
         # The log is open until the study's first status says it finished:
         # the page as it stands once it has.

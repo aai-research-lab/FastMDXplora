@@ -148,7 +148,8 @@ def defaults_changed(root: str | Path, body: Any) -> dict[str, Any]:
 
     asked = body if isinstance(body, dict) else {}
     given = asked.get("set") if isinstance(asked.get("set"), dict) else {}
-    unset = [str(n) for n in asked.get("unset") or [] if isinstance(n, str)]
+    unset = ([n for n in asked["unset"] if isinstance(n, str)]
+             if isinstance(asked.get("unset"), list) else [])
     whys = asked.get("why") if isinstance(asked.get("why"), dict) else {}
     path = _where(Path(root))
     with _WRITING:

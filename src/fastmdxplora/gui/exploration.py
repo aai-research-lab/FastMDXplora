@@ -772,7 +772,9 @@ def _json_mapping_or_yaml(path: Path) -> dict[str, Any]:
 
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+    except (OSError, UnicodeDecodeError, RecursionError, yaml.YAMLError):
+        # Not text, or nested past what the parser can follow: none to read,
+        # and the check that follows says which.
         return {}
     return value if isinstance(value, dict) else {}
 
@@ -1545,6 +1547,18 @@ class DashboardRuntime:
         # stack it needs is not installed: the phase would fail inside
         # the run with the same message, minutes later and off screen.
         written = _json_mapping_or_yaml(Path(prepared["config_path"]))
+        # Judged as the run will judge it, as `launch_existing_config` judges
+        # its file: a config with no systems, or one naming a structure that
+        # cannot be read, stopped `fastmdx explore` at once and left a study
+        # folder of a config and a log in the workspace's list.
+        from fastmdxplora.gui.config_builder import check_config_file
+
+        checked = check_config_file(prepared["config_path"], to_run=True,
+                                    defaults=_defaults_found_from(output_dir),
+                                    base=self.exploration_root)
+        if not checked["ok"]:
+            _taken_back(Path(prepared["config_path"]), output_dir, made)
+            return {**checked, "config_path": None, "command": None}
         environment_error = exploration_environment_error(written)
         if environment_error:
             # What this launch wrote taken back, so the same folder can be

@@ -17,6 +17,7 @@ the page runs.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -1946,6 +1947,8 @@ def _named_place(runtime: Any, study: Any) -> tuple[Path | None, Path] | None:
     the workspace's own (Chats), or a study's folder. None if that is no
     study."""
     workspace, _ = _scope(runtime)
+    if study and not isinstance(study, (str, os.PathLike)):
+        return None
     target = Path(study) if study else None
     if target is not None and not _holds_conversations(target):
         return None
@@ -2423,6 +2426,9 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
     """
     import os
 
+    if not isinstance(study, (str, os.PathLike)) or (
+            from_study and not isinstance(from_study, (str, os.PathLike))):
+        return {"ok": False, "error": "No such study."}
     target = Path(study) if study else None
     if target is None or not target.is_dir():
         return {"ok": False, "error": "No such study."}

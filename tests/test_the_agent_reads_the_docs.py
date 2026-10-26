@@ -947,6 +947,10 @@ def test_useful_and_wrong_are_line_icons_named_and_filled_when_pressed(session) 
             page.set_default_timeout(30000)
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
             page.wait_for_selector("#agent-request", state="visible")
             page.route("**/api/agent/propose*", lambda route: route.fulfill(
                 status=200, content_type="application/json", body=json.dumps(reply)))

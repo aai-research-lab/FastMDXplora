@@ -40,7 +40,10 @@ from __future__ import annotations
 try:
     from fastmdxplora._version import version as __version__
 except ImportError:
-    __version__ = "0.1.0"
+    # A checkout run from its source with no `_version.py` written: as the
+    # build's `fallback_version` says it, never a number shaped like a
+    # release, which a study's record and its citation then carried.
+    __version__ = "0.0.0+unknown-version"
 
 __author__ = "Adekunle Aina, Derrick Kwan"
 __license__ = "MIT"

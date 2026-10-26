@@ -575,10 +575,11 @@ register_analysis(DimRed.name, DimRed)
 
 def mds_memory_needed(n: int) -> int:
     """The peak bytes, of order n squared, MDS of ``n`` frames makes: the
-    pairwise RMSD matrix in float64 (8 n^2) and its doubly centred square,
-    whose leading eigenvectors are found in place (8 n^2), as clustering's
-    k-means makes them (:func:`fastmdxplora.analysis.cluster.memory_needed`)."""
-    return int(16 * float(n) * float(n))
+    pairwise RMSD matrix in float64 (8 n^2), its doubly centred square,
+    whose leading eigenvectors are asked for in place (8 n^2), and the copy
+    LAPACK can make of it all the same (8 n^2), as clustering's k-means
+    makes them (:func:`fastmdxplora.analysis.cluster.memory_needed`)."""
+    return int(24 * float(n) * float(n))
 
 
 def _refuse_mds_past_memory(self: "DimRed", n: int) -> None:

@@ -76,6 +76,21 @@ class TestAWholeStudyIsItsOwnFirstSegment(unittest.TestCase):
 
 class TestTheExtensionIsPlannedInsideTheStudy(unittest.TestCase):
 
+    def test_a_study_with_no_production_is_refused_before_a_segment_runs(self):
+        """`duration_ns: 0` equilibrates and stops, and still writes a
+        production checkpoint at step zero. Its extension simulated a segment
+        and was then refused by the join, "segments [0] are missing"."""
+        from fastmdxplora.simulation.resume import extend_study, extension_of
+
+        root = _study(done_steps=0, duration=0.0)
+        (root / "simulation" / "production.dcd").unlink()
+        plan = extension_of(root, more_ns=0.02)
+        self.assertFalse(plan.possible)
+        self.assertIn("ran no production of its own", plan.refusal)
+        said = extend_study(root, more_ns=0.02)
+        self.assertEqual((said["ok"], said["stage"]), (False, "planning"))
+        self.assertFalse((root / "segment-001").exists())
+
     def test_it_lands_in_the_study_and_simulates_only(self):
         from fastmdxplora.simulation.resume import extension_of
 

@@ -87,6 +87,10 @@ def _open(browser, site, before=None, after=None, width=1400, theme="dark", wait
     _seed(site, before, after)
     page = _page(browser, site, width, theme)
     page.goto(site.url + "#agent", wait_until="domcontentloaded")
+    # Send waits for the page's study and its conversation (9787cefd):
+    # Enter before then sends nothing.
+    page.wait_for_function("() => window.FastMDXAgentPanel"
+                       " && !window.FastMDXAgentPanel.waits")
     page.locator(f'{LIVE} [data-review-setting="{wait}"]').wait_for()
     return page
 
@@ -358,6 +362,10 @@ def test_the_page_works_without_its_storage(browser, site):
     try:
         page.context.add_init_script("""Object.defineProperty(window, 'localStorage', {get() { throw new Error('blocked'); }});""")
         page.goto(site.url + "#agent", wait_until="domcontentloaded")
+        # Send waits for the page's study and its conversation (9787cefd):
+        # Enter before then sends nothing.
+        page.wait_for_function("() => window.FastMDXAgentPanel"
+                           " && !window.FastMDXAgentPanel.waits")
         page.locator(LIVE + ' [data-review-setting="simulation.temperature_K"]').wait_for()
         _choose(page, "simulation.temperature_K", "reject")
         _apply(page)
@@ -374,6 +382,10 @@ def test_no_choice_is_offered_for_a_version_without_changes(browser, site):
     try:
         with page.expect_response("**/api/agent/review-config") as answered:
             page.goto(site.url + "#agent", wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
         assert answered.value.json()["changes"] == []
         page.evaluate("() => new Promise(requestAnimationFrame)")
         card = page.locator(LIVE)
@@ -533,6 +545,10 @@ def test_a_long_value_wraps_inside_the_proposal_card(browser, site, width, besid
             page.reload(wait_until="domcontentloaded")
         else:
             page.goto(site.url + ("#overview" if beside else "#agent"), wait_until="domcontentloaded")
+            # Send waits for the page's study and its conversation (9787cefd):
+            # Enter before then sends nothing.
+            page.wait_for_function("() => window.FastMDXAgentPanel"
+                               " && !window.FastMDXAgentPanel.waits")
         if beside:
             page.wait_for_function("() => document.getElementById('loading-screen').getAttribute('aria-hidden') === 'true'")
             page.click("#agent-beside-open")

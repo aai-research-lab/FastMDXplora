@@ -983,7 +983,8 @@ ANALYSIS = PhaseSchema(
               example="simulation/topology.pdb"),
         Field("include", list, None,
               "Subset of analyses to run. Default: every analysis the "
-              "system supports -- eleven always, the check of the solute "
+              "system supports -- ten always, backbone dihedrals where "
+              "there is a protein, the check of the solute "
               "against its own periodic images where there is a box, the "
               "fraction of native "
               "contacts where the chain is long enough to have a fold, "

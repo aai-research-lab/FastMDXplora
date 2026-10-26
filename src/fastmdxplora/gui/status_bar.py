@@ -74,14 +74,32 @@ def _fastest_platform() -> str:
     global _platform
     if _platform is not None:
         return _platform
-    try:
-        import openmm
+    # As `simulation.platform: auto` chooses: in its order, and only a
+    # platform that computes a force at the precision a study asks for by
+    # default. A Mac's OpenCL is registered and computes in single
+    # precision only, and was named here while every study ran on the CPU.
+    from fastmdxplora.simulation.runner import (
+        PRECISION_PLATFORMS,
+        _import_openmm,
+        _probe_platform,
+    )
 
-        names = {openmm.Platform.getPlatform(i).getName()
-                 for i in range(openmm.Platform.getNumPlatforms())}
+    def props(name: str) -> dict[str, str]:
+        return {"Precision": "mixed"} if name in PRECISION_PLATFORMS else {}
+
+    found = ""
+    try:
+        omm = _import_openmm()
+        platforms = omm["openmm"].Platform
+        names = {platforms.getPlatform(i).getName()
+                 for i in range(platforms.getNumPlatforms())}
+        found = next((name for name in ("CUDA", "OpenCL", "CPU") if name in names
+                      and _probe_platform(omm, platforms.getPlatformByName(name), name,
+                                         props(name))),
+                     "")
     except Exception:  # noqa: BLE001 - no OpenMM, no platform to name
-        names = set()
-    _platform = next((name for name in ("CUDA", "HIP", "OpenCL", "CPU") if name in names), "")
+        found = ""
+    _platform = found
     return _platform
 
 

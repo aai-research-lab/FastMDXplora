@@ -83,9 +83,11 @@ class TestTheLoaderAcceptsExactlyWhatTheSchemaDeclares:
             # Declared and accepted by the schema; whether an integrator can
             # run at the default friction is a rule over several settings,
             # tested in test_an_integrator_holds_the_temperature.py, and a
-            # record holding one is read as a record.
+            # record holding one is read as a record. So is whether a method
+            # with no periodic box can take the default NPT stage, tested in
+            # test_a_config_that_cannot_run_is_refused_as_written.py.
             validate_config(_config(block, field.name, given),
-                            as_record=field.name == "integrator")
+                            as_record=field.name in ("integrator", "nonbonded_method"))
 
     @pytest.mark.parametrize(
         "block,field",
