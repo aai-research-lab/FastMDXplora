@@ -86,3 +86,8 @@ def test_a_protein_keeps_every_one() -> None:
     plan = _plan(_protein())
     for name in ("rg", "sasa", "end_to_end", "dihedrals"):
         assert name in plan, name
+
+
+def test_a_selection_that_cannot_be_parsed_is_left_for_the_analysis_to_refuse() -> None:
+    plan = _plan(_dna(), options={"rg": {"selection": "resname ((("}})
+    assert "rg" in plan

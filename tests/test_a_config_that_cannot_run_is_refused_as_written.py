@@ -66,6 +66,24 @@ def test_without_a_simulation_there_is_no_barostat() -> None:
                      "include_phase": ["setup"]})
 
 
+def test_runs_that_cannot_be_expanded_are_judged_as_the_study_s_own() -> None:
+    """The batch check says what is wrong with them; this one reads the
+    study's own settings."""
+    from fastmdxplora.config.loader import _check_barostat_has_a_box
+
+    with pytest.raises(ConfigError, match="no periodic box"):
+        _check_barostat_has_a_box({"systems": "not a list",
+                                   "setup": {"nonbonded_method": "NoCutoff"}})
+
+
+def test_a_length_of_the_wrong_type_is_left_to_its_own_check() -> None:
+    from fastmdxplora.config.loader import _check_barostat_has_a_box
+
+    _check_barostat_has_a_box({"systems": [{"system": "1UBQ"}],
+                               "setup": {"nonbonded_method": "NoCutoff"},
+                               "simulation": {"npt_duration_ns": "long"}})
+
+
 def test_the_status_bar_names_the_platform_a_study_runs_on(monkeypatch) -> None:
     """A Mac's OpenCL is registered and computes in single precision only, so
     `auto` passes it by and runs on the CPU; the status bar named OpenCL."""
@@ -87,6 +105,21 @@ def test_the_status_bar_names_the_platform_a_study_runs_on(monkeypatch) -> None:
         status_bar.forget()
     assert named == "CPU"
     assert all(props == {"Precision": "mixed"} for name, props in asked if name != "CPU")
+
+
+def test_the_status_bar_names_no_platform_without_openmm(monkeypatch) -> None:
+    from fastmdxplora.gui import status_bar
+    from fastmdxplora.simulation import runner
+
+    def missing():
+        raise ImportError("no OpenMM")
+
+    monkeypatch.setattr(runner, "_import_openmm", missing)
+    status_bar.forget()
+    try:
+        assert status_bar._fastest_platform() == ""
+    finally:
+        status_bar.forget()
 
 
 def test_a_checkout_that_cannot_know_its_version_does_not_name_one() -> None:
