@@ -376,6 +376,9 @@ def test_a_window_resized_refits_the_page(browser, session) -> None:
 
 def test_a_seam_put_back_by_a_double_click_refits_the_page(browser, session) -> None:
     tab = _page(browser, session, width=1280, stored={"panelCollapsed": "0"})
+    tab.wait_for_function(
+        "() => document.body.classList.contains('state-ready') && "
+        "Number(getComputedStyle(document.getElementById('loading-screen')).opacity) < 0.001")
     handle = tab.evaluate("""() => { const b = document.querySelector('.col-handle[data-handle="panel"]')
         .getBoundingClientRect(); return [b.left + b.width / 2, b.top + 200]; }""")
     tab.mouse.move(*handle)
