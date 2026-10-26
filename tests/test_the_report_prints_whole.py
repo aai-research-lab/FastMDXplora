@@ -160,8 +160,27 @@ def test_printed_to_a_pdf_it_is_the_report_to_its_last_line_and_nothing_over_it(
         pytest.skip("pdftotext reads the PDF's text")
     page = _report(browser, sessions["without"])
     try:
+        # Keep the startup state while the complete report is printed, even
+        # if the dashboard finishes loading between browser calls.
+        page.evaluate("""() => {
+            const holdLoading = () => {
+                document.body.classList.remove('state-ready');
+                document.body.classList.add('state-loading');
+            };
+            holdLoading();
+            new MutationObserver(() => {
+                if (!document.body.classList.contains('state-loading')
+                        || document.body.classList.contains('state-ready')) holdLoading();
+            }).observe(document.body, {attributes: true, attributeFilter: ['class']});
+        }""")
+        assert page.locator('.app-shell').evaluate(
+            "el => getComputedStyle(el).filter") == "blur(6px)"
         page.emulate_media(media="print")
         page.pdf(path=str(tmp_path / "report.pdf"))
+        assert page.locator('body').evaluate(
+            "el => el.classList.contains('state-loading')")
+        printed_filter = page.locator('.app-shell').evaluate(
+            "el => getComputedStyle(el).filter")
     finally:
         page.close()
     text = subprocess.run(["pdftotext", "-layout", str(tmp_path / "report.pdf"), "-"],
@@ -171,3 +190,4 @@ def test_printed_to_a_pdf_it_is_the_report_to_its_last_line_and_nothing_over_it(
     assert "Section 12" in words
     last = words[words.index("Section 12"):]
     assert last.count("within the spread of its own blocks.") == 8
+    assert printed_filter == "none"
