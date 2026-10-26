@@ -204,6 +204,8 @@ class TestOneFolderIsTheWholeWorld:
         (workspace / "own.yml").symlink_to(workspace / "study.yml")
         (outside / "theirs.pdb").write_text("END\n", encoding="utf-8")
         (workspace / "first-study" / "theirs").symlink_to(outside, target_is_directory=True)
+        # One that leads nowhere, round to itself: not followed, nor offered.
+        (workspace / "first-study" / "loop").symlink_to(workspace / "first-study" / "loop")
         with _serving(hosting) as (address, _):
             listing = _json(_ask(address, "/api/browse")[1])
         assert [e["path"] for e in listing["entries"]] == ["~/first-study"]
