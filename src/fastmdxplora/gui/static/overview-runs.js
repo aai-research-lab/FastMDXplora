@@ -320,8 +320,11 @@
   function listed(words) {
     return words.length < 2 ? words.join("") : words.slice(0, -1).join(", ") + " and " + words[words.length - 1];
   }
-  /* Under one is said so, as `statistics.independent_samples_said` says it. */
-  function samplesSaid(n) { return n < 1 ? "fewer than one" : n.toFixed(1); }
+  /* Keep the decimal count's wording in step with the Overview and Analysis. */
+  function samplesSaid(n) {
+    return window.FastMDXOverview.samplesSaid(n, false, "fewer than one")
+      .replace(/ independent samples?$/, "");
+  }
   function remedy(reason) {
     var found = /The remedy is ([^.]+)\./.exec(String(reason || ""));
     return found ? "The remedy is " + found[1] + "." : "";

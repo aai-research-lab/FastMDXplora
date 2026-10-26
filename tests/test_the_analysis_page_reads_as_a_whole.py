@@ -98,7 +98,7 @@ class TestWhatTheTableSays:
         mean = row["mean"]
         assert mean["determined"] is True and mean["why"] is None
         assert mean["said"] == with_its_error(record["mean"], record["standard_error"]) + " nm"
-        assert mean["samples"] == int(round(record["effective_samples"]))
+        assert mean["samples"] == pytest.approx(record["effective_samples"])
         assert (mean["from_frame"], mean["of_frames"]) == (record["discard"], 4000)
         # Frame k of the file was written at (k + 1) saving intervals.
         assert mean["from_ns"] == pytest.approx((record["discard"] + 1) * INTERVAL_PS / 1000.0)
@@ -133,7 +133,7 @@ class TestWhatTheTableSays:
         assert temperature["said"] == with_its_error(300.0656, 0.3093) + " K"
         assert (temperature["of_frames"], temperature["from_frame"], temperature["from_ns"]) == (50, 5, None)
         assert quantities["Density"]["determined"] is False
-        assert quantities["Density"]["samples"] == 0
+        assert quantities["Density"]["samples"] == pytest.approx(0.4)
         assert _rows(study)["thermodynamics"]["theme"] == "The run's ensemble"
 
     def test_a_failure_says_its_reason_without_the_name_before_it(self, study) -> None:
@@ -371,8 +371,8 @@ class TestThePage:
         assert panel.locator(".convergence-level").count() >= 2
         assert page.errors == []
 
-    def test_one_independent_sample_is_said_in_the_singular(self, page) -> None:
-        """"so about 1 independent samples" for a count that rounds to 1."""
+    def test_fractional_independent_sample_count_is_said_without_rounding(self, page) -> None:
+        """A fractional count is not rounded to a different count."""
         import json
 
         def one(route):
@@ -390,7 +390,30 @@ class TestThePage:
             "'.convergence-panel[data-analysis=\"rmsd\"] .convergence-said') || {}).textContent || '')",
             timeout=20000)
         said = panel.locator(".convergence-said").text_content()
-        assert "so about 1 independent sample." in said, said
+        assert "so about 1.2 independent samples." in said, said
+
+    @pytest.mark.parametrize(("samples", "expected"), [
+        (9.501928863580078, "9.5 independent samples"),
+        (9.99, "9.99 independent samples"),
+    ])
+    def test_sample_count_display_does_not_round_up_to_ten(self, page, samples, expected) -> None:
+        import json
+
+        def sample_count(route):
+            answer = route.fetch()
+            body = answer.json()
+            rmsd = next(row for row in body["rows"] if row["analysis"] == "rmsd")
+            next(q for q in rmsd["quantities"] if q["key"] == "mean")["samples"] = samples
+            route.fulfill(response=answer, body=json.dumps(body))
+
+        page.route("**/api/analysis-overview*", sample_count)
+        page.goto(page.url.split("#", 1)[0] + "#analysis", wait_until="domcontentloaded")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function(
+            "() => { const cell = document.querySelector('#analysis-results tr[data-analysis=rmsd] "
+            ".analysis-results-samples'); return cell && cell.textContent.trim() !== ''; }")
+        cell = page.locator('#analysis-results tr[data-analysis="rmsd"] .analysis-results-samples')
+        assert cell.text_content().strip() == expected
 
     def test_a_series_under_a_nanosecond_is_plotted_in_picoseconds(self, page) -> None:
         """The panel's time axes read "Time (ns)" with ticks of 0.0004 for a

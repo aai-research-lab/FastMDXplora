@@ -633,6 +633,44 @@ def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
     assert note.startswith("under 1 independent sample"), note
 
 
+@pytest.mark.parametrize(("samples", "expected"), [
+    (9.501928863580078, "9.5 independent samples"),
+    (9.99, "9.99 independent samples"),
+])
+def test_fractional_independent_samples_stay_finite_and_below_ten(
+        tmp_path, samples, expected) -> None:
+    """The displayed count keeps its fractional value and cannot cross 10."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.analysis_overview import overview_of
+
+    root = _browser_study(tmp_path / "study", "completed")
+    options_path = root / "analysis" / "rg" / "options.json"
+    options = json.loads(options_path.read_text(encoding="utf-8"))
+    finding = options["findings"]["mean"]
+    finding["effective_samples"] = samples
+    finding["not_a_measurement"] = (
+        f"{expected.split(' independent samples')[0]} independent samples in 16 frames "
+        "(one every 2). Below 10 "
+        "independent samples, so this mean is not determined.")
+    options_path.write_text(json.dumps(options), encoding="utf-8")
+    mean = next(q for row in overview_of(root)["rows"] if row["analysis"] == "rg"
+                for q in row["quantities"] if q["key"] == "mean")
+
+    def check(page):
+        note = page.text_content('#overview-tiles [data-tile-analysis="rg"] .tile-note')
+        payload = page.evaluate("() => fetch('/api/overview').then(response => response.json())")
+        tile = next(item for item in payload["tiles"] if item.get("analysis") == "rg")
+        return note, tile
+
+    (note, tile), errors = _open(root, check)
+    assert mean["samples"] == pytest.approx(samples)
+    assert not errors, errors
+    assert note.startswith(expected), note
+    assert tile["samples"] == pytest.approx(samples)
+    assert tile["determined"] is False
+    assert tile["reason"] == "Fewer than 10 independent samples: the run has to be longer."
+
+
 def test_the_run_s_speed_is_production_s_as_the_fix_card_prices_it(tmp_path) -> None:
     """A stopped run showed "CPU · 2.694 ns/day", the live record's average
     from its start, beside a fix priced at 5.0 ns/day from production."""

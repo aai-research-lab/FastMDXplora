@@ -112,11 +112,32 @@ class TestTheTable:
         _analysis(tmp_path, "rmsd", RMSD, _measured())
         row = _row(tmp_path, "RMSD")
         assert (row.metric, row.average, row.samples, row.status) == (
-            "RMSD", "0.0130 ± 0.0021 nm", "21", "Determined")
+            "RMSD", "0.0130 ± 0.0021 nm", "21.2", "Determined")
         from fastmdxplora.gui.analysis_overview import overview_of
 
         [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
         assert row.average == page["mean"]["said"]
+
+    def test_fractional_samples_keep_their_meaning_in_the_table(self, tmp_path) -> None:
+        for index, (samples, expected) in enumerate((
+                (0.3, "< 1"), (1.0, "1"), (1.001, "1.001"),
+                (9.501928863580078, "9.5"), (9.99, "9.99"),
+                (10.0, "10"), (21.2, "21.2"))):
+            root = tmp_path / str(index)
+            _analysis(root, "rmsd", RMSD, _measured(effective_samples=samples))
+            assert _row(root, "RMSD").samples == expected
+
+    def test_samples_below_the_error_bar_threshold_are_not_rounded_up(self, tmp_path) -> None:
+        _analysis(tmp_path, "rmsd", RMSD, _measured(
+            effective_samples=24.99, standard_error=None))
+        row = _row(tmp_path, "RMSD")
+        assert row.samples == "24.99"
+        assert row.why == "About 24.99 independent samples, fewer than the 25 an error bar needs."
+        from fastmdxplora.gui.analysis_overview import overview_of
+
+        [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
+        assert page["mean"]["samples"] == 24.99
+        assert page["mean"]["why"] == row.why
 
     def test_a_profile_is_said_over_its_residues(self, tmp_path) -> None:
         """One value per residue, not a series: no error, and its range."""

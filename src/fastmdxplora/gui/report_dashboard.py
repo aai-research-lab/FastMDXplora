@@ -674,10 +674,23 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         suffix = (" (reweighted)" if quantity.get("reweighted")
                   else " (biased ensemble)" if biased else "")
         samples = quantity.get("samples")
+        if _finite(samples):
+            if 0 <= samples < 1:
+                samples_said = "< 1"
+            else:
+                samples_said = f"{samples:,.1f}"
+                rounded_samples = float(samples_said.replace(",", ""))
+                if ((rounded_samples.is_integer() and rounded_samples > samples)
+                        or 1 < samples and rounded_samples == 1):
+                    samples_said = str(samples)
+                elif samples_said.endswith(".0"):
+                    samples_said = samples_said[:-2]
+        else:
+            samples_said = "—"
         rows.append(MetricRow(
             metric=label + suffix,
             average=str(quantity.get("said") or "—"),
-            samples="< 1" if samples == 0 else (f"{samples:,}" if isinstance(samples, int) else "—"),
+            samples=samples_said,
             status=("Not read" if quantity.get("unavailable")
                     else "Determined" if quantity.get("determined") else "Not determined"),
             why=str(quantity.get("why") or ""),
@@ -942,10 +955,9 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
         text += " after equilibration"
     samples = found.get("effective_samples")
     if _finite(samples):
-        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES, independent_samples_said
 
-        count = int(round(samples))
-        text += f", {count} independent sample{'s' if count != 1 else ''}"
+        text += f", {independent_samples_said(samples)}"
         if samples < MINIMUM_EFFECTIVE_SAMPLES:
             text += ", too few to determine the mean"
     return text + _image_noted(record)

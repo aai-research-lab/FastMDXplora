@@ -693,12 +693,12 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
         unit = str(entry.get("units") or "")
         share = error / abs(mean) * 100.0 if mean else 0.0
         name = _OBSERVABLES.get(key, key.replace("_", " ").capitalize())
-        from fastmdxplora.statistics import with_its_error
+        from fastmdxplora.statistics import independent_samples_said, with_its_error
 
         said = [name, f"{with_its_error(mean, error)} {unit}".rstrip(),
                 f"standard error {share:.2g}% of the mean"]
         if samples is not None:
-            said.append(f"{samples:.0f} independent samples")
+            said.append(independent_samples_said(samples))
         bars.append({"label": name, "value": share, "said": said})
     # What was not measured, and why, under the bars.
     # A constant volume's density and volume are recorded as the value the
