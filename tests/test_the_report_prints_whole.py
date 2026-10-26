@@ -113,6 +113,7 @@ def test_printed_it_is_the_document_alone_in_black_on_white(browser, sessions) -
             };
             const doc = document.getElementById('report-document');
             return {
+                loading: shown('.loading-screen'),
                 sidebar: shown('.sidebar'), log: shown('#side-panel'),
                 notices: shown('#report-notices'), buttons: shown('#report-downloads'),
                 document: shown('#report-document'),
@@ -123,7 +124,7 @@ def test_printed_it_is_the_document_alone_in_black_on_white(browser, sessions) -
                 done: getComputedStyle(document.body).getPropertyValue('--status-completed').trim(),
             };
         }""")
-        assert shown == {"sidebar": False, "log": False, "notices": False,
+        assert shown == {"loading": False, "sidebar": False, "log": False, "notices": False,
                          "buttons": False, "document": True,
                          "ink": "rgb(0, 0, 0)", "ground": "rgb(255, 255, 255)",
                          "done": "#17703f"}
