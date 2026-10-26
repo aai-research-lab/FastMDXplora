@@ -631,6 +631,15 @@ def test_the_orchestrator_records_its_pid_and_removes_it_on_exit(tmp_path):
     assert not (out / RUN_PROCESS_FILE).exists()
 
 
+def test_a_record_that_cannot_be_written_has_nothing_to_remove(tmp_path):
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, _record_run_process
+
+    # No folder to write it in: the run goes on, and its end removes nothing.
+    forget = _record_run_process(tmp_path / "not made")
+    forget()
+    assert not (tmp_path / "not made" / RUN_PROCESS_FILE).exists()
+
+
 def test_a_run_is_judged_by_what_it_runs_not_where_the_interpreter_lives():
     # "fastmdx" as a substring matched the whole command line, and on a
     # Mac whose conda environment is named fastmdxplora every Python

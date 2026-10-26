@@ -101,6 +101,17 @@ class TestTheBrowserTellsThemApart(unittest.TestCase):
         self.assertEqual(sorted(e["values"]["simulation.temperature_K"] for e in runs.values()),
                          [300, 310])
 
+    def test_a_manifest_that_is_not_an_object_is_refused_by_name(self):
+        import tempfile
+
+        from fastmdxplora.batch.aggregate import batch_manifest
+
+        work = Path(tempfile.mkdtemp())
+        (work / "batch_manifest.json").write_text("[]", encoding="utf-8")
+        with self.assertRaises(ValueError) as raised:
+            batch_manifest(work)
+        self.assertEqual(raised.exception.code, "analysis.data.absent")
+
     def test_the_plan_is_recorded_before_any_run_starts(self):
         import sys
         import tempfile
