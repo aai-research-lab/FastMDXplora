@@ -133,8 +133,10 @@ jobs:
     # the arm64 runners short of capacity, two were cancelled at 83% and
     # 86% at 60 with nothing failed: 90 for them. The other ubuntu legs
     # took 47-57 minutes on 10-25, and on 10-26 two were cancelled at 60,
-    # at 51% and 97%, with nothing failed: 90 for them too.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 150 || 90 }}
+    # at 51% and 97%, with nothing failed: 90 for them too. The coverage
+    # leg took 138 minutes on 10-25 and on 10-26 was cancelled at 150 at 97%
+    # of its browser tests, its ffmpeg alone taking 9 minutes: 180 for it.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 180 || 90 }}
     strategy:
       fail-fast: false
       matrix:
