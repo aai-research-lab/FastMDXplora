@@ -1200,13 +1200,6 @@ def _write_topology(source: Path, kept: Any, target: Path) -> None:
     _write_text(target, "\n".join(written) + "\nEND\n")
 
 
-def _temporary(target: Path) -> Path:
-    """A name beside ``target`` no other writer is using. The writers here
-    no longer use it: `record_access.save` makes each temporary file new,
-    by a random name (`tests/test_the_agent_panel.py` still asks for it)."""
-    return target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-
-
 def _write_text(target: Path, text: str) -> None:
     """``text`` saved as ``target`` through a new temporary file beside it,
     never one of a fixed name, nor through a link out of the study
