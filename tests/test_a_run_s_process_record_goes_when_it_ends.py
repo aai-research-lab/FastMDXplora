@@ -249,6 +249,58 @@ def test_a_study_of_one_keeps_its_record_while_it_goes_on_after_its_run(tmp_path
     assert _records_of_this_process(out) == []
 
 
+def test_the_gui_of_explore_with_its_dashboard_holds_the_run_while_it_goes(tmp_path,
+                                                                             monkeypatch):
+    """`fastmdx explore --dashboard` starts its GUI before the run records
+    itself (a study given as a config has no folder until the batch layer
+    starts it): the GUI said idle and offered no Stop while the run went.
+    It takes the run up as it records itself, Stop reaches it, and once the
+    run is over it says so."""
+    import importlib
+
+    from fastmdxplora.config import before_run
+    from fastmdxplora.gui import exploration
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    out = tmp_path / "study"
+    monkeypatch.setattr(before_run, "refuse_what_can_be_seen", lambda *a, **k: None)
+    monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
+    monkeypatch.setattr(BatchExplorer, "_refuse_to_overwrite_runs", lambda *a, **k: None)
+    signals: list = []
+
+    def signalled(pid, force=False):
+        # As the run's handler of SIGTERM does, in the run's own thread.
+        signals.append(pid)
+        raise RunStopped("SIGTERM")
+
+    monkeypatch.setattr(exploration, "_terminate_process", signalled)
+    sessions: list = []
+    start = cli._start_dashboard_for_command
+
+    def started(args, output_dir):
+        sessions.append(start(args, output_dir))
+        return sessions[-1]
+
+    monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
+    seen: list = []
+
+    def phase(self, name, options):
+        gui = sessions[0].runtime
+        seen.append((gui.snapshot()["process_running"], getattr(gui.process, "pid", None)))
+        gui.stop()
+        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
+
+    monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
+    cli.main(["explore", "-s", "1L2Y", "--dashboard", "--dashboard-port", "0",
+              "--dashboard-stop-on-complete", "--output", str(out), "--include-phase", "analysis"])
+    gui = sessions[0].runtime
+    assert seen == [(True, os.getpid())]
+    assert signals == [os.getpid()]
+    after = gui.snapshot()
+    assert after["process_running"] is False and after["status"] == "stopped", after["status"]
+    assert _records_of_this_process(out) == []
+
+
 def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkeypatch):
     """A record this process left empty (a full disk) was never removed,
     and a GUI in this process went on saying its run was going. One left

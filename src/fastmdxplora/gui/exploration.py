@@ -1105,6 +1105,7 @@ class DashboardRuntime:
         )
 
     def _refresh_process(self) -> None:
+        self._take_up_this_process_s_run()
         if self.process is None:
             return
         returncode = self.process.poll()
@@ -1128,6 +1129,30 @@ class DashboardRuntime:
             self.completion_error = self._completed_run_error()
             if self.completion_error:
                 self._record_completion_failure(self.completion_error)
+
+    def _take_up_this_process_s_run(self) -> None:
+        """Holding no run going, take up one of this process that has since
+        recorded itself in the study open. `fastmdx explore --dashboard`
+        starts its GUI before the run writes its record (a study given as a
+        config has no folder until the batch layer starts it), so the GUI,
+        adopting only as it was made and on a switch, said idle and offered
+        no Stop while the run went."""
+        if self.process is not None and self.process.poll() is None:
+            return
+        root = self.active_root
+        if root is None:
+            return
+        from fastmdxplora.orchestrator import RUN_PROCESS_FILE, _written_by_this_process
+
+        if not (Path(root) / RUN_PROCESS_FILE).is_file():
+            return
+        record = _process_record_held(Path(root))
+        if not _written_by_this_process(record):
+            return
+        if (isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid()
+                and dict(self.process.record) == record):
+            return  # the run already held, and seen to end
+        self._hold(Path(root), record, os.getpid())
 
     def _completed_run_error(self) -> str | None:
         """Reject a false-success child that produced no simulation results.
