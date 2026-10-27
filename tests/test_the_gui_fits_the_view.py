@@ -100,7 +100,9 @@ def _page(browser, session, width=1440, scheme=None, page="overview", stored=Non
         # The log is open until the study's first status says it finished:
         # the page as it stands once it has.
         tab.wait_for_function("() => document.body.classList.contains('panel-collapsed')")
-    tab.wait_for_timeout(300)
+    tab.wait_for_function("() => document.body.classList.contains('state-ready')"
+                          " && getComputedStyle(document.getElementById('loading-screen'))"
+                          ".opacity === '0'")
     return tab
 
 
