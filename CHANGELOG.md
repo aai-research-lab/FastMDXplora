@@ -1579,7 +1579,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   no topology is left to read it with, and a saved topology refused has no
   other read in its place.
 
-- Every route a page asks for reads only inside the study. A scene is made
+- The routes a page asks for of a study read only inside it (the Agent's
+  conversation routes are not yet held to it, and answer on this computer
+  only). A scene is made
   of the study's own frames, trajectory and structure, and none is written
   through a link; another study set beside this one reads this one's
   parameters, manifest and RMSF held to it; a residue's or two atoms'
@@ -1599,6 +1601,43 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   it holds as many atoms as they read (`n_atoms`), and its trajectory the
   same way, so a copied study's time points open its own frames with the
   original still there; a structure of other atoms is said not read.
+
+- Every record the GUI saves in a study (what the Viewer computes from the
+  frames, the frames written for it, a scene, the views and selections) is
+  written to a new temporary file of its own and renamed into place. A link
+  planted at the temporary name it was written through had a public GET
+  write over a file outside the study; a link there, or a record or folder
+  linked out of the study, is now never written through.
+
+- The Files page reads the run's parameters, the analysis manifest, the
+  report's record of what it did not write and the structures it counts
+  atoms in held to the study, on this computer and on a public bind: a
+  record linked out of it is not read, its tile or analysis says it was not
+  read, and the answer names it.
+
+- What can be run again offers ticked the analyses the study's own manifest
+  names: a manifest linked out of it is said not read, and those its Config
+  asked for are offered instead. Its runs and batch manifest are read held
+  to the study too.
+
+- The study set beside the open one is read held to itself: its frames,
+  topology or RMSF linked out of it are not read, its frames are not played
+  beside, and the answer names each by that study's name.
+
+- Running a study's analyses or report again starts nothing where its
+  Config or analysis manifest is linked out of the study, as nothing is
+  offered then; clearing the scratch keeps a run's snapshots where the
+  run's record is linked out, rather than judge them by what it says.
+
+- With the analysis manifest linked out of the study, a residue or two
+  atoms are not selected or measured in the saved topology in its place.
+
+- A copy whose analyses name its trajectory outside it, of other atoms than
+  its own, says on its time charts that the file named outside the study
+  was not read.
+
+- A residue's states read the structure a Config names relative to the
+  study in the study, not in the folder the GUI was started in.
 
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a
