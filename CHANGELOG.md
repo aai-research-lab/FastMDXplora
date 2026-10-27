@@ -1636,7 +1636,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   MDTraj's own errors on one included), rather than as records not read or
   an error of the server. With the index of the frames written for the
   Viewer linked out, the frames are played and not written again on each
-  request. MDTraj writes a DCD or XTC by name in a new folder of its own.
+  request, and every tool that computes from them (the states, two states
+  compared, where the ligand and the water went and the water sites among
+  them) answers from the study's own frames, the index said not saved.
+  MDTraj writes a DCD or XTC by name in a new folder of its own.
 
 - Analyze again and Write it again offer nothing where the study's Config,
   analysis manifest or log is linked out of it, and say which was not read,

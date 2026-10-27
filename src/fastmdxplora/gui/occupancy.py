@@ -372,11 +372,12 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}
+    """A record of the study, held to it where the read is: the frames'
+    index linked out of it is what was said of the frames when written,
+    while they stand (`trajectory_frames._load_json`)."""
+    from fastmdxplora.gui.trajectory_frames import _load_json as held
+
+    return held(path)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

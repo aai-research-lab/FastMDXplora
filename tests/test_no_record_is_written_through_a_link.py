@@ -762,17 +762,13 @@ def test_the_agent_s_stop_writes_to_no_log_linked_out(tmp_path, monkeypatch, pla
     assert (root / "exploration.log").is_symlink()
 
 
-#: What the Viewer computes from the frames it plays, and whether its reader
-#: reads the frames' index held to the study (`states.py` and `occupancy.py`
-#: read it by its name, so nothing is computed there with it linked out).
-COMPUTED = {"/api/frames-superposed?on=backbone": True, "/api/motion": True,
-            "/api/backbone-angles": True, "/api/chain-contacts": True,
-            "/api/contact-map": True, "/api/contact-pair?a=0&b=3": True,
-            "/api/pocket-volume?ligand=LIG": True, "/api/secondary-structure?of=frames": True,
-            "/api/viewer-atoms?of=frames&expression=protein": True,
-            "/api/beside?path=elsewhere": True,
-            "/api/states": False, "/api/state-difference?a=0&b=3": False,
-            "/api/occupancy?of=ligand&ligand=LIG": False, "/api/water-sites": False}
+#: What the Viewer computes from the frames it plays.
+COMPUTED = ("/api/frames-superposed?on=backbone", "/api/motion", "/api/backbone-angles",
+            "/api/chain-contacts", "/api/contact-map", "/api/contact-pair?a=0&b=3",
+            "/api/pocket-volume?ligand=LIG",
+            "/api/secondary-structure?of=frames",
+            "/api/viewer-atoms?of=frames&expression=protein", "/api/beside?path=elsewhere",
+            "/api/state-difference?a=0&b=3", "/api/occupancy?of=ligand&ligand=LIG")
 
 
 @pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
@@ -781,12 +777,10 @@ def test_what_is_computed_from_the_frames_is_given_with_their_index_linked_out(
         tmp_path, route, public):
     """The frames' index linked out of the study is not read and not saved
     over: the frames are the study's own, so what the Viewer computes from
-    them is given, the index said not saved (G14 M1). A reader that reads
-    the index by its name gives nothing, and says the index was not read;
-    never that the frames are not the study's own."""
+    them is given, the index said not saved (G14 M1); never that the frames
+    are not the study's own."""
     if public and "beside" in route:
         pytest.skip("not answered beyond loopback")
-    held = COMPUTED[route]
     root = _study(tmp_path)
     if "beside" in route:
         route = route.replace("elsewhere", str(_study(tmp_path / "elsewhere")))
@@ -801,12 +795,8 @@ def test_what_is_computed_from_the_frames_is_given_with_their_index_linked_out(
 
     said = json.loads(body)
     assert status == 200 and "not this study's own records" not in body.decode("utf-8"), said
-    if held:
-        assert said.get("ok") is not False, said
-        assert "simulation/frames_index.json was not saved" in said["not_read"], said
-    else:
-        assert said["ok"] is False, said
-        assert said["reason"].startswith("simulation/frames_index.json was not read"), said
+    assert said.get("ok") is not False, said
+    assert "simulation/frames_index.json was not saved" in said["not_read"], said
     assert victim.read_text(encoding="utf-8") == mine and index.is_symlink()
 
 
@@ -883,3 +873,61 @@ def test_the_study_beside_says_a_record_not_saved_on_a_full_disk(tmp_path, monke
     said = json.loads(body)
     assert status == 200 and said["ok"] is False, said
     assert "could not be saved: no room" in said["reason"], said
+
+
+def _index_linked_out(root: Path, tmp_path: Path) -> Path:
+    victim = _outside(tmp_path, "to a file")
+    index = root / "simulation" / "frames_index.json"
+    victim.write_text(index.read_text(encoding="utf-8"), encoding="utf-8")
+    index.unlink()
+    _link(index, victim)
+    return victim
+
+
+@pytest.fixture(scope="module")
+def two_states(tmp_path_factory) -> Path:
+    """Trypsin in two states, the cluster analysis run over them."""
+    from tests.test_the_states_a_study_visited import _two_states
+
+    return _two_states(tmp_path_factory.mktemp("states") / "study")
+
+
+@pytest.fixture(scope="module")
+def water_sites(tmp_path_factory) -> Path:
+    """Trypsin with its crystal waters, the water sites analysis run."""
+    from tests.test_where_the_ligand_and_water_go import trypsin
+
+    return trypsin.__wrapped__(tmp_path_factory)
+
+
+#: The routes whose readers are `states.py` and `occupancy.py`, each with
+#: the study it reads.
+BY_STATES = {"/api/states": "two_states", "/api/state-difference?a=2&b=25": "two_states",
+             "/api/contact-map?first=0&second=1": "two_states",
+             "/api/occupancy?of=water&ligand=BEN": "water_sites",
+             "/api/water-sites": "water_sites"}
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", sorted(BY_STATES))
+def test_the_states_and_water_are_given_with_the_frames_index_linked_out(
+        tmp_path, request, route, public):
+    """The states, two of them compared, the contact map of two states, where
+    the water went and its sites: given with the frames' index linked out of
+    the study, which is said not saved, and the file outside unchanged."""
+    import shutil
+
+    root = tmp_path / "study"
+    shutil.copytree(request.getfixturevalue(BY_STATES[route]), root, symlinks=True)
+    status, body = _ask(root, tmp_path, route, public=public)
+    assert status == 200 and json.loads(body)["ok"], body[:300]
+    victim = _index_linked_out(root, tmp_path)
+    mine = victim.read_text(encoding="utf-8")
+
+    status, body = _ask(root, tmp_path, route, public=public)
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"], said
+    assert "simulation/frames_index.json was not saved" in said["not_read"], said
+    assert victim.read_text(encoding="utf-8") == mine
+    assert (root / "simulation" / "frames_index.json").is_symlink()

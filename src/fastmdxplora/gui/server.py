@@ -1957,10 +1957,9 @@ def make_handler(
                 return
             if path == "/api/occupancy":
                 query = parse_qs(parsed.query)
-                # `occupancy.py` reads the frames' index by its name.
                 self._send_json(self._from_the_frames(
                     root, lambda inside: _occupancy_payload(inside, query),
-                    *_occupancy_records(query), index_held=False))
+                    *_occupancy_records(query)))
                 return
             if path == "/structure/occupancy.dx":
                 self._send_occupancy(root, parse_qs(parsed.query))
@@ -2077,14 +2076,11 @@ def make_handler(
 
                 asked = parse_qs(parsed.query)
                 one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
-                # Two states compared are read by `states.py`, which reads the
-                # frames' index by its name.
                 self._send_json(self._from_the_frames(
                     root, lambda inside: contact_pair(inside, one("a"), one("b"))
                     if path == "/api/contact-pair"
                     else contact_map(inside, one("first"), one("second"), one("method")),
-                    f"simulation/{MAP_FILE}", *_CLUSTER_RECORDS,
-                    index_held=one("first") is None and one("second") is None))
+                    f"simulation/{MAP_FILE}", *_CLUSTER_RECORDS))
                 return
             if path == "/api/backbone-angles":
                 from fastmdxplora.gui.backbone_angles import ANGLES_FILE, backbone_angles
@@ -2097,21 +2093,20 @@ def make_handler(
 
                 method = (parse_qs(parsed.query).get("method") or [None])[0]
                 self._send_json(self._from_the_frames(
-                    root, lambda inside: states_of(inside, method), *_CLUSTER_RECORDS,
-                    index_held=False))
+                    root, lambda inside: states_of(inside, method), *_CLUSTER_RECORDS))
                 return
             if path == "/api/state-difference":
                 query = parse_qs(parsed.query)
                 self._send_json(self._from_the_frames(
                     root, lambda inside: _state_difference_payload(inside, query),
-                    *_superposed_records(query), index_held=False))
+                    *_superposed_records(query)))
                 return
             if path == "/api/water-sites":
                 from fastmdxplora.gui.occupancy import water_sites_placed
 
                 self._send_json(self._from_the_frames(
                     root, water_sites_placed, "analysis/water_sites/options.json",
-                    "analysis/water_sites/water_sites.dat", index_held=False))
+                    "analysis/water_sites/water_sites.dat"))
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))
@@ -3538,8 +3533,7 @@ def make_handler(
                 said = frames_info(inside, most_frames=cfg.max_browser_frames)
             return bool(said.get("playback_available")) or not refused
 
-        def _frames_refused(self, inside: Path, *records: str,
-                            index_held: bool = True) -> dict[str, Any] | None:
+        def _frames_refused(self, inside: Path, *records: str) -> dict[str, Any] | None:
             """Why what the study ``inside`` computes from the frames it plays
             is not given, in the held read the caller is in: the frames are
             not its own (`_frames_played`), or they or their topology, or one
@@ -3549,13 +3543,9 @@ def make_handler(
             The frames' index linked out is not read and not saved, and what
             was said of the frames when written is read in its place
             (`trajectory_frames._load_json`), so the frames are computed from
-            all the same; where the reader reads the index by its name, not
-            held (``index_held`` false), nothing is computed, and the index
-            is named in the reason. None where every one is the study's
-            own."""
-            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_INDEX,
-                                                            FRAMES_TOPOLOGY, _NOT_SENT,
-                                                            _linked_out)
+            all the same. None where every one is the study's own."""
+            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
+                                                            _NOT_SENT, _linked_out)
 
             played = self._frames_played(inside)
             frames = [_linked_out(inside / "simulation" / name)
@@ -3564,10 +3554,6 @@ def make_handler(
             if not played or any(frames):
                 return {"ok": False, "available": False, "reason": _NOT_SENT[0],
                         "code": _NOT_SENT[1]}
-            if not index_held and _linked_out(inside / "simulation" / FRAMES_INDEX):
-                return {"ok": False, "available": False, "code": _NOT_SENT[1], "reason": (
-                    f"simulation/{FRAMES_INDEX} was not read (it leads outside the study), "
-                    "and this is computed with it, so nothing is computed from the frames.")}
             if any(beside):
                 return {"ok": False, "available": False,
                         "reason": "A record this is read from is not one of the study's own.",
@@ -3575,15 +3561,14 @@ def make_handler(
             return None
 
         def _from_the_frames(self, root: Path, read: Callable[[Path], Any],
-                             *records: str, index_held: bool = True) -> Any:
+                             *records: str) -> Any:
             """``read(study)`` of what the study computes from the frames it
             plays, held to the study (`_confined`) and given only where they
             and the ``records`` beside them are its own (`_frames_refused`):
             MDTraj reads a DCD by its name, in C, where a link out is
             followed. A record refused is said not read (`_said_not_read`)."""
             return _said_not_read(_confined(root, lambda inside: (
-                self._frames_refused(inside, *records, index_held=index_held)
-                or read(inside))))
+                self._frames_refused(inside, *records) or read(inside))))
 
         def _frames_held(self, inside: Path, name: str, query: dict[str, list[str]]
                          ) -> tuple[bytes | None, dict[str, Any]]:
