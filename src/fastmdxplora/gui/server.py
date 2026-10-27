@@ -724,7 +724,7 @@ def _terminal(study: Path, phases: list[str]) -> str:
     return shlex.join(["fastmdx", *command])
 
 
-def _again_answer(root: Path) -> dict[str, Any]:
+def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dict[str, Any]:
     """What can be run again on the study ``root`` (`GET /api/again`), read
     held to it (`_confined`). The run's own process follows what is in its
     folder, as a run started at the terminal does, so the GUI starts none in
@@ -735,10 +735,11 @@ def _again_answer(root: Path) -> dict[str, Any]:
     was not read, neither can either. `POST /api/again` and
     `/api/report/write` decide from this same answer, so nothing is
     offered that would be refused."""
+    if links is None:
+        links = _links_out(_the_study_run(Path(root)))
     said = _said_not_read(_confined(root, _again_offered))
     refused = said.get("unavailable") or ()
     read = [name for name in refused if name.endswith(_AGAIN_FROM)]
-    links = _links_out(_the_study_run(Path(root)))
     if not read and not links:
         return said
     whys = []
@@ -760,20 +761,44 @@ def _again_answer(root: Path) -> dict[str, Any]:
     return answer
 
 
-def _fix_refused(study: Path, argv: list[str]) -> dict[str, Any] | None:
+def _fix_refused(study: Path, argv: list[str] | None) -> dict[str, Any] | None:
     """Why a fix (`POST /api/fix`: a resume, umbrella windows again) is not
     started in ``study``: as for running a phase again, a link leading out
     of it, or a record the run writes in place shared by a hard link
     (`_links_out`), with the fix's own command, quoted, to run at the
-    terminal instead. None where there is none."""
+    terminal instead, where it is known without reading the study
+    (``argv``). None where there is none."""
     import shlex
 
     links = _links_out(_the_study_run(Path(study)))
     if not links:
         return None
-    terminal = shlex.join(["fastmdx", *argv])
-    return {"ok": False, "error": _links_said(links) + " To run it anyway, at the terminal: "
-            + terminal, "terminal": terminal, "links_out": [name for name, _ in links]}
+    terminal = shlex.join(["fastmdx", *argv]) if argv else None
+    return {"ok": False, "error": _links_said(links) + (
+        " To run it anyway, at the terminal: " + terminal if terminal else ""),
+        "terminal": terminal, "links_out": [name for name, _ in links]}
+
+
+def _fix_walked(app_runtime: Any, asked: dict[str, Any]) -> dict[str, Any] | None:
+    """`POST /api/fix` refused before any record of the study is read: the
+    study walked first (`_fix_refused`), so neither the fixes shown nor the
+    windows asked for are read through a link out of it. The command is
+    the fix's as the page was given it, read held to the study
+    (`_fixes_held`); for windows, none is read, and the refusal is said
+    alone."""
+    from fastmdxplora.gui.fixes_view import study_of
+
+    study = study_of(getattr(app_runtime, "active_root", None))
+    if study is None or not Path(study).is_dir():
+        return None
+    argv = None
+    if "windows" not in asked and _links_out(_the_study_run(Path(study))):
+        try:
+            shown = _fixes_held(app_runtime.data_root()).get("fixes") or []
+            argv = shown[int(asked.get("index"))].get("argv") or None
+        except (TypeError, ValueError, IndexError, AttributeError):
+            argv = None
+    return _fix_refused(study, argv)
 
 
 def _again_refused(root: Path | None, phase: str = "analysis") -> dict[str, Any] | None:
@@ -785,7 +810,13 @@ def _again_refused(root: Path | None, phase: str = "analysis") -> dict[str, Any]
     checks then decide."""
     if root is None or not Path(root).is_dir():
         return None
-    said = _again_answer(Path(root))
+    # Walked before any record of it is read, held or not.
+    links = _links_out(_the_study_run(Path(root)))
+    if links:
+        terminal = _terminal(Path(root), [phase])
+        return {"ok": False, "error": _links_said(links) + " To run it anyway, at the "
+                "terminal: " + terminal, "terminal": terminal, "not_read": None}
+    said = _again_answer(Path(root), links)
     if not said.get("refused"):
         return None
     offered = said.get(phase) if isinstance(said.get(phase), dict) else {}
@@ -2730,7 +2761,13 @@ def make_handler(
                 # Running a fix starts work on this machine, so it needs the
                 # machine's trust, which it has only on loopback, like every
                 # route not listed open. The page asks the person first.
-                asked = payload or {}
+                asked = payload if isinstance(payload, dict) else {}
+                # The study walked before any record of it is read: a fix
+                # read through a link out of it is not even looked at.
+                refused = _fix_walked(app_runtime, asked)
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 if "windows" in asked:
                     # Windows the person named, at the values they named.
                     self._send_json(app_runtime.run_windows_again(

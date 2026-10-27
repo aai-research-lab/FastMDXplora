@@ -730,8 +730,9 @@ RUN_AGAIN = {"/api/again": {"phases": ["analysis"]}, "/api/report/write": {}}
 @pytest.mark.parametrize("route", sorted(RUN_AGAIN))
 def test_nothing_is_run_again_from_a_record_linked_out(tmp_path, monkeypatch, route, relative):
     """As `GET /api/again` offers nothing from a Config linked out of the
-    study, a POST sent without asking it starts nothing: refused, with the
-    record said not read. The start is stood in for; nothing is run."""
+    study, a POST sent without asking it starts nothing: refused by the
+    walk of the study, before any record is read, the link named. The
+    start is stood in for; nothing is run."""
     from fastmdxplora.gui.exploration import DashboardRuntime
 
     started = []
@@ -756,7 +757,8 @@ def test_nothing_is_run_again_from_a_record_linked_out(tmp_path, monkeypatch, ro
 
     said = json.loads(body)
     assert status == 200 and said["ok"] is False and started == [], said
-    assert f"{relative} was not read" in said["error"] and opened == [], (said, opened)
+    assert f"{relative} is a link out of the study" in said["error"] and opened == [], \
+        (said, opened)
 
 
 def test_a_run_whose_record_is_linked_out_keeps_its_snapshots(tmp_path):

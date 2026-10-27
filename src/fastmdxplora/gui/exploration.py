@@ -1717,7 +1717,14 @@ class DashboardRuntime:
         the study's own record of how it was started.
         """
         from fastmdxplora.gui.run_from_config import prepare_run
+        from fastmdxplora.gui.server import _fix_refused
 
+        # Not where the run would read or write through a link out of the
+        # study, nor into a hard-linked copy: walked before anything is
+        # read or written for it (`server._fix_refused`).
+        refused = _fix_refused(study, None)
+        if refused is not None:
+            return refused
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
         made = _made_by(kept)

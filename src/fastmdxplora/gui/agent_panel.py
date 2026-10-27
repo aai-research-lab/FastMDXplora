@@ -580,7 +580,14 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
             # The fix itself, from the study's record rather than from the
             # reply: the command and its price, for the person to confirm.
             # Always asked: it starts work on this machine.
-            answer["fix"] = _first_fix(runtime)
+            # The study walked first (`server._fix_walked`): a fix read
+            # through a link out of it is not offered, and the refusal is said.
+            from fastmdxplora.gui.server import _fix_walked
+
+            refused = _fix_walked(runtime, {})
+            answer["fix"] = None if refused is not None else _first_fix(runtime)
+            if refused is not None:
+                answer["refused"] = refused["error"]
             answer["confirm"] = True
         if proposal.action in ("analyze again", "write the report again"):
             # The study open's analyses or report run again in its folder,
@@ -604,8 +611,12 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
             # pattern and checked here against the study; the command is
             # built from its record. Asked, with the price, or said why not.
             from fastmdxplora.gui.fixes_view import windows_payload
+            from fastmdxplora.gui.server import _fix_walked
 
-            said = windows_payload(getattr(runtime, "active_root", None), proposal.arguments)
+            # Walked first, as the POST is: no window is read through a link.
+            refused = _fix_walked(runtime, {"windows": None})
+            said = ({"reason": refused["error"]} if refused is not None else windows_payload(
+                getattr(runtime, "active_root", None), proposal.arguments))
             answer["fix"] = said.get("fix")
             answer["refused"] = said.get("reason")
             answer["confirm"] = True

@@ -1107,12 +1107,14 @@ def test_no_fix_is_started_in_a_study_holding_a_link_out(tmp_path, monkeypatch, 
         assert said["ok"] and len(_Started.started) == 1, said
         return
     assert said["ok"] is False and _Started.started == [], said
-    if relative == "manifest.json":
-        # The fixes shown were read held to the study, the manifest refused
-        # there, so the one asked for is not the one shown: refused first.
-        return
     assert f"{relative}{'/' if relative == 'previous' else ''} is a link out of the study" \
         in said["error"], said
+    if relative == "manifest.json":
+        # The fixes are read held to the study, its manifest refused there:
+        # no fix is known from its own records, so no command is given.
+        assert said["terminal"] is None and said["error"].endswith(
+            "so it is not run from here."), said
+        return
     assert said["terminal"] == f"fastmdx resume {root}" and said["error"].endswith(
         said["terminal"]), said
 
@@ -1218,3 +1220,143 @@ def test_the_agent_offers_no_run_in_a_study_holding_a_link_out(tmp_path, monkeyp
     else:
         command = f"fastmdx analyze --output {root} --rerun"
     assert answer["refused"].endswith("To run it anyway, at the terminal: " + command), answer
+
+
+#: Paths opened while a request is answered, each as the file it reaches.
+_OPENED: list[str] = []
+
+
+def _audited(event: str, args: tuple) -> None:
+    if event == "open" and args and isinstance(args[0], (str, bytes, os.PathLike)):
+        try:
+            _OPENED.append(os.path.realpath(os.fsdecode(args[0])))
+        except (TypeError, ValueError):
+            pass
+
+
+_HOOKED: list[bool] = []
+
+
+def _opened_while(ask) -> tuple[object, list[str]]:
+    """What ``ask()`` answers, and every file opened meanwhile, followed to
+    where it leads: a file opened through a link by the link's own name
+    is said as the file outside (`sys.addaudithook`, added once)."""
+    import sys
+
+    if not _HOOKED:
+        sys.addaudithook(_audited)
+        _HOOKED.append(True)
+    _OPENED.clear()
+    answer = ask()
+    opened, _OPENED[:] = list(_OPENED), []
+    return answer, opened
+
+
+@pytest.mark.parametrize("body", [{"index": 0}, {"windows": [42]}, {"windows": [3]}],
+                         ids=["fix", "no such window", "a window"])
+@pytest.mark.parametrize("record", ["manifest.json", "batch_manifest.json"])
+def test_a_fix_asked_for_reads_nothing_through_a_link_out(tmp_path, monkeypatch, record, body):
+    """`POST /api/fix` walks the study before it reads a record of it: with
+    its manifest or batch manifest linked out, nothing outside is opened,
+    nothing of it is said (an outside batch manifest planning seven
+    windows was said as "numbered 0 to 6"), nothing starts, and the link
+    is named (G19 H1)."""
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    _stopped(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if record == "manifest.json":
+        (outside / record).write_text(json.dumps({"phases": [
+            {"name": "simulation", "status": "failed", "error": "MARKER-SECRET"}]}),
+            encoding="utf-8")
+    else:
+        planned = [{"run_id": f"w{at}", "system": "x", "options": {"simulation": {
+            "umbrella": {"index": at, "collective_variable": "MARKER-SECRET"}}}}
+            for at in range(7)]
+        (outside / record).write_text(json.dumps({"planned": planned, "runs": []}),
+                                      encoding="utf-8")
+    (root / record).unlink(missing_ok=True)
+    _link(root / record, outside / record)
+    before = _tree(outside)
+
+    (status, text), opened = _opened_while(
+        lambda: _asked(root, tmp_path, "/api/fix", body=dict(body, force_constant=5)))
+
+    said = json.loads(text)
+    reached = [path for path in opened if path.startswith(str(outside.resolve()))]
+    assert reached == [], reached
+    assert said["ok"] is False and _Started.started == [], said
+    assert f"{record} is a link out of the study" in said["error"], said
+    assert "MARKER" not in text.decode() and "0 to 6" not in text.decode(), said
+    assert _tree(outside) == before
+
+
+@pytest.mark.parametrize("route", sorted(STARTS))
+def test_a_run_again_asked_for_opens_nothing_through_a_link_out(tmp_path, monkeypatch, route):
+    """`POST /api/again` and `/api/report/write` walk the study before they
+    read a record of it, held or not: with its analysis manifest linked
+    out, nothing outside is opened, even by the name of the link, what
+    would run is not read even held, and nothing starts (G19 H1)."""
+    from fastmdxplora.gui import server
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    held: list[object] = []
+    confined = server._confined
+    monkeypatch.setattr(server, "_confined", lambda root, read, *a, **k: (
+        held.append(read), confined(root, read, *a, **k))[1])
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "analysis" / "analysis_manifest.json").rename(outside / "analysis_manifest.json")
+    _link(root / "analysis" / "analysis_manifest.json", outside / "analysis_manifest.json")
+
+    (status, text), opened = _opened_while(
+        lambda: _asked(root, tmp_path, route, body=STARTS[route]))
+
+    said = json.loads(text)
+    reached = [path for path in opened if path.startswith(str(outside.resolve()))]
+    assert reached == [] and server._again_offered not in held, (reached, held)
+    assert said["ok"] is False and _Started.started == [], said
+    assert "analysis/analysis_manifest.json is a link out of the study" in said["error"], said
+
+
+def test_the_agent_offers_no_fix_in_a_study_holding_a_link_out(tmp_path, monkeypatch):
+    """The Agent's `DO: run the fix` is walked first as the POST is: no fix
+    is offered to say Yes to, and the refusal names the link."""
+    import fastmdxplora.agent as agent_mod
+    from fastmdxplora.gui.agent_panel import propose_endpoint
+    from tests.test_the_agent_analyses_a_study_again import _runtime
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    _stopped(root)
+    (tmp_path / "outside").mkdir()
+    _link(root / "fastmdxplora.log", tmp_path / "outside" / "fastmdxplora.log")
+    monkeypatch.setattr(agent_mod, "completion_for",
+                        lambda *a, **k: (lambda prompt: "DO: run the fix"))
+
+    answer = propose_endpoint({"request": "resume it"}, _runtime(root))
+
+    assert answer["fix"] is None, answer
+    assert "fastmdxplora.log is a link out of the study" in answer["refused"], answer
+
+
+def test_no_study_is_continued_in_place_holding_a_link_out(tmp_path, monkeypatch):
+    """A config carrying a study on (`simulation.resume_from`) runs in that
+    study's folder: walked first, as a fix is, nothing is written for it
+    and nothing starts."""
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    (tmp_path / "outside").mkdir()
+    _link(root / "fastmdxplora.log", tmp_path / "outside" / "fastmdxplora.log")
+    runtime = DashboardRuntime(workspace_root=tmp_path / "space",
+                               exploration_root=tmp_path / "space")
+
+    said = runtime.launch_from_config(None, config={
+        "simulation": {"resume_from": str(root), "extra_ns": 0.01}})
+
+    assert said["ok"] is False and _Started.started == [], said
+    assert "fastmdxplora.log is a link out of the study" in said["error"], said
+    assert not (tmp_path / "space" / "continuations").exists()
