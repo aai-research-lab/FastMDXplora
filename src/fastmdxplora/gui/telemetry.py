@@ -236,9 +236,9 @@ class TelemetryWriter:
             status["elapsed_wall_time_s"] = round((now - started).total_seconds(), 3)
             status["last_update_timestamp"] = _utc_now()
             self._last_status = dict(status)
-            tmp = self.status_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
-            os.replace(tmp, self.status_path)
+            # A new temporary file of its own, renamed into place: a link at
+            # the record, or planted at a temporary name, is never followed.
+            _records.save(self.status_path, json.dumps(status, indent=2, default=str))
         except Exception:
             return
 
@@ -286,9 +286,9 @@ class TelemetryWriter:
             if "latest_error" in updates:
                 status["latest_error"] = updates["latest_error"]
             status["phases_updated_at"] = _utc_now()
-            tmp = self.status_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
-            os.replace(tmp, self.status_path)
+            # A new temporary file of its own, renamed into place: a link at
+            # the record, or planted at a temporary name, is never followed.
+            _records.save(self.status_path, json.dumps(status, indent=2, default=str))
         except Exception:
             return
 
@@ -327,7 +327,8 @@ class TelemetryWriter:
             exists = self.metrics_path.exists()
             clean_row = {field: row.get(field, "") for field in METRIC_FIELDS}
             clean_row["timestamp"] = clean_row["timestamp"] or _utc_now()
-            with self.metrics_path.open("a", newline="", encoding="utf-8") as fh:
+            # Never through a link (`record_access.open_to_append`).
+            with _records.open_to_append(self.metrics_path, newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=METRIC_FIELDS)
                 if not exists:
                     writer.writeheader()
@@ -340,7 +341,7 @@ class TelemetryWriter:
             return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8") as fh:
+            with _records.open_to_append(self.events_path) as fh:
                 fh.write(f"{_utc_now()}\t{level}\t{message}\n")
         except Exception:
             return

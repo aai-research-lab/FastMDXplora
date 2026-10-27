@@ -455,3 +455,118 @@ def test_the_study_beside_is_not_saved_through_a_link(tmp_path, planted):
     assert f"viewer_beside/{key}.dcd was not saved: it leads outside the study" in said["reason"]
     _unchanged(victim, planted)
     assert (root / "viewer_beside" / f"{key}.dcd").is_symlink()
+
+
+# --------------------------------------------------------------------------
+# The run's own records the GUI writes: its log, its status (G11 H1)
+# --------------------------------------------------------------------------
+
+class _Started:
+    """The run's process, stood in for: nothing is run. It writes a line to
+    the log it is given, as a run would."""
+
+    started: list = []
+
+    def __init__(self, command, *args, **kwargs):
+        _Started.started.append(command)
+        self.pid, self.args, self.returncode = 999999, command, None
+        out = kwargs.get("stdout")
+        if hasattr(out, "write"):
+            out.write("a line the run would log\n")
+
+    def poll(self):
+        return None
+
+    def wait(self, timeout=None):
+        return 0
+
+
+#: The POSTs that start a run in the study open, and what each is asked.
+STARTS = {"/api/again": {"phases": ["analysis"]}, "/api/report/write": {}}
+
+
+@pytest.mark.parametrize("planted", PLANTED)
+@pytest.mark.parametrize("route", sorted(STARTS))
+def test_a_run_s_log_linked_out_is_not_written_to(tmp_path, monkeypatch, route, planted):
+    from fastmdxplora.gui import exploration
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    monkeypatch.setattr(exploration.subprocess, "Popen", _Started)
+    monkeypatch.setattr(exploration.DashboardRuntime, "_others_running", lambda self, **_: None)
+    _Started.started = []
+    root = _with_its_structure(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rmsf]\n",
+                                              encoding="utf-8")
+    (root / "report").mkdir(exist_ok=True)
+    victim = _outside(tmp_path, planted)
+    _link(root / "exploration.log", victim)
+
+    status, body = _asked(root, tmp_path, route, body=STARTS[route])
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False and _Started.started == [], said
+    assert "exploration.log" in said["error"], said
+    _unchanged(victim, planted)
+    assert (root / "exploration.log").is_symlink()
+
+
+def _going(root: Path) -> Path:
+    status = root / "simulation" / "live_status.json"
+    status.write_text(json.dumps({"status": "running", "stage": "production"}),
+                      encoding="utf-8")
+    return status
+
+
+@pytest.mark.parametrize("planted", PLANTED)
+@pytest.mark.parametrize("at", ["live_status.json.tmp", "live_status.json"])
+def test_a_stop_writes_the_run_s_status_through_no_link(tmp_path, at, planted):
+    """A run stopped here is recorded as stopped in its own status record: a
+    link at its old temporary name is never followed, and the record itself
+    linked out of the study is replaced by the study's own, not written
+    through."""
+    from fastmdxplora.gui.exploration import _record_the_stop
+
+    root = _study(tmp_path)
+    status = _going(root)
+    victim = _outside(tmp_path, planted)
+    if at == "live_status.json":
+        if planted == "to a file":
+            victim.write_text(status.read_text(encoding="utf-8"), encoding="utf-8")
+            mine = victim.read_text(encoding="utf-8")
+        status.unlink()
+        _link(status, victim)
+    else:
+        _link(status.with_name(at), victim)
+
+    _record_the_stop(root)
+
+    if at == "live_status.json" and planted == "to a file":
+        assert victim.read_text(encoding="utf-8") == mine
+        assert [p.name for p in victim.parent.iterdir()] == ["victim.txt"]
+    else:
+        _unchanged(victim, planted)
+    if at == "live_status.json" and planted == "dangling":
+        # Nothing read says it was going: nothing is recorded.
+        assert status.is_symlink()
+        return
+    assert _regular(status)
+    assert json.loads(status.read_text(encoding="utf-8"))["status"] == "stopped"
+
+
+@pytest.mark.parametrize("planted", PLANTED)
+@pytest.mark.parametrize("record", ["live_events.log", "live_metrics.csv"])
+def test_a_run_s_events_and_metrics_are_added_through_no_link(tmp_path, record, planted):
+    from fastmdxplora.gui.telemetry import TelemetryWriter
+
+    root = _study(tmp_path)
+    victim = _outside(tmp_path, planted)
+    _link(root / "simulation" / record, victim)
+    writer = TelemetryWriter(root / "simulation")
+
+    if record.endswith(".log"):
+        writer.event("stopped here")
+    else:
+        writer.append_metric(step=1)
+
+    _unchanged(victim, planted)
+    assert (root / "simulation" / record).is_symlink()

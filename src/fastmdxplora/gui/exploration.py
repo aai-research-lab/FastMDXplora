@@ -1390,7 +1390,7 @@ class DashboardRuntime:
         work on the CPU.
         """
         from fastmdxplora.gpu_here import start_sampler
-        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.refusals import OutsideWorkspace, refusal_of
         from fastmdxplora.runs_here import StartRefused, may_start, record_start, starting_in
 
         folders = self._rule_folders()
@@ -1405,8 +1405,14 @@ class DashboardRuntime:
                 if start.refused is not None:
                     return start.refused
                 since = time.time()
-                started = self._spawn_now(command, output_dir, dashboard_url,
-                                          **({"env": start.env} if start.env else {}))
+                try:
+                    started = self._spawn_now(command, output_dir, dashboard_url,
+                                              **({"env": start.env} if start.env else {}))
+                except OutsideWorkspace as exc:
+                    # Its log is a link: nothing is written where it leads,
+                    # and nothing is started.
+                    return {"ok": False, "error": f"{exc} Nothing was started.",
+                            "code": exc.code}
                 for folder in folders:
                     record_start(folder, output_dir, started["pid"], command,
                                  by=self.started_by, gpu=start.gpu)
@@ -1471,7 +1477,11 @@ class DashboardRuntime:
         env["FASTMDX_DASHBOARD_OUTPUT"] = str(output_dir)
         if dashboard_url:
             env["FASTMDX_DASHBOARD_URL"] = dashboard_url
-        log_handle = log_path.open("a", encoding="utf-8", buffering=1)
+        from fastmdxplora import record_access
+
+        # Never through a link: a log linked out of the study is refused
+        # (`OutsideWorkspace`, said by `_spawn`), and nothing is started.
+        log_handle = record_access.open_to_append(log_path, encoding="utf-8", buffering=1)
         try:
             # Its own session, so the run outlives the server. Without this
             # it sat in the terminal's process group, and Ctrl-C on the
