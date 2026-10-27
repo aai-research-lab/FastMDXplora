@@ -556,7 +556,8 @@ def test_no_movie_is_made_through_a_folder_linked_out(tmp_path):
     status, body = _asked(root, tmp_path, "/api/movies", body={
         "name": "m1", "fps": 30, "width": 64, "height": 64})
     said = json.loads(body)
-    assert status == 200 and said["ok"] is False and "movies was not read" in said["not_read"]
+    assert status == 200 and said["ok"] is False
+    assert "movies/ is a link out of the study" in said["not_read"], said
     assert list(elsewhere.iterdir()) == []
 
 
@@ -950,3 +951,63 @@ def test_write_it_again_is_offered_only_where_it_would_be_written(tmp_path, publ
         assert confirm is None and "not offered here" in said, said
     else:
         assert confirm is not None and focused == "Yes, write it", (said, focused)
+
+
+# --------------------------------------------------------------------------
+# A folder of the study linked out is said as a folder, once (G16 M1, L4)
+# --------------------------------------------------------------------------
+
+def _simulation_on_scratch(root: Path, tmp_path: Path) -> None:
+    """The study's `simulation/` moved to a folder elsewhere and linked back,
+    as a person on a cluster does."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (root / "simulation").rename(scratch / "simulation")
+    _link(root / "simulation", scratch / "simulation")
+
+
+FOLDER_SAID = "simulation/ is a link out of the study, so its records are not read here."
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", ["/api/status", "/api/overview", "/api/frames-info",
+                                   "/api/results", "/api/metrics", "/api/again"])
+def test_a_simulation_folder_linked_out_is_said_as_a_folder(tmp_path, route, public):
+    if public and route == "/api/again":
+        pytest.skip("not answered beyond loopback")
+    root = _study(tmp_path)
+    _simulation_on_scratch(root, tmp_path)
+
+    status, body = _asked(root, tmp_path, route, public=public)
+
+    text = body.decode("utf-8")
+    said = json.loads(body)
+    assert status == 200 and "a link to a file" not in text, text[:400]
+    if route == "/api/again":
+        assert "simulation/ is a link out of the study" in said["analysis"]["why"], said
+        return
+    assert said["unavailable"] == ["simulation/"], said
+    assert said["unavailable_why"] == {"simulation/": "folder outside"}, said
+    if route != "/api/overview":
+        # The Overview says it from the reason, on the page.
+        assert FOLDER_SAID in (said.get("not_read") or "") + json.dumps(said.get("health")), said
+
+
+def test_the_overview_says_a_simulation_folder_linked_out_once(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    root = _study(tmp_path)
+    _simulation_on_scratch(root, tmp_path)
+    with _serve(root, tmp_path, public=False) as url:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(url + "/#overview", wait_until="domcontentloaded")
+            page.wait_for_selector("body:has-text('not read')")
+            text = page.inner_text("body")
+            browser.close()
+    assert "simulation/ is a link out of the study, so its records are not read here" in text
+    assert "a link to a file" not in text and "links to files" not in text, text
+    assert "simulation/cost.json" not in text and "simulation/live_status.json" not in text

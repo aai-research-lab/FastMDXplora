@@ -68,8 +68,9 @@ def test_a_run_linked_out_is_not_read_to_find_the_run_played(tmp_path, public):
     answer, opened = _asked(root, tmp_path, outside, public)
     assert opened == []
     assert answer["properties"] == []
-    assert "runs/r2" in answer["unavailable"]
-    assert "runs/r2 was not read" in answer["not_read"]
+    # A run's folder linked out is named as a folder, with its "/".
+    assert "runs/r2/" in answer["unavailable"]
+    assert "runs/r2/ is a link out of the study" in answer["not_read"]
 
 
 def test_replicas_unlinked_are_coloured_by_their_mean_as_before(tmp_path):

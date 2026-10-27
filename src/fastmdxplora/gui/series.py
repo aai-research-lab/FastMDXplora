@@ -56,15 +56,47 @@ NOT_READ_BECAUSE = {
     "not a result": "it is a file of the study that is not one of its results",
     "leads to": "it leads to a file of the study that is not one of its results",
     "not a file": "it is not a regular file",
+    "folder outside": "it is in a folder linked out of the study",
 }
+#: How a folder of the study linked out of it is said, its records not read.
+FOLDER_OUT = "{} is a link out of the study, so its records are not read here"
+
+
+def folder_out(root: Path, path: Path) -> str | None:
+    """The folder of the study ``root`` on the way to ``path`` (``path``
+    itself among them) that is a link leading out of it, named with its
+    "/"; None where there is none. A record that is itself a link to a
+    file is not one. Nothing is opened."""
+    root = Path(root)
+    try:
+        parts = Path(path).relative_to(root).parts
+        top = root.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    here = root
+    for place, part in enumerate(parts):
+        here = here / part
+        if not here.is_symlink():
+            continue
+        target = Path(os.path.realpath(here))
+        try:
+            target.relative_to(top)
+        except ValueError:
+            if place < len(parts) - 1 or target.is_dir():
+                return "/".join(parts[:place + 1]) + "/"
+        return None
+    return None
 
 
 def why_not_read(root: Path, path: Path) -> str:
     """Why a confined read refused ``path`` (a key of `NOT_READ_BECAUSE`):
     a link out of the study ``root``, a file of the study that is not one
     of its results (hidden, say), or a link to such a file. Told from where
-    the path leads, without opening it."""
+    the path leads, without opening it. One in a folder of the study linked
+    out of it (or that folder itself) is "folder outside"."""
     path = Path(path)
+    if folder_out(root, path):
+        return "folder outside"
     try:
         resolved = path.resolve()
         resolved.relative_to(Path(root).resolve())
@@ -75,7 +107,11 @@ def why_not_read(root: Path, path: Path) -> str:
 
 
 def refused_said(root: Path, path: Path) -> str:
-    """A record a confined read refused (`record_access`), said as that."""
+    """A record a confined read refused (`record_access`), said as that: one
+    in a folder linked out of the study, as that folder (`FOLDER_OUT`)."""
+    folder = folder_out(root, path)
+    if folder:
+        return FOLDER_OUT.format(folder)
     try:
         named = Path(path).relative_to(root).as_posix()
     except ValueError:

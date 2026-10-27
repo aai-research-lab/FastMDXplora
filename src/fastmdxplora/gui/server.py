@@ -400,8 +400,9 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
             answer = {**answer, "not_saved": unsaved}
     if isinstance(answer, dict):
         named = answer.get("unavailable")
-        refused = ({_named_from(inside, held, name) for name in scope.denied}
-                   | set(named if isinstance(named, list) else ()))
+        refused = _folders_said(inside, {_named_from(inside, held, name)
+                                         for name in scope.denied}
+                                | set(named if isinstance(named, list) else ()))
         if refused:
             # A copy: the answer may be one a reader keeps for its next call.
             # Each named with why it was not read, for the page to say so.
@@ -409,6 +410,19 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
                       "unavailable_why": {name: _why_not_read(inside, name, held)
                                           for name in sorted(refused)}}
     return answer
+
+
+def _folders_said(inside: Path, names: set[str]) -> set[str]:
+    """``names`` (refused, in the open folder ``inside``), each in a folder
+    of it linked out of it named as that folder instead (``simulation/``),
+    once (`series.folder_out`)."""
+    from fastmdxplora.gui.series import folder_out
+
+    said = set()
+    for name in names:
+        folder = None if name in _UNNAMED_REFUSALS else folder_out(inside, inside / name)
+        said.add(folder or name)
+    return said
 
 
 def _unsaved_said(inside: Path, held: Path, unsaved: dict[str, str]) -> str:
@@ -544,7 +558,7 @@ def _status_unread() -> dict[str, Any]:
 def _refusals_said(answer: dict[str, Any]) -> str:
     """The records a `_confined` answer names as not read, each with why,
     in a sentence: "" where every record was read."""
-    from fastmdxplora.gui.series import NOT_READ_BECAUSE
+    from fastmdxplora.gui.series import FOLDER_OUT, NOT_READ_BECAUSE
 
     names = answer.get("unavailable") if isinstance(answer, dict) else None
     if not names:
@@ -560,9 +574,16 @@ def _refusals_said(answer: dict[str, Any]) -> str:
             why.get(name), "it leads outside the study, or to a file of the study that is not "
             "one of its results")
 
-    said = "; ".join(one(name) for name in names)
-    return said + (", so what it says is not shown." if len(names) == 1
-                   else ", so what they say is not shown.")
+    # A folder linked out is said once, as a folder, not as each of its
+    # records a link to a file.
+    folders = [name for name in names if name.endswith("/")]
+    records = [name for name in names if not name.endswith("/")]
+    parts = [FOLDER_OUT.format(name) for name in folders]
+    if records:
+        parts.append("; ".join(one(name) for name in records)
+                     + (", so what it says is not shown" if len(records) == 1
+                        else ", so what they say is not shown"))
+    return "; ".join(parts) + "."
 
 
 def _said_not_read(answer: Any) -> Any:

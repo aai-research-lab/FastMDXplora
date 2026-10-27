@@ -299,7 +299,9 @@ def test_a_piece_not_read_is_not_left_out_of_the_production(tmp_path, refused, p
     simulation = json.loads(body)["simulation"]
     assert simulation["pieces"] is None
     assert simulation["duration_ns_actual"] is None
-    assert simulation["production_not_read"].startswith(f"{refused} was not read")
+    # A folder linked out is said as a folder (`series.FOLDER_OUT`).
+    assert simulation["production_not_read"].startswith(
+        (f"{refused} was not read", f"{refused}/ is a link out of the study"))
 
 
 @PUBLIC

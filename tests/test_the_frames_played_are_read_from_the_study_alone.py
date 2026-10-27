@@ -220,7 +220,9 @@ def test_nothing_is_written_through_a_link_out_of_the_study(tmp_path, relative, 
     if route.startswith("/api/"):
         said = json.loads(body)
         assert said["ok"] is False, said
-        assert f"{relative} was not read" in said["not_read"]
+        # A folder linked out is said as a folder (`series.FOLDER_OUT`).
+        assert (f"{relative}/ is a link out of the study" if folder
+                else f"{relative} was not read") in said["not_read"], said
         assert str(tmp_path) not in body.decode("utf-8")
     else:
         assert status == 404
