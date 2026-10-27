@@ -74,7 +74,8 @@ _PHASE_STOPPED = re.compile(r"\w+ phase stopped")
 
 #: The warning logged when a stop is asked for (`runner._StopRequests`,
 #: `batch/explorer.py`): part of the stop, not a problem of its own.
-_STOP_HEARD = re.compile(r"\w+ received: (production will stop|each run in progress ends)")
+_STOP_HEARD = re.compile(
+    r"(?:\w+ received|Stop asked from the GUI): (production will stop|each run in progress ends)")
 
 #: A warning line of the study's log, in either of its formats
 #: (`utils/logging.py`: `_PlainISOFormatter`, `_PrettyFormatter`).

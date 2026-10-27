@@ -68,14 +68,14 @@ HEARD = ("SIGTERM received: production will stop at the next frame, where it can
          "carried on, if that can be reached within 20 s. Send it again to stop now.")
 
 
-def _stopped(root: Path, code: str = "simulation.run.stopped") -> Path:
+def _stopped(root: Path, code: str = "simulation.run.stopped", heard: str = HEARD) -> Path:
     """Stopped in production, as the runner, the orchestrator and the log
     record it: the stop's words as a warning, the phase stopped, the
     manifest's refusal; then the study's records of a resume."""
     from tests.test_a_resumed_study_reads_as_one_run import STOP, _stopped_study
 
     _stopped_study(root)
-    _logged(root, (logging.WARNING, PADDING), (logging.WARNING, HEARD))
+    _logged(root, (logging.WARNING, PADDING), (logging.WARNING, heard))
     _events(root / "simulation", ("info", "Production started"), ("warning", STOP),
             ("warning", "Simulation phase stopped"))
     _write(root, "manifest.json", {"phases": [
@@ -112,6 +112,22 @@ def test_a_stop_being_carried_on_is_not_a_problem(tmp_path, code):
         ("Warning in the study's log", PADDING)]
     assert payload["unavailable"] == []
     assert "segment-001/simulation/live_status.json" in payload["read"]
+
+
+@pytest.mark.parametrize("heard", [
+    "Stop asked from the GUI: production will stop at the next frame, where it can be "
+    "carried on, if that can be reached within 20 s.",
+    "Stop asked from the GUI: each run in progress ends where it can be carried on (in "
+    "production, at its next frame if that is within 20 s), and no further run starts."])
+def test_a_stop_asked_from_the_gui_is_not_a_problem_of_its_own(tmp_path, heard):
+    """The GUI's own process asks its run to stop without a signal, and
+    says so as a signal's stop does: those words were listed beside the
+    stop as a warning of their own."""
+    root = _stopped(tmp_path / "study", heard=heard)
+    _carrying_it_on(root, status="running", step=3000)
+    payload = problems_payload(root, admit_evidence=True)
+    assert [(item["title"], item["reason"]) for item in payload["items"]] == [
+        ("Warning in the study's log", PADDING)]
 
 
 def test_a_stop_carried_on_to_the_end_leaves_no_problem_behind(tmp_path):
