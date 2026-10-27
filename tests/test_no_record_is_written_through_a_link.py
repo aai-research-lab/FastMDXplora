@@ -766,13 +766,17 @@ def test_no_run_is_started_in_a_study_holding_a_link_out(tmp_path, monkeypatch, 
     offered, asked = _asked_again(root, tmp_path)
 
     named = relative + ("/" if target.is_dir() else "")
-    for phase, command in (("analysis", "fastmdx analyze --output"),
-                           ("report", "fastmdx report --output")):
-        why = offered[phase]["why"]
+    # The command the GUI would start, quoted: the study has a report, so
+    # its analysis run again writes the report again too.
+    for phase, command in (
+            ("analysis", f"fastmdx explore --output {root} --include-phase analysis report "
+                         "--rerun"),
+            ("report", f"fastmdx report --output {root} --rerun")):
         assert offered[phase]["can"] is False, offered
+        why = offered[phase]["why"]
         assert f"{named} is a link out of the study: the run would read or write through " \
                "it" in why, why
-        assert f"{command} {root} --rerun" in why, why
+        assert offered[phase]["terminal"] == command and why.endswith(command), why
     assert all(said["ok"] is False for said in asked) and _Started.started == [], asked
     assert _tree(outside) == before
 
@@ -1055,3 +1059,135 @@ def test_an_atom_picked_in_the_frames_is_its_own_with_their_index_linked_out(
 
     assert said["ok"] and said["residue"]["selection"] == "chainid 1 and resSeq 2", said
     assert "simulation/frames_index.json was not saved" in said["not_read"], said
+
+
+# --------------------------------------------------------------------------
+# A fix started from the GUI, a hard link, a study in a folder named runs
+# (G17 H1 and M1, G18 M1)
+# --------------------------------------------------------------------------
+
+def _stopped(root: Path) -> None:
+    """The study stopped in its run: the Problems panel offers to resume it."""
+    (root / "simulation" / "live_status.json").write_text(json.dumps(
+        {"status": "stopped", "stage": "production", "current_step": 10,
+         "total_planned_steps": 100}), encoding="utf-8")
+
+
+@pytest.mark.parametrize("relative", ["fastmdxplora.log", "previous", "manifest.json", None])
+def test_no_fix_is_started_in_a_study_holding_a_link_out(tmp_path, monkeypatch, relative):
+    """`POST /api/fix` refuses as Analyze again does: with a link out of the
+    study it starts nothing, names the link and gives the fix's own command
+    to run at the terminal; nothing outside changes. A study whose links
+    stay inside is still fixed."""
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    _stopped(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if relative is None:
+        _link(root / "notes.log", root / "report" / "report.md")
+    elif relative == "previous":
+        (outside / "previous" / "analysis").mkdir(parents=True)
+        (outside / "previous" / "analysis" / "notes.txt").write_text("mine\n", encoding="utf-8")
+        _link(root / "previous", outside / "previous")
+    else:
+        target = outside / relative
+        if (root / relative).exists():
+            (root / relative).rename(target)
+        else:
+            target.write_text("the person's own\n", encoding="utf-8")
+        _link(root / relative, target)
+    before = _tree(outside)
+
+    said = json.loads(_asked(root, tmp_path, "/api/fix", body={"index": 0})[1])
+
+    assert _tree(outside) == before
+    if relative is None:
+        assert said["ok"] and len(_Started.started) == 1, said
+        return
+    assert said["ok"] is False and _Started.started == [], said
+    if relative == "manifest.json":
+        # The fixes shown were read held to the study, the manifest refused
+        # there, so the one asked for is not the one shown: refused first.
+        return
+    assert f"{relative}{'/' if relative == 'previous' else ''} is a link out of the study" \
+        in said["error"], said
+    assert said["terminal"] == f"fastmdx resume {root}" and said["error"].endswith(
+        said["terminal"]), said
+
+
+@pytest.mark.parametrize("record", ["manifest.json", "fastmdxplora.log"])
+def test_no_run_is_started_where_a_record_it_writes_in_place_is_a_hard_link(
+        tmp_path, monkeypatch, record):
+    """A study copied with hard links (`cp -al`): the run writes these by
+    name, in place, so into the other copy too. Neither phase is offered,
+    nor is the fix, and nothing outside changes."""
+    import os
+
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    _stopped(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if not (root / record).exists():
+        (root / record).write_text("the person's own\n", encoding="utf-8")
+    os.link(root / record, outside / record)
+    before = _tree(outside)
+
+    offered, asked = _asked_again(root, tmp_path)
+    fixed = json.loads(_asked(root, tmp_path, "/api/fix", body={"index": 0})[1])
+
+    assert offered["analysis"]["can"] is False and offered["report"]["can"] is False, offered
+    assert f"{record} is a hard link: the run would write into another copy of it" \
+        in offered["analysis"]["why"], offered
+    assert all(said["ok"] is False for said in [*asked, fixed]), (asked, fixed)
+    assert _Started.started == [] and _tree(outside) == before
+
+
+def test_a_folder_that_cannot_be_listed_is_named_not_passed_over(tmp_path, monkeypatch):
+    """What the run would read or write in a folder the walk cannot list is
+    not known: the folder is named, and no run is offered (G17 L3)."""
+    import os
+
+    from fastmdxplora.gui import server
+
+    root = _with_its_structure(tmp_path)
+    scandir = os.scandir
+
+    def closed(path):
+        if Path(path).name == "analysis":
+            raise PermissionError(13, "Permission denied", str(path))
+        return scandir(path)
+
+    monkeypatch.setattr(server.os, "scandir", closed)
+
+    found = server._links_out(root)
+    said = server._again_answer(root)
+
+    assert found == [("analysis/", "unlisted")], found
+    assert said["analysis"]["can"] is False and "analysis/ cannot be listed" in said["refused"]
+
+
+def test_a_study_kept_in_a_folder_named_runs_is_run_again_as_itself(tmp_path, monkeypatch):
+    """A person's project folder, its studies in its own `runs/` beside its
+    notes and a link to data elsewhere: the study is not one of a study of
+    several (no batch manifest), so the project's link is not its."""
+    import shutil
+
+    root = _ready_to_run_again(tmp_path / "made", monkeypatch)
+    project = tmp_path / "project"
+    (project / "runs").mkdir(parents=True)
+    study = project / "runs" / "s1"
+    shutil.move(str(root), str(study))
+    (project / "analysis").mkdir()
+    (project / "analysis" / "notes.md").write_text("mine\n", encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    _link(project / "data", tmp_path / "data")
+    del root
+
+    offered, asked = _asked_again(study, tmp_path)
+
+    assert offered["analysis"]["can"] and offered["report"]["can"], offered
+    assert all(said["ok"] for said in asked), asked

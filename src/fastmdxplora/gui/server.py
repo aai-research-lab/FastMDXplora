@@ -622,54 +622,117 @@ _LINKS_NAMED = 3
 
 def _the_study_run(root: Path) -> Path:
     """The study a run again in ``root`` belongs to: a run of a study of
-    several (``<study>/runs/<run>``) has its study's comparison built
-    again after it, so the whole study is the run's."""
-    from fastmdxplora.gui.browse import is_study
+    several (``<study>/runs/<run>``, by its batch manifest, as
+    `again.plan` finds it) has its study's comparison built again after
+    it, so the whole study is the run's. A study the person keeps in a
+    folder of their own named ``runs`` is itself."""
+    from fastmdxplora.batch.explorer import campaign_of
 
-    study = root.parent.parent
-    return study if root.parent.name == "runs" and is_study(study) else root
+    return campaign_of(Path(root)) or Path(root)
 
 
-def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[str]:
-    """The first ``most`` entries of the study ``study`` that are links
-    leading out of it, each named in it (a folder with its "/"): found by
-    walking it without following a link, skipping nothing (its top,
-    `previous/`, each run of a study of several, `setup/`, `simulation/`,
-    `analysis/`, `report/`, and the rest). A link that stays in the study
-    is not one. Nothing is opened."""
+#: The records a run writes in place, by name (truncated or appended to, not
+#: replaced): a hard link at one would have it write into another copy.
+_WRITTEN_IN_PLACE = frozenset({"manifest.json", "fastmdxplora.log", "exploration.log",
+                               ".fastmdxplora_run.json"})
+_WRITTEN_IN_PLACE_IN_SIMULATION = frozenset({"production.dcd", "energy.csv",
+                                             "live_events.log", "live_metrics.csv"})
+
+
+def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[tuple[str, str]]:
+    """The first ``most`` entries of the study ``study`` that a run would
+    read or write through, each named in it with what it is: a link leading
+    out of it ("link"; a folder with its "/"), a record the run writes in
+    place that is a hard link ("hard"), or a folder that cannot be listed
+    ("unlisted"). Found by walking it without following a link, skipping
+    nothing (its top, `previous/`, each run of a study of several,
+    `setup/`, `simulation/`, `analysis/`, `report/`, and the rest). A link
+    that stays in the study is not one. Nothing is opened."""
+    from collections import deque
+
     top = Path(os.path.realpath(study))
-    found: list[str] = []
-    folders = [Path(study)]
+    found: list[tuple[str, str]] = []
+    folders = deque([Path(study)])
+
+    def named(path: str) -> str:
+        return Path(path).relative_to(study).as_posix()
+
     while folders and len(found) < most:
-        folder = folders.pop(0)
+        folder = folders.popleft()
         try:
             with os.scandir(folder) as listing:
                 entries = sorted(listing, key=lambda entry: entry.name)
         except OSError:
+            found.append((named(str(folder)) + "/" if folder != Path(study) else "./",
+                          "unlisted"))
             continue
         for entry in entries:
+            if len(found) >= most:
+                break
             if entry.is_symlink():
                 target = Path(os.path.realpath(entry.path))
                 try:
                     target.relative_to(top)
                 except ValueError:
-                    named = Path(entry.path).relative_to(study).as_posix()
-                    found.append(named + "/" if target.is_dir() else named)
-                    if len(found) >= most:
-                        break
+                    found.append((named(entry.path) + ("/" if target.is_dir() else ""),
+                                  "link"))
             elif entry.is_dir(follow_symlinks=False):
                 folders.append(Path(entry.path))
+            elif (entry.name in _WRITTEN_IN_PLACE or (
+                    folder.name == "simulation"
+                    and entry.name in _WRITTEN_IN_PLACE_IN_SIMULATION)):
+                try:
+                    shared = entry.stat(follow_symlinks=False).st_nlink > 1
+                except OSError:
+                    shared = False
+                if shared:
+                    found.append((named(entry.path), "hard"))
     return found
+
+
+def _links_said(found: list[tuple[str, str]]) -> str:
+    """Why a run is not started from here, of what `_links_out` found."""
+    said = []
+    for kind, one, many, why in (
+            ("link", " is a link", " are links",
+             " out of the study: the run would read or write through {}"),
+            ("hard", " is a hard link", " are hard links",
+             ": the run would write into another copy of {}"),
+            ("unlisted", " cannot be listed", " cannot be listed",
+             ": what the run would read or write in {} is not known")):
+        names = [name for name, what in found if what == kind]
+        if names:
+            said.append(", ".join(names) + (many if len(names) > 1 else one)
+                        + why.format("them" if len(names) > 1 else "it"))
+    return "; ".join(said) + ", so it is not run from here."
+
+
+def _terminal(study: Path, phases: list[str]) -> str:
+    """The command the GUI would start to run ``phases`` again in ``study``
+    (`again.Again.command`: an analysis run again writes the report again
+    too where the study has one), quoted, for the person to run at the
+    terminal instead. Made without reading a record of the study, which may
+    lead out of it: only whether its `report/` is there is asked."""
+    import shlex
+
+    from fastmdxplora import again
+
+    asked = tuple(phase for phase in again.PHASES if phase in phases)
+    if asked == ("analysis",) and os.path.isdir(Path(study) / "report"):
+        asked = again.PHASES
+    command = again.Again(study=Path(study), phases=asked, analyses=None, runs=()).command()
+    return shlex.join(["fastmdx", *command])
 
 
 def _again_answer(root: Path) -> dict[str, Any]:
     """What can be run again on the study ``root`` (`GET /api/again`), read
     held to it (`_confined`). The run's own process follows what is in its
     folder, as a run started at the terminal does, so the GUI starts none in
-    a study that holds a link leading out of it (`_links_out`): neither
-    phase can, said with the links found and the command that runs it at
-    the terminal instead (``refused``). Where its Config or analysis
-    manifest was not read, neither can either. `POST /api/again` and
+    a study that holds a link leading out of it, or a record it writes in
+    place shared by a hard link (`_links_out`): neither phase can, said
+    with what was found and the command the GUI would start, to run at the
+    terminal instead (``refused``). Where its Config or analysis manifest
+    was not read, neither can either. `POST /api/again` and
     `/api/report/write` decide from this same answer, so nothing is
     offered that would be refused."""
     said = _said_not_read(_confined(root, _again_offered))
@@ -680,25 +743,37 @@ def _again_answer(root: Path) -> dict[str, Any]:
         return said
     whys = []
     if links:
-        many = len(links) > 1
-        whys.append(", ".join(links) + (" are links" if many else " is a link")
-                    + " out of the study: the run would read or write through "
-                    + ("them" if many else "it") + ", so it is not run again here.")
+        whys.append(_links_said(links))
     if read:
         whys.append(_refusals_said({"unavailable": read, "unavailable_why": {
             name: (said.get("unavailable_why") or {}).get(name) for name in read}})
             + " Nothing is run again from it.")
     why = " ".join(whys)
-    terminal = {"analysis": ["fastmdx", "analyze", "--output", str(root), "--rerun"],
-                "report": ["fastmdx", "report", "--output", str(root), "--rerun"]}
-    answer = {**said, "recorded": [], "refused": why, "links_out": links}
-    for phase, command in terminal.items():
-        answer[phase] = {"can": False, "why": why + (
-            " To run it anyway, at the terminal: " + " ".join(command) if links else ""),
-            "command": command if links else None}
+    answer = {**said, "recorded": [], "refused": why,
+              "links_out": [name for name, _ in links]}
+    for phase in ("analysis", "report"):
+        terminal = _terminal(Path(root), [phase]) if links else None
+        answer[phase] = {"can": False, "terminal": terminal, "why": why + (
+            " To run it anyway, at the terminal: " + terminal if terminal else "")}
     # Nothing is offered ticked, so nothing is said of what would be.
     answer.pop("recorded_said", None)
     return answer
+
+
+def _fix_refused(study: Path, argv: list[str]) -> dict[str, Any] | None:
+    """Why a fix (`POST /api/fix`: a resume, umbrella windows again) is not
+    started in ``study``: as for running a phase again, a link leading out
+    of it, or a record the run writes in place shared by a hard link
+    (`_links_out`), with the fix's own command, quoted, to run at the
+    terminal instead. None where there is none."""
+    import shlex
+
+    links = _links_out(_the_study_run(Path(study)))
+    if not links:
+        return None
+    terminal = shlex.join(["fastmdx", *argv])
+    return {"ok": False, "error": _links_said(links) + " To run it anyway, at the terminal: "
+            + terminal, "terminal": terminal, "links_out": [name for name, _ in links]}
 
 
 def _again_refused(root: Path | None) -> dict[str, Any] | None:

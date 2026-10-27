@@ -2099,6 +2099,13 @@ class DashboardRuntime:
             if not runnable(remedy):
                 return {"ok": False, "error": (
                     "This fix is not a command run from here: " + remedy.fix)}
+            # Not where the run would read or write through a link out of
+            # the study, as Analyze again is not (`server._fix_refused`).
+            from fastmdxplora.gui.server import _fix_refused
+
+            refused = _fix_refused(study, list(remedy.argv))
+            if refused is not None:
+                return refused
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
                                   study, dashboard_url)
@@ -2137,6 +2144,13 @@ class DashboardRuntime:
             except StudyError as exc:
                 found = refusal_of(exc)
                 return {"ok": False, "error": found.message, "code": found.code}
+            # Not where the run would read or write through a link out of
+            # the study, as Analyze again is not (`server._fix_refused`).
+            from fastmdxplora.gui.server import _fix_refused
+
+            refused = _fix_refused(study, list(remedy.argv))
+            if refused is not None:
+                return refused
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
                                   study, dashboard_url)
