@@ -1415,9 +1415,11 @@ class BatchExplorer:
     def run(self) -> list[dict[str, Any]]:
         """Execute every run. Returns per-run result records.
 
-        The study's process record, and each run's made in this process, go
-        when it ends, however it ends (`_forget_this_process_s_records`).
+        The study's process record is held for the whole of it, a study of
+        one too, and goes when it ends, however it ends, with each run's made
+        in this process (`_forget_this_process_s_records`).
         """
+        self._holding_its_record = False
         try:
             return self._run_every_run()
         finally:
@@ -1428,10 +1430,14 @@ class BatchExplorer:
         removed now its run has ended: they went only when the process
         exited, so a GUI opened in a process that went on (a notebook, a
         test) took itself for the study's run. A worker's record, or one of a
-        run started there since, names another process and is left alone."""
-        from fastmdxplora.orchestrator import _forget_run_process
+        run started there since, names another process and is left alone;
+        so is one a run of this process still holds (a study around this
+        one)."""
+        from fastmdxplora.orchestrator import _forget_run_process, _release_run_process
 
-        _forget_run_process(self.output_dir)
+        if self._holding_its_record:
+            self._holding_its_record = False
+            _release_run_process(self.output_dir)
         for spec in self.run_specs:
             _forget_run_process(self._run_output_dir(spec))
 
@@ -1459,19 +1465,22 @@ class BatchExplorer:
         if stopping is not None:
             self._write_planned_stopping(stopping)
 
-        if not self.is_single:
-            # The study's process, at its top: each run records its own (a
-            # worker's, in parallel), which says nothing between two runs,
-            # while the comparison is written, or while an umbrella study
-            # prepares once for every window (seventh and eighth reviews,
-            # 10-08). A GUI opened on the study finds it running, and can
-            # stop it. After the refusals above, so a second `explore`
-            # refused for a study whose runs have begun does not write over
-            # its record (one by hand during the shared preparation still
-            # can; the GUI and an AI app refuse it by `runs_here`).
-            from fastmdxplora.orchestrator import _record_run_process
+        # The study's process, at its top: each run records its own (a
+        # worker's, in parallel), which says nothing between two runs,
+        # while the comparison is written, or while an umbrella study
+        # prepares once for every window (seventh and eighth reviews,
+        # 10-08). A GUI opened on the study finds it running, and can
+        # stop it. After the refusals above, so a second `explore`
+        # refused for a study whose runs have begun does not write over
+        # its record (one by hand during the shared preparation still
+        # can; the GUI and an AI app refuse it by `runs_here`). Held for
+        # a study of one too, whose folder is its run's: the run's own
+        # `explore()` ends before the study does (its rounds until it is
+        # determined, its report again, its campaign's comparison).
+        from fastmdxplora.orchestrator import _hold_run_process
 
-            _record_run_process(self.output_dir)
+        _hold_run_process(self.output_dir, rewrite=True)
+        self._holding_its_record = True
 
         shared = self._maybe_prepare_once(include, exclude)
         if shared is not None:

@@ -3,7 +3,7 @@
 The record (`.fastmdxplora_run.json`) names the process a study runs in, so
 a GUI opened on the folder finds the run going and can stop it. It was
 removed only when the process exited, so a run made in a process that went
-on (a notebook, a test, `fastmdx run --dashboard` whose GUI stays up) left
+on (a notebook, a test, the GUI of `fastmdx explore --dashboard`) left
 a record naming that process: a GUI opened in it on the study took itself
 for the study's run, said it was running, and refused to start another
 ("A FastMDXplora workflow is already running."). It is removed when the run
@@ -187,8 +187,8 @@ def test_only_this_process_s_own_record_is_removed(tmp_path, another):
 
 
 def test_a_gui_in_the_run_s_process_is_not_running_once_the_run_ends(tmp_path, monkeypatch):
-    """`fastmdx run --dashboard`: its GUI, in the run's process, takes the
-    run for the one it watches as it starts, and stays up after it. It
+    """A GUI in the run's process (a notebook's), opened on a study made
+    there, takes the run for the one it watches, and stays up after it. It
     went on saying the study was running, and offered Stop on this
     process, once the run was over."""
     from unittest import mock
@@ -214,3 +214,78 @@ def test_a_gui_in_the_run_s_process_is_not_running_once_the_run_ends(tmp_path, m
         gui.process.terminate()
         gui.process.kill()
     signalled.assert_not_called()
+
+
+def test_a_study_of_one_keeps_its_record_while_it_goes_on_after_its_run(tmp_path, monkeypatch):
+    """A study of one run until it is determined: its run's own `explore()`
+    ends, and the study goes on extending it in rounds in the same process.
+    Its record went with that `explore()`, so a GUI opened on it elsewhere
+    did not find it running, and its Stop said no workflow was running."""
+    out = tmp_path / "study"
+    monkeypatch.setattr(FastMDXplora, "_run_phase", lambda self, name, options: PhaseResult(
+        name=name, status="ok", output_dir=Path(self.output_dir) / name))
+    monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
+    monkeypatch.setattr(BatchExplorer, "_stopping_rule", lambda self: ["a rule"])
+    monkeypatch.setattr(BatchExplorer, "_write_planned_stopping", lambda self, targets: None)
+    seen: dict = {}
+
+    def rounds(self, targets):
+        # Where the study's rounds of extension run, for hours.
+        seen["record"] = _records_of_this_process(out)
+        seen["here"] = _runtime(out).process is not None
+        code = ("import sys; from pathlib import Path; "
+                "from fastmdxplora.gui.exploration import DashboardRuntime as D; "
+                "p = Path(sys.argv[1]); "
+                "g = D(workspace_root=p.parent, exploration_root=p.parent, active_root=p); "
+                "print(g.process is not None and g.process.poll() is None)")
+        seen["elsewhere"] = subprocess.run(
+            [sys.executable, "-c", code, str(out)], capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            timeout=120).stdout.strip().splitlines()[-1:]
+
+    monkeypatch.setattr(BatchExplorer, "_run_until_known", rounds)
+    BatchExplorer(config_data={"systems": [{"system": "1L2Y"}]}, output_dir=str(out)).run()
+    assert seen == {"record": [RUN_PROCESS_FILE], "here": True, "elsewhere": ["True"]}
+    assert _records_of_this_process(out) == []
+
+
+def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkeypatch):
+    """A record this process left empty (a full disk) was never removed,
+    and a GUI in this process went on saying its run was going. One left
+    empty here is removed; one left empty by anyone else is not; and an
+    unreadable record is believed only while a run of this process holds
+    the folder."""
+    from fastmdxplora.gui.exploration import _AdoptedProcess
+    from fastmdxplora.orchestrator import (
+        _forget_run_process,
+        _hold_run_process,
+        _release_run_process,
+    )
+
+    write = Path.write_text
+
+    def full(self, *args, **kwargs):
+        if self.name == RUN_PROCESS_FILE:
+            write(self, "", encoding="utf-8")
+            raise OSError(28, "No space left on device")
+        return write(self, *args, **kwargs)
+
+    mine, theirs = tmp_path / "mine", tmp_path / "theirs"
+    mine.mkdir()
+    theirs.mkdir()
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setattr(Path, "write_text", full)
+        _record_run_process(mine)
+    (theirs / RUN_PROCESS_FILE).write_text("", encoding="utf-8")
+    assert (mine / RUN_PROCESS_FILE).read_text(encoding="utf-8") == ""
+    adopted = _AdoptedProcess(os.getpid(), mine)
+    assert adopted.poll() is not None
+    _hold_run_process(theirs)
+    try:
+        assert _AdoptedProcess(os.getpid(), theirs).poll() is None
+    finally:
+        # Released: written by hand, it is not this process's to remove.
+        _release_run_process(theirs)
+    _forget_run_process(mine)
+    assert not (mine / RUN_PROCESS_FILE).exists()
+    assert (theirs / RUN_PROCESS_FILE).exists()

@@ -205,22 +205,24 @@ class _AdoptedProcess:
 
     def _alive(self) -> bool:
         if self.pid == os.getpid():
-            # This process (`fastmdx run --dashboard`, a notebook) goes on
-            # once its run has ended, so the run is going only while this
-            # process's record of it stands: it is removed as the run ends
-            # (`orchestrator._forget_run_process`). Its GUI said it was
-            # running, and refused another, after the run was over.
+            # This process (the GUI of `fastmdx explore --dashboard`, a
+            # notebook) goes on once its run has ended, so the run is going
+            # only while this process's record of it stands: it is removed
+            # as the run ends (`orchestrator._release_run_process`). Its GUI
+            # said it was running, and refused another, after the run was
+            # over.
             from fastmdxplora.orchestrator import (
-                RUN_PROCESS_FILE,
                 process_start_ticks,
                 record_is_from_elsewhere,
+                run_process_held_here,
             )
 
             record = _process_record_held(self.root)
             if not record:
-                # One there and not read is being written again (a study's
-                # top-level record, as its runs begin): still going.
-                return (self.root / RUN_PROCESS_FILE).is_file()
+                # Not read (being written again, as a study's runs begin; or
+                # left empty, or linked out of the study): going only while a
+                # run of this process holds the folder.
+                return run_process_held_here(self.root)
             ticks = record.get("start_ticks")
             return (record.get("pid") == self.pid and not record_is_from_elsewhere(record)
                     and (ticks is None or ticks == process_start_ticks(self.pid)))
