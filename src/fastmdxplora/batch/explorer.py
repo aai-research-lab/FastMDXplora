@@ -1413,7 +1413,29 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def run(self) -> list[dict[str, Any]]:
-        """Execute every run. Returns per-run result records."""
+        """Execute every run. Returns per-run result records.
+
+        The study's process record, and each run's made in this process, go
+        when it ends, however it ends (`_forget_this_process_s_records`).
+        """
+        try:
+            return self._run_every_run()
+        finally:
+            self._forget_this_process_s_records()
+
+    def _forget_this_process_s_records(self) -> None:
+        """The process records this process wrote in the study and its runs,
+        removed now its run has ended: they went only when the process
+        exited, so a GUI opened in a process that went on (a notebook, a
+        test) took itself for the study's run. A worker's record, or one of a
+        run started there since, names another process and is left alone."""
+        from fastmdxplora.orchestrator import _forget_run_process
+
+        _forget_run_process(self.output_dir)
+        for spec in self.run_specs:
+            _forget_run_process(self._run_output_dir(spec))
+
+    def _run_every_run(self) -> list[dict[str, Any]]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         n = len(self.run_specs)

@@ -249,6 +249,36 @@ def _logging_to_its_folder(method: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
+def _its_process_recorded_while_it_runs(method: Callable[_P, _R]) -> Callable[_P, _R]:
+    """The study's process record (`_record_run_process`) for the length
+    of one run, and no longer: removed when the run ends, however it ends.
+
+    It went only when the process exited, so a run made in a process that
+    went on (a notebook, a test, `fastmdx run --dashboard` whose GUI stays
+    up) left a record naming that process, and a GUI opened in it on the
+    study took itself for the study's run, and refused to start another.
+    Written again if a run before removed it; nested calls share the outer
+    call's record.
+    """
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        study = args[0]
+        depth = getattr(study, "_runs_going", 0)
+        where = getattr(study, "output_dir", None)
+        if depth == 0 and where is not None and not (Path(where) / RUN_PROCESS_FILE).exists():
+            _record_run_process(Path(where))
+        study._runs_going = depth + 1  # type: ignore[attr-defined]
+        try:
+            return method(*args, **kwargs)
+        finally:
+            study._runs_going = depth  # type: ignore[attr-defined]
+            if depth == 0 and where is not None:
+                _forget_run_process(Path(where))
+    return wrapper
+
+
 class FastMDXplora:
     """Project-level orchestrator for end-to-end MD studies.
 
@@ -419,9 +449,11 @@ class FastMDXplora:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # Which process this study is, so a GUI opened on the folder later
         # can adopt the run: show it as running and stop it if asked. The
-        # file goes when the process exits; a crash leaves it, and an
-        # adopter checks the process is alive and is this run before
-        # believing it.
+        # file goes when the run ends (`_its_process_recorded_while_it_runs`),
+        # or when the process exits; a crash leaves it, and an adopter checks
+        # the process is alive and is this run before believing it. Written
+        # here, before the run, so a GUI started beside it in this process
+        # (`fastmdx run --dashboard`) finds it from the first and can stop it.
         _record_run_process(self.output_dir)
 
         self.options: dict[str, dict[str, Any]] = options or {}
@@ -477,6 +509,7 @@ class FastMDXplora:
     # Orchestration entry point
     # ------------------------------------------------------------------
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def explore(
         self,
         *,
@@ -862,21 +895,25 @@ class FastMDXplora:
 
     # Convenience: per-phase entry points (also called by the CLI)
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def setup(self, **kwargs: Unpack[SetupSettings]) -> PhaseResult:
         """Run only the setup phase."""
         return self._run_phase("setup", self._validated("setup", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def simulate(self, **kwargs: Unpack[SimulateSettings]) -> PhaseResult:
         """Run only the simulation phase."""
         return self._run_phase("simulation", self._validated("simulation", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def analyze(self, **kwargs: Unpack[AnalyzeSettings]) -> PhaseResult:
         """Run only the analysis phase."""
         return self._run_phase("analysis", self._validated("analysis", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def report(self, **kwargs: Unpack[ReportSettings]) -> PhaseResult:
         """Run only the report phase."""
         return self._run_phase("report", self._validated("report", kwargs))
@@ -1870,10 +1907,13 @@ def _was_a_stop(result: Any) -> bool:
             and refusal.get("code") == STOPPED_CODE)
 
 
+#: The process records this process has written, each removed at its exit
+#: where its run has not removed it already.
+_RECORDS_WRITTEN_HERE: set[Path] = set()
+
+
 def _record_run_process(output_dir: Path) -> None:
     import atexit
-    import json
-    import os
     import sys
 
     path = Path(output_dir) / RUN_PROCESS_FILE
@@ -1890,17 +1930,41 @@ def _record_run_process(output_dir: Path) -> None:
         }), encoding="utf-8")
     except OSError:
         return
+    path = path.absolute()
+    if path not in _RECORDS_WRITTEN_HERE:
+        _RECORDS_WRITTEN_HERE.add(path)
+        # For a run that raised past its end, and an orchestrator made and
+        # never run: removed at exit, where it still names this process.
+        atexit.register(_forget_run_process, path.parent)
 
-    def _remove(p: Path = path, pid: int = os.getpid()) -> None:
-        # Only this process's record: a child that inherited this hook must not
-        # remove the parent's.
+
+def _written_by_this_process(record: Any) -> bool:
+    """Whether a process record names this process: its number, and its
+    start where this machine says (`process_start_ticks`), on this machine.
+    A child that inherited the parent's state has a number of its own, so it
+    never takes the parent's record for its own."""
+    if not isinstance(record, dict) or record_is_from_elsewhere(record):
+        return False
+    pid = record.get("pid")
+    if isinstance(pid, bool) or pid != os.getpid():
+        return False
+    return record.get("start_ticks") == process_start_ticks(os.getpid())
+
+
+def _forget_run_process(output_dir: Path) -> None:
+    """The process record in ``output_dir`` removed, where this process wrote
+    it: its run has ended, finished, refused, failed or stopped. A record of
+    another process (a run started there since, a worker's) is left alone."""
+    path = Path(output_dir) / RUN_PROCESS_FILE
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if _written_by_this_process(record):
         try:
-            if os.getpid() == pid and p.is_file():
-                p.unlink()
+            path.unlink()
         except OSError:
             pass
-
-    atexit.register(_remove)
 
 
 def _phase_selection(
