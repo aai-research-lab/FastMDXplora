@@ -16,8 +16,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   of the dimer were simulated without it, said only as an unresolved
   terminus not built. A chain's records up to the TER that closes it are
   now its polymer.
-- A phosphorylated residue made standard is warned of: 1QMZ's TPO160, the
-  phosphate that activates CDK2, became a threonine said only at INFO.
+- A ligand modelled in two conformers is counted by its atoms, not its
+  records: 1AKE's AP5 holds seven of its 57 heavy atoms twice, and was
+  refused as "64 heavy atoms in the structure but 57 in its chemical
+  definition, so it is only partially resolved".
+- A modified residue made standard is warned of, but for selenomethionine,
+  which is the same molecule to a force field: 1QMZ's TPO160, the phosphate
+  that activates CDK2, became a threonine, and 1CAG's thirty hydroxyprolines,
+  which hold collagen's triple helix, prolines, each said only at INFO.
 - DNA and RNA are the polymer, not ligands: 1BNA's dodecamer was offered as
   24 ligands, and the Viewer drew its bases as ball and stick with a binding
   pocket around them.

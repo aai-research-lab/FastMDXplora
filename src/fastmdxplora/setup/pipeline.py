@@ -1224,9 +1224,12 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
             decision.resname,
             chain=(params.get("_copied_from") or {}).get(instance.chain, instance.chain),
             resseq=instance.resseq,
-            expected_heavy_atoms=sum(
-                1 for atom in instance.atoms if atom.element.upper() != "H"
-            ),
+            # Each atom once, whatever its alternate locations: 1AKE's AP5
+            # holds seven atoms in two conformers, and its 57 counted as 64
+            # were refused as "only partially resolved" (10-27).
+            expected_heavy_atoms=len({
+                atom.name for atom in instance.atoms if atom.element.upper() != "H"
+            }),
         )
         # A pKa is a property of the environment, so the environment should be
         # the one that will be simulated: repaired, with the missing side

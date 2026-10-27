@@ -316,11 +316,12 @@ def test_a_hetatm_residue_of_the_chain_stays_in_each_built_copy(tmp_path) -> Non
         assert not any(written[n][17:20] == "BTN" for n in range(mine[0], closing)), chain
 
 
-# -- A phosphorylated residue made standard ---------------------------------
+# -- A modified residue made standard, and what it lost ---------------
 
 def test_a_phosphate_taken_off_a_residue_is_warned_of(tmp_path) -> None:
-    """1QMZ's TPO160, the phosphate that activates CDK2, became a threonine
-    said only at INFO. 3PTB's Ser32 is written here as SEP."""
+    """1QMZ's TPO160, the phosphate that activates CDK2, became a threonine,
+    and 1CAG's thirty hydroxyprolines prolines, said only at INFO. 3PTB's
+    Ser32 is written here as SEP."""
     pytest.importorskip("pdbfixer")
     import logging
 
@@ -341,7 +342,31 @@ def test_a_phosphate_taken_off_a_residue_is_warned_of(tmp_path) -> None:
     finally:
         logger.removeHandler(handler)
     said = [record.getMessage() for record in heard if record.levelno >= logging.WARNING]
-    assert any("SEP" in line and "without their phosphate" in line for line in said), said
+    assert any("SEP32" in line and "without what modified them" in line for line in said), said
+
+
+def test_a_selenomethionine_made_standard_is_not_warned_of(tmp_path) -> None:
+    """A selenium for a sulfur is the same molecule to the force field."""
+    pytest.importorskip("pdbfixer")
+    import logging
+
+    from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
+
+    lines = [("HETATM" + line[6:17] + "MSE" + line[20:])
+             if line.startswith("ATOM") and line[17:20] == "MET" else line
+             for line in _deposition("3PTB")]
+    given = tmp_path / "3ptb_mse.pdb"
+    given.write_text("\n".join(lines) + "\n")
+    heard: list[logging.LogRecord] = []
+    handler = logging.Handler(logging.WARNING)
+    handler.emit = heard.append
+    logger = logging.getLogger("fastmdx.setup.pdbfix")
+    logger.addHandler(handler)
+    try:
+        fix_pdb_with_pdbfixer(str(given), str(tmp_path / "fixed.pdb"), ph=7.0)
+    finally:
+        logger.removeHandler(handler)
+    assert not any("modified" in record.getMessage() for record in heard)
 
 
 # -- DNA is the polymer, not a ligand ----------------------------------------
@@ -360,3 +385,30 @@ def test_dna_is_not_offered_as_a_ligand(tmp_path) -> None:
     path = tmp_path / "dna.pdb"
     path.write_text("\n".join(lines + ["END"]) + "\n")
     assert count_structure(path)["ligand_resnames"] == []
+
+
+# -- A ligand in two conformers ---------------------------------------------
+
+def test_a_ligand_s_atoms_in_two_conformers_are_counted_once(tmp_path, monkeypatch) -> None:
+    """1AKE's AP5 holds seven of its 57 heavy atoms in conformers A and B.
+    Counted per record it had 64, and was refused as "only partially
+    resolved" against its 57 in the dictionary."""
+    path = tmp_path / "input.pdb"
+    path.write_bytes(gzip.decompress((DEPOSITED / "1AKE.pdb.gz").read_bytes()))
+    params: dict = {"heterogens": "auto", "ph": 7.4}
+    built = pipeline._the_chains_to_simulate(SimpleNamespace(_assembly=None), path,
+                                             "pdb_id", params)
+    expected: list[int] = []
+
+    class Asked(Exception):
+        pass
+
+    def fetch(entry, resname, *, expected_heavy_atoms, **_):
+        expected.append(expected_heavy_atoms)
+        raise Asked
+
+    monkeypatch.setattr(ccd, "fetch_chemistry", fetch)
+    monkeypatch.setattr(pipeline, "_refuse_without_a_charge_provider", lambda params: None)
+    with pytest.raises(Asked):
+        pipeline._auto_ligands(params, built, tmp_path, "1ake")
+    assert expected == [57]

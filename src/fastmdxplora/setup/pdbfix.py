@@ -221,8 +221,9 @@ def report_removed_heterogens(
 #: The twenty, as a trace is counted among them.
 _AMINO_ACIDS = frozenset(
     "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split())
-# Phosphoserine, -threonine and -tyrosine, which made standard lose a phosphate.
-_PHOSPHORYLATED = frozenset({"SEP", "TPO", "PTR"})
+# The modified residue whose standard form is the same molecule to a force
+# field: a selenium for a sulfur. Every other loses what modified it.
+_SAME_WHEN_STANDARD = frozenset({"MSE"})
 
 
 def _refuse_a_trace(fixer) -> None:
@@ -735,17 +736,20 @@ def fix_pdb_with_pdbfixer(
                 "equivalents: %s", len(substitutions), described,
             )
             # A selenium for a sulfur changes nothing simulated; a phosphate
-            # taken off does. 1QMZ's TPO160, the phosphate that activates
-            # CDK2, became a threonine said only at INFO (10-27).
-            lost = sorted({f"{residue.name}{getattr(residue, 'id', '')}"
-                           for residue, _ in substitutions
-                           if residue.name.upper() in _PHOSPHORYLATED})
+            # or a hydroxyl taken off does. 1QMZ's TPO160, the phosphate that
+            # activates CDK2, became a threonine, and 1CAG's thirty
+            # hydroxyprolines, which hold collagen's triple helix, prolines,
+            # each said only at INFO (10-27).
+            lost = [f"{residue.name}{getattr(residue, 'id', '')}"
+                    for residue, _ in substitutions
+                    if residue.name.upper() not in _SAME_WHEN_STANDARD]
             if lost:
                 logger.warning(
-                    "Phosphorylated residue(s) %s were simulated without their "
-                    "phosphate, as the plain amino acid: a study of the "
-                    "phosphorylated state needs parameters for them supplied "
-                    "deliberately.", ", ".join(lost),
+                    "%d modified residue(s) were simulated as the plain amino "
+                    "acid, without what modified them (a phosphate, hydroxyl, "
+                    "oxidation, methyl or acetyl group): %s. A study of the "
+                    "modified form needs parameters for them supplied "
+                    "deliberately.", len(lost), ", ".join(lost),
                 )
             observe_fixer(
                 audit,
