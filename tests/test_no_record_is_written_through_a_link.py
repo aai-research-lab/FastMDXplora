@@ -273,7 +273,10 @@ def test_a_record_linked_out_is_not_saved_over_in_a_held_read(tmp_path, planted)
     assert [p.name for p in root.iterdir()] == ["record.json"]
 
 
-def test_a_link_saved_over_outside_a_held_read_is_replaced_not_followed(tmp_path):
+def test_a_record_linked_out_is_replaced_not_followed_outside_a_held_read(tmp_path):
+    """Where no study is known (the run's own writer), a record that is
+    itself a link is replaced by the rename into place, never written
+    through."""
     from fastmdxplora import record_access
 
     victim = _outside(tmp_path, "to a file")
@@ -284,6 +287,32 @@ def test_a_link_saved_over_outside_a_held_read_is_replaced_not_followed(tmp_path
 
     _unchanged(victim, "to a file")
     assert _regular(target) and target.read_text(encoding="utf-8") == "written\n"
+
+
+def test_a_run_writes_its_progress_into_a_simulation_folder_it_was_given_as_a_link(tmp_path):
+    """A study whose `simulation/` is a link the person made (to scratch on a
+    cluster): the run's own process, outside any held read, writes its
+    status, phases, events and metrics there, as it always did."""
+    from fastmdxplora.gui.telemetry import TelemetryWriter
+
+    root = tmp_path / "study"
+    root.mkdir()
+    scratch = tmp_path / "scratch" / "simulation"
+    scratch.mkdir(parents=True)
+    _link(root / "simulation", scratch)
+    writer = TelemetryWriter(root / "simulation", total_steps=100)
+
+    writer.write_status(stage="production", status="running", current_step=40)
+    writer.event("production began")
+    writer.append_metric(step=40)
+    TelemetryWriter(root / "simulation", phases_only=True).write_status(
+        stage="analysis", status="running", stage_states={"analysis": "running"})
+
+    status = json.loads((scratch / "live_status.json").read_text(encoding="utf-8"))
+    assert status["current_step"] == 40 and status["stage_states"]["analysis"] == "running"
+    assert "production began" in (scratch / "live_events.log").read_text(encoding="utf-8")
+    assert (scratch / "live_metrics.csv").read_text(encoding="utf-8").count("\n") == 2
+    assert (root / "simulation").is_symlink()
 
 
 def test_a_record_is_saved_as_any_file_written_here_would_be(tmp_path):
@@ -521,9 +550,10 @@ def _going(root: Path) -> Path:
 @pytest.mark.parametrize("at", ["live_status.json.tmp", "live_status.json"])
 def test_a_stop_writes_the_run_s_status_through_no_link(tmp_path, at, planted):
     """A run stopped here is recorded as stopped in its own status record: a
-    link at its old temporary name is never followed, and the record itself
-    linked out of the study is replaced by the study's own, not written
-    through."""
+    link at its old temporary name is never followed. The record itself
+    linked out of the study is not read (what it says is never copied in,
+    `test_a_status_linked_out_is_not_copied_into_the_study`), so nothing is
+    recorded and the link is left as it was."""
     from fastmdxplora.gui.exploration import _record_the_stop
 
     root = _study(tmp_path)
@@ -545,7 +575,7 @@ def test_a_stop_writes_the_run_s_status_through_no_link(tmp_path, at, planted):
         assert [p.name for p in victim.parent.iterdir()] == ["victim.txt"]
     else:
         _unchanged(victim, planted)
-    if at == "live_status.json" and planted == "dangling":
+    if at == "live_status.json":
         # Nothing read says it was going: nothing is recorded.
         assert status.is_symlink()
         return
@@ -570,3 +600,151 @@ def test_a_run_s_events_and_metrics_are_added_through_no_link(tmp_path, record, 
 
     _unchanged(victim, planted)
     assert (root / "simulation" / record).is_symlink()
+
+
+# --------------------------------------------------------------------------
+# What a run's status linked out says is never copied in (G13 H1, G14 H1)
+# --------------------------------------------------------------------------
+
+#: A status outside the study that says it is going, with keys and values
+#: the study never wrote.
+MARKED = {"status": "running", "stage": "production", "platform": "MARKERPLATFORM",
+          "latest_warning": "MARKER-OUTSIDE-STOP", "current_step": 777777,
+          "secret_token": "MARKER-SECRET"}
+MARKERS = ("MARKERPLATFORM", "MARKER-OUTSIDE-STOP", "777777", "MARKER-SECRET")
+
+
+def _marked_status(root: Path, tmp_path: Path, stage: str = "production") -> Path:
+    """The study's status record moved out of it, a link to it left in its
+    place, and the file outside saying it is going, in ``stage``, with
+    markers."""
+    outside = tmp_path / "outside"
+    outside.mkdir(exist_ok=True)
+    target = outside / "live_status.json"
+    target.write_text(json.dumps({**MARKED, "stage": stage}), encoding="utf-8")
+    status = root / "simulation" / "live_status.json"
+    status.unlink(missing_ok=True)
+    _link(status, target)
+    return target
+
+
+def _tree(folder: Path) -> dict[str, bytes]:
+    return {p.relative_to(folder).as_posix(): p.read_bytes()
+            for p in sorted(folder.rglob("*")) if p.is_file() and not p.is_symlink()}
+
+
+def _no_marker_in(root: Path, tmp_path: Path) -> None:
+    """No marker in any record of the study, nor in what `/api/status`
+    sends on this computer or on a public bind."""
+    for name, data in _tree(root).items():
+        assert not any(marker.encode() in data for marker in MARKERS), name
+    for public in (False, True):
+        status, body = _ask(root, tmp_path, "/api/status", public=public)
+        assert status == 200 and not any(m in body.decode("utf-8") for m in MARKERS), body[:300]
+
+
+def _run_status_writers():
+    from fastmdxplora.gui.exploration import DashboardRuntime, _record_the_stop
+    from fastmdxplora.gui.telemetry import TelemetryWriter
+
+    def stop(root: Path) -> None:
+        _record_the_stop(root)
+
+    def failed_checks(root: Path) -> None:
+        runtime = DashboardRuntime(workspace_root=root.parent, exploration_root=root.parent)
+        runtime.active_root = root
+        runtime._record_completion_failure("Its checks failed after the run.")
+
+    def phases(root: Path) -> None:
+        TelemetryWriter(root / "simulation", phases_only=True).write_status(
+            stage="analysis", status="running", stage_states={"analysis": "running"})
+
+    return {"stop": stop, "completion failure": failed_checks, "phase writer": phases}
+
+
+@pytest.mark.parametrize("writer", ["stop", "completion failure", "phase writer"])
+def test_a_status_linked_out_is_not_copied_into_the_study(tmp_path, writer):
+    root = _study(tmp_path)
+    target = _marked_status(root, tmp_path, "analysis" if writer == "phase writer"
+                            else "production")
+    before = target.read_bytes()
+
+    _run_status_writers()[writer](root)
+
+    assert target.read_bytes() == before
+    assert [p.name for p in target.parent.iterdir()] == ["live_status.json"]
+    _no_marker_in(root, tmp_path)
+
+
+@pytest.mark.parametrize("writer", ["stop", "completion failure"])
+def test_a_simulation_folder_linked_out_is_not_written_into(tmp_path, writer):
+    """The run's whole `simulation/` linked out of the study, saying it is
+    going: what the GUI records of it, held to the study, changes and makes
+    nothing outside, and no marker reaches the study. (The run's own
+    process writes there, as `test_a_run_writes_its_progress_into_...`
+    says.)"""
+    root = _study(tmp_path)
+    (root / "simulation" / "live_status.json").write_text(json.dumps(MARKED), encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "simulation").rename(outside / "simulation")
+    _link(root / "simulation", outside / "simulation")
+    before = _tree(outside)
+
+    _run_status_writers()[writer](root)
+
+    assert _tree(outside) == before
+    _no_marker_in(root, tmp_path)
+
+
+@pytest.mark.parametrize("folder", ["simulation", "analysis", "report"])
+def test_nothing_is_run_again_into_a_folder_linked_out(tmp_path, monkeypatch, folder):
+    """Running a phase again writes into `simulation/` (its status),
+    `analysis/` or `report/`: with one linked out of the study, neither
+    phase is offered, and asked anyway, nothing is started."""
+    from fastmdxplora.gui import exploration
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    monkeypatch.setattr(exploration.subprocess, "Popen", _Started)
+    monkeypatch.setattr(exploration.DashboardRuntime, "_others_running", lambda self, **_: None)
+    _Started.started = []
+    root = _with_its_structure(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rmsf]\n",
+                                              encoding="utf-8")
+    (root / "report").mkdir(exist_ok=True)
+    (root / "report" / "report.md").write_text("# Report\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / folder).rename(outside / folder)
+    _link(root / folder, outside / folder)
+    before = _tree(outside)
+
+    offered = json.loads(_asked(root, tmp_path, "/api/again")[1])
+    asked = [json.loads(_asked(root, tmp_path, route, body=body)[1])
+             for route, body in STARTS.items()]
+
+    assert offered["analysis"]["can"] is False and offered["report"]["can"] is False, offered
+    assert f"{folder} is a link out of the study" in offered["analysis"]["why"], offered
+    assert all(said["ok"] is False for said in asked) and _Started.started == [], asked
+    assert _tree(outside) == before
+
+
+@pytest.mark.parametrize("planted", PLANTED)
+def test_the_agent_s_stop_writes_to_no_log_linked_out(tmp_path, monkeypatch, planted):
+    """A run ended after it was asked to stop says so in its log
+    (`stop_after.watch`): never through a link out of the study. Nothing is
+    signalled: the run and its ending are stood in for."""
+    from fastmdxplora import stop_after
+    from fastmdxplora.gui import exploration
+
+    monkeypatch.setattr(exploration, "_identify_run", lambda *args: True)
+    monkeypatch.setattr(exploration, "_terminate_process", lambda *args, **kwargs: None)
+    monkeypatch.setattr(exploration, "_end_what_is_left_of", lambda *args: None)
+    root = _study(tmp_path)
+    victim = _outside(tmp_path, planted)
+    _link(root / "exploration.log", victim)
+
+    assert stop_after.watch(2 ** 30, root, {}, 0.0) is True
+
+    _unchanged(victim, planted)
+    assert (root / "exploration.log").is_symlink()

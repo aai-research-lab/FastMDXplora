@@ -78,7 +78,10 @@ def watch(pid: int, folder: Path, record: Any, grace_s: float) -> bool:
     if its_own_session:
         _end_what_is_left_of(pid)
     try:
-        with (Path(folder) / "exploration.log").open("a", encoding="utf-8") as log:
+        from fastmdxplora import record_access
+
+        # Never through a link (`record_access.open_to_append`).
+        with record_access.open_to_append(Path(folder) / "exploration.log") as log:
             log.write(f"\n[{datetime.now(timezone.utc).isoformat(timespec='seconds')}] "
                       f"Ended: it had not stopped {grace_s:g} s after it was asked to.\n")
     except OSError:

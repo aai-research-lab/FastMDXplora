@@ -578,15 +578,21 @@ def _said_not_read(answer: Any) -> Any:
     return answer
 
 
+#: Where a run again writes in a study: its log, and the folders of its
+#: phases' records. One linked out of the study would be written through.
+_AGAIN_WRITES = ("exploration.log", "simulation", "analysis", "report")
+
+
 def _again_offered(inside: Path) -> dict[str, Any]:
     """What `GET /api/again` offers of the study ``inside``, in the held read
-    the caller is in: nothing where its Config is not its own. Its log is
-    asked after too (`_linked_out`), as the run would write it."""
+    the caller is in: nothing where its Config is not its own. Where the run
+    would write (`_AGAIN_WRITES`) is asked after too (`_linked_out`)."""
     from fastmdxplora.config.recorded import RECORDED
     from fastmdxplora.gui.again_view import again_payload
     from fastmdxplora.gui.trajectory_frames import _linked_out
 
-    _linked_out(inside / "exploration.log")
+    for name in _AGAIN_WRITES:
+        _linked_out(inside / name)
     if _linked_out(inside / RECORDED):
         return {"available": False, "why": (
             f"{RECORDED} is not one of this study's own records, so nothing is offered to "
@@ -594,27 +600,39 @@ def _again_offered(inside: Path) -> dict[str, Any]:
     return again_payload(inside)
 
 
-#: The records of a study whose refusal leaves nothing to run again in it:
-#: its Config and analysis manifest, which say what runs, and its log.
-_AGAIN_FROM = ("resolved_config.yml", "analysis_manifest.json", "exploration.log")
+#: The records of a study a run again is planned from: its Config and its
+#: analysis manifest, which say what runs.
+_AGAIN_FROM = ("resolved_config.yml", "analysis_manifest.json")
 
 
 def _again_answer(root: Path) -> dict[str, Any]:
     """What can be run again on the study ``root`` (`GET /api/again`), read
-    held to it (`_confined`): where its Config, its analysis manifest or its
-    log is linked out of it, neither phase can, said with the sentence of
-    what was not read (``refused``). `POST /api/again` and
-    `/api/report/write` decide from this same answer, so nothing is offered
-    that would be refused."""
+    held to it (`_confined`): where its Config or its analysis manifest is
+    linked out of it, or where the run would write (its log, its
+    `simulation/`, `analysis/` or `report/`), neither phase can, said with
+    why (``refused``). `POST /api/again` and `/api/report/write` decide
+    from this same answer, so nothing is offered that would be refused."""
     said = _said_not_read(_confined(root, _again_offered))
-    names = [name for name in said.get("unavailable") or () if name.endswith(_AGAIN_FROM)]
-    if not names:
+    refused = said.get("unavailable") or ()
+    read = [name for name in refused if name.endswith(_AGAIN_FROM)]
+    written = [name for name in refused if name in _AGAIN_WRITES]
+    if not read and not written:
         return said
-    unread = _refusals_said({"unavailable": names, "unavailable_why": {
-        name: (said.get("unavailable_why") or {}).get(name) for name in names}})
-    why = unread + " Nothing is run again from it."
-    return {**said, "analysis": {"can": False, "why": why}, "report": {"can": False, "why": why},
-            "recorded": [], "refused": why}
+    whys = []
+    if read:
+        whys.append(_refusals_said({"unavailable": read, "unavailable_why": {
+            name: (said.get("unavailable_why") or {}).get(name) for name in read}})
+            + " Nothing is run again from it.")
+    if written:
+        whys.append(", ".join(written) + (" is a link" if len(written) == 1 else " are links")
+                    + " out of the study, where running it again would write, so nothing "
+                    "is run again.")
+    why = " ".join(whys)
+    answer = {**said, "analysis": {"can": False, "why": why},
+              "report": {"can": False, "why": why}, "recorded": [], "refused": why}
+    # Nothing is offered ticked, so nothing is said of what would be.
+    answer.pop("recorded_said", None)
+    return answer
 
 
 def _again_refused(root: Path | None) -> dict[str, Any] | None:

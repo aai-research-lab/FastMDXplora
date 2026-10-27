@@ -357,9 +357,11 @@ def _leads_out(path: Path) -> bool:
 def _may_save(target: Path) -> None:
     """Refuse, in a read held to the study, where ``target`` or the folder
     it is saved in is a link out of the study: named as not saved, and
-    never written over or through. Nothing outside a held read, where the
-    temporary file and the rename still never follow a link at either
-    name."""
+    never written over or through. Outside a held read (the run's own
+    process writing its progress), a folder that is a link the person made
+    (to scratch on a cluster) is followed, as it always was, and a record
+    that is itself a link is replaced by the rename, never written
+    through."""
     if _scope.get() is None:
         return
     if _leads_out(target.parent) or _leads_out(target):
@@ -482,32 +484,48 @@ def _removed(name: str) -> None:
         pass
 
 
+def _opened_without_links(path: Path, flags: int) -> int:
+    """``path`` opened with ``flags`` and ``O_NOFOLLOW``: a link at the
+    record itself is refused with `OutsideWorkspace`. In a read held to the
+    study, so is a record or folder that leads out of it; outside one (the
+    run's own process), a folder that is a link the person made is
+    followed, as it always was."""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    flags |= nofollow | getattr(os, "O_CLOEXEC", 0)
+    if _scope.get() is not None and (_leads_out(path.parent) or _leads_out(path)):
+        raise OutsideWorkspace(f"{path.name} leads outside the study, so it is not opened.")
+    try:
+        descriptor = os.open(path, flags, 0o666)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
+            raise OutsideWorkspace(f"{path.name} is a link, so it is not opened.") from exc
+        raise
+    return descriptor
+
+
 def open_to_append(path: Path, *, encoding: str = "utf-8", buffering: int = -1,
                    newline: str | None = None) -> TextIO:
     """A record of the study opened to add to its end (a run's log, its
-    events), never through a link: the record is opened with
-    ``O_NOFOLLOW``, in its folder opened without following a link at the
-    folder's own name, so a link at either is refused with
-    `OutsideWorkspace` and nothing is written where it leads. Made where
-    it is not there yet, with the mode any file written here has."""
-    path = Path(path)
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | nofollow | getattr(os, "O_CLOEXEC", 0)
-    try:
-        if nofollow and os.open in os.supports_dir_fd:
-            above = Path(path.parent.parent).resolve() / path.parent.name
-            folder = os.open(above, os.O_RDONLY | os.O_DIRECTORY | nofollow)
-            try:
-                descriptor = os.open(path.name, flags, 0o666, dir_fd=folder)
-            finally:
-                os.close(folder)
-        else:
-            descriptor = os.open(path, flags, 0o666)
-    except OSError as exc:
-        if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
-            raise OutsideWorkspace(f"{path.name} is a link, so nothing is written to it.") from exc
-        raise
+    events), never through a link at the record (`_opened_without_links`),
+    so nothing is written where one leads. Made where it is not there yet, with the mode
+    any file written here has."""
+    descriptor = _opened_without_links(Path(path), os.O_WRONLY | os.O_APPEND | os.O_CREAT)
     return os.fdopen(descriptor, "a", encoding=encoding, buffering=buffering, newline=newline)
+
+
+def read_own_text(path: Path, *, encoding: str = "utf-8") -> str:
+    """A record's text as `read_text` reads it in a held read; outside one
+    (the run's own writer reading the record it writes over), never
+    through a link at the record itself (`_opened_without_links`): what it
+    leads to is not read, let alone merged into what is written."""
+    if _scope.get() is not None:
+        return read_text(path, encoding=encoding)
+    descriptor = _opened_without_links(Path(path), os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OutsideWorkspace("Only regular study records may be read.")
+    with os.fdopen(descriptor, encoding=encoding) as stream:
+        return stream.read()
 
 
 def can_read(path: Path) -> bool:

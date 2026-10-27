@@ -1260,17 +1260,30 @@ class DashboardRuntime:
         return None
 
     def _record_completion_failure(self, detail: str) -> None:
-        """Make the overview and health panels reflect post-run validation."""
+        """Make the overview and health panels reflect post-run validation.
+        Read and written held to the study (`server._confined`), as the
+        Stop records itself: a status linked out of it is not read."""
         if self.active_root is None:
             return
+        from fastmdxplora.gui.server import _confined
+
+        try:
+            _confined(Path(self.active_root), lambda root: self._completion_failure_recorded(
+                root, detail))
+        except Exception:  # noqa: BLE001 - status reporting must not mask the result
+            return
+
+    def _completion_failure_recorded(self, root: Path, detail: str) -> None:
         try:
             from fastmdxplora.gui.telemetry import TelemetryWriter, read_status
 
-            status = read_status(self.active_root)
+            status = read_status(root)
             states = status.get("stage_states")
             states = dict(states) if isinstance(states, dict) else {}
+            from fastmdxplora import record_access
+
             setup_ready = all(
-                (self.active_root / "setup" / name).is_file()
+                record_access.is_file(root / "setup" / name)
                 for name in ("system.xml", "state.xml", "topology.pdb")
             )
             if setup_ready:
@@ -1290,7 +1303,7 @@ class DashboardRuntime:
                     "report",
                 ):
                     states[name] = "skipped"
-            writer = TelemetryWriter(self.active_root / "simulation", enabled=True)
+            writer = TelemetryWriter(root / "simulation", enabled=True)
             writer.write_status(
                 stage=stage,
                 status="failed",
@@ -2303,7 +2316,19 @@ def _record_the_stop(root: Path) -> None:
     run stopped before production ends without a word (minimisation is one
     call that cannot be interrupted), so its record still said it was
     running, the open page said "Running" and, read again, "Interrupted:
-    the machine restarted", with a checkpoint that was never written."""
+    the machine restarted", with a checkpoint that was never written.
+    Read and written held to the study (`server._confined`): a record of it
+    linked out of it is not read, so nothing it says is recorded, and no
+    record is written through a link."""
+    from fastmdxplora.gui.server import _confined
+
+    try:
+        _confined(Path(root), _the_stop_recorded)
+    except Exception:  # noqa: BLE001 - the stop stands whatever is recorded
+        return
+
+
+def _the_stop_recorded(root: Path) -> None:
     from fastmdxplora.gui.telemetry import (
         _GOING_STATUSES, TelemetryWriter, read_status, read_study_status)
 

@@ -1037,10 +1037,13 @@ open one (`/api/beside`) is read held to itself, and what it did not read is
 named by its name (`other: simulation/frames.dcd`), in the reason it is not
 shown or beside what is shown. A POST decides only from the study's own
 records: its phases are not run again (`POST /api/again`,
-`/api/report/write`) from a Config, analysis manifest or log linked out of
-it, and `GET /api/again` then offers neither phase, from the same answer; a
-run's snapshots are not cleared (`POST /api/files/clear-scratch`) where its
-record is linked out. Every record the GUI saves in a study is written to a
+`/api/report/write`) from a Config or analysis manifest linked out of it,
+nor into a log, `simulation/`, `analysis/` or `report/` linked out, and
+`GET /api/again` then offers neither phase, from the same answer; a run's
+snapshots are not cleared (`POST /api/files/clear-scratch`) where its
+record is linked out; and the Stop (`POST /api/explore/stop`) reads and
+writes the run's status held to the study, so a status linked out is not
+read, copied in or written through. Every record the GUI saves in a study is written to a
 new temporary file of its own and renamed into place (MDTraj's in a new
 folder of its own), and the run's log, events and metrics are added to
 without following a link, so nothing is written over or through a link, at
@@ -1052,6 +1055,10 @@ whole reads its own file in the place its records name only where it holds
 as many atoms as its analyses read (`n_atoms`). The Agent's conversation
 routes (`/api/agent/...`) are not yet held to the study: they answer on
 this computer only, and are held in a later release.
+The run's own process, outside any held read, follows a folder of the study
+that is a link the person made (`simulation/` on a cluster's scratch, say)
+and writes its progress there; it never reads or writes through a record
+that is itself a link.
 
 **Reading**
 

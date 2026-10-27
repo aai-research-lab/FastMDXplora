@@ -852,8 +852,8 @@ def test_a_structure_named_relative_to_the_study_is_read_in_it(tmp_path):
                                       "exploration.log"])
 def test_nothing_is_offered_again_that_would_be_refused(tmp_path, relative):
     """With the study's Config, analysis manifest or log linked out of it,
-    neither phase is offered: each says what was not read, as the POST
-    refuses with it."""
+    neither phase is offered: each says what was not read, or for the log
+    that the run would write through it, as the POST refuses with it."""
     root = _study(tmp_path)
     (root / "resolved_config.yml").write_text("analysis:\n  include: [rg]\n",
                                               encoding="utf-8")
@@ -866,8 +866,10 @@ def test_nothing_is_offered_again_that_would_be_refused(tmp_path, relative):
 
     for phase in ("analysis", "report"):
         assert said[phase]["can"] is False, said
-        assert f"{relative} was not read" in said[phase]["why"], said
-    assert said["recorded"] == []
+        assert (f"{relative} is a link out of the study, where running it again would write"
+                if relative == "exploration.log" else f"{relative} was not read") \
+            in said[phase]["why"], said
+    assert said["recorded"] == [] and "recorded_said" not in said
 
 
 def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path):

@@ -1624,7 +1624,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 - A run's log, its status (a run stopped here included), its events and
   its metrics are written through no link: a log linked out of the study
-  starts nothing, and a status linked out is replaced by the study's own.
+  starts nothing. A status linked out is not read, by the Stop, by a
+  run's checks failing after it or by the run's own writer, so nothing it
+  says is copied into the study's record or sent; and with `simulation/`,
+  `analysis/` or `report/` linked out, nothing is run again. The run's own
+  process still writes its progress into a `simulation/` that is a link the
+  person made (to scratch, say), never through a link at a record itself.
 
 - A record the GUI could not save is named in the answer, as not saved
   (linked out of the study) or as not saved for want of room (a full disk,

@@ -185,7 +185,7 @@ class TelemetryWriter:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             now = datetime.now(timezone.utc)
-            persisted = _read_status_path(self.status_path)
+            persisted = _own_status(self.status_path)
             status = {
                 # A run that has not reported a stage does not have one yet.
                 # Written as "not available" this travelled to the page and
@@ -246,7 +246,7 @@ class TelemetryWriter:
         """Only the analysis and report stages, the status and the error,
         over the simulation's record as it stands."""
         try:
-            status = _read_status_path(self.status_path)
+            status = _own_status(self.status_path)
             if not status:
                 return
             if not self._last_status:
@@ -304,7 +304,7 @@ class TelemetryWriter:
         name = str(stage or "").strip().lower()
         if name not in STAGE_ORDER:
             return
-        persisted = _read_status_path(self.status_path)
+        persisted = _own_status(self.status_path)
         states = persisted.get("stage_states")
         if not isinstance(states, dict):
             states = {}
@@ -354,6 +354,18 @@ _PHASES_AFTER = ("analysis", "report")
 def _read_status_path(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(_records.read_text(path, encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _own_status(path: Path) -> dict[str, Any]:
+    """The status record a writer merges what it writes into, read never
+    through a link (`record_access.read_own_text`): a record linked out of
+    the study is read as no record, and nothing it says is merged into
+    the study's own."""
+    try:
+        data = json.loads(_records.read_own_text(path, encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
