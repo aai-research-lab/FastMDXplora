@@ -204,6 +204,26 @@ class _AdoptedProcess:
         self._returncode: int | None = None
 
     def _alive(self) -> bool:
+        if self.pid == os.getpid():
+            # This process (`fastmdx run --dashboard`, a notebook) goes on
+            # once its run has ended, so the run is going only while this
+            # process's record of it stands: it is removed as the run ends
+            # (`orchestrator._forget_run_process`). Its GUI said it was
+            # running, and refused another, after the run was over.
+            from fastmdxplora.orchestrator import (
+                RUN_PROCESS_FILE,
+                process_start_ticks,
+                record_is_from_elsewhere,
+            )
+
+            record = _process_record_held(self.root)
+            if not record:
+                # One there and not read is being written again (a study's
+                # top-level record, as its runs begin): still going.
+                return (self.root / RUN_PROCESS_FILE).is_file()
+            ticks = record.get("start_ticks")
+            return (record.get("pid") == self.pid and not record_is_from_elsewhere(record)
+                    and (ticks is None or ticks == process_start_ticks(self.pid)))
         if not _process_alive(self.pid):
             return False
         # Its start where the record has it: a number given to another
@@ -230,11 +250,12 @@ class _AdoptedProcess:
 
     def terminate(self) -> None:
         # Never a process that is not the run: asked again before each signal.
-        if self.what_it_is() == "the run":
+        # Nor this process once its run has ended (`_alive`).
+        if self._alive() and self.what_it_is() == "the run":
             _terminate_process(self.pid)
 
     def kill(self) -> None:
-        if self.what_it_is() == "the run":
+        if self._alive() and self.what_it_is() == "the run":
             _terminate_process(self.pid, force=True)
 
     def wait(self, timeout: float | None = None) -> int:

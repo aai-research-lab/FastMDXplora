@@ -184,3 +184,33 @@ def test_only_this_process_s_own_record_is_removed(tmp_path, another):
     assert left({**ours, "start_ticks": ours["start_ticks"] - 1})
     assert left({**ours, "host": ours["host"] + "-elsewhere"})
     assert left({"pid": os.getpid()})
+
+
+def test_a_gui_in_the_run_s_process_is_not_running_once_the_run_ends(tmp_path, monkeypatch):
+    """`fastmdx run --dashboard`: its GUI, in the run's process, takes the
+    run for the one it watches as it starts, and stays up after it. It
+    went on saying the study was running, and offered Stop on this
+    process, once the run was over."""
+    from unittest import mock
+
+    from fastmdxplora.gui import exploration
+
+    root = tmp_path / "study"
+    seen: list = []
+
+    def phase(self, name, options):
+        seen.append((gui.process.poll(), gui.snapshot()["process_running"]))
+        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
+
+    monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
+    study = FastMDXplora("1L2Y", output_dir=str(root))
+    gui = _runtime(root)
+    assert gui.process is not None and gui.process.pid == os.getpid()
+    study.explore(include_phase=["analysis"])
+    assert seen == [(None, True)]
+    assert gui.process.poll() is not None
+    assert gui.snapshot()["process_running"] is False
+    with mock.patch.object(exploration, "_terminate_process") as signalled:
+        gui.process.terminate()
+        gui.process.kill()
+    signalled.assert_not_called()
