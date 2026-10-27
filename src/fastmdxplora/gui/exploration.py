@@ -186,6 +186,13 @@ def _finished_cleanly(root: Path) -> bool:
         str(p.get("status") or "").lower() in FAILED_STATUSES for p in phases.values())
 
 
+#: Said where a run in this GUI's own process cannot be stopped from it: a
+#: signal to it would end the GUI too, and nothing in it listens for a stop.
+OWN_STOP_REFUSED = ("This run is in this GUI's own process; stopping it here would end the "
+                    "GUI too. Stop it where it was started (Ctrl+C at its terminal, or "
+                    "interrupt the notebook's cell).")
+
+
 class _AdoptedProcess:
     """A run this server did not start, held by its PID.
 
@@ -1310,6 +1317,9 @@ class DashboardRuntime:
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
                 "process_running": running and viewing_running,
+                # Said at once, in place of asking, where Stop would be refused.
+                "stop_refused": (self._own_stop_refused()
+                                 if running and viewing_running else None),
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
@@ -2154,9 +2164,7 @@ class DashboardRuntime:
 
                 said = stop_what_listens_here(where)
                 if said is None:
-                    said = ("This run is in this GUI's own process; stopping it here would "
-                            "end the GUI too. Stop it where it was started (Ctrl+C at its "
-                            "terminal, or interrupt the notebook's cell).")
+                    said = OWN_STOP_REFUSED
                     return {"stopped": False, "ok": False, "refused": True, "detail": said,
                             "error": said, "state": self.snapshot()}
                 if where is not None:
@@ -2195,6 +2203,16 @@ class DashboardRuntime:
                 "state": self.snapshot(),
             }
 
+
+    def _own_stop_refused(self) -> str | None:
+        """Why Stop would be refused now, where the run held is in this
+        GUI's own process and nothing in it listens for a stop
+        (`stop`); None otherwise. Called with the lock held."""
+        if not (isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid()):
+            return None
+        from fastmdxplora.simulation.runner import listens_here
+
+        return None if listens_here(self.running_root or self.active_root) else OWN_STOP_REFUSED
 
     def _not_the_run_held(self) -> str | None:
         """Why the run adopted here is not signalled, where its process is

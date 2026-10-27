@@ -276,36 +276,52 @@ def test_a_stop_s_card_is_named_alike_wherever_it_is_led_to(browser, tmp_path): 
     assert headings == [["health:stopped", "To carry it on"]], headings
 
 
-def test_a_stop_refused_is_said_until_the_run_moves_on(browser, tmp_path):  # noqa: F811
-    """A run in the GUI's own process, outside production: its Stop is
-    refused, and said. The status bar's answer went after four seconds, the
-    refusal with it."""
+def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_path):  # noqa: F811
+    """A run in the GUI's own process, outside production, cannot be stopped
+    from it. The page asked "Stop the run?" and then refused, and the status
+    bar's answer went after four seconds; under the Overview's Stop it stayed
+    into production, where Stop works, and after the run. It is said at
+    once, kept while it holds, and goes once the run can be stopped."""
     from fastmdxplora.gui.server import start_dashboard_session
+
+    own_stop_refused = (
+        "This run is in this GUI's own process; stopping it here would end the GUI too. "
+        "Stop it where it was started (Ctrl+C at its terminal, or interrupt the notebook's "
+        "cell).")
 
     study = _going(tmp_path / "study", "nvt")
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     page = browser.new_page(viewport={"width": 1440, "height": 900})
-    said = ("This run is in this GUI's own process; stopping it here would end the GUI too. "
-            "Stop it where it was started (Ctrl+C at its terminal, or interrupt the notebook's "
-            "cell).")
+    refused = [own_stop_refused]
+    asked: list = []
     errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused=refused[0])
+        route.fulfill(response=response, json=body)
+
     try:
         page.set_default_timeout(60000)
         page.on("pageerror", lambda error: errors.append(str(error)))
-        _with_a_run(page, [])
-        page.route("**/api/explore/stop", lambda route: route.fulfill(json={
-            "stopped": False, "ok": False, "refused": True, "detail": said, "error": said}))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", lambda route: (asked.append(1), route.fulfill(
+            json={"stopped": True, "detail": "Stopping."})))
         page.goto(session.url + "#analysis", wait_until="domcontentloaded")
         page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
         page.click("#sb-stop")
-        page.click("#sb-stop-ask .stop-run-yes")
-        page.wait_for_function("(said) => document.querySelector('#sb-stop-ask')"
-                               ".textContent === said", arg=said)
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        questioned = page.locator("#sb-stop-ask .stop-run-yes").count()
         page.wait_for_timeout(6000)
-        kept = page.text_content("#sb-stop-ask")
-        shown = page.is_visible("#sb-stop-ask")
+        kept = page.text_content("#sb-stop-ask") if page.is_visible("#sb-stop-ask") else ""
+        refused[0] = None   # production reached: Stop works here now
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached")
     finally:
         page.close()
         session.server.shutdown()
     assert errors == []
-    assert kept == said and shown
+    assert questioned == 0 and asked == []
+    assert kept == own_stop_refused

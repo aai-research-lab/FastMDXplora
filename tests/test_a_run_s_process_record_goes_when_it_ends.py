@@ -311,10 +311,13 @@ def test_the_gui_of_explore_with_its_dashboard_holds_the_run_and_never_signals_i
     the command, GUI and all, died and left its record. Outside production
     it is refused, said, and the run goes on to its end."""
     seen: list = []
+    refusals: list = []
 
     def phase(self, name, gui):
-        seen.append((name, gui.snapshot()["process_running"],
-                     getattr(gui.process, "pid", None)))
+        state = gui.snapshot()
+        seen.append((name, state["process_running"], getattr(gui.process, "pid", None)))
+        # Said before Stop is pressed, so the page says it at once.
+        refusals.append(state["stop_refused"])
         if name == pressed_in:
             seen.append(gui.stop())
         return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
@@ -329,6 +332,7 @@ def test_the_gui_of_explore_with_its_dashboard_holds_the_run_and_never_signals_i
         "cell).")
     assert [item for item in seen if isinstance(item, tuple)] == [
         ("setup", True, os.getpid()), ("analysis", True, os.getpid())]
+    assert refusals == [answer["detail"]] * 2
     assert signalled == []
     assert rc == 0
     after = gui.snapshot()
@@ -349,15 +353,18 @@ def test_the_gui_of_explore_with_its_dashboard_stops_production_as_sigterm_does(
         # Stands in for production: it listens as production does, and
         # ends as a stopped production ends.
         with runner._StopRequests() as stop:
-            gui.snapshot()
+            answers.append(gui.snapshot()["stop_refused"])
             answers.append(gui.stop())
+            # Recorded as the GUI's request: no signal was sent.
+            answers.append(runner._who_asked(stop.name))
             if stop.requested:
                 raise RunStopped(stop.name)
         return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
 
     rc, out, gui, signalled = _explore_with_its_dashboard(
         tmp_path, monkeypatch, phase, ["simulation"])
-    assert answers and answers[0]["stopped"] is True
+    assert answers[0] is None and answers[1]["stopped"] is True
+    assert answers[2] == "a request to stop from the GUI"
     assert signalled == []
     assert rc != 0
     after = gui.snapshot()

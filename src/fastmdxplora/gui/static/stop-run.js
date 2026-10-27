@@ -16,6 +16,12 @@
   var wasRunning = false;
   var stage = "";
   var refused = false;
+  var refusedNow = null;
+
+  /* A refused stop, said until the run can be stopped here or ends. */
+  function refusal(said) {
+    return el("span", "fix-said stop-run-answer stop-run-refused", said);
+  }
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -42,6 +48,14 @@
    * words, or null for Not now. */
   function ask(host, done) {
     if (!host || !window.FastMDXConfirm || beyondLoopback()) return;
+    // Refused now (a run in this GUI's own process, where nothing listens
+    // for a stop): said at once, not after asking whether to stop.
+    if (refusedNow) {
+      host.replaceChildren(refusal(refusedNow));
+      host.hidden = false;
+      if (done) done(refusedNow);
+      return;
+    }
     window.FastMDXConfirm.ask(host, {
       title: "Stop the run?", detail: whatItLeaves(), yes: "Yes, stop it",
       yesClass: "stop-run-yes", noClass: "stop-run-no",
@@ -53,14 +67,7 @@
       }
       host.replaceChildren(el("span", "fix-said", "Stopping…"));
       stop().then(function (said) {
-        var answer = el("span", "fix-said stop-run-answer", said);
-        // Refused (a run in this GUI's own process, outside production): said
-        // until the run moves on, not for a moment.
-        if (refused) {
-          answer.classList.add("stop-run-refused");
-          answer.dataset.stage = stage;
-        }
-        host.replaceChildren(answer);
+        host.replaceChildren(refused ? refusal(said) : el("span", "fix-said stop-run-answer", said));
         if (done) done(said);
         // What would fix it, once the stop is in the study's records: it
         // came only with a reload.
@@ -138,18 +145,20 @@
     if (!board || !board.on) return;
     board.on("app-state", function (detail) {
       running = Boolean(detail && detail.process_running);
+      refusedNow = (running && detail && detail.stop_refused) || null;
+      // A refusal goes once the run can be stopped here (production) or ends.
+      if (!refusedNow) {
+        Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
+          var host = said.parentNode;
+          said.remove();
+          if (host && !host.children.length) host.hidden = true;
+        });
+      }
       show();
     });
     board.on("status-updated", function (detail) {
       var status = (detail && detail.status) || {};
       stage = String(status.stage || "").toLowerCase();
-      // A refusal goes once the run has moved on to another stage, or ended.
-      Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
-        if (said.dataset.stage === stage && running) return;
-        var host = said.parentNode;
-        said.remove();
-        if (host && host.hasAttribute("data-stop-fades") && !host.children.length) host.hidden = true;
-      });
     });
   });
 
