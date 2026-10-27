@@ -553,6 +553,21 @@ def _said_not_read(answer: Any) -> Any:
     return answer
 
 
+def _the_other_not_read(other: dict[str, Any]) -> str:
+    """What the study played beside this one did not read of itself, held
+    to itself (`_confined`), each record named by that study's name
+    ("other: simulation/frames.dcd"), in `_refusals_said`'s sentence; ""
+    where it read every one."""
+    names = other.get("unavailable") or []
+    if not names:
+        return ""
+    study = other.get("name") or Path(str(other.get("study") or "")).name or "the other study"
+    named = {name: name if name in _UNNAMED_REFUSALS else f"{study}: {name}" for name in names}
+    why = other.get("unavailable_why") or {}
+    return _refusals_said({"unavailable": [named[name] for name in names],
+                           "unavailable_why": {named[name]: why.get(name) for name in names}})
+
+
 def _withheld_where_not_read(answer: dict[str, Any], key: str) -> dict[str, Any]:
     """A `_confined` answer whose ``key`` is a list read across the study's
     records (its pieces' too): where one was not read, none of it, since
@@ -1887,17 +1902,28 @@ def make_handler(
                 if not named:
                     self._send_json({"ok": False, "reason": "No study was named."})
                     return
-                # The study named is read as it is named, first; then this
-                # study's frames, what is written beside them and the records
-                # read with them, its own records only (`_from_the_frames`).
+                # The study named is read first, held to itself (`_confined`),
+                # as `/api/compared` reads each study it is named: its frames,
+                # topology and RMSF linked out of it are not read, and said
+                # not read by its name. Then this study's frames, what is
+                # written beside them and the records read with them, its own
+                # records only (`_from_the_frames`).
                 from fastmdxplora.gui.beside import BESIDE, the_other
 
-                other = the_other(named, most_frames=cfg.max_browser_frames)
+                other = _confined(Path(named).expanduser(), lambda inside: the_other(
+                    inside, most_frames=cfg.max_browser_frames))
+                unread = _the_other_not_read(other)
                 if not other.get("ok"):
-                    self._send_json(other)
+                    self._send_json({key: value for key, value in other.items()
+                                     if key in ("ok", "reason", "code")}
+                                    | ({"not_read": unread} if unread else {}))
                     return
-                self._send_json(self._from_the_frames(root, lambda inside: beside(
-                    inside, other, most_frames=cfg.max_browser_frames), BESIDE))
+                answer = self._from_the_frames(root, lambda inside: beside(
+                    inside, other, most_frames=cfg.max_browser_frames), BESIDE)
+                if unread:
+                    answer["not_read"] = " ".join(filter(None, (answer.get("not_read"),
+                                                                unread)))
+                self._send_json(answer)
                 return
             if path in ("/structure/beside.pdb", "/structure/beside.dcd"):
                 from fastmdxplora.gui.beside import BESIDE, beside_file

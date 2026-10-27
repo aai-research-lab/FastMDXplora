@@ -646,3 +646,42 @@ def test_the_analyses_offered_again_are_not_read_through_a_link(tmp_path):
     assert "marker_analysis" not in body.decode("utf-8")
     assert "analysis/analysis_manifest.json was not read" in said["not_read"], said
     assert said["analysis"]["can"] is True
+
+
+# --------------------------------------------------------------------------
+# The study played beside this one is held to itself (G10 H4)
+# --------------------------------------------------------------------------
+
+#: The other study's records `/api/beside` reads, and whether without it
+#: nothing is played beside.
+OTHER_RECORDS = {"simulation/frames.dcd": True, "simulation/frames_topology.pdb": True,
+                 "analysis/rmsf/rmsf.dat": False}
+
+
+@pytest.mark.parametrize("relative", sorted(OTHER_RECORDS))
+def test_the_study_beside_is_not_read_through_its_own_links(tmp_path, relative):
+    root = _study(tmp_path)
+    other = _study(tmp_path / "other")
+    route = f"/api/beside?path={other}"
+    said = json.loads(_asked(root, tmp_path, route)[1])
+    assert said["ok"] and "not_read" not in said and said["property"], said
+    shutil.rmtree(root / "viewer_beside")
+    outside = tmp_path / "outside_other"
+    target = outside / relative
+    target.parent.mkdir(parents=True)
+    (other / relative).rename(target)
+    if relative.endswith("rmsf.dat"):
+        target.write_text("# residue rmsf_nm\n" + "".join(f"{k} 777.0\n" for k in range(1, 5)),
+                          encoding="utf-8")
+    _link(other / relative, target)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(root, tmp_path, route))
+
+    said = json.loads(body)
+    assert status == 200 and opened == [], (said, opened)
+    assert f"{other.name}: {relative} was not read" in said["not_read"], said
+    assert "777.0" not in body.decode("utf-8") and "776.9" not in body.decode("utf-8")
+    if OTHER_RECORDS[relative]:
+        assert said["ok"] is False and not (root / "viewer_beside").exists(), said
+    else:
+        assert said["ok"] and said["property"] is None, said

@@ -98,10 +98,14 @@ def anchored(mine: list[dict[str, Any]], theirs: list[dict[str, Any]]) -> int:
 def the_other(other: str | Path, *, most_frames: int) -> dict[str, Any]:
     """The study named to be played beside this one, read as it is named
     (outside any read held to this study): its run played, its frames'
-    details, their topology's atoms and its RMSF; or why not."""
+    details, their topology's atoms and its RMSF; or why not. The GUI reads
+    it held to itself (`server._confined`), so a record of it linked out of
+    it is refused, and its frames are named for MDTraj only where they are
+    its own (`_sent_here`)."""
     from fastmdxplora.gui.browse import is_study
     from fastmdxplora.gui.runs_together import run_shown
-    from fastmdxplora.gui.trajectory_frames import FRAMES_TOPOLOGY, _atom_lines, _read, frames_info
+    from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines,
+                                                    _read, _sent_here, frames_info)
 
     that = Path(other).expanduser()
     try:
@@ -115,7 +119,10 @@ def the_other(other: str | Path, *, most_frames: int) -> dict[str, Any]:
     theirs = frames_info(that, most_frames=most_frames, simulation_time_ns_total=_load_json(
         that / "simulation" / "simulation_parameters.json").get("duration_ns_actual"))
     if not theirs.get("available"):
-        return {"ok": False, "reason": f"{name} has no frames to play yet."}
+        return {"ok": False, "reason": f"{name} has no frames to play yet.", "name": name}
+    if not _sent_here(that / "simulation", FRAMES_FILE, FRAMES_TOPOLOGY):
+        return {"ok": False, "name": name, "reason": (
+            f"{name}'s frames are not its own records, so they are not played beside.")}
     return {"ok": True, "study": that, "name": name, "frames": theirs,
             "lines": _atom_lines(_read(that / "simulation" / FRAMES_TOPOLOGY)),
             "rmsf": _rmsf(that)}
