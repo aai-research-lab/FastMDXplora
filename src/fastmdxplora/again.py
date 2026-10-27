@@ -160,12 +160,24 @@ def analyses_named(given: Iterable[Any] | None) -> tuple[str, ...] | None:
 
 
 def _runs_of(campaign: Path) -> list[Path]:
+    # Through `record_access`: held to the study where the read is (the
+    # GUI's `/api/again`), so a run linked out of it is not listed.
+    from fastmdxplora import record_access
     from fastmdxplora.gui.browse import is_study
 
     folder = campaign / "runs"
-    if not folder.is_dir():
+    if not record_access.is_dir(folder):
         return []
-    return [run for run in sorted(folder.iterdir()) if run.is_dir() and is_study(run)]
+    return [run for run in sorted(record_access.iterdir(folder))
+            if record_access.is_dir(run) and is_study(run)]
+
+
+def _several(root: Path) -> bool:
+    """Whether ``root`` is a study of several runs, by its batch manifest,
+    through `record_access` as `_runs_of` reads."""
+    from fastmdxplora import record_access
+
+    return record_access.is_file(root / "batch_manifest.json")
 
 
 def frames_of(run: Path) -> Path | None:
@@ -211,7 +223,7 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
     asked = phases_named(phases)
     chosen = analyses_named(analyses)
 
-    several = (root / "batch_manifest.json").is_file()
+    several = _several(root)
     runs = _runs_of(root) if several else [root]
     campaign = root if several else campaign_of(root)
     going = _going([root, *runs])
@@ -246,13 +258,17 @@ def recorded_analyses(study: str | Path) -> list[str]:
     analysis made, else those it recorded asking for."""
     import json
 
+    from fastmdxplora import record_access
+
     root = Path(study)
-    if (root / "batch_manifest.json").is_file():
+    if _several(root):
         runs = _runs_of(root)
         root = runs[0] if runs else root
     try:
-        made = json.loads((root / "analysis" / "analysis_manifest.json")
-                          .read_text(encoding="utf-8")).get("results")
+        # Held to the study where the read is: a manifest linked out of it
+        # is refused, and those the study asked for are offered instead.
+        made = json.loads(record_access.read_text(
+            root / "analysis" / "analysis_manifest.json", encoding="utf-8")).get("results")
     except (OSError, ValueError, AttributeError):
         made = None
     if isinstance(made, dict) and made:
@@ -269,12 +285,18 @@ def recorded_analyses(study: str | Path) -> list[str]:
 
 def offered(study: str | Path) -> dict[str, Any]:
     """What can be run again on ``study``, and why not, for a page to offer."""
+    from fastmdxplora import record_access
     from fastmdxplora.refusals import refusal_of
 
     root = Path(study).expanduser().resolve()
-    out: dict[str, Any] = {"study": str(root),
-                           "several": (root / "batch_manifest.json").is_file(),
-                           "recorded": recorded_analyses(root)}
+    with record_access.refusals_noted() as refused:
+        recorded = recorded_analyses(root)
+    out: dict[str, Any] = {"study": str(root), "several": _several(root),
+                           "recorded": recorded}
+    if any(name.endswith("analysis_manifest.json") for name in refused):
+        # Named in the answer's `not_read` by the held read (`server._confined`).
+        out["recorded_said"] = ("The analysis manifest was not read, so those offered "
+                                "ticked are the analyses the study's Config asked for.")
     for phase in PHASES:
         try:
             found = plan(root, [phase])

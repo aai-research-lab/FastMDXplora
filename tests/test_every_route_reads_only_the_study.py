@@ -608,3 +608,41 @@ def test_the_analysis_pages_say_a_record_not_read_in_one_sentence(tmp_path, rout
     status, body = _asked(root, tmp_path, route, public=public)
     said = json.loads(body)
     assert status == 200 and "analysis/rmsd/options.json was not read" in said["not_read"]
+
+
+# --------------------------------------------------------------------------
+# What can be run again is read from the study's own records (G10 H3)
+# --------------------------------------------------------------------------
+
+def _linked_out_saying(root: Path, tmp_path: Path, relative: str, change) -> Path:
+    """``relative`` moved out of the study and changed there by ``change``,
+    a link to it left in its place."""
+    outside = _moved_out(root, tmp_path, relative)
+    record = json.loads((outside / relative).read_text(encoding="utf-8"))
+    change(record)
+    (outside / relative).write_text(json.dumps(record), encoding="utf-8")
+    return outside
+
+
+def test_the_analyses_offered_again_are_not_read_through_a_link(tmp_path):
+    """The manifest linked out names an analysis the study never ran: it is
+    not offered ticked, the manifest is said not read, and those the
+    study's Config asked for are offered instead."""
+    root = _study(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rg]\n",
+                                              encoding="utf-8")
+    said = json.loads(_asked(root, tmp_path, "/api/again")[1])
+    assert said["recorded"] == ["rmsf"] and "not_read" not in said, said
+    outside = _linked_out_saying(root, tmp_path, "analysis/analysis_manifest.json",
+                                 lambda record: record.update(
+                                     results={"marker_analysis": {"status": "ok"}}))
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, "/api/again"))
+
+    said = json.loads(body)
+    assert status == 200 and opened == []
+    assert said["recorded"] == ["rg"], said
+    assert "marker_analysis" not in body.decode("utf-8")
+    assert "analysis/analysis_manifest.json was not read" in said["not_read"], said
+    assert said["analysis"]["can"] is True
