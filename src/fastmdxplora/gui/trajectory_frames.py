@@ -560,15 +560,10 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
         # Its frames are steps apart, not a time: no time is spread over them.
         simulation_time_ns_total = None
     if not force:
-        from fastmdxplora import record_access
-
-        with record_access.refusals_noted() as refused:
-            cached = _load_json(index)
-        if refused:
-            # The index linked out of the study: not read, and not saved
-            # over. The frames written beside it are played from what was
-            # said of them when they were written here, while they stand.
-            cached = _unsaved_index(simulation, signature)
+        # The index linked out of the study is not read, and not saved over:
+        # the frames written beside it are played from what was said of them
+        # when they were written here, while they stand (`_load_json`).
+        cached = _load_json(index)
         if (cached.get("available") and cached.get("signature") == signature
                 and _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY)):
             interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
@@ -647,14 +642,15 @@ def _stamps(simulation: Path) -> tuple[Any, ...]:
     return tuple(found)
 
 
-def _unsaved_index(simulation: Path, signature: str) -> dict[str, Any]:
+def _unsaved_index(simulation: Path) -> dict[str, Any]:
     """What was said of the frames last written for ``simulation``, where its
-    index could not be saved: given while they are those frames, for the
-    same source (``signature``), and said again not saved; else none."""
+    index could not be saved: given while they are those frames (whose
+    source the caller checks by its signature), and said again not saved;
+    else none."""
     from fastmdxplora import record_access
 
     kept = _UNSAVED_INDEX.get(str(simulation.resolve()))
-    if kept is None or kept[0].get("signature") != signature or kept[1] != _stamps(simulation):
+    if kept is None or kept[1] != _stamps(simulation):
         return {}
     record_access.note_not_saved(simulation / FRAMES_INDEX, "it leads outside the study")
     return dict(kept[0])
@@ -1334,13 +1330,21 @@ def _stamp(path: Path) -> str:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
-    # Through `record_access`: held to its study where the read is.
+    """A record of the study, through `record_access`: held to it where the
+    read is. The index of the frames written for the Viewer, refused there
+    (a link out of the study, not saved over), is what was said of those
+    frames when they were written here, while they stand (`_unsaved_index`):
+    what is computed from them is computed as before, the index said not
+    read and not saved."""
     from fastmdxplora import record_access
 
-    try:
-        value = json.loads(record_access.read_text(path, encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    with record_access.refusals_noted() as refused:
+        try:
+            value = json.loads(record_access.read_text(path, encoding="utf-8"))
+        except (OSError, ValueError):
+            value = {}
+    if refused and Path(path).name == FRAMES_INDEX:
+        return _unsaved_index(Path(path).parent)
     return value if isinstance(value, dict) else {}
 
 

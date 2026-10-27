@@ -80,8 +80,11 @@ def _from_the_frames(out: Path) -> dict[str, Any]:
     from fastmdxplora.analysis.base import superposed
     from fastmdxplora.utils.native_output import suppress_native_output
 
+    from fastmdxplora.gui.trajectory_frames import _load_json as _held_json
+
     simulation = out / "simulation"
-    index = _load_json(simulation / "frames_index.json")
+    # Held to the study where the read is (`trajectory_frames._load_json`).
+    index = _held_json(simulation / "frames_index.json")
     if not index.get("available") or not (simulation / "frames.dcd").is_file():
         return {"ok": False, "reason": "There are no frames to find a motion in yet."}
     record = simulation / "motion_modes.npz"

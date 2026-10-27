@@ -748,3 +748,51 @@ def test_the_agent_s_stop_writes_to_no_log_linked_out(tmp_path, monkeypatch, pla
 
     _unchanged(victim, planted)
     assert (root / "exploration.log").is_symlink()
+
+
+#: What the Viewer computes from the frames it plays, and whether its reader
+#: reads the frames' index held to the study (`states.py` and `occupancy.py`
+#: read it by its name, so nothing is computed there with it linked out).
+COMPUTED = {"/api/frames-superposed?on=backbone": True, "/api/motion": True,
+            "/api/backbone-angles": True, "/api/chain-contacts": True,
+            "/api/contact-map": True, "/api/contact-pair?a=0&b=3": True,
+            "/api/pocket-volume?ligand=LIG": True, "/api/secondary-structure?of=frames": True,
+            "/api/viewer-atoms?of=frames&expression=protein": True,
+            "/api/beside?path=elsewhere": True,
+            "/api/states": False, "/api/state-difference?a=0&b=3": False,
+            "/api/occupancy?of=ligand&ligand=LIG": False, "/api/water-sites": False}
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", sorted(COMPUTED))
+def test_what_is_computed_from_the_frames_is_given_with_their_index_linked_out(
+        tmp_path, route, public):
+    """The frames' index linked out of the study is not read and not saved
+    over: the frames are the study's own, so what the Viewer computes from
+    them is given, the index said not saved (G14 M1). A reader that reads
+    the index by its name gives nothing, and says the index was not read;
+    never that the frames are not the study's own."""
+    if public and "beside" in route:
+        pytest.skip("not answered beyond loopback")
+    held = COMPUTED[route]
+    root = _study(tmp_path)
+    if "beside" in route:
+        route = route.replace("elsewhere", str(_study(tmp_path / "elsewhere")))
+    victim = _outside(tmp_path, "to a file")
+    index = root / "simulation" / "frames_index.json"
+    victim.write_text(index.read_text(encoding="utf-8"), encoding="utf-8")
+    mine = victim.read_text(encoding="utf-8")
+    index.unlink()
+    _link(index, victim)
+
+    status, body = _ask(root, tmp_path, route, public=public)
+
+    said = json.loads(body)
+    assert status == 200 and "not this study's own records" not in body.decode("utf-8"), said
+    if held:
+        assert said.get("ok") is not False, said
+        assert "simulation/frames_index.json was not saved" in said["not_read"], said
+    else:
+        assert said["ok"] is False, said
+        assert said["reason"].startswith("simulation/frames_index.json was not read"), said
+    assert victim.read_text(encoding="utf-8") == mine and index.is_symlink()

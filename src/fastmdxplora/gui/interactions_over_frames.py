@@ -94,9 +94,11 @@ def _placed(base: Path, pairs: list[dict[str, Any]]) -> list[list[int] | None]:
     # Through `record_access` (`topology_held`): in a read held to the
     # study, a structure linked out of it, or named outside it, is not read.
     where = topology_held(base)
-    try:
-        said = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    from fastmdxplora.gui.trajectory_frames import _load_json
+
+    # Held to the study where the read is (`trajectory_frames._load_json`).
+    said = _load_json(base / "simulation" / "frames_index.json")
+    if not said:
         return nothing
     source, kept = said.get("source_topology"), said.get("shown")
     if where is None or not said.get("available") or not isinstance(source, str) \
