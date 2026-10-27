@@ -345,6 +345,15 @@
       card.insertBefore(line, head ? head.nextSibling : card.firstChild);
     }
     var why = (data && data.unavailable_why) || {};
+    // A record in a folder linked out of the study is said as that folder,
+    // once, as the page says it elsewhere.
+    var folders = Object.keys(why).filter(function (name) {
+      return why[name] === "folder outside";
+    });
+    names = names.map(function (name) {
+      var folder = folders.filter(function (f) { return name.indexOf(f) === 0; })[0];
+      return folder || name;
+    }).filter(function (name, at, all) { return all.indexOf(name) === at; });
     var keys = [];
     names.forEach(function (name) {
       var key = reasonOf(why, name);
@@ -355,9 +364,12 @@
       : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
     line.textContent = "";
     line.appendChild(make("b", "", "Production means not read. "));
+    // The folder's own sentence ends with its "so": the means follow it
+    // as a sentence of their own, not a second "so".
     line.appendChild(document.createTextNode(listed + " " +
-      BECAUSE[key][names.length === 1 ? 0 : 1] + ", so the means over the production " +
-      "are not shown."));
+      BECAUSE[key][names.length === 1 ? 0 : 1] + (key === "folder outside"
+        ? "; the means over the production are not shown."
+        : ", so the means over the production are not shown.")));
   }
 
   /* Why a record was not read (`unavailable_why`, `series.NOT_READ_BECAUSE`),

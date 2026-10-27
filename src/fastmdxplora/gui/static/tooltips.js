@@ -70,8 +70,11 @@
     shown.textContent = title;
     shown.hidden = false;
     place();
-    var described = (target.getAttribute("aria-describedby") || "").split(/\s+/);
-    if (described.indexOf(shown.id) < 0) {
+    var described = (target.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter(Boolean);
+    // An element the page already describes (the Files page's pill) is
+    // not described again by its tooltip: its words are heard once.
+    if (!described.length) {
       target.setAttribute("aria-describedby", described.concat(shown.id).join(" ").trim());
       target.dataset.tipDescribed = "1";
     }

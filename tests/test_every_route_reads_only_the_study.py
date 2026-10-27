@@ -979,10 +979,8 @@ FOLDER_SAID = "simulation/ is a link out of the study, so its records are not re
 
 @pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
 @pytest.mark.parametrize("route", ["/api/status", "/api/overview", "/api/frames-info",
-                                   "/api/results", "/api/metrics", "/api/again"])
+                                   "/api/results", "/api/metrics"])
 def test_a_simulation_folder_linked_out_is_said_as_a_folder(tmp_path, route, public):
-    if public and route == "/api/again":
-        pytest.skip("not answered beyond loopback")
     root = _study(tmp_path)
     _simulation_on_scratch(root, tmp_path)
 
@@ -991,9 +989,6 @@ def test_a_simulation_folder_linked_out_is_said_as_a_folder(tmp_path, route, pub
     text = body.decode("utf-8")
     said = json.loads(body)
     assert status == 200 and "a link to a file" not in text, text[:400]
-    if route == "/api/again":
-        assert "simulation/ is a link out of the study" in said["analysis"]["why"], said
-        return
     assert said["unavailable"] == ["simulation/"], said
     assert said["unavailable_why"] == {"simulation/": "folder outside"}, said
     if route != "/api/overview":
@@ -1074,3 +1069,63 @@ def test_a_view_or_scene_refused_beyond_loopback_says_why():
     small = DISABLED[0].lower() + DISABLED[1:]
     assert said == [f"The scene was not written: {small}", f"The view was not saved: {small}",
                     "The scene was not written: MDTraj could not read it."], said
+
+
+def _analysis_on_scratch(root: Path, tmp_path: Path) -> None:
+    """The study's `analysis/` (with its thermodynamics' record) moved to a
+    folder elsewhere and linked back."""
+    (root / "analysis" / "thermodynamics").mkdir()
+    (root / "analysis" / "thermodynamics" / "options.json").write_text(
+        json.dumps({"analysis": "thermodynamics"}), encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (root / "analysis").rename(scratch / "analysis")
+    _link(root / "analysis", scratch / "analysis")
+
+
+def test_the_pages_say_an_analysis_folder_linked_out_as_a_folder(tmp_path):
+    """The Overview's line on the production's means says the folder once,
+    with one "so"; the Analysis page says it in place of "not available
+    yet" (G17 L2, G18 M2, L5)."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    root = _study(tmp_path)
+    _analysis_on_scratch(root, tmp_path)
+    with _serve(root, tmp_path, public=False) as url:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(url + "/#overview", wait_until="domcontentloaded")
+            page.wait_for_selector("#overview-charts-not-read")
+            means = page.text_content("#overview-charts-not-read")
+            page.goto(url + "/#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-empty:not([hidden])")
+            try:
+                # Until the study's results are in: then said, or not.
+                page.wait_for_function(
+                    "() => document.querySelector('#analysis-empty .empty-title')"
+                    ".textContent.indexOf('not available yet') < 0", timeout=15000)
+            except PlaywrightTimeout:
+                pass
+            empty = page.text_content("#analysis-empty .empty-title")
+            browser.close()
+    assert means == ("Production means not read. analysis/ is a link out of the study, so its "
+                     "records are not read here; the means over the production are not shown."), \
+        means
+    assert empty == "analysis/ is a link out of the study, so its records are not read here.", \
+        empty
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_files_page_says_a_folder_linked_out(tmp_path, public):
+    root = _study(tmp_path)
+    _simulation_on_scratch(root, tmp_path)
+
+    said = json.loads(_asked(root, tmp_path, "/api/files-page", public=public)[1])
+
+    assert ("simulation/ is a link out of the study, so its records are not read here."
+            in said["html"]), said["html"][:400]

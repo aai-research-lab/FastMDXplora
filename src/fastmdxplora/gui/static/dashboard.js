@@ -2331,6 +2331,21 @@
     renderAnalysisMeta();
     if (cards.length) empty.setAttribute("hidden", "");
     else empty.removeAttribute("hidden");
+    // A folder of the study linked out of it (`analysis/`, `simulation/`):
+    // said in place of "not available yet", which it is not.
+    const why = payload.unavailable_why || {};
+    const out = Object.keys(why).filter((name) => why[name] === "folder outside");
+    const title = empty.querySelector(".empty-title");
+    const detail = empty.querySelector(".empty-detail");
+    if (title && !title.dataset.plain) title.dataset.plain = title.textContent;
+    if (title) {
+      title.textContent = out.length
+        ? out.map((name) => `${name} is a link out of the study, so its records are not read here.`)
+          .join(" ")
+        : title.dataset.plain;
+    }
+    if (detail) detail.hidden = out.length > 0;
+    if (out.length && !cards.length) setText("analysis-meta", `${out.join(", ")} not read`);
   }
 
   function renderAnalysisMeta() {

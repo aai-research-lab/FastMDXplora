@@ -324,7 +324,25 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
         counts[entry["filter"]] = counts.get(entry["filter"], 0) + 1
     return {"files": files, "analyses": ordered, "runs": runs,
             "keys": _key_files(root, files, runs, not_produced), "counts": counts,
-            "total": sum(entry["size"] for entry in files)}
+            "total": sum(entry["size"] for entry in files),
+            "folders_out": _folders_out(root)}
+
+
+def _folders_out(root: Path) -> list[str]:
+    """The study's folders of its phases that are links leading out of it
+    (`series.folder_out`): not listed, so the page says why, once each."""
+    from fastmdxplora.gui.series import folder_out
+
+    found = (folder_out(root, Path(root) / name)
+             for name in ("setup", "simulation", "analysis", "report"))
+    return [folder for folder in found if folder]
+
+
+def _folders_out_said(model: dict[str, Any]) -> str:
+    from fastmdxplora.gui.series import FOLDER_OUT
+
+    return "".join(f'<p class="files-folder-out" role="note">{escape(FOLDER_OUT.format(name))}.</p>'
+                   for name in model.get("folders_out") or ())
 
 
 def _key_files(root: Path, files: list[dict[str, Any]], runs: list[dict[str, str]],
@@ -805,12 +823,13 @@ def render(model: dict[str, Any], links: Links, *, view: str = "phases") -> str:
     standalone dashboard, which has no server to ask for the other)."""
     if not model["files"]:
         # The page's one empty block (page-states.css), as every page says it.
-        return ('<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
-                'This study has not written any files yet.</span></div>')
+        return _folders_out_said(model) + (
+            '<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
+            'This study has not written any files yet.</span></div>')
     by_path = {entry["path"]: entry for entry in model["files"]}
     runs = {run["id"]: run["label"] for run in model["runs"]}
     tiles = "".join(_tile(tile, by_path, links, runs) for tile in model["keys"])
-    parts = [icons(), _toolbar(model, links), _usage(model, links)]
+    parts = [icons(), _folders_out_said(model), _toolbar(model, links), _usage(model, links)]
     if tiles:
         parts.append(f'<div class="files-keys"><h2 class="files-keys-title">What you came for</h2>'
                      f'<div class="files-tiles">{tiles}</div></div>')

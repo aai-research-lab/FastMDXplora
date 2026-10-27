@@ -146,8 +146,14 @@ def test_the_status_not_read_fits_a_narrow_page_and_is_said_without_a_pointer(tm
                         focusable: e.tabIndex >= 0, said: said ? said.textContent : '',
                         wide: document.documentElement.scrollWidth};
             }""")
+            # Focused, its tooltip shown: still described once (G18 L2).
+            page.focus(".files-state")
+            page.wait_for_timeout(1200)
+            described = page.get_attribute(".files-state", "aria-describedby")
             browser.close()
     finally:
         session.server.shutdown()
     assert pill["inName"] is False and pill["cut"] is False and pill["wide"] <= 390, pill
     assert pill["focusable"] and pill["said"].startswith("Its status was not read"), pill
+    assert described.split() == [described.split()[0]] and described.startswith(
+        "files-state-"), described
