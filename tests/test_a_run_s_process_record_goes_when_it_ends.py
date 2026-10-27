@@ -341,3 +341,43 @@ def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkey
     _forget_run_process(mine)
     assert not (mine / RUN_PROCESS_FILE).exists()
     assert (theirs / RUN_PROCESS_FILE).exists()
+
+
+def test_a_study_run_in_stages_keeps_its_record_while_it_is_priced(tmp_path, monkeypatch):
+    """A study with a budget runs setup, then times the prepared system in
+    the same process, then the rest. Setup's run ended and took the record
+    with it, so while the system was timed a GUI found nothing going."""
+    from fastmdxplora.agent import run_in_stages
+    from fastmdxplora.cost import calibrate
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "config"))
+    out = tmp_path / "out"
+
+    def a_run(*, config, output_dir):
+        # As a run does: its record held while it goes, and given back.
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        _hold_run_process(Path(output_dir))
+        try:
+            if config.get("include_phase") == ["setup"]:
+                where = Path(output_dir) / "setup"
+                where.mkdir(parents=True, exist_ok=True)
+                (where / "setup_parameters.json").write_text(
+                    json.dumps({"n_atoms_solvated": 60_000}), encoding="utf-8")
+        finally:
+            _release_run_process(Path(output_dir))
+
+    seen: list = []
+
+    def timed(setup_dir, *, platform_name, precision):
+        seen.append((_records_of_this_process(out), _runtime(out).process is not None))
+        return calibrate(particles=60_000, steps=2000, seconds=12.0,
+                         platform_name=platform_name or "CPU", precision=precision)
+
+    staged = run_in_stages({"systems": [{"id": "a", "system": "x.pdb"}],
+                            "simulation": {"platform": "CPU", "production_steps": 1000,
+                                           "nvt_steps": 0, "npt_steps": 0}},
+                           out, budget_hours=10, explore=a_run, measure=timed)
+    assert staged.refusal is None and staged.simulated
+    assert seen == [([RUN_PROCESS_FILE], True)]
+    assert _records_of_this_process(out) == []

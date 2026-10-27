@@ -162,6 +162,31 @@ def run_in_stages(
         Substituted in tests: times the prepared system when the machine
         has no usable measurement (:func:`measure_prepared_system`).
     """
+    # The study's process record held from setup to the end: setup's run ends,
+    # and the prepared system is then timed and priced in this process before
+    # the rest runs; the record went with setup's run, so a GUI found nothing
+    # going (`orchestrator._hold_run_process`).
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+
+    _hold_run_process(Path(output_dir))
+    try:
+        return _run_in_stages(config, output_dir, budget_hours=budget_hours,
+                              platform_name=platform_name, precision=precision,
+                              explore=explore, measure=measure)
+    finally:
+        _release_run_process(Path(output_dir))
+
+
+def _run_in_stages(
+    config: dict[str, Any],
+    output_dir: Path | str,
+    *,
+    budget_hours: float | None = None,
+    platform_name: str = "",
+    precision: str = "",
+    explore: Any = None,
+    measure: Any = None,
+) -> StagedRun:
     from fastmdxplora.cost import estimate_runs
 
     out = Path(output_dir)
