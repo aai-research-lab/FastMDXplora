@@ -738,13 +738,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   its process record behind, so a GUI opened in that process no longer takes
   itself for the study's run. The record goes when the run ends, finished,
   failed, refused or stopped, where this process wrote it; a record of
-  another process is left alone. The GUI of `fastmdx run --dashboard` no
-  longer says its study is running, or offers Stop, once the run is over.
+  another process is left alone. The record stays while a run of this
+  process still holds the folder: a study of one keeps it while it is
+  extended in rounds, reported again or compared with its campaign. The GUI
+  of `fastmdx explore --dashboard` holds the run, and its Stop reaches it,
+  from the moment the run records itself, not only once the study is
+  opened again; once the run is over it no longer says the study is
+  running, or offers Stop. A record left empty or cut short (a full disk)
+  no longer keeps it saying so either.
+
+- A printed report no longer carries the loading screen, or its blur, when
+  printed before the page had finished loading.
+
+- A batch manifest that does not hold a JSON object is refused as
+  `batch.manifest.invalid`.
+
+- The Agent's Send, while the page reads the study open and its
+  conversation, says so as it is hovered, not that a run is starting.
 
 - Tests: every Agent browser test waits for the page to read its study and
   conversation before it sends; the tests of a run's study opened elsewhere
-  each have a browser of their own, so the file passes run whole; four
-  browser tests wait for the page they print, read or switch from.
+  each have a browser of their own, so the file passes run whole; browser
+  tests wait for the page they print, read, drag, reload or switch from;
+  Python 3.10's pathlib calls what a test patches; tests that bound an
+  address no machine has, read a process limit on macOS, timed a busy
+  runner or read text in the locale's encoding no longer do.
 
 ### Added
 
