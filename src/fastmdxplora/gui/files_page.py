@@ -274,11 +274,14 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
             manifest, unread = _held(_load_json,
                                      root / prefix / "analysis" / "analysis_manifest.json")
             # Refused (a link out of the study): each analysis says its
-            # record was not read, not a status read through the link.
+            # status was not read, not a status read through the link. The
+            # value beside it is its own record's, read held to the study.
             manifests[run] = unread or (manifest.get("results") or {})
         result = manifests[run].get(folder) if isinstance(manifests[run], dict) else None
         if isinstance(manifests[run], str):
-            group["status"], group["message"] = "not read", manifests[run]
+            group["status"] = "status not read: analysis_manifest.json"
+            group["message"] = ("analysis_manifest.json was not read (it leads outside the "
+                                "study), so this analysis's status is not shown.")
         if isinstance(result, dict):
             group["status"] = str(result.get("status") or "")
             if group["status"] not in ("ok", ""):

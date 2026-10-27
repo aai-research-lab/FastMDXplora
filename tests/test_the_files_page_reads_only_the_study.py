@@ -75,7 +75,10 @@ def test_a_record_linked_out_is_said_not_read_on_the_files_page(tmp_path, linked
     for relative in names:
         for marker in RECORDS[relative][2]:
             assert marker not in page["html"], marker
-        assert f"{Path(relative).name} not read" in page["html"]
+        # A tile says the record not read; an analysis that its status was
+        # not read, beside the value its own record holds.
+        assert (f"status not read: {Path(relative).name}" if relative.endswith("manifest.json")
+                else f"{Path(relative).name} not read") in page["html"]
         assert f"{relative} was not read" in page["not_read"], page["not_read"]
     assert str(outside) not in json.dumps(page)
     if "simulation/simulation_parameters.json" not in names:
