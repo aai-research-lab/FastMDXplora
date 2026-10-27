@@ -685,3 +685,72 @@ def test_the_study_beside_is_not_read_through_its_own_links(tmp_path, relative):
         assert said["ok"] is False and not (root / "viewer_beside").exists(), said
     else:
         assert said["ok"] and said["property"] is None, said
+
+
+# --------------------------------------------------------------------------
+# What a POST starts or removes is decided from the study's own records
+# (G10 M1)
+# --------------------------------------------------------------------------
+
+#: The POSTs that run a study's phases again, and what each is asked.
+RUN_AGAIN = {"/api/again": {"phases": ["analysis"]}, "/api/report/write": {}}
+
+
+@pytest.mark.parametrize("relative", ["resolved_config.yml", "analysis/analysis_manifest.json"])
+@pytest.mark.parametrize("route", sorted(RUN_AGAIN))
+def test_nothing_is_run_again_from_a_record_linked_out(tmp_path, monkeypatch, route, relative):
+    """As `GET /api/again` offers nothing from a Config linked out of the
+    study, a POST sent without asking it starts nothing: refused, with the
+    record said not read. The start is stood in for; nothing is run."""
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    started = []
+
+    def spawn(self, command, study, dashboard_url=None):
+        started.append(command)
+        return {"ok": True}
+
+    monkeypatch.setattr(DashboardRuntime, "_spawn", spawn)
+    monkeypatch.setattr(DashboardRuntime, "_others_running", lambda self, **_: None)
+    root = _study(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rmsf]\n",
+                                              encoding="utf-8")
+    (root / "report").mkdir()
+    status, body = _asked(root, tmp_path, route, body=RUN_AGAIN[route])
+    assert status == 200 and json.loads(body)["ok"] and len(started) == 1, body[:300]
+    started.clear()
+    outside = _moved_out(root, tmp_path, relative)
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, body=RUN_AGAIN[route]))
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False and started == [], said
+    assert f"{relative} was not read" in said["error"] and opened == [], (said, opened)
+
+
+def test_a_run_whose_record_is_linked_out_keeps_its_snapshots(tmp_path):
+    """Clearing the scratch judges each run's snapshots by the run's own
+    record, read held to the study: one linked out of it (saying the run
+    completed) is not read, so its snapshots are not removed."""
+    from tests.test_the_scratch_is_cleared_after_asking import _left, _post, _serving
+    from tests.test_the_scratch_is_cleared_after_asking import _study as scratched
+
+    root = scratched(tmp_path / "study")
+    outside = _moved_out(root, tmp_path, "simulation/live_status.json")
+    snapshots = {name for name in _left(root) if "live_frame" in name and name.count("/") > 0
+                 and ("live_frames/" in name or name.endswith("live_frame_history.json"))}
+    assert len(snapshots) == 4
+
+    _watch(outside)
+    try:
+        with _serving(root) as url:
+            status, done = _post(url + "/api/files/clear-scratch", {})
+        opened = sorted(set(_OPENED))
+    finally:
+        _WATCHED.clear()
+
+    assert status == 200 and done["ok"] and done["snapshots"] == 0 and opened == [], done
+    assert "was not read" in done["kept"][0]["why"], done
+    assert snapshots <= _left(root)
+    assert "simulation/frames.dcd" not in _left(root)

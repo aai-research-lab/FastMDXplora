@@ -990,9 +990,17 @@ def _why_kept(folder: Path) -> str:
     going writes and reads them; a run with no trajectory has only them to
     play; and a run that failed or ended without saying so may have a
     trajectory cut short, which the Viewer plays the snapshots instead of."""
+    from fastmdxplora import record_access
     from fastmdxplora.gui.telemetry import status_as_it_stands
 
-    status = status_as_it_stands(folder)
+    # Held to the study where the read is (`POST /api/files/clear-scratch`):
+    # a record of the run linked out of it is not read, and what it would
+    # have said is not known, so nothing of the run's is removed.
+    with record_access.refusals_noted() as refused:
+        status = status_as_it_stands(folder)
+    if refused:
+        return ("its record of how it ran was not read (it leads outside the study), so "
+                "whether its snapshots are needed is not known")
     said = str(status.get("status") or "").lower()
     if said in _GOING:
         return "it is still running"
@@ -1003,7 +1011,7 @@ def _why_kept(folder: Path) -> str:
     has_trajectory = False
     for trajectory in (folder / "joined" / "production.dcd", folder / "simulation" / "production.dcd"):
         try:
-            if trajectory.stat().st_size > 0:
+            if record_access.stat(trajectory).st_size > 0:
                 has_trajectory = True
                 break
         except OSError:

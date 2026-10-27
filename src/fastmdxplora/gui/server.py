@@ -553,6 +553,40 @@ def _said_not_read(answer: Any) -> Any:
     return answer
 
 
+def _again_offered(inside: Path) -> dict[str, Any]:
+    """What `GET /api/again` offers of the study ``inside``, in the held read
+    the caller is in: nothing where its Config is not its own."""
+    from fastmdxplora.config.recorded import RECORDED
+    from fastmdxplora.gui.again_view import again_payload
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+    if _linked_out(inside / RECORDED):
+        return {"available": False, "why": (
+            f"{RECORDED} is not one of this study's own records, so nothing is offered to "
+            "run again from it.")}
+    return again_payload(inside)
+
+
+def _again_refused(root: Path | None) -> dict[str, Any] | None:
+    """Why `POST /api/again` and `/api/report/write` start nothing on the
+    study ``root``, read held to it (`_confined`) as the GET reads it: its
+    Config or its analysis manifest linked out of it, each said not read.
+    None where both are its own (or not there), and the run's own checks
+    then decide."""
+    from fastmdxplora.config.recorded import RECORDED
+
+    if root is None or not Path(root).is_dir():
+        return None
+    said = _confined(Path(root), _again_offered)
+    names = [name for name in said.get("unavailable") or ()
+             if name.endswith((RECORDED, "analysis_manifest.json"))]
+    if not names:
+        return None
+    unread = _refusals_said({"unavailable": names, "unavailable_why": {
+        name: (said.get("unavailable_why") or {}).get(name) for name in names}})
+    return {"ok": False, "error": unread + " Nothing is run again from it.", "not_read": unread}
+
+
 def _the_other_not_read(other: dict[str, Any]) -> str:
     """What the study played beside this one did not read of itself, held
     to itself (`_confined`), each record named by that study's name
@@ -1602,21 +1636,9 @@ def make_handler(
                 # What can be run again on the study on screen, and why not,
                 # with the analyses it ran last and those this release has.
                 # Not answered beyond loopback, like the POST it offers.
-                from fastmdxplora.gui.again_view import again_payload
-
                 # Read from the study's own records only (`_confined`): what
                 # is offered again is planned from its own Config.
-                def offered(inside: Path) -> dict[str, Any]:
-                    from fastmdxplora.config.recorded import RECORDED
-                    from fastmdxplora.gui.trajectory_frames import _linked_out
-
-                    if _linked_out(inside / RECORDED):
-                        return {"available": False, "why": (
-                            f"{RECORDED} is not one of this study's own records, so "
-                            "nothing is offered to run again from it.")}
-                    return again_payload(inside)
-
-                self._send_json(_said_not_read(_confined(root, offered)))
+                self._send_json(_said_not_read(_confined(root, _again_offered)))
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its
@@ -2103,10 +2125,16 @@ def make_handler(
                 if _no_study(root):
                     self._send_json({"ok": False, "error": "No study is open."})
                     return
-                self._send_json(clear_scratch(
-                    root, _artifact_records(root),
-                    running=bool(app_runtime.snapshot().get("process_running")),
-                    dry=bool((payload or {}).get("dry"))))
+                records = _artifact_records(root)
+                running = bool(app_runtime.snapshot().get("process_running"))
+                # Each run's records read held to the study (`_confined`): a
+                # run whose record is linked out of it keeps its snapshots.
+                said = _confined(root, lambda inside: clear_scratch(
+                    inside, records, running=running, dry=bool((payload or {}).get("dry"))))
+                if "files" not in said:
+                    said = {"ok": False, "error": said.get("reason"), "files": 0, "bytes": 0,
+                            "snapshots": 0, "kept": []}
+                self._send_json(_said_not_read(said))
                 return
             if path == "/api/study-tags":
                 # A study's tags and note, as the person set them on its card,
@@ -2507,7 +2535,12 @@ def make_handler(
                 # A study's analysis or report run again in its folder
                 # (`fastmdxplora.again`). It starts work on this machine, so
                 # loopback only, like every route not listed open; the page
-                # asks the person first.
+                # asks the person first. Refused, as the GET offers nothing,
+                # where the study's Config or manifest is not its own.
+                refused = _again_refused(app_runtime.active_root)
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 asked = payload if isinstance(payload, dict) else {}
                 self._send_json(app_runtime.run_again(
                     asked.get("phases") or [], asked.get("analyses"),
@@ -2517,7 +2550,12 @@ def make_handler(
                 # The report phase alone on the study open, from its records.
                 # It starts work on this machine, so it needs the machine's
                 # trust, which it has only on loopback, like every route not
-                # listed open. The page asks the person first.
+                # listed open. The page asks the person first. Refused as
+                # `POST /api/again` is.
+                refused = _again_refused(app_runtime.active_root)
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 self._send_json(app_runtime.write_the_report_again(
                     dashboard_url=self.headers.get("Origin")))
                 return
