@@ -152,7 +152,11 @@ def test_folded_recent_shows_its_studies_beside_the_strip(browser, session) -> N
     tab.keyboard.press("Escape")
     gone = tab.evaluate("() => !document.getElementById('sidebar-recent').classList.contains('flyout')")
     tab.click("#sidebar-recent > summary")
-    tab.click('#sidebar-recent-list .sidebar-recent-item:not([aria-current="true"])')
+    # The study opened loads the page again: the fold is read from that page,
+    # not the one left (read from it, it was the flyout's).
+    with tab.expect_navigation(wait_until="domcontentloaded"):
+        tab.click('#sidebar-recent-list .sidebar-recent-item:not([aria-current="true"])')
+    tab.wait_for_function("() => document.body.classList.contains('state-ready')")
     tab.wait_for_function("() => !document.getElementById('sidebar-recent').classList.contains('flyout')")
     tab.click("#sidebar-expand")
     kept = tab.evaluate("() => [document.getElementById('sidebar-recent').open, "

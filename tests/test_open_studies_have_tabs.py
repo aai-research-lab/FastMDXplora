@@ -76,11 +76,14 @@ def _active(page, key):
 
 
 def _outside_open(page, site, index, route="overview"):
+    # Opened once the evaluation has returned: the page it opens loads in
+    # place of this one, and an evaluation still returning then was lost
+    # with it ("Execution context was destroyed").
     page.evaluate("""async ({path, route}) => {
         const answer = await (await fetch('/api/explore/switch', {
             method: 'POST', headers: {'content-type': 'application/json'},
             body: JSON.stringify({folder: path})})).json();
-        window.FastMDXDashboard.studyOpened(answer, route);
+        setTimeout(() => window.FastMDXDashboard.studyOpened(answer, route), 0);
     }""", {"path": str(site["studies"][index]), "route": route})
     _active(page, site["keys"][index])
 

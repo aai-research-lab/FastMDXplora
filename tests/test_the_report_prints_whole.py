@@ -69,6 +69,9 @@ def _report(browser, session, scheme="light"):
     page.set_default_timeout(60000)
     page.goto(session.url + "#report", wait_until="domcontentloaded")
     page.wait_for_selector("#report-document:not([hidden]) h2")
+    # Its loading screen gone: the report is drawn under it before then, and
+    # a page printed while it showed was the loading screen.
+    page.wait_for_function("() => document.body.classList.contains('state-ready')")
     return page
 
 
