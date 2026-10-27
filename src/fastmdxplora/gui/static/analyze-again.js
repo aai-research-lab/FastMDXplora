@@ -4,7 +4,8 @@
  *
  * The Analysis page offers it while a study with frames is open and
  * nothing runs. Pressing it opens the analyses to run: those the study ran
- * last, ticked, and the others this release has, to add one. The panel
+ * last, ticked, or, with no record, those that apply to its trajectory; the
+ * others this release has remain available to add. The panel
  * says what is written again and what is kept aside, and only its own
  * button starts the run. The analyses appear on the page as they are
  * written, as they do while any run goes. */
@@ -109,6 +110,7 @@
     box.appendChild(said);
 
     var recorded = offered.recorded || [];
+    var automatic = Array.isArray(analysis.defaults) ? analysis.defaults : null;
     var catalogue = offered.catalogue || [];
     var known = {};
     catalogue.forEach(function (item) { known[item.name] = item; });
@@ -119,13 +121,22 @@
       first.appendChild(choice(known[name] || { name: name }, !only || only.indexOf(name) >= 0));
     });
     fields.appendChild(first);
+    if (!recorded.length && automatic === null) {
+      fields.appendChild(node("p", "again-said", analysis.defaults_why ||
+        "Automatic choices could not be determined for this study. Choose analyses below."));
+    } else if (!recorded.length && automatic.length === 0) {
+      fields.appendChild(node("p", "again-said",
+        "No automatic analyses apply to this trajectory. Choose analyses below."));
+    }
     var others = catalogue.filter(function (item) { return recorded.indexOf(item.name) < 0; });
     if (others.length) {
       var more = node("details", "again-more");
       more.appendChild(node("summary", "", "More analyses (" + others.length + ")"));
       var rest = node("div", "again-list");
       others.forEach(function (item) {
-        rest.appendChild(choice(item, only ? only.indexOf(item.name) >= 0 : !recorded.length));
+        var ticked = only ? only.indexOf(item.name) >= 0 :
+          !recorded.length && automatic !== null && automatic.indexOf(item.name) >= 0;
+        rest.appendChild(choice(item, ticked));
       });
       more.appendChild(rest);
       if (!recorded.length) more.open = true;

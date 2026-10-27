@@ -12,6 +12,45 @@ from pathlib import Path
 from typing import Any
 
 
+def _automatic_analyses(study: Path) -> list[str]:
+    from fastmdxplora.analysis import AnalysisOrchestrator
+    from fastmdxplora.analysis.analyze import (
+        _detect_ligand_resname,
+        _saving_interval_ps,
+        study_trajectory,
+    )
+    from fastmdxplora.config.recorded import RECORDED, phase_settings
+
+    settings = phase_settings(study / RECORDED, "analysis", study=study)
+    joined, joined_topology = study_trajectory(study)
+    trajectory = settings.get("trajectory") or joined or study / "simulation" / "production.dcd"
+    topology = settings.get("topology")
+    if not topology and not settings.get("trajectory"):
+        topology = joined_topology
+    if not topology:
+        saved = study / "simulation" / "trajectory_topology.pdb"
+        topology = saved if saved.is_file() else study / "simulation" / "topology.pdb"
+
+    planner = AnalysisOrchestrator(
+        trajectory=str(trajectory),
+        topology=str(topology) if topology else None,
+        output_dir=study / "analysis",
+        selection=settings.get("selection"),
+        scope=settings.get("scope", "solute"),
+        ligand_resname=(settings.get("ligand_resname")
+                        or _detect_ligand_resname(study)),
+        stride=settings.get("stride"),
+        first=settings.get("first"),
+        last=settings.get("last"),
+        saving_interval_ps=_saving_interval_ps(study, trajectory=trajectory),
+        figure_colours=settings.get("figure_colours"),
+        figure_width=settings.get("figure_width"),
+        _create_output_dir=False,
+    )
+    return list(planner.planned_analyses(
+        exclude=settings.get("exclude"), options=settings.get("options")))
+
+
 def again_payload(root: Any) -> dict[str, Any]:
     from fastmdxplora import again
     from fastmdxplora.gui.browse import is_study
@@ -29,8 +68,18 @@ def again_payload(root: Any) -> dict[str, Any]:
                      for name in available_analyses()]
     except Exception:  # noqa: BLE001 - the analysis stack is optional here
         catalogue = []
-    return {"available": True, **offered, "catalogue": catalogue,
-            "previous": again.PREVIOUS}
+    payload = {"available": True, **offered, "catalogue": catalogue,
+               "previous": again.PREVIOUS}
+    if not payload["recorded"] and payload["analysis"]["can"]:
+        try:
+            payload["analysis"]["defaults"] = _automatic_analyses(
+                Path(payload["study"]))
+        except Exception as exc:  # noqa: BLE001 - make the unavailable default clear
+            from fastmdxplora.refusals import refusal_of
+
+            payload["analysis"]["defaults"] = None
+            payload["analysis"]["defaults_why"] = refusal_of(exc).message
+    return payload
 
 
 def again_fix(root: Any, action: str, arguments: dict[str, Any] | None) -> dict[str, Any]:

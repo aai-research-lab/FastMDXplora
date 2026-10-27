@@ -218,6 +218,7 @@ class AnalysisOrchestrator:
         saving_interval_ps: float | None = None,
         figure_colours: str | None = None,
         figure_width: str | None = None,
+        _create_output_dir: bool = True,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -225,7 +226,8 @@ class AnalysisOrchestrator:
             if output_dir is not None
             else Path(f"fastmdx_analysis_{timestamp}")
         )
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        if _create_output_dir:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.default_selection: str | None = selection
         # Scope resolves to a concrete selection used as the default for
@@ -274,6 +276,18 @@ class AnalysisOrchestrator:
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
+    def planned_analyses(
+        self,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        options: dict[str, dict[str, Any]] | None = None,
+    ) -> tuple[str, ...]:
+        """Return the analyses that ``run`` would execute on these frames."""
+        plan = self._build_plan(include, exclude, options)
+        plan.sort(key=lambda name: name != _IMAGE_CHECK)
+        return tuple(plan)
+
     def run(
         self,
         *,
@@ -303,6 +317,7 @@ class AnalysisOrchestrator:
             Also stored on ``self.results``.
         """
         from fastmdxplora.analysis import residues
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         # An orchestrator made without its constructor read no topology of
         # its own, so it has no codes to put back and leaves the table be.
         codes = getattr(self, "_insertion_codes", None)
@@ -310,10 +325,8 @@ class AnalysisOrchestrator:
             residues._INSERTION_CODES.clear()
             residues._INSERTION_CODES.update(codes)
 
-        plan = self._build_plan(include, exclude, options)
-        # The image check first, so its finding is there for every analysis
-        # of the same frames after it.
-        plan.sort(key=lambda name: name != _IMAGE_CHECK)
+        plan = list(self.planned_analyses(include=include, exclude=exclude,
+                                          options=options))
         merged_options = self._merge_options(plan, options)
 
         logger.debug("Plan: %s", ", ".join(plan))

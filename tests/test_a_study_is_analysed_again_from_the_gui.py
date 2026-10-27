@@ -30,6 +30,24 @@ def _runtime(root: Path) -> DashboardRuntime:
     return runtime
 
 
+_TINY_PROTEIN_DEFAULTS = [
+    "rmsd", "rmsf", "rg", "hbonds", "ss", "sasa", "dihedrals",
+    "end_to_end", "moments_of_inertia", "cluster", "dimred",
+]
+
+
+def _forget_analysis_selection(root: Path) -> None:
+    record = root / "resolved_config.yml"
+    if record.is_file():
+        import yaml
+
+        config = yaml.safe_load(record.read_text(encoding="utf-8")) or {}
+        if isinstance(config.get("analysis"), dict):
+            config["analysis"].pop("include", None)
+        record.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    (root / "analysis" / "analysis_manifest.json").unlink(missing_ok=True)
+
+
 def test_the_analyses_chosen_are_run_again_in_the_study_open(tmp_path):
     root = _analysed(tmp_path / "study")
     with mock.patch.object(DashboardRuntime, "_spawn",
@@ -68,6 +86,104 @@ def test_the_page_is_told_what_can_be_run_again(tmp_path):
     titles = {item["name"]: item["title"] for item in offered["catalogue"]}
     assert titles["rmsd"] == "Root-mean-square deviation" and "sasa" in titles
     assert offered["previous"] == "previous"
+
+
+def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path):
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        offered = json.loads(urllib.request.urlopen(
+            session.url.rstrip("/") + "/api/again", timeout=30).read())
+    finally:
+        session.server.shutdown()
+
+    assert offered["recorded"] == []
+    assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+
+
+def test_an_unplannable_trajectory_has_no_automatic_fallback(tmp_path):
+    from fastmdxplora.gui.again_view import again_payload
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    (root / "simulation" / "production.dcd").write_bytes(b"not a trajectory")
+
+    offered = again_payload(root)
+
+    assert offered["recorded"] == []
+    assert offered["analysis"]["can"]
+    assert offered["analysis"]["defaults"] is None
+    assert offered["analysis"]["defaults_why"]
+
+
+def test_the_dialog_starts_with_automatic_choices_and_keeps_manual_additions(
+    tmp_path,
+) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    submissions: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    def submit(route):
+        if route.request.method == "POST":
+            submissions.append(json.loads(route.request.post_data or "{}"))
+            route.abort()
+        else:
+            route.continue_()
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again", submit)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+
+            ticked = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert ticked == _TINY_PROTEIN_DEFAULTS
+
+            page.check("#analysis-again-ask input[value='pmf']")
+            added = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert set(added) == {*_TINY_PROTEIN_DEFAULTS, "pmf"}
+
+            checked = page.locator("#analysis-again-ask input:checked")
+            while checked.count():
+                checked.first.uncheck()
+            confirm = page.locator("#analysis-again-ask .fix-confirm")
+            assert confirm.is_disabled()
+            assert submissions == []
+
+            page.check("#analysis-again-ask input[value='pmf']")
+            assert confirm.is_enabled()
+            selected = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert selected == ["pmf"]
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector(
+                "#analysis-again-ask:has-text('Could not reach the server to start it.')")
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+    assert submissions == [{"phases": ["analysis"], "analyses": ["pmf"]}]
+    assert not (root / "analysis" / "analysis_manifest.json").exists()
+    assert errors == []
 
 
 def test_the_analysis_page_analyses_again_after_asking(tmp_path) -> None:
