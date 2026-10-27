@@ -571,8 +571,15 @@ def _of_the_played_trajectory(root: Path, manifest: dict[str, Any]) -> bool:
         # the same place in the study, of as many atoms as the analyses
         # read, whether or not the folder before it is still there.
         named = Path(analysed)
-        return (named.parts[-2:] == played.relative_to(root).parts[-2:]
-                and _outside(root, named) and _as_many_atoms(played, manifest))
+        if named.parts[-2:] != played.relative_to(root).parts[-2:] or not _outside(root, named):
+            return False
+        if _as_many_atoms(played, manifest):
+            return True
+        # Named outside the study, and the study's own file in its place is
+        # not of as many atoms: neither is read, and the name is said not
+        # read (in a read held to the study), as the RMSF's structure is.
+        _records.is_file(named)
+        return False
     except (OSError, ValueError):
         return False
 

@@ -776,3 +776,23 @@ def test_a_manifest_linked_out_selects_in_no_structure(tmp_path, route, public):
     assert status == 200 and opened == [] and said["ok"] is False, said
     assert "analysis/analysis_manifest.json was not read" in said["not_read"], said
     assert "against" not in said, said
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_copy_not_of_its_atoms_says_why_its_time_points_open_no_frame(tmp_path, public):
+    """A copy whose manifest says other atoms than its own trajectory's is
+    not re-rooted: its time chart opens no frame, and says the trajectory
+    named outside the study was not read (G10 L1)."""
+    original, copy = _copied_study(tmp_path)
+    manifest = copy / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["n_atoms"] = 29
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    (status, body), opened = _opened_asking(original, lambda: _asked(
+        copy, tmp_path, "/api/series?analysis=rmsd", public=public))
+
+    said = json.loads(body)
+    assert status == 200 and opened == [] and said["linked"] is False, said
+    assert "a file named outside the study was not read" in said["not_read"], said
+    assert str(original) not in body.decode("utf-8")
