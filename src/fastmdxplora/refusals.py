@@ -340,6 +340,10 @@ CODES: tuple[Code, ...] = (
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("path",)),
+    Code("environment.path.not_saved",
+         "A record of the study could not be saved: its writer failed, as on "
+         "a full disk.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.budget.absent",
          "An unattended run was asked for with no ceiling on what it may "
          "spend.",
@@ -1194,6 +1198,14 @@ class OutsideWorkspace(CodedError, PermissionError):
     is to a caller that does not know the codes."""
 
     default_code = "environment.workspace.outside"
+
+
+class RecordNotSaved(CodedError, OSError):
+    """A record of a study could not be saved: its writer failed (MDTraj's
+    own error on a full disk). An ``OSError``, as a failed write is, so a
+    caller that catches those says it was not saved."""
+
+    default_code = "environment.path.not_saved"
 
 
 class MissingPathError(CodedError, FileNotFoundError):

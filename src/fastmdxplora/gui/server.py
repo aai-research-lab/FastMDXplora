@@ -388,7 +388,16 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
         try:
             answer = read(inside, scope.denied) if keeps else read(inside)
         except OSError:
-            return dict(_RECORDS_UNREADABLE)
+            # A record not saved (`record_access.save`), or one refused, is
+            # still named: not "the study's records could not be read".
+            unsaved = _unsaved_said(inside, held, scope.unsaved)
+            if not unsaved and not scope.denied:
+                return dict(_RECORDS_UNREADABLE)
+            answer = {"ok": False, "available": False,
+                      "reason": unsaved or _RECORDS_UNREADABLE["reason"]}
+        unsaved = _unsaved_said(inside, held, scope.unsaved)
+        if unsaved and isinstance(answer, dict):
+            answer = {**answer, "not_saved": unsaved}
     if isinstance(answer, dict):
         named = answer.get("unavailable")
         refused = ({_named_from(inside, held, name) for name in scope.denied}
@@ -400,6 +409,18 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
                       "unavailable_why": {name: _why_not_read(inside, name, held)
                                           for name in sorted(refused)}}
     return answer
+
+
+def _unsaved_said(inside: Path, held: Path, unsaved: dict[str, str]) -> str:
+    """The records a held read did not save (`record_access.not_saved`),
+    each named in the open folder ``inside`` with why, in a sentence: ""
+    where it saved every one."""
+    said = []
+    for name, why in sorted(unsaved.items()):
+        named = _named_from(inside, held, name) if name != "a record" else name
+        said.append(f"{named} was not saved: {why}" if why == "it leads outside the study"
+                    else f"{named} could not be saved: {why}")
+    return "; ".join(said) + "." if said else ""
 
 
 def _bytes_confined(root: Path, read: Callable[[Path], tuple[bytes | None, dict[str, Any]]]
@@ -548,6 +569,10 @@ def _said_not_read(answer: Any) -> Any:
     """A `_confined` answer with its refused records said as not read, in
     its ``not_read`` sentence, for a page to show (`_refusals_said`)."""
     said = _refusals_said(answer)
+    unsaved = answer.get("not_saved") if isinstance(answer, dict) else None
+    if unsaved and unsaved != answer.get("reason"):
+        # A record not saved is said where a page says what was not read.
+        said = f"{said} {unsaved}".strip()
     if said:
         answer["not_read"] = said
     return answer

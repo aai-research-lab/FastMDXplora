@@ -560,7 +560,15 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
         # Its frames are steps apart, not a time: no time is spread over them.
         simulation_time_ns_total = None
     if not force:
-        cached = _load_json(index)
+        from fastmdxplora import record_access
+
+        with record_access.refusals_noted() as refused:
+            cached = _load_json(index)
+        if refused:
+            # The index linked out of the study: not read, and not saved
+            # over. The frames written beside it are played from what was
+            # said of them when they were written here, while they stand.
+            cached = _unsaved_index(simulation, signature)
         if (cached.get("available") and cached.get("signature") == signature
                 and _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY)):
             interval = (_interval_ns(out, source) if source["kind"] == "trajectory"
@@ -607,8 +615,49 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
                 source_kind="production-dcd" if source["kind"] == "trajectory"
                 else source["kind"],
                 compiled_at=time.time(), topology=FRAMES_TOPOLOGY, coordinates=FRAMES_FILE)
-    _write_json(index, said)
+    try:
+        _write_json(index, said)
+        _UNSAVED_INDEX.pop(str(simulation.resolve()), None)
+    except OSError:
+        # Not saved, and said so (`record_access.not_saved`): the frames are
+        # played all the same, and not written again for the next request
+        # while they stand as written (`_unsaved_index`).
+        _UNSAVED_INDEX[str(simulation.resolve())] = (said, _stamps(simulation))
     return said
+
+
+#: What was said of the frames written for a study whose index could not be
+#: saved, by its simulation folder, with the frames' stamps then.
+_UNSAVED_INDEX: dict[str, tuple[dict[str, Any], tuple[Any, ...]]] = {}
+
+
+def _stamps(simulation: Path) -> tuple[Any, ...]:
+    """The frames' and their topology's device, inode, size and time, held
+    to the study where the read is (`record_access.stat`); None where
+    either is not there or is refused."""
+    from fastmdxplora import record_access
+
+    found = []
+    for name in (FRAMES_FILE, FRAMES_TOPOLOGY):
+        try:
+            info = record_access.stat(simulation / name)
+        except OSError:
+            return (None,)
+        found.append((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns))
+    return tuple(found)
+
+
+def _unsaved_index(simulation: Path, signature: str) -> dict[str, Any]:
+    """What was said of the frames last written for ``simulation``, where its
+    index could not be saved: given while they are those frames, for the
+    same source (``signature``), and said again not saved; else none."""
+    from fastmdxplora import record_access
+
+    kept = _UNSAVED_INDEX.get(str(simulation.resolve()))
+    if kept is None or kept[0].get("signature") != signature or kept[1] != _stamps(simulation):
+        return {}
+    record_access.note_not_saved(simulation / FRAMES_INDEX, "it leads outside the study")
+    return dict(kept[0])
 
 
 def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
