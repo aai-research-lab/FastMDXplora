@@ -249,6 +249,8 @@ def test_the_range_is_marked_on_the_viewer_s_timeline(study):
             browser, page, errors = _page(pw, session)
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
+            # Dragged under the loading screen, the range was not drawn.
+            page.wait_for_selector("body.state-ready")
             _drag(page, '.series-chart[data-analysis="rmsd"]', (0.4, 0.4), (0.8, 0.45))
             page.wait_for_selector("#analysis-cell-range:not([hidden])")
             page.click('[data-view-link="viewer"]')
@@ -366,6 +368,7 @@ def test_a_plot_is_zoomed_moved_and_shown_whole_by_the_keyboard(study):
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
             page.wait_for_selector('.figure-chart[data-figure-kind="states"] .plot-tools')
+            page.wait_for_selector("body.state-ready")
             view = "(s) => document.querySelector(s).dataset.view"
             rmsd = '.series-chart[data-analysis="rmsd"]'
             page.locator(rmsd + " svg").focus()

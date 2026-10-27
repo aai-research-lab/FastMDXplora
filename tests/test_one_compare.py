@@ -949,6 +949,9 @@ def test_ticking_the_second_run_does_not_move_the_table(variants):
     def look(page, url):
         page.goto(url + "#overview", wait_until="domcontentloaded")
         page.wait_for_selector("#overview-runs-table tbody tr")
+        # The loading screen over the page took the ticks, and the browser
+        # scrolled the page to reach the box under it (aailab01, 10-21).
+        page.wait_for_selector("body.state-ready")
         top = "() => document.getElementById('overview-runs-table').getBoundingClientRect().top"
         before = page.evaluate(top)
         page.locator(".overview-runs-pick").nth(0).check()
