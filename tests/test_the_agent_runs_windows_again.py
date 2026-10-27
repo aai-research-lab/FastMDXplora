@@ -25,6 +25,7 @@ from fastmdxplora.batch.explorer import BatchExplorer
 from fastmdxplora.gui.exploration import DashboardRuntime
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.remedies import windows_again
+from tests._agent_page import ready
 from tests.test_a_window_runs_again_in_place import _config, _stand_in, _window
 
 
@@ -261,12 +262,14 @@ def test_the_agent_asks_then_runs_them(study, monkeypatch) -> None:
                 route.fulfill(json={"ok": True})
             page.route("**/api/fix", answer)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "rerun window 2 at 6000")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-confirm")
             asked = " ".join(page.locator("#agent-thread .agent-confirm").last
                              .locator(".agent-confirm-q, .agent-confirm-facts").all_text_contents())
             assert ran == []
+            ready(page)
             page.fill("#agent-request", "yes")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-attempt:has-text('Started')",

@@ -17,6 +17,7 @@ import pytest
 
 pytest.importorskip("playwright.sync_api")
 
+from tests._agent_page import ready
 from tests.test_the_agent_page_on_a_phone_and_its_settings import _page, session  # noqa: F401
 
 USAGE = {"calls": 1, "input_tokens": 8, "cache_read_tokens": 58416,
@@ -61,6 +62,7 @@ def test_the_tokens_are_shown_once_asked_on_copy_s_row(session) -> None:  # noqa
         browser, page, errors = _page(pw, session.url, 1400)
         page.route("**/api/agent/propose*", lambda route: route.fulfill(
             status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
+        ready(page)
         page.fill("#agent-request", "How many residues?")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('76 residues')")

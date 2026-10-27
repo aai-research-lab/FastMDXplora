@@ -16,6 +16,8 @@ import urllib.request
 
 import pytest
 
+from tests._agent_page import ready
+
 pytest.importorskip("playwright.sync_api")
 
 CHOICES = ["2VB1 hen egg-white, X-ray 0.65 Å, 2007", "2LZM T4 phage, X-ray 1.7 Å, 1987",
@@ -73,6 +75,7 @@ def test_a_candidate_pressed_answers_with_its_identifier(session) -> None:
 
     with sync_playwright() as pw:
         browser, page, errors = _page(pw, session.url)
+        ready(page)
         page.fill("#agent-request", "Simulate lysozyme")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-choice")
@@ -99,9 +102,11 @@ def test_a_message_after_a_question_is_sent_as_it_is(session) -> None:
 
     with sync_playwright() as pw:
         browser, page, errors = _page(pw, session.url)
+        ready(page)
         page.fill("#agent-request", "Simulate lysozyme")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-choice")
+        ready(page)
         page.fill("#agent-request", "Has it run long enough?")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Noted.')")

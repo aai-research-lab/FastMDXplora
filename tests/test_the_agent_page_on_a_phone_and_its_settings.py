@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._agent_page import ready
+
 GUI = Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
 
 
@@ -122,6 +124,7 @@ def test_a_reply_is_marked_useful_or_wrong_and_kept(session, monkeypatch) -> Non
         browser, page, errors = _page(pw, session.url, 1400)
         page.route("**/api/agent/propose*", lambda route: route.fulfill(
             status=200, content_type="application/json", body=json.dumps(replies.pop(0))))
+        ready(page)
         page.fill("#agent-request", "How many residues?")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('76 residues')")

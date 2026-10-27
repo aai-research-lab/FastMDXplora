@@ -28,6 +28,7 @@ import pytest
 from fastmdxplora import software_docs
 from fastmdxplora.agent.tools import LOOK_WORDS, MOST_SAID, Toolbox, look_said
 from fastmdxplora.software_docs import DocsNotFound, read_docs
+from tests._agent_page import ready
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -950,6 +951,7 @@ def test_useful_and_wrong_are_line_icons_named_and_filled_when_pressed(session) 
             page.wait_for_selector("#agent-request", state="visible")
             page.route("**/api/agent/propose*", lambda route: route.fulfill(
                 status=200, content_type="application/json", body=json.dumps(reply)))
+            ready(page)
             page.fill("#agent-request", "How many residues?")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-answer:has-text('76 residues')")

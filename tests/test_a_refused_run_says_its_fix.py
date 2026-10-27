@@ -21,6 +21,7 @@ import pytest
 
 from fastmdxplora.gui.agent_panel import run_endpoint
 from fastmdxplora.gui.exploration import DashboardRuntime
+from tests._agent_page import ready
 
 A_STUDY = {"systems": [{"id": "a", "system": "1UBQ"}]}
 
@@ -113,6 +114,7 @@ def test_the_agent_is_offered_the_fix(tmp_path, monkeypatch) -> None:
             page.on("request", lambda r: asked.append(json.loads(r.post_data or "{}"))
                     if r.url.endswith(("/api/agent/propose", "/api/agent/propose-stream")) else None)
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "ubiquitin")
             page.keyboard.press("Enter")
             run = "#agent-thread .agent-msg-agent [data-role=run]"

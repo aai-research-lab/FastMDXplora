@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from fastmdxplora.agent.tools import LOOK_WORDS, Look, look_said
+from tests._agent_page import ready
 
 
 @pytest.mark.parametrize("tool, asked, done, doing", [
@@ -152,6 +153,7 @@ def test_a_look_is_shown_as_it_happens_and_named_after(study, monkeypatch) -> No
     try:
         with sync_playwright() as pw:
             browser, page, errors = _page(pw, session.url)
+            ready(page)
             page.fill("#agent-request", "Which studies are here?")
             page.keyboard.press("Enter")
             # The look taken, said as done, while the next turn is held.
@@ -189,6 +191,7 @@ def test_a_refusal_is_in_view_and_a_format_repair_is_not(study, monkeypatch) -> 
     try:
         with sync_playwright() as pw:
             browser, page, errors = _page(pw, session.url)
+            ready(page)
             page.fill("#agent-request", "Simulate ubiquitin for 5 ns")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-plan:not([hidden])")
@@ -219,6 +222,7 @@ def test_a_question_waits_and_an_error_stops(study, monkeypatch) -> None:
     try:
         with sync_playwright() as pw:
             browser, page, errors = _page(pw, session.url)
+            ready(page)
             page.fill("#agent-request", "Simulate lysozyme")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-msg-agent[data-state='waiting']")
@@ -229,6 +233,7 @@ def test_a_question_waits_and_an_error_stops(study, monkeypatch) -> None:
 
             import fastmdxplora.agent as agent_mod
             monkeypatch.setattr(agent_mod, "completion_for", failing)
+            ready(page)
             page.fill("#agent-request", "hen egg-white")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-msg-agent[data-state='stopped']")

@@ -7,6 +7,8 @@ import urllib.request
 import pytest
 import yaml
 
+from tests._agent_page import ready
+
 sync_api = pytest.importorskip("playwright.sync_api")
 expect = sync_api.expect
 
@@ -191,6 +193,7 @@ def test_run_and_next_message_use_the_reviewed_config(browser, site):
         page.locator(LIVE + ' [data-role="run"]').click()
         page.get_by_text("Run captured for this check.", exact=True).first.wait_for()
         assert runs[0]["config"]["simulation"] == {"temperature_K": 330, "duration_ns": 2}
+        ready(page)
         page.fill("#agent-request", "Describe these conditions.")
         page.keyboard.press("Enter")
         page.get_by_text("The reviewed conditions.", exact=True).wait_for()
@@ -245,6 +248,7 @@ def test_a_rejection_not_applied_holds_run_and_the_message_until_one_is_used(bro
         page.route("**/api/agent/propose*", lambda route: (requests.append(route.request), route.abort()))
         page.route("**/api/agent/run", lambda route: (runs.append(route.request), route.abort()))
         _choose(page, "simulation.temperature_K", "reject")
+        ready(page)
         page.fill("#agent-request", "Run it.")
         page.keyboard.press("Enter")
         page.locator(LIVE + ' .agent-review-note').filter(has_text="before sending").wait_for()

@@ -20,6 +20,7 @@ import pytest
 
 from fastmdxplora.agent.models import PROVIDERS, ModelChoice, completion_for
 from fastmdxplora.refusals import StudyError
+from tests._agent_page import ready
 
 #: The provider that answers in content blocks, and where its key is read.
 BLOCKS = next(name for name, spec in PROVIDERS.items() if spec["auth"] == "x-api-key")
@@ -225,6 +226,7 @@ def test_the_page_shows_it_and_stops_it(tmp_path, monkeypatch) -> None:
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "Tell me a long story.")
             page.keyboard.press("Enter")
             # Written into the thread as it arrives, without its marker.

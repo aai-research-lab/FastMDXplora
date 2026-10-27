@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from tests._agent_page import ready
+
 sync_api = pytest.importorskip("playwright.sync_api")
 expect = sync_api.expect
 
@@ -310,6 +312,7 @@ def test_an_agent_reply_holds_the_switch_until_it_finishes(browser, site, stream
             page.evaluate("window.ReadableStream = undefined")
         held = []
         page.route("**/api/agent/propose*", lambda route: held.append(route))
+        ready(page)
         page.fill("#agent-request", "Describe this study.")
         page.keyboard.press("Enter")
         page.locator("#agent-propose.is-writing").wait_for()
