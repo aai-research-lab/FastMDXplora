@@ -1052,11 +1052,18 @@ name only where it holds as many atoms as its analyses read (`n_atoms`).
 The Agent's conversation routes (`/api/agent/...`) are not yet held to the
 study: they answer on this computer only, and are held in a later release.
 
-The GUI starts no run (`POST /api/again`, `/api/report/write`) in a study
-that holds a link leading out of it, wherever in the study it is, nor where
-its Config or analysis manifest was not read: `GET /api/again` then offers
-neither phase, from the same answer, naming the links and the command that
-runs it at the terminal instead. A run's own process, started from the GUI
+The GUI starts no run (Analyze again and Write it again, `POST /api/again`
+and `/api/report/write`, the Agent's `DO: analyze again` and `DO: write the
+report again`, and a fix from the Problems panel, `POST /api/fix`) in a study
+that holds a link leading out of it, wherever in the study it is, or a
+record the run writes in place (its manifest, logs, process record, the
+trajectory and energies a resume extends) shared by a hard link, or a
+folder it cannot list; nor Analyze again or Write it again where its Config
+or analysis manifest was not read. `GET /api/again` then offers neither
+phase, from the same answer, naming what was found and the command the GUI
+would start, quoted, to run at the terminal instead. A study the person
+keeps in a folder named `runs/` of their own is judged as itself; a run of
+a study of several (by its batch manifest) with its whole study. A run's own process, started from the GUI
 or at the terminal, reads and writes the study's folder as the person made
 it, following its links (a `simulation/` on a cluster's scratch, say); only
 its status, events, metrics and the log of a run the GUI starts never

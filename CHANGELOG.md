@@ -1642,15 +1642,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   among them), the index said not saved.
   MDTraj writes a DCD or XTC by name in a new folder of its own.
 
-- The GUI starts no run (Analyze again, Write it again) in a study that
-  holds a link leading out of it, wherever it is in the study (its
-  `previous/`, `manifest.json`, log, process record, an analysis's record,
-  its trajectory, a run of a study of several): neither is offered, the
-  links found are named with the command that runs it at the terminal
-  instead, and asked anyway, nothing is started. A link that stays in the
-  study is no reason. Nor is one offered where the study's Config or
-  analysis manifest was not read; the person is not offered analyses ticked
-  in their place.
+- The GUI starts no run (Analyze again, Write it again, the Agent's
+  analyze again and write the report again, a fix from the Problems panel)
+  in a study that holds a link leading out of it, wherever it is in the
+  study (its `previous/`, `manifest.json`, log, process record, an
+  analysis's record, its trajectory, a run of a study of several), or a
+  record the run writes in place that is a hard link (a study copied with
+  `cp -al`): nothing is offered, what was found is named with the command
+  the GUI would start, quoted, to run at the terminal instead, and asked
+  anyway, nothing is started. A link that stays in the study is no reason,
+  nor one elsewhere in a person's project folder holding the study in its
+  own `runs/`. Nor is Analyze again or Write it again offered where the
+  study's Config or analysis manifest was not read; the person is not
+  offered analyses ticked in their place.
 
 - The study beside says why it is not shown where its frames are not its
   own records, and what of it was not read beside what is shown; it is
@@ -1664,7 +1668,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A folder of the study linked out of it (`simulation/` on a cluster's
   scratch, say) is said once, as a folder: "simulation/ is a link out of
   the study, so its records are not read here", not each of its records as
-  a link to a file.
+  a link to a file, on the Overview (its production's means too), the
+  Analysis and Files pages and the Viewer.
 
 - The Stop's question, where the run's status was not read, says its stage
   was not read rather than guess it; a view, a scene or a selection refused
