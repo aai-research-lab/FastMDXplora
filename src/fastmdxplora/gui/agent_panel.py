@@ -600,7 +600,8 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
             # study): said with the command to run at the terminal, no Yes.
             refused = _again_refused(getattr(runtime, "active_root", None),
                                      "report" if proposal.action == "write the report again"
-                                     else "analysis")
+                                     else "analysis",
+                                     (proposal.arguments or {}).get("analyses"))
             said = ({"reason": refused["error"]} if refused is not None else again_fix(
                 getattr(runtime, "active_root", None), proposal.action, proposal.arguments))
             answer["fix"] = said.get("fix")

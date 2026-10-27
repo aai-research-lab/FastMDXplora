@@ -364,12 +364,12 @@
       : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
     line.textContent = "";
     line.appendChild(make("b", "", "Production means not read. "));
-    // The folder's own sentence ends with its "so": the means follow it
-    // as a sentence of their own, not a second "so".
-    line.appendChild(document.createTextNode(listed + " " +
-      BECAUSE[key][names.length === 1 ? 0 : 1] + (key === "folder outside"
-        ? "; the means over the production are not shown."
-        : ", so the means over the production are not shown.")));
+    // A folder linked out is said once, under the page's title, with why:
+    // here only that the means are in it.
+    line.appendChild(document.createTextNode(key === "folder outside"
+      ? "They are recorded in " + listed + ", so they are not shown."
+      : listed + " " + BECAUSE[key][names.length === 1 ? 0 : 1] +
+        ", so the means over the production are not shown."));
   }
 
   /* Why a record was not read (`unavailable_why`, `series.NOT_READ_BECAUSE`),

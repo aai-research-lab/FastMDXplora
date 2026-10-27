@@ -485,6 +485,31 @@ def _fixes_held(root: Path) -> dict[str, Any]:
     return answer if inside == opened else _as_opened(answer, inside, opened)
 
 
+def _fixes_offered(root: Path) -> dict[str, Any]:
+    """`GET /api/fixes`: the fixes read held to the study (`_fixes_held`),
+    the study walked first (`_links_out`). Where the POST would refuse, no
+    fix is offered to run: each says why (``not_run_here``) with its own
+    command (``terminal``), as the POST would say it."""
+    import shlex
+
+    from fastmdxplora.gui.fixes_view import study_of
+
+    study = study_of(root)
+    links = (_links_out(_the_study_run(Path(study)))
+             if study is not None and Path(study).is_dir() else [])
+    answer = _fixes_held(root)
+    if not links or not isinstance(answer, dict):
+        return answer
+    for fix in answer.get("fixes") or []:
+        if fix.get("runnable"):
+            terminal = shlex.join(["fastmdx", *(fix.get("argv") or [])])
+            fix["runnable"] = False
+            fix["terminal"] = terminal
+            fix["not_run_here"] = (_links_said(links) + " To run it anyway, at the terminal: "
+                                   + terminal)
+    return answer
+
+
 def _the_fix_shown(root: Path, index: Any, run_in: Path | None = None) -> bool:
     """Whether the fix at ``index`` that `run_a_fix` would run (read
     without a held read, in the study open there, ``run_in``) is the one the
@@ -699,21 +724,61 @@ def _links_said(found: list[tuple[str, str]]) -> str:
     return "; ".join(said) + ", so it is not run from here."
 
 
-def _terminal(study: Path, phases: list[str]) -> str:
-    """The command the GUI would start to run ``phases`` again in ``study``
+def _folders_here(folder: Path) -> list[Path]:
+    """The folders in ``folder``, each in it, not a link to one; none where
+    ``folder`` is itself a link or cannot be listed."""
+    if Path(folder).is_symlink():
+        return []
+    try:
+        with os.scandir(folder) as listing:
+            return sorted(Path(entry.path) for entry in listing
+                          if entry.is_dir(follow_symlinks=False))
+    except OSError:
+        return []
+
+
+def _terminal(study: Path, phases: list[str], analyses: Any = None) -> str:
+    """The command the GUI would start to run ``phases`` again in ``study``,
+    with the ``analyses`` asked for, as `again.plan` makes it
     (`again.Again.command`: an analysis run again writes the report again
-    too where the study has one), quoted, for the person to run at the
-    terminal instead. Made without reading a record of the study, which may
-    lead out of it: only whether its `report/` is there is asked."""
+    too where the study, or any run of a study of several, has one),
+    quoted, for the person to run at the terminal instead. Made without
+    reading a record of the study, which may lead out of it: only which of
+    its folders are there is asked."""
     import shlex
 
     from fastmdxplora import again
+    from fastmdxplora.refusals import StudyError
 
+    root = Path(study)
     asked = tuple(phase for phase in again.PHASES if phase in phases)
-    if asked == ("analysis",) and os.path.isdir(Path(study) / "report"):
+    if os.path.isfile(root / "batch_manifest.json"):
+        runs = [run for run in _folders_here(root / "runs") if is_study(run)]
+    else:
+        runs = [root]
+    if asked == ("analysis",) and any(os.path.isdir(run / "report") for run in runs):
         asked = again.PHASES
-    command = again.Again(study=Path(study), phases=asked, analyses=None, runs=()).command()
+    try:
+        chosen = again.analyses_named(analyses) if analyses else None
+    except StudyError:
+        chosen = None
+    command = again.Again(study=root, phases=asked, analyses=chosen,
+                          runs=tuple(runs)).command()
     return shlex.join(["fastmdx", *command])
+
+
+def _anyway(root: Path, phases: str | list[str], analyses: Any = None) -> tuple[str, str]:
+    """What follows a refusal to run ``phases`` again in ``root``: that the
+    command builds the comparison of its study's runs again after it, for
+    a run of a study of several, and the command (`_terminal`), with it."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    phases = [phases] if isinstance(phases, str) else list(phases)
+    terminal = _terminal(root, phases, analyses)
+    campaign = campaign_of(Path(root)) if "analysis" in phases else None
+    said = (f" It builds the comparison of {campaign.name}'s runs again after it, as the run "
+            "from here would." if campaign is not None else "")
+    return terminal, said + " To run it anyway, at the terminal: " + terminal
 
 
 def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dict[str, Any]:
@@ -745,9 +810,8 @@ def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dic
     answer = {**said, "recorded": [], "refused": why,
               "links_out": [name for name, _ in links]}
     for phase in ("analysis", "report"):
-        terminal = _terminal(Path(root), [phase]) if links else None
-        answer[phase] = {"can": False, "terminal": terminal, "why": why + (
-            " To run it anyway, at the terminal: " + terminal if terminal else "")}
+        terminal, anyway = _anyway(Path(root), phase) if links else (None, "")
+        answer[phase] = {"can": False, "terminal": terminal, "why": why + anyway}
     # Nothing is offered ticked, so nothing is said of what would be.
     answer.pop("recorded_said", None)
     return answer
@@ -792,7 +856,8 @@ def _fix_walked(app_runtime: Any, asked: dict[str, Any]) -> dict[str, Any] | Non
     return _fix_refused(study, argv)
 
 
-def _again_refused(root: Path | None, phase: str = "analysis") -> dict[str, Any] | None:
+def _again_refused(root: Path | None, phase: str | list[str] = "analysis",
+                   analyses: Any = None) -> dict[str, Any] | None:
     """Why `POST /api/again` and `/api/report/write` (``phase`` "report"),
     and the Agent's `DO: analyze again` and `DO: write the report again`,
     start nothing on the study ``root``: what `_again_answer` refuses, said
@@ -804,12 +869,14 @@ def _again_refused(root: Path | None, phase: str = "analysis") -> dict[str, Any]
     # Walked before any record of it is read, held or not.
     links = _links_out(_the_study_run(Path(root)))
     if links:
-        terminal = _terminal(Path(root), [phase])
-        return {"ok": False, "error": _links_said(links) + " To run it anyway, at the "
-                "terminal: " + terminal, "terminal": terminal, "not_read": None}
+        terminal, anyway = _anyway(Path(root), phase, analyses)
+        return {"ok": False, "error": _links_said(links) + anyway, "terminal": terminal,
+                "not_read": None}
     said = _again_answer(Path(root), links)
     if not said.get("refused"):
         return None
+    if not isinstance(phase, str):
+        phase = "report" if list(phase) == ["report"] else "analysis"
     offered = said.get(phase) if isinstance(said.get(phase), dict) else {}
     return {"ok": False, "error": offered.get("why") or said["refused"],
             "terminal": offered.get("terminal"), "not_read": said.get("not_read")}
@@ -1875,7 +1942,7 @@ def make_handler(
                 # commands the POST below runs.
                 # Read from the study's own records only (`_fixes_held`): a
                 # remedy is not priced from a record linked out of it.
-                self._send_json(_fixes_held(root))
+                self._send_json(_fixes_offered(root))
                 return
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared
@@ -2786,11 +2853,20 @@ def make_handler(
                 # loopback only, like every route not listed open; the page
                 # asks the person first. Refused, as the GET offers nothing,
                 # where the study's Config or manifest is not its own.
-                refused = _again_refused(app_runtime.active_root)
+                asked = payload if isinstance(payload, dict) else {}
+                # Said with the command the run asked for would be.
+                from fastmdxplora import again as _again
+
+                try:
+                    phases = list(_again.phases_named(asked.get("phases") or []))
+                except Exception:  # noqa: BLE001 - refused below as it was
+                    phases = []
+                refused = _again_refused(
+                    app_runtime.active_root, phases or "analysis",
+                    asked.get("analyses") if isinstance(asked.get("analyses"), list) else None)
                 if refused is not None:
                     self._send_json(refused)
                     return
-                asked = payload if isinstance(payload, dict) else {}
                 self._send_json(app_runtime.run_again(
                     asked.get("phases") or [], asked.get("analyses"),
                     dashboard_url=self.headers.get("Origin")))

@@ -1225,12 +1225,14 @@ def test_the_agent_offers_no_run_in_a_study_holding_a_link_out(tmp_path, monkeyp
 
     assert answer["fix"] is None, answer
     assert "previous/ is a link out of the study" in answer["refused"], answer
+    # The command the GUI would have started, the analyses named in it.
     if asked.endswith("report again"):
         command = f"fastmdx report --output {root} --rerun"
     elif (root / "report").is_dir():
-        command = f"fastmdx explore --output {root} --include-phase analysis report --rerun"
+        command = (f"fastmdx explore --output {root} --include-phase analysis report --rerun "
+                   "--analyze-analyses rmsd")
     else:
-        command = f"fastmdx analyze --output {root} --rerun"
+        command = f"fastmdx analyze --output {root} --rerun --analyses rmsd"
     assert answer["refused"].endswith("To run it anyway, at the terminal: " + command), answer
 
 
@@ -1372,3 +1374,56 @@ def test_no_study_is_continued_in_place_holding_a_link_out(tmp_path, monkeypatch
     assert said["ok"] is False and _Started.started == [], said
     assert "fastmdxplora.log is a link out of the study" in said["error"], said
     assert not (tmp_path / "space" / "continuations").exists()
+
+
+def _several_with_reports(tmp_path: Path, monkeypatch) -> Path:
+    """A study of two runs, each with its trajectory and a report, its own
+    top holding none."""
+    import shutil
+
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    shutil.rmtree(root / "report")
+    (root / "batch_manifest.json").write_text(json.dumps({"runs": []}), encoding="utf-8")
+    for name in ("r1", "r2"):
+        run = root / "runs" / name
+        shutil.copytree(root / "simulation", run / "simulation")
+        (run / "manifest.json").write_text("{}", encoding="utf-8")
+        (run / "report").mkdir()
+        (run / "report" / "report.md").write_text("# Report\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize("case", ["study of several", "analyses named"])
+def test_the_command_given_is_the_run_the_gui_would_start(tmp_path, monkeypatch, case):
+    """The command said to run at the terminal is `again.plan`'s: a study of
+    several whose runs have reports, though its top has none, writes them
+    again too, and the analyses asked for are named (G19 L1, G20 L3)."""
+    import shlex
+
+    from fastmdxplora import again
+    from fastmdxplora.gui import server
+
+    root = _several_with_reports(tmp_path, monkeypatch)
+    analyses = ["rmsd"] if case == "analyses named" else None
+
+    planned = again.plan(root, ["analysis"], analyses)
+    said = server._terminal(root, ["analysis"], analyses)
+
+    assert said == shlex.join(["fastmdx", *planned.command()]), said
+    assert "--include-phase analysis report" in said and ("rmsd" in said) == bool(analyses)
+
+
+def test_a_run_of_a_study_of_several_is_said_to_build_its_comparison_again(
+        tmp_path, monkeypatch):
+    """Its command builds the comparison of the study's runs again after it,
+    as the run from here would, and the refusal says so."""
+    root = _several_with_reports(tmp_path, monkeypatch)
+    (tmp_path / "outside").mkdir()
+    _link(root / "notes", tmp_path / "outside")
+    from fastmdxplora.gui import server
+
+    refused = server._again_refused(root / "runs" / "r1")
+
+    assert refused["error"].endswith(
+        f"It builds the comparison of {root.name}'s runs again after it, as the run from "
+        f"here would. To run it anyway, at the terminal: {refused['terminal']}"), refused

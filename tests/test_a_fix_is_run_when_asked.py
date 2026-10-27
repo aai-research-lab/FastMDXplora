@@ -376,3 +376,87 @@ def test_the_agent_asks_then_runs_it(stopped, monkeypatch) -> None:
                      "about 15 min.")
     assert ran == [{"index": 0}]
     assert errors == []
+
+
+def _log_linked_out(root: Path) -> Path:
+    """The study's file log moved out of it and linked back."""
+    outside = root.parent / "outside"
+    outside.mkdir()
+    (outside / "fastmdxplora.log").write_text("the person's own\n", encoding="utf-8")
+    (root / "fastmdxplora.log").unlink(missing_ok=True)
+    (root / "fastmdxplora.log").symlink_to(outside / "fastmdxplora.log")
+    return outside
+
+
+@pytest.mark.parametrize("linked", [True, False], ids=["link out", "none"])
+def test_a_fix_the_post_would_refuse_is_not_offered_to_run(stopped, linked):
+    """`GET /api/fixes` walks the study as the POST does: where it would
+    refuse, no fix is offered to run, each saying why with its command
+    (G19 L3, G20 L2). A study with no link out is offered as before."""
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    if linked:
+        _log_linked_out(stopped)
+
+    (fix,) = json.loads(_asked(stopped, stopped.parent, "/api/fixes")[1])["fixes"]
+
+    if not linked:
+        assert fix["runnable"] and "not_run_here" not in fix, fix
+        return
+    assert fix["runnable"] is False, fix
+    assert fix["terminal"] == f"fastmdx resume {stopped.resolve()}", fix
+    assert fix["not_run_here"].startswith("fastmdxplora.log is a link out of the study"), fix
+    assert fix["not_run_here"].endswith("To run it anyway, at the terminal: " + fix["terminal"])
+
+
+def test_the_card_offers_no_run_it_would_refuse_and_says_a_refusal_where_the_keyboard_was(
+        stopped) -> None:
+    """With a link out, the card draws no Run it: it says why, the command
+    set as code. A refusal said after Yes takes the keyboard from the
+    button it replaces, rather than leave it on the page's body, the
+    command again as code (G20 L2)."""
+    import shutil
+
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    plain = stopped.parent / "plain"
+    shutil.copytree(stopped, plain)
+    _log_linked_out(stopped)
+    refusal = {"ok": False, "terminal": f"fastmdx resume {plain}",
+               "error": f"x is a link out of the study: the run would read or write through "
+                        f"it, so it is not run from here. To run it anyway, at the terminal: "
+                        f"fastmdx resume {plain}"}
+    found: dict[str, object] = {}
+    for root in (stopped, plain):
+        session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+                page = browser.new_page(viewport={"width": 390, "height": 900})
+                page.set_default_timeout(60000)
+                page.route("**/api/fix", lambda route: route.fulfill(json=refusal))
+                page.goto(session.url + "#overview", wait_until="domcontentloaded")
+                page.wait_for_selector("#fixes-card:not([hidden]) .fix")
+                if root == stopped:
+                    found["runs"] = page.locator("#fixes-card .fix-run").count()
+                    found["said"] = " ".join(page.locator(
+                        "#fixes-card .fix-not-here").all_text_contents())
+                    found["code"] = " ".join(page.locator(
+                        "#fixes-card .fix-not-here code").all_text_contents())
+                else:
+                    page.click("#fixes-card .fix-run")
+                    page.click("#fixes-card .fix-confirm")
+                    page.wait_for_selector("#fixes-card .fix-said:has-text('not run from here')")
+                    found["focus"] = page.evaluate(
+                        "document.activeElement.className + '|' + "
+                        "(document.activeElement.querySelector('code') || {}).textContent")
+                browser.close()
+        finally:
+            session.server.shutdown()
+    assert found["runs"] == 0, found
+    assert str(found["said"]).startswith("fastmdxplora.log is a link out of the study"), found
+    assert found["code"] == f"fastmdx resume {stopped.resolve()}", found
+    assert found["focus"] == f"fix-said|fastmdx resume {plain}", found
