@@ -378,6 +378,17 @@ def test_an_attachment_still_loading_holds_the_switch(browser, site):
         page.context.close()
 
 
+def _structure_read(page):
+    # The structure's facts and its preview are read after the form is
+    # drawn, and each draws the settings again: a fill begun as one lands
+    # lost its selection and put its text after what the field held.
+    page.wait_for_function("""() => {
+        const state = window.FastMDXRun.state;
+        return state.systems.length && state.systems[0].facts && state.estimate
+            && !document.getElementById('run-system-preview').classList.contains('is-loading');
+    }""")
+
+
 def _builder(page, site):
     pdb = site["root"] / "peptide.pdb"
     pdb.write_text("ATOM      1  N   GLY A   1       0.000   0.000   0.000  1.00  0.00           N\n"
@@ -1206,6 +1217,7 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         page.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('6.5'))")
         other.goto(site["session"].url + "#run", wait_until="domcontentloaded")
         expect(_ph(other)).to_have_value("6.5")
+        _structure_read(other)
         _ph(other).fill("7.2")
         other.keyboard.press("Tab")
         other.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('7.2'))")
@@ -1219,6 +1231,7 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         # and said as that, not as a draft that could not be saved.
         page.evaluate("window.FastMDXDashboard.navigate('run')")
         expect(_ph(page)).to_have_value("7.2")
+        _structure_read(page)
         _ph(page).fill("6.1")
         other.evaluate("""() => {
             const key = Object.keys(localStorage).find(k => k.startsWith('fmx.builderDraft'));
