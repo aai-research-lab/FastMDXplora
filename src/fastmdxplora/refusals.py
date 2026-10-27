@@ -839,6 +839,9 @@ CODES: tuple[Code, ...] = (
          detail_keys=("frames",)),
 
     # -- batch and report ---------------------------------------------------
+    Code("batch.manifest.invalid",
+         "A batch manifest does not hold a JSON object.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
     Code("batch.sweep.invalid",
          "A parameter sweep that does not describe a set of runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,

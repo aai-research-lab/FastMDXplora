@@ -127,7 +127,7 @@ def batch_manifest(batch_dir: str | Path) -> dict[str, Any]:
         from fastmdxplora.refusals import StudyError
 
         raise StudyError("The campaign's batch_manifest.json is not an object.",
-                         code="analysis.data.absent", needs="batch_manifest.json")
+                         code="batch.manifest.invalid")
     return manifest
 
 
