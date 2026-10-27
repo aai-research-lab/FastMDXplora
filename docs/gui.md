@@ -1032,7 +1032,8 @@ of it, or a file its records name outside it, is not read, nor another read
 in its place, on this computer or on a public bind. A JSON answer names it
 in `unavailable` and says it was not read (`not_read`); a file route gives a
 404. The Files page's tiles say "not read" of such a record, and an
-analysis whose status it was "status not read". The study set beside the
+analysis whose status it was "not read", saying on hover that its status,
+not the value beside it, was not read, and why. The study set beside the
 open one (`/api/beside`) is read held to itself, and what it did not read is
 named by its name (`other: simulation/frames.dcd`), in the reason it is not
 shown or beside what is shown. A POST decides only from the study's own

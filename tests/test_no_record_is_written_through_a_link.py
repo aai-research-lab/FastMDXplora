@@ -336,22 +336,34 @@ def test_a_record_is_saved_as_any_file_written_here_would_be(tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == ["record.json"]
 
 
-def test_the_file_creation_mask_is_read_without_changing_it(monkeypatch):
+def test_the_file_creation_mask_is_read_without_changing_it(tmp_path):
     """Read from the system's own record of it where there is one: setting
-    it to read it changed it for every thread for a moment."""
-    from fastmdxplora import record_access
+    it to read it changed it for every thread for a moment. In a process of
+    its own, every change of the mask counted from before the package is
+    imported to after a record is saved."""
+    import subprocess
+    import sys
+
+    import fastmdxplora
 
     if not Path("/proc/self/status").is_file():
         pytest.skip("no /proc on this system")
+    script = (
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "real, set_to = os.umask, []\n"
+        "os.umask = lambda mask: (set_to.append(mask), real(mask))[1]\n"
+        "from fastmdxplora import record_access\n"
+        "record_access.save(Path(sys.argv[1]), b'{}')\n"
+        "print(len(set_to), oct(os.stat(sys.argv[1]).st_mode & 0o777))\n")
+    source = Path(fastmdxplora.__file__).resolve().parent.parent
+    done = subprocess.run([sys.executable, "-c", script, str(tmp_path / "record.json")],
+                          capture_output=True, text=True, timeout=120,
+                          env={**os.environ, "PYTHONPATH": str(source)})
     mask = os.umask(0o022)
     os.umask(mask)
-
-    def changed(_):
-        raise AssertionError("the mask was set to be read")
-
-    monkeypatch.setattr(record_access, "_UMASK", None)
-    monkeypatch.setattr(os, "umask", changed)
-    assert record_access._umask() == mask
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == ["0", oct(0o666 & ~mask)], done.stdout
 
 
 # --------------------------------------------------------------------------
@@ -796,3 +808,78 @@ def test_what_is_computed_from_the_frames_is_given_with_their_index_linked_out(
         assert said["ok"] is False, said
         assert said["reason"].startswith("simulation/frames_index.json was not read"), said
     assert victim.read_text(encoding="utf-8") == mine and index.is_symlink()
+
+
+# --------------------------------------------------------------------------
+# A writer's own error, through each route that saves (G13 L2, L4)
+# --------------------------------------------------------------------------
+
+#: Each route that saves what it computes or is given, and its body if a POST.
+WRITERS = {
+    "/api/frames-superposed?on=backbone": None,
+    "/structure/frames.dcd?superposed=backbone": None,
+    "/structure/frames.dcd?span=0:5:1&between=1": None,
+    "/structure/frames.dcd?as=xtc": None,
+    "/api/frames-pieces": None,
+    "/api/occupancy?of=ligand&ligand=LIG": None,
+    "/api/backbone-angles": None,
+    "/api/views": {"action": "save", "name": "one", "view": {"camera": {
+        "position": [1.0, 2.0, 30.0], "target": [1.0, 2.0, 3.0], "up": [0.0, 1.0, 0.0]}}},
+    "/api/viewer-selections": {"action": "save", "name": "one",
+                               "selection": {"kind": "expression", "expression": "protein"}},
+}
+
+
+@pytest.mark.parametrize("route", sorted(WRITERS))
+def test_a_writer_s_own_error_is_logged_and_said_without_its_text(tmp_path, monkeypatch,
+                                                                  caplog, route):
+    """A writer failing with an error of its own (not the system's, and with
+    room on the disk) is said as not saved, without the Python text of its
+    error, and logged on the server; nothing is written, and the server
+    does not fail."""
+    import logging
+
+    from fastmdxplora import record_access
+    from tests.test_every_route_reads_only_the_study import _asked
+
+    root = _study(tmp_path)
+
+    def broken(name, target):
+        raise RuntimeError("MARKER-WRITER-TEXT")
+
+    monkeypatch.setattr(record_access, "_into_place", broken)
+    monkeypatch.setattr(record_access, "_little_room", lambda target: False)
+    before = _tree(root)
+    caplog.set_level(logging.WARNING, logger="fastmdxplora.record_access")
+
+    status, body = _asked(root, tmp_path, route, body=WRITERS[route])
+
+    text = body.decode("utf-8", "replace")
+    assert status != 500 and "MARKER-WRITER-TEXT" not in text, text[:300]
+    if route.startswith("/api/"):
+        said = json.loads(body)
+        assert said["ok"] is False and "could not be saved: its writer failed" in json.dumps(
+            said), said
+    assert any("MARKER-WRITER-TEXT" in (record.exc_text or "") or (
+        record.exc_info and "MARKER-WRITER-TEXT" in str(record.exc_info[1]))
+        for record in caplog.records), caplog.records
+    assert {name: data for name, data in _tree(root).items() if name in before} == before
+    assert not [p for p in root.rglob(".*.tmp")]
+
+
+def test_the_study_beside_says_a_record_not_saved_on_a_full_disk(tmp_path, monkeypatch):
+    from tests.test_every_route_reads_only_the_study import _asked
+    from tests.test_every_route_reads_only_the_study import _study as written
+
+    root = written(tmp_path)
+    other = written(tmp_path / "other")
+    # This study's frames to be written again, on a disk with no room.
+    for name in ("frames.dcd", "frames_topology.pdb", "frames_index.json"):
+        (root / "simulation" / name).unlink()
+    _no_room(monkeypatch)
+
+    status, body = _asked(root, tmp_path, f"/api/beside?path={other}")
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"] is False, said
+    assert "could not be saved: no room" in said["reason"], said

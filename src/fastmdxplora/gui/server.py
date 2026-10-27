@@ -2008,6 +2008,11 @@ def make_handler(
                     return
                 answer = self._from_the_frames(root, lambda inside: beside(
                     inside, other, most_frames=cfg.max_browser_frames), BESIDE)
+                unsaved = answer.get("not_saved")
+                if not answer.get("ok") and unsaved and unsaved not in str(answer.get("reason")):
+                    # A record not saved (a full disk) is said where the
+                    # Viewer says why the study beside is not shown.
+                    answer["reason"] = f"{answer.get('reason')} {unsaved}"
                 if unread:
                     answer["not_read"] = " ".join(filter(None, (answer.get("not_read"),
                                                                 unread)))

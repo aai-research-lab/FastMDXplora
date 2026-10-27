@@ -75,11 +75,35 @@ def test_a_record_linked_out_is_said_not_read_on_the_files_page(tmp_path, linked
     for relative in names:
         for marker in RECORDS[relative][2]:
             assert marker not in page["html"], marker
-        # A tile says the record not read; an analysis that its status was
-        # not read, beside the value its own record holds.
-        assert (f"status not read: {Path(relative).name}" if relative.endswith("manifest.json")
-                else f"{Path(relative).name} not read") in page["html"]
+        # A tile says the record not read; an analysis a short "not read"
+        # pill, which says on hover that its status, not the value beside
+        # it, was not read, and why, as `not_read` says it.
+        if relative.endswith("manifest.json"):
+            assert ('data-state="not read" title="Its status was not read: '
+                    f'{relative} was not read, it is a link to a file outside the study.'
+                    in page["html"]), page["html"]
+        else:
+            assert f"{Path(relative).name} not read" in page["html"]
         assert f"{relative} was not read" in page["not_read"], page["not_read"]
     assert str(outside) not in json.dumps(page)
     if "simulation/simulation_parameters.json" not in names:
         assert "12 frames" in page["html"]
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_a_manifest_linked_to_a_hidden_file_of_the_study_is_said_so(tmp_path, public):
+    """The pill's reason is the refusal's own (G13 L3): a link to a hidden
+    file of the study is not said to lead outside it."""
+    root = _study(tmp_path)
+    manifest = root / "analysis" / "analysis_manifest.json"
+    hidden = root / ".hidden" / "m.json"
+    hidden.parent.mkdir()
+    manifest.rename(hidden)
+    _link(manifest, hidden)
+
+    page = _page(root, tmp_path, public)
+
+    because = "it leads to a file of the study that is not one of its results"
+    assert f"analysis/analysis_manifest.json was not read: {because}" in page["not_read"]
+    assert f"analysis/analysis_manifest.json was not read, {because}." in page["html"]
+    assert "leads outside the study" not in page["html"]

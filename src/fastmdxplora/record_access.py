@@ -10,6 +10,7 @@ a new temporary file beside it, renamed into place, never through a link.
 from __future__ import annotations
 
 import errno
+import logging
 import fnmatch
 import os
 import shutil
@@ -79,6 +80,8 @@ class ReadScope:
             self.denied.add(relative.as_posix() if named else "an unavailable record")
         raise OutsideWorkspace("The record could not be confined to the allowed study files.")
 
+
+_LOG = logging.getLogger(__name__)
 
 _scope: ContextVar[ReadScope | None] = ContextVar("record_read_scope", default=None)
 
@@ -378,7 +381,10 @@ def _failed(target: Path, exc: BaseException) -> str:
     elif isinstance(exc, OSError):
         why = exc.strerror or str(exc) or type(exc).__name__
     else:
-        why = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        # A writer's own error, not the system's: logged here for whoever
+        # runs the GUI, and said to the person without its Python text.
+        _LOG.warning("%s could not be saved: its writer failed", target, exc_info=exc)
+        why = "its writer failed"
     _not_saved(target, why)
     return why
 

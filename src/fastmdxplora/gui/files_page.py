@@ -95,6 +95,21 @@ def _load_json(path: Path) -> dict[str, Any]:
     return said if isinstance(said, dict) else {}
 
 
+def _status_not_read(root: Path, where: Path) -> str:
+    """What an analysis's "not read" pill says on hover, where its manifest
+    was refused: the manifest named, why, as the answer's `not_read` says
+    it, and that its status, not its value, was not read."""
+    from fastmdxplora.gui.series import NOT_READ_BECAUSE, why_not_read
+
+    try:
+        named = where.relative_to(root).as_posix()
+    except ValueError:
+        named = where.name
+    return (f"Its status was not read: {named} was not read, "
+            f"{NOT_READ_BECAUSE[why_not_read(root, where)]}. The value beside it is read "
+            "from the analysis's own record.")
+
+
 def _held(read: Callable[..., Any], path: Path) -> tuple[Any, str]:
     """``read(path)``, and where a read held to the study refused the
     record, the line a tile says of it ("<name> not read"); "" otherwise,
@@ -271,17 +286,17 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
     for (run, folder), group in analyses.items():
         prefix = f"runs/{run}/" if run else ""
         if run not in manifests:
-            manifest, unread = _held(_load_json,
-                                     root / prefix / "analysis" / "analysis_manifest.json")
+            where = root / prefix / "analysis" / "analysis_manifest.json"
+            manifest, unread = _held(_load_json, where)
             # Refused (a link out of the study): each analysis says its
-            # status was not read, not a status read through the link. The
-            # value beside it is its own record's, read held to the study.
-            manifests[run] = unread or (manifest.get("results") or {})
+            # status was not read, not a status read through the link, with
+            # why as the answer's `not_read` says it. The value beside it is
+            # its own record's, read held to the study.
+            manifests[run] = _status_not_read(root, where) if unread else (
+                manifest.get("results") or {})
         result = manifests[run].get(folder) if isinstance(manifests[run], dict) else None
         if isinstance(manifests[run], str):
-            group["status"] = "status not read: analysis_manifest.json"
-            group["message"] = ("analysis_manifest.json was not read (it leads outside the "
-                                "study), so this analysis's status is not shown.")
+            group["status"], group["message"] = "not read", manifests[run]
         if isinstance(result, dict):
             group["status"] = str(result.get("status") or "")
             if group["status"] not in ("ok", ""):

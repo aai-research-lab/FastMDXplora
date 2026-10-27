@@ -300,15 +300,31 @@
     // would write it.
     var yes = askNow();
     if (yes) yes.disabled = true;
-    fetch("/api/again").then(function (res) { return res.json(); }).then(function (d) {
-      var report = d && d.report;
-      if (d && d.available === false) { say(d.why || "Nothing is open to write again."); return; }
+    fetch("/api/again").then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: res.ok, data: d || {} };
+      });
+    }).then(function (answer) {
+      var d = answer.data;
+      if (!answer.ok) {
+        // Refused here (a GUI served beyond this computer answers no
+        // question that starts a run): not offered, and said why.
+        say("Writing the report again is not offered here" +
+            (d.error || d.reason ? ": " + (d.error || d.reason) : "."));
+        return;
+      }
+      var report = d.report;
+      if (d.available === false) { say(d.why || "Nothing is open to write again."); return; }
       if (report && !report.can) {
         say(report.why || d.not_read || "The report cannot be written again here.");
         return;
       }
-      if (yes) yes.disabled = false;
-    }).catch(function () { if (yes) yes.disabled = false; });
+      if (yes) {
+        yes.disabled = false;
+        // The keyboard on Yes once it can be pressed, as before it was held.
+        yes.focus();
+      }
+    }).catch(function () { say("Could not ask the server whether it would write it again."); });
   }
 
   function askNow() {

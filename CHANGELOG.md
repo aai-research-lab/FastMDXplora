@@ -1647,8 +1647,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   own records, and what of it was not read beside what is shown; it is
   paired again once its clock is no longer read.
 
-- On the Files page, an analysis whose manifest was not read says its
-  status was not read, beside the value its own record holds.
+- On the Files page, an analysis whose manifest was not read says "not
+  read", and on hover that its status, not the value beside it, was not
+  read, and why, as the answer says it; the pill fits a narrow page.
+
+- Write it again on a GUI served beyond this computer says it is not
+  offered there, with no Yes to press; on this computer the keyboard is on
+  Yes once the server has said it would write it.
+
+- A writer's own error (not the system's) is logged by the server and said
+  to the person as "could not be saved: its writer failed", without its
+  Python text; the study beside names a record not saved on a full disk in
+  the reason it is not shown.
 
 - Running a study's analyses or report again starts nothing where its
   Config or analysis manifest is linked out of the study, as nothing is

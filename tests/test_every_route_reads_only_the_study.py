@@ -695,7 +695,7 @@ def test_the_study_beside_is_not_read_through_its_own_links(tmp_path, relative):
 def test_the_study_beside_is_paired_again_once_its_clock_is_not_read(tmp_path):
     """Paired by simulation time while both clocks are read; once the other
     study's clock is no longer read, by place in its run, not from the
-    pairing kept beside the frames (G12 L4)."""
+    pairing saved beside the frames (G12 L4)."""
     root = _study(tmp_path)
     other = _study(tmp_path / "other")
     route = f"/api/beside?path={other}"
@@ -872,6 +872,17 @@ def test_nothing_is_offered_again_that_would_be_refused(tmp_path, relative):
     assert said["recorded"] == [] and "recorded_said" not in said
 
 
+def _once_asked(page) -> tuple[str, object]:
+    """What Write it again shows once the server has answered: its words,
+    and its Yes where there is one to press."""
+    page.wait_for_function(
+        "() => { const yes = document.querySelector('#report-write-ask .fix-confirm');"
+        " const ask = document.querySelector('#report-write-ask');"
+        " return ask && !ask.hidden && (!yes || !yes.disabled); }")
+    return (page.text_content("#report-write-ask"),
+            page.query_selector("#report-write-ask .fix-confirm"))
+
+
 def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path):
     """Analyze again and Write it again say the manifest was not read, and
     offer nothing ticked to press."""
@@ -895,19 +906,48 @@ def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path)
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector("#analysis-again:not([hidden])")
             page.click("#analysis-again")
-            page.wait_for_selector("#analysis-again-ask:has-text('was not read')")
+            # What the page shows once it has asked: the dialog or why not.
+            page.wait_for_selector("#analysis-again-ask:not([hidden])")
             analysis = page.text_content("#analysis-again-ask")
             ticked = page.eval_on_selector_all("#analysis-again-ask input:checked",
                                                "boxes => boxes.length")
             page.goto(session.url + "#report", wait_until="domcontentloaded")
             page.wait_for_selector("#report-write:not([hidden])")
             page.click("#report-write")
-            page.wait_for_selector("#report-write-ask:has-text('was not read')")
-            report = page.text_content("#report-write-ask")
-            confirm = page.query_selector("#report-write-ask .fix-confirm")
+            report, confirm = _once_asked(page)
             browser.close()
     finally:
         session.server.shutdown()
     assert "analysis/analysis_manifest.json was not read" in analysis and ticked == 0
     assert "analysis/analysis_manifest.json was not read" in report and confirm is None
     assert not any(url.endswith(("/api/again", "/api/report/write")) for url in posted)
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_write_it_again_is_offered_only_where_it_would_be_written(tmp_path, public):
+    """On this computer, once the server agrees, the keyboard is on Yes
+    (G13 L1); beyond it, where the server refuses to say, nothing is
+    offered to press, and the page says it is not offered here (G14 L2)."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    root = _study(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rmsf]\n",
+                                              encoding="utf-8")
+    (root / "report").mkdir()
+    (root / "report" / "report.md").write_text("# Report\n", encoding="utf-8")
+    with _serve(root, tmp_path, public=public) as url:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(url + "/#report", wait_until="domcontentloaded")
+            page.wait_for_selector("#report-write:not([hidden])")
+            page.click("#report-write")
+            said, confirm = _once_asked(page)
+            focused = page.evaluate("() => document.activeElement.textContent")
+            browser.close()
+    if public:
+        assert confirm is None and "not offered here" in said, said
+    else:
+        assert confirm is not None and focused == "Yes, write it", (said, focused)
