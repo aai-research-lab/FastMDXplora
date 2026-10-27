@@ -12,6 +12,7 @@ import pytest
 
 pytest.importorskip("playwright.sync_api")
 
+from tests._agent_page import ready  # noqa: E402
 from tests.test_the_drawing_scripts_run_in_a_browser import _write_study  # noqa: E402
 
 
@@ -81,6 +82,7 @@ def test_the_keys_open_it_beside_the_page_and_close_it(browser, session) -> None
 def test_one_conversation_on_the_page_and_beside_it(browser, session, no_model) -> None:
     tab = _open(browser, session, "#report")
     tab.click("#agent-beside-open")
+    ready(tab)
     tab.fill("#agent-request", "Summarise what this study found.")
     tab.click("#agent-propose")
     tab.wait_for_selector("#agent-drawer .agent-msg-user")
