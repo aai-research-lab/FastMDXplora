@@ -446,15 +446,13 @@ class FastMDXplora:
                 {"systems": [{"id": self._system_id, "system": self.system}]})))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Which process this study is, so a GUI opened on the folder later
-        # can adopt the run: show it as running and stop it if asked. The
-        # file goes when the run ends (`_its_process_recorded_while_it_runs`),
-        # or when the process exits; a crash leaves it, and an adopter checks
-        # the process is alive and is this run before believing it. A study
-        # given as a config has no folder yet: its record is written by the
-        # batch layer as it starts, and the GUI of `fastmdx explore
-        # --dashboard`, started before that, takes it up then.
-        _record_run_process(self.output_dir)
+        # Which process this study is, so a GUI opened on the folder can adopt
+        # the run: show it as running and stop it if asked. Written as the run
+        # begins and removed as it ends (`_its_process_recorded_while_it_runs`),
+        # not as the study is made: a study made and not run, a record
+        # standing, was taken by a GUI in this process for a run going, and
+        # its Stop signalled this process. A crash leaves it, and an adopter
+        # checks the process is alive and is this run before believing it.
 
         self.options: dict[str, dict[str, Any]] = options or {}
         # Study-level settings (`agent`, `agent_model`), which describe the

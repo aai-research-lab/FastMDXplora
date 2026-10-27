@@ -199,15 +199,18 @@ def test_a_gui_in_the_run_s_process_is_not_running_once_the_run_ends(tmp_path, m
     seen: list = []
 
     def phase(self, name, options):
-        seen.append((gui.process.poll(), gui.snapshot()["process_running"]))
+        running = gui.snapshot()["process_running"]
+        seen.append((gui.process.poll(), running))
         return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
 
     monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
     study = FastMDXplora("1L2Y", output_dir=str(root))
     gui = _runtime(root)
-    assert gui.process is not None and gui.process.pid == os.getpid()
+    # Made, not run: not a run going.
+    assert gui.process is None and gui.snapshot()["process_running"] is False
     study.explore(include_phase=["analysis"])
     assert seen == [(None, True)]
+    assert gui.process.pid == os.getpid()
     assert gui.process.poll() is not None
     assert gui.snapshot()["process_running"] is False
     with mock.patch.object(exploration, "_terminate_process") as signalled:
@@ -416,3 +419,25 @@ def test_a_study_reached_through_a_link_keeps_its_record_across_its_rounds(tmp_p
     BatchExplorer(config_data={"systems": [{"system": "1L2Y"}]}, output_dir=str(out)).run()
     assert seen == {"record": [RUN_PROCESS_FILE], "held": True}
     assert _records_of_this_process(out) == []
+
+
+def test_a_study_made_here_and_not_run_is_not_a_run_going(tmp_path, monkeypatch):
+    """A notebook with a GUI open on a folder makes a study there and has
+    not run it: the GUI said running, refused Run and offered Stop, which
+    signalled the notebook's own process. Nor did a GUI opened after it."""
+    from fastmdxplora.gui import exploration
+
+    out = tmp_path / "study"
+    out.mkdir()
+    signals: list = []
+    monkeypatch.setattr(exploration, "_terminate_process",
+                        lambda pid, force=False: signals.append(pid))
+    before = _runtime(out)
+    FastMDXplora("1L2Y", output_dir=str(out))
+    after = _runtime(out)
+    for gui in (before, after):
+        state = gui.snapshot()
+        assert (state["status"], state["process_running"], state["can_launch"]) == (
+            "idle", False, True), state["status"]
+        assert gui.stop()["stopped"] is False
+    assert signals == []

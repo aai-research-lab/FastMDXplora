@@ -217,12 +217,15 @@ class _AdoptedProcess:
                 run_process_held_here,
             )
 
+            # Going only while a run of this process holds the folder: a study
+            # made here and not run writes its record as it is made, and was
+            # said to be running, with Stop signalling this process.
+            if not run_process_held_here(self.root):
+                return False
             record = _process_record_held(self.root)
             if not record:
-                # Not read (being written again, as a study's runs begin; or
-                # left empty, or linked out of the study): going only while a
-                # run of this process holds the folder.
-                return run_process_held_here(self.root)
+                # Not read: being written again, as a study's runs begin.
+                return True
             ticks = record.get("start_ticks")
             return (record.get("pid") == self.pid and not record_is_from_elsewhere(record)
                     and (ticks is None or ticks == process_start_ticks(self.pid)))
@@ -1142,9 +1145,15 @@ class DashboardRuntime:
         root = self.active_root
         if root is None:
             return
-        from fastmdxplora.orchestrator import RUN_PROCESS_FILE, _written_by_this_process
+        from fastmdxplora.orchestrator import (
+            RUN_PROCESS_FILE,
+            _written_by_this_process,
+            run_process_held_here,
+        )
 
-        if not (Path(root) / RUN_PROCESS_FILE).is_file():
+        # A run of this process going there: a study made and not run has a
+        # record too, and is not a run.
+        if not run_process_held_here(Path(root)) or not (Path(root) / RUN_PROCESS_FILE).is_file():
             return
         record = _process_record_held(Path(root))
         if not _written_by_this_process(record):
