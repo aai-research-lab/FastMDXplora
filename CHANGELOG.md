@@ -1616,13 +1616,34 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   read, and the answer names it.
 
 - What can be run again offers ticked the analyses the study's own manifest
-  names: a manifest linked out of it is said not read, and those its Config
-  asked for are offered instead. Its runs and batch manifest are read held
-  to the study too.
+  names. Its runs and batch manifest are read held to the study too.
 
 - The study set beside the open one is read held to itself: its frames,
   topology or RMSF linked out of it are not read, its frames are not played
   beside, and the answer names each by that study's name.
+
+- A run's log, its status (a run stopped here included), its events and
+  its metrics are written through no link: a log linked out of the study
+  starts nothing, and a status linked out is replaced by the study's own.
+
+- A record the GUI could not save is named in the answer, as not saved
+  (linked out of the study) or as not saved for want of room (a full disk,
+  MDTraj's own errors on one included), rather than as records not read or
+  an error of the server. With the index of the frames written for the
+  Viewer linked out, the frames are played and not written again on each
+  request. MDTraj writes a DCD or XTC by name in a new folder of its own.
+
+- Analyze again and Write it again offer nothing where the study's Config,
+  analysis manifest or log is linked out of it, and say which was not read,
+  as running them again would refuse; the person is not offered analyses
+  ticked in their place.
+
+- The study beside says why it is not shown where its frames are not its
+  own records, and what of it was not read beside what is shown; it is
+  paired again once its clock is no longer read.
+
+- On the Files page, an analysis whose manifest was not read says its
+  status was not read, beside the value its own record holds.
 
 - Running a study's analyses or report again starts nothing where its
   Config or analysis manifest is linked out of the study, as nothing is

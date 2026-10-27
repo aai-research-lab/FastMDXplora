@@ -1031,16 +1031,23 @@ The routes below that read a study read only inside it: a record linked out
 of it, or a file its records name outside it, is not read, nor another read
 in its place, on this computer or on a public bind. A JSON answer names it
 in `unavailable` and says it was not read (`not_read`); a file route gives a
-404. The Files page's tiles and analyses say "not read" of such a record.
-The study set beside the open one (`/api/beside`) is read held to itself,
-and what it did not read is named by its name (`other:
-simulation/frames.dcd`). A POST decides only from the study's own records:
-its phases are not run again (`POST /api/again`, `/api/report/write`) from a
-Config or analysis manifest linked out of it, and a run's snapshots are not
-cleared (`POST /api/files/clear-scratch`) where its record is linked out.
-Every record the GUI saves in a study is written to a new temporary file of
-its own and renamed into place, so nothing is written over or through a
-link, at the record's name, its folder's or a temporary one. A study copied
+404. The Files page's tiles say "not read" of such a record, and an
+analysis whose status it was "status not read". The study set beside the
+open one (`/api/beside`) is read held to itself, and what it did not read is
+named by its name (`other: simulation/frames.dcd`), in the reason it is not
+shown or beside what is shown. A POST decides only from the study's own
+records: its phases are not run again (`POST /api/again`,
+`/api/report/write`) from a Config, analysis manifest or log linked out of
+it, and `GET /api/again` then offers neither phase, from the same answer; a
+run's snapshots are not cleared (`POST /api/files/clear-scratch`) where its
+record is linked out. Every record the GUI saves in a study is written to a
+new temporary file of its own and renamed into place (MDTraj's in a new
+folder of its own), and the run's log, events and metrics are added to
+without following a link, so nothing is written over or through a link, at
+the record's name, its folder's or a temporary one. A record not saved is
+named in the answer: "was not saved: it leads outside the study", or
+"could not be saved: no room" on a full disk; the frames are played where
+only their index was not saved. A study copied
 whole reads its own file in the place its records name only where it holds
 as many atoms as its analyses read (`n_atoms`). The Agent's conversation
 routes (`/api/agent/...`) are not yet held to the study: they answer on
