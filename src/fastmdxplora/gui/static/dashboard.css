@@ -5766,8 +5766,9 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     }
     html, body { height: auto; overflow: visible; background: #ffffff; }
     .app-shell { display: block; height: auto; min-height: 0; background: none; }
+    body.state-loading .app-shell { filter: none; }
     .main { height: auto; overflow: visible; }
-    .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
+    .loading-screen, .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
     .agent-dialog, .agent-drawer, .page-header-actions, .report-notices, .report-write-ask,
     .report-figure-made, .figure-provenance {
         display: none !important;

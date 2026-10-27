@@ -69,9 +69,6 @@ def _report(browser, session, scheme="light"):
     page.set_default_timeout(60000)
     page.goto(session.url + "#report", wait_until="domcontentloaded")
     page.wait_for_selector("#report-document:not([hidden]) h2")
-    # Its loading screen gone: the report is drawn under it before then, and
-    # a page printed while it showed was the loading screen.
-    page.wait_for_function("() => document.body.classList.contains('state-ready')")
     return page
 
 
@@ -118,7 +115,8 @@ def test_printed_it_is_the_document_alone_in_black_on_white(browser, sessions) -
             return {
                 sidebar: shown('.sidebar'), log: shown('#side-panel'),
                 notices: shown('#report-notices'), buttons: shown('#report-downloads'),
-                document: shown('#report-document'),
+                document: shown('#report-document'), loading: shown('.loading-screen'),
+                filter: getComputedStyle(document.querySelector('.app-shell')).filter,
                 ink: getComputedStyle(doc.querySelector('h2')).color,
                 ground: getComputedStyle(document.body).backgroundColor,
                 // Declared on :root from the accents; a page printed as it
@@ -127,7 +125,7 @@ def test_printed_it_is_the_document_alone_in_black_on_white(browser, sessions) -
             };
         }""")
         assert shown == {"sidebar": False, "log": False, "notices": False,
-                         "buttons": False, "document": True,
+                         "buttons": False, "document": True, "loading": False, "filter": "none",
                          "ink": "rgb(0, 0, 0)", "ground": "rgb(255, 255, 255)",
                          "done": "#17703f"}
     finally:
