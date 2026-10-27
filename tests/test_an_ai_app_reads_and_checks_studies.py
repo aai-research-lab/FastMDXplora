@@ -209,7 +209,7 @@ class TestLooking:
     def test_setup_is_previewed_from_a_config_file(self, wire):
         said = text_of(wire.request("tools/call", {"name": "preview_setup",
                                                    "arguments": {"config": "ghg.yml"}}))
-        assert said.startswith("about 1,964 particles in a dodecahedron")
+        assert said.startswith("about 2,267 particles in a dodecahedron")
         assert "solute: 34 atoms with hydrogens, 3 residues, net charge +0" in said
         assert said.endswith("setup's own numbers replace it once it has run.")
 

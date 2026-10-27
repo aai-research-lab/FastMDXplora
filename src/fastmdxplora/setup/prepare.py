@@ -224,9 +224,15 @@ def _contraction_to_density(topology: Any, vectors: Any, unit: Any) -> float:
                      for atom in topology.atoms() if atom.element is not None)
     except (TypeError, ValueError, AttributeError):
         return 1.0
-    if volume <= 0.0 or dalton <= 0.0:
+    return contraction_to_density(dalton, volume)
+
+
+def contraction_to_density(dalton: float, volume_nm3: float) -> float:
+    """The contraction of `_contraction_to_density` from the system's mass
+    and its box's volume, so the estimate grows the box as setup does."""
+    if volume_nm3 <= 0.0 or dalton <= 0.0:
         return 1.0
-    grams_per_ml = dalton * 1.66053907e-24 / (volume * 1e-21)
+    grams_per_ml = dalton * 1.66053907e-24 / (volume_nm3 * 1e-21)
     return max(1.0, (1.0 / grams_per_ml) ** (1.0 / 3.0))
 
 

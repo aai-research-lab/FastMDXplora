@@ -123,9 +123,12 @@ def _gpus(machine, *rows: tuple[int, str, int, int]) -> None:
     lines of ``$HOME/apps.csv``."""
     # A study on a GPU simulates: the stand-in's analysis-only study would
     # take none. Its padding given, the 1.0 nm these sizes were worked out
-    # with, so the default's water does not take it past what a run measured.
+    # with, so the default's water does not take it past what a run measured;
+    # and a 0.9 nm cutoff, as a box this small is grown for the cutoff and
+    # for the water missing at its faces, which at 1.0 nm took it to 2,275.
     machine.study.write_text(machine.study.read_text().replace(
-        "include_phase: [analysis]\n", "setup:\n  solvent_padding_nm: 1.0\n"))
+        "include_phase: [analysis]\n",
+        "setup:\n  solvent_padding_nm: 1.0\n  nonbonded_cutoff_nm: 0.9\n"))
     # Its size worked out here, under the 2,000 particles a stand-in run says.
     _peptide(machine.study.parent / "top.pdb")
     lines = [f"{index}, {uuid}, Stand-in GPU, {total}, {total - free}, {free}, 7"
@@ -561,8 +564,10 @@ class TestThePythonAPI:
 # ---------------------------------------------------------------------------
 # An AI app
 # ---------------------------------------------------------------------------
-# Its padding given, so its size stays under the 2,000 particles a stand-in run measures.
+# Its padding and cutoff given, so its size stays under the 2,000 particles a
+# stand-in run measures.
 STUDY = ("systems:\n  - system: ghg.pdb\nsetup:\n  solvent_padding_nm: 1.0\n"
+         "  nonbonded_cutoff_nm: 0.9\n"
          "simulation:\n  duration_ns: 5\noutput: ghg_run\n")
 ELICIT = {"elicitation": {"form": {}}}
 YES = {"action": "accept", "content": {"go": True}}
@@ -2854,10 +2859,11 @@ def _go(machine, sending):
 def _systems(machine, *names, more=""):
     for name in names[1:]:
         _peptide(machine.study.parent / name)
-    # The padding these sizes were worked out with, as `_gpus` gives it.
+    # The padding and cutoff these sizes were worked out with, as `_gpus`
+    # gives them.
     machine.study.write_text(
         "systems:\n" + "".join(f"  - system: {name}\n" for name in names)
-        + "setup:\n  solvent_padding_nm: 1.0\n"
+        + "setup:\n  solvent_padding_nm: 1.0\n  nonbonded_cutoff_nm: 0.9\n"
         + "analysis:\n  topology: top.pdb\n" + more)
 
 
