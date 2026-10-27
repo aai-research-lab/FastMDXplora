@@ -15,6 +15,7 @@
   var running = false;
   var wasRunning = false;
   var stage = "";
+  var refused = false;
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -52,7 +53,14 @@
       }
       host.replaceChildren(el("span", "fix-said", "Stopping…"));
       stop().then(function (said) {
-        host.replaceChildren(el("span", "fix-said stop-run-answer", said));
+        var answer = el("span", "fix-said stop-run-answer", said);
+        // Refused (a run in this GUI's own process, outside production): said
+        // until the run moves on, not for a moment.
+        if (refused) {
+          answer.classList.add("stop-run-refused");
+          answer.dataset.stage = stage;
+        }
+        host.replaceChildren(answer);
         if (done) done(said);
         // What would fix it, once the stop is in the study's records: it
         // came only with a reload.
@@ -69,6 +77,7 @@
     return fetch("/api/explore/stop", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
     }).then(function (res) { return res.json(); }).then(function (d) {
+      refused = Boolean(d && d.refused);
       // The server answers `stopped`, never `ok`: the builder read `ok` and
       // said "Could not stop." of every stop that worked.
       if (d && d.stopped) return "Stopped.";
@@ -107,7 +116,8 @@
           button.disabled = false;
           // A card over the page (the status bar's) says the answer for a
           // moment and goes; one in its page's flow keeps it.
-          if (said && host && host.hasAttribute("data-stop-fades")) {
+          if (said && host && host.hasAttribute("data-stop-fades")
+              && !host.querySelector(".stop-run-refused")) {
             setTimeout(function () {
               if (host.querySelector(".stop-run-answer")) {
                 host.innerHTML = "";
@@ -133,6 +143,13 @@
     board.on("status-updated", function (detail) {
       var status = (detail && detail.status) || {};
       stage = String(status.stage || "").toLowerCase();
+      // A refusal goes once the run has moved on to another stage, or ended.
+      Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
+        if (said.dataset.stage === stage && running) return;
+        var host = said.parentNode;
+        said.remove();
+        if (host && host.hasAttribute("data-stop-fades") && !host.children.length) host.hidden = true;
+      });
     });
   });
 
