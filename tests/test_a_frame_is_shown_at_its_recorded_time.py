@@ -51,8 +51,10 @@ def _run_record(root: Path, *, interval_steps=500, timestep_fs=2.0,
 
 def _analysed(root: Path, *, interval_ps: float, read_at: str) -> None:
     (root / "analysis").mkdir(exist_ok=True)
+    # The atoms the analyses read, as the orchestrator records them: a study
+    # moved here is read as its own only where its trajectory holds as many.
     (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
-        "trajectory_input": read_at, "resolved": {"trajectory": read_at},
+        "trajectory_input": read_at, "resolved": {"trajectory": read_at}, "n_atoms": 3,
         "load_kwargs": {"stride": None, "first": None, "saving_interval_ps": interval_ps}}),
         encoding="utf-8")
 
