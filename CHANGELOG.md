@@ -734,6 +734,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Once a refused message is taken out, the Agent's welcome is shown from its
   top; its heading was under the Agent bar.
 
+- A run made in a process that goes on (a notebook, a test) no longer leaves
+  its process record behind, so a GUI opened in that process no longer takes
+  itself for the study's run. The record goes when the run ends, finished,
+  failed, refused or stopped, where this process wrote it; a record of
+  another process is left alone. The GUI of `fastmdx run --dashboard` no
+  longer says its study is running, or offers Stop, once the run is over.
+
+- Tests: every Agent browser test waits for the page to read its study and
+  conversation before it sends; the tests of a run's study opened elsewhere
+  each have a browser of their own, so the file passes run whole; four
+  browser tests wait for the page they print, read or switch from.
+
 ### Added
 
 - A study of several runs (seeds, arms, mutants, umbrella windows) is
