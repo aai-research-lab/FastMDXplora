@@ -1017,6 +1017,7 @@ class _StopRequests:
         import signal as _signal
         import threading
 
+        _LISTENING.append(self)
         if threading.current_thread() is not threading.main_thread():
             return self
         _listen_afresh()
@@ -1057,8 +1058,33 @@ class _StopRequests:
         self._previous = {}
 
     def __exit__(self, *_exc: Any) -> bool:
+        if self in _LISTENING:
+            _LISTENING.remove(self)
         self._restore()
         return False
+
+
+#: The production of this process listening for a stop now, if any.
+_LISTENING: list[_StopRequests] = []
+
+
+def stop_production_here() -> bool:
+    """Ask this process's production to stop, as SIGTERM does, without a
+    signal: for the GUI of `fastmdx explore --dashboard`, which runs in the
+    run's own process and must not signal it. True where production here
+    listens and so stops at its next frame; False where nothing here listens
+    (another phase), and nothing is asked."""
+    import signal as _signal
+
+    if not _LISTENING:
+        return False
+    stop = _LISTENING[-1]
+    if stop.signal is None:
+        stop.signal = _signal.SIGTERM
+        logger.warning(
+            "Stop asked from the GUI: production will stop at the next frame, where it "
+            "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
+    return True
 
 
 def _cap_for_stopping(chunk: int, done: int, elapsed: float) -> int:

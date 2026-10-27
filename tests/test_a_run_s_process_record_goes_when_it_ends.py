@@ -253,31 +253,38 @@ def test_a_study_of_one_keeps_its_record_while_it_goes_on_after_its_run(tmp_path
     assert _records_of_this_process(out) == []
 
 
-def test_the_gui_of_explore_with_its_dashboard_holds_the_run_while_it_goes(tmp_path,
-                                                                             monkeypatch):
-    """`fastmdx explore --dashboard` starts its GUI before the run records
-    itself (a study given as a config has no folder until the batch layer
-    starts it): the GUI said idle and offered no Stop while the run went.
-    It takes the run up as it records itself, Stop reaches it, and once the
-    run is over it says so."""
+def _explore_with_its_dashboard(tmp_path, monkeypatch, phase, phases):
+    """`fastmdx explore --dashboard` run as the command runs it, each phase
+    stood in for by ``phase(self, name, gui)``; signals sent to this
+    process noted, not delivered."""
     import importlib
 
     from fastmdxplora.config import before_run
-    from fastmdxplora.gui import exploration
 
     cli = importlib.import_module("fastmdxplora.cli.main")
     out = tmp_path / "study"
     monkeypatch.setattr(before_run, "refuse_what_can_be_seen", lambda *a, **k: None)
     monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
     monkeypatch.setattr(BatchExplorer, "_refuse_to_overwrite_runs", lambda *a, **k: None)
-    signals: list = []
+    signalled: list = []
+    kill, killpg = os.kill, getattr(os, "killpg", None)
 
-    def signalled(pid, force=False):
-        # As the run's handler of SIGTERM does, in the run's own thread.
-        signals.append(pid)
-        raise RunStopped("SIGTERM")
+    def noted(pid, number):
+        # Signal 0 asks only whether a process is alive.
+        if number != 0 and pid in (os.getpid(), 0, -os.getpid()):
+            signalled.append(number)
+            return None
+        return kill(pid, number)
 
-    monkeypatch.setattr(exploration, "_terminate_process", signalled)
+    def noted_group(group, number):
+        if number != 0 and group == os.getpgid(0):
+            signalled.append(number)
+            return None
+        return killpg(group, number)
+
+    monkeypatch.setattr(os, "kill", noted)
+    if killpg is not None:
+        monkeypatch.setattr(os, "killpg", noted_group)
     sessions: list = []
     start = cli._start_dashboard_for_command
 
@@ -286,20 +293,71 @@ def test_the_gui_of_explore_with_its_dashboard_holds_the_run_while_it_goes(tmp_p
         return sessions[-1]
 
     monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
+    monkeypatch.setattr(FastMDXplora, "_run_phase",
+                        lambda self, name, options: phase(self, name, sessions[0].runtime))
+    rc = cli.main(["explore", "-s", "1L2Y", "--dashboard", "--dashboard-port", "0",
+                   "--dashboard-stop-on-complete", "--output", str(out),
+                   "--include-phase", *phases])
+    return rc, out, sessions[0].runtime, signalled
+
+
+@pytest.mark.parametrize("pressed_in", ["setup", "analysis"])
+def test_the_gui_of_explore_with_its_dashboard_holds_the_run_and_never_signals_itself(
+        tmp_path, monkeypatch, pressed_in):
+    """`fastmdx explore --dashboard` starts its GUI before the run records
+    itself: the GUI said idle and offered no Stop while the run went. It
+    takes the run up as it records itself. Its Stop sent SIGTERM, then
+    SIGKILL, to its own process, which outside production nothing caught:
+    the command, GUI and all, died and left its record. Outside production
+    it is refused, said, and the run goes on to its end."""
     seen: list = []
 
-    def phase(self, name, options):
-        gui = sessions[0].runtime
-        seen.append((gui.snapshot()["process_running"], getattr(gui.process, "pid", None)))
-        gui.stop()
+    def phase(self, name, gui):
+        seen.append((name, gui.snapshot()["process_running"],
+                     getattr(gui.process, "pid", None)))
+        if name == pressed_in:
+            seen.append(gui.stop())
         return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
 
-    monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
-    cli.main(["explore", "-s", "1L2Y", "--dashboard", "--dashboard-port", "0",
-              "--dashboard-stop-on-complete", "--output", str(out), "--include-phase", "analysis"])
-    gui = sessions[0].runtime
-    assert seen == [(True, os.getpid())]
-    assert signals == [os.getpid()]
+    rc, out, gui, signalled = _explore_with_its_dashboard(
+        tmp_path, monkeypatch, phase, ["setup", "analysis"])
+    answer = next(item for item in seen if isinstance(item, dict))
+    assert (answer["stopped"], answer["ok"]) == (False, False)
+    assert answer["detail"] == ("This run is in this GUI's own process; stopping it here "
+                                "would end the GUI too. Stop it at its terminal with Ctrl+C.")
+    assert [item for item in seen if isinstance(item, tuple)] == [
+        ("setup", True, os.getpid()), ("analysis", True, os.getpid())]
+    assert signalled == []
+    assert rc == 0
+    after = gui.snapshot()
+    assert after["process_running"] is False and after["status"] == "completed", after["status"]
+    assert _records_of_this_process(out) == []
+
+
+def test_the_gui_of_explore_with_its_dashboard_stops_production_as_sigterm_does(
+        tmp_path, monkeypatch):
+    """In production, where the run listens for a stop, the GUI asks for it
+    as SIGTERM does, without a signal: production stops at its next frame,
+    and the run ends as stopped, its GUI still up."""
+    from fastmdxplora.simulation import runner
+
+    answers: list = []
+
+    def phase(self, name, gui):
+        # Stands in for production: it listens as production does, and
+        # ends as a stopped production ends.
+        with runner._StopRequests() as stop:
+            gui.snapshot()
+            answers.append(gui.stop())
+            if stop.requested:
+                raise RunStopped(stop.name)
+        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
+
+    rc, out, gui, signalled = _explore_with_its_dashboard(
+        tmp_path, monkeypatch, phase, ["simulation"])
+    assert answers and answers[0]["stopped"] is True
+    assert signalled == []
+    assert rc != 0
     after = gui.snapshot()
     assert after["process_running"] is False and after["status"] == "stopped", after["status"]
     assert _records_of_this_process(out) == []
