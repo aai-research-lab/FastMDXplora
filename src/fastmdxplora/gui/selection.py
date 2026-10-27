@@ -64,14 +64,16 @@ def _frames_atom(base: Path, topology: Any, where: Path, index: Any) -> Any:
     the viewer plays is, where the frames were written from that topology
     (``gui/trajectory_frames.py`` records which, and which of its atoms);
     else ``None``."""
+    from fastmdxplora.gui.trajectory_frames import _load_json
+
     try:
         position = int(str(index).strip())
-        # Through `record_access`: in a read held to the study, an index
-        # linked out of it is refused and named, not read.
-        said = json.loads(_records.read_text(base / "simulation" / "frames_index.json",
-                                             encoding="utf-8"))
-    except (TypeError, ValueError, OSError):
+    except (TypeError, ValueError):
         return None
+    # Held to the study (`trajectory_frames._load_json`): an index linked out
+    # of it is refused and named, and the one remembered while the frames
+    # stand is read in its place.
+    said = _load_json(base / "simulation" / "frames_index.json")
     source, shown = said.get("source_topology"), said.get("shown")
     if not said.get("available") or not isinstance(source, str) or shown not in ("not water",
                                                                                 "all"):

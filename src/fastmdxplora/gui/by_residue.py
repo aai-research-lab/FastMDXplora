@@ -484,12 +484,13 @@ def _frames_coordinates(base: Path) -> Any:
 
 
 def _frames_signature(base: Path) -> str | None:
-    try:
-        index = json.loads(_records.read_text(base / "simulation" / "frames_index.json",
-                                              encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return index.get("signature") if isinstance(index, dict) else None
+    """The signature of the frames written for the Viewer, from their index
+    held to the study; where it is linked out of it, the index remembered
+    while the frames stand (`trajectory_frames._load_json`), as
+    `/api/frames-info` gives it."""
+    from fastmdxplora.gui.trajectory_frames import _load_json
+
+    return _load_json(base / "simulation" / "frames_index.json").get("signature")
 
 
 def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:

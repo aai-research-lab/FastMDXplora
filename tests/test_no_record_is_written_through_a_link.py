@@ -1016,3 +1016,42 @@ def test_the_states_and_water_are_given_with_the_frames_index_linked_out(
     assert "simulation/frames_index.json was not saved" in said["not_read"], said
     assert victim.read_text(encoding="utf-8") == mine
     assert (root / "simulation" / "frames_index.json").is_symlink()
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_the_frames_secondary_structure_is_of_the_frames_played_with_their_index_linked_out(
+        tmp_path, public):
+    """The frames' DSSP is applied in the Viewer only where it was computed
+    for the frames it plays: with their index linked out, it carries the
+    signature `/api/frames-info` gives, the index remembered (G15 M1)."""
+    root = _study(tmp_path)
+    _index_linked_out(root, tmp_path)
+
+    played = json.loads(_ask(root, tmp_path, "/api/frames-info", public=public)[1])
+    dssp = json.loads(_ask(root, tmp_path, "/api/secondary-structure?of=frames",
+                           public=public)[1])
+
+    assert played["source_signature"] and dssp["signature"] == played["source_signature"], dssp
+
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+def test_an_atom_picked_in_the_frames_is_its_own_with_their_index_linked_out(
+        tmp_path, public):
+    """An atom picked in the frames played is the topology's atom the index
+    says it is, with the index linked out: chain B's second alanine, though
+    the request names no chain and both chains have one (G15 M1)."""
+    from tests.test_every_route_reads_only_the_study import _study as analysed
+
+    root = analysed(tmp_path)
+    _index_linked_out(root, tmp_path)
+    # Chain A's four alanines of five atoms each, then chain B's: its second
+    # residue's alpha carbon is atom 26 of the frames.
+    route = "/api/selection?chain=&resseq=2&resname=ALA&atom=CA&frames_atom=26"
+    # The frames played, as the Viewer asks for them before an atom is picked.
+    assert json.loads(_ask(root, tmp_path, "/api/frames-info",
+                           public=public)[1])["playback_available"]
+
+    said = json.loads(_ask(root, tmp_path, route, public=public)[1])
+
+    assert said["ok"] and said["residue"]["selection"] == "chainid 1 and resSeq 2", said
+    assert "simulation/frames_index.json was not saved" in said["not_read"], said
