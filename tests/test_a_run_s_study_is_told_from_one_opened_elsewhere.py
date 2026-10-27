@@ -28,7 +28,21 @@ from tests.test_a_conversation_follows_a_run_that_wrote_nothing import (  # noqa
     _page_on,
     _say,
 )
-from tests.test_open_studies_have_tabs import _builder, _open, browser, site  # noqa: F401
+from tests.test_open_studies_have_tabs import _builder, _open, site  # noqa: F401
+
+
+@pytest.fixture
+def browser():
+    """A browser of the test's own, closed when it ends. The tabs tests'
+    browser lasts as long as their module, here this one: once a test had
+    used it, every test after it that starts Playwright of its own
+    (`_page_on`) was refused ("Sync API inside the asyncio loop"), so the
+    file failed whole and passed a test at a time."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as pw:
+        launched = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        yield launched
+        launched.close()
 
 #: Each thing the page's notice says, in order, as it is shown.
 _HEARD = """() => {
