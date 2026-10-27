@@ -3009,10 +3009,20 @@ def make_handler(
 
             links = self._files_links()
             records = self._where_each_is(root, _artifact_records(root))
-            model = files_model(root, records, values=_determined_values(root, records))
+            values = _determined_values(root, records)
+            # The study's own records only (`_confined`): a record linked out
+            # of it is not read, its tile says so, and the answer names it.
+            model = _said_not_read(_confined(root, lambda inside: files_model(
+                inside, records, values=values)))
+            if "files" not in model:
+                # The study's folder could not be opened to hold its reads.
+                self._send_json({"ok": False, "reason": model.get("reason")})
+                return
             payload = {"ok": True, "html": render(model, links, view=view), "view": view,
                        "can": links.can, "reveal_word": links.reveal_word,
                        "runs": model["runs"], "files": len(model["files"])}
+            if model.get("not_read"):
+                payload.update(not_read=model["not_read"], unavailable=model["unavailable"])
             body = json.dumps(payload).encode("utf-8")
             if hosting is not None:
                 self._send_json(payload)
