@@ -381,3 +381,38 @@ def test_a_study_run_in_stages_keeps_its_record_while_it_is_priced(tmp_path, mon
     assert staged.refusal is None and staged.simulated
     assert seen == [([RUN_PROCESS_FILE], True)]
     assert _records_of_this_process(out) == []
+
+
+def test_a_study_reached_through_a_link_keeps_its_record_across_its_rounds(tmp_path,
+                                                                            monkeypatch):
+    """A study of one with a stopping rule, its folder named through a link.
+    Each round's join and analysis is a run of its own on the folder
+    resolved (`extend_study` resolves it): its hold was counted under the
+    resolved spelling and the study's under the one given, so the round's
+    end removed the study's record while the study went on."""
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real)
+    out = tmp_path / "link" / "study"
+    monkeypatch.setattr(FastMDXplora, "_run_phase", lambda self, name, options: PhaseResult(
+        name=name, status="ok", output_dir=Path(self.output_dir) / name))
+    monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
+    monkeypatch.setattr(BatchExplorer, "_refuse_to_overwrite_runs", lambda *a, **k: None)
+    monkeypatch.setattr(BatchExplorer, "_stopping_rule", lambda self: ["a rule"])
+    monkeypatch.setattr(BatchExplorer, "_write_planned_stopping", lambda self, targets: None)
+    seen: dict = {}
+
+    def rounds(self, targets):
+        monkeypatch.setattr(BatchExplorer, "_stopping_rule", lambda self: None)
+        FastMDXplora(config_data={"systems": [{"system": "1L2Y"}],
+                                  "include_phase": ["analysis"]},
+                     output_dir=str(out.resolve())).explore(force=True)
+        # The next round's production would now run.
+        seen["record"] = _records_of_this_process(out)
+        seen["held"] = DashboardRuntime(workspace_root=real, exploration_root=real,
+                                        active_root=out).process is not None
+
+    monkeypatch.setattr(BatchExplorer, "_run_until_known", rounds)
+    BatchExplorer(config_data={"systems": [{"system": "1L2Y"}]}, output_dir=str(out)).run()
+    assert seen == {"record": [RUN_PROCESS_FILE], "held": True}
+    assert _records_of_this_process(out) == []

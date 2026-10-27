@@ -1926,7 +1926,11 @@ _HOLDS_LOCK = threading.Lock()
 
 
 def _key(output_dir: Path) -> Path:
-    return Path(os.path.abspath(output_dir))
+    """The folder itself, links followed: one study is named one way by the
+    batch layer (as given), another by a resume or the GUI (resolved), and a
+    hold taken under one spelling was given back under the other, so a
+    study reached through a link lost its record at its first round."""
+    return Path(os.path.realpath(output_dir))
 
 
 def _holds() -> dict[Path, int]:
