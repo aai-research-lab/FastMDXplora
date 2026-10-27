@@ -318,7 +318,10 @@ def test_a_run_s_study_record_linked_out_does_not_name_it(variants, tmp_path):
         _WATCHED.clear()
     assert status == 200 and opened == []
     answer = json.loads(body)
-    assert answer["first"]["said"] == first.name and answer["first"]["run_of"] is None
+    # A run of the study by its folder, the study's record not read: named by
+    # where it is, not by what the record outside says of it.
+    assert answer["first"]["said"] == f"{variants.name}, {first.name}"
+    assert answer["first"]["run_of"]["name"] == variants.name
     # The two runs' study: its record not read said once, not once a run.
     assert answer["not_read"].count("study: batch_manifest.json was not read") == 1
     # Whether they are repeats of one measurement is then not known: said.
