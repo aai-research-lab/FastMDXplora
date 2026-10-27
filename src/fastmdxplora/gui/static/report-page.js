@@ -266,11 +266,38 @@
     return made;
   }
 
-  function say(text) {
+  /* A command to run at the terminal, set as code that breaks only between
+   * its words: never between "--" and the word it marks. */
+  function commandNode(command) {
+    var code = document.createElement("code");
+    code.className = "again-terminal";
+    String(command).split(" ").forEach(function (word, at) {
+      if (at) code.appendChild(document.createTextNode(" "));
+      var piece = document.createElement("span");
+      piece.style.whiteSpace = "nowrap";
+      piece.textContent = word;
+      code.appendChild(piece);
+    });
+    return code;
+  }
+
+  /* A sentence, its command (``terminal``, its last words) set as code. */
+  function withCommand(said, text, terminal) {
+    text = String(text || "");
+    if (terminal && text.slice(-terminal.length) === terminal) {
+      said.textContent = text.slice(0, text.length - terminal.length);
+      said.appendChild(commandNode(terminal));
+    } else {
+      said.textContent = text;
+    }
+    return said;
+  }
+
+  function say(text, terminal) {
     var ask = el("report-write-ask");
     if (!ask) return;
     ask.innerHTML = "";
-    ask.appendChild(node("span", "fix-said", text));
+    ask.appendChild(withCommand(node("span", "fix-said", ""), text, terminal));
     ask.hidden = false;
   }
 
@@ -318,7 +345,8 @@
       var report = d.report;
       if (d.available === false) { say(d.why || "Nothing is open to write again."); return; }
       if (report && !report.can) {
-        say(report.why || d.not_read || "The report cannot be written again here.");
+        say(report.why || d.not_read || "The report cannot be written again here.",
+            report.terminal);
         return;
       }
       if (yes) {

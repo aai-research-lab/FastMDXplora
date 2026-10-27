@@ -909,6 +909,11 @@ def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path)
             # What the page shows once it has asked: the dialog or why not.
             page.wait_for_selector("#analysis-again-ask:not([hidden])")
             analysis = page.text_content("#analysis-again-ask")
+            # The command to run at the terminal, set as code whose words
+            # do not break apart (G17 L1, G18 L1).
+            command = page.eval_on_selector_all(
+                "#analysis-again-ask code.again-terminal span",
+                "words => words.map(w => [w.textContent, getComputedStyle(w).whiteSpace])")
             ticked = page.eval_on_selector_all("#analysis-again-ask input:checked",
                                                "boxes => boxes.length")
             page.goto(session.url + "#report", wait_until="domcontentloaded")
@@ -919,6 +924,9 @@ def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path)
     finally:
         session.server.shutdown()
     assert "analysis/analysis_manifest.json was not read" in analysis and ticked == 0
+    assert " ".join(word for word, _ in command) == (
+        f"fastmdx analyze --output {root} --rerun"), command
+    assert {wrap for _, wrap in command} == {"nowrap"}, command
     assert "analysis/analysis_manifest.json was not read" in report and confirm is None
     assert not any(url.endswith(("/api/again", "/api/report/write")) for url in posted)
 

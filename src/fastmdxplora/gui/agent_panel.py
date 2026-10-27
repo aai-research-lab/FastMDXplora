@@ -587,9 +587,15 @@ def _proposal_kind(proposal: Any, payload: dict[str, Any], runtime: Any,
             # the analyses named checked against the software's own; asked
             # with what is replaced, or said why not.
             from fastmdxplora.gui.again_view import again_fix
+            from fastmdxplora.gui.server import _again_refused
 
-            said = again_fix(getattr(runtime, "active_root", None), proposal.action,
-                             proposal.arguments)
+            # Refused, as the page's GET refuses it (a link out of the
+            # study): said with the command to run at the terminal, no Yes.
+            refused = _again_refused(getattr(runtime, "active_root", None),
+                                     "report" if proposal.action == "write the report again"
+                                     else "analysis")
+            said = ({"reason": refused["error"]} if refused is not None else again_fix(
+                getattr(runtime, "active_root", None), proposal.action, proposal.arguments))
             answer["fix"] = said.get("fix")
             answer["refused"] = said.get("reason")
             answer["confirm"] = True

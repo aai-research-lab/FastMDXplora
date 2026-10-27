@@ -776,16 +776,21 @@ def _fix_refused(study: Path, argv: list[str]) -> dict[str, Any] | None:
             + terminal, "terminal": terminal, "links_out": [name for name, _ in links]}
 
 
-def _again_refused(root: Path | None) -> dict[str, Any] | None:
-    """Why `POST /api/again` and `/api/report/write` start nothing on the
-    study ``root``: what `_again_answer` refuses. None where it refuses
-    nothing, and the run's own checks then decide."""
+def _again_refused(root: Path | None, phase: str = "analysis") -> dict[str, Any] | None:
+    """Why `POST /api/again` and `/api/report/write` (``phase`` "report"),
+    and the Agent's `DO: analyze again` and `DO: write the report again`,
+    start nothing on the study ``root``: what `_again_answer` refuses, said
+    as it says it of ``phase``, with the command to run at the terminal
+    where there is one. None where it refuses nothing, and the run's own
+    checks then decide."""
     if root is None or not Path(root).is_dir():
         return None
     said = _again_answer(Path(root))
     if not said.get("refused"):
         return None
-    return {"ok": False, "error": said["refused"], "not_read": said.get("not_read")}
+    offered = said.get(phase) if isinstance(said.get(phase), dict) else {}
+    return {"ok": False, "error": offered.get("why") or said["refused"],
+            "terminal": offered.get("terminal"), "not_read": said.get("not_read")}
 
 
 def _the_other_not_read(other: dict[str, Any]) -> str:
@@ -2768,7 +2773,7 @@ def make_handler(
                 # trust, which it has only on loopback, like every route not
                 # listed open. The page asks the person first. Refused as
                 # `POST /api/again` is.
-                refused = _again_refused(app_runtime.active_root)
+                refused = _again_refused(app_runtime.active_root, "report")
                 if refused is not None:
                     self._send_json(refused)
                     return

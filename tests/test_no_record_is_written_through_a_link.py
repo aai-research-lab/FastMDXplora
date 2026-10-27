@@ -1191,3 +1191,30 @@ def test_a_study_kept_in_a_folder_named_runs_is_run_again_as_itself(tmp_path, mo
 
     assert offered["analysis"]["can"] and offered["report"]["can"], offered
     assert all(said["ok"] for said in asked), asked
+
+
+@pytest.mark.parametrize("asked", ["DO: analyze again rmsd", "DO: write the report again"])
+def test_the_agent_offers_no_run_in_a_study_holding_a_link_out(tmp_path, monkeypatch, asked):
+    """The Agent's `DO: analyze again` and `DO: write the report again`
+    say the refusal and the command, with nothing to say Yes to, where the
+    page refuses (G18 L3)."""
+    import fastmdxplora.agent as agent_mod
+    from fastmdxplora.gui.agent_panel import propose_endpoint
+    from tests.test_the_agent_analyses_a_study_again import _analysed, _runtime
+
+    root = _analysed(tmp_path / "study")
+    (tmp_path / "outside").mkdir()
+    _link(root / "previous", tmp_path / "outside")
+    monkeypatch.setattr(agent_mod, "completion_for", lambda *a, **k: (lambda prompt: asked))
+
+    answer = propose_endpoint({"request": "again"}, _runtime(root))
+
+    assert answer["fix"] is None, answer
+    assert "previous/ is a link out of the study" in answer["refused"], answer
+    if asked.endswith("report again"):
+        command = f"fastmdx report --output {root} --rerun"
+    elif (root / "report").is_dir():
+        command = f"fastmdx explore --output {root} --include-phase analysis report --rerun"
+    else:
+        command = f"fastmdx analyze --output {root} --rerun"
+    assert answer["refused"].endswith("To run it anyway, at the terminal: " + command), answer

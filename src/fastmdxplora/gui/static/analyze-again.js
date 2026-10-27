@@ -35,7 +35,34 @@
     if (button) button.setAttribute("aria-expanded", "false");
   }
 
-  function say(text) {
+  /* A command to run at the terminal, set as code that breaks only between
+   * its words: never between "--" and the word it marks. */
+  function commandNode(command) {
+    var code = document.createElement("code");
+    code.className = "again-terminal";
+    String(command).split(" ").forEach(function (word, at) {
+      if (at) code.appendChild(document.createTextNode(" "));
+      var piece = document.createElement("span");
+      piece.style.whiteSpace = "nowrap";
+      piece.textContent = word;
+      code.appendChild(piece);
+    });
+    return code;
+  }
+
+  /* A sentence, its command (``terminal``, its last words) set as code. */
+  function withCommand(said, text, terminal) {
+    text = String(text || "");
+    if (terminal && text.slice(-terminal.length) === terminal) {
+      said.textContent = text.slice(0, text.length - terminal.length);
+      said.appendChild(commandNode(terminal));
+    } else {
+      said.textContent = text;
+    }
+    return said;
+  }
+
+  function say(text, terminal) {
     var box = panel();
     if (!box) return;
     box.innerHTML = "";
@@ -43,7 +70,7 @@
     var shut = window.FastMDXIcons.button("close", "Close", "panel-x");
     shut.addEventListener("click", close);
     box.appendChild(shut);
-    box.appendChild(node("p", "again-said", text));
+    box.appendChild(withCommand(node("p", "again-said", ""), text, terminal));
     box.hidden = false;
   }
 
@@ -103,7 +130,10 @@
     var analysis = offered && offered.analysis;
     if (!box || !analysis) return;
     askedFrom = document.activeElement;
-    if (!analysis.can) { say(analysis.why || "This study cannot be analyzed again here."); return; }
+    if (!analysis.can) {
+      say(analysis.why || "This study cannot be analyzed again here.", analysis.terminal);
+      return;
+    }
     box.innerHTML = "";
     var said = node("p", "again-said", "");
     box.appendChild(said);
