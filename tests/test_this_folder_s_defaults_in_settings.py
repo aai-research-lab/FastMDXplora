@@ -506,7 +506,7 @@ def test_new_study_says_a_refused_defaults_file(browser, session):
     page.wait_for_selector("#settings-folder-body .settings-cannot")
     scope = page.get_attribute("#settings-scope-folder", "aria-selected")
     # Put right, New study says nothing more once the form is drawn from it
-    # (until then, that it was drawn with the file as it was).
+    # (until then, that it was filled with the file as it was).
     where.write_text("setup:\n  ph: 6.5\n", encoding="utf-8")
     page.evaluate("() => window.FastMDXDashboard.navigate('run')")
     page.click(f"{note} .builder-defaults-again")
@@ -523,11 +523,11 @@ def test_new_study_says_a_refused_defaults_file(browser, session):
 
 
 def test_new_study_follows_the_defaults_file_it_was_drawn_with(browser, session):
-    """New study's form keeps the defaults it was drawn with: changed in
+    """New study's form keeps the defaults it was filled with: changed in
     This folder, put right or refused since, its fields said "Your default
     6.5" beside a note that said otherwise, and the run took the file as it
     then was. A read that differs is said above the form, and Read the
-    defaults again draws the form from the file as it is."""
+    defaults again fills the form from the file as it is."""
     started, where = session
     where.write_text("setup:\n  ph: 6.5\n", encoding="utf-8")
     note = "#run-defaults-refused"
@@ -571,13 +571,13 @@ def test_new_study_follows_the_defaults_file_it_was_drawn_with(browser, session)
     page.context.close()
     assert errors == []
     assert drawn == "Your default 6.5"
-    assert changed[0].startswith("Your defaults changed since this form was drawn."), changed[0]
+    assert changed[0].startswith("Your defaults changed since this form was filled."), changed[0]
     assert "FastMDXplora's own values" not in changed[0] and changed[1] == "Your default 6.5"
     assert redrawn[1] and redrawn[2] == "Your default 6.8", redrawn
     assert "page-title" in focused
     assert refused[0].startswith("Your defaults are not used. "), refused[0]
     assert "sets setup.mutations, which says what one study simulates" in refused[0], refused[0]
-    assert "drawn with the file's values" in refused[0], refused[0]
+    assert "filled with the file's values" in refused[0], refused[0]
     assert "runs with the file" not in refused[0] and "until the file is put right" not in refused[0]
     assert refused[1] == "Your default 6.8"
     assert refused_again[0].startswith("Your defaults are not used. "), refused_again
