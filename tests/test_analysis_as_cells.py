@@ -251,7 +251,16 @@ def test_the_range_is_marked_on_the_viewer_s_timeline(study):
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
             # Dragged under the loading screen, the range was not drawn.
             page.wait_for_selector("body.state-ready")
-            _drag(page, '.series-chart[data-analysis="rmsd"]', (0.4, 0.4), (0.8, 0.45))
+            # A chart whose width changes is drawn again, and a drag begun on
+            # the plot it replaced is lost: dragged once every plot is in,
+            # and again on a plot drawn while it was dragged.
+            page.wait_for_function("() => !document.querySelector('[data-series-ready=\"pending\"]')")
+            chart = '.series-chart[data-analysis="rmsd"]'
+            for _ in range(3):
+                page.evaluate(f"() => {{ document.querySelector('{chart} svg').dataset.dragOn = '1'; }}")
+                _drag(page, chart, (0.4, 0.4), (0.8, 0.45))
+                if page.evaluate(f"() => !!document.querySelector('{chart} svg').dataset.dragOn"):
+                    break
             page.wait_for_selector("#analysis-cell-range:not([hidden])")
             page.click('[data-view-link="viewer"]')
             page.wait_for_selector("#timeline-ruler svg .timeline-range")
