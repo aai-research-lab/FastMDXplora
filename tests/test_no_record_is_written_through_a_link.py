@@ -709,13 +709,9 @@ def test_a_simulation_folder_linked_out_is_not_written_into(tmp_path, writer):
     _no_marker_in(root, tmp_path)
 
 
-@pytest.mark.parametrize("folder", ["simulation", "analysis", "report"])
-def test_nothing_is_run_again_into_a_folder_linked_out(tmp_path, monkeypatch, folder):
-    """Running a phase again writes into `simulation/` (its status),
-    `analysis/` or `report/`: with one linked out of the study, neither
-    phase is offered, and asked anyway, nothing is started."""
+def _ready_to_run_again(tmp_path: Path, monkeypatch) -> Path:
+    """A study that can be run again, its start stood in for."""
     from fastmdxplora.gui import exploration
-    from tests.test_every_route_reads_only_the_study import _asked
 
     monkeypatch.setattr(exploration.subprocess, "Popen", _Started)
     monkeypatch.setattr(exploration.DashboardRuntime, "_others_running", lambda self, **_: None)
@@ -725,20 +721,109 @@ def test_nothing_is_run_again_into_a_folder_linked_out(tmp_path, monkeypatch, fo
                                               encoding="utf-8")
     (root / "report").mkdir(exist_ok=True)
     (root / "report" / "report.md").write_text("# Report\n", encoding="utf-8")
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    (root / folder).rename(outside / folder)
-    _link(root / folder, outside / folder)
-    before = _tree(outside)
+    return root
+
+
+def _asked_again(root: Path, tmp_path: Path) -> tuple[dict, list[dict]]:
+    from tests.test_every_route_reads_only_the_study import _asked
 
     offered = json.loads(_asked(root, tmp_path, "/api/again")[1])
     asked = [json.loads(_asked(root, tmp_path, route, body=body)[1])
              for route, body in STARTS.items()]
+    return offered, asked
 
-    assert offered["analysis"]["can"] is False and offered["report"]["can"] is False, offered
-    assert f"{folder} is a link out of the study" in offered["analysis"]["why"], offered
+
+#: What a run again reads or writes in a study, each linked out of it: the
+#: folders its phases write, where `--rerun` sets aside what it replaces,
+#: the study's manifest, its file log and process record, an analysis's
+#: record the report reads, and the trajectory the analysis reads.
+RUN_THROUGH = ("simulation", "analysis", "report", "previous", "manifest.json",
+               "fastmdxplora.log", ".fastmdxplora_run.json", "analysis/rmsf/rmsf.dat",
+               "simulation/production.dcd")
+
+
+@pytest.mark.parametrize("relative", RUN_THROUGH)
+def test_no_run_is_started_in_a_study_holding_a_link_out(tmp_path, monkeypatch, relative):
+    """The run's own process follows what is in the study's folder, as a run
+    started at the terminal does, so the GUI starts none where a link
+    leads out of it: neither phase is offered, each says the link and the
+    command that runs it at the terminal, and asked anyway, nothing is
+    started; nothing outside changes."""
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    outside = tmp_path / "outside"
+    target = outside / relative
+    target.parent.mkdir(parents=True)
+    if (root / relative).exists():
+        (root / relative).rename(target)
+    elif relative == "previous":
+        (target / "analysis").mkdir(parents=True)
+        (target / "analysis" / "notes.txt").write_text("the person's own\n", encoding="utf-8")
+    else:
+        target.write_text("the person's own\n", encoding="utf-8")
+    _link(root / relative, target)
+    before = _tree(outside)
+
+    offered, asked = _asked_again(root, tmp_path)
+
+    named = relative + ("/" if target.is_dir() else "")
+    for phase, command in (("analysis", "fastmdx analyze --output"),
+                           ("report", "fastmdx report --output")):
+        why = offered[phase]["why"]
+        assert offered[phase]["can"] is False, offered
+        assert f"{named} is a link out of the study: the run would read or write through " \
+               "it" in why, why
+        assert f"{command} {root} --rerun" in why, why
     assert all(said["ok"] is False for said in asked) and _Started.started == [], asked
     assert _tree(outside) == before
+
+
+def test_no_run_is_started_in_a_study_of_several_with_a_run_linked_out(tmp_path, monkeypatch):
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    (root / "batch_manifest.json").write_text(json.dumps({"runs": []}), encoding="utf-8")
+    (root / "runs").mkdir()
+    for name in ("r1", "r2"):
+        import shutil
+
+        shutil.copytree(root / "simulation", root / "runs" / name / "simulation")
+        (root / "runs" / name / "manifest.json").write_text("{}", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "runs" / "r2").rename(outside / "r2")
+    _link(root / "runs" / "r2", outside / "r2")
+    before = _tree(outside)
+
+    offered, asked = _asked_again(root, tmp_path)
+
+    assert offered["analysis"]["can"] is False and offered["report"]["can"] is False, offered
+    assert "runs/r2/ is a link out of the study" in offered["analysis"]["why"], offered
+    assert all(said["ok"] is False for said in asked) and _Started.started == [], asked
+    assert _tree(outside) == before
+
+
+def test_a_study_whose_links_stay_inside_it_is_run_again(tmp_path, monkeypatch):
+    """A link that leads to another place in the study is not one out of
+    it: the study is offered, and run, as before."""
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    (root / "notes").mkdir()
+    _link(root / "notes" / "the_trajectory.dcd", root / "simulation" / "production.dcd")
+    _link(root / "report" / "latest.md", root / "report" / "report.md")
+
+    offered, asked = _asked_again(root, tmp_path)
+
+    assert offered["analysis"]["can"] and offered["report"]["can"], offered
+    assert all(said["ok"] for said in asked) and len(_Started.started) == 2, asked
+
+
+def test_a_dangling_link_out_is_refused(tmp_path, monkeypatch):
+    root = _ready_to_run_again(tmp_path, monkeypatch)
+    _link(root / "previous", tmp_path / "nowhere" / "previous")
+
+    offered, asked = _asked_again(root, tmp_path)
+
+    assert offered["analysis"]["can"] is False, offered
+    assert "previous is a link out of the study" in offered["analysis"]["why"], offered
+    assert all(said["ok"] is False for said in asked) and _Started.started == [], asked
+    assert not (tmp_path / "nowhere").exists()
 
 
 @pytest.mark.parametrize("planted", PLANTED)

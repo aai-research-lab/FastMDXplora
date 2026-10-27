@@ -578,21 +578,13 @@ def _said_not_read(answer: Any) -> Any:
     return answer
 
 
-#: Where a run again writes in a study: its log, and the folders of its
-#: phases' records. One linked out of the study would be written through.
-_AGAIN_WRITES = ("exploration.log", "simulation", "analysis", "report")
-
-
 def _again_offered(inside: Path) -> dict[str, Any]:
     """What `GET /api/again` offers of the study ``inside``, in the held read
-    the caller is in: nothing where its Config is not its own. Where the run
-    would write (`_AGAIN_WRITES`) is asked after too (`_linked_out`)."""
+    the caller is in: nothing where its Config is not its own."""
     from fastmdxplora.config.recorded import RECORDED
     from fastmdxplora.gui.again_view import again_payload
     from fastmdxplora.gui.trajectory_frames import _linked_out
 
-    for name in _AGAIN_WRITES:
-        _linked_out(inside / name)
     if _linked_out(inside / RECORDED):
         return {"available": False, "why": (
             f"{RECORDED} is not one of this study's own records, so nothing is offered to "
@@ -603,33 +595,86 @@ def _again_offered(inside: Path) -> dict[str, Any]:
 #: The records of a study a run again is planned from: its Config and its
 #: analysis manifest, which say what runs.
 _AGAIN_FROM = ("resolved_config.yml", "analysis_manifest.json")
+#: How many links out of a study are named before the walk stops.
+_LINKS_NAMED = 3
+
+
+def _the_study_run(root: Path) -> Path:
+    """The study a run again in ``root`` belongs to: a run of a study of
+    several (``<study>/runs/<run>``) has its study's comparison built
+    again after it, so the whole study is the run's."""
+    from fastmdxplora.gui.browse import is_study
+
+    study = root.parent.parent
+    return study if root.parent.name == "runs" and is_study(study) else root
+
+
+def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[str]:
+    """The first ``most`` entries of the study ``study`` that are links
+    leading out of it, each named in it (a folder with its "/"): found by
+    walking it without following a link, skipping nothing (its top,
+    `previous/`, each run of a study of several, `setup/`, `simulation/`,
+    `analysis/`, `report/`, and the rest). A link that stays in the study
+    is not one. Nothing is opened."""
+    top = Path(os.path.realpath(study))
+    found: list[str] = []
+    folders = [Path(study)]
+    while folders and len(found) < most:
+        folder = folders.pop(0)
+        try:
+            with os.scandir(folder) as listing:
+                entries = sorted(listing, key=lambda entry: entry.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_symlink():
+                target = Path(os.path.realpath(entry.path))
+                try:
+                    target.relative_to(top)
+                except ValueError:
+                    named = Path(entry.path).relative_to(study).as_posix()
+                    found.append(named + "/" if target.is_dir() else named)
+                    if len(found) >= most:
+                        break
+            elif entry.is_dir(follow_symlinks=False):
+                folders.append(Path(entry.path))
+    return found
 
 
 def _again_answer(root: Path) -> dict[str, Any]:
     """What can be run again on the study ``root`` (`GET /api/again`), read
-    held to it (`_confined`): where its Config or its analysis manifest is
-    linked out of it, or where the run would write (its log, its
-    `simulation/`, `analysis/` or `report/`), neither phase can, said with
-    why (``refused``). `POST /api/again` and `/api/report/write` decide
-    from this same answer, so nothing is offered that would be refused."""
+    held to it (`_confined`). The run's own process follows what is in its
+    folder, as a run started at the terminal does, so the GUI starts none in
+    a study that holds a link leading out of it (`_links_out`): neither
+    phase can, said with the links found and the command that runs it at
+    the terminal instead (``refused``). Where its Config or analysis
+    manifest was not read, neither can either. `POST /api/again` and
+    `/api/report/write` decide from this same answer, so nothing is
+    offered that would be refused."""
     said = _said_not_read(_confined(root, _again_offered))
     refused = said.get("unavailable") or ()
     read = [name for name in refused if name.endswith(_AGAIN_FROM)]
-    written = [name for name in refused if name in _AGAIN_WRITES]
-    if not read and not written:
+    links = _links_out(_the_study_run(Path(root)))
+    if not read and not links:
         return said
     whys = []
+    if links:
+        many = len(links) > 1
+        whys.append(", ".join(links) + (" are links" if many else " is a link")
+                    + " out of the study: the run would read or write through "
+                    + ("them" if many else "it") + ", so it is not run again here.")
     if read:
         whys.append(_refusals_said({"unavailable": read, "unavailable_why": {
             name: (said.get("unavailable_why") or {}).get(name) for name in read}})
             + " Nothing is run again from it.")
-    if written:
-        whys.append(", ".join(written) + (" is a link" if len(written) == 1 else " are links")
-                    + " out of the study, where running it again would write, so nothing "
-                    "is run again.")
     why = " ".join(whys)
-    answer = {**said, "analysis": {"can": False, "why": why},
-              "report": {"can": False, "why": why}, "recorded": [], "refused": why}
+    terminal = {"analysis": ["fastmdx", "analyze", "--output", str(root), "--rerun"],
+                "report": ["fastmdx", "report", "--output", str(root), "--rerun"]}
+    answer = {**said, "recorded": [], "refused": why, "links_out": links}
+    for phase, command in terminal.items():
+        answer[phase] = {"can": False, "why": why + (
+            " To run it anyway, at the terminal: " + " ".join(command) if links else ""),
+            "command": command if links else None}
     # Nothing is offered ticked, so nothing is said of what would be.
     answer.pop("recorded_said", None)
     return answer
