@@ -1119,12 +1119,18 @@ def test_no_fix_is_started_in_a_study_holding_a_link_out(tmp_path, monkeypatch, 
         said["terminal"]), said
 
 
-@pytest.mark.parametrize("record", ["manifest.json", "fastmdxplora.log"])
+@pytest.mark.parametrize("record", ["manifest.json", "fastmdxplora.log", "resolved_config.yml",
+                                    "members.json", "comparison/comparison_summary.csv",
+                                    None])
 def test_no_run_is_started_where_a_record_it_writes_in_place_is_a_hard_link(
         tmp_path, monkeypatch, record):
-    """A study copied with hard links (`cp -al`): the run writes these by
-    name, in place, so into the other copy too. Neither phase is offered,
-    nor is the fix, and nothing outside changes."""
+    """A study copied with hard links (`cp -al`), or one file of it linked
+    so by a person: a run rewrites some records by name, in place (its
+    Config at each start and end, the table of a study's members and its
+    comparison), so into the other copy too. Any file of the study that is
+    a hard link refuses, not a list of names. Neither phase is offered,
+    nor is the fix, and nothing outside changes. A study with none is
+    offered as before (G19 H2)."""
     import os
 
     from tests.test_every_route_reads_only_the_study import _asked
@@ -1133,16 +1139,22 @@ def test_no_run_is_started_where_a_record_it_writes_in_place_is_a_hard_link(
     _stopped(root)
     outside = tmp_path / "outside"
     outside.mkdir()
-    if not (root / record).exists():
-        (root / record).write_text("the person's own\n", encoding="utf-8")
-    os.link(root / record, outside / record)
+    if record is not None:
+        (root / record).parent.mkdir(parents=True, exist_ok=True)
+        if not (root / record).exists():
+            (root / record).write_text("the person's own\n", encoding="utf-8")
+        os.link(root / record, outside / Path(record).name)
     before = _tree(outside)
 
     offered, asked = _asked_again(root, tmp_path)
     fixed = json.loads(_asked(root, tmp_path, "/api/fix", body={"index": 0})[1])
 
+    if record is None:
+        assert offered["analysis"]["can"] and offered["report"]["can"], offered
+        assert all(said["ok"] for said in [*asked, fixed]), (asked, fixed)
+        return
     assert offered["analysis"]["can"] is False and offered["report"]["can"] is False, offered
-    assert f"{record} is a hard link: the run would write into another copy of it" \
+    assert f"{record} is a hard link: the run could write into another copy of it" \
         in offered["analysis"]["why"], offered
     assert all(said["ok"] is False for said in [*asked, fixed]), (asked, fixed)
     assert _Started.started == [] and _tree(outside) == before

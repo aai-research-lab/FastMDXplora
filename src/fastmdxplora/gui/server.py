@@ -631,23 +631,17 @@ def _the_study_run(root: Path) -> Path:
     return campaign_of(Path(root)) or Path(root)
 
 
-#: The records a run writes in place, by name (truncated or appended to, not
-#: replaced): a hard link at one would have it write into another copy.
-_WRITTEN_IN_PLACE = frozenset({"manifest.json", "fastmdxplora.log", "exploration.log",
-                               ".fastmdxplora_run.json"})
-_WRITTEN_IN_PLACE_IN_SIMULATION = frozenset({"production.dcd", "energy.csv",
-                                             "live_events.log", "live_metrics.csv"})
-
-
 def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[tuple[str, str]]:
     """The first ``most`` entries of the study ``study`` that a run would
     read or write through, each named in it with what it is: a link leading
-    out of it ("link"; a folder with its "/"), a record the run writes in
-    place that is a hard link ("hard"), or a folder that cannot be listed
-    ("unlisted"). Found by walking it without following a link, skipping
-    nothing (its top, `previous/`, each run of a study of several,
+    out of it ("link"; a folder with its "/"), a file that is a hard link
+    ("hard": any regular file another name also leads to, since a run
+    rewrites some of its records in place, and no list of those is
+    complete), or a folder that cannot be listed ("unlisted"). Found by
+    walking it without following a link, skipping nothing (its top, `previous/`, each run of a study of several,
     `setup/`, `simulation/`, `analysis/`, `report/`, and the rest). A link
     that stays in the study is not one. Nothing is opened."""
+    import stat as _stat
     from collections import deque
 
     top = Path(os.path.realpath(study))
@@ -678,14 +672,12 @@ def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[tuple[str, str]]:
                                   "link"))
             elif entry.is_dir(follow_symlinks=False):
                 folders.append(Path(entry.path))
-            elif (entry.name in _WRITTEN_IN_PLACE or (
-                    folder.name == "simulation"
-                    and entry.name in _WRITTEN_IN_PLACE_IN_SIMULATION)):
+            else:
                 try:
-                    shared = entry.stat(follow_symlinks=False).st_nlink > 1
+                    held = entry.stat(follow_symlinks=False)
                 except OSError:
-                    shared = False
-                if shared:
+                    continue
+                if _stat.S_ISREG(held.st_mode) and held.st_nlink > 1:
                     found.append((named(entry.path), "hard"))
     return found
 
@@ -697,7 +689,7 @@ def _links_said(found: list[tuple[str, str]]) -> str:
             ("link", " is a link", " are links",
              " out of the study: the run would read or write through {}"),
             ("hard", " is a hard link", " are hard links",
-             ": the run would write into another copy of {}"),
+             ": the run could write into another copy of {}"),
             ("unlisted", " cannot be listed", " cannot be listed",
              ": what the run would read or write in {} is not known")):
         names = [name for name, what in found if what == kind]
@@ -728,8 +720,8 @@ def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dic
     """What can be run again on the study ``root`` (`GET /api/again`), read
     held to it (`_confined`). The run's own process follows what is in its
     folder, as a run started at the terminal does, so the GUI starts none in
-    a study that holds a link leading out of it, or a record it writes in
-    place shared by a hard link (`_links_out`): neither phase can, said
+    a study that holds a link leading out of it, or a file that is a hard
+    link (`_links_out`): neither phase can, said
     with what was found and the command the GUI would start, to run at the
     terminal instead (``refused``). Where its Config or analysis manifest
     was not read, neither can either. `POST /api/again` and
@@ -764,8 +756,7 @@ def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dic
 def _fix_refused(study: Path, argv: list[str] | None) -> dict[str, Any] | None:
     """Why a fix (`POST /api/fix`: a resume, umbrella windows again) is not
     started in ``study``: as for running a phase again, a link leading out
-    of it, or a record the run writes in place shared by a hard link
-    (`_links_out`), with the fix's own command, quoted, to run at the
+    of it, or a file of it that is a hard link (`_links_out`), with the fix's own command, quoted, to run at the
     terminal instead, where it is known without reading the study
     (``argv``). None where there is none."""
     import shlex
