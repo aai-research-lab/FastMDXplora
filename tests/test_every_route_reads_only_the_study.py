@@ -796,3 +796,20 @@ def test_a_copy_not_of_its_atoms_says_why_its_time_points_open_no_frame(tmp_path
     assert status == 200 and opened == [] and said["linked"] is False, said
     assert "a file named outside the study was not read" in said["not_read"], said
     assert str(original) not in body.decode("utf-8")
+
+
+def test_a_structure_named_relative_to_the_study_is_read_in_it(tmp_path):
+    """A Config naming its structure by a name relative to the study names a
+    file of the study, not of the folder the GUI was started in (G10 L4)."""
+    root = _study(tmp_path)
+    _given(root, tmp_path)
+    (root / "setup" / "input.pdb").rename(root / "given.pdb")
+    (root / "resolved_config.yml").write_text(
+        "systems: [{system: given.pdb}]\nsetup: {forcefield: amber14}\n", encoding="utf-8")
+
+    (status, body), opened = _opened_asking(tmp_path / "outside", lambda: _asked(
+        root, tmp_path, "/api/residue-states?chain=A&resseq=2&resname=HIS"))
+
+    said = json.loads(body)
+    assert status == 200 and said["ok"] and "not_read" not in said, said
+    assert said["system"] == "given.pdb" and opened == []

@@ -279,10 +279,15 @@ def _the_structure_given(base: Path, system: str) -> Path | str:
     if present:
         return own
     if not given_by_identifier(system):
+        # A name relative to the study is a file of it, not of the folder
+        # the GUI was started in.
+        named = Path(system).expanduser()
+        if not named.is_absolute():
+            system = str(base / named)
         with _records.refusals_noted() as refused:
-            _records.is_file(Path(system).expanduser())
+            _records.is_file(Path(system))
         if refused:
-            return f"{system}, the structure the study was given, was not read."
+            return f"{named}, the structure the study was given, was not read."
     try:
         return structure_file(system, None)
     except Exception as exc:  # noqa: BLE001 - said, not raised
