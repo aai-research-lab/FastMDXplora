@@ -683,8 +683,37 @@ def test_the_study_beside_is_not_read_through_its_own_links(tmp_path, relative):
     assert "777.0" not in body.decode("utf-8") and "776.9" not in body.decode("utf-8")
     if OTHER_RECORDS[relative]:
         assert said["ok"] is False and not (root / "viewer_beside").exists(), said
+        # Said where the Viewer says why it shows nothing: not that it has
+        # no frames, and what was not read.
+        assert said["reason"].startswith(f"{other.name}'s frames are not its own records")
+        assert f"{other.name}: {relative} was not read" in said["reason"], said
     else:
         assert said["ok"] and said["property"] is None, said
+        assert f"{other.name}: {relative} was not read" in said["said"], said
+
+
+def test_the_study_beside_is_paired_again_once_its_clock_is_not_read(tmp_path):
+    """Paired by simulation time while both clocks are read; once the other
+    study's clock is no longer read, by place in its run, not from the
+    pairing kept beside the frames (G12 L4)."""
+    root = _study(tmp_path)
+    other = _study(tmp_path / "other")
+    route = f"/api/beside?path={other}"
+    said = json.loads(_asked(root, tmp_path, route)[1])
+    assert said["ok"] and "nearest it in simulation time" in said["said"], said
+    index = other / "simulation" / "frames_index.json"
+    record = json.loads(index.read_text(encoding="utf-8"))
+    record["frame_times_ns"] = [None] * len(record["frame_times_ns"])
+    index.write_text(json.dumps(record), encoding="utf-8")
+    (other / "simulation" / "simulation_parameters.json").unlink()
+    manifest = other / "analysis" / "analysis_manifest.json"
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record.pop("load_kwargs")
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    said = json.loads(_asked(root, tmp_path, route)[1])
+
+    assert said["ok"] and "at the same place in its run" in said["said"], said
 
 
 # --------------------------------------------------------------------------

@@ -1979,15 +1979,24 @@ def make_handler(
                     inside, most_frames=cfg.max_browser_frames))
                 unread = _the_other_not_read(other)
                 if not other.get("ok"):
-                    self._send_json({key: value for key, value in other.items()
-                                     if key in ("ok", "reason", "code")}
-                                    | ({"not_read": unread} if unread else {}))
+                    # What it did not read is said where the Viewer says why
+                    # it shows nothing.
+                    said = {key: value for key, value in other.items()
+                            if key in ("ok", "reason", "code")}
+                    if unread:
+                        said.update(not_read=unread, reason=f"{said.get('reason')} {unread}")
+                    self._send_json(said)
                     return
                 answer = self._from_the_frames(root, lambda inside: beside(
                     inside, other, most_frames=cfg.max_browser_frames), BESIDE)
                 if unread:
                     answer["not_read"] = " ".join(filter(None, (answer.get("not_read"),
                                                                 unread)))
+                    if answer.get("ok") and answer.get("said"):
+                        # Said beside what it plays, as the Viewer shows it.
+                        answer["said"] = f"{answer['said']} {unread}"
+                    elif not answer.get("ok"):
+                        answer["reason"] = f"{answer.get('reason')} {unread}"
                 self._send_json(answer)
                 return
             if path in ("/structure/beside.pdb", "/structure/beside.dcd"):

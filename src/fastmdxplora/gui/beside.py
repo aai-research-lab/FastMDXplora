@@ -114,15 +114,23 @@ def the_other(other: str | Path, *, most_frames: int) -> dict[str, Any]:
         pass
     if not that.is_dir() or not is_study(that):
         return {"ok": False, "reason": f"{that} is not a study."}
+    from fastmdxplora import record_access
+
     name = that.name
     that = run_shown(that) or that
-    theirs = frames_info(that, most_frames=most_frames, simulation_time_ns_total=_load_json(
-        that / "simulation" / "simulation_parameters.json").get("duration_ns_actual"))
-    if not theirs.get("available"):
-        return {"ok": False, "reason": f"{name} has no frames to play yet.", "name": name}
-    if not _sent_here(that / "simulation", FRAMES_FILE, FRAMES_TOPOLOGY):
+    total = _load_json(that / "simulation" / "simulation_parameters.json").get(
+        "duration_ns_actual")
+    with record_access.refusals_noted() as refused:
+        theirs = frames_info(that, most_frames=most_frames, simulation_time_ns_total=total)
+        own = _sent_here(that / "simulation", FRAMES_FILE, FRAMES_TOPOLOGY)
+    framed = {f"simulation/{FRAMES_FILE}", f"simulation/{FRAMES_TOPOLOGY}"}
+    if (own is False and theirs.get("available")) or any(
+            record.endswith(tuple(framed)) for record in refused):
+        # Its frames or their topology linked out of it: not that it has none.
         return {"ok": False, "name": name, "reason": (
             f"{name}'s frames are not its own records, so they are not played beside.")}
+    if not theirs.get("available"):
+        return {"ok": False, "reason": f"{name} has no frames to play yet.", "name": name}
     return {"ok": True, "study": that, "name": name, "frames": theirs,
             "lines": _atom_lines(_read(that / "simulation" / FRAMES_TOPOLOGY)),
             "rmsf": _rmsf(that)}
@@ -159,7 +167,10 @@ def beside(root: str | Path, other: dict[str, Any] | str | Path, *,
         return {"ok": False, "reason": "This study has no frames to play beside yet."}
     key = hashlib.sha1(str(that).encode("utf-8")).hexdigest()[:16]
     out = this / BESIDE
-    signature = json.dumps([mine.get("signature"), theirs.get("signature"), str(that)])
+    # With each side's clock as read now: a pairing by simulation time is not
+    # given again once a clock is no longer read.
+    signature = json.dumps([mine.get("signature"), theirs.get("signature"), str(that),
+                            mine.get("frame_times_ns"), theirs.get("frame_times_ns")])
     lines_a = _atom_lines(_read(this / "simulation" / FRAMES_TOPOLOGY))
     lines_b = other["lines"]
     residues_a, residues_b = _residues(lines_a), _residues(lines_b)
