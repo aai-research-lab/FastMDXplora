@@ -28,7 +28,15 @@ from tests.test_a_conversation_follows_a_run_that_wrote_nothing import (  # noqa
     _page_on,
     _say,
 )
-from tests.test_open_studies_have_tabs import _builder, _open, browser, site  # noqa: F401
+from tests.test_open_studies_have_tabs import _builder, _open, site  # noqa: F401
+from tests.test_open_studies_have_tabs import browser as _shared_browser
+
+
+@pytest.fixture
+def browser():
+    # Release the Sync Playwright manager before later tests call _page_on().
+    yield from _shared_browser.__wrapped__()
+
 
 #: Each thing the page's notice says, in order, as it is shown.
 _HEARD = """() => {
