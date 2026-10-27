@@ -2145,25 +2145,23 @@ class DashboardRuntime:
             where = self.running_root or self.active_root
             if isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid():
                 # A run of this GUI's own process (`fastmdx explore
-                # --dashboard`): a signal to it ended the GUI too, and outside
-                # production nothing caught it, so the process died and left
-                # its record. Asked as SIGTERM asks production, without a
-                # signal; refused in every other phase, where nothing listens.
-                from fastmdxplora.simulation.runner import stop_production_here
+                # --dashboard`, a notebook): a signal to it ended the GUI too,
+                # and where nothing caught it the process died and left its
+                # record. What listens for a stop here (production, or a
+                # parallel study's parent) is asked as SIGTERM asks, without
+                # a signal; where nothing listens, the stop is refused.
+                from fastmdxplora.simulation.runner import stop_what_listens_here
 
-                if not stop_production_here():
+                said = stop_what_listens_here(where)
+                if said is None:
                     said = ("This run is in this GUI's own process; stopping it here would "
-                            "end the GUI too. Stop it at its terminal with Ctrl+C.")
-                    return {"stopped": False, "ok": False, "detail": said, "error": said,
-                            "state": self.snapshot()}
+                            "end the GUI too. Stop it where it was started (Ctrl+C at its "
+                            "terminal, or interrupt the notebook's cell).")
+                    return {"stopped": False, "ok": False, "refused": True, "detail": said,
+                            "error": said, "state": self.snapshot()}
                 if where is not None:
                     self.stopped_roots.add(Path(where).resolve())
-                return {
-                    "stopped": True,
-                    "detail": ("Stopping: production ends at its next frame with a "
-                               "checkpoint there, and `fastmdx resume` carries it on."),
-                    "state": self.snapshot(),
-                }
+                return {"stopped": True, "detail": said, "state": self.snapshot()}
             if where is not None:
                 self.stopped_roots.add(Path(where).resolve())
             self.process.terminate()

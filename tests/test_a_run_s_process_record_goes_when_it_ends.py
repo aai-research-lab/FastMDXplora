@@ -253,7 +253,7 @@ def test_a_study_of_one_keeps_its_record_while_it_goes_on_after_its_run(tmp_path
     assert _records_of_this_process(out) == []
 
 
-def _explore_with_its_dashboard(tmp_path, monkeypatch, phase, phases):
+def _explore_with_its_dashboard(tmp_path, monkeypatch, phase, phases, study=("-s", "1L2Y")):
     """`fastmdx explore --dashboard` run as the command runs it, each phase
     stood in for by ``phase(self, name, gui)``; signals sent to this
     process noted, not delivered."""
@@ -295,7 +295,7 @@ def _explore_with_its_dashboard(tmp_path, monkeypatch, phase, phases):
     monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
     monkeypatch.setattr(FastMDXplora, "_run_phase",
                         lambda self, name, options: phase(self, name, sessions[0].runtime))
-    rc = cli.main(["explore", "-s", "1L2Y", "--dashboard", "--dashboard-port", "0",
+    rc = cli.main(["explore", *study, "--dashboard", "--dashboard-port", "0",
                    "--dashboard-stop-on-complete", "--output", str(out),
                    "--include-phase", *phases])
     return rc, out, sessions[0].runtime, signalled
@@ -323,8 +323,10 @@ def test_the_gui_of_explore_with_its_dashboard_holds_the_run_and_never_signals_i
         tmp_path, monkeypatch, phase, ["setup", "analysis"])
     answer = next(item for item in seen if isinstance(item, dict))
     assert (answer["stopped"], answer["ok"]) == (False, False)
-    assert answer["detail"] == ("This run is in this GUI's own process; stopping it here "
-                                "would end the GUI too. Stop it at its terminal with Ctrl+C.")
+    assert answer["detail"] == (
+        "This run is in this GUI's own process; stopping it here would end the GUI too. "
+        "Stop it where it was started (Ctrl+C at its terminal, or interrupt the notebook's "
+        "cell).")
     assert [item for item in seen if isinstance(item, tuple)] == [
         ("setup", True, os.getpid()), ("analysis", True, os.getpid())]
     assert signalled == []
@@ -360,6 +362,64 @@ def test_the_gui_of_explore_with_its_dashboard_stops_production_as_sigterm_does(
     assert rc != 0
     after = gui.snapshot()
     assert after["process_running"] is False and after["status"] == "stopped", after["status"]
+    assert _records_of_this_process(out) == []
+
+
+def test_the_gui_of_explore_with_its_dashboard_stops_a_parallel_study_through_its_parent(
+        tmp_path, monkeypatch, another):
+    """A parallel study's production runs in its workers; its parent, the
+    GUI's process, listens for a stop through the study's `_StudyStop`.
+    The GUI asked production alone, so its Stop was refused in every phase
+    of such a study. The study's stop is asked, the workers are told, and
+    this process is not signalled."""
+    from fastmdxplora.batch import explorer
+
+    config = tmp_path / "par.yml"
+    config.write_text("systems:\n  - {id: a, system: 1L2Y}\n"
+                      "sweep: {simulation.random_seed: [1, 2]}\n"
+                      "execution: {mode: parallel, workers: 2}\n", encoding="utf-8")
+    answers: list = []
+
+    class Pool:
+        # A worker's process, as the executor lists it.
+        _processes = {another.pid: None}
+
+    def in_parallel(self, include, exclude):
+        # The study's parent around its pool, as `_run_parallel` has it.
+        listening = explorer._StudyStop(Pool())
+        listening.folder = self.output_dir
+        with listening as stop:
+            gui = runtime[0]
+            gui.snapshot()
+            answers.append(gui.stop())
+            assert stop.requested
+        return [explorer._skipped_run_result(spec, self._run_output_dir(spec), "stopped")
+                for spec in self.run_specs]
+
+    runtime: list = []
+    monkeypatch.setattr(BatchExplorer, "_run_parallel", in_parallel)
+
+    def phase(self, name, gui):
+        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
+
+    import importlib
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    start = cli._start_dashboard_for_command
+
+    def started(args, output_dir):
+        session = start(args, output_dir)
+        runtime.append(session.runtime)
+        return session
+
+    monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
+    rc, out, gui, signalled = _explore_with_its_dashboard(
+        tmp_path, monkeypatch, phase, ["simulation"], study=("-c", str(config)))
+    assert answers and answers[0]["stopped"] is True, answers
+    assert answers[0]["detail"].startswith("Stopping: each run in progress ends")
+    assert signalled == []
+    assert another.wait(timeout=30) != 0, "the worker was not told"
+    assert gui.snapshot()["process_running"] is False
     assert _records_of_this_process(out) == []
 
 
@@ -533,3 +593,31 @@ def test_a_hold_taken_as_the_last_is_given_back_keeps_the_record(tmp_path, monke
         monkeypatch.setattr(orchestrator, "_remove_if_written_here", remove)
         orchestrator._release_run_process(tmp_path)
     assert _records_of_this_process(tmp_path) == []
+
+
+def test_the_gui_stops_its_own_study_s_production_not_the_newest_one(tmp_path):
+    """Two runs going on threads of one process (a notebook), a GUI on the
+    first: its Stop asked the newest production in the process, the
+    second's."""
+    from fastmdxplora.gui.exploration import _AdoptedProcess
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+    from fastmdxplora.simulation import runner
+
+    first, second = tmp_path / "first", tmp_path / "second"
+    for folder in (first, second):
+        folder.mkdir()
+    _hold_run_process(first)
+    try:
+        gui = _runtime(first)
+        record = json.loads((first / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+        gui.process = _AdoptedProcess(os.getpid(), first, record)
+        gui.running_root = first
+        theirs, ours = runner._StopRequests(), runner._StopRequests()
+        ours.folder, theirs.folder = first, second
+        with ours, theirs:
+            answer = gui.stop()
+            asked = (ours.requested, theirs.requested)
+    finally:
+        _release_run_process(first)
+    assert answer["stopped"] is True
+    assert asked == (True, False)

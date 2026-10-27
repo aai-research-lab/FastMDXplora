@@ -297,8 +297,11 @@ class _StudyStop:
     one is obeyed at once.
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: Any, folder: Any = None) -> None:
         self.pool = pool
+        #: The study, so a stop asked without a signal reaches this one
+        #: (`runner.stop_what_listens_here`).
+        self.folder = folder
         self.signal: int | None = None
         self._previous: dict[int, Any] = {}
 
@@ -310,8 +313,9 @@ class _StudyStop:
         import signal
         import threading
 
-        from fastmdxplora.simulation.runner import _listen_afresh
+        from fastmdxplora.simulation.runner import _LISTENING, _listen_afresh
 
+        _LISTENING.append(self)
         if threading.current_thread() is not threading.main_thread():
             return self
         _listen_afresh()
@@ -369,8 +373,30 @@ class _StudyStop:
         self._previous = {}
 
     def __exit__(self, *_exc: Any) -> bool:
+        from fastmdxplora.simulation.runner import _LISTENING
+
+        if self in _LISTENING:
+            _LISTENING.remove(self)
         self._restore()
         return False
+
+    def ask_here(self) -> str:
+        """Asked to stop as a first SIGTERM asks, without a signal to this
+        process (its own GUI's Stop): the workers are told, and no further
+        run starts."""
+        import signal
+
+        from fastmdxplora.simulation.runner import stop_grace_seconds
+
+        if self.signal is None:
+            self.signal = signal.SIGTERM
+            logger.warning(
+                "Stop asked from the GUI: each run in progress ends where it can be carried "
+                "on (in production, at its next frame if that is within %.0f s), and no "
+                "further run starts.", stop_grace_seconds())
+        self._pass_on(signal.SIGTERM)
+        return ("Stopping: each run in progress ends where it can be carried on, and no "
+                "further run starts.")
 
 
 def _threads_for_each(n_workers: int) -> int:
@@ -1665,7 +1691,7 @@ class BatchExplorer:
             max_workers=workers, mp_context=get_context("spawn"),
             initializer=_give_this_worker_its_share,
             initargs=(_threads_for_each(workers),))
-        stop = _StudyStop(pool)
+        stop = _StudyStop(pool, folder=self.output_dir)
         try:
             stop.__enter__()
             futures = [pool.submit(_extend_one, str(run), more_ns,
@@ -2795,7 +2821,7 @@ class BatchExplorer:
             mp_context=get_context("spawn"),
             initializer=_give_this_worker_its_share,
             initargs=(threads_each,))
-        stop = _StudyStop(pool)
+        stop = _StudyStop(pool, folder=self.output_dir)
         try:
             stop.__enter__()
             for _ in range(min(n_workers, n)):

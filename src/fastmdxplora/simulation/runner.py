@@ -994,7 +994,10 @@ class _StopRequests:
     the old behaviour.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, folder: Any = None) -> None:
+        #: The study whose production this is, so a stop asked without a
+        #: signal reaches this one (`stop_what_listens_here`).
+        self.folder = folder
         self.signal: int | None = None
         self.at_step: int | None = None
         self.on_frame = False
@@ -1063,28 +1066,48 @@ class _StopRequests:
         self._restore()
         return False
 
+    def ask_here(self) -> str:
+        return _asked_here(self)
 
-#: The production of this process listening for a stop now, if any.
-_LISTENING: list[_StopRequests] = []
+
+#: What in this process listens for a stop now, newest last: a production
+#: (`_StopRequests`), or the parent of a parallel study (its `_StudyStop`).
+#: Each has ``folder``, its study, and ``ask_here()``, which asks it to stop
+#: as a first SIGTERM does, without a signal, and says how it will stop.
+_LISTENING: list[Any] = []
 
 
-def stop_production_here() -> bool:
-    """Ask this process's production to stop, as SIGTERM does, without a
-    signal: for the GUI of `fastmdx explore --dashboard`, which runs in the
-    run's own process and must not signal it. True where production here
-    listens and so stops at its next frame; False where nothing here listens
-    (another phase), and nothing is asked."""
+def _asked_here(stop: "_StopRequests") -> str:
     import signal as _signal
 
-    if not _LISTENING:
-        return False
-    stop = _LISTENING[-1]
     if stop.signal is None:
         stop.signal = _signal.SIGTERM
         logger.warning(
             "Stop asked from the GUI: production will stop at the next frame, where it "
             "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
-    return True
+    return ("Stopping: production ends at its next frame with a checkpoint there, "
+            "and `fastmdx resume` carries it on.")
+
+
+def stop_what_listens_here(root: Any = None) -> str | None:
+    """Ask what in this process listens for a stop, for the study at
+    ``root`` (or within it), to stop as SIGTERM asks, without a signal: for
+    the GUI of `fastmdx explore --dashboard`, which runs in the run's own
+    process and must not signal it. What it said, where something listens;
+    None where nothing does (a phase outside production), and nothing is
+    asked."""
+    import os as _os
+
+    def within(folder: Any) -> bool:
+        if root is None or folder is None:
+            return folder is None or root is None
+        there, here = _os.path.realpath(folder), _os.path.realpath(root)
+        return there == here or there.startswith(here.rstrip(_os.sep) + _os.sep)
+
+    for listener in reversed(list(_LISTENING)):
+        if within(getattr(listener, "folder", None)):
+            return listener.ask_here()
+    return None
 
 
 def _cap_for_stopping(chunk: int, done: int, elapsed: float) -> int:
@@ -3237,7 +3260,7 @@ def run_simulation(
                 telemetry.event("Production skipped (0 steps)")
         # A stop asked for now ends production on a frame, with a
         # checkpoint there (see `_StopRequests`).
-        with _StopRequests() as stop:
+        with _StopRequests(folder=output_dir.parent) as stop:
             if telemetry is not None:
                 current_step = _run_md_stage_with_live_metrics(
                     omm,
