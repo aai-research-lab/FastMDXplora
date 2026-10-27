@@ -346,6 +346,27 @@ def build_assembly(input_pdb: Path, assembly: Assembly, chain_columns: dict[str,
     lines = input_pdb.read_text(encoding="utf-8", errors="replace").splitlines()
     coordinate_records = [line for line in lines if line[:6] in ("ATOM  ", "HETATM")]
     in_use = {line[21] for line in coordinate_records}
+    # A chain's polymer as deposited: its records up to the TER that closes
+    # it, a HETATM residue in the sequence among them (selenomethionine).
+    # Written after the chain's TER with the heterogens, 1A8O's MSE 151
+    # started a chain of its own and was lost as an unresolved terminus
+    # (10-27). A chain no TER closes is its ATOM records, as before.
+    polymer: set[str] = set()
+    closed: set[str] = set()
+    last_chain = ""
+    for line in lines:
+        if line[:3] == "TER":
+            closed.add(line[21] if len(line) > 21 and line[21].strip() else last_chain)
+        elif line[:6] in ("ATOM  ", "HETATM"):
+            last_chain = line[21]
+    last_chain = ""
+    for line in lines:
+        if line[:3] == "TER":
+            closed.discard(line[21] if len(line) > 21 and line[21].strip() else last_chain)
+        elif line[:6] in ("ATOM  ", "HETATM"):
+            last_chain = line[21]
+            if line[:6] == "ATOM  " or (line[21] in closed and line[17:20].strip() not in _WATER):
+                polymer.add(line[:27])
     # The chains each part moves, and any heterogen chain kept beside them.
     free = iter(c for c in _CHAIN_IDS if c not in in_use)
     copies: dict[str, list[str]] = {}
@@ -379,6 +400,7 @@ def build_assembly(input_pdb: Path, assembly: Assembly, chain_columns: dict[str,
         rotation = np.array([row[:3] for row in operator], dtype=float)
         shift = np.array([row[3] for row in operator], dtype=float)
         block: list[str] = []
+        sources: list[str] = []
         heavy: list[list[float]] = []
         for line in coordinate_records:
             target = mapping.get(line[21])
@@ -397,6 +419,7 @@ def build_assembly(input_pdb: Path, assembly: Assembly, chain_columns: dict[str,
                     code="setup.structure.assembly_ambiguous", assemblies=[assembly.number])
             block.append(f"{line[:6]}{serial:5d}{line[11:21]}{target}{line[22:30]}"
                          f"{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}")
+            sources.append(line)
             if line[:6] == "ATOM  " and line[76:78].strip() != "H":
                 heavy.append([x, y, z])
         label = ",".join(sorted(set(mapping.values())))
@@ -419,10 +442,11 @@ def build_assembly(input_pdb: Path, assembly: Assembly, chain_columns: dict[str,
         # then the heterogens. Without the TER, PDBFixer read the waters and
         # ligands into the protein chain, could not align it with its SEQRES,
         # and found no residue missing in any copy.
-        for chain in dict.fromkeys(line[21] for line in block if line.startswith("ATOM")):
-            out.extend(line for line in block if line.startswith("ATOM") and line[21] == chain)
+        in_chain = [kept for kept, line in zip(block, sources) if line[:27] in polymer]
+        for chain in dict.fromkeys(line[21] for line in in_chain):
+            out.extend(line for line in in_chain if line[21] == chain)
             out.append("TER")
-        out.extend(line for line in block if line.startswith("HETATM"))
+        out.extend(kept for kept, line in zip(block, sources) if line[:27] not in polymer)
 
     # SEQRES chain by chain, each copy's records together. PDBFixer reads a
     # chain's declared sequence from consecutive records; interleaved, it

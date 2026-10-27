@@ -221,6 +221,8 @@ def report_removed_heterogens(
 #: The twenty, as a trace is counted among them.
 _AMINO_ACIDS = frozenset(
     "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split())
+# Phosphoserine, -threonine and -tyrosine, which made standard lose a phosphate.
+_PHOSPHORYLATED = frozenset({"SEP", "TPO", "PTR"})
 
 
 def _refuse_a_trace(fixer) -> None:
@@ -732,6 +734,19 @@ def fix_pdb_with_pdbfixer(
                 "Replaced %d modified residue(s) with their standard "
                 "equivalents: %s", len(substitutions), described,
             )
+            # A selenium for a sulfur changes nothing simulated; a phosphate
+            # taken off does. 1QMZ's TPO160, the phosphate that activates
+            # CDK2, became a threonine said only at INFO (10-27).
+            lost = sorted({f"{residue.name}{getattr(residue, 'id', '')}"
+                           for residue, _ in substitutions
+                           if residue.name.upper() in _PHOSPHORYLATED})
+            if lost:
+                logger.warning(
+                    "Phosphorylated residue(s) %s were simulated without their "
+                    "phosphate, as the plain amino acid: a study of the "
+                    "phosphorylated state needs parameters for them supplied "
+                    "deliberately.", ", ".join(lost),
+                )
             observe_fixer(
                 audit,
                 "nonstandard_substitution_requests",

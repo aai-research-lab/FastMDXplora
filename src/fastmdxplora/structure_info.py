@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora.ligand_detection import (
+    NUCLEIC_RESNAMES,
     POLYMER_RESNAMES,
     ION_RESNAMES,
     WATER_RESNAMES,
@@ -148,6 +149,8 @@ def _count_structure_cached(
                     protein_chains.add(chain_id)
                     protein_residue_keys.add(key)
                     continue
+                if resname in NUCLEIC_RESNAMES:
+                    continue
 
                 # Any remaining residue is a ligand/cofactor candidate.  The
                 # detector applies its own cofactor exclusions.
@@ -216,6 +219,7 @@ def ligand_atom_counts(path: str | Path) -> dict[str, int]:
                     resname in WATER_RESNAMES
                     or resname in ION_RESNAMES
                     or resname in POLYMER_RESNAMES
+                    or resname in NUCLEIC_RESNAMES
                 ):
                     continue
                 counts[resname] += 1

@@ -286,3 +286,77 @@ def test_a_modified_residue_of_a_chain_not_kept_goes_with_the_heterogens(tmp_pat
     fix_pdb_with_pdbfixer(str(given), str(out), ph=7.0)
     assert not any(line[21] == "C" for line in out.read_text().splitlines()
                    if line.startswith(("ATOM", "HETATM")))
+
+
+# -- A residue of the chain deposited as HETATM, in a built assembly --------
+
+def test_a_hetatm_residue_of_the_chain_stays_in_each_built_copy(tmp_path) -> None:
+    """1A8O's selenomethionines are HETATM records in the chain. Building its
+    dimer wrote them after each copy's TER with the heterogens, and MSE 151,
+    the first residue, began a chain of its own and was lost as an
+    unresolved terminus. 1STP's Ala13, its first, is written here as MSE."""
+    lines = [("HETATM" + line[6:17] + "MSE" + line[20:])
+             if line.startswith("ATOM") and int(line[22:26]) == 13 else line
+             for line in _deposition("1STP")]
+    given = tmp_path / "input.pdb"
+    given.write_text("\n".join(lines) + "\n")
+    built = pipeline._the_chains_to_simulate(SimpleNamespace(_assembly=None), given,
+                                             "pdb_id", {})
+    written = built.read_text().splitlines()
+    for chain in "ABCD":
+        mine = [n for n, line in enumerate(written)
+                if line.startswith(("ATOM", "HETATM")) and line[21] == chain
+                and line[17:20] != "BTN" and line[17:20] != "HOH"]
+        first = [n for n in mine if int(written[n][22:26]) == 13]
+        closing = next(n for n in range(mine[-1], len(written)) if written[n].startswith("TER"))
+        # Its first residue first, before the TER that closes it.
+        assert first and first == mine[:len(first)], chain
+        assert all(n < closing for n in mine), chain
+        # The biotins are still heterogens, none inside a chain.
+        assert not any(written[n][17:20] == "BTN" for n in range(mine[0], closing)), chain
+
+
+# -- A phosphorylated residue made standard ---------------------------------
+
+def test_a_phosphate_taken_off_a_residue_is_warned_of(tmp_path) -> None:
+    """1QMZ's TPO160, the phosphate that activates CDK2, became a threonine
+    said only at INFO. 3PTB's Ser32 is written here as SEP."""
+    pytest.importorskip("pdbfixer")
+    import logging
+
+    from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
+
+    lines = [("HETATM" + line[6:17] + "SEP" + line[20:])
+             if line.startswith("ATOM") and line[17:20] == "SER" and int(line[22:26]) == 32
+             else line for line in _deposition("3PTB")]
+    given = tmp_path / "3ptb_sep.pdb"
+    given.write_text("\n".join(lines) + "\n")
+    heard: list[logging.LogRecord] = []
+    handler = logging.Handler(logging.WARNING)
+    handler.emit = heard.append
+    logger = logging.getLogger("fastmdx.setup.pdbfix")
+    logger.addHandler(handler)
+    try:
+        fix_pdb_with_pdbfixer(str(given), str(tmp_path / "fixed.pdb"), ph=7.0)
+    finally:
+        logger.removeHandler(handler)
+    said = [record.getMessage() for record in heard if record.levelno >= logging.WARNING]
+    assert any("SEP" in line and "without their phosphate" in line for line in said), said
+
+
+# -- DNA is the polymer, not a ligand ----------------------------------------
+
+def test_dna_is_not_offered_as_a_ligand(tmp_path) -> None:
+    """1BNA's dodecamer was offered as 24 ligands: the Viewer drew its bases
+    as ball and stick with a binding pocket around them."""
+    from fastmdxplora.gui.structure_info import count_structure
+    from fastmdxplora.ligand_detection import detect_ligands
+
+    keys = [("A", name, str(n)) for n, name in enumerate("DC DG DC DG DA DA".split(), 1)]
+    keys += [("B", "DT5", "13"), ("B", "RU3", "24"), ("C", "ATP", "500")]
+    assert detect_ligands(keys)["resnames"] == ["ATP"]
+    lines = [f"ATOM  {n:5d}  P   {name:>3s} A{n:4d}    {n:8.3f}{n:8.3f}{n:8.3f}  1.00  0.00           P"
+             for n, name in enumerate("DC DG DA DT".split(), 1)]
+    path = tmp_path / "dna.pdb"
+    path.write_text("\n".join(lines + ["END"]) + "\n")
+    assert count_structure(path)["ligand_resnames"] == []

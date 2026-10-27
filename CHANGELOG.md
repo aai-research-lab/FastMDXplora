@@ -9,6 +9,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A residue of the chain deposited as HETATM stays in its chain when the
+  assembly is built. Each copy's polymer was written as its ATOM records,
+  and the rest after its TER with the heterogens; 1A8O's selenomethionine
+  151, the chain's first residue, began a chain of its own, and both copies
+  of the dimer were simulated without it, said only as an unresolved
+  terminus not built. A chain's records up to the TER that closes it are
+  now its polymer.
+- A phosphorylated residue made standard is warned of: 1QMZ's TPO160, the
+  phosphate that activates CDK2, became a threonine said only at INFO.
+- DNA and RNA are the polymer, not ligands: 1BNA's dodecamer was offered as
+  24 ligands, and the Viewer drew its bases as ball and stick with a binding
+  pocket around them.
 - The Viewer's molecule takes the window's room again: the timeline under
   it, its ruler and three tracks counted whole, left it 420px wide in a
   1280px window and 373px in one 800px high. It is fitted to leave the
