@@ -1053,17 +1053,24 @@ The Agent's conversation routes (`/api/agent/...`) are not yet held to the
 study: they answer on this computer only, and are held in a later release.
 
 The GUI starts no run (Analyze again and Write it again, `POST /api/again`
-and `/api/report/write`, the Agent's `DO: analyze again` and `DO: write the
-report again`, and a fix from the Problems panel, `POST /api/fix`) in a study
-that holds a link leading out of it, wherever in the study it is, or a
-record the run writes in place (its manifest, logs, process record, the
-trajectory and energies a resume extends) shared by a hard link, or a
-folder it cannot list; nor Analyze again or Write it again where its Config
-or analysis manifest was not read. `GET /api/again` then offers neither
-phase, from the same answer, naming what was found and the command the GUI
-would start, quoted, to run at the terminal instead. A study the person
-keeps in a folder named `runs/` of their own is judged as itself; a run of
-a study of several (by its batch manifest) with its whole study. A run's own process, started from the GUI
+and `/api/report/write`, the Agent's `DO: analyze again`, `DO: write the
+report again` and `DO: run the fix`, a fix from the Problems panel, `POST
+/api/fix`, and a study carried on in place, `simulation.resume_from`) in a
+study that holds a link leading out of it, wherever in the study it is, or
+any file that is a hard link ("the run could write into another copy of
+it": a run rewrites some records in place, its Config among them, and no
+list of those is complete), or a folder it cannot list; nor Analyze again
+or Write it again where its Config or analysis manifest was not read. The
+study is walked, as it is at the moment it is asked, before any record of
+it is read for the run. `GET /api/again` then offers neither phase, and
+`GET /api/fixes` no fix to run, from the same walk, naming what was found
+and the command the GUI would start, quoted, to run at the terminal
+instead: the one `again.plan` makes, with the report where the study or
+any of its runs has one, and the analyses asked for; for a run of a study
+of several, it says the command builds the comparison of the study's runs
+again after it. A study the person keeps in a folder named `runs/` of
+their own is judged as itself; a run of a study of several (by its batch
+manifest) with its whole study. A run's own process, started from the GUI
 or at the terminal, reads and writes the study's folder as the person made
 it, following its links (a `simulation/` on a cluster's scratch, say); only
 its status, events, metrics and the log of a run the GUI starts never
