@@ -754,3 +754,25 @@ def test_a_run_whose_record_is_linked_out_keeps_its_snapshots(tmp_path):
     assert "was not read" in done["kept"][0]["why"], done
     assert snapshots <= _left(root)
     assert "simulation/frames.dcd" not in _left(root)
+
+
+# --------------------------------------------------------------------------
+# With the manifest not read, no other structure is selected in (G10 L2)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("public", [False, True], ids=["loopback", "public"])
+@pytest.mark.parametrize("route", [route for route, public in SELECTED.items() if public])
+def test_a_manifest_linked_out_selects_in_no_structure(tmp_path, route, public):
+    """Which structure the analyses read is the manifest's to say: with it
+    linked out of the study, the saved topology is not read in its place."""
+    root = _study(tmp_path)
+    _given(root, tmp_path)
+    outside = _moved_out(root, tmp_path, "analysis/analysis_manifest.json")
+
+    (status, body), opened = _opened_asking(outside, lambda: _asked(
+        root, tmp_path, route, public=public))
+
+    said = json.loads(body)
+    assert status == 200 and opened == [] and said["ok"] is False, said
+    assert "analysis/analysis_manifest.json was not read" in said["not_read"], said
+    assert "against" not in said, said

@@ -380,8 +380,13 @@ def topology_held(root: Path) -> Path | None:
     it, is refused and named, never opened where it leads, and no other
     structure is read in its place (the one found is then read by MDTraj,
     by its name). A structure the manifest names that is nowhere (a study
-    moved since) is passed over, as `selection` passes it over."""
-    manifest = _json(root / "analysis" / "analysis_manifest.json")
+    moved since) is passed over, as `selection` passes it over. With the
+    manifest itself refused, which structure the analyses read is not
+    known, so none is read in its place (the saved topology included)."""
+    with _records.refusals_noted() as refused:
+        manifest = _json(root / "analysis" / "analysis_manifest.json")
+    if refused:
+        return None
     resolved = manifest.get("resolved") if isinstance(manifest.get("resolved"), dict) else {}
     for candidate in (resolved.get("topology"), manifest.get("topology_input")):
         if not isinstance(candidate, str) or not candidate:
