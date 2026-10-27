@@ -317,7 +317,6 @@ class AnalysisOrchestrator:
             Also stored on ``self.results``.
         """
         from fastmdxplora.analysis import residues
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         # An orchestrator made without its constructor read no topology of
         # its own, so it has no codes to put back and leaves the table be.
         codes = getattr(self, "_insertion_codes", None)
@@ -328,6 +327,7 @@ class AnalysisOrchestrator:
         plan = list(self.planned_analyses(include=include, exclude=exclude,
                                           options=options))
         merged_options = self._merge_options(plan, options)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.debug("Plan: %s", ", ".join(plan))
 
