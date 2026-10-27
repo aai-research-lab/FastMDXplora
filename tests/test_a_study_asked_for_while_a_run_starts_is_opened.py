@@ -19,6 +19,7 @@ from tests.test_a_conversation_follows_a_run_that_wrote_nothing import (  # noqa
     _browsers_closed,
     _gui,
     _page_on,
+    _ready,
     _say,
     _slow_disk,
 )
@@ -137,9 +138,24 @@ MOMENTS = ("before the switch", "across the switch", "after it")
 
 @pytest.mark.parametrize("moment", MOMENTS)
 def test_words_typed_while_a_run_starts_go_with_it_whole(tmp_path, monkeypatch, moment):
+    import threading
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
     from fastmdxplora.gui.workspace import study_key
 
     workspace, made, session = _gui(tmp_path, monkeypatch, taking=2.0)
+    second_asked, release_second = threading.Event(), threading.Event()
+    launch = DashboardRuntime.launch_from_config
+
+    def held_launch(runtime, *args, **kwargs):
+        # A loaded runner can take longer to type than the fake launch's
+        # delay. Hold the switch until the intended words have been typed.
+        if len(made) == 1:
+            second_asked.set()
+            assert release_second.wait(30), "The second launch was not released"
+        return launch(runtime, *args, **kwargs)
+
+    monkeypatch.setattr(DashboardRuntime, "launch_from_config", held_launch)
     words = "is it going well so far"
     shown = "() => window.FastMDXDashboard.state.studyShown"
     try:
@@ -151,6 +167,7 @@ def test_words_typed_while_a_run_starts_go_with_it_whole(tmp_path, monkeypatch, 
         page.wait_for_function("(key) => window.FastMDXDashboard.state.studyShown === key",
                                arg=study_key(workspace / "run1"), timeout=30000)
         page.wait_for_selector("#agent-thread .agent-running")
+        _ready(page)
         _say(page, "again")
         page.wait_for_function(
             "() => document.querySelectorAll('#agent-thread .agent-study:not([hidden])').length === 2")
@@ -158,17 +175,21 @@ def test_words_typed_while_a_run_starts_go_with_it_whole(tmp_path, monkeypatch, 
         left, run = study_key(workspace / "run1"), study_key(workspace / "run2")
         switched = f"() => window.FastMDXDashboard.state.studyShown === '{run}'"
         page.click("#agent-thread .agent-study:not([hidden]) [data-role=run] >> nth=-1")
+        assert second_asked.wait(30), "The second launch was not asked for"
         page.focus("#agent-request")
         seen = []
         if moment == "before the switch":
             page.keyboard.type(words)
             seen.append(page.evaluate(shown))
+            release_second.set()
         elif moment == "across the switch":
             page.keyboard.type(words[:10])
             seen.append(page.evaluate(shown))
+            release_second.set()
             page.wait_for_function(switched, timeout=30000, polling=10)
             page.keyboard.type(words[10:])
         else:
+            release_second.set()
             page.wait_for_function(switched, timeout=30000, polling=10)
             page.keyboard.type(words)
         page.wait_for_function(switched, timeout=30000)
@@ -178,6 +199,7 @@ def test_words_typed_while_a_run_starts_go_with_it_whole(tmp_path, monkeypatch, 
         kept = _unsent(page)
         close()
     finally:
+        release_second.set()
         session.server.shutdown()
     # Typed, all or the first part, while the page showed the study left.
     assert seen == ([] if moment == "after it" else [left]), seen
