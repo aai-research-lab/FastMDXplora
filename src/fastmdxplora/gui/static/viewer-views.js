@@ -222,6 +222,16 @@
 
   /** The view shown written with the study as a MolViewSpec scene
    * (scenes/<name>.mvsx, with the selections named), and downloaded. */
+  /* Why a view or a scene was not saved, in the server's own words (a 403
+   * beyond this computer gives them as ``error``), said after a colon with
+   * a small first letter. */
+  function notDone(what, said) {
+    var why = String((said && (said.reason || said.error)) || "no reason given");
+    // A word, not a name (MDTraj): its first letter small.
+    return what + ": " + (/^[A-Z][a-z]/.test(why) ? why.charAt(0).toLowerCase() + why.slice(1)
+      : why);
+  }
+
   function keepScene(name, shown) {
     say("Writing the scene " + name + "\u2026");
     return fetch("/api/scenes", {
@@ -232,7 +242,7 @@
     }).catch(function () { return { ok: false, reason: "The server did not answer." }; })
       .then(function (said) {
         if (!said || !said.ok) {
-          say("The scene was not written: " + ((said && said.reason) || "no reason given"));
+          say(notDone("The scene was not written", said));
           return;
         }
         naming(false);
@@ -266,7 +276,7 @@
     var before = keptView(name);
     post({ action: "save", name: name, view: shown }).then(function (said) {
       if (!said || !said.ok) {
-        say("The view was not saved: " + ((said && (said.reason || said.error)) || "no reason given"));
+        say(notDone("The view was not saved", said));
         return;
       }
       views = said.views || [];

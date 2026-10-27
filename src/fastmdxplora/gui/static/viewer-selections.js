@@ -245,7 +245,12 @@
   /* Why a write was not made, as the person is told it. */
   function notMade(answer, what) {
     if (answer && answer.study_changed) return what + ": another study is open now.";
-    return (answer && answer.reason) || what + ".";
+    if (answer && answer.reason) return answer.reason;
+    // Refused by the server (beyond this computer, a 403): its own words.
+    var error = String((answer && answer.error) || "");
+    if (!error) return what + ".";
+    return what + ": " + (/^[A-Z][a-z]/.test(error)
+      ? error.charAt(0).toLowerCase() + error.slice(1) : error);
   }
 
   function post(body) {

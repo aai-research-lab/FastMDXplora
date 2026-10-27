@@ -948,7 +948,7 @@ def test_write_it_again_is_offered_only_where_it_would_be_written(tmp_path, publ
             focused = page.evaluate("() => document.activeElement.textContent")
             browser.close()
     if public:
-        assert confirm is None and "not offered here" in said, said
+        assert confirm is None and "not offered here: this is disabled" in said, said
     else:
         assert confirm is not None and focused == "Yes, write it", (said, focused)
 
@@ -1011,3 +1011,58 @@ def test_the_overview_says_a_simulation_folder_linked_out_once(tmp_path):
     assert "simulation/ is a link out of the study, so its records are not read here" in text
     assert "a link to a file" not in text and "links to files" not in text, text
     assert "simulation/cost.json" not in text and "simulation/live_status.json" not in text
+
+
+# --------------------------------------------------------------------------
+# What the pages say where nothing was read or saved (G16 L2, L3)
+# --------------------------------------------------------------------------
+
+def _function(script: str, name: str) -> str:
+    """The function ``name`` of a page's script, as its source."""
+    text = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+            / script).read_text(encoding="utf-8")
+    start = text.index(f"  function {name}(")
+    return text[start:text.index("\n  }\n", start) + 4]
+
+
+def _node(source: str) -> object:
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    done = subprocess.run([node, "-e", source], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def test_the_stop_guesses_no_stage_where_its_status_was_not_read():
+    said = _node('var stage = "";\n' + _function("stop-run.js", "whatItLeaves")
+                 + "\nconsole.log(JSON.stringify(whatItLeaves()));")
+    assert said == "Its stage was not read, so what a stop leaves is not known.", said
+
+
+DISABLED = "This is disabled when the dashboard is bound to a non-loopback address."
+
+
+def test_a_selection_refused_beyond_loopback_says_why():
+    """Refused beyond this computer (a 403 whose words are its ``error``), a
+    selection says why, the server's sentence after a colon with a small
+    first letter."""
+    error = json.dumps({"ok": False, "error": DISABLED})
+    said = _node(_function("viewer-selections.js", "notMade")
+                 + f"\nconsole.log(JSON.stringify(notMade({error}, "
+                 "'The selection was not saved')));")
+    assert said == "The selection was not saved: " + DISABLED[0].lower() + DISABLED[1:], said
+
+
+def test_a_view_or_scene_refused_beyond_loopback_says_why():
+    """The same for a view and a scene, a name (MDTraj) kept as it is."""
+    error = json.dumps({"ok": False, "error": DISABLED})
+    said = _node(_function("viewer-views.js", "notDone")
+                 + f"\nconsole.log(JSON.stringify(["
+                 f"notDone('The scene was not written', {error}),"
+                 f"notDone('The view was not saved', {error}),"
+                 "notDone('The scene was not written', {reason: 'MDTraj could not read it.'})]));")
+    small = DISABLED[0].lower() + DISABLED[1:]
+    assert said == [f"The scene was not written: {small}", f"The view was not saved: {small}",
+                    "The scene was not written: MDTraj could not read it."], said

@@ -107,3 +107,47 @@ def test_a_manifest_linked_to_a_hidden_file_of_the_study_is_said_so(tmp_path, pu
     assert f"analysis/analysis_manifest.json was not read: {because}" in page["not_read"]
     assert f"analysis/analysis_manifest.json was not read, {because}." in page["html"]
     assert "leads outside the study" not in page["html"]
+
+
+def test_the_status_not_read_fits_a_narrow_page_and_is_said_without_a_pointer(tmp_path):
+    """The "not read" pill of an analysis with a long title sits under its
+    name, not clipped with it at 390 pixels, and what it means (its status,
+    not the value beside it, was not read) is in the page for a keyboard or
+    a screen reader, not only on hover (G15 L1, L2, G16 L1)."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _study(tmp_path)
+    (root / "analysis" / "rmsf").rename(root / "analysis" / "order_parameters")
+    manifest = root / "analysis" / "analysis_manifest.json"
+    outside = tmp_path / "outside" / "analysis_manifest.json"
+    outside.parent.mkdir()
+    outside.write_text(json.dumps({"results": {"order_parameters": {"status": "ok"}}}),
+                       encoding="utf-8")
+    manifest.unlink()
+    _link(manifest, outside)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 390, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#files", wait_until="domcontentloaded")
+            page.wait_for_selector(".files-state", state="attached")
+            pill = page.evaluate("""() => {
+                const e = document.querySelector('.files-state');
+                const name = e.closest('.files-name');
+                const cut = name ? e.getBoundingClientRect().right
+                    > name.getBoundingClientRect().right + 1 : false;
+                const said = document.getElementById(e.getAttribute('aria-describedby') || '');
+                return {cut: cut || e.scrollWidth > e.clientWidth + 1, inName: !!name,
+                        focusable: e.tabIndex >= 0, said: said ? said.textContent : '',
+                        wide: document.documentElement.scrollWidth};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert pill["inName"] is False and pill["cut"] is False and pill["wide"] <= 390, pill
+    assert pill["focusable"] and pill["said"].startswith("Its status was not read"), pill

@@ -107,6 +107,9 @@
     if (stage === "analysis" || stage === "report") {
       return "The simulation is finished and saved; the " + stage + " can be run again.";
     }
+    // Its status not read (linked out of the study, say): no stage to judge
+    // by, so none is guessed.
+    if (!stage) return "Its stage was not read, so what a stop leaves is not known.";
     return "It has not reached production, so it leaves no checkpoint: carrying it on runs it again.";
   }
 

@@ -309,8 +309,10 @@
       if (!answer.ok) {
         // Refused here (a GUI served beyond this computer answers no
         // question that starts a run): not offered, and said why.
+        var why = String(d.error || d.reason || "");
         say("Writing the report again is not offered here" +
-            (d.error || d.reason ? ": " + (d.error || d.reason) : "."));
+            (!why ? "." : ": " + (/^[A-Z][a-z]/.test(why)
+              ? why.charAt(0).toLowerCase() + why.slice(1) : why)));
         return;
       }
       var report = d.report;

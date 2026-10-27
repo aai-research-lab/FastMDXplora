@@ -610,8 +610,15 @@ def _analysis_row(group: dict[str, Any], entries: list[dict[str, Any]], links: L
              if group["value"] else "")
     state = ""
     if group["status"] and group["status"] != "ok":
+        # Its own line under the name, not clipped with it on a narrow page;
+        # its words reachable without a pointer (described, and focusable).
+        said = "files-state-" + "".join(c if c.isalnum() else "-"
+                                         for c in f'{group["run"]}/{group["folder"]}')
+        described = (f' tabindex="0" aria-describedby="{said}"' if group["message"] else "")
         state = (f'<span class="files-state" data-state="{_attr(group["status"])}" '
-                 f'title="{_attr(group["message"])}">{escape(group["status"])}</span>')
+                 f'title="{_attr(group["message"])}"{described}>{escape(group["status"])}</span>'
+                 + (f'<span class="files-sr" id="{said}">{escape(group["message"])}</span>'
+                    if group["message"] else ""))
     run = (f'<span class="files-run">{escape(runs.get(group["run"], group["run"]))}</span>'
            if group["run"] else "")
     names = [by_path[p]["name"] for p in sorted(group["files"], key=_chip_order)
@@ -645,7 +652,7 @@ def _analysis_row(group: dict[str, Any], entries: list[dict[str, Any]], links: L
         f'<span class="files-sr">{escape(group["title"])}: its files</span></button>'
         f'<span class="files-thumbs">{thumb}{more}</span>'
         f'<div class="files-what"><div class="files-name">{escape(group["title"])}{run}{value}'
-        f'{state}</div><div class="files-chips">{chips}</div></div>'
+        f'</div>{state}<div class="files-chips">{chips}</div></div>'
         f'<span class="files-size">{len(names)} file{"s" if len(names) != 1 else ""}'
         f'<br>{escape(human_size(group["size"]))}</span>'
         f'<div class="files-acts">{"".join(acts)}</div></div>'
