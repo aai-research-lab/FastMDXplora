@@ -177,9 +177,9 @@ def test_beyond_loopback_the_config_handed_back_neither_shows_nor_says_the_folde
     here = answered(True)
     public = answered(False)
     # Bound to an address beyond loopback, as `fastmdx gui --host` does.
-    started = start_dashboard_session(output=str(study), host="192.0.2.2", port=0)
+    started = start_dashboard_session(output=str(study), host="0.0.0.0", port=0)
     try:
-        bound = _config(started.url, body)
+        bound = _config(f"http://127.0.0.1:{started.port}", body)
     finally:
         started.stop()
     assert here["ok"] and ph(here) == 6.5 and "our assay buffer" in json.dumps(here)
