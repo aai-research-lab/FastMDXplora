@@ -696,6 +696,13 @@ def test_a_reload_while_a_run_starts_keeps_what_was_said(tmp_path, monkeypatch):
         _say(page, "asked while it starts")
         _sent_once_offered(page)
         page.wait_for_selector("#agent-thread .agent-answer:has-text('Starting.')")
+        # The run is asked for once the saves before it are in: reloaded
+        # while it starts, not before it was asked for.
+        for _ in range(300):
+            if made:
+                break
+            page.wait_for_timeout(100)
+        assert made, "the run was not asked for"
         page.reload(wait_until="domcontentloaded")
         page.wait_for_selector("#agent-request", state="visible")
         _ready(page)
