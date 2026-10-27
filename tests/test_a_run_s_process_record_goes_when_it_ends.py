@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -441,3 +442,36 @@ def test_a_study_made_here_and_not_run_is_not_a_run_going(tmp_path, monkeypatch)
             "idle", False, True), state["status"]
         assert gui.stop()["stopped"] is False
     assert signals == []
+
+
+def test_a_hold_taken_as_the_last_is_given_back_keeps_the_record(tmp_path, monkeypatch):
+    """Counting a hold and writing the record were two steps, and so were
+    giving the last one back and removing it: a run of another thread that
+    took its hold between them found the record there, wrote none, and was
+    left going with none."""
+    import threading
+
+    from fastmdxplora import orchestrator
+
+    _hold = orchestrator._hold_run_process
+    _hold(tmp_path)
+    remove = orchestrator._remove_if_written_here
+    removing = threading.Event()
+
+    def slowly(where):
+        removing.set()
+        time.sleep(0.3)
+        remove(where)
+
+    monkeypatch.setattr(orchestrator, "_remove_if_written_here", slowly)
+    last = threading.Thread(target=orchestrator._release_run_process, args=(tmp_path,))
+    last.start()
+    assert removing.wait(10)
+    _hold(tmp_path)
+    last.join(10)
+    try:
+        assert _records_of_this_process(tmp_path) == [RUN_PROCESS_FILE]
+    finally:
+        monkeypatch.setattr(orchestrator, "_remove_if_written_here", remove)
+        orchestrator._release_run_process(tmp_path)
+    assert _records_of_this_process(tmp_path) == []

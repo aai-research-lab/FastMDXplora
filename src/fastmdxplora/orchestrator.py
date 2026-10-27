@@ -1920,7 +1920,7 @@ _RECORDS_WRITTEN_HERE: dict[Path, tuple[int, int] | None] = {}
 _HOLDS: dict[Path, int] = {}
 _HOLDS_OF: list[int] = [os.getpid()]
 
-_HOLDS_LOCK = threading.Lock()
+_HOLDS_LOCK = threading.RLock()
 
 
 def _key(output_dir: Path) -> Path:
@@ -1991,12 +1991,14 @@ def _hold_run_process(output_dir: Path, *, rewrite: bool = False) -> None:
     """A run of this process takes a hold on the folder's record: written
     now where there is none (or, with ``rewrite``, whatever is there), and
     kept until the last hold is given back."""
+    # Counted and written as one step, so a last hold given back meanwhile
+    # in another thread does not remove the record this one keeps.
     with _HOLDS_LOCK:
         holds = _holds()
         key = _key(output_dir)
         holds[key] = holds.get(key, 0) + 1
-    if rewrite or not (Path(output_dir) / RUN_PROCESS_FILE).exists():
-        _record_run_process(Path(output_dir))
+        if rewrite or not (Path(output_dir) / RUN_PROCESS_FILE).exists():
+            _record_run_process(Path(output_dir))
 
 
 def _release_run_process(output_dir: Path) -> None:
@@ -2010,7 +2012,7 @@ def _release_run_process(output_dir: Path) -> None:
             holds[key] = left
             return
         holds.pop(key, None)
-    _remove_if_written_here(Path(output_dir))
+        _remove_if_written_here(Path(output_dir))
 
 
 def run_process_held_here(output_dir: Path) -> bool:
@@ -2024,9 +2026,10 @@ def _forget_run_process(output_dir: Path) -> None:
     it and no run of this process holds it: the run that wrote it has ended,
     finished, refused, failed or stopped. A record of another process (a run
     started there since, a worker's) is left alone."""
-    if run_process_held_here(output_dir):
-        return
-    _remove_if_written_here(Path(output_dir))
+    with _HOLDS_LOCK:
+        if run_process_held_here(output_dir):
+            return
+        _remove_if_written_here(Path(output_dir))
 
 
 def _remove_if_written_here(output_dir: Path) -> None:
