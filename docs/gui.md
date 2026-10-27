@@ -1031,35 +1031,36 @@ The routes below that read a study read only inside it: a record linked out
 of it, or a file its records name outside it, is not read, nor another read
 in its place, on this computer or on a public bind. A JSON answer names it
 in `unavailable` and says it was not read (`not_read`); a file route gives a
-404. The Files page's tiles say "not read" of such a record, and an
-analysis whose status it was "not read", saying on hover that its status,
-not the value beside it, was not read, and why. The study set beside the
-open one (`/api/beside`) is read held to itself, and what it did not read is
-named by its name (`other: simulation/frames.dcd`), in the reason it is not
-shown or beside what is shown. A POST decides only from the study's own
-records: its phases are not run again (`POST /api/again`,
-`/api/report/write`) from a Config or analysis manifest linked out of it,
-nor into a log, `simulation/`, `analysis/` or `report/` linked out, and
-`GET /api/again` then offers neither phase, from the same answer; a run's
-snapshots are not cleared (`POST /api/files/clear-scratch`) where its
-record is linked out; and the Stop (`POST /api/explore/stop`) reads and
-writes the run's status held to the study, so a status linked out is not
-read, copied in or written through. Every record the GUI saves in a study is written to a
-new temporary file of its own and renamed into place (MDTraj's in a new
-folder of its own), and the run's log, events and metrics are added to
-without following a link, so nothing is written over or through a link, at
-the record's name, its folder's or a temporary one. A record not saved is
-named in the answer: "was not saved: it leads outside the study", or
-"could not be saved: no room" on a full disk; the frames are played where
-only their index was not saved. A study copied
-whole reads its own file in the place its records name only where it holds
-as many atoms as its analyses read (`n_atoms`). The Agent's conversation
-routes (`/api/agent/...`) are not yet held to the study: they answer on
-this computer only, and are held in a later release.
-The run's own process, outside any held read, follows a folder of the study
-that is a link the person made (`simulation/` on a cluster's scratch, say)
-and writes its progress there; it never reads or writes through a record
-that is itself a link.
+404; a folder linked out is said once ("simulation/ is a link out of the
+study, so its records are not read here"). The Files page's tiles say "not
+read" of such a record, and an analysis whose status it was says its
+status, not the value beside it, was not read, and why. The study set
+beside the open one (`/api/beside`) is read held to itself, and what it did
+not read is named by its name (`other: simulation/frames.dcd`). The run's
+snapshots are not cleared (`POST /api/files/clear-scratch`) where its record
+is linked out, and the Stop (`POST /api/explore/stop`) reads and writes the
+run's status held to the study, so a status linked out is not read, copied
+in or written through. Every record the GUI itself saves in a study (what
+the Viewer computes, the frames written for it, views, selections and
+scenes, a stop recorded) is written to a new temporary file of its own and
+renamed into place (MDTraj's in a new folder of its own), never over or
+through a link out of the study; one not saved is named in the answer ("was
+not saved: it leads outside the study", or "could not be saved: no room" on
+a full disk), and the frames are played where only their index was not
+saved. A study copied whole reads its own file in the place its records
+name only where it holds as many atoms as its analyses read (`n_atoms`).
+The Agent's conversation routes (`/api/agent/...`) are not yet held to the
+study: they answer on this computer only, and are held in a later release.
+
+The GUI starts no run (`POST /api/again`, `/api/report/write`) in a study
+that holds a link leading out of it, wherever in the study it is, nor where
+its Config or analysis manifest was not read: `GET /api/again` then offers
+neither phase, from the same answer, naming the links and the command that
+runs it at the terminal instead. A run's own process, started from the GUI
+or at the terminal, reads and writes the study's folder as the person made
+it, following its links (a `simulation/` on a cluster's scratch, say); only
+its status, events, metrics and the log of a run the GUI starts never
+follow a link at the record itself.
 
 **Reading**
 

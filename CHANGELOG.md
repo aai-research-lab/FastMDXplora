@@ -1622,37 +1622,54 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   topology or RMSF linked out of it are not read, its frames are not played
   beside, and the answer names each by that study's name.
 
-- A run's log, its status (a run stopped here included), its events and
-  its metrics are written through no link: a log linked out of the study
-  starts nothing. A status linked out is not read, by the Stop, by a
-  run's checks failing after it or by the run's own writer, so nothing it
-  says is copied into the study's record or sent; and with `simulation/`,
-  `analysis/` or `report/` linked out, nothing is run again. The run's own
-  process still writes its progress into a `simulation/` that is a link the
-  person made (to scratch, say), never through a link at a record itself.
+- A run's status, its events and its metrics, and the log of a run the
+  GUI starts, are written through no link at the record itself. A status
+  linked out is not read, by the Stop, by a run's checks failing after it
+  or by the run's own writer, so nothing it says is copied into the
+  study's record or sent. The run's own process otherwise reads and writes
+  the study's folder as the person made it, following its links (a
+  `simulation/` on a cluster's scratch, say), as a run started at the
+  terminal does.
 
 - A record the GUI could not save is named in the answer, as not saved
   (linked out of the study) or as not saved for want of room (a full disk,
   MDTraj's own errors on one included), rather than as records not read or
   an error of the server. With the index of the frames written for the
   Viewer linked out, the frames are played and not written again on each
-  request, and every tool that computes from them (the states, two states
-  compared, where the ligand and the water went and the water sites among
-  them) answers from the study's own frames, the index said not saved.
+  request; the Viewer's tools answer from the study's own frames (the
+  states, two states compared, where the ligand and the water went, the
+  water sites, the frames' secondary structure and an atom picked in them
+  among them), the index said not saved.
   MDTraj writes a DCD or XTC by name in a new folder of its own.
 
-- Analyze again and Write it again offer nothing where the study's Config,
-  analysis manifest or log is linked out of it, and say which was not read,
-  as running them again would refuse; the person is not offered analyses
-  ticked in their place.
+- The GUI starts no run (Analyze again, Write it again) in a study that
+  holds a link leading out of it, wherever it is in the study (its
+  `previous/`, `manifest.json`, log, process record, an analysis's record,
+  its trajectory, a run of a study of several): neither is offered, the
+  links found are named with the command that runs it at the terminal
+  instead, and asked anyway, nothing is started. A link that stays in the
+  study is no reason. Nor is one offered where the study's Config or
+  analysis manifest was not read; the person is not offered analyses ticked
+  in their place.
 
 - The study beside says why it is not shown where its frames are not its
   own records, and what of it was not read beside what is shown; it is
   paired again once its clock is no longer read.
 
 - On the Files page, an analysis whose manifest was not read says "not
-  read", and on hover that its status, not the value beside it, was not
-  read, and why, as the answer says it; the pill fits a narrow page.
+  read" under its name, and that its status, not the value beside it, was
+  not read, and why, as the answer says it: on hover, and to a keyboard or
+  a screen reader. It fits a page 390 pixels wide.
+
+- A folder of the study linked out of it (`simulation/` on a cluster's
+  scratch, say) is said once, as a folder: "simulation/ is a link out of
+  the study, so its records are not read here", not each of its records as
+  a link to a file.
+
+- The Stop's question, where the run's status was not read, says its stage
+  was not read rather than guess it; a view, a scene or a selection refused
+  beyond this computer says why, the server's sentence after a colon with
+  a small first letter.
 
 - Write it again on a GUI served beyond this computer says it is not
   offered there, with no Yes to press; on this computer the keyboard is on
