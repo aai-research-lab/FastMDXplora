@@ -388,12 +388,16 @@ class _StudyStop:
 
         from fastmdxplora.simulation.runner import stop_grace_seconds
 
-        if self.signal is None:
-            self.signal = signal.SIGTERM
-            logger.warning(
-                "Stop asked from the GUI: each run in progress ends where it can be carried "
-                "on (in production, at its next frame if that is within %.0f s), and no "
-                "further run starts.", stop_grace_seconds())
+        if self.signal is not None:
+            # Passed on once: a worker takes a second SIGTERM, later than
+            # `STOP_REPEAT_SECONDS`, as stop now, and dies without the
+            # checkpoint its first was ending at.
+            return "Stopping: asked already."
+        self.signal = signal.SIGTERM
+        logger.warning(
+            "Stop asked from the GUI: each run in progress ends where it can be carried "
+            "on (in production, at its next frame if that is within %.0f s), and no "
+            "further run starts.", stop_grace_seconds())
         self._pass_on(signal.SIGTERM)
         return ("Stopping: each run in progress ends where it can be carried on, and no "
                 "further run starts.")

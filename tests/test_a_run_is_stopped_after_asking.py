@@ -315,13 +315,77 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
         page.wait_for_selector("#sb-stop-ask .stop-run-refused")
         questioned = page.locator("#sb-stop-ask .stop-run-yes").count()
         page.wait_for_timeout(6000)
-        kept = page.text_content("#sb-stop-ask") if page.is_visible("#sb-stop-ask") else ""
+        kept = (page.evaluate("() => document.querySelector('#sb-stop-ask .stop-run-refused')"
+                              ".firstChild.textContent")
+                if page.is_visible("#sb-stop-ask") else "")
+        # It can be put away.
+        page.click("#sb-stop-ask .stop-run-close")
+        closed = page.is_hidden("#sb-stop-ask")
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
         refused[0] = None   # production reached: Stop works here now
         page.evaluate("() => document.getElementById('refresh-now').click()")
         page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached")
+        # Once it can be stopped, Stop asks first again.
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-yes")
     finally:
         page.close()
         session.server.shutdown()
     assert errors == []
     assert questioned == 0 and asked == []
-    assert kept == own_stop_refused
+    assert kept == own_stop_refused and closed
+
+
+def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_path):  # noqa: F811
+    """A run of the GUI's own process asked to stop goes on to its next
+    frame: the page said "Stopped.", went on offering Stop, and a second
+    press of a parallel study's killed its workers. It says "Stopping..." in
+    the status bar and on the Overview, and offers no Stop, until the run
+    has stopped."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    state = {"running": True, "stopping": False}
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=state["running"], stopping=state["stopping"],
+                    status="running" if state["running"] else "stopped")
+        route.fulfill(response=response, json=body)
+
+    def stop(route):
+        state["stopping"] = True
+        route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
+                            "next frame with a checkpoint there."})
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", stop)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.click("#sb-stop")
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#health-stop-ask .stop-run-stopping")
+        page.wait_for_timeout(5000)
+        during = page.evaluate("""() => ({
+            bar: document.querySelector('#sb-stop-ask').textContent,
+            overview: document.querySelector('#health-stop-ask').textContent,
+            offered: [...document.querySelectorAll('[data-stop-run]')].filter(b => !b.hidden).length,
+        })""")
+        state.update(running=False, stopping=False)
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector(".stop-run-stopping", state="detached")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert during == {"bar": "Stopping…", "overview": "Stopping…", "offered": 0}, during

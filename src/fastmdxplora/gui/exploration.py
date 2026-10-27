@@ -932,6 +932,9 @@ class DashboardRuntime:
     stopped_roots: set[Path] = field(default_factory=set)
     #: Whether the process last run here ended because Stop was pressed.
     stopped_here: bool = False
+    #: The run of this GUI's own process a stop was asked of (`stop`), so
+    #: the page says it is stopping, and offers no Stop, until it ends.
+    _stop_asked_of: Any = field(default=None, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -1320,6 +1323,10 @@ class DashboardRuntime:
                 # Said at once, in place of asking, where Stop would be refused.
                 "stop_refused": (self._own_stop_refused()
                                  if running and viewing_running else None),
+                # Asked to stop, and not yet stopped: no Stop is offered again.
+                "stopping": bool(running and viewing_running
+                                 and self._stop_asked_of is not None
+                                 and self._stop_asked_of is self.process),
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
@@ -2169,6 +2176,7 @@ class DashboardRuntime:
                             "error": said, "state": self.snapshot()}
                 if where is not None:
                     self.stopped_roots.add(Path(where).resolve())
+                self._stop_asked_of = self.process
                 return {"stopped": True, "detail": said, "state": self.snapshot()}
             if where is not None:
                 self.stopped_roots.add(Path(where).resolve())

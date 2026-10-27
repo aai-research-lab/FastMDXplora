@@ -352,7 +352,7 @@ def test_the_gui_of_explore_with_its_dashboard_stops_production_as_sigterm_does(
     def phase(self, name, gui):
         # Stands in for production: it listens as production does, and
         # ends as a stopped production ends.
-        with runner._StopRequests() as stop:
+        with runner._StopRequests(folder=self.output_dir) as stop:
             answers.append(gui.snapshot()["stop_refused"])
             answers.append(gui.stop())
             # Recorded as the GUI's request: no signal was sent.
@@ -369,64 +369,6 @@ def test_the_gui_of_explore_with_its_dashboard_stops_production_as_sigterm_does(
     assert rc != 0
     after = gui.snapshot()
     assert after["process_running"] is False and after["status"] == "stopped", after["status"]
-    assert _records_of_this_process(out) == []
-
-
-def test_the_gui_of_explore_with_its_dashboard_stops_a_parallel_study_through_its_parent(
-        tmp_path, monkeypatch, another):
-    """A parallel study's production runs in its workers; its parent, the
-    GUI's process, listens for a stop through the study's `_StudyStop`.
-    The GUI asked production alone, so its Stop was refused in every phase
-    of such a study. The study's stop is asked, the workers are told, and
-    this process is not signalled."""
-    from fastmdxplora.batch import explorer
-
-    config = tmp_path / "par.yml"
-    config.write_text("systems:\n  - {id: a, system: 1L2Y}\n"
-                      "sweep: {simulation.random_seed: [1, 2]}\n"
-                      "execution: {mode: parallel, workers: 2}\n", encoding="utf-8")
-    answers: list = []
-
-    class Pool:
-        # A worker's process, as the executor lists it.
-        _processes = {another.pid: None}
-
-    def in_parallel(self, include, exclude):
-        # The study's parent around its pool, as `_run_parallel` has it.
-        listening = explorer._StudyStop(Pool())
-        listening.folder = self.output_dir
-        with listening as stop:
-            gui = runtime[0]
-            gui.snapshot()
-            answers.append(gui.stop())
-            assert stop.requested
-        return [explorer._skipped_run_result(spec, self._run_output_dir(spec), "stopped")
-                for spec in self.run_specs]
-
-    runtime: list = []
-    monkeypatch.setattr(BatchExplorer, "_run_parallel", in_parallel)
-
-    def phase(self, name, gui):
-        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
-
-    import importlib
-
-    cli = importlib.import_module("fastmdxplora.cli.main")
-    start = cli._start_dashboard_for_command
-
-    def started(args, output_dir):
-        session = start(args, output_dir)
-        runtime.append(session.runtime)
-        return session
-
-    monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
-    rc, out, gui, signalled = _explore_with_its_dashboard(
-        tmp_path, monkeypatch, phase, ["simulation"], study=("-c", str(config)))
-    assert answers and answers[0]["stopped"] is True, answers
-    assert answers[0]["detail"].startswith("Stopping: each run in progress ends")
-    assert signalled == []
-    assert another.wait(timeout=30) != 0, "the worker was not told"
-    assert gui.snapshot()["process_running"] is False
     assert _records_of_this_process(out) == []
 
 
@@ -628,3 +570,112 @@ def test_the_gui_stops_its_own_study_s_production_not_the_newest_one(tmp_path):
         _release_run_process(first)
     assert answer["stopped"] is True
     assert asked == (True, False)
+
+
+def test_a_parallel_study_under_its_dashboard_is_stopped_once_however_often_asked(
+        tmp_path, monkeypatch):
+    """A parallel study's production runs in its workers; its parent, the
+    GUI's process, listens for a stop through the study's `_StudyStop`.
+    The GUI asked production alone, so its Stop was refused in every phase
+    of such a study; then, Stop pressed twice passed SIGTERM on to the
+    workers twice, and a worker takes a second one, later than a repeat, as
+    stop now: it died without the checkpoint the first was ending at, the
+    pool broke, and its record was left. Through the real pool's stop: the
+    first press is passed on to the workers, the page is told the run is
+    stopping, the second passes nothing on, and this process is not
+    signalled."""
+    import concurrent.futures
+    import threading
+    import urllib.request
+
+    from fastmdxplora.batch import explorer
+
+    counted = tmp_path / "heard"
+    worker = subprocess.Popen([sys.executable, "-c", (
+        "import signal, sys, time\n"
+        "heard = []\n"
+        "def note(*_):\n"
+        "    heard.append(1)\n"
+        "    open(sys.argv[1], 'w').write(str(len(heard)))\n"
+        "signal.signal(signal.SIGTERM, note)\n"
+        "open(sys.argv[1], 'w').write('0')\n"
+        "time.sleep(60)\n"), str(counted)])
+    try:
+        for _ in range(200):
+            if counted.exists():
+                break
+            time.sleep(0.05)
+        config = tmp_path / "par.yml"
+        config.write_text("systems:\n  - {id: a, system: 1L2Y}\n"
+                          "sweep: {simulation.random_seed: [1, 2]}\n"
+                          "execution: {mode: parallel, workers: 2}\n", encoding="utf-8")
+        answers: list = []
+        sessions: list = []
+
+        def press(base):
+            asked = urllib.request.Request(
+                base + "/api/explore/stop", method="POST", data=b"{}",
+                headers={"Content-Type": "application/json", "Origin": base})
+            return json.loads(urllib.request.urlopen(asked, timeout=60).read())
+
+        class Pool:
+            """The executor `_run_parallel` makes, its worker a process of
+            the test's: each run ends stopped once Stop has been pressed."""
+
+            def __init__(self, *args, **kwargs):
+                self._processes = {worker.pid: None}
+                self.pressed = threading.Event()
+
+            def submit(self, fn, spec, run_out, *args, **kwargs):
+                done: concurrent.futures.Future = concurrent.futures.Future()
+
+                def go():
+                    if not self.pressed.is_set():
+                        self.pressed.set()
+                        base = sessions[0].url.split("#")[0].rstrip("/")
+                        answers.append(press(base))
+                        answers.append(sessions[0].runtime.snapshot().get("stopping"))
+                        time.sleep(2.5)  # later than a repeat of one signal
+                        answers.append(press(base))
+                    else:
+                        time.sleep(4)
+                    done.set_result(RunResult(
+                        run_id=spec["run_id"], system=spec["system"], status="error",
+                        output_dir=Path(run_out), error_type=explorer.STOPPED_ERROR_TYPE,
+                        message="stopped"))
+
+                threading.Thread(target=go, daemon=True).start()
+                return done
+
+            def shutdown(self, *args, **kwargs):
+                return None
+
+        monkeypatch.setattr(explorer, "ProcessPoolExecutor", Pool)
+        import importlib
+
+        cli = importlib.import_module("fastmdxplora.cli.main")
+        start = cli._start_dashboard_for_command
+
+        def started(args, output_dir):
+            sessions.append(start(args, output_dir))
+            return sessions[-1]
+
+        monkeypatch.setattr(cli, "_start_dashboard_for_command", started)
+        rc, out, gui, signalled = _explore_with_its_dashboard(
+            tmp_path, monkeypatch, lambda self, name, gui: PhaseResult(
+                name=name, status="ok", output_dir=Path(self.output_dir) / name),
+            ["simulation"], study=("-c", str(config)))
+        heard = counted.read_text(encoding="utf-8")
+    finally:
+        worker.kill()
+        worker.wait()
+    assert heard == "1", heard
+    first, stopping, second = answers
+    assert first["stopped"] is True, first
+    assert first["detail"].startswith("Stopping: each run in progress ends")
+    assert stopping is True
+    assert second["stopped"] is True and second["detail"] == "Stopping: asked already."
+    assert signalled == []
+    after = gui.snapshot()
+    assert after["process_running"] is False and after["stopping"] is False
+    assert _records_of_this_process(out) == []

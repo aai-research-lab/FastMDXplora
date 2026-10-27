@@ -17,10 +17,27 @@
   var stage = "";
   var refused = false;
   var refusedNow = null;
+  var stoppingNow = false;
 
-  /* A refused stop, said until the run can be stopped here or ends. */
+  /* A refused stop, said until the run can be stopped here or ends, or it
+   * is closed. */
   function refusal(said) {
-    return el("span", "fix-said stop-run-answer stop-run-refused", said);
+    var answer = el("span", "fix-said stop-run-answer stop-run-refused", said);
+    var close = el("button", "stop-run-close", "Close");
+    close.type = "button";
+    close.addEventListener("click", function () {
+      var host = answer.parentNode;
+      answer.remove();
+      if (host && !host.children.length) host.hidden = true;
+    });
+    answer.appendChild(document.createTextNode(" "));
+    answer.appendChild(close);
+    return answer;
+  }
+
+  /* Asked to stop, and not yet stopped: said, in place of a second Stop. */
+  function stopping() {
+    return el("span", "fix-said stop-run-answer stop-run-stopping", "Stopping…");
   }
 
   function el(tag, cls, text) {
@@ -67,7 +84,8 @@
       }
       host.replaceChildren(el("span", "fix-said", "Stopping…"));
       stop().then(function (said) {
-        host.replaceChildren(refused ? refusal(said) : el("span", "fix-said stop-run-answer", said));
+        host.replaceChildren(refused ? refusal(said)
+          : said === "Stopping…" ? stopping() : el("span", "fix-said stop-run-answer", said));
         if (done) done(said);
         // What would fix it, once the stop is in the study's records: it
         // came only with a reload.
@@ -87,7 +105,8 @@
       refused = Boolean(d && d.refused);
       // The server answers `stopped`, never `ok`: the builder read `ok` and
       // said "Could not stop." of every stop that worked.
-      if (d && d.stopped) return "Stopped.";
+      // Asked of a run of this GUI's own process: it is stopping, not stopped.
+      if (d && d.stopped) return /^Stopping/.test(d.detail || "") ? "Stopping…" : "Stopped.";
       return (d && (d.detail || d.error)) || "Could not stop it.";
     }).catch(function () { return "Could not reach the server to stop it."; });
   }
@@ -95,7 +114,7 @@
   /* The controls this offers, shown only while a run goes here. */
   function show() {
     Array.prototype.forEach.call(document.querySelectorAll("[data-stop-run]"), function (button) {
-      button.hidden = !running || beyondLoopback();
+      button.hidden = !running || beyondLoopback() || stoppingNow;
       button.disabled = false;
     });
     var started = running && !wasRunning;
@@ -108,6 +127,14 @@
           || (started && host.querySelector(".stop-run-answer"))) {
         host.innerHTML = "";
         host.hidden = true;
+      }
+      // Stopping: said, and no Stop offered, until the run has stopped.
+      if (stoppingNow && !host.querySelector(".stop-run-stopping")) {
+        host.replaceChildren(stopping());
+        host.hidden = false;
+      } else if (!stoppingNow && host.querySelector(".stop-run-stopping")) {
+        host.querySelector(".stop-run-stopping").remove();
+        if (!host.children.length) host.hidden = true;
       }
     });
   }
@@ -123,14 +150,17 @@
           button.disabled = false;
           // A card over the page (the status bar's) says the answer for a
           // moment and goes; one in its page's flow keeps it.
+          // A refusal there stays longer, and can be closed; the Overview's
+          // keeps it while it holds. Stopping stays until the run stops.
           if (said && host && host.hasAttribute("data-stop-fades")
-              && !host.querySelector(".stop-run-refused")) {
+              && !host.querySelector(".stop-run-stopping")) {
+            var refusedHere = Boolean(host.querySelector(".stop-run-refused"));
             setTimeout(function () {
-              if (host.querySelector(".stop-run-answer")) {
+              if (host.querySelector(".stop-run-answer:not(.stop-run-stopping)")) {
                 host.innerHTML = "";
                 host.hidden = true;
               }
-            }, 4000);
+            }, refusedHere ? 12000 : 4000);
           }
           if (!said) button.focus();
         });
@@ -146,6 +176,7 @@
     board.on("app-state", function (detail) {
       running = Boolean(detail && detail.process_running);
       refusedNow = (running && detail && detail.stop_refused) || null;
+      stoppingNow = Boolean(running && detail && detail.stopping);
       // A refusal goes once the run can be stopped here (production) or ends.
       if (!refusedNow) {
         Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
@@ -165,6 +196,6 @@
   window.FastMDXStop = {
     ask: ask,
     stop: stop,
-    running: function () { return running && !beyondLoopback(); }
+    running: function () { return running && !stoppingNow && !beyondLoopback(); }
   };
 }());

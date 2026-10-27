@@ -1084,12 +1084,13 @@ _LISTENING: list[Any] = []
 def _asked_here(stop: "_StopRequests") -> str:
     import signal as _signal
 
-    if stop.signal is None:
-        stop.signal = _signal.SIGTERM
-        stop.asked_here = True
-        logger.warning(
-            "Stop asked from the GUI: production will stop at the next frame, where it "
-            "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
+    if stop.signal is not None:
+        return "Stopping: asked already."
+    stop.signal = _signal.SIGTERM
+    stop.asked_here = True
+    logger.warning(
+        "Stop asked from the GUI: production will stop at the next frame, where it "
+        "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
     return ("Stopping: production ends at its next frame with a checkpoint there, "
             "and `fastmdx resume` carries it on.")
 
@@ -1115,8 +1116,11 @@ def _listener_for(root: Any) -> Any:
     import os as _os
 
     def within(folder: Any) -> bool:
-        if root is None or folder is None:
+        # One of no known study is not taken for the study named.
+        if root is None:
             return True
+        if folder is None:
+            return False
         there, here = _os.path.realpath(folder), _os.path.realpath(root)
         return there == here or there.startswith(here.rstrip(_os.sep) + _os.sep)
 
