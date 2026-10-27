@@ -626,8 +626,8 @@ def _linked_out_saying(root: Path, tmp_path: Path, relative: str, change) -> Pat
 
 def test_the_analyses_offered_again_are_not_read_through_a_link(tmp_path):
     """The manifest linked out names an analysis the study never ran: it is
-    not offered ticked, the manifest is said not read, and those the
-    study's Config asked for are offered instead."""
+    not offered ticked, the manifest is said not read, and nothing is
+    offered to run from it (as the POST refuses)."""
     root = _study(tmp_path)
     (root / "resolved_config.yml").write_text("analysis:\n  include: [rg]\n",
                                               encoding="utf-8")
@@ -642,10 +642,10 @@ def test_the_analyses_offered_again_are_not_read_through_a_link(tmp_path):
 
     said = json.loads(body)
     assert status == 200 and opened == []
-    assert said["recorded"] == ["rg"], said
+    assert said["recorded"] == [], said
     assert "marker_analysis" not in body.decode("utf-8")
     assert "analysis/analysis_manifest.json was not read" in said["not_read"], said
-    assert said["analysis"]["can"] is True
+    assert said["analysis"]["can"] is False
 
 
 # --------------------------------------------------------------------------
@@ -813,3 +813,70 @@ def test_a_structure_named_relative_to_the_study_is_read_in_it(tmp_path):
     said = json.loads(body)
     assert status == 200 and said["ok"] and "not_read" not in said, said
     assert said["system"] == "given.pdb" and opened == []
+
+
+# --------------------------------------------------------------------------
+# What is offered to run again is what would be run (G12 M2)
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("relative", ["analysis/analysis_manifest.json", "resolved_config.yml",
+                                      "exploration.log"])
+def test_nothing_is_offered_again_that_would_be_refused(tmp_path, relative):
+    """With the study's Config, analysis manifest or log linked out of it,
+    neither phase is offered: each says what was not read, as the POST
+    refuses with it."""
+    root = _study(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rg]\n",
+                                              encoding="utf-8")
+    (root / "exploration.log").write_text("", encoding="utf-8")
+    said = json.loads(_asked(root, tmp_path, "/api/again")[1])
+    assert said["analysis"]["can"] and said["report"]["can"], said
+    _moved_out(root, tmp_path, relative)
+
+    said = json.loads(_asked(root, tmp_path, "/api/again")[1])
+
+    for phase in ("analysis", "report"):
+        assert said[phase]["can"] is False, said
+        assert f"{relative} was not read" in said[phase]["why"], said
+    assert said["recorded"] == []
+
+
+def test_the_pages_offer_nothing_to_run_again_from_a_manifest_not_read(tmp_path):
+    """Analyze again and Write it again say the manifest was not read, and
+    offer nothing ticked to press."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _study(tmp_path)
+    (root / "resolved_config.yml").write_text("analysis:\n  include: [rg]\n",
+                                              encoding="utf-8")
+    _moved_out(root, tmp_path, "analysis/analysis_manifest.json")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    posted: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("request", lambda r: posted.append(r.url) if r.method == "POST" else None)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.wait_for_selector("#analysis-again-ask:has-text('was not read')")
+            analysis = page.text_content("#analysis-again-ask")
+            ticked = page.eval_on_selector_all("#analysis-again-ask input:checked",
+                                               "boxes => boxes.length")
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            page.wait_for_selector("#report-write:not([hidden])")
+            page.click("#report-write")
+            page.wait_for_selector("#report-write-ask:has-text('was not read')")
+            report = page.text_content("#report-write-ask")
+            confirm = page.query_selector("#report-write-ask .fix-confirm")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert "analysis/analysis_manifest.json was not read" in analysis and ticked == 0
+    assert "analysis/analysis_manifest.json was not read" in report and confirm is None
+    assert not any(url.endswith(("/api/again", "/api/report/write")) for url in posted)

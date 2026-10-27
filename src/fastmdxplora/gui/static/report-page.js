@@ -290,9 +290,30 @@
     }).catch(function () { say("Could not reach the server to start it."); });
   }
 
+  /* Asked only where the server would write it: what it offers of the
+   * study (`GET /api/again`), from which the POST decides. A record not
+   * read (its Config or analysis manifest) is said instead. */
   function askFirst() {
     var ask = el("report-write-ask");
     if (!ask) return;
+    // The question at once, its Yes held until the server has said it
+    // would write it.
+    var yes = askNow();
+    if (yes) yes.disabled = true;
+    fetch("/api/again").then(function (res) { return res.json(); }).then(function (d) {
+      var report = d && d.report;
+      if (d && d.available === false) { say(d.why || "Nothing is open to write again."); return; }
+      if (report && !report.can) {
+        say(report.why || d.not_read || "The report cannot be written again here.");
+        return;
+      }
+      if (yes) yes.disabled = false;
+    }).catch(function () { if (yes) yes.disabled = false; });
+  }
+
+  function askNow() {
+    var ask = el("report-write-ask");
+    if (!ask) return null;
     ask.innerHTML = "";
     ask.appendChild(node("span", "fix-said",
       "Write " + (several ? "each run's report" : "the report") + " again from " +
@@ -310,6 +331,7 @@
     ask.appendChild(no);
     ask.hidden = false;
     yes.focus();
+    return yes;
   }
 
   /* Shown while a study is open; held while anything runs. A writing

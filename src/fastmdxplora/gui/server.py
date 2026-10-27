@@ -580,11 +580,13 @@ def _said_not_read(answer: Any) -> Any:
 
 def _again_offered(inside: Path) -> dict[str, Any]:
     """What `GET /api/again` offers of the study ``inside``, in the held read
-    the caller is in: nothing where its Config is not its own."""
+    the caller is in: nothing where its Config is not its own. Its log is
+    asked after too (`_linked_out`), as the run would write it."""
     from fastmdxplora.config.recorded import RECORDED
     from fastmdxplora.gui.again_view import again_payload
     from fastmdxplora.gui.trajectory_frames import _linked_out
 
+    _linked_out(inside / "exploration.log")
     if _linked_out(inside / RECORDED):
         return {"available": False, "why": (
             f"{RECORDED} is not one of this study's own records, so nothing is offered to "
@@ -592,24 +594,39 @@ def _again_offered(inside: Path) -> dict[str, Any]:
     return again_payload(inside)
 
 
-def _again_refused(root: Path | None) -> dict[str, Any] | None:
-    """Why `POST /api/again` and `/api/report/write` start nothing on the
-    study ``root``, read held to it (`_confined`) as the GET reads it: its
-    Config or its analysis manifest linked out of it, each said not read.
-    None where both are its own (or not there), and the run's own checks
-    then decide."""
-    from fastmdxplora.config.recorded import RECORDED
+#: The records of a study whose refusal leaves nothing to run again in it:
+#: its Config and analysis manifest, which say what runs, and its log.
+_AGAIN_FROM = ("resolved_config.yml", "analysis_manifest.json", "exploration.log")
 
-    if root is None or not Path(root).is_dir():
-        return None
-    said = _confined(Path(root), _again_offered)
-    names = [name for name in said.get("unavailable") or ()
-             if name.endswith((RECORDED, "analysis_manifest.json"))]
+
+def _again_answer(root: Path) -> dict[str, Any]:
+    """What can be run again on the study ``root`` (`GET /api/again`), read
+    held to it (`_confined`): where its Config, its analysis manifest or its
+    log is linked out of it, neither phase can, said with the sentence of
+    what was not read (``refused``). `POST /api/again` and
+    `/api/report/write` decide from this same answer, so nothing is offered
+    that would be refused."""
+    said = _said_not_read(_confined(root, _again_offered))
+    names = [name for name in said.get("unavailable") or () if name.endswith(_AGAIN_FROM)]
     if not names:
-        return None
+        return said
     unread = _refusals_said({"unavailable": names, "unavailable_why": {
         name: (said.get("unavailable_why") or {}).get(name) for name in names}})
-    return {"ok": False, "error": unread + " Nothing is run again from it.", "not_read": unread}
+    why = unread + " Nothing is run again from it."
+    return {**said, "analysis": {"can": False, "why": why}, "report": {"can": False, "why": why},
+            "recorded": [], "refused": why}
+
+
+def _again_refused(root: Path | None) -> dict[str, Any] | None:
+    """Why `POST /api/again` and `/api/report/write` start nothing on the
+    study ``root``: what `_again_answer` refuses. None where it refuses
+    nothing, and the run's own checks then decide."""
+    if root is None or not Path(root).is_dir():
+        return None
+    said = _again_answer(Path(root))
+    if not said.get("refused"):
+        return None
+    return {"ok": False, "error": said["refused"], "not_read": said.get("not_read")}
 
 
 def _the_other_not_read(other: dict[str, Any]) -> str:
@@ -1662,8 +1679,9 @@ def make_handler(
                 # with the analyses it ran last and those this release has.
                 # Not answered beyond loopback, like the POST it offers.
                 # Read from the study's own records only (`_confined`): what
-                # is offered again is planned from its own Config.
-                self._send_json(_said_not_read(_confined(root, _again_offered)))
+                # is offered again is planned from its own Config, and is what
+                # the POST would do (`_again_answer`).
+                self._send_json(_again_answer(root))
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its

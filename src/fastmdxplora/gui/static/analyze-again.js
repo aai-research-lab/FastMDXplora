@@ -107,6 +107,10 @@
     box.innerHTML = "";
     var said = node("p", "again-said", "");
     box.appendChild(said);
+    // A record of the study not read (its analysis manifest) is said, and
+    // nothing is ticked in its place: the person chooses.
+    var unread = offered.recorded_said || offered.not_read || "";
+    if (unread) box.appendChild(node("p", "again-unread", unread));
 
     var recorded = offered.recorded || [];
     var catalogue = offered.catalogue || [];
@@ -125,7 +129,8 @@
       more.appendChild(node("summary", "", "More analyses (" + others.length + ")"));
       var rest = node("div", "again-list");
       others.forEach(function (item) {
-        rest.appendChild(choice(item, only ? only.indexOf(item.name) >= 0 : !recorded.length));
+        rest.appendChild(choice(item, only ? only.indexOf(item.name) >= 0
+          : !recorded.length && !unread));
       });
       more.appendChild(rest);
       if (!recorded.length) more.open = true;
