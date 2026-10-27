@@ -671,14 +671,17 @@ def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None,
 
     folder = Path(root) / SCENES_DIR
     target = folder / f"{name}.mvsx"
-    temporary = folder / f".{name}.mvsx.tmp"
     if any(_linked_out(path) for path in (folder, target)):
         # Held to the study: nothing is written through a link out of it.
         return {"ok": False, "reason": "Where the scene would be written is not one of this "
                                        "study's own records, so it is not written."}
     folder.mkdir(exist_ok=True)
-    temporary.write_bytes(scene_bytes(scene))
-    temporary.replace(target)
+    try:
+        # A new temporary file, never one of a fixed name (`record_access.save`).
+        _records.save(target, scene_bytes(scene))
+    except _records.OutsideWorkspace:
+        return {"ok": False, "reason": "Where the scene would be written is not one of this "
+                                       "study's own records, so it is not written."}
     return {"ok": True, "name": name, "path": str(target), "notes": scene["notes"],
             "of": scene["of"], "frame": scene["frame"]}
 

@@ -3,6 +3,8 @@
 Ordinary callers retain pathlib's behavior. A public record aggregate can
 enter ``confined_records`` so its readers and their helpers share one
 boundary without caching a tree scan or changing another request's policy.
+A record the GUI saves in the study goes through `save` (or `save_by_name`):
+a new temporary file beside it, renamed into place, never through a link.
 """
 
 from __future__ import annotations
@@ -11,11 +13,12 @@ import errno
 import fnmatch
 import os
 import stat as stat_module
+import tempfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterator, TextIO
+from typing import BinaryIO, Callable, Iterator, TextIO
 
 from fastmdxplora.refusals import OutsideWorkspace
 
@@ -239,6 +242,116 @@ def refused() -> frozenset[str]:
 def read_text(path: Path, *, encoding: str = "utf-8", errors: str | None = None) -> str:
     with open_text(path, encoding=encoding, errors=errors) as stream:
         return stream.read()
+
+
+def open_binary(path: Path) -> BinaryIO:
+    """A record's bytes as a stream, held as `open_text` holds its text: a
+    topology counted line by line is not read whole into memory."""
+    scope = _scope.get()
+    if scope is None:
+        return Path(path).open("rb")
+    descriptor = _open(scope, Path(path))
+    if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        scope.denied.add("a non-regular record")
+        raise OutsideWorkspace("Only regular study records may be read.")
+    return os.fdopen(descriptor, "rb")
+
+
+# ---------------------------------------------------------------------------
+# A record saved in the study
+# ---------------------------------------------------------------------------
+
+#: The process's file-creation mask, read once on import: a record saved is
+#: given the mode any file written here would have, not `mkstemp`'s
+#: owner-only mode (a lab's shared study is read by the group).
+_UMASK = os.umask(0o022)
+os.umask(_UMASK)
+#: Why a record is not saved where it would be.
+NOT_SAVED = ("Where the record would be saved is not one of the study's own, so it is "
+             "not saved.")
+
+
+def _may_save(target: Path) -> None:
+    """Refuse, in a read held to the study, where ``target`` or the folder
+    it is saved in is a link out of the study: named, as a read of it
+    would be, and never written over or through. Nothing outside a held
+    read, where the temporary file and the rename still never follow a
+    link at either name."""
+    if _scope.get() is None:
+        return
+    for path in (target.parent, target):
+        with refusals_noted() as refused:
+            exists(path)
+        if refused:
+            raise OutsideWorkspace(NOT_SAVED)
+
+
+def _temporary_beside(target: Path) -> tuple[int, str]:
+    """A new file beside ``target``, by a name no other writer has, opened
+    with ``O_CREAT | O_EXCL``: a link planted at any name is never
+    followed (`tempfile.mkstemp`). Hidden, and ending ``.tmp``, so no
+    listing of the study offers it."""
+    descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.",
+                                        suffix=".tmp")
+    if hasattr(os, "fchmod"):
+        try:
+            os.fchmod(descriptor, 0o666 & ~_UMASK)
+        except OSError:
+            pass
+    return descriptor, name
+
+
+def _into_place(name: str, target: Path) -> None:
+    """The temporary file ``name`` renamed to ``target``: a link there is
+    replaced, never written through."""
+    Path(name).replace(target)
+
+
+def save(target: Path, content: bytes | str | Callable[[BinaryIO], None]) -> None:
+    """``content`` saved as ``target`` at once: its bytes, its text in
+    UTF-8, or what ``content(stream)`` writes to a binary stream (NumPy's
+    `savez`). Written to a new temporary file beside it (`_temporary_beside`)
+    and renamed into place; the temporary file is removed on any failure.
+    In a read held to the study, refused with `OutsideWorkspace` where the
+    record or its folder is a link out of it (`_may_save`)."""
+    target = Path(target)
+    _may_save(target)
+    descriptor, name = _temporary_beside(target)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            if callable(content):
+                content(stream)
+            else:
+                stream.write(content.encode("utf-8") if isinstance(content, str) else content)
+        _into_place(name, target)
+    except BaseException:
+        _removed(name)
+        raise
+
+
+def save_by_name(target: Path, write: Callable[[str], None]) -> None:
+    """``target`` saved as `save` saves it, by a writer that is given a
+    file's name, not a stream (MDTraj's `save_dcd` and `save_xtc`): the
+    name is that of the new temporary file, made first and empty, which the
+    writer writes over."""
+    target = Path(target)
+    _may_save(target)
+    descriptor, name = _temporary_beside(target)
+    os.close(descriptor)
+    try:
+        write(name)
+        _into_place(name, target)
+    except BaseException:
+        _removed(name)
+        raise
+
+
+def _removed(name: str) -> None:
+    try:
+        os.unlink(name)
+    except OSError:
+        pass
 
 
 def can_read(path: Path) -> bool:

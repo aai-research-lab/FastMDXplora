@@ -234,9 +234,8 @@ def _kept(root: Path | str) -> list[dict[str, Any]] | None:
 
 def _write(root: Path, selections: list[dict[str, Any]]) -> None:
     target = root / SELECTIONS_FILE
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    temporary.write_text(json.dumps({"selections": selections}, indent=2), encoding="utf-8")
-    temporary.replace(target)
+    # A new temporary file, never one of a fixed name (`record_access.save`).
+    _records.save(target, json.dumps({"selections": selections}, indent=2))
 
 
 def _residue(value: Any) -> list[Any] | None:

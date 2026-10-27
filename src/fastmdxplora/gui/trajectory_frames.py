@@ -1020,9 +1020,7 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
         pieces = []
         for k, start in enumerate(range(0, frames.n_frames, size)):
             piece = frames[start:start + size]
-            temporary = _temporary(folder / f"piece_{k}.xtc")
-            piece.save_xtc(str(temporary))
-            temporary.replace(folder / f"piece_{k}.xtc")
+            _write_xtc(piece, folder / f"piece_{k}.xtc")
             pieces.append({"start": start, "frames": int(piece.n_frames),
                            "url": f"/structure/frames-piece.xtc?k={k}"})
         said = {"ok": True, "signature": index.get("signature"), "pieces": pieces,
@@ -1049,9 +1047,7 @@ def as_xtc(dcd: Path) -> Path | None:
         return target
     with suppress_native_output():
         frames = md.load_dcd(str(dcd), top=str(dcd.parent / FRAMES_TOPOLOGY))
-    temporary = _temporary(target)
-    frames.save_xtc(str(temporary))
-    temporary.replace(target)
+    _write_xtc(frames, target)
     return target
 
 
@@ -1156,23 +1152,30 @@ def _write_topology(source: Path, kept: Any, target: Path) -> None:
 
 
 def _temporary(target: Path) -> Path:
-    """A name beside ``target`` no other writer is using."""
+    """A name beside ``target`` no other writer is using. The writers here
+    no longer use it: `record_access.save` makes each temporary file new,
+    by a random name (`tests/test_the_agent_panel.py` still asks for it)."""
     return target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
 
 
 def _write_text(target: Path, text: str) -> None:
-    temporary = _temporary(target)
-    temporary.write_text(text, encoding="utf-8")
+    """``text`` saved as ``target`` through a new temporary file beside it,
+    never one of a fixed name, nor through a link out of the study
+    (`record_access.save`)."""
+    from fastmdxplora import record_access
+    from fastmdxplora.refusals import OutsideWorkspace
+
     # Two local dashboard requests can atomically replace the same Windows
     # target at once. Windows may briefly refuse the second rename while the
     # first replacement is settling; retry that transient sharing failure.
     for attempt in range(6):
         try:
-            temporary.replace(target)
+            record_access.save(target, text)
             return
+        except OutsideWorkspace:
+            raise
         except PermissionError:
             if os.name != "nt" or attempt == 5:
-                temporary.unlink(missing_ok=True)
                 raise
             time.sleep(0.01 * (attempt + 1))
 
@@ -1191,9 +1194,18 @@ def _has_a_cell(path: Path) -> bool:
 
 
 def _write_dcd(frames: Any, target: Path) -> None:
-    temporary = _temporary(target)
-    frames.save_dcd(str(temporary))
-    temporary.replace(target)
+    """``frames`` saved as the DCD ``target``, as `_write_text` saves text:
+    MDTraj writes over the new temporary file by its name."""
+    from fastmdxplora import record_access
+
+    record_access.save_by_name(target, frames.save_dcd)
+
+
+def _write_xtc(frames: Any, target: Path) -> None:
+    """``frames`` saved as the XTC ``target``, as `_write_dcd` saves a DCD."""
+    from fastmdxplora import record_access
+
+    record_access.save_by_name(target, frames.save_xtc)
 
 
 def _times(indices: list[int], total: int, total_ns: float | None,

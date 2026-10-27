@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import threading
 from pathlib import Path
@@ -109,9 +108,8 @@ def _kept(root: Path | str) -> list[dict[str, Any]] | None:
 
 def _write(root: Path, views: list[dict[str, Any]]) -> None:
     target = root / VIEWS_FILE
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    temporary.write_text(json.dumps({"views": views}, indent=2), encoding="utf-8")
-    temporary.replace(target)
+    # A new temporary file, never one of a fixed name (`record_access.save`).
+    _records.save(target, json.dumps({"views": views}, indent=2))
 
 
 def _numbers(value: Any, count: int) -> list[float] | None:

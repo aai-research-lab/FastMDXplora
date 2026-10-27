@@ -170,10 +170,10 @@ def contact_map(root: str | Path, first: Any = None, second: Any = None,
                      f"{CONTACT_ANGSTROM:g} Å, residues of one chain fewer than "
                      f"{NEAREST_APART} apart left out) in the {frames.n_frames:,} frames "
                      "played, each with the share of frames it was in contact in.")}
-    target = out / "simulation" / MAP_FILE
-    temporary = target.with_name(f".{MAP_FILE}.tmp")
-    temporary.write_text(json.dumps(said), encoding="utf-8")
-    temporary.replace(target)
+    from fastmdxplora import record_access
+
+    # A new temporary file, never one of a fixed name (`record_access.save`).
+    record_access.save(out / "simulation" / MAP_FILE, json.dumps(said))
     return said
 
 

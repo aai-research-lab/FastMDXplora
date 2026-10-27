@@ -232,9 +232,10 @@ def chain_contacts(root: str | Path, most: int = MOST_CONTACTS) -> dict[str, Any
                 found = None
         if not isinstance(found, dict):
             found = _computed(simulation)
-            temporary = target.with_name(f".{target.name}.tmp")
-            temporary.write_text(json.dumps(found), encoding="utf-8")
-            temporary.replace(target)
+            from fastmdxplora import record_access
+
+            # A new temporary file, never one of a fixed name.
+            record_access.save(target, json.dumps(found))
     if not found.get("ok"):
         return found
     total = len(found["contacts"])

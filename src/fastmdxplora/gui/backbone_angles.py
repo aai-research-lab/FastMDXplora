@@ -41,6 +41,7 @@ def backbone_angles(root: str | Path) -> dict[str, Any]:
     or why there are none."""
     import mdtraj as md
 
+    from fastmdxplora import record_access
     from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_INDEX, FRAMES_TOPOLOGY,
                                                     _atom_lines, _load_json, _read)
     from fastmdxplora.utils.native_output import suppress_native_output
@@ -81,7 +82,6 @@ def backbone_angles(root: str | Path) -> dict[str, Any]:
             "residues": residues, "atoms": [int(a) for a in alphas],
             "phi": _packed(phi), "psi": _packed(psi),
             "said": _said(len(alphas), int(frames.n_frames))}
-    temporary = simulation / f".{ANGLES_FILE}.tmp"
-    temporary.write_text(json.dumps(said), encoding="utf-8")
-    temporary.replace(simulation / ANGLES_FILE)
+    # A new temporary file, never one of a fixed name (`record_access.save`).
+    record_access.save(simulation / ANGLES_FILE, json.dumps(said))
     return said
