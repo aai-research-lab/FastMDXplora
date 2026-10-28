@@ -403,6 +403,7 @@ fastmdx agent                                            # opens the GUI Agent p
 | `--unvalidated` | — | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
 | `--budget-hours H` | — | Maximum GPU time, checked after setup |
 | `--host` / `--port` / `--no-browser` | `127.0.0.1` / `8765` | For the no-request panel route |
+| `--add` / `--change` / `--forget` / `--undo` / `--clear` / `--yes` / `--on` / `--off` / `--learn-from-chats` | with `memory` | Edit what the Agent remembers; see [the memory guide](agent.md#what-the-agent-remembers-of-you) |
 
 The three mode flags are mutually exclusive.
 
