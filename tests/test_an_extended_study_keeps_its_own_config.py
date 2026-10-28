@@ -140,10 +140,18 @@ def _joined_study(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, joined, topology
 
 
-def test_the_analysis_phase_reads_the_joined_trajectory_unless_given_one(tmp_path, monkeypatch):
+@pytest.mark.parametrize("explicit_trajectory,explicit_topology", [
+    (False, False), (True, False), (False, True), (True, True),
+])
+def test_the_analysis_and_dialog_resolve_the_same_joined_or_explicit_inputs(
+    tmp_path, monkeypatch, explicit_trajectory, explicit_topology,
+):
     from types import SimpleNamespace
 
+    import fastmdxplora.analysis
     from fastmdxplora.analysis import analyze
+    from fastmdxplora.config import recorded
+    from fastmdxplora.gui.again_view import _automatic_analyses
 
     class Read(Exception):
         pass
@@ -153,15 +161,27 @@ def test_the_analysis_phase_reads_the_joined_trajectory_unless_given_one(tmp_pat
             raise Read(trajectory, topology)
 
     monkeypatch.setattr(analyze, "AnalysisOrchestrator", Orchestrator)
+    monkeypatch.setattr(fastmdxplora.analysis, "AnalysisOrchestrator", Orchestrator)
     root, joined, topology = _joined_study(tmp_path)
+    joined_topology = root / "joined" / "topology.pdb"
+    joined_topology.write_text("END\n", encoding="utf-8")
+    (root / "joined" / "joined.json").write_text(
+        json.dumps({"topology": str(joined_topology)}), encoding="utf-8")
+    settings = {}
+    if explicit_trajectory:
+        settings["trajectory"] = str(root / "simulation" / "production.dcd")
+    if explicit_topology:
+        settings["topology"] = str(root / "simulation" / "explicit.pdb")
+    monkeypatch.setattr(recorded, "phase_settings", lambda *args, **kwargs: settings)
     study = SimpleNamespace(output_dir=root)
     with pytest.raises(Read) as read:
-        analyze.run(orchestrator=study, output_dir=root / "analysis")
-    assert read.value.args == (str(joined), str(topology))
-    own = root / "simulation" / "production.dcd"
+        analyze.run(orchestrator=study, output_dir=root / "analysis", **settings)
+    expected = (settings.get("trajectory", str(joined)),
+                settings.get("topology", str(topology if explicit_trajectory else joined_topology)))
+    assert read.value.args == expected
     with pytest.raises(Read) as read:
-        analyze.run(orchestrator=study, output_dir=root / "analysis", trajectory=str(own))
-    assert read.value.args[0] == str(own)
+        _automatic_analyses(root)
+    assert read.value.args == expected
 
 
 def test_a_join_record_that_cannot_be_read_is_no_joined_trajectory(tmp_path):

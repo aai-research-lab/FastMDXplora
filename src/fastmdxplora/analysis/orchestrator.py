@@ -34,15 +34,16 @@ from typing import Any
 import mdtraj as md
 
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, carry_wholeness
+from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
+from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
     PathLike,
     TrajectoryInput,
     load_trajectory,
 )
-from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
-from fastmdxplora.config.schema import ANALYSIS
-from fastmdxplora.refusals import CodedKeyError, StudyError
 from fastmdxplora.utils.logging import get_logger
+from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import CodedKeyError
 
 logger = get_logger("analysis.orchestrator")
 
@@ -217,7 +218,6 @@ class AnalysisOrchestrator:
         saving_interval_ps: float | None = None,
         figure_colours: str | None = None,
         figure_width: str | None = None,
-        _create_output_dir: bool = True,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -225,8 +225,6 @@ class AnalysisOrchestrator:
             if output_dir is not None
             else Path(f"fastmdx_analysis_{timestamp}")
         )
-        if _create_output_dir:
-            self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.default_selection: str | None = selection
         # Scope resolves to a concrete selection used as the default for
@@ -735,7 +733,8 @@ class AnalysisOrchestrator:
             cls = _REGISTRY[name]
             if not getattr(cls, "requires_crystallographic_bfactors", False):
                 return True
-            from fastmdxplora.analysis.bfactor_comparison import has_crystallographic_bfactors
+            from fastmdxplora.analysis.bfactor_comparison import (
+                has_crystallographic_bfactors)
             here = Path(getattr(self, "output_dir", ".") or ".")
             for parent in (here, here.parent, here.parent.parent):
                 for candidate in (
@@ -793,10 +792,7 @@ class AnalysisOrchestrator:
             return not getattr(_REGISTRY[name], "requires_naming", False)
 
         if include is not None and exclude is not None:
-            raise StudyError(
-                "Specify either `include` or `exclude`, not both.",
-                code="analysis.option.inapplicable",
-            )
+            raise StudyError("Specify either `include` or `exclude`, not both.", code="analysis.option.inapplicable")
 
         if include is not None:
             unknown = [n for n in include if n not in _REGISTRY]

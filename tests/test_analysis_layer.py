@@ -364,7 +364,9 @@ class TestAnalysisOrchestrator:
         )
         assert ao.traj.n_frames > 0
         assert ao.output_dir == tmp_path / "run"
-        assert ao.output_dir.exists()
+        assert not ao.output_dir.exists()
+        ao.planned_analyses(include=["rmsd"])
+        assert not ao.output_dir.exists()
 
     def test_run_executes_registered_analyses(
         self, tmp_path: Path, traj_files: tuple[Path, Path]

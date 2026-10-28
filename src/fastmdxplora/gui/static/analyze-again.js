@@ -76,7 +76,7 @@
   }
 
   function load() {
-    return fetch("/api/again", { cache: "no-store" })
+    return fetch("/api/again?defaults=1", { cache: "no-store" })
       .then(function (res) { return res.json(); })
       .then(function (data) { offered = data; return data; })
       .catch(function () { offered = null; return null; });

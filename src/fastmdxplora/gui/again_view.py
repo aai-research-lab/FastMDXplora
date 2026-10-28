@@ -17,23 +17,17 @@ def _automatic_analyses(study: Path) -> list[str]:
     from fastmdxplora.analysis.analyze import (
         _detect_ligand_resname,
         _saving_interval_ps,
-        study_trajectory,
+        analysis_paths,
     )
     from fastmdxplora.config.recorded import RECORDED, phase_settings
 
     settings = phase_settings(study / RECORDED, "analysis", study=study)
-    joined, joined_topology = study_trajectory(study)
-    trajectory = settings.get("trajectory") or joined or study / "simulation" / "production.dcd"
-    topology = settings.get("topology")
-    if not topology and not settings.get("trajectory"):
-        topology = joined_topology
-    if not topology:
-        saved = study / "simulation" / "trajectory_topology.pdb"
-        topology = saved if saved.is_file() else study / "simulation" / "topology.pdb"
+    trajectory, topology = analysis_paths(
+        study, trajectory=settings.get("trajectory"), topology=settings.get("topology"))
 
     planner = AnalysisOrchestrator(
         trajectory=str(trajectory),
-        topology=str(topology) if topology else None,
+        topology=str(topology),
         output_dir=study / "analysis",
         selection=settings.get("selection"),
         scope=settings.get("scope", "solute"),
@@ -45,7 +39,6 @@ def _automatic_analyses(study: Path) -> list[str]:
         saving_interval_ps=_saving_interval_ps(study, trajectory=trajectory),
         figure_colours=settings.get("figure_colours"),
         figure_width=settings.get("figure_width"),
-        _create_output_dir=False,
     )
     return list(planner.planned_analyses(
         exclude=settings.get("exclude"), options=settings.get("options")))

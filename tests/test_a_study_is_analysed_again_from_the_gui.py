@@ -71,21 +71,44 @@ def test_a_refusal_is_said_at_once_and_nothing_starts(tmp_path):
     assert in_place["code"] == "config.option.not_permitted"
 
 
-def test_the_page_is_told_what_can_be_run_again(tmp_path):
+@pytest.mark.parametrize("query", ["", "?defaults=1"])
+def test_the_page_is_told_what_can_be_run_again(tmp_path, query):
     from fastmdxplora.gui.server import start_dashboard_session
 
     root = _analysed(tmp_path / "study", analyses=("rmsd", "rg"))
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
     try:
         offered = json.loads(urllib.request.urlopen(
-            session.url.rstrip("/") + "/api/again", timeout=30).read())
+            session.url.rstrip("/") + "/api/again" + query, timeout=30).read())
     finally:
         session.server.shutdown()
     assert offered["available"] and offered["analysis"]["can"]
     assert offered["recorded"] == ["rmsd", "rg"]
+    assert "defaults" not in offered["analysis"]
     titles = {item["name"]: item["title"] for item in offered["catalogue"]}
     assert titles["rmsd"] == "Root-mean-square deviation" and "sasa" in titles
     assert offered["previous"] == "previous"
+
+
+@pytest.mark.parametrize("query", ["", "?defaults=0"])
+def test_a_request_without_defaults_does_not_plan_automatic_choices(tmp_path, query):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("defaults were not requested")) as plan:
+            offered = json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again" + query, timeout=30).read())
+            assert offered["analysis"]["can"] and offered["recorded"] == []
+            assert "defaults" not in offered["analysis"]
+            assert "defaults_why" not in offered["analysis"]
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
 
 
 def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path):
@@ -97,7 +120,7 @@ def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path)
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
     try:
         offered = json.loads(urllib.request.urlopen(
-            session.url.rstrip("/") + "/api/again", timeout=30).read())
+            session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
     finally:
         session.server.shutdown()
 
@@ -115,7 +138,7 @@ def test_an_unplannable_trajectory_has_no_automatic_fallback(tmp_path):
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
     try:
         offered = json.loads(urllib.request.urlopen(
-            session.url.rstrip("/") + "/api/again", timeout=30).read())
+            session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
     finally:
         session.server.shutdown()
 
@@ -168,7 +191,7 @@ def test_a_page_refused_for_a_link_out_does_not_plan_automatic_choices(tmp_path,
         with mock.patch.object(again_view, "_automatic_analyses",
                                side_effect=AssertionError("the study has a link out")) as plan:
             offered = json.loads(urllib.request.urlopen(
-                session.url.rstrip("/") + "/api/again", timeout=30).read())
+                session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
             assert offered["refused"] and relative in offered["links_out"]
             assert not offered["analysis"]["can"]
             plan.assert_not_called()

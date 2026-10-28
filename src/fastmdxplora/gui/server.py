@@ -1940,9 +1940,10 @@ def make_handler(
                 # the POST would do (`_again_answer`).
                 answer = _again_answer(root)
                 analysis = answer.get("analysis") or {}
-                # Defaults are only for the page, after the study's walk and
-                # held read allow analysis; start checks never need them.
-                if (not answer.get("refused") and not answer.get("links_out")
+                # Only the Analyze again dialog asks for defaults, after
+                # the study's walk and held read allow analysis.
+                if ((parse_qs(parsed.query).get("defaults") or [""])[0] == "1"
+                        and not answer.get("refused") and not answer.get("links_out")
                         and analysis.get("can") and not answer.get("recorded")):
                     from fastmdxplora.gui.again_view import _automatic_analyses
 
