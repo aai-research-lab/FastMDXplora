@@ -597,3 +597,16 @@ class TestTheReportKeepsTheJoinsOnTheirFrames:
         pooled, _why = summarise_segments(holed, joins)
         assessment = assess_series("rmsd", holed, joins=joins)
         assert assessment.mean == pytest.approx(pooled.mean)
+
+    def test_the_join_aware_error_is_the_pooled_error(self) -> None:
+        from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import summarise_segments
+
+        rng = np.random.default_rng(11)
+        segments = [rng.normal(10, scale, 2000) for scale in (0.03, 3.0, 0.03, 3.0)]
+        values = np.concatenate(segments)
+        joins = [2000, 4000, 6000]
+        pooled, why = summarise_segments(values, joins)
+        assert pooled is not None, why
+        assert assess_series("rmsd", values, joins=joins).standard_error == pytest.approx(
+            pooled.standard_error)

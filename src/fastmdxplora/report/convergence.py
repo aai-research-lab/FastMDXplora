@@ -107,6 +107,7 @@ class Assessment:
     #: Why the analyses' record gives this mean no error, where it gives
     #: none (`statistics.summarise`); None where the mean is determined.
     withheld: str | None = None
+    error: float | None = None
 
     @property
     def standard_error(self) -> float:
@@ -118,6 +119,8 @@ class Assessment:
         Dividing by the frame count instead would understate it by the square
         root of the correlation time -- a factor of three or four is ordinary.
         """
+        if self.error is not None:
+            return float(self.error)
         if self.withheld is not None or self.effective_samples < 2:
             return float("nan")
         return float(self.spread / np.sqrt(self.effective_samples))
@@ -258,6 +261,7 @@ def assess_series(name: str, values: Any,
     from fastmdxplora.statistics import summarise
 
     reason: Any = None
+    error: float | None = None
     if joins:
         # A joined run read as a single series loses most of it: the
         # equilibration detector finds a join, calls it a transient, and
@@ -282,6 +286,7 @@ def assess_series(name: str, values: Any,
             reason = withheld or "The joined run supports no mean."
         else:
             equilibrated = pooled.segments[0] if pooled.segments else None
+            error = pooled.standard_error
             # The pooled mean and error are what the run supports. The
             # discard and inefficiency come from the first segment, since
             # per-segment equilibration is what was actually done and there
@@ -335,6 +340,7 @@ def assess_series(name: str, values: Any,
         correlation_is_measurable=code != "analysis.sampling.correlation_unresolved",
         drift_is_measurable=bool(kept.size >= 6),
         withheld=str(reason) if reason else None,
+        error=error,
     )
 
 
