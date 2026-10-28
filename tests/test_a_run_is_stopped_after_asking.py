@@ -694,3 +694,62 @@ def test_a_page_kept_open_across_a_gui_started_again_offers_stop(browser, tmp_pa
     assert errors == []
     assert idle == {"offered": 0, "stopping": 0}, idle
     assert going["offered"] >= 1 and going["stopping"] == 0, going
+
+
+def test_a_refusal_gone_by_itself_gives_the_keyboard_back(browser, tmp_path):  # noqa: F811
+    """A refusal took the keyboard to its Close; when it went by itself (the
+    status bar's fade, or production reached) the keyboard fell to the
+    page's body. And with the Stop that asked gone, Close gives it to the
+    shown page's heading."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "nvt")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    refused = ["Not here."]
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused=refused[0])
+        route.fulfill(response=response, json=body)
+
+    def active():
+        return page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        # The status bar's card fades.
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached", timeout=20000)
+        after_fade = active()
+        # The Overview's is lifted once production is reached.
+        page.click("#health-stop")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        refused[0] = None
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused", state="detached")
+        after_lift = active()
+        # The Stop that asked gone, Close gives the keyboard to the heading.
+        refused[0] = "Not here."
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_timeout(1500)
+        page.click("#health-stop")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        page.evaluate("() => { document.getElementById('health-stop').hidden = true; }")
+        page.click("#health-stop-ask .stop-run-close")
+        heading = page.evaluate("() => document.activeElement.tagName === 'H1' "
+                                "&& document.activeElement.offsetParent !== null")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert (after_fade, after_lift) == ("sb-stop", "health-stop")
+    assert heading

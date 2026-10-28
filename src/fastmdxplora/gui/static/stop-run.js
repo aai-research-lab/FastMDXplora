@@ -60,6 +60,17 @@
     return null;
   }
 
+  /* The keyboard back on the Stop that asked, or the shown page's heading,
+   * where it was in ``host``, which is about to be emptied. */
+  function giveBackFocus(host) {
+    if (!host || !host.contains(document.activeElement)) return;
+    var asker = host.id && document.querySelector('[data-stop-run="' + host.id + '"]');
+    var back = asker && !asker.hidden ? asker : visibleHeading();
+    if (!back) return;
+    if (!back.hasAttribute("tabindex") && back.tagName === "H1") back.setAttribute("tabindex", "-1");
+    back.focus();
+  }
+
   /* Asked to stop, and not yet stopped: said, in place of a second Stop. */
   function stopping() {
     return el("span", "fix-said stop-run-answer stop-run-stopping", "Stopping…");
@@ -214,6 +225,7 @@
             clearTimeout(host.stopFade);
             host.stopFade = setTimeout(function () {
               if (host.querySelector(".stop-run-answer:not(.stop-run-stopping)")) {
+                giveBackFocus(host);
                 host.innerHTML = "";
                 host.hidden = true;
               }
@@ -248,6 +260,7 @@
       if (!refusedNow) {
         Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
           var host = said.parentNode;
+          giveBackFocus(host);
           said.remove();
           if (host && !host.children.length) host.hidden = true;
         });
