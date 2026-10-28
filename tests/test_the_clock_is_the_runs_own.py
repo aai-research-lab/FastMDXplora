@@ -192,6 +192,21 @@ class TestTheIntervalIsReadFromTheRunsOwnRecord:
         (root / "simulation" / "simulation_parameters.json").write_text(
             json.dumps(payload), encoding="utf-8")
 
+    def test_a_foreign_trajectory_does_not_use_the_run_interval(self, tmp_path):
+        self._write(tmp_path, {"parameters": {
+            "trajectory_interval_steps": 5000, "timestep_fs": 2.0}})
+        simulation = tmp_path / "simulation"
+        own = simulation / "production.dcd"
+        own.touch()
+        foreign = tmp_path / "other" / "strided.dcd"
+        foreign.parent.mkdir()
+        foreign.touch()
+
+        from fastmdxplora.analysis.analyze import _saving_interval_ps
+
+        assert _saving_interval_ps(tmp_path, trajectory=own) == pytest.approx(10.0)
+        assert _saving_interval_ps(tmp_path, trajectory=foreign) is None
+
     def test_the_reporter_interval_is_preferred(self, tmp_path):
         self._write(tmp_path, {
             "parameters": {

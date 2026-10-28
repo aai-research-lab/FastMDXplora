@@ -304,6 +304,8 @@ def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = N
                     return float(joined["saving_interval_ps"])
             except (OSError, ValueError, TypeError):
                 continue
+        if beside.resolve().parent != (project_root / "simulation").resolve():
+            return None
 
     manifest = project_root / "simulation" / "simulation_parameters.json"
     try:
