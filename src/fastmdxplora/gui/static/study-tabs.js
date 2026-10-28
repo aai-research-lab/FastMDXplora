@@ -129,6 +129,13 @@
              of ? of.study + " \u203a " + (of.label || of.run_id)
                : document.getElementById("study-folder")?.dataset.name);
   }
+  /* The place shown saved under its study, before it is announced a frame
+   * later: only while that study is the open tab's. A page shown again on
+   * Back can show one study while the server has another open, and a
+   * study whose tab was just closed has no page to save. */
+  function saveShown() {
+    if (!pending && studyPage() && active && api.state.studyShown === active) rememberShown(false);
+  }
   function hrefFor(tab) {
     var url = new URL(location.href);
     url.searchParams.set("study", tab.key);
@@ -429,9 +436,11 @@
       save();
     });
     // A switch asked another way is in flight: the strip is busy and
-    // asks nothing more of the server until it is answered.
+    // asks nothing more of the server until it is answered. The place
+    // shown is saved first, as a tab's switch saves it, since navigation
+    // announces it a frame later and nothing is saved while busy.
     api.on("study-switching", function (on) {
-      if (on && !pending) { pending = elsewhere = true; render(); }
+      if (on && !pending) { saveShown(); pending = elsewhere = true; render(); }
       else if (!on && elsewhere) { pending = elsewhere = false; render(); }
     });
     // A switch held on another way to a study: said here as well.
@@ -443,7 +452,11 @@
       if (studyPage()) rememberShown(true);
       showGone();
     });
-    window.addEventListener("pagehide", save);
+    // The page left by another page of the GUI, or by another address
+    // loaded: its place saved now, as its navigation announces it a frame
+    // later, by when another page is shown or this one has gone.
+    api.on("page-leaving", saveShown);
+    window.addEventListener("pagehide", function () { saveShown(); save(); });
     window.addEventListener("pageshow", function (event) {
       if (event.persisted) {
         pending = elsewhere = false; message(""); storageKey = ""; lastRender = "";

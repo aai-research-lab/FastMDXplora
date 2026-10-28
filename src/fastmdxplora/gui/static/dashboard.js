@@ -229,6 +229,8 @@
     return place ? `#${page}/${place}` : `#${page}`;
   }
 
+  // Whether a page has been shown yet: none is left by the first.
+  let aPageShown = false;
   function navigate(page, options) {
     const opts = options || {};
     if (DIALOG_OF[page] && byId(DIALOG_OF[page])) {
@@ -252,6 +254,10 @@
     // The Analysis page's places are its sections; Compare's, the two it
     // compares (compare.js). No other page has places the address names.
     if (page !== "analysis" && page !== "compare") place = "";
+    // The page shown is left for another: said while it is still the one
+    // shown.
+    if (aPageShown && (page !== state.activePage || place !== state.activePlace)) emit("page-leaving", {});
+    aPageShown = true;
     state.activePage = page;
     state.activePlace = place;
     $$('.page').forEach((element) => {

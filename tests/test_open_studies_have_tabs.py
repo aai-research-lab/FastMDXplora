@@ -80,8 +80,11 @@ def _active(page, key):
 def _outside_open(page, site, index, route="overview"):
     # Opened once the evaluation has returned: the page it opens loads in
     # place of this one, and an evaluation still returning then was lost
-    # with it ("Execution context was destroyed").
+    # with it ("Execution context was destroyed"). The switch hold is asked
+    # first, as the Studies page, a link, the Agent and the demo ask it.
     page.evaluate("""async ({path, route}) => {
+        const held = window.FastMDXDashboard.beginStudySwitch();
+        if (held) throw new Error(held);
         const answer = await (await fetch('/api/explore/switch', {
             method: 'POST', headers: {'content-type': 'application/json'},
             body: JSON.stringify({folder: path})})).json();
@@ -141,6 +144,126 @@ def test_a_switch_saves_the_page_before_its_navigation_frame_runs(browser, site)
         _link(page, site["keys"][1]).click()
         _active(page, site["keys"][1])
         assert page.url.endswith("#analysis/rmsd")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_a_study_opened_another_way_saves_the_page_before_its_navigation_frame_runs(browser, site):
+    page = _open(browser, site)
+    try:
+        # This page's frames held back, as on a loaded machine: the study is
+        # left before the frame that announces the page shown.
+        page.evaluate("window.requestAnimationFrame = () => 0")
+        page.evaluate("window.FastMDXDashboard.navigate('analysis/rmsd')")
+        _outside_open(page, site, 1)
+        _link(page, site["keys"][0]).click()
+        _active(page, site["keys"][0])
+        assert page.url.endswith("#analysis/rmsd")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_a_study_left_by_the_studies_page_saves_the_page_before_its_frame_runs(browser, site):
+    page = _open(browser, site)
+    try:
+        # Frames held back: the Studies page is shown before the frame that
+        # announces the page left, and Studies is no page of a study.
+        page.evaluate("window.requestAnimationFrame = () => 0")
+        page.evaluate("window.FastMDXDashboard.navigate('analysis/rmsd')")
+        page.locator('a[href="#studies"]').first.click()
+        page.wait_for_function("location.hash === '#studies'")
+        _outside_open(page, site, 1)
+        _link(page, site["keys"][0]).click()
+        _active(page, site["keys"][0])
+        assert page.url.endswith("#analysis/rmsd")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_a_study_left_by_a_typed_address_saves_the_page_before_its_frame_runs(browser, site):
+    page = _open(browser, site)
+    try:
+        # Frames held back: the address typed loads another page before the
+        # frame that announces the page left.
+        page.evaluate("window.requestAnimationFrame = () => 0")
+        page.evaluate("window.FastMDXDashboard.navigate('analysis/rmsd')")
+        page.goto(site["session"].url + "?study=" + site["keys"][1] + "#overview",
+                  wait_until="domcontentloaded")
+        _active(page, site["keys"][1])
+        _link(page, site["keys"][0]).click()
+        _active(page, site["keys"][0])
+        assert page.url.endswith("#analysis/rmsd")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def _saved_pages(page):
+    return page.evaluate("""() => {
+        const key = Object.keys(sessionStorage).find(k => k.startsWith('fmx.studyTabs:'));
+        return Object.fromEntries(JSON.parse(sessionStorage.getItem(key)).tabs.map(t => [t.key, t.page]));
+    }""")
+
+
+def test_a_page_shown_again_on_back_saves_no_page_under_the_study_the_server_has(browser, site):
+    """Back to a page the browser held: it shows the first study while the
+    server has the second open, and opens the first again. The second
+    study's tab is not saved at the first one's page."""
+    page = _open(browser, site)
+    try:
+        _outside_open(page, site, 1)
+        _link(page, site["keys"][0]).click()
+        _active(page, site["keys"][0])
+        page.evaluate("window.FastMDXDashboard.navigate('analysis/rmsd')")
+        page.wait_for_function("location.hash === '#analysis/rmsd'")
+        assert _saved_pages(page)[site["keys"][1]] == "overview"
+        # The server moved to the second study by the address typed in the
+        # page left; then the page held is shown again, as on Back.
+        with page.expect_navigation():
+            page.evaluate("""async (path) => {
+                await fetch('/api/explore/switch', {method: 'POST', headers: {'content-type': 'application/json'},
+                                                     body: JSON.stringify({folder: path})});
+                window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}));
+            }""", str(site["studies"][1]))
+        _active(page, site["keys"][0])
+        assert _saved_pages(page)[site["keys"][1]] == "overview"
+        _link(page, site["keys"][1]).click()
+        _active(page, site["keys"][1])
+        assert page.url.endswith("#overview")
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_the_first_page_shown_is_not_said_to_be_left(browser, site):
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    context.add_init_script("window.__left = 0;"
+                            " window.addEventListener('dashboard:page-leaving', () => { window.__left += 1; });")
+    page = _open(browser, site, context=context)
+    try:
+        page.wait_for_function("window.FastMDXDashboard.state.addressKnown")
+        assert page.evaluate("window.__left") == 0
+        page.evaluate("window.FastMDXDashboard.navigate('analysis/rmsd')")
+        assert page.evaluate("window.__left") == 1
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_closing_the_last_tab_tells_the_page_once(browser, site):
+    page = _open(browser, site)
+    try:
+        page.evaluate("""() => {
+            window.__closed = [];
+            const real = window.FastMDXDashboard.studyClosed;
+            window.FastMDXDashboard.studyClosed = (key) => { window.__closed.push(key); return real(key); };
+        }""")
+        page.locator(".study-tab-close").click()
+        page.wait_for_function("location.hash === '#studies'")
+        assert page.evaluate("window.__closed") == [site["keys"][0]]
         assert page.errors == []
     finally:
         page.context.close()
