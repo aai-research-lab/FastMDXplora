@@ -2185,6 +2185,12 @@ class DashboardRuntime:
                 # a signal; where nothing listens, the stop is refused.
                 from fastmdxplora.simulation.runner import _listener_for, stop_what_listens_here
 
+                if self._still_stopping():
+                    # Asked already, and winding down: its listener may have
+                    # left, its stop has not ended. Not refused as one that
+                    # would end the GUI.
+                    return {"stopped": True, "detail": "Stopping: asked already.",
+                            "state": self.snapshot()}
                 asked = _listener_for(where)
                 record = _process_record_held(Path(where)) if where is not None else {}
                 said = stop_what_listens_here(where)

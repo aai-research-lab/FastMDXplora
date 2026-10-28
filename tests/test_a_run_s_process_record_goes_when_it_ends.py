@@ -759,11 +759,16 @@ def test_a_run_is_said_stopping_until_it_has_ended(tmp_path):
             assert gui.stop()["stopped"] is True
         # The study's parent no longer listens; its run has not yet ended.
         winding = gui.snapshot()
+        # Asked again meanwhile: asked already, not refused as one that would
+        # end the GUI.
+        again = gui.stop()
     finally:
         _release_run_process(tmp_path)
     ended = gui.snapshot()
     assert (winding["process_running"], winding["stopping"], winding["stop_refused"]) == (
         True, True, None), winding["stop_refused"]
+    assert (again["stopped"], again.get("refused"), again["detail"]) == (
+        True, None, "Stopping: asked already."), again["detail"]
     assert (ended["process_running"], ended["stopping"]) == (False, False)
 
 
