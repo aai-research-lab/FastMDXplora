@@ -80,6 +80,18 @@ class TestCountingIndependentSamples:
 
 
 class TestFindingWhereARunSettled:
+    def test_discard_is_on_the_original_frame_axis_after_nan_frames(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        rng = np.random.default_rng(7)
+        values = (1.0 + 3.0 * np.exp(-np.arange(2000) / 120.0)
+                  + rng.normal(0, 0.2, 2000))
+        values[:500] = np.nan
+        record = mean_record(values)
+        finite = mean_record(values[np.isfinite(values)])
+        original_frames = np.flatnonzero(np.isfinite(values))
+        assert record["discard"] == int(original_frames[finite["discard"]])
+
     def test_a_relaxation_is_discarded(self) -> None:
         """Several relaxation times of it, which is what leaves the average
         describing the equilibrium rather than the approach to it. The start
