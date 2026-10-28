@@ -77,7 +77,9 @@ def test_a_run_linked_out_of_the_study_is_not_played(tmp_path, public):
     info = json.loads(asked["/api/frames-info"][1])
     assert info["n_frames_total"] == 7
     assert [run["run_id"] for run in info["runs_together"]["runs"]] == ["r2"]
-    assert "runs/r1 was not read" in info["not_read"]
+    # A folder linked out is said as a folder, once (round 7's wording).
+    assert ("runs/r1/ is a link out of the study, so its records are not read here"
+            in info["not_read"]), info["not_read"]
     # What is played and sent is the study's own run, never the one linked out.
     own = root / "runs" / "r2" / "simulation"
     status, body = asked["/structure/frames.dcd"]
@@ -154,4 +156,5 @@ def test_the_runs_set_beside_are_not_written_through_a_link(tmp_path, public):
     together = said["runs_together"]
     assert [run["run_id"] for run in together["runs"]] == ["r1"]
     assert [run["run_id"] for run in together["excluded"]] == ["r2"]
-    assert "viewer_runs was not read" in said["not_read"]
+    assert ("viewer_runs/ is a link out of the study, so its records are not read here"
+            in said["not_read"]), said["not_read"]
