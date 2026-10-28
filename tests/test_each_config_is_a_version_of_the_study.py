@@ -371,6 +371,7 @@ def test_a_cut_thread_changes_its_newest_version_left(session) -> None:
                         {"role": "agent", "kind": "answer", "text": "Shortly.", "cites": []}])
     with sync_playwright() as pw:
         browser, page, errors = _page(pw, session.url)
+        ready(page)
         page.evaluate("""() => {
             window.sentBodies = [];
             const real = window.fetch;
@@ -424,6 +425,7 @@ def test_a_cut_thread_runs_its_newest_version_left(session) -> None:
                     {"role": "user", "text": "make it 330 K"}, _config(330)])
     with sync_playwright() as pw:
         browser, page, errors = _page(pw, session.url)
+        ready(page)
         # Retry the second message: the thread is cut there, and asked again.
         page.evaluate("""() => {
             const second = document.querySelectorAll('#agent-thread .agent-msg-user')[1];
