@@ -643,9 +643,15 @@
 
     // Establish the study before its panels, but do not hold results behind
     // an unrelated trajectory/topology request that is still being read.
-    applyResponse(await responses[0], 0);
-    await Promise.all(responses.slice(1).map(async (response, index) => {
-      applyResponse(await response, index + 1);
+    // The app state and the status are applied together, as one: a study
+    // run changed with no status to name it was read by the Agent's thread
+    // as the study before, and read again only at the next poll, after the
+    // study's results (L10 F6).
+    const [app, status] = await Promise.all(responses.slice(0, 2));
+    applyResponse(app, 0);
+    applyResponse(status, 1);
+    await Promise.all(responses.slice(2).map(async (response, index) => {
+      applyResponse(await response, index + 2);
     }));
     if (state.addressAsking) return;
 
