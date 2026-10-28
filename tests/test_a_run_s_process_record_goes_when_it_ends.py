@@ -679,3 +679,25 @@ def test_a_parallel_study_under_its_dashboard_is_stopped_once_however_often_aske
     after = gui.snapshot()
     assert after["process_running"] is False and after["stopping"] is False
     assert _records_of_this_process(out) == []
+
+
+def test_a_listener_of_no_study_is_not_asked_for_a_study_named(tmp_path):
+    """A listener that names no folder matched every study, so a Stop for
+    one study could reach whatever listened without saying where."""
+    from fastmdxplora.simulation import runner
+
+    with runner._StopRequests() as nameless:
+        assert runner.stop_what_listens_here(tmp_path) is None
+        assert not runner.listens_here(tmp_path)
+        assert not nameless.requested
+
+
+def test_production_asked_twice_says_it_was_asked_already(tmp_path):
+    from fastmdxplora.simulation import runner
+
+    with runner._StopRequests(folder=tmp_path) as stop:
+        first = runner.stop_what_listens_here(tmp_path)
+        second = runner.stop_what_listens_here(tmp_path)
+        assert stop.requested and stop.name == "GUI"
+    assert first.startswith("Stopping: production ends at its next frame")
+    assert second == "Stopping: asked already."
