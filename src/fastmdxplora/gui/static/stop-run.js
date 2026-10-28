@@ -14,7 +14,7 @@
 
   var running = false;
   var wasRunning = false;
-  var stage = "";
+  var ownStage = "";
   var refused = false;
   var refusedNow = null;
   var stoppingNow = false;
@@ -47,8 +47,24 @@
     return node;
   }
 
+  /* The stage furthest on among a study of runs' runs going: such a study
+   * has no stage of its own, and its question said it had not reached
+   * production while its runs were in it. */
+  var ORDER = ["setup", "minimization", "minimisation", "nvt", "npt", "production",
+               "analysis", "report"];
+  function furthest(runs) {
+    var best = "";
+    (runs || []).forEach(function (run) {
+      var at = String((run && run.state === "running" && run.stage) || "").toLowerCase();
+      if (ORDER.indexOf(at) > ORDER.indexOf(best)) best = at;
+    });
+    return best;
+  }
+  var runsStage = "";
+
   /* What stopping now leaves, by the stage the run is in. */
   function whatItLeaves() {
+    var stage = ORDER.indexOf(ownStage) >= 0 ? ownStage : runsStage || ownStage;
     if (stage === "production") {
       return "It ends at its next frame with a checkpoint there, and can be carried on from it.";
     }
@@ -103,6 +119,12 @@
       method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
     }).then(function (res) { return res.json(); }).then(function (d) {
       refused = Boolean(d && d.refused);
+      // Told by the answer itself, not by the next state read, which in a
+      // quiet phase came half a minute later, Stop offered all the while.
+      var state = (d && d.state) || {};
+      stoppingNow = Boolean((state.process_running && state.stopping)
+        || (d && d.stopped && /^Stopping/.test(d.detail || "")));
+      show();
       // The server answers `stopped`, never `ok`: the builder read `ok` and
       // said "Could not stop." of every stop that worked.
       // Asked of a run of this GUI's own process: it is stopping, not stopped.
@@ -177,6 +199,7 @@
       running = Boolean(detail && detail.process_running);
       refusedNow = (running && detail && detail.stop_refused) || null;
       stoppingNow = Boolean(running && detail && detail.stopping);
+      runsStage = furthest(detail && detail.runs);
       // A refusal goes once the run can be stopped here (production) or ends.
       if (!refusedNow) {
         Array.prototype.forEach.call(document.querySelectorAll(".stop-run-refused"), function (said) {
@@ -189,7 +212,7 @@
     });
     board.on("status-updated", function (detail) {
       var status = (detail && detail.status) || {};
-      stage = String(status.stage || "").toLowerCase();
+      ownStage = String(status.stage || "").toLowerCase();
     });
   });
 

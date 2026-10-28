@@ -359,9 +359,11 @@ def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_pa
         route.fulfill(response=response, json=body)
 
     def stop(route):
-        state["stopping"] = True
+        # Said by the answer: the app state, read again only half a minute
+        # later in a quiet phase, says nothing of it yet.
         route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
-                            "next frame with a checkpoint there."})
+                            "next frame with a checkpoint there.",
+                            "state": {"process_running": True, "stopping": True}})
 
     try:
         page.set_default_timeout(60000)
@@ -373,8 +375,10 @@ def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_pa
         page.click("#sb-stop")
         page.click("#sb-stop-ask .stop-run-yes")
         page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
-        page.evaluate("() => document.getElementById('refresh-now').click()")
-        page.wait_for_selector("#health-stop-ask .stop-run-stopping")
+        page.wait_for_selector("#health-stop-ask .stop-run-stopping", state="attached")
+        offered_at_once = page.evaluate(
+            "() => [...document.querySelectorAll('[data-stop-run]')].filter(b => !b.hidden).length")
+        state["stopping"] = True
         page.wait_for_timeout(5000)
         during = page.evaluate("""() => ({
             bar: document.querySelector('#sb-stop-ask').textContent,
@@ -388,4 +392,51 @@ def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_pa
         page.close()
         session.server.shutdown()
     assert errors == []
+    assert offered_at_once == 0
     assert during == {"bar": "Stopping…", "overview": "Stopping…", "offered": 0}, during
+
+
+def test_a_study_of_runs_in_production_is_asked_as_production(browser, tmp_path):  # noqa: F811
+    """A study of runs has no stage of its own: Stop asked it as one that
+    had not reached production, with its runs in production, and a stop
+    that keeps their work was said to leave nothing to carry on."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", runs=[
+            {"run_id": "a", "state": "running", "stage": "npt"},
+            {"run_id": "b", "state": "running", "stage": "production"}])
+        route.fulfill(response=response, json=body)
+
+    def status(route):
+        response = route.fetch()
+        body = response.json()
+        (body.get("status") or {}).pop("stage", None)   # a study of runs has none of its own
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/status*", status)
+        page.route("**/api/stream*", lambda route: route.abort())  # read as polled
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-yes")
+        question = page.text_content("#sb-stop-ask")
+        page.click("#sb-stop-ask .stop-run-no")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert "ends at its next frame with a checkpoint" in question, question
+    assert "not reached production" not in question
