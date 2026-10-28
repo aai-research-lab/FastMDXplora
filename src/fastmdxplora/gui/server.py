@@ -4399,7 +4399,7 @@ def _report_panels(root: Path) -> dict[str, Any]:
             if section.panels
         ]
         quick_actions = [
-            {"label": link.label, "href": f"/artifacts/{quote(link.href)}", "detail": link.detail}
+            {"label": link.label, "href": f"/artifacts/{link.href}", "detail": link.detail}
             for link in quick_actions_for(root, built)
         ]
     except Exception:  # noqa: BLE001 - a panel must never break the dashboard

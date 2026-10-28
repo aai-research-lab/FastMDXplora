@@ -235,7 +235,7 @@
   var retrying = 0;
   var asked = 0;
   function load() {
-    var mine = ++asked;
+    var mine = asked;
     return fetch("/api/report").then(function (r) { return r.json(); })
       .then(function (data) {
         if (mine !== asked) return;
@@ -429,6 +429,7 @@
         if (detail === "report" || (detail && detail.page === "report")) load();
       });
       window.FastMDXDashboard.on("study-changed-elsewhere", function () {
+        asked += 1;
         var doc = el("report-document");
         if (doc) delete doc.dataset.rendered;
       });

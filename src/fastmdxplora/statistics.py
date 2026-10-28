@@ -905,8 +905,7 @@ def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", t
     at 1 sample in 5 frames asked for 5 more frames where 45 were wanted.
     Read from the summary's own count, an unresolved correlation needs at
     least as long again, and only that figure is a floor."""
-    finite = int(np.isfinite(np.asarray(values, dtype=float)).sum())
-    kept = max(finite - int(equilibrated.discard), 1)
+    kept = max(int(np.isfinite(values[int(equilibrated.discard):]).sum()), 1)
     have = float(equilibrated.effective_samples)
     g = kept / have if have > 0 else float(kept)
     more = max(int(np.ceil(float(target) * g)) - kept, kept if unresolved else 1)

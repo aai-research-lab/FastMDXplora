@@ -218,7 +218,19 @@ def _get(url: str, headers: dict | None = None):
         return error.code, dict(error.headers), error.read()
 
 
-def test_artifact_links_keep_percent_and_hashes_in_filenames(study):
+def test_artifact_links_keep_percent_and_hashes_in_filenames(study, monkeypatch):
+    from fastmdxplora.gui import report_dashboard
+    from fastmdxplora.gui.server import _report_panels
+
+    source = "analysis/my fig%.png"
+    _write(study, source, "figure")
+    _write(study, "resolved_config.yml", "{}")
+    panel = report_dashboard.DashboardPanel(
+        title="Markdown report", source=source, href="", original_source=source,
+        original_href="", mode="image")
+    monkeypatch.setattr(report_dashboard, "analysis_sections_for", lambda root: [
+        report_dashboard.DashboardSection("Analysis", "analysis", [panel])])
+    panels = _report_panels(study)
     for name, text in (("a%41.dat", "percent"), ("aA.dat", "other"),
                        ("result#1.dat", "hash")):
         _write(study, name, text)
@@ -227,6 +239,12 @@ def test_artifact_links_keep_percent_and_hashes_in_filenames(study):
         for name, expected in (("a%41.dat", b"percent"), ("result#1.dat", b"hash")):
             status, _headers, body = _get(url + records[name]["href"])
             assert status == 200 and body == expected
+        section = panels["analysis_sections"][0]["panels"][0]
+        quick = next(link for link in panels["quick_actions"]
+                     if link["label"] == "Open Markdown Report")
+        for href in (section["href"], section["original_href"], quick["href"]):
+            status, _headers, body = _get(url + href)
+            assert status == 200 and body == b"figure"
 
 
 def test_the_page_is_served_rendered_and_compressed(study):

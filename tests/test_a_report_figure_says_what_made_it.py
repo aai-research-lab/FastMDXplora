@@ -202,6 +202,8 @@ def test_a_late_report_cannot_replace_a_newer_report_after_a_study_switch() -> N
         result = page.evaluate("""async () => {
           const doc = document.getElementById('report-document');
           const oldLoad = window.FastMDXReport.load();
+          const changed = window.dashboardListeners['study-changed-elsewhere'];
+          changed();
           const newLoad = window.FastMDXReport.load();
           window.heldReports[2]({json: async () => ({
             ok: true, html: '<h1>STUDY_B_REPORT</h1>', downloads: {}
@@ -213,13 +215,20 @@ def test_a_late_report_cannot_replace_a_newer_report_after_a_study_switch() -> N
           })});
           await oldLoad;
           const afterOld = doc.textContent;
-          const changed = window.dashboardListeners['study-changed-elsewhere'];
-          if (changed) changed();
-          return {afterNew, afterOld, rendered: doc.dataset.rendered};
+          changed();
+          const rendered = doc.dataset.rendered;
+          const slowLoad = window.FastMDXReport.load();
+          window.FastMDXReport.load(); // The next poll arrives before the response.
+          window.heldReports[3]({json: async () => ({
+            ok: true, html: '<h1>SAME_STUDY_REPORT</h1>', downloads: {}
+          })});
+          await slowLoad;
+          return {afterNew, afterOld, rendered, afterPoll: doc.textContent};
         }""")
         browser.close()
     assert result == {
         "afterNew": "STUDY_B_REPORT",
         "afterOld": "STUDY_B_REPORT",
         "rendered": None,
+        "afterPoll": "SAME_STUDY_REPORT",
     }
