@@ -21,6 +21,7 @@
   /* The number of the state read Stop's answer carried: a read numbered
    * before it was asked before the stop, and says nothing of it. */
   var stopRead = null;
+  var stopReadOf = null;   // which GUI numbered it: one started again counts afresh
 
   /* A refused stop, said until the run can be stopped here or ends, or it
    * is closed. */
@@ -152,7 +153,10 @@
       var state = (d && d.state) || {};
       stoppingNow = Boolean((state.process_running && state.stopping)
         || (d && d.stopped && /^Stopping/.test(d.detail || "")));
-      if (stoppingNow && typeof state.read === "number") stopRead = state.read;
+      if (stoppingNow && typeof state.read === "number") {
+        stopRead = state.read;
+        stopReadOf = state.read_of || null;
+      }
       show();
       // The server answers `stopped`, never `ok`: the builder read `ok` and
       // said "Could not stop." of every stop that worked.
@@ -231,8 +235,10 @@
       refusedNow = (running && detail && detail.stop_refused) || null;
       // A read asked before Stop's answer (answered late) says nothing of
       // the stop: it put Stop back while the run was stopping.
-      var stale = stopRead !== null && detail && typeof detail.read === "number"
-        && detail.read < stopRead;
+      // Numbers of another GUI (one started again) say nothing of this stop.
+      if (stopRead !== null && detail && (detail.read_of || null) !== stopReadOf) stopRead = null;
+      var stale = Boolean(detail && detail.process_running) && stopRead !== null
+        && typeof detail.read === "number" && detail.read < stopRead;
       if (!stale) {
         stoppingNow = Boolean(running && detail && detail.stopping);
         if (!stoppingNow) stopRead = null;

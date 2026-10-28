@@ -765,3 +765,14 @@ def test_a_run_is_said_stopping_until_it_has_ended(tmp_path):
     assert (winding["process_running"], winding["stopping"], winding["stop_refused"]) == (
         True, True, None), winding["stop_refused"]
     assert (ended["process_running"], ended["stopping"]) == (False, False)
+
+
+def test_the_gui_s_reads_are_numbered_as_its_own(tmp_path):
+    """A GUI started again numbers its state reads from 0: a page kept open
+    across it took them for reads asked before its stop. Each GUI says whose
+    numbers they are."""
+    first, again = _runtime(tmp_path), _runtime(tmp_path)
+    one, two = first.snapshot(), first.snapshot()
+    other = again.snapshot()
+    assert two["read"] == one["read"] + 1 and one["read_of"] == two["read_of"]
+    assert other["read_of"] != one["read_of"]

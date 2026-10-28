@@ -10,8 +10,8 @@ science.
 
 from __future__ import annotations
 
-import json
 import itertools
+import json
 import math
 import os
 import re
@@ -946,6 +946,9 @@ class DashboardRuntime:
     #: Each state read numbered, so the page can tell a read asked before
     #: Stop's answer from one asked after it (`stop-run.js`).
     _reads: Any = field(default_factory=itertools.count, repr=False)
+    #: Which GUI numbered them: a GUI started again numbers from 0, and a
+    #: page kept open across it took every read for one asked before its stop.
+    _reads_of: str = field(default_factory=lambda: os.urandom(8).hex(), repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -1336,6 +1339,7 @@ class DashboardRuntime:
                 # and none is refused.
                 "stopping": stopping,
                 "read": next(self._reads),
+                "read_of": self._reads_of,
                 # Said at once, in place of asking, where Stop would be refused.
                 "stop_refused": (self._own_stop_refused()
                                  if running and viewing_running and not stopping else None),
