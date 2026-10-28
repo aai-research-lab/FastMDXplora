@@ -1938,7 +1938,22 @@ def make_handler(
                 # Read from the study's own records only (`_confined`): what
                 # is offered again is planned from its own Config, and is what
                 # the POST would do (`_again_answer`).
-                self._send_json(_again_answer(root))
+                answer = _again_answer(root)
+                analysis = answer.get("analysis") or {}
+                # Defaults are only for the page, after the study's walk and
+                # held read allow analysis; start checks never need them.
+                if (not answer.get("refused") and not answer.get("links_out")
+                        and analysis.get("can") and not answer.get("recorded")):
+                    from fastmdxplora.gui.again_view import _automatic_analyses
+
+                    try:
+                        analysis["defaults"] = _automatic_analyses(Path(answer["study"]))
+                    except Exception as exc:  # noqa: BLE001 - make the unavailable default clear
+                        from fastmdxplora.refusals import refusal_of
+
+                        analysis["defaults"] = None
+                        analysis["defaults_why"] = refusal_of(exc).message
+                self._send_json(answer)
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its

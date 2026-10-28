@@ -106,18 +106,74 @@ def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path)
 
 
 def test_an_unplannable_trajectory_has_no_automatic_fallback(tmp_path):
-    from fastmdxplora.gui.again_view import again_payload
+    from fastmdxplora.gui.server import start_dashboard_session
 
     root = _analysed(tmp_path / "study", analyses=(), report=False)
     _forget_analysis_selection(root)
     (root / "simulation" / "production.dcd").write_bytes(b"not a trajectory")
 
-    offered = again_payload(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        offered = json.loads(urllib.request.urlopen(
+            session.url.rstrip("/") + "/api/again", timeout=30).read())
+    finally:
+        session.server.shutdown()
 
     assert offered["recorded"] == []
     assert offered["analysis"]["can"]
     assert offered["analysis"]["defaults"] is None
     assert offered["analysis"]["defaults_why"]
+
+
+@pytest.mark.parametrize("route,method,body", [
+    ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
+    ("/api/report/write", "write_the_report_again", {}),
+])
+def test_starting_again_does_not_plan_the_pages_automatic_choices(tmp_path, route, method, body):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    base = session.url.rstrip("/")
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("only the page needs defaults")) as plan, \
+                mock.patch.object(DashboardRuntime, method, return_value={"ok": True}) as run:
+            request = urllib.request.Request(
+                base + route, data=json.dumps(body).encode(), method="POST",
+                headers={"Content-Type": "application/json", "Origin": base})
+            answer = json.loads(urllib.request.urlopen(request, timeout=30).read())
+            assert answer["ok"]
+            run.assert_called_once()
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
+
+
+@pytest.mark.parametrize("relative", ["simulation/production.dcd", "simulation/topology.pdb"])
+def test_a_page_refused_for_a_link_out_does_not_plan_automatic_choices(tmp_path, relative):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_the_study_pages_read_only_the_study import _link
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    outside = tmp_path / Path(relative).name
+    (root / relative).rename(outside)
+    _link(root / relative, outside)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("the study has a link out")) as plan:
+            offered = json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again", timeout=30).read())
+            assert offered["refused"] and relative in offered["links_out"]
+            assert not offered["analysis"]["can"]
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
 
 
 def test_the_dialog_starts_with_automatic_choices_and_keeps_manual_additions(

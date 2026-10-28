@@ -68,18 +68,8 @@ def again_payload(root: Any) -> dict[str, Any]:
                      for name in available_analyses()]
     except Exception:  # noqa: BLE001 - the analysis stack is optional here
         catalogue = []
-    payload = {"available": True, **offered, "catalogue": catalogue,
-               "previous": again.PREVIOUS}
-    if not payload["recorded"] and payload["analysis"]["can"]:
-        try:
-            payload["analysis"]["defaults"] = _automatic_analyses(
-                Path(payload["study"]))
-        except Exception as exc:  # noqa: BLE001 - make the unavailable default clear
-            from fastmdxplora.refusals import refusal_of
-
-            payload["analysis"]["defaults"] = None
-            payload["analysis"]["defaults_why"] = refusal_of(exc).message
-    return payload
+    return {"available": True, **offered, "catalogue": catalogue,
+            "previous": again.PREVIOUS}
 
 
 def again_fix(root: Any, action: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
