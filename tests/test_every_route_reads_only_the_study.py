@@ -1040,10 +1040,24 @@ def _node(source: str) -> object:
     return json.loads(done.stdout)
 
 
-def test_the_stop_guesses_no_stage_where_its_status_was_not_read():
-    said = _node('var stage = "";\n' + _function("stop-run.js", "whatItLeaves")
+@pytest.mark.parametrize("own,said", [
+    ("", "Its stage was not read, so what a stop leaves is not known."),
+    ("production", "It ends at its next frame with a checkpoint there, and can be carried on "
+                   "from it."),
+], ids=["not read", "production"])
+def test_the_stop_guesses_no_stage_where_its_status_was_not_read(own, said):
+    """The stage its status names, or none where it was not read: the
+    stages in order are the page's own (`ORDER`), no run of a study of
+    several going."""
+    import re
+
+    text = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+            / "stop-run.js").read_text(encoding="utf-8")
+    order = re.search(r"  var ORDER = \[[^\]]*\];", text).group(0)
+    told = _node(f'{order}\nvar ownStage = {json.dumps(own)}, runsStage = "";\n'
+                 + _function("stop-run.js", "whatItLeaves")
                  + "\nconsole.log(JSON.stringify(whatItLeaves()));")
-    assert said == "Its stage was not read, so what a stop leaves is not known.", said
+    assert told == said, told
 
 
 DISABLED = "This is disabled when the dashboard is bound to a non-loopback address."
