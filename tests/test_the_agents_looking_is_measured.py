@@ -162,5 +162,6 @@ def test_the_software_answers_every_question() -> None:
     assert truths["selection_1l2y"] == 10
     # Setup builds 1HHO's tetramer: 19 histidines in each alpha-beta pair.
     assert truths["histidines_1hho"] == 38
-    assert 2500 < truths["particles_1l2y"] < 5000
+    # At the 2.0 nm default solvent padding (d562eb0b): 7,067; 3,305 at 1.0 nm.
+    assert 6000 < truths["particles_1l2y"] < 8500
     assert 5.0 < truths["box_1ake"] < 9.0
