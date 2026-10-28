@@ -854,6 +854,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   address no machine has, read a process limit on macOS, timed a busy
   runner or read text in the locale's encoding no longer do.
 
+- A study's tab saves the page it was showing however the study is left,
+  as a tab's switch does: for another study opened from Recent, the Studies
+  page, a link or the Agent, for the Studies page, or for an address typed.
+  Left within a frame of that page being shown, as on a busy machine, its
+  tab opened it again at its Overview.
+
+- Tests: the Agent's cut-thread tests wait for the page to read its study
+  before Retry; the 1L2Y particle count is bounded at the 2.0 nm default
+  solvent padding (7,067).
+
 ### Added
 
 - A study of several runs (seeds, arms, mutants, umbrella windows) is
