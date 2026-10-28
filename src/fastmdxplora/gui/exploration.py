@@ -11,6 +11,7 @@ science.
 from __future__ import annotations
 
 import json
+import itertools
 import math
 import os
 import re
@@ -942,6 +943,9 @@ class DashboardRuntime:
     #: leaves as the run winds down, a moment before the run ends, and the
     #: stop is still going while this same record stands.
     _stop_asked_record: Any = field(default=None, repr=False)
+    #: Each state read numbered, so the page can tell a read asked before
+    #: Stop's answer from one asked after it (`stop-run.js`).
+    _reads: Any = field(default_factory=itertools.count, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -1331,6 +1335,7 @@ class DashboardRuntime:
                 # Asked to stop, and not yet stopped: no Stop is offered again,
                 # and none is refused.
                 "stopping": stopping,
+                "read": next(self._reads),
                 # Said at once, in place of asking, where Stop would be refused.
                 "stop_refused": (self._own_stop_refused()
                                  if running and viewing_running and not stopping else None),

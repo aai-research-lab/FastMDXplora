@@ -18,6 +18,9 @@
   var refused = false;
   var refusedNow = null;
   var stoppingNow = false;
+  /* The number of the state read Stop's answer carried: a read numbered
+   * before it was asked before the stop, and says nothing of it. */
+  var stopRead = null;
 
   /* A refused stop, said until the run can be stopped here or ends, or it
    * is closed. */
@@ -145,6 +148,7 @@
       var state = (d && d.state) || {};
       stoppingNow = Boolean((state.process_running && state.stopping)
         || (d && d.stopped && /^Stopping/.test(d.detail || "")));
+      if (stoppingNow && typeof state.read === "number") stopRead = state.read;
       show();
       // The server answers `stopped`, never `ok`: the builder read `ok` and
       // said "Could not stop." of every stop that worked.
@@ -221,7 +225,14 @@
     board.on("app-state", function (detail) {
       running = Boolean(detail && detail.process_running);
       refusedNow = (running && detail && detail.stop_refused) || null;
-      stoppingNow = Boolean(running && detail && detail.stopping);
+      // A read asked before Stop's answer (answered late) says nothing of
+      // the stop: it put Stop back while the run was stopping.
+      var stale = stopRead !== null && detail && typeof detail.read === "number"
+        && detail.read < stopRead;
+      if (!stale) {
+        stoppingNow = Boolean(running && detail && detail.stopping);
+        if (!stoppingNow) stopRead = null;
+      }
       runsStage = furthest(detail && detail.runs);
       // A refusal goes once the run can be stopped here (production) or ends.
       if (!refusedNow) {

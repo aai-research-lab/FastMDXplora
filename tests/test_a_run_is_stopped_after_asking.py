@@ -508,3 +508,80 @@ def test_a_study_whose_process_goes_on_is_said_running(browser, tmp_path):  # no
         session.server.shutdown()
     assert errors == []
     assert (said, run) == ("Running", "running"), (said, run)
+
+
+#: A state read asked before Stop's Yes, its answer held until a moment
+#: after Stop's own answer has been taken.
+_LATE_READ = """(() => {
+  const real = window.fetch;
+  let answered; const stopAnswered = new Promise((done) => { answered = done; });
+  window.__holdNextRead = false;
+  window.fetch = function (url) {
+    const asked = real.apply(this, arguments);
+    const at = String(url);
+    if (at.includes('/api/explore/stop')) {
+      asked.then(() => setTimeout(answered, 300));
+    } else if (window.__holdNextRead && at.includes('/api/app-state')) {
+      window.__holdNextRead = false;
+      return asked.then((res) => stopAnswered.then(() => res));
+    }
+    return asked;
+  };
+})();"""
+
+
+def test_a_read_asked_before_stop_and_answered_after_it_puts_no_stop_back(browser, tmp_path):  # noqa: F811
+    """A state read asked before Yes and answered after Stop's answer said
+    the run was not stopping: Stop came back, Cmd+K's with it, until the
+    next read, half a minute later in a quiet phase."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    state = {"stopping": False}
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, stopping=state["stopping"], status="running")
+        route.fulfill(response=response, json=body)
+
+    def stop(route):
+        # Answered as the server answers, its state read numbered after any
+        # read asked before it.
+        read = route.fetch(url=session.url.split("#")[0].rstrip("/") + "/api/app-state",
+                           method="GET").json().get("read")
+        state["stopping"] = True
+        route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
+                            "next frame.", "state": {"process_running": True, "stopping": True,
+                                                     "read": read}})
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script(_LATE_READ)
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", stop)
+        page.route("**/api/stream*", lambda route: route.abort())   # a quiet phase
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.evaluate("() => { window.__holdNextRead = true; "
+                      "document.getElementById('refresh-now').click(); }")
+        page.wait_for_timeout(300)
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
+        page.wait_for_timeout(1500)   # the late read has landed
+        after = page.evaluate("""() => ({
+            offered: [...document.querySelectorAll('[data-stop-run]')].filter(b => !b.hidden).length,
+            palette: window.FastMDXStop.running(),
+            said: document.querySelector('#sb-stop-ask').textContent,
+        })""")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert after == {"offered": 0, "palette": False, "said": "Stopping…"}, after
