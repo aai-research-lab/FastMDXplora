@@ -662,7 +662,7 @@ def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
 
     note, errors = _open(root, check)
     assert not errors, errors
-    assert note.startswith("under 1 independent sample"), note
+    assert note.startswith("fewer than one independent sample"), note
 
 
 @pytest.mark.parametrize(("samples", "expected"), [

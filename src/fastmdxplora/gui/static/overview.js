@@ -23,7 +23,7 @@
   function samplesSaid(n, about, belowOne) {
     n = Number(n);
     if (!Number.isFinite(n)) return "";
-    if (n < 1) return (belowOne || "under 1") + " independent sample";
+    if (n < 1) return (belowOne || "fewer than one") + " independent sample";
     var rounded = Math.floor(n * 10) / 10;
     var count = rounded.toFixed(1).replace(/\.0$/, "");
     return (about ? "about " : "") + count + " independent sample" +
