@@ -38,25 +38,59 @@
     return host;
   }
 
-  function tell(actions, text) {
+  /* A command to run at the terminal, set as code that breaks only between
+   * its words: never between "--" and the word it marks. */
+  function commandNode(command) {
+    var code = el("code", "again-terminal");
+    String(command).split(" ").forEach(function (word, at) {
+      if (at) code.appendChild(document.createTextNode(" "));
+      var piece = el("span", "", word);
+      piece.style.whiteSpace = "nowrap";
+      code.appendChild(piece);
+    });
+    return code;
+  }
+
+  /* A sentence, its command (``terminal``, its last words) set as code. */
+  function withTerminal(host, text, terminal) {
+    text = String(text || "");
+    if (terminal && text.slice(-terminal.length) === terminal) {
+      host.appendChild(document.createTextNode(text.slice(0, text.length - terminal.length)));
+      host.appendChild(commandNode(terminal));
+    } else {
+      host.appendChild(document.createTextNode(text));
+    }
+    return host;
+  }
+
+  /* What a fix said, in place of its buttons. ``take``: the keyboard was
+   * on a button now gone, so it is put on what is said, not left on the
+   * page's body. */
+  function tell(actions, text, terminal, take) {
+    var focused = document.activeElement;
+    var had = !focused || focused === document.body || actions.contains(focused);
     actions.innerHTML = "";
-    var line = el("span", "fix-said", text);
+    var line = withTerminal(el("span", "fix-said"), text, terminal);
     line.setAttribute("role", "status");
     actions.appendChild(line);
+    if (take && had) {
+      line.setAttribute("tabindex", "-1");
+      line.focus({ preventScroll: true });
+    }
   }
 
   function run(fix, actions) {
     var key = JSON.stringify(fix);
     delete asked[key];
     said[key] = "Starting…";
-    tell(actions, said[key]);
-    function told(text, started) {
+    tell(actions, said[key], null, true);
+    function told(text, started, terminal) {
       // A start that failed is offered again when the card is next drawn.
       if (started) said[key] = text;
       else delete said[key];
       // Written where the fix is now, should the card have been drawn again.
       var now = actions.isConnected ? actions : place(key);
-      if (now) tell(now, text);
+      if (now) tell(now, text, terminal, true);
     }
     fetch("/api/fix", {
       method: "POST",
@@ -64,7 +98,7 @@
       body: JSON.stringify({ index: fix.index })
     }).then(function (res) { return res.json(); }).then(function (d) {
       told(d && d.ok ? "Started. It is followed here as it runs." : (d && d.error) || "Could not start it.",
-           !!(d && d.ok));
+           !!(d && d.ok), d && !d.ok ? d.terminal : null);
     }).catch(function () {
       told("Could not reach the server to start it.", false);
     });
@@ -178,6 +212,11 @@
       item.appendChild(withCode(el("div", "fix-fix"), fix.fix || ""));
       if (fix.price_said) item.appendChild(el("div", "fix-price", "Costs " + fix.price_said + "."));
       if (fix.command) item.appendChild(el("pre", "fix-command", fix.command));
+      // Not run from here where the run would go through a link out of
+      // the study (`/api/fixes`, as the POST refuses): said, with no Run.
+      if (!fix.runnable && fix.not_run_here) {
+        item.appendChild(withTerminal(el("div", "fix-not-here"), fix.not_run_here, fix.terminal));
+      }
       if (fix.runnable) {
         var actions = el("div", "fix-actions");
         var fixKey = JSON.stringify(fix);

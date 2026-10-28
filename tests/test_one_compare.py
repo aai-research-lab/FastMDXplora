@@ -301,7 +301,7 @@ def test_a_config_linked_out_is_said_not_read_not_missing(variants, tmp_path):
     assert "holds no resolved_config.yml" not in answer["reason"]
 
 
-def test_a_run_s_study_record_linked_out_does_not_name_it(variants, tmp_path):
+def test_a_run_s_study_record_linked_out_names_it_by_its_folder(variants, tmp_path):
     """Where a run is is read from its study's records, held to that study."""
     from tests.test_the_study_pages_read_only_the_study import _ask, _OPENED, _watch, _WATCHED
 
@@ -318,7 +318,12 @@ def test_a_run_s_study_record_linked_out_does_not_name_it(variants, tmp_path):
         _WATCHED.clear()
     assert status == 200 and opened == []
     answer = json.loads(body)
-    assert answer["first"]["said"] == first.name and answer["first"]["run_of"] is None
+    # A run of the study by its folder, the study's record not read: named by
+    # where it is, not by what the record outside says of it.
+    assert answer["first"]["said"] == f"{variants.name}, {first.name}"
+    assert answer["first"]["run_of"] == {
+        "path": str(variants), "name": variants.name, "label": first.name}
+    assert answer["second"]["said"] == f"{variants.name}, {second.name}"
     # The two runs' study: its record not read said once, not once a run.
     assert answer["not_read"].count("study: batch_manifest.json was not read") == 1
     # Whether they are repeats of one measurement is then not known: said.
@@ -944,6 +949,9 @@ def test_ticking_the_second_run_does_not_move_the_table(variants):
     def look(page, url):
         page.goto(url + "#overview", wait_until="domcontentloaded")
         page.wait_for_selector("#overview-runs-table tbody tr")
+        # The loading screen over the page took the ticks, and the browser
+        # scrolled the page to reach the box under it (aailab01, 10-21).
+        page.wait_for_selector("body.state-ready")
         top = "() => document.getElementById('overview-runs-table').getBoundingClientRect().top"
         before = page.evaluate(top)
         page.locator(".overview-runs-pick").nth(0).check()

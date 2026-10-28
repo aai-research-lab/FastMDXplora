@@ -419,7 +419,10 @@ class TestARealParallelStudyStopped(unittest.TestCase):
                 now = json.loads(status.read_text())
             except ValueError:  # caught mid-write
                 continue
-            if now.get("stage") == "production" and now.get("status") == "running":
+            # Production is announced before its stop handler is installed.
+            # Wait for a frame, when production is actually integrating.
+            if (now.get("stage") == "production" and now.get("status") == "running"
+                    and (now.get("current_frame_count") or 0) > 0):
                 found.append(status)
         return found
 

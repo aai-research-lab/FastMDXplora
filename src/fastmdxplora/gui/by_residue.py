@@ -445,11 +445,12 @@ def secondary_structure(root: str | Path, of: str = "structure") -> dict[str, An
         return {"available": False, "of": of,
                 "reason": "There is no such structure in this study yet."}
     try:
-        stat = path.stat()
-        key: tuple[Any, ...] = (of, str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+        stat = _records.stat(path)
+        key: tuple[Any, ...] = (of, str(_records.resolved(path)), stat.st_mtime_ns,
+                                stat.st_size)
         if of == "frames":
-            frames = base / "simulation" / "frames.dcd"
-            key += (frames.stat().st_mtime_ns, frames.stat().st_size)
+            frames = _records.stat(base / "simulation" / "frames.dcd")
+            key += (frames.st_mtime_ns, frames.st_size)
     except OSError:
         key = (of, str(path), hash(text))
     with _LOCK:
@@ -483,11 +484,13 @@ def _frames_coordinates(base: Path) -> Any:
 
 
 def _frames_signature(base: Path) -> str | None:
-    try:
-        index = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return index.get("signature") if isinstance(index, dict) else None
+    """The signature of the frames written for the Viewer, from their index
+    held to the study; where it is linked out of it, the index remembered
+    while the frames stand (`trajectory_frames._load_json`), as
+    `/api/frames-info` gives it."""
+    from fastmdxplora.gui.trajectory_frames import _load_json
+
+    return _load_json(base / "simulation" / "frames_index.json").get("signature")
 
 
 def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
@@ -495,7 +498,7 @@ def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
     if of == "frames":
         path = simulation / "frames_topology.pdb"
         try:
-            return path, path.read_text(encoding="utf-8", errors="replace")
+            return path, _records.read_text(path, encoding="utf-8", errors="replace")
         except OSError:
             return path, None
     if of == "live":
@@ -503,15 +506,17 @@ def _structure_for(base: Path, of: str) -> tuple[Path, str | None]:
 
         # As the Viewer is sent it, so the fingerprint is the one it holds.
         return simulation / "live_frame.pdb", live_frame_text(simulation)
-    from fastmdxplora.gui.protein_preview import find_structure, find_system
-    from fastmdxplora.gui.server import _display_structure_bytes
+    from fastmdxplora.gui.viewed_structure import display_structure_bytes, structure_file
 
-    target = find_system(base)
-    if target is None or not target.is_file():
-        target = find_structure(base)
-    if target is None or not target.is_file():
+    # As `/structure/topology.pdb` sends it, held to the study where the
+    # read is: one linked out of it is refused, and no other read instead.
+    target = structure_file(base)
+    if target is None:
         return base, None
-    return target, _display_structure_bytes(target).decode("utf-8", errors="replace")
+    try:
+        return target, display_structure_bytes(target).decode("utf-8", errors="replace")
+    except OSError:
+        return base, None
 
 
 def residue_runs(lines: list[str]) -> list[tuple[str, int, str, str, int, list[int]]]:

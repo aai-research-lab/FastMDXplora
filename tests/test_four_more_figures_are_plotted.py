@@ -101,8 +101,42 @@ def test_the_contacts_are_the_residues_most_often_touching(study) -> None:
     got = _get(study, "pl_contacts")
     assert got["kind"] == "hbars" and (got["x_low"], got["x_high"]) == (0.0, 1.0)
     assert len(got["bars"]) == MOST_BARS and got["bars"][0]["label"] == "RES0"
+    assert all(bar["entity"] is None for bar in got["bars"])
     assert got["bars"][1]["said"] == ["RES1", "in contact in 97% of frames"]
     assert got["note"] == f"The {MOST_BARS} most often in contact of 25 residues."
+
+
+def test_contact_and_interaction_rows_select_only_topology_matched_residues(tmp_path) -> None:
+    pytest.importorskip("mdtraj")
+    from unittest.mock import patch
+
+    from fastmdxplora.utils.native_output import topology_quietly
+    from tests.test_a_clicked_atom_is_a_selection import _topology
+
+    root = _write(tmp_path / "study")
+    _topology(root / "simulation" / "trajectory_topology.pdb",
+              chains=(("A", [("ASP", 189)]), ("B", [("TRP", 215)])))
+    (root / "analysis" / "pl_contacts" / "pl_contacts_per_residue.csv").write_text(
+        "residue,contact_frequency\nA:ASP189,0.95\nB:TRP215,0.3\n", encoding="utf-8")
+    (root / "analysis" / "pl_interactions" / "pl_interactions.dat").write_text(
+        "kind,ligand_atom,protein_atom,residue,ligand_atom_name,protein_atom_name,"
+        "frames_present,frames_total,occupancy,episodes,standard_error,well_sampled\n"
+        "hydrogen_bond,1,20,A:ASP189,N1,OD1,38,40,0.95,7,0.03,True\n"
+        "hydrophobic,3,40,B:TRP215,C4,CZ2,12,40,0.3,2,0.12,False\n",
+        encoding="utf-8")
+
+    contacts = _get(root, "pl_contacts")["bars"]
+    with patch("fastmdxplora.utils.native_output.topology_quietly",
+               wraps=topology_quietly) as read_topology:
+        interactions = _get(root, "pl_interactions")["bars"]
+    assert read_topology.call_count == 1
+
+    assert [bar["entity"] for bar in contacts] == [
+        {"kind": "residue", "chain": "A", "resi": 189, "icode": "", "resn": "ASP"},
+        {"kind": "residue", "chain": "B", "resi": 215, "icode": "", "resn": "TRP"},
+    ]
+    assert interactions[0]["entity"] == contacts[0]["entity"]
+    assert interactions[1]["entity"] == contacts[1]["entity"]
 
 
 def test_the_interactions_are_atom_pairs_the_thin_ones_hollow(study) -> None:

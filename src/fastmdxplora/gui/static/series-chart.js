@@ -20,6 +20,7 @@
   var MARGIN = { top: 16, right: 28, bottom: 38, left: 64 };
   var cache = {};
   var playback = null;
+  var ranges = Object.create(null);
 
   function token(name, fallback) {
     var value = "";
@@ -109,6 +110,18 @@
     return value.toPrecision(3);
   }
 
+  /* A time (ns) on a chart's clock (ps where what is shown is under a
+   * nanosecond), to as many places as tell a frame of the trajectory from
+   * the next, by the Viewer's own rule (dashboard.js `timeDigitsOf`). */
+  function timeText(value, times, frames, clock) {
+    var k = clock && clock.factor ? clock.factor : 1;
+    var unit = clock && clock.unit ? clock.unit : "ns";
+    var board = window.FastMDXDashboard;
+    var digits = board && board.timeDigitsOf ? board.timeDigitsOf(times, frames, k) : null;
+    var v = value == null ? value : Number(value) * k;
+    return (digits == null || v == null || !isFinite(v) ? format(v) : v.toFixed(digits)) + " " + unit;
+  }
+
   function withUnit(value, unit) {
     return format(value) + (unit ? " " + unit : "");
   }
@@ -128,7 +141,7 @@
     var parts = [data.label + ", " + data.y.length + " points"];
     var mean = data.mean;
     if (mean && mean.value != null) {
-      parts.push("mean " + withUnit(mean.value, data.unit)
+      parts.push("full-analysis mean " + withUnit(mean.value, data.unit)
         + (mean.error != null ? " plus or minus " + format(mean.error) : "")
         + (mean.noted ? ", " + mean.noted : ""));
     }
@@ -160,12 +173,21 @@
     };
     var view = viewOf(host, data);
     host.dataset.view = view ? (host._view === view ? "zoomed" : "range") : "";
+    // Said on the chart too, which holds this plot under its range form.
+    var chart = host.closest ? host.closest(".series-chart") : null;
+    if (chart && chart !== host) chart.dataset.view = host.dataset.view;
     var clock = data.kind === "residue" ? { factor: 1, label: data.x_label, unit: "" }
       : timeScale(view || data.x, data.x_label);
     var xs = clock.factor === 1 ? data.x : data.x.map(function (x) { return x * clock.factor; });
     var ys = data.y;
     var xLow = view ? view[0] * clock.factor : xs[0];
     var xHigh = view ? view[1] * clock.factor : xs[xs.length - 1];
+    if (data.kind === "residue") {
+      // Half a residue beyond each end, so its point and its measured
+      // square are drawn whole, not cut by the axes.
+      xLow -= 0.5;
+      xHigh += 0.5;
+    }
     if (xHigh === xLow) xHigh = xLow + 1;
     // The values in view set the height, so a range zoomed into is read.
     var seen = ys.filter(function (y, i) { return xs[i] >= xLow && xs[i] <= xHigh; });
@@ -185,6 +207,10 @@
     var pad = (yHigh - yLow) * 0.06 || Math.abs(yHigh) * 0.1 || 1;
     yHigh += pad;
     if (yLow < 0) yLow -= pad;
+    if (data.y_bounds) {
+      yLow = data.y_bounds[0];
+      yHigh = data.y_bounds[1];
+    }
 
     function px(x) { return plot.left + (x - xLow) / (xHigh - xLow) * (plot.right - plot.left); }
     function py(y) { return plot.bottom - (y - yLow) / (yHigh - yLow) * (plot.bottom - plot.top); }
@@ -201,8 +227,9 @@
     var layer = el("g", { "clip-path": "url(#" + clipId + ")" }, svg);
 
     // What the analysis left out, first, so the line is drawn over it.
-    if (mean && mean.from_x != null && mean.discard > 0) {
-      var cut = px(mean.from_x * clock.factor);
+    if (mean && mean.from_x != null && mean.discard > 0 && mean.from_x * clock.factor > xLow) {
+      // Within the plot where a range shows only part of what was left out.
+      var cut = Math.min(plot.right, px(mean.from_x * clock.factor));
       el("rect", {
         x: plot.left, y: plot.top, width: Math.max(0, cut - plot.left),
         height: plot.bottom - plot.top, fill: c.axis, "fill-opacity": 0.12,
@@ -234,7 +261,7 @@
         x: px(v), y: plot.bottom + 15, fill: c.axis, "font-size": 10, "text-anchor": "middle",
       }, svg);
       label.textContent = data.kind === "residue"
-        ? (data.labels[Math.round(v) - 1] || "") : xText(v);
+        ? (data.labels[xs.indexOf(v)] || "") : xText(v);
     });
     el("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: c.axis }, svg);
     var xTitle = el("text", {
@@ -249,8 +276,13 @@
     }, svg);
     yTitle.textContent = data.label + (data.unit ? " (" + data.unit + ")" : "");
 
+    // A profile's line goes along each chain, not from one chain's last
+    // residue to the next one's first.
+    var residues = data.kind === "residue" && Array.isArray(data.residues) ? data.residues : null;
     var path = xs.map(function (x, i) {
-      return (i ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+      var joined = i > 0 && !(residues && residues[i] && residues[i - 1]
+        && residues[i].chain !== residues[i - 1].chain);
+      return (joined ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
     }).join("");
     el("path", {
       d: path, fill: "none", stroke: c.line, "stroke-width": 1.5,
@@ -260,6 +292,17 @@
       xs.forEach(function (x, i) {
         el("circle", { cx: px(x), cy: py(ys[i]), r: 2.2, fill: c.line }, layer);
       });
+    }
+    if (Array.isArray(data.reference)) {
+      data.reference.forEach(function (value, i) {
+        if (value == null || !isFinite(value)) return;
+        el("rect", { x: px(xs[i]) - 3, y: py(value) - 3, width: 6, height: 6,
+          fill: c.mean, class: "series-reference" }, layer);
+      });
+      var referenceLabel = el("text", { x: plot.left, y: plot.top - 4,
+        fill: c.mean, "font-size": 10, "text-anchor": "start" }, svg);
+      referenceLabel.textContent = data.reference.some(function (v) { return v != null; })
+        ? "Squares: measured S²" : "";
     }
 
     // The mean over the frames kept, with its error where there is one.
@@ -275,49 +318,103 @@
           fill: c.mean, "fill-opacity": 0.16, class: "series-error",
         }, layer);
       }
-      el("line", {
-        x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
-        stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
-        "stroke-dasharray": "5 4", class: "series-mean",
-      }, layer);
+      if (from < plot.right) {
+        el("line", {
+          x1: from, x2: plot.right, y1: py(mean.value), y2: py(mean.value),
+          stroke: mean.not_a_measurement ? c.axis : c.mean, "stroke-width": 1.4,
+          "stroke-dasharray": "5 4", class: "series-mean",
+        }, layer);
+        // Over the plot, not on it: the label covers none of the values.
+        var meanLabel = el("text", {
+          x: plot.right - 4, y: plot.top - 4, fill: c.mean, "font-size": 10,
+          "text-anchor": "end", class: "series-mean-label",
+        }, svg);
+        meanLabel.textContent = "Full-analysis mean " + withUnit(mean.value, data.unit);
+        // Shorter on a narrow chart.
+        var room = meanLabel.getBBox();
+        if (room.width && room.x < plot.left + 4) {
+          meanLabel.textContent = "Mean " + withUnit(mean.value, data.unit);
+        }
+      }
     }
 
     var cursor = el("line", {
       y1: plot.top, y2: plot.bottom, stroke: c.axis, "stroke-width": 1, visibility: "hidden",
+      "pointer-events": "none",
     }, svg);
     var dot = el("circle", { r: 4, fill: c.line, stroke: c.shade, "stroke-width": 1.5,
-                             visibility: "hidden" }, svg);
+                             visibility: "hidden", "pointer-events": "none" }, svg);
     var tip = document.createElement("div");
     tip.className = "series-tip";
     tip.hidden = true;
     host.appendChild(tip);
 
+    // The point the keyboard (or the pointer) is on, kept on the host by
+    // its x in the data's own units: a zoom, a move, a time range or the
+    // From/To range draws the chart again, and the keyboard goes on from
+    // the same point, not from the first. Out of view, it gives way to the
+    // shown point nearest it; Enter opens only a point shown.
+    function shownAt(i) {
+      return i >= 0 && i < xs.length && xs[i] >= xLow - 1e-9 && xs[i] <= xHigh + 1e-9;
+    }
+    function firstShown(direction) {
+      for (var i = direction > 0 ? 0 : xs.length - 1; i >= 0 && i < xs.length; i += direction) {
+        if (shownAt(i)) return i;
+      }
+      return -1;
+    }
+    function nearestShown(value) {
+      if (value < xLow) return firstShown(1);
+      if (value > xHigh) return firstShown(-1);
+      var i = nearest(xs, value);
+      return shownAt(i) ? i : firstShown(1);
+    }
     var at = -1;
+    if (host._keyAt != null) {
+      at = data.x.indexOf(host._keyAt);
+      if (!shownAt(at)) at = nearestShown(host._keyAt * clock.factor);
+    }
     function show(index) {
       if (index < 0 || index >= xs.length) return;
       at = index;
+      host._keyAt = data.x[index];
       var x = px(xs[index]);
       var y = py(ys[index]);
       cursor.setAttribute("x1", x); cursor.setAttribute("x2", x);
       cursor.setAttribute("visibility", "visible");
       dot.setAttribute("cx", x); dot.setAttribute("cy", y);
       dot.setAttribute("visibility", "visible");
-      var where = data.kind === "residue"
-        ? "residue " + data.labels[index]
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      var where = data.kind === "residue" || data.kind === "atom"
+        ? data.labels[index]
         : (data.x_label === "Frame" ? "frame " + data.frames[index]
-          : format(xs[index]) + " " + (clock.unit || "ns") + " · frame " + data.frames[index]);
-      var action = data.kind === "residue" ? "show it in the structure"
+          : timeText(data.x[index], data.x, data.frames, clock.unit ? clock : null)
+            + " \u00b7 frame " + data.frames[index]);
+      var action = (data.kind === "residue" || data.kind === "atom") && entity
+        ? "select it in the structure"
         : (data.linked ? "open this frame" : "");
       tip.innerHTML = "";
       var value = document.createElement("strong");
       value.textContent = withUnit(ys[index], data.unit);
       tip.appendChild(value);
       tip.appendChild(document.createTextNode(" · " + where));
+      if (data.reference && data.reference[index] != null) {
+        tip.appendChild(document.createTextNode(" · measured " + format(data.reference[index])));
+      }
       if (action) {
         var hint = document.createElement("span");
         hint.className = "series-tip-hint";
         hint.textContent = "Click to " + action;
         tip.appendChild(hint);
+      } else if ((data.kind === "residue" || data.kind === "atom") && !entity) {
+        var unavailable = document.createElement("span");
+        unavailable.className = "series-tip-hint";
+        // A structure not read is why, where it was not: not that it has
+        // no row like this one.
+        unavailable.textContent = data.not_read
+          ? "Selection unavailable: " + data.not_read
+          : "Selection unavailable: this row has no unique topology match.";
+        tip.appendChild(unavailable);
       }
       tip.hidden = false;
       var left = Math.min(Math.max(x + 12, 4), width - tip.offsetWidth - 4);
@@ -334,6 +431,8 @@
     function indexAt(event) {
       var box = svg.getBoundingClientRect();
       var x = (event.clientX - box.left) * (width / box.width);
+      var y = (event.clientY - box.top) * (HEIGHT / box.height);
+      if (x < plot.left || x > plot.right || y < plot.top || y > plot.bottom) return -1;
       var value = xLow + (x - plot.left) / (plot.right - plot.left) * (xHigh - xLow);
       return nearest(xs, value);
     }
@@ -372,10 +471,13 @@
         },
       });
     }
-    svg.addEventListener("mousemove", function (event) { show(indexAt(event)); });
+    svg.addEventListener("mousemove", function (event) {
+      var index = indexAt(event);
+      if (index < 0) hide(); else show(index);
+    });
     svg.addEventListener("mouseleave", hide);
     svg.addEventListener("blur", hide);
-    svg.addEventListener("focus", function () { show(at >= 0 ? at : 0); });
+    svg.addEventListener("focus", function () { show(at >= 0 ? at : firstShown(1)); });
     // A click opens the point; the first click of a double click (show
     // all, plot-tools.js) does not: it waits to see if a second follows.
     var pending = null;
@@ -388,47 +490,37 @@
     svg.addEventListener("dblclick", function () { clearTimeout(pending); });
     svg.addEventListener("keydown", function (event) {
       var step = event.shiftKey ? Math.max(1, Math.round(xs.length / 20)) : 1;
-      if (event.key === "ArrowRight") show(Math.min(xs.length - 1, (at < 0 ? 0 : at) + step));
-      else if (event.key === "ArrowLeft") show(Math.max(0, (at < 0 ? 0 : at) - step));
-      else if (event.key === "Home") show(0);
-      else if (event.key === "End") show(xs.length - 1);
-      else if ((event.key === "Enter" || event.key === " ") && at >= 0) open(data, at);
+      // Along the points shown: zoomed in, the cursor stays in the view.
+      var first = firstShown(1), last = firstShown(-1);
+      if (event.key === "ArrowRight") show(at < 0 ? first : Math.min(last, at + step));
+      else if (event.key === "ArrowLeft") show(at < 0 ? first : Math.max(first, at - step));
+      else if (event.key === "Home") show(first);
+      else if (event.key === "End") show(last);
+      else if ((event.key === "Enter" || event.key === " ") && shownAt(at)) open(data, at);
       else return;
       event.preventDefault();
     });
   }
 
-  /* The frame of a point, as the viewer numbers what it plays: the viewer
-   * plays a subset of the trajectory's frames (at most a few hundred), so
-   * the nearest of those. */
-  function playedIndex(frame) {
-    var frames = playback && Array.isArray(playback.frame_indices) ? playback.frame_indices : [];
-    if (!frames.length) return null;
-    var best = 0;
-    for (var i = 1; i < frames.length; i += 1) {
-      if (Math.abs(frames[i] - frame) < Math.abs(frames[best] - frame)) best = i;
-    }
-    return best;
-  }
-
   function open(data, index) {
     if (index < 0 || !window.FastMDXDashboard) return;
-    if (data.kind === "residue") {
-      window.FastMDXDashboard.navigate("viewer");
-      window.dispatchEvent(new CustomEvent("dashboard:residue-focus",
-        { detail: data.residues[index] }));
+    if (data.kind === "residue" || data.kind === "atom") {
+      var entity = Array.isArray(data.entities) ? data.entities[index] : null;
+      if (!entity) return;
+      window.FastMDXDashboard.focusEntity(entity);
       return;
     }
     if (!data.linked) return;
     var frame = data.frames[index];
-    var go = function () {
-      var played = playedIndex(frame);
-      if (played == null) return;
+    var go = function (source) {
       window.FastMDXDashboard.navigate("viewer");
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: played, trajectoryFrame: frame } }));
+        { detail: { trajectoryFrame: frame, sourceSignature: source.source_signature } }));
     };
-    if (playback) { go(); return; }
+    if (playback && playback.playback_available && playback.source_kind === "production-dcd") {
+      go(playback);
+      return;
+    }
     fetch("/api/frames-info", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (payload) {
@@ -436,9 +528,213 @@
         // trajectory; during a run it plays snapshots, numbered otherwise.
         playback = payload && payload.playback_available
           && payload.source_kind === "production-dcd" ? payload : null;
-        if (playback) go(); else window.FastMDXDashboard.navigate("viewer");
+        if (playback) { go(playback); return; }
+        window.FastMDXDashboard.navigate("viewer");
+        // No frames to play: said where it is seen, a record not read first.
+        var why = payload && !payload.playback_available && (payload.not_read || payload.reason);
+        if (why && window.FastMDXDashboard.toast) {
+          window.FastMDXDashboard.toast("Frame " + frame + " is unavailable: " + why, "warning");
+        }
       })
       .catch(function () { /* the viewer says why when opened */ });
+  }
+
+  function rangeBounds(data) {
+    var values = (data.x || []).filter(function (value) { return isFinite(value); });
+    return values.length ? [Math.min.apply(null, values), Math.max.apply(null, values)] : null;
+  }
+
+  function rangeOf(name, data) {
+    var bounds = rangeBounds(data);
+    return ranges[name] || (bounds ? { from: bounds[0], to: bounds[1] } : null);
+  }
+
+  /* Keep each selected point's source frame or residue identity attached.
+   * The chart gets a view of the arrays; the analysis data stays untouched. */
+  function withinRange(data, range) {
+    if (!range) return null;
+    var indices = [];
+    (data.x || []).forEach(function (value, index) {
+      // A range said in ps is read back in ns: within a part in 1e9.
+      var slack = 1e-9 * Math.max(Math.abs(range.from), Math.abs(range.to), 1e-12);
+      if (isFinite(value) && value >= range.from - slack && value <= range.to + slack) {
+        indices.push(index);
+      }
+    });
+    if (!indices.length) return null;
+    var shown = Object.assign({}, data);
+    ["x", "y", "frames", "labels", "entities", "reference", "residues"].forEach(function (key) {
+      if (Array.isArray(data[key]) && data[key].length === data.x.length) {
+        shown[key] = indices.map(function (index) { return data[key][index]; });
+      }
+    });
+    return shown;
+  }
+
+  function rangeInput(form, field, labelText, bounds, value) {
+    var label = document.createElement("label");
+    label.className = "series-range-field";
+    var said = document.createElement("span");
+    said.textContent = labelText;
+    var input = document.createElement("input");
+    input.type = "number";
+    input.step = "any";
+    input.required = true;
+    input.min = String(bounds[0]);
+    input.max = String(bounds[1]);
+    input.value = String(value);
+    input.setAttribute("aria-label", labelText);
+    input.dataset.range = field;
+    label.append(said, input);
+    form.appendChild(label);
+    return input;
+  }
+
+  /* A profile's range is chosen by its residues' (or atoms') own names,
+   * not by their places along the axis. */
+  function rangeSelect(form, field, labelText, data, value) {
+    var label = document.createElement("label");
+    label.className = "series-range-field";
+    var said = document.createElement("span");
+    said.textContent = labelText;
+    var select = document.createElement("select");
+    select.setAttribute("aria-label", labelText);
+    select.dataset.range = field;
+    fillSelect(select, data, value);
+    label.append(said, select);
+    form.appendChild(label);
+    return select;
+  }
+
+  function fillSelect(select, data, value) {
+    select.replaceChildren();
+    (data.x || []).forEach(function (x, index) {
+      if (!isFinite(x)) return;
+      var option = document.createElement("option");
+      option.value = String(x);
+      option.textContent = (data.labels && data.labels[index]) || String(x);
+      select.appendChild(option);
+    });
+    select.value = String(value);
+  }
+
+  function rangeControls(chart, data, name) {
+    var bounds = rangeBounds(data);
+    if (!bounds) return null;
+    var form = document.createElement("form");
+    form.className = "series-range";
+    form.noValidate = true;
+    form.setAttribute("aria-label", "Limit " + data.label + " plot range");
+    var profile = data.kind === "residue" || data.kind === "atom";
+    // A time in the unit the chart's axis reads in: ps for a run under a
+    // nanosecond (`timeScale`), each value read back in ns.
+    function factorOf(d) {
+      return !profile && d.x_label === "Time (ns)" ? timeScale(d.x, d.x_label).factor : 1;
+    }
+    function unitOf(d) {
+      return d.x_label === "Time (ns)" ? (factorOf(d) === 1000 ? "time (ps)" : "time (ns)")
+        : profile ? (d.kind === "atom" ? "atom" : "residue") : "frame";
+    }
+    var k = factorOf(data);
+    var unit = unitOf(data);
+    function shown(value) { return k === 1 ? value : Number((value * k).toPrecision(12)); }
+    function said(pair) { return [shown(pair[0]), shown(pair[1])]; }
+    var initial = rangeOf(name, data);
+    var from = profile ? rangeSelect(form, "from", "From " + unit, data, initial.from)
+      : rangeInput(form, "from", "From " + unit, said(bounds), shown(initial.from));
+    var to = profile ? rangeSelect(form, "to", "To " + unit, data, initial.to)
+      : rangeInput(form, "to", "To " + unit, said(bounds), shown(initial.to));
+    var apply = document.createElement("button");
+    apply.type = "submit";
+    apply.className = "line-btn";
+    apply.textContent = "Apply range";
+    form.appendChild(apply);
+    var reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "line-btn";
+    reset.textContent = "Reset";
+    reset.setAttribute("aria-label", "Reset plot range");
+    form.appendChild(reset);
+    var status = document.createElement("span");
+    status.className = "series-range-status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    form.appendChild(status);
+
+    function render() {
+      var current = chart.__seriesData;
+      var shown = withinRange(current, rangeOf(name, current));
+      if (!shown) {
+        chart.__seriesPlot.replaceChildren();
+        var empty = document.createElement("p");
+        empty.className = "series-range-empty";
+        empty.textContent = "No points fall inside this range. Choose a wider range or reset it.";
+        chart.__seriesPlot.appendChild(empty);
+        return;
+      }
+      draw(chart.__seriesPlot, shown);
+    }
+
+    function mark(input, invalid, message) {
+      if (invalid) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+      status.textContent = message;
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var low = String(from.value).trim() === "" ? NaN : Number(from.value);
+      var high = String(to.value).trim() === "" ? NaN : Number(to.value);
+      if (!isFinite(low)) return mark(from, true, "Enter a numeric start value.");
+      if (!isFinite(high)) return mark(to, true, "Enter a numeric end value.");
+      var edges = profile ? bounds : said(bounds);
+      if (low < edges[0] || low > edges[1]) {
+        return mark(from, true, "Start must be within the available range.");
+      }
+      if (high < edges[0] || high > edges[1]) {
+        return mark(to, true, "End must be within the available range.");
+      }
+      if (low > high) return mark(to, true, "End must be at or after start.");
+      ranges[name] = { from: low / k, to: high / k };
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+      status.textContent = withinRange(chart.__seriesData, ranges[name])
+        ? "Showing the selected range." : "No plotted points fall inside this range.";
+    });
+    reset.addEventListener("click", function () {
+      delete ranges[name];
+      from.value = String(profile ? bounds[0] : shown(bounds[0]));
+      to.value = String(profile ? bounds[1] : shown(bounds[1]));
+      mark(from, false, "");
+      mark(to, false, "");
+      render();
+    });
+    return {
+      form: form, from: from, to: to, render: render,
+      updateData: function (fresh) {
+        bounds = rangeBounds(fresh);
+        if (profile) {
+          fillSelect(from, fresh, bounds[0]);
+          fillSelect(to, fresh, bounds[1]);
+        } else {
+          k = factorOf(fresh);
+          unit = unitOf(fresh);
+          [[from, "From "], [to, "To "]].forEach(function (pair) {
+            pair[0].setAttribute("aria-label", pair[1] + unit);
+            if (pair[0].previousSibling) pair[0].previousSibling.textContent = pair[1] + unit;
+          });
+          from.min = String(shown(bounds[0]));
+          from.max = String(shown(bounds[1]));
+          to.min = String(shown(bounds[0]));
+          to.max = String(shown(bounds[1]));
+        }
+        from.value = String(profile ? bounds[0] : shown(bounds[0]));
+        to.value = String(profile ? bounds[1] : shown(bounds[1]));
+        mark(from, false, "");
+        mark(to, false, "");
+      },
+    };
   }
 
   function load(name) {
@@ -458,13 +754,33 @@
       frame.setAttribute("data-series-ready", "pending");
       var name = frame.getAttribute("data-series");
       load(name).then(function (data) {
-        if (!data || !data.ok || !data.y || data.y.length < 2) {
+        if (!data || !data.ok || !data.y || data.y.length < 1) {
           frame.setAttribute("data-series-ready", "none");
           return;
         }
         var chart = document.createElement("div");
         chart.className = "series-chart";
         chart.setAttribute("data-analysis", name);
+        chart.__seriesData = data;
+        var controls = rangeControls(chart, data, name);
+        var plot = document.createElement("div");
+        plot.className = "series-plot";
+        chart.__seriesPlot = plot;
+        chart.__seriesRender = controls ? controls.render : function () { draw(plot, chart.__seriesData); };
+        if (controls) chart.appendChild(controls.form);
+        chart.appendChild(plot);
+        var notice = document.createElement("p");
+        notice.className = "series-notice";
+        notice.textContent = data.notice || "";
+        notice.hidden = !data.notice;
+        chart.appendChild(notice);
+        chart.__seriesSetData = function (fresh) {
+          chart.__seriesData = fresh;
+          notice.textContent = fresh.notice || "";
+          notice.hidden = !fresh.notice;
+          if (controls) controls.updateData(fresh);
+          chart.__seriesRender();
+        };
         frame.parentNode.insertBefore(chart, frame);
         var card = frame.closest(".analysis-card");
         var toggle = card && card.querySelector("[data-series-toggle]");
@@ -472,7 +788,7 @@
           chart.hidden = !chartShown;
           frame.hidden = chartShown;
           if (toggle) toggle.textContent = chartShown ? "Show the figure" : "Show the chart";
-          if (chartShown) draw(chart, data);
+          if (chartShown) chart.__seriesRender();
         }
         if (toggle) {
           toggle.hidden = false;
@@ -489,7 +805,7 @@
           new ResizeObserver(function () {
             if (!chart.hidden && Math.abs(chart.clientWidth - width) > 4) {
               width = chart.clientWidth;
-              draw(chart, data);
+              chart.__seriesRender();
             }
           }).observe(chart);
         }
@@ -502,7 +818,9 @@
   document.addEventListener("fmx:time-range", function () {
     drawn = drawn.filter(function (d) { return d.chart.isConnected; });
     drawn.forEach(function (d) {
-      if (!d.chart.hidden && d.data.kind !== "residue") draw(d.chart, d.data);
+      // Into the chart's plot, under its own From/To range, not over the
+      // chart (its range form and notice are its own).
+      if (!d.chart.hidden && d.data.kind !== "residue") d.chart.__seriesRender();
     });
   });
 
@@ -511,17 +829,38 @@
     Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
       var name = chart.getAttribute("data-analysis");
       if (chart.hidden || !cache[name]) return;
-      cache[name].then(function (data) { if (data && data.ok) draw(chart, data); });
+      cache[name].then(function (data) { if (data && data.ok) chart.__seriesRender(); });
     });
   });
   /* A new run, or new results, may have new numbers. */
-  window.addEventListener("dashboard:run-changed", function () { cache = {}; playback = null; });
+  window.addEventListener("dashboard:run-changed", function () {
+    cache = {};
+    playback = null;
+    ranges = Object.create(null);
+    Array.prototype.forEach.call(document.querySelectorAll(".series-chart"), function (chart) {
+      var name = chart.getAttribute("data-analysis");
+      load(name).then(function (data) {
+        if (data && data.ok && data.y && data.y.length) {
+          chart.__seriesSetData(data);
+          return;
+        }
+        // The new study has no such series: its figure, not the last
+        // study's numbers, is what the card shows.
+        chart.hidden = true;
+        var frame = chart.nextElementSibling;
+        if (frame && frame.hasAttribute("data-series")) frame.hidden = false;
+        var card = chart.closest(".analysis-card");
+        var toggle = card && card.querySelector("[data-series-toggle]");
+        if (toggle) toggle.hidden = true;
+      });
+    });
+  });
 
   window.FastMDXSeries = {
     hydrate: hydrate, ticks: ticks, timeScale: timeScale, frameTimeSaid: frameTimeSaid,
     /* A series drawn into a host from its payload (as /api/series gives it). */
     draw: draw,
-    forget: function () { cache = {}; playback = null; },
+    forget: function () { cache = {}; playback = null; ranges = Object.create(null); },
     /* A frame of the trajectory opened in the viewer (figure-chart.js). */
     openFrame: function (frame) { open({ linked: true, frames: [frame] }, 0); },
   };

@@ -21,6 +21,7 @@ import pytest
 
 from fastmdxplora.gui import records_answer
 from fastmdxplora.gui.agent_panel import run_summary_endpoint
+from tests._agent_page import ready
 from tests.test_the_agent_answers_from_the_records import SUPPORTED, _study
 
 
@@ -421,6 +422,7 @@ def test_the_box_s_words_follow_the_situation(tmp_path, monkeypatch):
             for typed, waited in (("chignolin", ".agent-study:not([hidden])"),
                                   ("which lysozyme?", ".agent-choice"),
                                   ("run it", ".agent-confirm")):
+                ready(page)
                 page.fill("#agent-request", typed)
                 page.keyboard.press("Enter")
                 page.wait_for_selector("#agent-thread " + waited)
@@ -469,6 +471,7 @@ def test_a_run_that_ended_before_it_was_seen_running_is_summarised(tmp_path, mon
             page.wait_for_selector("#agent-request", state="visible")
             for typed, waited in (("chignolin", ".agent-study:not([hidden])"),
                                   ("run it", ".agent-running")):
+                ready(page)
                 page.fill("#agent-request", typed)
                 page.keyboard.press("Enter")
                 page.wait_for_selector("#agent-thread " + waited)
@@ -529,6 +532,7 @@ def test_a_late_summary_of_one_run_does_not_end_the_next(tmp_path, monkeypatch):
                 body=json.dumps({"ok": True, "output": outputs.pop(0)})))
             page.route("**/api/agent/run-summary", summary)
             page.wait_for_selector("#agent-request", state="visible")
+            ready(page)
             page.fill("#agent-request", "chignolin")
             page.keyboard.press("Enter")
             page.click("#agent-thread .agent-study:not([hidden]) [data-role=run]")
@@ -538,6 +542,7 @@ def test_a_late_summary_of_one_run_does_not_end_the_next(tmp_path, monkeypatch):
                 if held:
                     break
                 page.wait_for_timeout(100)
+            ready(page)
             page.fill("#agent-request", "make it 4 ns")
             page.keyboard.press("Enter")
             # Version 2 shown, not only its reply's card made: a click while

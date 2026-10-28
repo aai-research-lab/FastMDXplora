@@ -234,8 +234,11 @@ def deposit_name(root: Path, when: datetime | None = None) -> str:
 
 
 def _load(path: Path) -> Any:
+    # Through `record_access`: held to the study where the read is.
+    from fastmdxplora import record_access
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(record_access.read_text(path, encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 

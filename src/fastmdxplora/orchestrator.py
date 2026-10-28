@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -249,6 +250,34 @@ def _logging_to_its_folder(method: Callable[_P, _R]) -> Callable[_P, _R]:
     return wrapper
 
 
+def _its_process_recorded_while_it_runs(method: Callable[_P, _R]) -> Callable[_P, _R]:
+    """The study's process record (`_record_run_process`) for the length
+    of one run, and no longer: a hold on the folder (`_hold_run_process`)
+    given back when the run ends, however it ends.
+
+    It went only when the process exited, so a run made in a process that
+    went on (a notebook, a test, the GUI of `fastmdx explore --dashboard`)
+    left a record naming that process, and a GUI opened in it on the study
+    took itself for the study's run, and refused to start another. Written
+    again if a run before removed it. The record goes with the last hold on
+    its folder: nested calls, and a study going on with the folder after
+    this run of it (`BatchExplorer.run`), keep it.
+    """
+    import functools
+
+    @functools.wraps(method)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        where = getattr(args[0], "output_dir", None)
+        if where is None:
+            return method(*args, **kwargs)
+        _hold_run_process(Path(where))
+        try:
+            return method(*args, **kwargs)
+        finally:
+            _release_run_process(Path(where))
+    return wrapper
+
+
 class FastMDXplora:
     """Project-level orchestrator for end-to-end MD studies.
 
@@ -417,12 +446,13 @@ class FastMDXplora:
                 {"systems": [{"id": self._system_id, "system": self.system}]})))
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Which process this study is, so a GUI opened on the folder later
-        # can adopt the run: show it as running and stop it if asked. The
-        # file goes when the process exits; a crash leaves it, and an
-        # adopter checks the process is alive and is this run before
-        # believing it.
-        _record_run_process(self.output_dir)
+        # Which process this study is, so a GUI opened on the folder can adopt
+        # the run: show it as running and stop it if asked. Written as the run
+        # begins and removed as it ends (`_its_process_recorded_while_it_runs`),
+        # not as the study is made: a study made and not run, a record
+        # standing, was taken by a GUI in this process for a run going, and
+        # its Stop signalled this process. A crash leaves it, and an adopter
+        # checks the process is alive and is this run before believing it.
 
         self.options: dict[str, dict[str, Any]] = options or {}
         # Study-level settings (`agent`, `agent_model`), which describe the
@@ -477,6 +507,7 @@ class FastMDXplora:
     # Orchestration entry point
     # ------------------------------------------------------------------
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def explore(
         self,
         *,
@@ -862,21 +893,25 @@ class FastMDXplora:
 
     # Convenience: per-phase entry points (also called by the CLI)
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def setup(self, **kwargs: Unpack[SetupSettings]) -> PhaseResult:
         """Run only the setup phase."""
         return self._run_phase("setup", self._validated("setup", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def simulate(self, **kwargs: Unpack[SimulateSettings]) -> PhaseResult:
         """Run only the simulation phase."""
         return self._run_phase("simulation", self._validated("simulation", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def analyze(self, **kwargs: Unpack[AnalyzeSettings]) -> PhaseResult:
         """Run only the analysis phase."""
         return self._run_phase("analysis", self._validated("analysis", kwargs))
 
     @_logging_to_its_folder
+    @_its_process_recorded_while_it_runs
     def report(self, **kwargs: Unpack[ReportSettings]) -> PhaseResult:
         """Run only the report phase."""
         return self._run_phase("report", self._validated("report", kwargs))
@@ -1870,10 +1905,42 @@ def _was_a_stop(result: Any) -> bool:
             and refusal.get("code") == STOPPED_CODE)
 
 
+#: The process records this process has written, by path, each with the
+#: file's identity once written (its inode and modification time), so that
+#: one this process left empty or cut short can be told for its own; each is
+#: removed at exit where its run has not removed it already.
+_RECORDS_WRITTEN_HERE: dict[Path, tuple[int, int] | None] = {}
+
+#: How many runs of this process hold each folder's record: the record goes
+#: when the last of them ends (`_release_run_process`). Counted in one place
+#: for the process, not on each object: a study of one is held by its run's
+#: own `explore()` and by the study around it (`BatchExplorer.run`), which
+#: goes on with the folder after that run ends (its rounds, its report
+#: again, its campaign's comparison).
+_HOLDS: dict[Path, int] = {}
+_HOLDS_OF: list[int] = [os.getpid()]
+
+_HOLDS_LOCK = threading.RLock()
+
+
+def _key(output_dir: Path) -> Path:
+    """The folder itself, links followed: one study is named one way by the
+    batch layer (as given), another by a resume or the GUI (resolved), and a
+    hold taken under one spelling was given back under the other, so a
+    study reached through a link lost its record at its first round."""
+    return Path(os.path.realpath(output_dir))
+
+
+def _holds() -> dict[Path, int]:
+    """This process's holds; a child forked from it holds nothing of them."""
+    if _HOLDS_OF[0] != os.getpid():
+        _HOLDS.clear()
+        _HOLDS_OF[0] = os.getpid()
+    return _HOLDS
+
+
 def _record_run_process(output_dir: Path) -> None:
     import atexit
-    import json
-    import os
     import sys
 
     path = Path(output_dir) / RUN_PROCESS_FILE
@@ -1888,19 +1955,106 @@ def _record_run_process(output_dir: Path) -> None:
             **this_machine(),
             **({"start_ticks": ticks} if ticks is not None else {}),
         }), encoding="utf-8")
+        written = True
+    except OSError:
+        # Perhaps left empty or cut short (a full disk): this process's,
+        # to remove as its own (`_forget_run_process`).
+        written = False
+    key = _key(path)
+    try:
+        stat = key.stat()
+        identity: tuple[int, int] | None = (stat.st_ino, stat.st_mtime_ns)
+    except OSError:
+        identity = None
+    first = key not in _RECORDS_WRITTEN_HERE
+    _RECORDS_WRITTEN_HERE[key] = identity
+    if first and (written or identity is not None):
+        # For a run that raised past its end, and an orchestrator made and
+        # never run: removed at exit, where it is still this process's.
+        atexit.register(_remove_if_written_here, key.parent)
+
+
+def _written_by_this_process(record: Any) -> bool:
+    """Whether a process record names this process: its number, and its
+    start where this machine says (`process_start_ticks`), on this machine.
+    A child that inherited the parent's state has a number of its own, so it
+    never takes the parent's record for its own."""
+    if not isinstance(record, dict) or record_is_from_elsewhere(record):
+        return False
+    pid = record.get("pid")
+    if isinstance(pid, bool) or pid != os.getpid():
+        return False
+    return record.get("start_ticks") == process_start_ticks(os.getpid())
+
+
+def _hold_run_process(output_dir: Path, *, rewrite: bool = False) -> None:
+    """A run of this process takes a hold on the folder's record: written
+    now where there is none (or, with ``rewrite``, whatever is there), and
+    kept until the last hold is given back."""
+    # Counted and written as one step, so a last hold given back meanwhile
+    # in another thread does not remove the record this one keeps.
+    with _HOLDS_LOCK:
+        holds = _holds()
+        key = _key(output_dir)
+        holds[key] = holds.get(key, 0) + 1
+        if rewrite or not (Path(output_dir) / RUN_PROCESS_FILE).exists():
+            _record_run_process(Path(output_dir))
+
+
+def _release_run_process(output_dir: Path) -> None:
+    """A hold given back: at the last, the record removed where this process
+    wrote it (`_forget_run_process`)."""
+    with _HOLDS_LOCK:
+        holds = _holds()
+        key = _key(output_dir)
+        left = holds.get(key, 0) - 1
+        if left > 0:
+            holds[key] = left
+            return
+        holds.pop(key, None)
+        _remove_if_written_here(Path(output_dir))
+
+
+def run_process_held_here(output_dir: Path) -> bool:
+    """Whether a run of this process holds the folder's record now."""
+    with _HOLDS_LOCK:
+        return _holds().get(_key(output_dir), 0) > 0
+
+
+def _forget_run_process(output_dir: Path) -> None:
+    """The process record in ``output_dir`` removed, where this process wrote
+    it and no run of this process holds it: the run that wrote it has ended,
+    finished, refused, failed or stopped. A record of another process (a run
+    started there since, a worker's) is left alone."""
+    with _HOLDS_LOCK:
+        if run_process_held_here(output_dir):
+            return
+        _remove_if_written_here(Path(output_dir))
+
+
+def _remove_if_written_here(output_dir: Path) -> None:
+    """The record removed where it names this process; or, where it cannot
+    be read (left empty or cut short), where it is the very file this
+    process wrote last."""
+    path = Path(output_dir) / RUN_PROCESS_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return
-
-    def _remove(p: Path = path, pid: int = os.getpid()) -> None:
-        # Only this process's record: a child that inherited this hook must not
-        # remove the parent's.
+    try:
+        ours = _written_by_this_process(json.loads(text))
+    except ValueError:
+        identity = _RECORDS_WRITTEN_HERE.get(_key(path))
         try:
-            if os.getpid() == pid and p.is_file():
-                p.unlink()
+            stat = path.stat()
+            ours = identity is not None and identity == (stat.st_ino, stat.st_mtime_ns)
+        except OSError:
+            ours = False
+    if ours:
+        try:
+            path.unlink()
         except OSError:
             pass
-
-    atexit.register(_remove)
 
 
 def _phase_selection(

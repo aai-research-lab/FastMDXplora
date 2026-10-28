@@ -1406,8 +1406,9 @@ class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
     directory: playback.pdb.tmp": two dashboard polls built the playback at
     once through one temporary name, so the second's rename found the file
     the first had just renamed into place. Each writer of the frames now
-    writes under a name of its own (gui/trajectory_frames.py), so neither
-    can take the other's file, and the last rename wins whole.
+    writes under a new name of its own (`record_access.save`, whose own
+    tests check it), so neither can take the other's file, and the last
+    rename wins whole.
     """
 
     def test_each_writer_has_a_name_of_its_own(self):
@@ -1415,15 +1416,13 @@ class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
         import threading
         from pathlib import Path
 
-        from fastmdxplora.gui.trajectory_frames import _temporary, _write_text
+        from fastmdxplora.gui.trajectory_frames import _write_text
 
         root = Path(tempfile.mkdtemp())
         target = root / "frames_topology.pdb"
-        names: list[Path] = []
         errors: list[BaseException] = []
 
         def write(text):
-            names.append(_temporary(target))
             try:
                 for _ in range(50):
                     _write_text(target, text)
@@ -1437,7 +1436,6 @@ class TestARaceWithACorrectOutcomeIsNotAnError(unittest.TestCase):
         for writer in writers:
             writer.join()
         self.assertEqual(errors, [])
-        self.assertEqual(len(set(names)), 2)
         self.assertIn(target.read_text(), {f"writer {n}\n" * 2000 for n in range(2)})
         self.assertEqual(sorted(p.name for p in root.iterdir()), ["frames_topology.pdb"])
 

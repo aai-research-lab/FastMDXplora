@@ -19,6 +19,7 @@ import urllib.request
 import pytest
 
 from fastmdxplora.gui.plan import changes_between, plan_of, sourced
+from tests._agent_page import ready
 
 STUDY = {"systems": [{"id": "trpcage_1L2Y", "system": "1L2Y"}],
          "simulation": {"duration_ns": 10, "temperature_K": 310}}
@@ -406,6 +407,7 @@ def test_a_version_used_again_is_not_a_yes(session) -> None:
             status=200, content_type="application/json",
             body=json.dumps({"ok": False, "answer": "About two hours.", "cites": []})))
         page.click("#agent-thread .agent-study.is-replaced [data-role=use]")
+        ready(page)
         page.fill("#agent-request", "how long will it take?")
         page.keyboard.press("Enter")
         page.wait_for_selector("#agent-thread .agent-answer:has-text('About two hours.')")

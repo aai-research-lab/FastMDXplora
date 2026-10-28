@@ -10,6 +10,7 @@ science.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import os
@@ -186,6 +187,13 @@ def _finished_cleanly(root: Path) -> bool:
         str(p.get("status") or "").lower() in FAILED_STATUSES for p in phases.values())
 
 
+#: Said where a run in this GUI's own process cannot be stopped from it: a
+#: signal to it would end the GUI too, and nothing in it listens for a stop.
+OWN_STOP_REFUSED = ("This run is in this GUI's own process; stopping it here would end the "
+                    "GUI too. Stop it where it was started (Ctrl+C at its terminal, or "
+                    "interrupt the notebook's cell).")
+
+
 class _AdoptedProcess:
     """A run this server did not start, held by its PID.
 
@@ -204,6 +212,31 @@ class _AdoptedProcess:
         self._returncode: int | None = None
 
     def _alive(self) -> bool:
+        if self.pid == os.getpid():
+            # This process (the GUI of `fastmdx explore --dashboard`, a
+            # notebook) goes on once its run has ended, so the run is going
+            # only while this process's record of it stands: it is removed
+            # as the run ends (`orchestrator._release_run_process`). Its GUI
+            # said it was running, and refused another, after the run was
+            # over.
+            from fastmdxplora.orchestrator import (
+                process_start_ticks,
+                record_is_from_elsewhere,
+                run_process_held_here,
+            )
+
+            # Going only while a run of this process holds the folder: a study
+            # made here and not run writes its record as it is made, and was
+            # said to be running, with Stop signalling this process.
+            if not run_process_held_here(self.root):
+                return False
+            record = _process_record_held(self.root)
+            if not record:
+                # Not read: being written again, as a study's runs begin.
+                return True
+            ticks = record.get("start_ticks")
+            return (record.get("pid") == self.pid and not record_is_from_elsewhere(record)
+                    and (ticks is None or ticks == process_start_ticks(self.pid)))
         if not _process_alive(self.pid):
             return False
         # Its start where the record has it: a number given to another
@@ -230,11 +263,12 @@ class _AdoptedProcess:
 
     def terminate(self) -> None:
         # Never a process that is not the run: asked again before each signal.
-        if self.what_it_is() == "the run":
+        # Never this process, the GUI's own (`DashboardRuntime.stop`).
+        if self.pid != os.getpid() and self._alive() and self.what_it_is() == "the run":
             _terminate_process(self.pid)
 
     def kill(self) -> None:
-        if self.what_it_is() == "the run":
+        if self.pid != os.getpid() and self._alive() and self.what_it_is() == "the run":
             _terminate_process(self.pid, force=True)
 
     def wait(self, timeout: float | None = None) -> int:
@@ -899,6 +933,22 @@ class DashboardRuntime:
     stopped_roots: set[Path] = field(default_factory=set)
     #: Whether the process last run here ended because Stop was pressed.
     stopped_here: bool = False
+    #: What in this GUI's own process a stop was asked of (`stop`): the
+    #: listener of that run (`runner._LISTENING`), so the page says it is
+    #: stopping, and offers no Stop, while that one listens. The process is
+    #: the same for the next run there: tied to it, a next run begun before
+    #: the page read the state again was said stopping for the whole of it.
+    _stop_asked_of: Any = field(default=None, repr=False)
+    #: And that run's process record as it stood when asked: the listener
+    #: leaves as the run winds down, a moment before the run ends, and the
+    #: stop is still going while this same record stands.
+    _stop_asked_record: Any = field(default=None, repr=False)
+    #: Each state read numbered, so the page can tell a read asked before
+    #: Stop's answer from one asked after it (`stop-run.js`).
+    _reads: Any = field(default_factory=itertools.count, repr=False)
+    #: Which GUI numbered them: a GUI started again numbers from 0, and a
+    #: page kept open across it took every read for one asked before its stop.
+    _reads_of: str = field(default_factory=lambda: os.urandom(8).hex(), repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -1082,6 +1132,7 @@ class DashboardRuntime:
         )
 
     def _refresh_process(self) -> None:
+        self._take_up_this_process_s_run()
         if self.process is None:
             return
         returncode = self.process.poll()
@@ -1105,6 +1156,36 @@ class DashboardRuntime:
             self.completion_error = self._completed_run_error()
             if self.completion_error:
                 self._record_completion_failure(self.completion_error)
+
+    def _take_up_this_process_s_run(self) -> None:
+        """Holding no run going, take up one of this process that has since
+        recorded itself in the study open. `fastmdx explore --dashboard`
+        starts its GUI before the run writes its record (a study given as a
+        config has no folder until the batch layer starts it), so the GUI,
+        adopting only as it was made and on a switch, said idle and offered
+        no Stop while the run went."""
+        if self.process is not None and self.process.poll() is None:
+            return
+        root = self.active_root
+        if root is None:
+            return
+        from fastmdxplora.orchestrator import (
+            RUN_PROCESS_FILE,
+            _written_by_this_process,
+            run_process_held_here,
+        )
+
+        # A run of this process going there: a study made and not run has a
+        # record too, and is not a run.
+        if not run_process_held_here(Path(root)) or not (Path(root) / RUN_PROCESS_FILE).is_file():
+            return
+        record = _process_record_held(Path(root))
+        if not _written_by_this_process(record):
+            return
+        if (isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid()
+                and dict(self.process.record) == record):
+            return  # the run already held, and seen to end
+        self._hold(Path(root), record, os.getpid())
 
     def _completed_run_error(self) -> str | None:
         """Reject a false-success child that produced no simulation results.
@@ -1179,17 +1260,30 @@ class DashboardRuntime:
         return None
 
     def _record_completion_failure(self, detail: str) -> None:
-        """Make the overview and health panels reflect post-run validation."""
+        """Make the overview and health panels reflect post-run validation.
+        Read and written held to the study (`server._confined`), as the
+        Stop records itself: a status linked out of it is not read."""
         if self.active_root is None:
             return
+        from fastmdxplora.gui.server import _confined
+
+        try:
+            _confined(Path(self.active_root), lambda root: self._completion_failure_recorded(
+                root, detail))
+        except Exception:  # noqa: BLE001 - status reporting must not mask the result
+            return
+
+    def _completion_failure_recorded(self, root: Path, detail: str) -> None:
         try:
             from fastmdxplora.gui.telemetry import TelemetryWriter, read_status
 
-            status = read_status(self.active_root)
+            status = read_status(root)
             states = status.get("stage_states")
             states = dict(states) if isinstance(states, dict) else {}
+            from fastmdxplora import record_access
+
             setup_ready = all(
-                (self.active_root / "setup" / name).is_file()
+                record_access.is_file(root / "setup" / name)
                 for name in ("system.xml", "state.xml", "topology.pdb")
             )
             if setup_ready:
@@ -1209,7 +1303,7 @@ class DashboardRuntime:
                     "report",
                 ):
                     states[name] = "skipped"
-            writer = TelemetryWriter(self.active_root / "simulation", enabled=True)
+            writer = TelemetryWriter(root / "simulation", enabled=True)
             writer.write_status(
                 stage=stage,
                 status="failed",
@@ -1241,6 +1335,7 @@ class DashboardRuntime:
             elif self.process is not None and self.process_returncode is not None and viewing_running:
                 status = "failed"
             no_study = self._no_study_open()
+            stopping = bool(running and viewing_running and self._still_stopping())
             open_root = None if no_study or self.data_stale else self.active_root
             # Its runs, and the study it is a run of, read held to the study.
             held = _runs_held(open_root) if open_root else {}
@@ -1253,6 +1348,14 @@ class DashboardRuntime:
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
                 "process_running": running and viewing_running,
+                # Asked to stop, and not yet stopped: no Stop is offered again,
+                # and none is refused.
+                "stopping": stopping,
+                "read": next(self._reads),
+                "read_of": self._reads_of,
+                # Said at once, in place of asking, where Stop would be refused.
+                "stop_refused": (self._own_stop_refused()
+                                 if running and viewing_running and not stopping else None),
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
@@ -1300,7 +1403,7 @@ class DashboardRuntime:
         work on the CPU.
         """
         from fastmdxplora.gpu_here import start_sampler
-        from fastmdxplora.refusals import refusal_of
+        from fastmdxplora.refusals import OutsideWorkspace, refusal_of
         from fastmdxplora.runs_here import StartRefused, may_start, record_start, starting_in
 
         folders = self._rule_folders()
@@ -1315,8 +1418,14 @@ class DashboardRuntime:
                 if start.refused is not None:
                     return start.refused
                 since = time.time()
-                started = self._spawn_now(command, output_dir, dashboard_url,
-                                          **({"env": start.env} if start.env else {}))
+                try:
+                    started = self._spawn_now(command, output_dir, dashboard_url,
+                                              **({"env": start.env} if start.env else {}))
+                except OutsideWorkspace as exc:
+                    # Its log is a link: nothing is written where it leads,
+                    # and nothing is started.
+                    return {"ok": False, "error": f"{exc} Nothing was started.",
+                            "code": exc.code}
                 for folder in folders:
                     record_start(folder, output_dir, started["pid"], command,
                                  by=self.started_by, gpu=start.gpu)
@@ -1381,7 +1490,11 @@ class DashboardRuntime:
         env["FASTMDX_DASHBOARD_OUTPUT"] = str(output_dir)
         if dashboard_url:
             env["FASTMDX_DASHBOARD_URL"] = dashboard_url
-        log_handle = log_path.open("a", encoding="utf-8", buffering=1)
+        from fastmdxplora import record_access
+
+        # Never through a link: a log linked out of the study is refused
+        # (`OutsideWorkspace`, said by `_spawn`), and nothing is started.
+        log_handle = record_access.open_to_append(log_path, encoding="utf-8", buffering=1)
         try:
             # Its own session, so the run outlives the server. Without this
             # it sat in the terminal's process group, and Ctrl-C on the
@@ -1604,7 +1717,14 @@ class DashboardRuntime:
         the study's own record of how it was started.
         """
         from fastmdxplora.gui.run_from_config import prepare_run
+        from fastmdxplora.gui.server import _fix_refused
 
+        # Not where the run would read or write through a link out of the
+        # study, nor into a hard-linked copy: walked before anything is
+        # read or written for it (`server._fix_refused`).
+        refused = _fix_refused(study, None)
+        if refused is not None:
+            return refused
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
         made = _made_by(kept)
@@ -1986,6 +2106,13 @@ class DashboardRuntime:
             if not runnable(remedy):
                 return {"ok": False, "error": (
                     "This fix is not a command run from here: " + remedy.fix)}
+            # Not where the run would read or write through a link out of
+            # the study, as Analyze again is not (`server._fix_refused`).
+            from fastmdxplora.gui.server import _fix_refused
+
+            refused = _fix_refused(study, list(remedy.argv))
+            if refused is not None:
+                return refused
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
                                   study, dashboard_url)
@@ -2024,6 +2151,13 @@ class DashboardRuntime:
             except StudyError as exc:
                 found = refusal_of(exc)
                 return {"ok": False, "error": found.message, "code": found.code}
+            # Not where the run would read or write through a link out of
+            # the study, as Analyze again is not (`server._fix_refused`).
+            from fastmdxplora.gui.server import _fix_refused
+
+            refused = _fix_refused(study, list(remedy.argv))
+            if refused is not None:
+                return refused
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
                                   study, dashboard_url)
@@ -2086,6 +2220,33 @@ class DashboardRuntime:
             if self.process is None or self.process.poll() is not None:
                 return {"stopped": False, "detail": "No workflow is currently running.", "state": self.snapshot()}
             where = self.running_root or self.active_root
+            if isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid():
+                # A run of this GUI's own process (`fastmdx explore
+                # --dashboard`, a notebook): a signal to it ended the GUI too,
+                # and where nothing caught it the process died and left its
+                # record. What listens for a stop here (production, or a
+                # parallel study's parent) is asked as SIGTERM asks, without
+                # a signal; where nothing listens, the stop is refused.
+                from fastmdxplora.simulation.runner import _listener_for, stop_what_listens_here
+
+                if self._still_stopping():
+                    # Asked already, and winding down: its listener may have
+                    # left, its stop has not ended. Not refused as one that
+                    # would end the GUI.
+                    return {"stopped": True, "detail": "Stopping: asked already.",
+                            "state": self.snapshot()}
+                asked = _listener_for(where)
+                record = _process_record_held(Path(where)) if where is not None else {}
+                said = stop_what_listens_here(where)
+                if said is None:
+                    said = OWN_STOP_REFUSED
+                    return {"stopped": False, "ok": False, "refused": True, "detail": said,
+                            "error": said, "state": self.snapshot()}
+                if where is not None:
+                    self.stopped_roots.add(Path(where).resolve())
+                self._stop_asked_of = asked
+                self._stop_asked_record = record or None
+                return {"stopped": True, "detail": said, "state": self.snapshot()}
             if where is not None:
                 self.stopped_roots.add(Path(where).resolve())
             self.process.terminate()
@@ -2120,6 +2281,34 @@ class DashboardRuntime:
             }
 
 
+    def _still_stopping(self) -> bool:
+        """Whether the run a stop was asked of here is still stopping: what
+        was asked still listens, or that run's process record still stands.
+        Forgotten once neither holds; a next run here writes a record of its
+        own. Called with the lock held."""
+        from fastmdxplora.simulation.runner import _LISTENING
+
+        asked, record = self._stop_asked_of, self._stop_asked_record
+        if asked is None and record is None:
+            return False
+        if asked is not None and any(listener is asked for listener in list(_LISTENING)):
+            return True
+        where = self.running_root or self.active_root
+        if record is not None and where is not None and _process_record_held(Path(where)) == record:
+            return True
+        self._stop_asked_of = self._stop_asked_record = None
+        return False
+
+    def _own_stop_refused(self) -> str | None:
+        """Why Stop would be refused now, where the run held is in this
+        GUI's own process and nothing in it listens for a stop
+        (`stop`); None otherwise. Called with the lock held."""
+        if not (isinstance(self.process, _AdoptedProcess) and self.process.pid == os.getpid()):
+            return None
+        from fastmdxplora.simulation.runner import listens_here
+
+        return None if listens_here(self.running_root or self.active_root) else OWN_STOP_REFUSED
+
     def _not_the_run_held(self) -> str | None:
         """Why the run adopted here is not signalled, where its process is
         no longer certainly the run (`_what_the_process_is`): its number
@@ -2148,7 +2337,19 @@ def _record_the_stop(root: Path) -> None:
     run stopped before production ends without a word (minimisation is one
     call that cannot be interrupted), so its record still said it was
     running, the open page said "Running" and, read again, "Interrupted:
-    the machine restarted", with a checkpoint that was never written."""
+    the machine restarted", with a checkpoint that was never written.
+    Read and written held to the study (`server._confined`): a record of it
+    linked out of it is not read, so nothing it says is recorded, and no
+    record is written through a link."""
+    from fastmdxplora.gui.server import _confined
+
+    try:
+        _confined(Path(root), _the_stop_recorded)
+    except Exception:  # noqa: BLE001 - the stop stands whatever is recorded
+        return
+
+
+def _the_stop_recorded(root: Path) -> None:
     from fastmdxplora.gui.telemetry import (
         _GOING_STATUSES, TelemetryWriter, read_status, read_study_status)
 

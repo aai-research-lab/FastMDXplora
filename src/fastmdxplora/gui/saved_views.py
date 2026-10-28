@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import threading
 from pathlib import Path
 from typing import Any
+
+from fastmdxplora import record_access as _records
 
 __all__ = ["MOST_NOTE", "MOST_VIEWS", "VIEWS_FILE", "delete_view", "save_view", "views_of"]
 
@@ -37,9 +38,11 @@ _LOCK = threading.Lock()
 
 
 def views_of(root: Path | str) -> dict[str, Any]:
-    """The views saved with the study, in the order they were saved."""
+    """The views saved with the study, in the order they were saved.
+    Through `record_access`: in a read held to the study, a record of them
+    linked out of it is refused and named, not read."""
     try:
-        data = json.loads((Path(root) / VIEWS_FILE).read_text(encoding="utf-8"))
+        data = json.loads(_records.read_text(Path(root) / VIEWS_FILE, encoding="utf-8"))
     except (OSError, ValueError):
         data = {}
     views = data.get("views") if isinstance(data, dict) else None
@@ -65,7 +68,10 @@ def save_view(root: Path | str, name: Any, view: Any) -> dict[str, Any]:
         return {"ok": False, "reason": f"A note is one line of at most {MOST_NOTE} "
                                        "characters."}
     with _LOCK:
-        views = [v for v in views_of(root)["views"] if v["name"] != name]
+        kept = _kept(root)
+        if kept is None:
+            return dict(_NOT_READ)
+        views = [v for v in kept if v["name"] != name]
         if len(views) >= MOST_VIEWS:
             return {"ok": False, "reason": f"A study keeps at most {MOST_VIEWS} views; "
                                            "forget one first."}
@@ -77,7 +83,9 @@ def save_view(root: Path | str, name: Any, view: Any) -> dict[str, Any]:
 def delete_view(root: Path | str, name: Any) -> dict[str, Any]:
     """The view of that name forgotten."""
     with _LOCK:
-        views = views_of(root)["views"]
+        views = _kept(root)
+        if views is None:
+            return dict(_NOT_READ)
         kept = [v for v in views if v["name"] != str(name)]
         if len(kept) == len(views):
             return {"ok": False, "reason": "There is no view of that name."}
@@ -85,11 +93,23 @@ def delete_view(root: Path | str, name: Any) -> dict[str, Any]:
     return {"ok": True, "views": kept}
 
 
+#: Why a view is not saved over views that were not read.
+_NOT_READ = {"ok": False, "reason": "The views saved with the study were not read, so none "
+                                    "is saved or forgotten over them."}
+
+
+def _kept(root: Path | str) -> list[dict[str, Any]] | None:
+    """The views saved with the study, or None where a held read refused
+    their record (a link out of the study): nothing is written over it."""
+    with _records.refusals_noted() as refused:
+        views = views_of(root)["views"]
+    return None if refused else views
+
+
 def _write(root: Path, views: list[dict[str, Any]]) -> None:
     target = root / VIEWS_FILE
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    temporary.write_text(json.dumps({"views": views}, indent=2), encoding="utf-8")
-    temporary.replace(target)
+    # A new temporary file, never one of a fixed name (`record_access.save`).
+    _records.save(target, json.dumps({"views": views}, indent=2))
 
 
 def _numbers(value: Any, count: int) -> list[float] | None:
@@ -124,6 +144,14 @@ def _checked(view: Any) -> dict[str, Any] | None:
     frame = view.get("frame")
     if isinstance(frame, int) and not isinstance(frame, bool) and 0 <= frame < 10_000_000:
         clean["frame"] = frame
+        if view.get("frame_source") is True:
+            clean["frame_source"] = True
+            # The trajectory the frame was named in, so a view opened after
+            # it was extended or joined is not shown at another frame.
+            signature = view.get("frame_signature")
+            if isinstance(signature, str) and 0 < len(signature) <= 1024 \
+                    and signature.isprintable():
+                clean["frame_signature"] = signature
     for key, word in (("representation", _WORD), ("colour", _COLOURING)):
         if isinstance(view.get(key), str) and word.match(view[key]):
             clean[key] = view[key]

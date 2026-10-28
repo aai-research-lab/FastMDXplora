@@ -80,8 +80,11 @@ def _from_the_frames(out: Path) -> dict[str, Any]:
     from fastmdxplora.analysis.base import superposed
     from fastmdxplora.utils.native_output import suppress_native_output
 
+    from fastmdxplora.gui.trajectory_frames import _load_json as _held_json
+
     simulation = out / "simulation"
-    index = _load_json(simulation / "frames_index.json")
+    # Held to the study where the read is (`trajectory_frames._load_json`).
+    index = _held_json(simulation / "frames_index.json")
     if not index.get("available") or not (simulation / "frames.dcd").is_file():
         return {"ok": False, "reason": "There are no frames to find a motion in yet."}
     record = simulation / "motion_modes.npz"
@@ -112,9 +115,11 @@ def _from_the_frames(out: Path) -> dict[str, Any]:
                  "vectors": model.components_.reshape(count, len(atoms), 3),
                  "variance": model.explained_variance_, "ratio": model.explained_variance_ratio_,
                  "frames": np.int64(frames.n_frames), "signature": np.array(signature)}
-        temporary = record.with_name(f".{record.name}.tmp.npz")
-        np.savez(temporary, **modes)
-        temporary.replace(record)
+        from fastmdxplora import record_access
+
+        # A new temporary file, never one of a fixed name; NumPy writes the
+        # archive to the stream it is given.
+        record_access.save(record, lambda stream: np.savez(stream, **modes))
         return _said_of_the_frames(modes)
 
 

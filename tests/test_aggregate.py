@@ -262,3 +262,15 @@ def test_replicas_from_the_models_of_an_ensemble_are_said_so_not_seed_alone(tmp_
         "differing only by random seed"
     assert how_replicas_differ(["setup.model", "simulation.random_seed"]) == \
         "started from different models of the ensemble, each with a seed of its own"
+
+
+@pytest.mark.parametrize("value", [[], None, "not an object", 42])
+def test_a_manifest_without_an_object_is_refused_with_its_code(tmp_path, value):
+    from fastmdxplora.batch.aggregate import batch_manifest
+    from fastmdxplora.refusals import StudyError
+
+    (tmp_path / "batch_manifest.json").write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(StudyError, match="The campaign's batch_manifest.json is not an object.") as refused:
+        batch_manifest(tmp_path)
+    assert isinstance(refused.value, ValueError)
+    assert refused.value.code == "batch.manifest.invalid"

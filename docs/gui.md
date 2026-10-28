@@ -418,7 +418,7 @@ there. Two scopes:
   setting, and the file is left as it was. **Use FastMDXplora's** takes it out
   again, a reason given is saved with it in the file's `decisions` (a study's
   report says it under **Why these settings**), and **Undo** puts back what
-  was there. A setting no control draws (a stopping rule, the
+  was there. A setting no control shows (a stopping rule, the
   analyses' options), or a value its control cannot say (restraints
   written as blocks), is set only by hand in the file and shown under its
   words as the file holds it, and a file with comments is shown and changed
@@ -628,12 +628,12 @@ The file is changed in **Settings**, under **This folder**. A file that is
 refused (a setting of one study in it, or a value the schema refuses)
 fills nothing: New study says why above the form, with the way to This
 folder, and offers FastMDXplora's own values until it is put right. The
-form keeps the defaults it was drawn with: where the file has changed
+form keeps the defaults it was filled with: where the file has changed
 since (in This folder or put right), New study says so above the form,
 where it is refused since, the refusal, and **Read the defaults again**
-draws the form from the file as it is. Bound beyond loopback, the folder's
+fills the form from the file as it is. Bound beyond loopback, the folder's
 file is neither shown nor said, as This folder is not offered there: the
-form offers FastMDXplora's own values, and the config handed back is drawn
+form offers FastMDXplora's own values, and the config handed back is made
 from them. A full config gives your default only to the systems that take
 it, and each run records your reason only where it took your value.
 
@@ -1027,6 +1027,55 @@ The GUI is a thin layer over a JSON API on the same port, which is worth
 knowing if you want to drive it from a script. Requests are capped at 1 MB,
 a movie's frames at 64 MB.
 
+The routes below that read a study read only inside it: a record linked out
+of it, or a file its records name outside it, is not read, nor another read
+in its place, on this computer or on a public bind. A JSON answer names it
+in `unavailable` and says it was not read (`not_read`); a file route gives a
+404; a folder linked out is said once ("simulation/ is a link out of the
+study, so its records are not read here"). The Files page's tiles say "not
+read" of such a record, and an analysis whose status it was says its
+status, not the value beside it, was not read, and why. The study set
+beside the open one (`/api/beside`) is read held to itself, and what it did
+not read is named by its name (`other: simulation/frames.dcd`). The run's
+snapshots are not cleared (`POST /api/files/clear-scratch`) where its record
+is linked out, and the Stop (`POST /api/explore/stop`) reads and writes the
+run's status held to the study, so a status linked out is not read, copied
+in or written through. Every record the GUI itself saves in a study (what
+the Viewer computes, the frames written for it, views, selections and
+scenes, a stop recorded) is written to a new temporary file of its own and
+renamed into place (MDTraj's in a new folder of its own), never over or
+through a link out of the study; one not saved is named in the answer ("was
+not saved: it leads outside the study", or "could not be saved: no room" on
+a full disk), and the frames are played where only their index was not
+saved. A study copied whole reads its own file in the place its records
+name only where it holds as many atoms as its analyses read (`n_atoms`).
+The Agent's conversation routes (`/api/agent/...`) are not yet held to the
+study: they answer on this computer only, and are held in a later release.
+
+The GUI starts no run (Analyze again and Write it again, `POST /api/again`
+and `/api/report/write`, the Agent's `DO: analyze again`, `DO: write the
+report again` and `DO: run the fix`, a fix from the Problems panel, `POST
+/api/fix`, and a study carried on in place, `simulation.resume_from`) in a
+study that holds a link leading out of it, wherever in the study it is, or
+any file that is a hard link ("the run could write into another copy of
+it": a run rewrites some records in place, its Config among them, and no
+list of those is complete), or a folder it cannot list; nor Analyze again
+or Write it again where its Config or analysis manifest was not read. The
+study is walked, as it is at the moment it is asked, before any record of
+it is read for the run. `GET /api/again` then offers neither phase, and
+`GET /api/fixes` no fix to run, from the same walk, naming what was found
+and the command the GUI would start, quoted, to run at the terminal
+instead: the one `again.plan` makes, with the report where the study or
+any of its runs has one, and the analyses asked for; for a run of a study
+of several, it says the command builds the comparison of the study's runs
+again after it. A study the person keeps in a folder named `runs/` of
+their own is judged as itself; a run of a study of several (by its batch
+manifest) with its whole study. A run's own process, started from the GUI
+or at the terminal, reads and writes the study's folder as the person made
+it, following its links (a `simulation/` on a cluster's scratch, say); only
+its status, events, metrics and the log of a run the GUI starts never
+follow a link at the record itself.
+
 **Reading**
 
 | Endpoint | What it returns |
@@ -1040,7 +1089,7 @@ a movie's frames at 64 MB.
 | `GET /api/artifacts`, `/api/files` | Artifact records for the Report page |
 | `GET /api/structure-info`, `/api/ligands` | Atom, residue, chain and ligand counts |
 | `GET /api/live-frame-index`, `/api/live-coordinates` | The run's latest frame, as it writes them |
-| `GET /api/frames-info`, `/structure/frames-topology.pdb`, `/structure/frames.dcd` | The trajectory the viewer plays, as binary frames: the source's own topology lines for the atoms shown (solvent stripped), and a DCD of evenly spaced frames, made whole and centred on the protein, each frame's time (`frame_times_ns`) as the analyses plot it, frame k at k + 1 saving intervals, the interval read from the analysis's record or the run's, under ten million atoms times frames and at most 2,000 frames (`--dashboard-max-playback-frames`); `?of=frames` gives their DSSP; `GET /api/frames-pieces` and `/structure/frames-piece.xtc?k=0` the same frames as XTC, in the pieces the Viewer plays from the first, and `?as=xtc` any of the frames (superposed or not) as XTC; `&span=FROM:TO:EVERY&between=N` gives a movie's frames with 1, 3 or 7 frames in between each two, interpolated in straight lines and written once beside the frames. For a study of several runs, the first run with a trajectory, with `runs_together`: each run's label, colour and frames, those not shown and why, and what they were fitted on; `/structure/frames.dcd?run=N` is the Nth run's frames fitted to the first run's first frame |
+| `GET /api/frames-info`, `/structure/frames-topology.pdb`, `/structure/frames.dcd` | The trajectory the viewer plays, as binary frames: the source's own topology lines for the atoms shown (solvent stripped), and a DCD of evenly spaced frames, made whole and centred on the protein, each frame's time (`frame_times_ns`) as the analyses plot it, frame k at k + 1 saving intervals, the interval read from the analysis's record or the run's, under ten million atoms times frames and at most 2,000 frames (`--dashboard-max-playback-frames`); `?of=frames` gives their DSSP; `GET /api/frames-pieces` and `/structure/frames-piece.xtc?k=0` the same frames as XTC, in the pieces the Viewer plays from the first, and `?as=xtc` any of the frames (superposed or not) as XTC; `&span=FROM:TO:EVERY&between=N` gives a movie's frames with 1, 3 or 7 frames in between each two, interpolated in straight lines and written once beside the frames. For a study of several runs, the first run with a trajectory, with `runs_together`: each run's label, colour and frames, those not shown and why, and what they were fitted on; `/structure/frames.dcd?run=N` is the Nth run's frames fitted to the first run's first frame. Each is read from the study's own records alone: a trajectory, a topology or the frames written for the Viewer linked out of the study, or a topology its join names outside it, is not opened where it leads and not played, on this computer or on a public bind; the binary routes give a 404 and `/api/frames-info` names it in `unavailable` and says it was not read (`not_read`). For a study of several runs, the run played is chosen held to the study, a run folder linked out of it passed over. What the routes below compute from these frames is read the same way, and only of the frames the study plays: frames, their topology or a record read beside them linked out is not read, and each answer says so. Nothing is written through a folder or file linked out of the study |
 | `GET /api/frames-superposed?on=backbone`, `?on=pocket&ligand=LIG&cutoff=5` | The frames played, each fitted to the first on the backbone or on the pocket's backbone (`/structure/frames.dcd?superposed=...`), written once beside the frames, with what they were fitted on |
 | `GET /api/chain-contacts` | The hydrogen bonds and salt bridges between the protein's chains in the frames played, by the interactions analysis's criteria, the most often present first (at most 40), each with its runs of frames and its two atoms among the frames played |
 | `GET /api/interactions-over-frames` | The contacts the interactions analysis found, the most often present first (at most 40), each with its runs of frames on the trajectory's clock and its two atoms among the frames played, checked by name |
@@ -1058,12 +1107,12 @@ a movie's frames at 64 MB.
 | `GET /api/residue-values` | Each per-residue result the analyses wrote, as `[chain, number, insertion code, value]`, with its unit, range and a sentence saying what it is |
 | `GET /api/secondary-structure?of=structure\|live\|frames` | DSSP for each residue of what the viewer was sent, one string of `H`, `E` and `C` per frame, or why there is none |
 | `GET /api/protein-preview` | The cached preview image |
-| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart plotted from them; `&run=ID` for one run of a study of several; with neither, the study's series over time, each with its label and unit |
+| `GET /api/series?analysis=NAME` | An analysis's series as numbers, for the chart plotted from them; `&run=ID` for one run of a study of several; with neither, the study's series over time, each with its label and unit. A residue's chain, number and name are read from the structure the analyses selected in, held to the study: one linked out of it, or named outside it, leaves the points value-only and is said not read (`not_read`), in the chart's hover box too |
 | `GET /api/selection?chain=A&resseq=189&resname=ASP&atom=CA` | The selection for a residue and one of its atoms, by `resSeq` and MDTraj's chain index, each checked against the topology the analyses read; `&frames_atom=N`, the atom's index in the frames played, names it exactly where they were written from that topology (a chain letter two chains share, or a residue number two residues share, by `resid`) |
 | `GET /api/studies?path=`, `/api/compared?a=&b=`, `/api/study-thumbnail?path=` | The studies under a folder as cards (each with its tags and note), the tags they carry, the most used first, two compared (for the Compare page, with each named and their series), and a card's figure; loopback only, as browsing folders is, and inside the workspace when hosted |
 | `POST /api/study-tags` | A study's tags and note, `{"path", "tags", "note"}`, replacing those it had (without `note`, the note kept), kept in its `study_tags.json`; loopback only, and inside the workspace when hosted |
 | `GET /api/residue-states?chain=A&resseq=57&resname=HIS` | A clicked residue's protonation states and this study's Config to start a new study from, the residue named as setup builds the structure |
-| `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom |
+| `GET /api/measure-over-frames?a=<selection>&b=<selection>` | The command that measures the distance between two atoms at every frame (`pair_distance`, into a folder of its own), each selection checked to name one atom; beyond loopback its files are named from the study's folder, where it is run (`note`) |
 | `GET /api/remote/machines`, `/api/remote/job?job=`, `/api/remote/fetch-sizes?job=` | Your machines as recorded at a terminal ([Other machines](remote.md)) and the jobs whose results come back into the workspace, nothing asked of any machine; a job's state, asked of its machine at most every 30 s; what a fetch of an ended job would bring, each part's size; loopback only, and not in a hosted GUI |
 | `GET /api/stream` | Server-sent events: one `change` event each time the study's files or the run's state change, and nothing about what changed; the page then asks the routes here |
 | `GET /api/stopping` | For a study run until it is determined: the rule, each quantity's error and mean after each round with the replicas' own means, where the error would reach the target at the rate it has fallen, and the piece now running with its time here |

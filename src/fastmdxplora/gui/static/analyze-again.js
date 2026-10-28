@@ -36,7 +36,34 @@
     if (button) button.setAttribute("aria-expanded", "false");
   }
 
-  function say(text) {
+  /* A command to run at the terminal, set as code that breaks only between
+   * its words: never between "--" and the word it marks. */
+  function commandNode(command) {
+    var code = document.createElement("code");
+    code.className = "again-terminal";
+    String(command).split(" ").forEach(function (word, at) {
+      if (at) code.appendChild(document.createTextNode(" "));
+      var piece = document.createElement("span");
+      piece.style.whiteSpace = "nowrap";
+      piece.textContent = word;
+      code.appendChild(piece);
+    });
+    return code;
+  }
+
+  /* A sentence, its command (``terminal``, its last words) set as code. */
+  function withCommand(said, text, terminal) {
+    text = String(text || "");
+    if (terminal && text.slice(-terminal.length) === terminal) {
+      said.textContent = text.slice(0, text.length - terminal.length);
+      said.appendChild(commandNode(terminal));
+    } else {
+      said.textContent = text;
+    }
+    return said;
+  }
+
+  function say(text, terminal) {
     var box = panel();
     if (!box) return;
     box.innerHTML = "";
@@ -44,7 +71,7 @@
     var shut = window.FastMDXIcons.button("close", "Close", "panel-x");
     shut.addEventListener("click", close);
     box.appendChild(shut);
-    box.appendChild(node("p", "again-said", text));
+    box.appendChild(withCommand(node("p", "again-said", ""), text, terminal));
     box.hidden = false;
   }
 
@@ -104,10 +131,17 @@
     var analysis = offered && offered.analysis;
     if (!box || !analysis) return;
     askedFrom = document.activeElement;
-    if (!analysis.can) { say(analysis.why || "This study cannot be analyzed again here."); return; }
+    if (!analysis.can) {
+      say(analysis.why || "This study cannot be analyzed again here.", analysis.terminal);
+      return;
+    }
     box.innerHTML = "";
     var said = node("p", "again-said", "");
     box.appendChild(said);
+    // A record of the study not read (its analysis manifest) is said, and
+    // nothing is ticked in its place: the person chooses.
+    var unread = offered.recorded_said || offered.not_read || "";
+    if (unread) box.appendChild(node("p", "again-unread", unread));
 
     var recorded = offered.recorded || [];
     var automatic = Array.isArray(analysis.defaults) ? analysis.defaults : null;
@@ -121,10 +155,10 @@
       first.appendChild(choice(known[name] || { name: name }, !only || only.indexOf(name) >= 0));
     });
     fields.appendChild(first);
-    if (!recorded.length && automatic === null) {
+    if (!unread && !recorded.length && automatic === null) {
       fields.appendChild(node("p", "again-said", analysis.defaults_why ||
         "Automatic choices could not be determined for this study. Choose analyses below."));
-    } else if (!recorded.length && automatic.length === 0) {
+    } else if (!unread && !recorded.length && automatic.length === 0) {
       fields.appendChild(node("p", "again-said",
         "No automatic analyses apply to this trajectory. Choose analyses below."));
     }
@@ -135,7 +169,7 @@
       var rest = node("div", "again-list");
       others.forEach(function (item) {
         var ticked = only ? only.indexOf(item.name) >= 0 :
-          !recorded.length && automatic !== null && automatic.indexOf(item.name) >= 0;
+          !recorded.length && !unread && automatic !== null && automatic.indexOf(item.name) >= 0;
         rest.appendChild(choice(item, ticked));
       });
       more.appendChild(rest);

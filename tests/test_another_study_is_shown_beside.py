@@ -222,7 +222,7 @@ def test_the_viewer_plays_them_together(pair):
 def test_without_a_clock_or_an_rmsf(pair, tmp_path):
     import shutil
 
-    from fastmdxplora.gui.beside import _difference, _residues, _timed, paired
+    from fastmdxplora.gui.beside import _difference, _residues, _rmsf, _timed, paired
     from fastmdxplora.gui.trajectory_frames import _atom_lines, _read
 
     chosen, said = _timed({"frame_times_ns": [None] * 5, "n_frames_browser": 5},
@@ -235,7 +235,7 @@ def test_without_a_clock_or_an_rmsf(pair, tmp_path):
     mine = _residues(_atom_lines(_read(wild / "simulation" / "frames_topology.pdb")))
     theirs = _residues(_atom_lines(_read(bare / "simulation" / "frames_topology.pdb")))
     pairs, _, _ = paired(mine, theirs)
-    assert _difference(wild, bare, "bare", mine, theirs, pairs) is None
+    assert _difference(wild, _rmsf(bare), "bare", mine, theirs, pairs) is None
 
 
 def test_an_unrelated_protein_is_not_paired_with_it(pair, tmp_path):

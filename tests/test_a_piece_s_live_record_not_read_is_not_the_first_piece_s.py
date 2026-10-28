@@ -90,8 +90,11 @@ def test_a_piece_s_live_record_not_read_is_not_its_first_piece_s(tmp_path, linke
     assert status["status"].get("status") != "stopped"
     assert "Ctrl+C" not in json.dumps(status)
     assert status["health"]["state"] == "not read"
-    assert RECORD in status["health"]["message"]
-    assert RECORD in status["unavailable"] or linked in status["unavailable"]
+    # The record, or, where its piece's folder is the link, that folder said
+    # once as a folder (`series.folder_out`).
+    named = RECORD if linked == RECORD else f"{linked}/ is a link out of the study"
+    assert named in status["health"]["message"]
+    assert RECORD in status["unavailable"] or f"{linked}/" in status["unavailable"]
 
     results = _asked(root, tmp_path, outside, "/api/results", public)
     said = {card["label"]: card["value"] for card in results["summary"]}

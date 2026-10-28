@@ -399,6 +399,6 @@ def test_the_overlay_says_the_frame_played(study):
             browser.close()
     finally:
         session.server.shutdown()
-    assert played[1] == "frame 2"
+    assert played[1] == "frame 3 / 5"
     assert after == played
     assert polled == played

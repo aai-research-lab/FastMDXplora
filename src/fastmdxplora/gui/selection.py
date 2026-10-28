@@ -15,6 +15,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora import record_access as _records
+
 __all__ = ["selection_for", "states_for", "topology_the_analyses_read"]
 
 _NAME = re.compile(r"^[A-Za-z0-9'*+-]{1,8}$")
@@ -41,16 +43,37 @@ def topology_the_analyses_read(root: Path | str) -> Path | None:
     return None
 
 
+def analysed_structure(root: Path) -> Path | str:
+    """The structure the analyses selected atoms in, as a chart's residues
+    are read from it (`series.topology_held`): in a read held to the study,
+    one linked out of it, or named outside it, is refused and named, and no
+    other read in its place. A study copied whole reads its own. Else why
+    there is none to read."""
+    from fastmdxplora.gui.series import topology_held
+
+    with _records.refusals_noted() as refused:
+        where = topology_held(root)
+    if where is not None:
+        return where
+    return ("The topology the analyses read was not read." if refused
+            else "No topology to check a selection against.")
+
+
 def _frames_atom(base: Path, topology: Any, where: Path, index: Any) -> Any:
     """The atom of the analyses' topology that atom ``index`` of the frames
     the viewer plays is, where the frames were written from that topology
     (``gui/trajectory_frames.py`` records which, and which of its atoms);
     else ``None``."""
+    from fastmdxplora.gui.trajectory_frames import _load_json
+
     try:
         position = int(str(index).strip())
-        said = json.loads((base / "simulation" / "frames_index.json").read_text(encoding="utf-8"))
-    except (TypeError, ValueError, OSError):
+    except (TypeError, ValueError):
         return None
+    # Held to the study (`trajectory_frames._load_json`): an index linked out
+    # of it is refused and named, and the one remembered while the frames
+    # stand is read in its place.
+    said = _load_json(base / "simulation" / "frames_index.json")
     source, shown = said.get("source_topology"), said.get("shown")
     if not said.get("available") or not isinstance(source, str) or shown not in ("not water",
                                                                                 "all"):
@@ -89,9 +112,9 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     atom = str(atom or "").strip()
     if not _NAME.match(resname) or (atom and not _NAME.match(atom)):
         return {"ok": False, "reason": "not a residue or atom name"}
-    where = topology_the_analyses_read(root)
-    if where is None:
-        return {"ok": False, "reason": "no topology to check a selection against"}
+    where = analysed_structure(Path(root))
+    if not isinstance(where, Path):
+        return {"ok": False, "reason": where.lower().rstrip(".")}
     try:
         from fastmdxplora.utils.native_output import topology_quietly
 
@@ -186,7 +209,9 @@ def states_for(root: Path | str, *, chain: str, resseq: Any, resname: str) -> di
         return {"ok": False, "reason": "no residue number"}
     base = Path(root)
     try:
-        config = yaml.safe_load((base / "resolved_config.yml").read_text(encoding="utf-8"))
+        # Through `record_access`: held to the study where the read is.
+        config = yaml.safe_load(_records.read_text(base / "resolved_config.yml",
+                                                   encoding="utf-8"))
     except (OSError, yaml.YAMLError):
         config = None
     if not isinstance(config, dict):
@@ -201,11 +226,14 @@ def states_for(root: Path | str, *, chain: str, resseq: Any, resname: str) -> di
     system = systems[0].get("system") if systems and isinstance(systems[0], dict) else None
     if not system:
         return {"ok": False, "reason": "This study names no structure."}
+    source = _the_structure_given(base, str(system))
+    if not isinstance(source, Path):
+        return {"ok": False, "reason": source}
     try:
-        from fastmdxplora.gui.preview import structure_file, titratable_residues
+        from fastmdxplora.gui.preview import titratable_residues
         from fastmdxplora.setup.estimate import estimate_system
 
-        built = titratable_residues(estimate_system(structure_file(str(system), None), {}).atoms)
+        built = titratable_residues(estimate_system(source, {}).atoms)
     except Exception as exc:  # noqa: BLE001 - said, not raised
         from fastmdxplora.refusals import refusal_of
 
@@ -234,3 +262,37 @@ def states_for(root: Path | str, *, chain: str, resseq: Any, resname: str) -> di
             "states": [{"state": s, "meaning": RESIDUE_STATE_MEANING.get(s, "")}
                        for s in RESIDUE_STATES[family]],
             "config": new}
+
+
+def _the_structure_given(base: Path, system: str) -> Path | str:
+    """The structure the study was given, as setup builds from it: its own
+    copy placed in its setup (``setup/input.pdb``), else the file its
+    Config names, or the entry fetched by identifier. Through
+    `record_access`: in a read held to the study, a copy linked out of it,
+    or a file named outside it, is refused and named, not read. Else why
+    there is none."""
+    from fastmdxplora.gui.preview import given_by_identifier, structure_file
+
+    own = base / "setup" / "input.pdb"
+    with _records.refusals_noted() as refused:
+        present = _records.is_file(own)
+    if refused:
+        return "setup/input.pdb, the structure the study was given, was not read."
+    if present:
+        return own
+    if not given_by_identifier(system):
+        # A name relative to the study is a file of it, not of the folder
+        # the GUI was started in.
+        named = Path(system).expanduser()
+        if not named.is_absolute():
+            system = str(base / named)
+        with _records.refusals_noted() as refused:
+            _records.is_file(Path(system))
+        if refused:
+            return f"{named}, the structure the study was given, was not read."
+    try:
+        return structure_file(system, None)
+    except Exception as exc:  # noqa: BLE001 - said, not raised
+        from fastmdxplora.refusals import refusal_of
+
+        return f"{system} could not be read: {refusal_of(exc).message}"

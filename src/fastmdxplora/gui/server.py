@@ -152,6 +152,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/measure-over-frames", "/api/residue-values", "/api/secondary-structure",
     "/api/frames-info", "/api/frames-superposed", "/api/interactions-over-frames",
     "/api/frames-pieces", "/structure/frames-piece.xtc",
+    "/api/exact-frame", "/structure/exact-frame.xtc",
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
@@ -174,7 +175,8 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/structure/frames-topology.pdb", "/api/occupancy", "/api/water-sites",
     "/structure/occupancy.dx", "/api/motion", "/api/states", "/api/state-difference",
     "/api/beside", "/structure/beside.pdb", "/structure/beside.dcd",
-    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/backbone-angles",
+    "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/exact-frame",
+    "/structure/exact-frame.xtc", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
     "/api/timeline",
 })
@@ -330,6 +332,8 @@ def _with_its_runs_process_records(study: Path,
 #: The names `record_access` gives a refused record that is not in the
 #: folder it was held to, which no path is relative to.
 _UNNAMED_REFUSALS = ("an unavailable record", "a non-regular record")
+#: How a record named outside the study, refused, is said.
+_NAMED_OUTSIDE = "a file named outside the study was not read"
 
 
 def _named_from(inside: Path, held: Path, name: str) -> str:
@@ -384,11 +388,21 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
         try:
             answer = read(inside, scope.denied) if keeps else read(inside)
         except OSError:
-            return dict(_RECORDS_UNREADABLE)
+            # A record not saved (`record_access.save`), or one refused, is
+            # still named: not "the study's records could not be read".
+            unsaved = _unsaved_said(inside, held, scope.unsaved)
+            if not unsaved and not scope.denied:
+                return dict(_RECORDS_UNREADABLE)
+            answer = {"ok": False, "available": False,
+                      "reason": unsaved or _RECORDS_UNREADABLE["reason"]}
+        unsaved = _unsaved_said(inside, held, scope.unsaved)
+        if unsaved and isinstance(answer, dict):
+            answer = {**answer, "not_saved": unsaved}
     if isinstance(answer, dict):
         named = answer.get("unavailable")
-        refused = ({_named_from(inside, held, name) for name in scope.denied}
-                   | set(named if isinstance(named, list) else ()))
+        refused = _folders_said(inside, {_named_from(inside, held, name)
+                                         for name in scope.denied}
+                                | set(named if isinstance(named, list) else ()))
         if refused:
             # A copy: the answer may be one a reader keeps for its next call.
             # Each named with why it was not read, for the page to say so.
@@ -396,6 +410,51 @@ def _confined(root: Path, read: Callable[..., Any], *, keeps: bool = False) -> A
                       "unavailable_why": {name: _why_not_read(inside, name, held)
                                           for name in sorted(refused)}}
     return answer
+
+
+def _folders_said(inside: Path, names: set[str]) -> set[str]:
+    """``names`` (refused, in the open folder ``inside``), each in a folder
+    of it linked out of it named as that folder instead (``simulation/``),
+    once (`series.folder_out`)."""
+    from fastmdxplora.gui.series import folder_out
+
+    said = set()
+    for name in names:
+        folder = None if name in _UNNAMED_REFUSALS else folder_out(inside, inside / name)
+        said.add(folder or name)
+    return said
+
+
+def _unsaved_said(inside: Path, held: Path, unsaved: dict[str, str]) -> str:
+    """The records a held read did not save (`record_access.not_saved`),
+    each named in the open folder ``inside`` with why, in a sentence: ""
+    where it saved every one."""
+    said = []
+    for name, why in sorted(unsaved.items()):
+        named = _named_from(inside, held, name) if name != "a record" else name
+        said.append(f"{named} was not saved: {why}" if why == "it leads outside the study"
+                    else f"{named} could not be saved: {why}")
+    return "; ".join(said) + "." if said else ""
+
+
+def _bytes_confined(root: Path, read: Callable[[Path], tuple[bytes | None, dict[str, Any]]]
+                    ) -> tuple[bytes | None, dict[str, Any]]:
+    """``read(study)``, which gives bytes and what it says of them, held to
+    the study's own records as `_confined` holds a page's reads: no bytes
+    where the study's folder could not be opened to hold it."""
+    answer = _confined(root, read)
+    return answer if isinstance(answer, tuple) else (None, answer)
+
+
+def _held_bytes(path: Path) -> bytes | None:
+    """A file's bytes through `record_access`, held to the study within
+    `_bytes_confined`; None where it is not there or is refused."""
+    from fastmdxplora import record_access
+
+    try:
+        return record_access.read_bytes(path)
+    except OSError:
+        return None
 
 
 def _as_opened(value: Any, inside: str, opened: str) -> Any:
@@ -424,6 +483,31 @@ def _fixes_held(root: Path) -> dict[str, Any]:
     answer = _confined(study, fixes_payload)
     inside, opened = str(study.resolve()), str(study)
     return answer if inside == opened else _as_opened(answer, inside, opened)
+
+
+def _fixes_offered(root: Path) -> dict[str, Any]:
+    """`GET /api/fixes`: the fixes read held to the study (`_fixes_held`),
+    the study walked first (`_links_out`). Where the POST would refuse, no
+    fix is offered to run: each says why (``not_run_here``) with its own
+    command (``terminal``), as the POST would say it."""
+    import shlex
+
+    from fastmdxplora.gui.fixes_view import study_of
+
+    study = study_of(root)
+    links = (_links_out(_the_study_run(Path(study)))
+             if study is not None and Path(study).is_dir() else [])
+    answer = _fixes_held(root)
+    if not links or not isinstance(answer, dict):
+        return answer
+    for fix in answer.get("fixes") or []:
+        if fix.get("runnable"):
+            terminal = shlex.join(["fastmdx", *(fix.get("argv") or [])])
+            fix["runnable"] = False
+            fix["terminal"] = terminal
+            fix["not_run_here"] = (_links_said(links) + " To run it anyway, at the terminal: "
+                                   + terminal)
+    return answer
 
 
 def _the_fix_shown(root: Path, index: Any, run_in: Path | None = None) -> bool:
@@ -499,26 +583,322 @@ def _status_unread() -> dict[str, Any]:
 def _refusals_said(answer: dict[str, Any]) -> str:
     """The records a `_confined` answer names as not read, each with why,
     in a sentence: "" where every record was read."""
-    from fastmdxplora.gui.series import NOT_READ_BECAUSE
+    from fastmdxplora.gui.series import FOLDER_OUT, NOT_READ_BECAUSE
 
     names = answer.get("unavailable") if isinstance(answer, dict) else None
     if not names:
         return ""
     why = answer.get("unavailable_why") or {}
-    said = "; ".join(f"{name} was not read: " + NOT_READ_BECAUSE.get(
-        why.get(name), "it leads outside the study, or to a file of the study that is not "
-        "one of its results") for name in names)
-    return said + (", so what it says is not shown." if len(names) == 1
-                   else ", so what they say is not shown.")
+
+    def one(name: str) -> str:
+        if name == _UNNAMED_REFUSALS[0]:
+            # Named by an address outside the study (`record_access` gives
+            # it no name of its own): no link, and said as what it is.
+            return _NAMED_OUTSIDE
+        return f"{name} was not read: " + NOT_READ_BECAUSE.get(
+            why.get(name), "it leads outside the study, or to a file of the study that is not "
+            "one of its results")
+
+    # A folder linked out is said once, as a folder, not as each of its
+    # records a link to a file.
+    folders = [name for name in names if name.endswith("/")]
+    records = [name for name in names if not name.endswith("/")]
+    parts = [FOLDER_OUT.format(name) for name in folders]
+    if records:
+        parts.append("; ".join(one(name) for name in records)
+                     + (", so what it says is not shown" if len(records) == 1
+                        else ", so what they say is not shown"))
+    return "; ".join(parts) + "."
 
 
 def _said_not_read(answer: Any) -> Any:
     """A `_confined` answer with its refused records said as not read, in
     its ``not_read`` sentence, for a page to show (`_refusals_said`)."""
     said = _refusals_said(answer)
+    unsaved = answer.get("not_saved") if isinstance(answer, dict) else None
+    if unsaved and unsaved != answer.get("reason"):
+        # A record not saved is said where a page says what was not read.
+        said = f"{said} {unsaved}".strip()
     if said:
         answer["not_read"] = said
     return answer
+
+
+def _again_offered(inside: Path) -> dict[str, Any]:
+    """What `GET /api/again` offers of the study ``inside``, in the held read
+    the caller is in: nothing where its Config is not its own."""
+    from fastmdxplora.config.recorded import RECORDED
+    from fastmdxplora.gui.again_view import again_payload
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+    if _linked_out(inside / RECORDED):
+        return {"available": False, "why": (
+            f"{RECORDED} is not one of this study's own records, so nothing is offered to "
+            "run again from it.")}
+    return again_payload(inside)
+
+
+#: The records of a study a run again is planned from: its Config and its
+#: analysis manifest, which say what runs.
+_AGAIN_FROM = ("resolved_config.yml", "analysis_manifest.json")
+#: How many links out of a study are named before the walk stops.
+_LINKS_NAMED = 3
+
+
+def _the_study_run(root: Path) -> Path:
+    """The study a run again in ``root`` belongs to: a run of a study of
+    several (``<study>/runs/<run>``, by its batch manifest, as
+    `again.plan` finds it) has its study's comparison built again after
+    it, so the whole study is the run's. A study the person keeps in a
+    folder of their own named ``runs`` is itself."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    return campaign_of(Path(root)) or Path(root)
+
+
+def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[tuple[str, str]]:
+    """The first ``most`` entries of the study ``study`` that a run would
+    read or write through, each named in it with what it is: a link leading
+    out of it ("link"; a folder with its "/"), a file that is a hard link
+    ("hard": any regular file another name also leads to, since a run
+    rewrites some of its records in place, and no list of those is
+    complete), or a folder that cannot be listed ("unlisted"). Found by
+    walking it without following a link, skipping nothing (its top, `previous/`, each run of a study of several,
+    `setup/`, `simulation/`, `analysis/`, `report/`, and the rest). A link
+    that stays in the study is not one. Nothing is opened."""
+    import stat as _stat
+    from collections import deque
+
+    top = Path(os.path.realpath(study))
+    found: list[tuple[str, str]] = []
+    folders = deque([Path(study)])
+
+    def named(path: str) -> str:
+        return Path(path).relative_to(study).as_posix()
+
+    while folders and len(found) < most:
+        folder = folders.popleft()
+        try:
+            with os.scandir(folder) as listing:
+                entries = sorted(listing, key=lambda entry: entry.name)
+        except FileNotFoundError:
+            # A study not yet written (or gone) has nothing to read or write
+            # through: what refuses its run is said where it is started.
+            continue
+        except OSError:
+            found.append((named(str(folder)) + "/" if folder != Path(study) else "./",
+                          "unlisted"))
+            continue
+        for entry in entries:
+            if len(found) >= most:
+                break
+            if entry.is_symlink():
+                target = Path(os.path.realpath(entry.path))
+                try:
+                    target.relative_to(top)
+                except ValueError:
+                    found.append((named(entry.path) + ("/" if target.is_dir() else ""),
+                                  "link"))
+            elif entry.is_dir(follow_symlinks=False):
+                folders.append(Path(entry.path))
+            else:
+                try:
+                    held = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                if _stat.S_ISREG(held.st_mode) and held.st_nlink > 1:
+                    found.append((named(entry.path), "hard"))
+    return found
+
+
+def _links_said(found: list[tuple[str, str]]) -> str:
+    """Why a run is not started from here, of what `_links_out` found."""
+    said = []
+    for kind, one, many, why in (
+            ("link", " is a link", " are links",
+             " out of the study: the run would read or write through {}"),
+            ("hard", " is a hard link", " are hard links",
+             ": the run could write into another copy of {}"),
+            ("unlisted", " cannot be listed", " cannot be listed",
+             ": what the run would read or write in {} is not known")):
+        names = [name for name, what in found if what == kind]
+        if names:
+            said.append(", ".join(names) + (many if len(names) > 1 else one)
+                        + why.format("them" if len(names) > 1 else "it"))
+    return "; ".join(said) + ", so it is not run from here."
+
+
+def _folders_here(folder: Path) -> list[Path]:
+    """The folders in ``folder``, each in it, not a link to one; none where
+    ``folder`` is itself a link or cannot be listed."""
+    if Path(folder).is_symlink():
+        return []
+    try:
+        with os.scandir(folder) as listing:
+            return sorted(Path(entry.path) for entry in listing
+                          if entry.is_dir(follow_symlinks=False))
+    except OSError:
+        return []
+
+
+def _terminal(study: Path, phases: list[str], analyses: Any = None) -> str:
+    """The command the GUI would start to run ``phases`` again in ``study``,
+    with the ``analyses`` asked for, as `again.plan` makes it
+    (`again.Again.command`: an analysis run again writes the report again
+    too where the study, or any run of a study of several, has one),
+    quoted, for the person to run at the terminal instead. Made without
+    reading a record of the study, which may lead out of it: only which of
+    its folders are there is asked."""
+    import shlex
+
+    from fastmdxplora import again
+    from fastmdxplora.refusals import StudyError
+
+    root = Path(study)
+    asked = tuple(phase for phase in again.PHASES if phase in phases)
+    if os.path.isfile(root / "batch_manifest.json"):
+        runs = [run for run in _folders_here(root / "runs") if is_study(run)]
+    else:
+        runs = [root]
+    if asked == ("analysis",) and any(os.path.isdir(run / "report") for run in runs):
+        asked = again.PHASES
+    try:
+        chosen = again.analyses_named(analyses) if analyses else None
+    except StudyError:
+        chosen = None
+    command = again.Again(study=root, phases=asked, analyses=chosen,
+                          runs=tuple(runs)).command()
+    return shlex.join(["fastmdx", *command])
+
+
+def _anyway(root: Path, phases: str | list[str], analyses: Any = None) -> tuple[str, str]:
+    """What follows a refusal to run ``phases`` again in ``root``: that the
+    command builds the comparison of its study's runs again after it, for
+    a run of a study of several, and the command (`_terminal`), with it."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    phases = [phases] if isinstance(phases, str) else list(phases)
+    terminal = _terminal(root, phases, analyses)
+    campaign = campaign_of(Path(root)) if "analysis" in phases else None
+    said = (f" It builds the comparison of {campaign.name}'s runs again after it, as the run "
+            "from here would." if campaign is not None else "")
+    return terminal, said + " To run it anyway, at the terminal: " + terminal
+
+
+def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+    """What can be run again on the study ``root`` (`GET /api/again`), read
+    held to it (`_confined`). The run's own process follows what is in its
+    folder, as a run started at the terminal does, so the GUI starts none in
+    a study that holds a link leading out of it, or a file that is a hard
+    link (`_links_out`): neither phase can, said
+    with what was found and the command the GUI would start, to run at the
+    terminal instead (``refused``). Where its Config or analysis manifest
+    was not read, neither can either. `POST /api/again` and
+    `/api/report/write` decide from this same answer, so nothing is
+    offered that would be refused."""
+    if links is None:
+        links = _links_out(_the_study_run(Path(root)))
+    said = _said_not_read(_confined(root, _again_offered))
+    refused = said.get("unavailable") or ()
+    read = [name for name in refused if name.endswith(_AGAIN_FROM)]
+    if not read and not links:
+        return said
+    whys = []
+    if links:
+        whys.append(_links_said(links))
+    if read:
+        whys.append(_refusals_said({"unavailable": read, "unavailable_why": {
+            name: (said.get("unavailable_why") or {}).get(name) for name in read}})
+            + " Nothing is run again from it.")
+    why = " ".join(whys)
+    answer = {**said, "recorded": [], "refused": why,
+              "links_out": [name for name, _ in links]}
+    for phase in ("analysis", "report"):
+        terminal, anyway = _anyway(Path(root), phase) if links else (None, "")
+        answer[phase] = {"can": False, "terminal": terminal, "why": why + anyway}
+    # Nothing is offered ticked, so nothing is said of what would be.
+    answer.pop("recorded_said", None)
+    return answer
+
+
+def _fix_refused(study: Path, argv: list[str] | None) -> dict[str, Any] | None:
+    """Why a fix (`POST /api/fix`: a resume, umbrella windows again) is not
+    started in ``study``: as for running a phase again, a link leading out
+    of it, or a file of it that is a hard link (`_links_out`), with the fix's own command, quoted, to run at the
+    terminal instead, where it is known without reading the study
+    (``argv``). None where there is none."""
+    import shlex
+
+    links = _links_out(_the_study_run(Path(study)))
+    if not links:
+        return None
+    terminal = shlex.join(["fastmdx", *argv]) if argv else None
+    return {"ok": False, "error": _links_said(links) + (
+        " To run it anyway, at the terminal: " + terminal if terminal else ""),
+        "terminal": terminal, "links_out": [name for name, _ in links]}
+
+
+def _fix_walked(app_runtime: Any, asked: dict[str, Any]) -> dict[str, Any] | None:
+    """`POST /api/fix` refused before any record of the study is read: the
+    study walked first (`_fix_refused`), so neither the fixes shown nor the
+    windows asked for are read through a link out of it. The command is
+    the fix's as the page was given it, read held to the study
+    (`_fixes_held`); for windows, none is read, and the refusal is said
+    alone."""
+    from fastmdxplora.gui.fixes_view import study_of
+
+    study = study_of(getattr(app_runtime, "active_root", None))
+    if study is None or not Path(study).is_dir():
+        return None
+    argv = None
+    if "windows" not in asked and _links_out(_the_study_run(Path(study))):
+        try:
+            shown = _fixes_held(app_runtime.data_root()).get("fixes") or []
+            argv = shown[int(asked.get("index"))].get("argv") or None
+        except (TypeError, ValueError, IndexError, AttributeError):
+            argv = None
+    return _fix_refused(study, argv)
+
+
+def _again_refused(root: Path | None, phase: str | list[str] = "analysis",
+                   analyses: Any = None) -> dict[str, Any] | None:
+    """Why `POST /api/again` and `/api/report/write` (``phase`` "report"),
+    and the Agent's `DO: analyze again` and `DO: write the report again`,
+    start nothing on the study ``root``: what `_again_answer` refuses, said
+    as it says it of ``phase``, with the command to run at the terminal
+    where there is one. None where it refuses nothing, and the run's own
+    checks then decide."""
+    if root is None or not Path(root).is_dir():
+        return None
+    # Walked before any record of it is read, held or not.
+    links = _links_out(_the_study_run(Path(root)))
+    if links:
+        terminal, anyway = _anyway(Path(root), phase, analyses)
+        return {"ok": False, "error": _links_said(links) + anyway, "terminal": terminal,
+                "not_read": None}
+    said = _again_answer(Path(root), links)
+    if not said.get("refused"):
+        return None
+    if not isinstance(phase, str):
+        phase = "report" if list(phase) == ["report"] else "analysis"
+    offered = said.get(phase) if isinstance(said.get(phase), dict) else {}
+    return {"ok": False, "error": offered.get("why") or said["refused"],
+            "terminal": offered.get("terminal"), "not_read": said.get("not_read")}
+
+
+def _the_other_not_read(other: dict[str, Any]) -> str:
+    """What the study played beside this one did not read of itself, held
+    to itself (`_confined`), each record named by that study's name
+    ("other: simulation/frames.dcd"), in `_refusals_said`'s sentence; ""
+    where it read every one."""
+    names = other.get("unavailable") or []
+    if not names:
+        return ""
+    study = other.get("name") or Path(str(other.get("study") or "")).name or "the other study"
+    named = {name: name if name in _UNNAMED_REFUSALS else f"{study}: {name}" for name in names}
+    why = other.get("unavailable_why") or {}
+    return _refusals_said({"unavailable": [named[name] for name in names],
+                           "unavailable_why": {named[name]: why.get(name) for name in names}})
 
 
 def _withheld_where_not_read(answer: dict[str, Any], key: str) -> dict[str, Any]:
@@ -559,6 +939,17 @@ def _served_beyond_loopback(root: Path, target: Path) -> bool:
 
 #: How much of a file is read and sent at a time.
 SENT_AT_A_TIME = 1 << 20
+
+
+def _source_frame_number(query: dict[str, list[str]], key: str = "frame") -> int | None:
+    """One unambiguous ASCII frame index, including Python's integer-size guard."""
+    values = query.get(key, [])
+    if len(values) != 1 or not values[0].isascii() or not values[0].isdecimal():
+        return None
+    try:
+        return int(values[0])
+    except ValueError:
+        return None
 
 
 def byte_range(asked: str, size: int) -> tuple[int, int] | tuple[()] | None:
@@ -1003,7 +1394,10 @@ def make_handler(
                     self._send_run_frames(root, parse_qs(parsed.query)["run"][0],
                                           path.endswith(".pdb"))
                     return
-                root = run_shown(root) or root
+                # Chosen in a read held to the study (`_confined`): a run
+                # folder linked out of it is passed over, never played.
+                shown = _confined(root, run_shown)
+                root = shown if isinstance(shown, Path) else root
             if path in {"/", "/index", "/results", "/live"}:
                 self._send_html(page_for(self.headers.get(ACCOUNT_HEADER)))
                 return
@@ -1297,6 +1691,8 @@ def make_handler(
                 # figure saying which of its records were not read.
                 answer = _confined(root, lambda inside: figure_payload(inside, wanted))
                 said = _refusals_said(answer)
+                if said:
+                    answer["not_read"] = said
                 if said and answer.get("ok"):
                     answer["note"] = " ".join(filter(None, [answer.get("note"), said]))
                 elif said:
@@ -1308,6 +1704,8 @@ def make_handler(
                 # Read from the study's own results only (`_confined`).
                 from fastmdxplora.gui.overview_view import overview_payload
 
+                # Its ``not_read`` is the count of means not read, which its
+                # tiles say each with why (`overview_payload`).
                 self._send_json(_confined(
                     root, lambda inside, refused: overview_payload(inside, refused=refused),
                     keeps=True))
@@ -1337,7 +1735,7 @@ def make_handler(
                 # Read from the study's own records only (`_confined`).
                 from fastmdxplora.gui.timeline_view import timeline_payload
 
-                self._send_json(_confined(root, timeline_payload))
+                self._send_json(_said_not_read(_confined(root, timeline_payload)))
                 return
             if path == "/api/status-bar":
                 # This computer and its GPUs, for the strip under every
@@ -1378,10 +1776,11 @@ def make_handler(
 
                 query = parse_qs(parsed.query)
                 sets = query.get("sets")
-                self._send_json(deposit_plan(
-                    root, _artifact_records(root),
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: deposit_plan(
+                    inside, _artifact_records(inside),
                     figures=(query.get("figures") or ["svg"])[0],
-                    sets=None if sets is None else [k for k in ",".join(sets).split(",") if k]),
+                    sets=None if sets is None else [k for k in ",".join(sets).split(",") if k]))),
                     verbatim=("readme",))
                 return
             if path == "/api/files/sha256":
@@ -1411,7 +1810,7 @@ def make_handler(
                 return
             if path == "/api/results" or path == "/api/analyses":
                 # Read from the study's own results only (`_confined`).
-                payload = _confined(root, _results_payload)
+                payload = _said_not_read(_confined(root, _results_payload))
                 if payload.get("ok", True):
                     if payload.get("output_dir"):
                         # The folder as it was opened, not where its links lead.
@@ -1425,10 +1824,12 @@ def make_handler(
                 query = parse_qs(parsed.query)
                 name = (query.get("analysis") or [""])[0]
                 run = (query.get("run") or [""])[0]
-                # Read from the study's own results only (`_confined`).
+                # Read from the study's own results only (`_confined`), a
+                # record not read said so (`_said_not_read`): a chart whose
+                # structure was not read says that, not that it found none.
                 if not name and not run:
                     # Which series there are, for the Viewer's.
-                    self._send_json(_confined(root, series_over_time))
+                    self._send_json(_said_not_read(_confined(root, series_over_time)))
                     return
                 if run:
                     # One run of a study of several, named by its id: only
@@ -1440,9 +1841,10 @@ def make_handler(
                         return (series_payload(folder, name) if folder is not None
                                 else {"ok": False, "reason": "no such run in this study"})
 
-                    self._send_json(_confined(root, of_the_run))
+                    self._send_json(_said_not_read(_confined(root, of_the_run)))
                     return
-                self._send_json(_confined(root, lambda inside: series_payload(inside, name)))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: series_payload(inside, name))))
                 return
             if path == "/api/analysis-overview":
                 # What every analysis recorded, read together, from the
@@ -1450,14 +1852,15 @@ def make_handler(
                 # or to a hidden file in it, is not read (`record_access`).
                 from fastmdxplora.gui.analysis_overview import overview_of
 
-                self._send_json(_confined(root, overview_of))
+                self._send_json(_said_not_read(_confined(root, overview_of)))
                 return
             if path == "/api/convergence":
                 from fastmdxplora.gui.analysis_overview import convergence_payload
 
                 name = (parse_qs(parsed.query).get("analysis") or [""])[0]
                 # Read from the study's own results only (`_confined`).
-                self._send_json(_confined(root, lambda inside: convergence_payload(inside, name)))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: convergence_payload(inside, name))))
                 return
             if path == "/api/selection":
                 from fastmdxplora.gui.selection import selection_for
@@ -1467,9 +1870,12 @@ def make_handler(
                 def one(key: str) -> str:
                     return (query.get(key) or [""])[0]
 
-                self._send_json(selection_for(root, chain=one("chain"), resseq=one("resseq"),
-                                              resname=one("resname"), atom=one("atom"),
-                                              frames_atom=one("frames_atom") or None))
+                # Read from the study's own records only (`_confined`): the
+                # structure the analyses read and the frames' index, a study
+                # copied whole its own (`series.topology_held`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: selection_for(
+                    inside, chain=one("chain"), resseq=one("resseq"), resname=one("resname"),
+                    atom=one("atom"), frames_atom=one("frames_atom") or None))))
                 return
             if path == "/api/residue-states":
                 # A clicked residue's states, for a new study of the same
@@ -1477,16 +1883,25 @@ def make_handler(
                 from fastmdxplora.gui.selection import states_for
 
                 query = parse_qs(parsed.query)
-                self._send_json(states_for(root, chain=(query.get("chain") or [""])[0],
-                                           resseq=(query.get("resseq") or [""])[0],
-                                           resname=(query.get("resname") or [""])[0]))
+                # Read from the study's own records only (`_confined`): its
+                # Config and the structure it was given, as its setup placed it.
+                self._send_json(_said_not_read(_confined(root, lambda inside: states_for(
+                    inside, chain=(query.get("chain") or [""])[0],
+                    resseq=(query.get("resseq") or [""])[0],
+                    resname=(query.get("resname") or [""])[0]))))
                 return
             if path == "/api/measure-over-frames":
                 from fastmdxplora.gui.measure import over_frames
 
                 query = parse_qs(parsed.query)
-                self._send_json(over_frames(root, (query.get("a") or [""])[0],
-                                            (query.get("b") or [""])[0]))
+                # Read from the study's own records only (`_confined`), and
+                # its files named from the study's folder beyond loopback.
+                answer = _said_not_read(_confined(root, lambda inside: over_frames(
+                    inside, (query.get("a") or [""])[0], (query.get("b") or [""])[0],
+                    relative=not allow_control)))
+                inside, opened = str(root.resolve()), str(root)
+                self._send_json(answer if inside == opened or not allow_control
+                                else _as_opened(answer, inside, opened))
                 return
             if path == "/api/residue-values":
                 # The per-residue results the viewer colours the structure by.
@@ -1501,7 +1916,13 @@ def make_handler(
                 from fastmdxplora.gui.by_residue import secondary_structure
 
                 of = (parse_qs(parsed.query).get("of") or ["structure"])[0]
-                self._send_json(secondary_structure(root, of))
+                # The frames' read from the study's own records only, and only
+                # of the frames it plays (`_from_the_frames`); the structure's
+                # and the live frame's from its own records only (`_confined`).
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: secondary_structure(inside, of))
+                    if of == "frames" else _said_not_read(_confined(
+                        root, lambda inside: secondary_structure(inside, of))))
                 return
             if path == "/api/stopping":
                 from fastmdxplora.gui.stopping_view import stopping_payload
@@ -1514,9 +1935,10 @@ def make_handler(
                 # What can be run again on the study on screen, and why not,
                 # with the analyses it ran last and those this release has.
                 # Not answered beyond loopback, like the POST it offers.
-                from fastmdxplora.gui.again_view import again_payload
-
-                self._send_json(again_payload(root))
+                # Read from the study's own records only (`_confined`): what
+                # is offered again is planned from its own Config, and is what
+                # the POST would do (`_again_answer`).
+                self._send_json(_again_answer(root))
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its
@@ -1524,7 +1946,7 @@ def make_handler(
                 # commands the POST below runs.
                 # Read from the study's own records only (`_fixes_held`): a
                 # remedy is not priced from a record linked out of it.
-                self._send_json(_fixes_held(root))
+                self._send_json(_fixes_offered(root))
                 return
             if path == "/api/runs-compared":
                 from fastmdxplora.gui.runs_compared import runs_compared
@@ -1537,39 +1959,69 @@ def make_handler(
                 self._send_json(answer if inside == opened
                                 else _as_opened(answer, inside, opened))
                 return
+            # The structure, the live frame and what is read of them, below,
+            # are read from the study's own records only (`_confined`): one
+            # linked out of it, or named outside it, is not read, no other is
+            # read in its place, and the answer says it was not read.
             if path == "/api/protein-preview":
                 # Beyond loopback a viewer reads what the run has; it does
                 # not set this machine redoing work on request.
                 regenerate = allow_control and parsed.query == "regenerate=1"
-                self._send_json(protein_preview_payload(root, regenerate=regenerate))
+                self._send_json(_said_not_read(_confined(root, lambda inside: (
+                    protein_preview_payload(inside, regenerate=regenerate)))))
                 return
             if path == "/api/structure-info":
-                self._send_json(_structure_info_payload(root, cfg))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: _structure_info_payload(inside, cfg))))
                 return
             if path == "/api/ligands":
-                self._send_json(_ligands_payload(root, cfg))
+                self._send_json(_said_not_read(_confined(
+                    root, lambda inside: _ligands_payload(inside, cfg))))
                 return
             if path == "/api/live-frame-index":
-                self._send_json(_live_frame_index(root))
+                self._send_json(_said_not_read(_confined(root, _live_frame_index)))
                 return
             if path == "/api/live-coordinates":
-                self._send_json(_live_coordinates_payload(root))
+                self._send_json(_said_not_read(_confined(root, _live_coordinates_payload)))
                 return
             if path == "/api/frames-info":
                 # The trajectory as binary frames: a topology and a DCD.
                 from fastmdxplora.gui.runs_together import runs_together
                 from fastmdxplora.gui.trajectory_frames import frames_info
 
-                together = runs_together(study_root, most_frames=cfg.max_browser_frames,
-                                         force=allow_control and "force=1" in parsed.query)
+                force = allow_control and "force=1" in parsed.query
+                # Read from the study's own records only (`_confined`), as
+                # an exact frame is: a trajectory or topology linked out of
+                # it, or named outside it, is not played, and is said not read.
+                together = _confined(study_root, lambda inside: runs_together(
+                    inside, most_frames=cfg.max_browser_frames, force=force))
                 if together is not None:
-                    self._send_json(together)
+                    self._send_json(_said_not_read(together))
                     return
-                sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
-                self._send_json(frames_info(
-                    root, most_frames=cfg.max_browser_frames,
-                    simulation_time_ns_total=sim_manifest.get("duration_ns_actual"),
-                    force=allow_control and "force=1" in parsed.query))
+                self._send_json(_said_not_read(_confined(root, lambda inside: frames_info(
+                    inside, most_frames=cfg.max_browser_frames,
+                    simulation_time_ns_total=_load_json(
+                        inside / "simulation" / "simulation_parameters.json"
+                    ).get("duration_ns_actual"), force=force))))
+                return
+            if path == "/api/exact-frame":
+                from fastmdxplora.gui.trajectory_frames import exact_frame_info
+
+                query = parse_qs(parsed.query)
+                frame = _source_frame_number(query)
+                if frame is None:
+                    self._send_json({"ok": False,
+                                     "reason": "A source frame is a non-negative integer.",
+                                     "code": "config.option.wrong_type"})
+                    return
+                one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+                # Read from the study's own records only (`_confined`): a
+                # trajectory or topology linked out of it is said not read.
+                self._send_json(_said_not_read(_confined(root, lambda inside: exact_frame_info(
+                    inside, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=one("signature") or None,
+                    on=one("on") or "none", ligand=one("ligand") or None,
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))))
                 return
             if path == "/api/open-output":
                 if hosting is not None:
@@ -1605,22 +2057,61 @@ def make_handler(
                 self._send_live_coordinates(root)
                 return
             if path in ("/structure/frames.dcd", "/structure/frames-topology.pdb"):
-                self._send_frames(root, path.rsplit("/", 1)[1], parse_qs(parsed.query))
+                self._send_frames(root, path.rsplit("/", 1)[1],
+                                  parse_qs(parsed.query, keep_blank_values=True))
+                return
+            if path == "/structure/exact-frame.xtc":
+                from fastmdxplora.gui.trajectory_frames import exact_frame_xtc
+
+                query = parse_qs(parsed.query)
+                frame = _source_frame_number(query)
+                signature = (query.get("signature") or [""])[0]
+                if frame is None or not signature:
+                    self.send_error(400, "A source frame and its trajectory signature are required")
+                    return
+                one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+                # Read from the study's own records only (`_confined`).
+                data, details = _bytes_confined(root, lambda inside: exact_frame_xtc(
+                    inside, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=one("signature") or None,
+                    on=one("on") or "none", ligand=one("ligand") or None,
+                    cutoff_angstrom=one("cutoff") or 5.0, to=one("to") or "first"))
+                if data is None:
+                    # A fixed reason: the details are said by /api/exact-frame,
+                    # where a hosted page has them scrubbed of paths.
+                    busy = details.get("code") == "environment.service.busy"
+                    self.send_error(503 if busy else 404, "Exact frame unavailable")
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path == "/api/frames-pieces":
                 from fastmdxplora.gui.trajectory_frames import frames_pieces
 
-                self._send_json(frames_pieces(root))
+                # Read from the study's own records only (`_confined`), and
+                # only of the frames the study plays now (`_frames_played`).
+                self._send_json(_said_not_read(_confined(root, lambda inside: frames_pieces(
+                    inside) if self._frames_played(inside) else {
+                        "ok": False, "reason": "There are no frames yet."})))
                 return
             if path == "/structure/frames-piece.xtc":
                 from fastmdxplora.gui.trajectory_frames import PIECES
 
                 k = (parse_qs(parsed.query).get("k") or [""])[0]
-                target = root / "simulation" / PIECES / f"piece_{k}.xtc"
-                if not k.isdigit() or not target.is_file():
+                if not (k.isascii() and k.isdigit()):
                     self.send_error(404, "No such piece of the frames")
                     return
-                data = target.read_bytes()
+                # Read from the study's own records only (`_bytes_confined`).
+                data, _ = _bytes_confined(root, lambda inside: (_held_bytes(
+                    inside / "simulation" / PIECES / f"piece_{k}.xtc")
+                    if self._frames_played(inside) else None, {}))
+                if data is None:
+                    self.send_error(404, "No such piece of the frames")
+                    return
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Cache-Control", "no-store")
@@ -1631,7 +2122,8 @@ def make_handler(
             if path == "/api/views":
                 from fastmdxplora.gui.saved_views import views_of
 
-                self._send_json(views_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, views_of)))
                 return
             if path == "/api/viewer-atoms":
                 # The atoms a typed selection names in what the Viewer renders.
@@ -1639,19 +2131,28 @@ def make_handler(
 
                 query = parse_qs(parsed.query)
                 one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
-                pdb, key = _viewer_structure(root, one("of"),
-                                             with_solvent=one("solvent").lower() in {"1", "true"})
-                self._send_json(atoms_selected(pdb, one("expression"), key=key))
+                def selected(inside: Path) -> dict[str, Any]:
+                    pdb, key = _viewer_structure(
+                        inside, one("of"), with_solvent=one("solvent").lower() in {"1", "true"})
+                    return atoms_selected(pdb, one("expression"), key=key)
+
+                # The frames' topology read from the study's own records only,
+                # and only of the frames it plays (`_from_the_frames`); the
+                # structure and the live frame from its own records only.
+                self._send_json(self._from_the_frames(root, selected) if one("of") == "frames"
+                                else _said_not_read(_confined(root, selected)))
                 return
             if path == "/api/viewer-selections":
                 from fastmdxplora.gui.viewer_selections import selections_of
 
-                self._send_json(selections_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, selections_of)))
                 return
             if path == "/api/scenes":
                 from fastmdxplora.scenes import scenes_of
 
-                self._send_json(scenes_of(root))
+                # Read from the study's own records only (`_confined`).
+                self._send_json(_said_not_read(_confined(root, scenes_of)))
                 return
             if path == "/api/movies":
                 # What a movie is made with on this computer, and the movies
@@ -1659,28 +2160,45 @@ def make_handler(
                 # computer's ffmpeg, and making one writes the study.
                 from fastmdxplora.movies import encoding, movies_of
 
-                self._send_json({**encoding(), "movies": movies_of(root)["movies"]})
+                # Read from the study's own records only (`_confined`).
+                made = _said_not_read(_confined(root, movies_of))
+                self._send_json({**encoding(), **{key: made[key] for key in
+                                                  ("not_read", "unavailable") if key in made},
+                                 "movies": made.get("movies") or []})
                 return
             if path.startswith("/scenes/"):
                 # One file of a scene written with the study, so a viewer
                 # given the scene's address finds the files it names.
                 self._send_scene_member(root, path.removeprefix("/scenes/"))
                 return
+            # What the Viewer computes from the frames it plays, below, is
+            # read from the study's own records only, and only of the frames
+            # it plays (`_from_the_frames`): a frame, topology or record
+            # beside them linked out of it is not read, and said not read.
             if path == "/api/chain-contacts":
-                from fastmdxplora.gui.chain_contacts import chain_contacts
+                from fastmdxplora.gui.chain_contacts import CONTACTS_FILE, chain_contacts
 
-                self._send_json(chain_contacts(root))
+                self._send_json(self._from_the_frames(root, chain_contacts,
+                                                      f"simulation/{CONTACTS_FILE}"))
                 return
             if path == "/api/interactions-over-frames":
                 from fastmdxplora.gui.interactions_over_frames import interactions_over_frames
 
-                self._send_json(interactions_over_frames(root))
+                self._send_json(self._from_the_frames(
+                    root, interactions_over_frames,
+                    "analysis/pl_interactions/pl_interactions_frames.json",
+                    "analysis/pl_interactions/pl_interactions.dat"))
                 return
             if path == "/api/frames-superposed":
-                self._send_json(_frames_superposed_payload(root, parse_qs(parsed.query)))
+                query = parse_qs(parsed.query)
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: _frames_superposed_payload(inside, query)))
                 return
             if path == "/api/occupancy":
-                self._send_json(_occupancy_payload(root, parse_qs(parsed.query)))
+                query = parse_qs(parsed.query)
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: _occupancy_payload(inside, query),
+                    *_occupancy_records(query)))
                 return
             if path == "/structure/occupancy.dx":
                 self._send_occupancy(root, parse_qs(parsed.query))
@@ -1689,8 +2207,11 @@ def make_handler(
                 from fastmdxplora.gui.motion import motion
 
                 query = parse_qs(parsed.query)
-                self._send_json(motion(root, (query.get("mode") or ["1"])[0],
-                                       (query.get("scale") or ["1"])[0]))
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: motion(inside, (query.get("mode") or ["1"])[0],
+                                                (query.get("scale") or ["1"])[0]),
+                    "simulation/motion_modes.npz", "analysis/dimred/dimred_pca_modes.npz",
+                    "analysis/dimred/options.json"))
                 return
             if path == "/api/beside":
                 # Another study's frames beside this one's. Not answered
@@ -1703,18 +2224,54 @@ def make_handler(
                 if not named:
                     self._send_json({"ok": False, "reason": "No study was named."})
                     return
-                self._send_json(beside(root, named, most_frames=cfg.max_browser_frames))
+                # The study named is read first, held to itself (`_confined`),
+                # as `/api/compared` reads each study it is named: its frames,
+                # topology and RMSF linked out of it are not read, and said
+                # not read by its name. Then this study's frames, what is
+                # written beside them and the records read with them, its own
+                # records only (`_from_the_frames`).
+                from fastmdxplora.gui.beside import BESIDE, the_other
+
+                other = _confined(Path(named).expanduser(), lambda inside: the_other(
+                    inside, most_frames=cfg.max_browser_frames))
+                unread = _the_other_not_read(other)
+                if not other.get("ok"):
+                    # What it did not read is said where the Viewer says why
+                    # it shows nothing.
+                    said = {key: value for key, value in other.items()
+                            if key in ("ok", "reason", "code")}
+                    if unread:
+                        said.update(not_read=unread, reason=f"{said.get('reason')} {unread}")
+                    self._send_json(said)
+                    return
+                answer = self._from_the_frames(root, lambda inside: beside(
+                    inside, other, most_frames=cfg.max_browser_frames), BESIDE)
+                unsaved = answer.get("not_saved")
+                if not answer.get("ok") and unsaved and unsaved not in str(answer.get("reason")):
+                    # A record not saved (a full disk) is said where the
+                    # Viewer says why the study beside is not shown.
+                    answer["reason"] = f"{answer.get('reason')} {unsaved}"
+                if unread:
+                    answer["not_read"] = " ".join(filter(None, (answer.get("not_read"),
+                                                                unread)))
+                    if answer.get("ok") and answer.get("said"):
+                        # Said beside what it plays, as the Viewer shows it.
+                        answer["said"] = f"{answer['said']} {unread}"
+                    elif not answer.get("ok"):
+                        answer["reason"] = f"{answer.get('reason')} {unread}"
+                self._send_json(answer)
                 return
             if path in ("/structure/beside.pdb", "/structure/beside.dcd"):
                 from fastmdxplora.gui.beside import BESIDE, beside_file
 
                 name = beside_file((parse_qs(parsed.query).get("key") or [""])[0],
                                    path[-4:])
-                target = root / BESIDE / name if name else None
-                if target is None or not target.is_file():
+                # Read from the study's own records only (`_bytes_confined`).
+                data, _ = _bytes_confined(root, lambda inside: (_held_bytes(
+                    inside / BESIDE / name) if name else None, {}))
+                if data is None:
                     self.send_error(404, "No such study beside this one")
                     return
-                data = target.read_bytes()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream"
                                  if path.endswith(".dcd") else "chemical/x-pdb; charset=utf-8")
@@ -1729,10 +2286,17 @@ def make_handler(
                 asked = parse_qs(parsed.query)
                 one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
                 if path == "/api/pocket-volume":
-                    self._send_json(pocket_volume(root, one("ligand"), one("cutoff") or 5.0))
+                    self._send_json(self._from_the_frames(
+                        root, lambda inside: pocket_volume(inside, one("ligand"),
+                                                           one("cutoff") or 5.0),
+                        *_pocket_records(one("ligand"), one("cutoff") or 5.0)))
                     return
-                text, reason = pocket_points(root, one("ligand"), one("cutoff") or 5.0,
-                                             one("frame"))
+                said = self._from_the_frames(root, lambda inside: dict(zip(
+                    ("text", "reason"), pocket_points(inside, one("ligand"),
+                                                      one("cutoff") or 5.0, one("frame")))))
+                text = said.get("text")
+                # A fixed reason where a record was refused: no path is said.
+                reason = said.get("reason") or "No pocket for that frame"
                 if text is None:
                     self.send_error(404, reason)
                     return
@@ -1747,31 +2311,41 @@ def make_handler(
             if path in ("/api/contact-map", "/api/contact-pair"):
                 from fastmdxplora.gui.contact_map import contact_map, contact_pair
 
+                from fastmdxplora.gui.contact_map import MAP_FILE
+
                 asked = parse_qs(parsed.query)
                 one = lambda key: (asked.get(key) or [None])[0]  # noqa: E731
-                self._send_json(contact_pair(root, one("a"), one("b"))
-                                if path == "/api/contact-pair"
-                                else contact_map(root, one("first"), one("second"),
-                                                 one("method")))
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: contact_pair(inside, one("a"), one("b"))
+                    if path == "/api/contact-pair"
+                    else contact_map(inside, one("first"), one("second"), one("method")),
+                    f"simulation/{MAP_FILE}", *_CLUSTER_RECORDS))
                 return
             if path == "/api/backbone-angles":
-                from fastmdxplora.gui.backbone_angles import backbone_angles
+                from fastmdxplora.gui.backbone_angles import ANGLES_FILE, backbone_angles
 
-                self._send_json(backbone_angles(root))
+                self._send_json(self._from_the_frames(root, backbone_angles,
+                                                      f"simulation/{ANGLES_FILE}"))
                 return
             if path == "/api/states":
                 from fastmdxplora.gui.states import states_of
 
-                self._send_json(states_of(root, (parse_qs(parsed.query).get("method")
-                                                 or [None])[0]))
+                method = (parse_qs(parsed.query).get("method") or [None])[0]
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: states_of(inside, method), *_CLUSTER_RECORDS))
                 return
             if path == "/api/state-difference":
-                self._send_json(_state_difference_payload(root, parse_qs(parsed.query)))
+                query = parse_qs(parsed.query)
+                self._send_json(self._from_the_frames(
+                    root, lambda inside: _state_difference_payload(inside, query),
+                    *_superposed_records(query)))
                 return
             if path == "/api/water-sites":
                 from fastmdxplora.gui.occupancy import water_sites_placed
 
-                self._send_json(water_sites_placed(root))
+                self._send_json(self._from_the_frames(
+                    root, water_sites_placed, "analysis/water_sites/options.json",
+                    "analysis/water_sites/water_sites.dat"))
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))
@@ -1834,9 +2408,20 @@ def make_handler(
                                      "it now would carry what is still being written."})
                     return
                 asked = payload if isinstance(payload, dict) else {}
-                said = write_deposit(root, _artifact_records(root),
-                                     sets=[str(k) for k in asked.get("sets") or []],
-                                     figures=str(asked.get("figures") or "svg"))
+
+                def written(inside: Path) -> dict[str, Any]:
+                    # Held to the study (`_confined`): its records read from
+                    # it alone, and nothing written through a link out of it.
+                    from fastmdxplora.gui.trajectory_frames import _linked_out
+
+                    if _linked_out(inside / "deposit"):
+                        return {"ok": False, "error": "Where the deposit would be written is "
+                                                      "not one of this study's own records."}
+                    return write_deposit(inside, _artifact_records(inside),
+                                         sets=[str(k) for k in asked.get("sets") or []],
+                                         figures=str(asked.get("figures") or "svg"))
+
+                said = _said_not_read(_confined(root, written))
                 if said.get("ok"):
                     said["href"] = f"/artifacts/{quote(said['path'])}?download=1"
                 self._send_json(said)
@@ -1854,10 +2439,16 @@ def make_handler(
                 if _no_study(root):
                     self._send_json({"ok": False, "error": "No study is open."})
                     return
-                self._send_json(clear_scratch(
-                    root, _artifact_records(root),
-                    running=bool(app_runtime.snapshot().get("process_running")),
-                    dry=bool((payload or {}).get("dry"))))
+                records = _artifact_records(root)
+                running = bool(app_runtime.snapshot().get("process_running"))
+                # Each run's records read held to the study (`_confined`): a
+                # run whose record is linked out of it keeps its snapshots.
+                said = _confined(root, lambda inside: clear_scratch(
+                    inside, records, running=running, dry=bool((payload or {}).get("dry"))))
+                if "files" not in said:
+                    said = {"ok": False, "error": said.get("reason"), "files": 0, "bytes": 0,
+                            "snapshots": 0, "kept": []}
+                self._send_json(_said_not_read(said))
                 return
             if path == "/api/study-tags":
                 # A study's tags and note, as the person set them on its card,
@@ -1904,6 +2495,18 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
+                from fastmdxplora.gui.trajectory_frames import _linked_out
+                from fastmdxplora.movies import MOVIES_DIR
+
+                # Held to the study (`_confined`): nothing is written through
+                # a folder linked out of it.
+                linked = _said_not_read(_confined(study, lambda inside: {
+                    "ok": not _linked_out(inside / MOVIES_DIR)}))
+                if not linked.get("ok"):
+                    self._send_json({**linked, "reason": (
+                        "Where the movie would be written is not one of this study's own "
+                        "records, so it is not made.")})
+                    return
                 self._send_json(start_movie(study, payload.get("name"), fps=payload.get("fps"),
                                             width=payload.get("width"),
                                             height=payload.get("height"),
@@ -1934,29 +2537,44 @@ def make_handler(
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
                 ligands = payload.get("ligands")
-                selections = (selections_of(study)["selections"]
-                              if payload.get("selections", True) else [])
                 highlight = payload.get("highlight")
-                if isinstance(highlight, str) and highlight.strip():
-                    # Atoms to show, as a scene the Agent proposed names them.
-                    from fastmdxplora.scenes import highlighted
-
-                    selections = [*selections, highlighted(highlight.strip()[:500],
-                                                           payload.get("labels") is True)]
-                # A study of several runs: the run the Viewer plays, alone.
+                view = payload.get("view")
+                # A scene at a frame is made of the frames the Viewer plays.
+                framed = isinstance(view, dict) and type(view.get("frame")) is int
                 from fastmdxplora.gui.runs_together import run_shown
 
-                played = run_shown(study)
-                said = write_scene(
-                    study, payload.get("name"), payload.get("view"),
-                    selections=selections or None,
-                    ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
-                    else None, source=played)
-                if played is not None and said.get("ok"):
-                    said["notes"] = [*said.get("notes", []),
-                                     f"The scene is of the run played ({played.name}) alone: "
-                                     "the other runs are not part of it."]
-                self._send_json(said)
+                def made(inside: Path) -> dict[str, Any]:
+                    # Read from the study's own records only (`_confined`):
+                    # its selections, the run it plays, the structure, the
+                    # frames and what colours them. A frame, topology or
+                    # record linked out of it is not read, and said not read.
+                    selections = (selections_of(inside)["selections"]
+                                  if payload.get("selections", True) else [])
+                    if isinstance(highlight, str) and highlight.strip():
+                        # Atoms to show, as a scene the Agent proposed names them.
+                        from fastmdxplora.scenes import highlighted
+
+                        selections = [*selections, highlighted(highlight.strip()[:500],
+                                                               payload.get("labels") is True)]
+                    # A study of several runs: the run the Viewer plays, alone.
+                    played = run_shown(inside)
+                    played = played if isinstance(played, Path) else None
+                    refused = self._frames_refused(played or inside) if framed else None
+                    if refused:
+                        return refused
+                    said = write_scene(
+                        inside, payload.get("name"), view, selections=selections or None,
+                        ligands=[str(n) for n in ligands][:20] if isinstance(ligands, list)
+                        else None, source=played, most_frames=cfg.max_browser_frames)
+                    if played is not None and said.get("ok"):
+                        said["notes"] = [*said.get("notes", []),
+                                         f"The scene is of the run played ({played.name}) "
+                                         "alone: the other runs are not part of it."]
+                    return said
+
+                said = _said_not_read(_confined(study, made))
+                inside, opened = str(study.resolve()), str(study)
+                self._send_json(said if inside == opened else _as_opened(said, inside, opened))
                 return
             if path == "/api/viewer-selections":
                 # A selection of the Viewer named in the study, or forgotten.
@@ -1970,11 +2588,13 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
-                if payload.get("action") == "delete":
-                    self._send_json(delete_selection(study, payload.get("name")))
-                else:
-                    self._send_json(save_selection(study, payload.get("name"),
-                                                   payload.get("selection")))
+                # Held to the study (`_confined`): selections linked out of it
+                # are not read, nor written over.
+                self._send_json(_said_not_read(_confined(study, lambda inside: (
+                    delete_selection(inside, payload.get("name"))
+                    if payload.get("action") == "delete"
+                    else save_selection(inside, payload.get("name"),
+                                        payload.get("selection"))))))
                 return
             if path == "/api/views":
                 # A view of the Viewer saved with the study, or forgotten.
@@ -1988,10 +2608,12 @@ def make_handler(
                 if not is_study(study):
                     self._send_json({"ok": False, "reason": "No study is open to save it in."})
                     return
-                if payload.get("action") == "delete":
-                    self._send_json(delete_view(study, payload.get("name")))
-                else:
-                    self._send_json(save_view(study, payload.get("name"), payload.get("view")))
+                # Held to the study (`_confined`): views linked out of it are
+                # not read, nor written over.
+                self._send_json(_said_not_read(_confined(study, lambda inside: (
+                    delete_view(inside, payload.get("name"))
+                    if payload.get("action") == "delete"
+                    else save_view(inside, payload.get("name"), payload.get("view"))))))
                 return
             if path == "/api/run":
                 # Runs what the config describes rather than what a form was
@@ -2201,7 +2823,13 @@ def make_handler(
                 # Running a fix starts work on this machine, so it needs the
                 # machine's trust, which it has only on loopback, like every
                 # route not listed open. The page asks the person first.
-                asked = payload or {}
+                asked = payload if isinstance(payload, dict) else {}
+                # The study walked before any record of it is read: a fix
+                # read through a link out of it is not even looked at.
+                refused = _fix_walked(app_runtime, asked)
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 if "windows" in asked:
                     # Windows the person named, at the values they named.
                     self._send_json(app_runtime.run_windows_again(
@@ -2227,8 +2855,22 @@ def make_handler(
                 # A study's analysis or report run again in its folder
                 # (`fastmdxplora.again`). It starts work on this machine, so
                 # loopback only, like every route not listed open; the page
-                # asks the person first.
+                # asks the person first. Refused, as the GET offers nothing,
+                # where the study's Config or manifest is not its own.
                 asked = payload if isinstance(payload, dict) else {}
+                # Said with the command the run asked for would be.
+                from fastmdxplora import again as _again
+
+                try:
+                    phases = list(_again.phases_named(asked.get("phases") or []))
+                except Exception:  # noqa: BLE001 - refused below as it was
+                    phases = []
+                refused = _again_refused(
+                    app_runtime.active_root, phases or "analysis",
+                    asked.get("analyses") if isinstance(asked.get("analyses"), list) else None)
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 self._send_json(app_runtime.run_again(
                     asked.get("phases") or [], asked.get("analyses"),
                     dashboard_url=self.headers.get("Origin")))
@@ -2237,7 +2879,12 @@ def make_handler(
                 # The report phase alone on the study open, from its records.
                 # It starts work on this machine, so it needs the machine's
                 # trust, which it has only on loopback, like every route not
-                # listed open. The page asks the person first.
+                # listed open. The page asks the person first. Refused as
+                # `POST /api/again` is.
+                refused = _again_refused(app_runtime.active_root, "report")
+                if refused is not None:
+                    self._send_json(refused)
+                    return
                 self._send_json(app_runtime.write_the_report_again(
                     dashboard_url=self.headers.get("Origin")))
                 return
@@ -2710,8 +3357,10 @@ def make_handler(
 
             name, _, member = unquote(rest).partition("/")
             archive = root / SCENES_DIR / f"{name}.mvsx"
-            data = read_scene(root, name, "index.mvsj" if member == "view"
-                              else member or "index.mvsj")
+            # Read from the study's own records only (`_confined`).
+            data = _confined(root, lambda inside: read_scene(
+                inside, name, "index.mvsj" if member == "view" else member or "index.mvsj"))
+            data = data if isinstance(data, bytes) else None
             if data is None or (not allow_control
                                 and not _served_beyond_loopback(root, archive)):
                 self.send_error(404, "Scene not found")
@@ -2753,10 +3402,20 @@ def make_handler(
 
             links = self._files_links()
             records = self._where_each_is(root, _artifact_records(root))
-            model = files_model(root, records, values=_determined_values(root, records))
+            values = _determined_values(root, records)
+            # The study's own records only (`_confined`): a record linked out
+            # of it is not read, its tile says so, and the answer names it.
+            model = _said_not_read(_confined(root, lambda inside: files_model(
+                inside, records, values=values)))
+            if "files" not in model:
+                # The study's folder could not be opened to hold its reads.
+                self._send_json({"ok": False, "reason": model.get("reason")})
+                return
             payload = {"ok": True, "html": render(model, links, view=view), "view": view,
                        "can": links.can, "reveal_word": links.reveal_word,
                        "runs": model["runs"], "files": len(model["files"])}
+            if model.get("not_read"):
+                payload.update(not_read=model["not_read"], unavailable=model["unavailable"])
             body = json.dumps(payload).encode("utf-8")
             if hosting is not None:
                 self._send_json(payload)
@@ -2963,20 +3622,27 @@ def make_handler(
 
         def _send_svg_bundle(self, root: Path) -> None:
             """Download every generated SVG analysis/report figure as one ZIP."""
-            svg_paths = [path for path in _svg_figure_paths(root)
-                         if allow_control or _served_beyond_loopback(root, path)]
-            if not svg_paths:
+            def bundled(inside: Path) -> tuple[bytes | None, dict[str, Any]]:
+                # Read from the study's own records only (`_bytes_confined`):
+                # a figure, or a folder of them, linked out of it is not.
+                svg_paths = [path for path in _svg_figure_paths(inside)
+                             if allow_control or _served_beyond_loopback(inside, path)]
+                buffer = io.BytesIO()
+                written = 0
+                with zipfile.ZipFile(buffer, mode="w",
+                                     compression=zipfile.ZIP_DEFLATED) as archive:
+                    for source in svg_paths:
+                        figure = _held_bytes(source)
+                        if figure is None:
+                            continue
+                        archive.writestr(source.relative_to(inside).as_posix(), figure)
+                        written += 1
+                return (buffer.getvalue() if written else None), {}
+
+            data, _ = _bytes_confined(root, bundled)
+            if data is None:
                 self.send_error(404, "No SVG figures are available yet")
                 return
-            buffer = io.BytesIO()
-            with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for source in svg_paths:
-                    try:
-                        relative = source.relative_to(root).as_posix()
-                        archive.write(source, arcname=relative)
-                    except (OSError, ValueError):
-                        continue
-            data = buffer.getvalue()
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Cache-Control", "no-store")
@@ -2994,10 +3660,6 @@ def make_handler(
             # the prepared solute kept the file small but omitted the ligand,
             # which is put back only when the system is built, so a ligand run
             # drew a bare protein and said nothing about the absence.
-            target = _structure_file(root)
-            if target is None:
-                self.send_error(404, "Structure not found")
-                return
             # Water and ions on request only. The viewer's Water and Ions
             # toggles had nothing to act on, because the copy sent to the
             # browser has bulk solvent stripped -- and before that it was the
@@ -3005,9 +3667,21 @@ def make_handler(
             # never shown anything. Sending the whole box every time would
             # cost every reader the download for a view most of them never
             # open; sending it when asked costs only them.
-            data = (
-                target.read_bytes() if with_solvent else _display_structure_bytes(target)
-            )
+            def held(inside: Path) -> tuple[bytes | None, dict[str, Any]]:
+                # Read from the study's own records only (`_bytes_confined`).
+                target = _structure_file(inside)
+                if target is None:
+                    return None, {}
+                try:
+                    return (_held_bytes(target) if with_solvent
+                            else _display_structure_bytes(target)), {}
+                except OSError:
+                    return None, {}
+
+            data, _ = _bytes_confined(root, held)
+            if data is None:
+                self.send_error(404, "Structure not found")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -3019,9 +3693,10 @@ def make_handler(
             from fastmdxplora.gui.live_frames import live_frame_text
 
             # Made whole, so a bound ligand is shown in its pocket rather
-            # than in the copy of the box the snapshot wrapped it into.
-            text = live_frame_text(_live_dir(root))
-            if text is None:
+            # than in the copy of the box the snapshot wrapped it into. Read
+            # from the study's own records only (`_confined`).
+            text = _confined(root, lambda inside: live_frame_text(_live_dir(inside)))
+            if not isinstance(text, str):
                 self.send_error(404, "Live frame not available")
                 return
             data = text.encode("utf-8")
@@ -3035,8 +3710,9 @@ def make_handler(
         def _send_live_coordinates(self, root: Path) -> None:
             from fastmdxplora.gui.live_frames import live_frame_coordinates
 
-            said = live_frame_coordinates(_live_dir(root))
-            if said is None:
+            # Read from the study's own records only (`_confined`).
+            said = _confined(root, lambda inside: live_frame_coordinates(_live_dir(inside)))
+            if not isinstance(said, dict) or "data" not in said:
                 self.send_error(404, "Live frame not available")
                 return
             data = said["data"]
@@ -3053,54 +3729,42 @@ def make_handler(
 
         def _send_frames(self, root: Path, name: str,
                          query: dict[str, list[str]] | None = None) -> None:
-            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
-                                                            frames_info, superposed_frames,
-                                                            superposed_name)
+            if "exact_frame" in (query or {}):
+                from fastmdxplora.gui.trajectory_frames import exact_frames_dcd
 
-            target = root / "simulation" / (FRAMES_FILE if name.endswith(".dcd")
-                                            else FRAMES_TOPOLOGY)
-            if not target.is_file():
-                frames_info(root, most_frames=cfg.max_browser_frames)
-            on = ((query or {}).get("superposed") or [""])[0]
-            if on and name.endswith(".dcd"):
-                # The frames superposed, by a name made from the request's
-                # words, written if they are not yet.
+                signature = ((query or {}).get("signature") or [""])[0]
+                frame = _source_frame_number(query or {}, "exact_frame")
+                if frame is None or not signature:
+                    self.send_error(400, "A source frame and its trajectory signature are required")
+                    return
                 one = lambda key: ((query or {}).get(key) or [""])[0]  # noqa: E731
-                to, smooth = one("to") or "first", one("smooth") or "1"
-                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
-                                                  smooth)
-                if file is None:
-                    self.send_error(404, reason)
+                # Read from the study's own records only (`_confined`).
+                data, details = _bytes_confined(root, lambda inside: exact_frames_dcd(
+                    inside, frame, most_frames=cfg.max_browser_frames,
+                    source_signature=signature, on=one("on") or "none",
+                    ligand=one("ligand") or None, cutoff_angstrom=one("cutoff") or 5.0,
+                    to=one("to") or "first"))
+                if data is None:
+                    # A fixed reason: the details are said by /api/exact-frame,
+                    # where a hosted page has them scrubbed of paths.
+                    busy = details.get("code") == "environment.service.busy"
+                    self.send_error(503 if busy else 404, "Exact frame unavailable")
                     return
-                if not (root / "simulation" / file).is_file():
-                    said = superposed_frames(root, on, ligand=one("ligand"),
-                                             cutoff_angstrom=one("cutoff") or 5.0, to=to,
-                                             smooth=smooth)
-                    if not said.get("ok"):
-                        self.send_error(404, said.get("reason"))
-                        return
-                target = root / "simulation" / file
-            between = ((query or {}).get("between") or [""])[0]
-            if between and name.endswith(".dcd"):
-                # A movie's frames with frames in between them.
-                from fastmdxplora.gui.trajectory_frames import frames_between
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
 
-                tweened, reason = frames_between(
-                    target, ((query or {}).get("span") or [""])[0], between)
-                if tweened is None:
-                    self.send_error(404, reason)
-                    return
-                target = tweened
-            if ((query or {}).get("as") or [""])[0] == "xtc" and name.endswith(".dcd"):
-                # As the frames were loaded in pieces: XTC, read in place of
-                # them without loading them again.
-                from fastmdxplora.gui.trajectory_frames import as_xtc
-
-                target = as_xtc(target)
-            try:
-                data = target.read_bytes()
-            except OSError:
-                self.send_error(404, "Frames not available")
+            # Read from the study's own records only (`_bytes_confined`), as
+            # an exact frame is: frames written from a trajectory or topology
+            # linked out of the study, or named outside it, are not sent.
+            data, said = _bytes_confined(root, lambda inside: self._frames_held(
+                inside, name, query or {}))
+            if data is None:
+                self.send_error(404, said.get("reason") or "Frames not available")
                 return
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream" if name.endswith(".dcd")
@@ -3110,17 +3774,124 @@ def make_handler(
             self.end_headers()
             self.wfile.write(data)
 
+        def _frames_played(self, inside: Path) -> bool:
+            """Whether the frames written beside the study's trajectory may be
+            sent (`frames_info`, in the held read the caller is in): not
+            where it refused a record, so frames written before a record was
+            linked out of the study are not; frames with no trajectory left
+            to write them from are sent as they are."""
+            from fastmdxplora import record_access
+            from fastmdxplora.gui.trajectory_frames import frames_info
+
+            with record_access.refusals_noted() as refused:
+                said = frames_info(inside, most_frames=cfg.max_browser_frames)
+            return bool(said.get("playback_available")) or not refused
+
+        def _frames_refused(self, inside: Path, *records: str) -> dict[str, Any] | None:
+            """Why what the study ``inside`` computes from the frames it plays
+            is not given, in the held read the caller is in: the frames are
+            not its own (`_frames_played`), or they or their topology, or one
+            of the ``records`` (named in the study) it reads beside them, is
+            linked out of it. Each such record is named, so the answer says it
+            was not read; none is opened where it leads, or written over.
+            The frames' index linked out is not read and not saved, and what
+            was said of the frames when written is read in its place
+            (`trajectory_frames._load_json`), so the frames are computed from
+            all the same. None where every one is the study's own."""
+            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
+                                                            _NOT_SENT, _linked_out)
+
+            played = self._frames_played(inside)
+            frames = [_linked_out(inside / "simulation" / name)
+                      for name in (FRAMES_FILE, FRAMES_TOPOLOGY)]
+            beside = [_linked_out(inside / name) for name in records]
+            if not played or any(frames):
+                return {"ok": False, "available": False, "reason": _NOT_SENT[0],
+                        "code": _NOT_SENT[1]}
+            if any(beside):
+                return {"ok": False, "available": False,
+                        "reason": "A record this is read from is not one of the study's own.",
+                        "code": _NOT_SENT[1]}
+            return None
+
+        def _from_the_frames(self, root: Path, read: Callable[[Path], Any],
+                             *records: str) -> Any:
+            """``read(study)`` of what the study computes from the frames it
+            plays, held to the study (`_confined`) and given only where they
+            and the ``records`` beside them are its own (`_frames_refused`):
+            MDTraj reads a DCD by its name, in C, where a link out is
+            followed. A record refused is said not read (`_said_not_read`)."""
+            return _said_not_read(_confined(root, lambda inside: (
+                self._frames_refused(inside, *records) or read(inside))))
+
+        def _frames_held(self, inside: Path, name: str, query: dict[str, list[str]]
+                         ) -> tuple[bytes | None, dict[str, Any]]:
+            """The frames written beside the study's trajectory for the
+            browser (or their topology, or the frames superposed, in between
+            or as XTC), read in `_bytes_confined`: none where the frames the
+            study plays now are not its own (`frames_info`), and the reason
+            a fixed one, never a path."""
+            from fastmdxplora import record_access
+            from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY,
+                                                            superposed_frames, superposed_name)
+
+            simulation = inside / "simulation"
+            if not self._frames_played(inside):
+                return None, {"reason": "Frames not available"}
+            target = simulation / (FRAMES_FILE if name.endswith(".dcd") else FRAMES_TOPOLOGY)
+            one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+            on = one("superposed")
+            if on and name.endswith(".dcd"):
+                # The frames superposed, by a name made from the request's
+                # words, written if they are not yet.
+                to, smooth = one("to") or "first", one("smooth") or "1"
+                file, _, reason = superposed_name(on, one("ligand"), one("cutoff") or 5.0, to,
+                                                  smooth)
+                if file is None:
+                    return None, {"reason": reason}
+                if not record_access.is_file(simulation / file):
+                    # Written now; one linked out of the study is refused
+                    # there before it is opened.
+                    said = superposed_frames(inside, on, ligand=one("ligand"),
+                                             cutoff_angstrom=one("cutoff") or 5.0, to=to,
+                                             smooth=smooth)
+                    if not said.get("ok"):
+                        return None, {"reason": said.get("reason")}
+                target = simulation / file
+            between = one("between")
+            if between and name.endswith(".dcd"):
+                # A movie's frames with frames in between them.
+                from fastmdxplora.gui.trajectory_frames import frames_between
+
+                tweened, reason = frames_between(target, one("span"), between)
+                if tweened is None:
+                    return None, {"reason": reason}
+                target = tweened
+            if one("as") == "xtc" and name.endswith(".dcd"):
+                # As the frames were loaded in pieces: XTC, read in place of
+                # them without loading them again.
+                from fastmdxplora.gui.trajectory_frames import as_xtc
+
+                target = as_xtc(target)
+                if target is None:
+                    return None, {"reason": "Frames not available"}
+            data = _held_bytes(target)
+            return (data, {}) if data is not None else (None, {"reason": "Frames not available"})
+
         def _send_occupancy(self, root: Path, query: dict[str, list[str]]) -> None:
             """A map written beside the frames, named by the request's words."""
             from fastmdxplora.gui.occupancy import occupancy_file
 
             one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
             name, reason = occupancy_file(one("of"), one("ligand"), one("cutoff") or 5.0)
-            target = root / "simulation" / name if name else None
-            if target is None or not target.is_file():
+            # Read from the study's own records only, and only of the frames
+            # it plays (`_frames_refused`).
+            data, _ = _bytes_confined(root, lambda inside: (None if name is None or (
+                self._frames_refused(inside, *_occupancy_records(query)))
+                else _held_bytes(inside / "simulation" / name), {}))
+            if data is None:
                 self.send_error(404, reason or "No such map yet")
                 return
-            data = target.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -3134,11 +3905,15 @@ def make_handler(
             study, never a path."""
             from fastmdxplora.gui.runs_together import TOGETHER
 
-            target = root / TOGETHER / f"run_{run}.{'pdb' if topology else 'dcd'}"
-            if not run.isdigit() or not target.is_file():
+            if not (run.isascii() and run.isdigit()):
                 self.send_error(404, "No such run's frames")
                 return
-            data = target.read_bytes()
+            # Read from the study's own records only (`_bytes_confined`).
+            data, _ = _bytes_confined(root, lambda inside: (_held_bytes(
+                inside / TOGETHER / f"run_{run}.{'pdb' if topology else 'dcd'}"), {}))
+            if data is None:
+                self.send_error(404, "No such run's frames")
+                return
             self.send_response(200)
             self.send_header("Content-Type", "chemical/x-pdb; charset=utf-8" if topology
                              else "application/octet-stream")
@@ -3778,7 +4553,7 @@ def _structure_info_payload(
     except ValueError:
         info["structure_path"] = structure_path.as_posix()
     info["structure_url"] = (
-        f"/structure/topology.pdb?v={int(structure_path.stat().st_mtime_ns)}"
+        f"/structure/topology.pdb?v={int(_records_stat(structure_path).st_mtime_ns)}"
     )
     info["structure_available"] = True
     return info
@@ -3790,7 +4565,7 @@ def _ligands_payload(
     # Preparation strips the ligand and puts it back with small-molecule
     # parameters, so the prepared structure is the one file that never has it.
     structure_path = find_system(root)
-    if structure_path is None or not structure_path.is_file():
+    if structure_path is None or not _records_is_file(structure_path):
         return {"ligands": [], "explicit": normalise_ligand_resname(config.ligand_resname), "valid": False}
     info = count_structure(structure_path, max_bytes=_MAX_PDB_BYTES_FOR_SYSTEM_SCAN)
     instances = []
@@ -3827,6 +4602,55 @@ def _ligands_payload(
     }
 
 
+#: The cluster analysis's records the states are read from.
+_CLUSTER_RECORDS = ("analysis/cluster/options.json",
+                    *(f"analysis/cluster/cluster_{method}.dat"
+                      for method in ("kmeans", "hierarchical", "dbscan")))
+
+
+def _records_stat(path: Path) -> os.stat_result:
+    from fastmdxplora import record_access
+
+    return record_access.stat(path)
+
+
+def _records_is_file(path: Path) -> bool:
+    from fastmdxplora import record_access
+
+    return record_access.is_file(path)
+
+
+def _occupancy_records(query: dict[str, list[str]]) -> tuple[str, ...]:
+    """The records a map over the frames is read from and written to, named
+    in the study, as the request's words name the map."""
+    from fastmdxplora.gui.occupancy import occupancy_file
+
+    one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+    name, _ = occupancy_file(one("of"), one("ligand"), one("cutoff") or 5.0)
+    return () if name is None else (f"simulation/{name}", f"simulation/{name[:-3]}.json")
+
+
+def _pocket_records(ligand: Any, cutoff: Any) -> tuple[str, ...]:
+    """The record a pocket's volume over the frames is kept in, in the study."""
+    from fastmdxplora.gui.pocket_volume import _ligand_and_cutoff
+
+    name, value, _ = _ligand_and_cutoff(ligand, cutoff)
+    return () if name is None else (f"simulation/pocket_volume_{name}_{value:.2f}.json",)
+
+
+def _superposed_records(query: dict[str, list[str]]) -> tuple[str, ...]:
+    """The frames superposed a comparison of two states reads, as the
+    request's words name them, in the study."""
+    from fastmdxplora.gui.trajectory_frames import superposed_name
+
+    one = lambda key: (query.get(key) or [""])[0]  # noqa: E731
+    if (one("on") or "none") == "none":
+        return ()
+    name, _, _ = superposed_name(one("on"), one("ligand"), one("cutoff") or 5.0,
+                                 one("to") or "first", one("smooth") or "1")
+    return () if name is None else (f"simulation/{name}",)
+
+
 def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any]:
     """The frames superposed as asked, written if they are not yet, and the
     address the viewer loads them from."""
@@ -3845,7 +4669,7 @@ def _frames_superposed_payload(root: Path, query: dict[str, list[str]]) -> dict[
     if not said.get("ok"):
         return said
     # Asked for again under a new address once written again.
-    version = (root / "simulation" / said["file"]).stat().st_mtime_ns
+    version = _records_stat(root / "simulation" / said["file"]).st_mtime_ns
     asked = {"superposed": on, "v": version}
     if to != "first":
         asked["to"] = to
@@ -3875,7 +4699,7 @@ def _state_difference_payload(root: Path, query: dict[str, list[str]]) -> dict[s
                                                  smooth)
         if frames_file is None:
             return {"ok": False, "reason": reason}
-        if not (root / "simulation" / frames_file).is_file():
+        if not _records_is_file(root / "simulation" / frames_file):
             said = superposed_frames(root, on, ligand=one("ligand"),
                                      cutoff_angstrom=one("cutoff") or 5.0, to=to, smooth=smooth)
             if not said.get("ok"):
@@ -3896,7 +4720,7 @@ def _occupancy_payload(root: Path, query: dict[str, list[str]]) -> dict[str, Any
     said = occupancy(root, one("of"), ligand=one("ligand"), cutoff_angstrom=one("cutoff") or 5.0)
     if not said.get("ok"):
         return said
-    version = (root / "simulation" / said["file"]).stat().st_mtime_ns
+    version = _records_stat(root / "simulation" / said["file"]).st_mtime_ns
     asked = {"of": said["of"], "ligand": said["ligand"], "cutoff": f"{said['cutoff']:g}",
              "v": version}
     return {**said, "url": "/structure/occupancy.dx?" + urlencode(asked)}
@@ -4071,8 +4895,11 @@ def _ligand_interactions(root: Path) -> dict[str, Any]:
     and not found from one that was never looked for, which are different
     things to tell somebody about a binding site.
     """
+    from fastmdxplora import record_access
+
+    # Through `record_access`: held to the study where the read is.
     table = root / "analysis" / "pl_interactions" / "pl_interactions.dat"
-    if not table.is_file():
+    if not record_access.is_file(table):
         return {"analysed": False, "kinds": {}}
 
     # Counted by residue, not by row. Each row is one ligand-atom /
@@ -4084,7 +4911,7 @@ def _ligand_interactions(root: Path) -> dict[str, Any]:
         label: {"residues": {}, "pairs": 0} for label in _PANEL_INTERACTION_KINDS.values()
     }
     try:
-        with table.open(newline="", encoding="utf-8") as handle:
+        with record_access.open_text(table, newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 label = _PANEL_INTERACTION_KINDS.get(str(row.get("kind", "")).strip())
                 if label is None:
@@ -4245,8 +5072,12 @@ def _crystal_positions(root: Path) -> dict[str, list[str]]:
     rather than plumbed through the setup pipeline -- the file is already in
     every run directory.
     """
+    from fastmdxplora import record_access
+
+    # Its own, through `record_access`, before it is read by its name: in a
+    # held read, a setup linked out of the study or named outside it is not.
     source = _setup_of(root) / "input.pdb"
-    if not source.is_file():
+    if not record_access.is_file(source):
         return {}
     info = count_structure(source)
     if not info.get("valid"):

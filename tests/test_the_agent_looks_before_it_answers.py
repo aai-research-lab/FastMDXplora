@@ -21,6 +21,7 @@ import pytest
 
 from fastmdxplora.agent.propose import propose_config, prompt_for
 from fastmdxplora.agent.tools import MOST_LOOKS, Toolbox, use_in
+from tests._agent_page import ready
 
 ATOM = ("{:6s}{:5d} {:<4s} {:>3s} {}{:4d}    {:8.3f}{:8.3f}{:8.3f}  1.00  0.00"
         "          {:>2s}\n")
@@ -268,6 +269,7 @@ def test_the_thread_shows_it_and_keeps_it(structure, tmp_path, monkeypatch) -> N
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "What is in this structure?")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-answer")

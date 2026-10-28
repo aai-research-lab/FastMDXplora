@@ -38,6 +38,7 @@ from fastmdxplora.agent.memory import (
     undo,
     worth_reading,
 )
+from tests._agent_page import ready
 
 
 @pytest.fixture(autouse=True)
@@ -1905,6 +1906,7 @@ def test_the_page_says_what_it_remembered_under_the_reply_and_in_settings(
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "I am a structural biologist and I mostly study kinases")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-memory-note")

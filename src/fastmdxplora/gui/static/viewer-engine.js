@@ -160,7 +160,7 @@
    * is still being rendered, each replaced the other's half-built scene. The
    * engine's own calls to itself are not queued, so none waits on itself. */
   const QUEUED = new Set(["loadFrames", "loadFramesFromBytes", "appendFrames",
-    "setFramesCoordinates", "loadStructure",
+    "setFramesCoordinates", "setExactFrame", "loadStructure",
     "setCoordinates", "showScene", "clear", "build", "setScene", "showBox", "setFrame",
     "setRepresentation", "setColour", "setSecondaryStructure", "redraw", "measure",
     "showPicks", "showSelected", "clearMeasurements", "showContacts", "showInteractions", "loadEnvironment",
@@ -218,25 +218,10 @@
     /** A topology and its frames (`/structure/frames-topology.pdb` and
      * `/structure/frames.dcd`). */
     async loadFrames(topologyUrl, coordinatesUrl) {
-      await this.clear();
-      const plugin = this.plugin;
-      const builders = plugin.builders;
-      const topology = await builders.data.download({url: absolute(topologyUrl), isBinary: false});
-      const model = await builders.structure.createModel(
-        await builders.structure.parseTrajectory(topology, "pdb"));
-      const download = await builders.data.download({url: absolute(coordinatesUrl),
-        isBinary: true});
-      const coordinates = await plugin.dataFormats.get("dcd").parse(plugin, download);
-      this.framesRef = download.ref;
-      const trajectory = await plugin.build().toRoot()
-        .apply(this.lib.plugin.StateTransforms.Model.TrajectoryFromModelAndCoordinates,
-          {modelRef: model.ref, coordinatesRef: coordinates.ref},
-          {dependsOn: [model.ref, coordinates.ref]})
-        .commit();
-      await builders.structure.hierarchy.applyPreset(trajectory, "default",
-        {representationPreset: "empty", showUnitcell: false});
-      await this.build();
-      return {frames: this.frameCount(), atoms: this.atomCount()};
+      const response = await fetch(absolute(coordinatesUrl), {cache: "no-store"});
+      if (!response.ok) throw new Error(`trajectory HTTP ${response.status}`);
+      return this.loadFramesFromBytes(topologyUrl,
+        new Uint8Array(await response.arrayBuffer()), "dcd");
     }
 
     /** A topology and its frames as bytes already fetched (the first
@@ -253,6 +238,10 @@
       const coordinates = await plugin.dataFormats.get(format).parse(plugin, raw);
       this.framesRef = raw.ref;
       this.framesBytes = format;
+      this.framesBaseBytes = bytes;
+      this.framesExactBytes = null;
+      this.exactIndex = null;
+      this.exactHeld = false;
       this.framesWhole = false;
       const trajectory = await plugin.build().toRoot()
         .apply(this.lib.plugin.StateTransforms.Model.TrajectoryFromModelAndCoordinates,
@@ -273,8 +262,32 @@
       if (!this.framesBytes || this.framesWhole || !this.framesRef
         || !cells.has(this.framesRef)) return 0;
       const frame = this.frame();
+      // An exact frame held stays after the frames sent: it is joined here,
+      // in the engine's own turn, so no insertion queued meanwhile is lost.
+      const exact = this.framesExactBytes;
       await this.plugin.build().to(this.framesRef)
-        .update((old) => ({...old, data: bytes})).commit();
+        .update((old) => ({...old, data: exact ? joined(bytes, exact) : bytes})).commit();
+      this.framesBaseBytes = bytes;
+      if (exact) this.exactIndex = this.frameCount() - 1;
+      if (this.frame() !== frame) await this.setFrame(frame);
+      return this.frameCount();
+    }
+
+    /** One frame read from the source trajectory, held after the frames
+     * sent: as XTC bytes of that frame alone, or (``whole``) as a DCD of the
+     * frames sent with it last. ``isCurrent`` is asked in the engine's own
+     * turn, so a request superseded while it waited changes nothing. */
+    async setExactFrame(bytes, options = {}) {
+      const cells = this.plugin.state.data.cells;
+      if (!this.framesRef || !cells.has(this.framesRef) || !this.framesBaseBytes) return 0;
+      if (options.isCurrent && !options.isCurrent()) return 0;
+      if (this.framesBytes !== (options.whole ? "dcd" : "xtc")) return 0;
+      const frame = this.frame();
+      await this.plugin.build().to(this.framesRef).update((old) => ({...old,
+        data: options.whole ? bytes : joined(this.framesBaseBytes, bytes)})).commit();
+      this.framesExactBytes = options.whole ? null : bytes;
+      this.exactHeld = true;
+      this.exactIndex = this.frameCount() - 1;
       if (this.frame() !== frame) await this.setFrame(frame);
       return this.frameCount();
     }
@@ -286,7 +299,9 @@
     async setFramesCoordinates(coordinatesUrl) {
       const cells = this.plugin.state.data.cells;
       if (!this.framesRef || !cells.has(this.framesRef)) return false;
-      const frames = this.frameCount();
+      // The frames sent, without an exact frame held after them: the
+      // coordinates read again are of the frames sent alone.
+      const frames = this.frameCount() - (this.exactHeld ? 1 : 0);
       const atoms = this.atomCount();
       const frame = this.frame();
       try {
@@ -300,6 +315,7 @@
           const bytes = new Uint8Array(await response.arrayBuffer());
           await this.plugin.build().to(this.framesRef)
             .update((old) => ({...old, data: bytes})).commit();
+          this.framesBaseBytes = bytes;
         } else {
           await this.plugin.build().to(this.framesRef)
             .update((old) => ({...old, url: absolute(coordinatesUrl)})).commit();
@@ -308,6 +324,10 @@
         console.debug("frames not read again", error);
         return false;
       }
+      // The exact frame held is no longer among them.
+      this.framesExactBytes = null;
+      this.exactHeld = false;
+      this.exactIndex = null;
       // Frames loaded in pieces may be given whole: more frames, not fewer.
       const counted = this.frameCount();
       if (this.atomCount() !== atoms
@@ -458,6 +478,10 @@
       this.coordinatesRef = null;
       this.framesRef = null;
       this.framesBytes = null;
+      this.framesBaseBytes = null;
+      this.framesExactBytes = null;
+      this.exactIndex = null;
+      this.exactHeld = false;
       this.framesWhole = false;
       this.tween = null;
       await this.plugin.clear();
@@ -840,7 +864,11 @@
     /** The box of the frame shown, as OpenMM lays its vectors out. */
     boxVectors() {
       if (!this.cells) return null;
-      const cell = this.cells[Math.min(this.cells.length - 1, Math.max(0, this.frame()))];
+      // A frame inserted from the source trajectory has no box among the
+      // played frames' boxes: none is shown rather than another frame's.
+      const shown = Math.max(0, this.frame());
+      if (shown === this.exactIndex || shown >= this.cells.length) return null;
+      const cell = this.cells[shown];
       return cell ? vectorsOf(cell) : null;
     }
 
@@ -1080,7 +1108,7 @@
 
     async setFrame(index, step) {
       const cell = this.trajectoryModelCell();
-      if (!cell) return;
+      if (!cell) return false;
       const total = this.frameCount();
       let frame = Math.max(0, Math.min(total - 1, Math.round(index)));
       let raw = frame;
@@ -1102,13 +1130,16 @@
       const update = this.plugin.build();
       update.to(cell.transform.ref).update((old) => ({...old, modelIndex: raw}));
       const ended = [];
+      // The other runs are read at the frames played; at a frame inserted
+      // from the source trajectory they have none, and are not shown.
+      const inserted = frame === this.exactIndex;
       for (const run of this.runs || []) {
         if (run.frames > 0) {
           update.to(run.modelRef).update((old) => ({...old,
             modelIndex: Math.min(frame, run.frames - 1)}));
         }
-        if ((frame >= run.frames) !== !!run.ended) {
-          run.ended = frame >= run.frames;
+        if ((inserted || frame >= run.frames) !== !!run.ended) {
+          run.ended = inserted || frame >= run.frames;
           ended.push(run);
         }
       }
@@ -1121,6 +1152,7 @@
       }
       await this.followThePocket();
       await this.followTheBox();
+      return true;
     }
 
     /* -------------------------------------------------------------- */
@@ -2368,6 +2400,14 @@
 
   function absolute(url) {
     return new URL(url, window.location.href).href;
+  }
+
+  /** Two byte arrays, one after the other. */
+  function joined(first, second) {
+    const whole = new Uint8Array(first.length + second.length);
+    whole.set(first);
+    whole.set(second, first.length);
+    return whole;
   }
 
   /* ---------------------------------------------------------------- */

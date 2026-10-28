@@ -297,8 +297,11 @@ class _StudyStop:
     one is obeyed at once.
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: Any, folder: Any = None) -> None:
         self.pool = pool
+        #: The study, so a stop asked without a signal reaches this one
+        #: (`runner.stop_what_listens_here`).
+        self.folder = folder
         self.signal: int | None = None
         self._previous: dict[int, Any] = {}
 
@@ -310,8 +313,9 @@ class _StudyStop:
         import signal
         import threading
 
-        from fastmdxplora.simulation.runner import _listen_afresh
+        from fastmdxplora.simulation.runner import _LISTENING, _listen_afresh
 
+        _LISTENING.append(self)
         if threading.current_thread() is not threading.main_thread():
             return self
         _listen_afresh()
@@ -369,8 +373,34 @@ class _StudyStop:
         self._previous = {}
 
     def __exit__(self, *_exc: Any) -> bool:
+        from fastmdxplora.simulation.runner import _LISTENING
+
+        if self in _LISTENING:
+            _LISTENING.remove(self)
         self._restore()
         return False
+
+    def ask_here(self) -> str:
+        """Asked to stop as a first SIGTERM asks, without a signal to this
+        process (its own GUI's Stop): the workers are told, and no further
+        run starts."""
+        import signal
+
+        from fastmdxplora.simulation.runner import stop_grace_seconds
+
+        if self.signal is not None:
+            # Passed on once: a worker takes a second SIGTERM, later than
+            # `STOP_REPEAT_SECONDS`, as stop now, and dies without the
+            # checkpoint its first was ending at.
+            return "Stopping: asked already."
+        self.signal = signal.SIGTERM
+        logger.warning(
+            "Stop asked from the GUI: each run in progress ends where it can be carried "
+            "on (in production, at its next frame if that is within %.0f s), and no "
+            "further run starts.", stop_grace_seconds())
+        self._pass_on(signal.SIGTERM)
+        return ("Stopping: each run in progress ends where it can be carried on, and no "
+                "further run starts.")
 
 
 def _threads_for_each(n_workers: int) -> int:
@@ -1413,7 +1443,35 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def run(self) -> list[dict[str, Any]]:
-        """Execute every run. Returns per-run result records."""
+        """Execute every run. Returns per-run result records.
+
+        The study's process record is held for the whole of it, a study of
+        one too, and goes when it ends, however it ends, with each run's made
+        in this process (`_forget_this_process_s_records`).
+        """
+        self._holding_its_record = False
+        try:
+            return self._run_every_run()
+        finally:
+            self._forget_this_process_s_records()
+
+    def _forget_this_process_s_records(self) -> None:
+        """The process records this process wrote in the study and its runs,
+        removed now its run has ended: they went only when the process
+        exited, so a GUI opened in a process that went on (a notebook, a
+        test) took itself for the study's run. A worker's record, or one of a
+        run started there since, names another process and is left alone;
+        so is one a run of this process still holds (a study around this
+        one)."""
+        from fastmdxplora.orchestrator import _forget_run_process, _release_run_process
+
+        if self._holding_its_record:
+            self._holding_its_record = False
+            _release_run_process(self.output_dir)
+        for spec in self.run_specs:
+            _forget_run_process(self._run_output_dir(spec))
+
+    def _run_every_run(self) -> list[dict[str, Any]]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         n = len(self.run_specs)
@@ -1437,19 +1495,22 @@ class BatchExplorer:
         if stopping is not None:
             self._write_planned_stopping(stopping)
 
-        if not self.is_single:
-            # The study's process, at its top: each run records its own (a
-            # worker's, in parallel), which says nothing between two runs,
-            # while the comparison is written, or while an umbrella study
-            # prepares once for every window (seventh and eighth reviews,
-            # 10-08). A GUI opened on the study finds it running, and can
-            # stop it. After the refusals above, so a second `explore`
-            # refused for a study whose runs have begun does not write over
-            # its record (one by hand during the shared preparation still
-            # can; the GUI and an AI app refuse it by `runs_here`).
-            from fastmdxplora.orchestrator import _record_run_process
+        # The study's process, at its top: each run records its own (a
+        # worker's, in parallel), which says nothing between two runs,
+        # while the comparison is written, or while an umbrella study
+        # prepares once for every window (seventh and eighth reviews,
+        # 10-08). A GUI opened on the study finds it running, and can
+        # stop it. After the refusals above, so a second `explore`
+        # refused for a study whose runs have begun does not write over
+        # its record (one by hand during the shared preparation still
+        # can; the GUI and an AI app refuse it by `runs_here`). Held for
+        # a study of one too, whose folder is its run's: the run's own
+        # `explore()` ends before the study does (its rounds until it is
+        # determined, its report again, its campaign's comparison).
+        from fastmdxplora.orchestrator import _hold_run_process
 
-            _record_run_process(self.output_dir)
+        _hold_run_process(self.output_dir, rewrite=True)
+        self._holding_its_record = True
 
         shared = self._maybe_prepare_once(include, exclude)
         if shared is not None:
@@ -1634,7 +1695,7 @@ class BatchExplorer:
             max_workers=workers, mp_context=get_context("spawn"),
             initializer=_give_this_worker_its_share,
             initargs=(_threads_for_each(workers),))
-        stop = _StudyStop(pool)
+        stop = _StudyStop(pool, folder=self.output_dir)
         try:
             stop.__enter__()
             futures = [pool.submit(_extend_one, str(run), more_ns,
@@ -2764,7 +2825,7 @@ class BatchExplorer:
             mp_context=get_context("spawn"),
             initializer=_give_this_worker_its_share,
             initargs=(threads_each,))
-        stop = _StudyStop(pool)
+        stop = _StudyStop(pool, folder=self.output_dir)
         try:
             stop.__enter__()
             for _ in range(min(n_workers, n)):

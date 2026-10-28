@@ -23,6 +23,14 @@
 
   function viewer() { return window.FastMDXMoleculeViewer; }
 
+  /* The frame shown, named as the Viewer names it (molecule-viewer.js). */
+  function shownName(fallback) {
+    if (state.name) return state.name;
+    var v = window.FastMDXMoleculeViewer;
+    var named = v && v.movie && v.movie.shownFrameName ? v.movie.shownFrameName() : "";
+    return named || "frame " + fallback;
+  }
+
   function say(text) {
     var note = byId("rama-note");
     if (note) note.textContent = text || "";
@@ -158,9 +166,9 @@
     var chosenColour = token("--accent-orange", "#ffb86b");
     var dot = Math.max(2, canvas.width / 150);
     state.dots = [];
-    var frame = Math.min(state.frame, d.frames - 1);
+    var frame = state.frame == null ? null : Math.min(state.frame, d.frames - 1);
     context.lineWidth = Math.max(1, dot / 2);
-    for (var r = 0; r < d.residues.length; r += 1) {
+    for (var r = 0; frame != null && r < d.residues.length; r += 1) {
       var phi = angle(state.phi, frame, r);
       var psi = angle(state.psi, frame, r);
       if (!isFinite(phi) || !isFinite(psi)) continue;
@@ -178,6 +186,8 @@
       }
     }
     state.path = [];
+    if (frame == null) say("The frame shown was opened from the trajectory and is not one of the frames played, so its angles are not plotted.");
+    else if (state.chosen == null) say(d.said);
     if (state.chosen == null) return;
     var previous = null;
     for (var f = 0; f < d.frames; f += 1) {
@@ -211,7 +221,8 @@
       context.stroke();
     }
     var residue = d.residues[state.chosen];
-    say(here ? nameOf(residue) + " in frame " + frame + ": φ " + here.phi.toFixed(1)
+    if (frame == null) return;
+    say(here ? nameOf(residue) + " in " + shownName(frame) + ": φ " + here.phi.toFixed(1)
       + "°, ψ " + here.psi.toFixed(1) + "°." : nameOf(residue) + " has no φ or ψ (a chain's end).");
   }
 
@@ -288,7 +299,7 @@
         state.phi = unpack(said.phi);
         state.psi = unpack(said.psi);
         var v = viewer();
-        state.frame = v && v.movie ? v.movie.shownFrame() : 0;
+        state.frame = v && v.movie ? v.movie.shownPlayedFrame() : 0;
         list();
         say(said.said);
         followTheSelection();
@@ -321,7 +332,7 @@
     var onPath = nearest(state.path, x, y, reach);
     if (onPath) {
       window.dispatchEvent(new CustomEvent("dashboard:trajectory-seek",
-        { detail: { frame: onPath.frame } }));
+        { detail: { playedFrame: onPath.frame } }));
       return;
     }
     var dot = nearest(state.dots, x, y, reach);
@@ -346,7 +357,12 @@
     });
     byId("rama-canvas").addEventListener("click", clicked);
     window.addEventListener("dashboard:frame-shown", function (event) {
-      state.frame = Number(event.detail && event.detail.index) || 0;
+      var played = event.detail ? event.detail.playedIndex : undefined;
+      // A frame opened from the trajectory between the frames played has
+      // no value here (null): never a neighbour's.
+      state.frame = played === undefined ? (Number(event.detail && event.detail.index) || 0)
+        : played;
+      state.name = event.detail && event.detail.name || "";
       if (state.data && section.open) draw();
     });
     window.addEventListener("dashboard:selection-changed", followTheSelection);

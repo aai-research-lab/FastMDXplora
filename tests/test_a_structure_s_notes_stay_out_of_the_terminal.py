@@ -198,14 +198,13 @@ def test_the_gui_keeps_the_notes_quiet_from_its_start(tmp_path):
 
 
 @pytest.fixture
-def study(tmp_path, monkeypatch):
-    """A study whose analyses read a structure with both notes."""
-    import fastmdxplora.gui.selection as selection
-
+def study(tmp_path):
+    """A study whose analyses read a structure with both notes: its saved
+    topology, read held to the study (`series.topology_held`), as a study
+    with no analysis manifest reads it."""
     root = tmp_path / "study"
     (root / "simulation").mkdir(parents=True)
-    where = _pdb(tmp_path / "system.pdb", alike=True)
-    monkeypatch.setattr(selection, "topology_the_analyses_read", lambda _root: where)
+    where = _pdb(root / "simulation" / "trajectory_topology.pdb", alike=True)
     return root, where
 
 

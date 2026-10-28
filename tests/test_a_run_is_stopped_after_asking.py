@@ -274,3 +274,482 @@ def test_a_stop_s_card_is_named_alike_wherever_it_is_led_to(browser, tmp_path): 
     assert card == "To carry it on"
     assert link == "To carry it on"
     assert headings == [["health:stopped", "To carry it on"]], headings
+
+
+def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_path):  # noqa: F811
+    """A run in the GUI's own process, outside production, cannot be stopped
+    from it. The page asked "Stop the run?" and then refused, and the status
+    bar's answer went after four seconds; under the Overview's Stop it stayed
+    into production, where Stop works, and after the run. It is said at
+    once, kept while it holds, and goes once the run can be stopped."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    own_stop_refused = (
+        "This run is in this GUI's own process; stopping it here would end the GUI too. "
+        "Stop it where it was started (Ctrl+C at its terminal, or interrupt the notebook's "
+        "cell).")
+
+    study = _going(tmp_path / "study", "nvt")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    refused = [own_stop_refused]
+    asked: list = []
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused=refused[0])
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", lambda route: (asked.append(1), route.fulfill(
+            json={"stopped": True, "detail": "Stopping."})))
+        page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        questioned = page.locator("#sb-stop-ask .stop-run-yes").count()
+        page.wait_for_timeout(6000)
+        kept = (page.evaluate("() => document.querySelector('#sb-stop-ask .stop-run-refused')"
+                              ".firstChild.textContent")
+                if page.is_visible("#sb-stop-ask") else "")
+        # It can be put away, by a button said as one, and the keyboard
+        # goes back to the Stop that asked.
+        close = page.locator("#sb-stop-ask .stop-run-close")
+        named = (close.get_attribute("aria-label"), "ghost-btn" in close.get_attribute("class"))
+        # On a line of its own: neither it nor its ring covers the words.
+        apart = page.evaluate("""() => {
+            const said = document.querySelector('#sb-stop-ask .stop-run-refused');
+            const range = document.createRange();
+            range.selectNodeContents(said.firstChild);
+            const words = [...range.getClientRects()];
+            const close = said.querySelector('.stop-run-close').getBoundingClientRect();
+            return words.every(r => r.bottom <= close.top + 0.5);
+        }""")
+        close.focus()
+        page.keyboard.press("Enter")
+        closed = page.is_hidden("#sb-stop-ask")
+        focused = page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+        # Asked again: the first card's timer does not take the second away.
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        page.wait_for_timeout(7000)
+        kept_again = page.is_visible("#sb-stop-ask .stop-run-refused")
+        # Stop pressed again over a card still up: its timer goes with it,
+        # and the new card has the whole of its own.
+        page.click("#sb-stop")
+        page.wait_for_timeout(7000)
+        kept_over = page.is_visible("#sb-stop-ask .stop-run-refused")
+        refused[0] = None   # production reached: Stop works here now
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached")
+        # Once it can be stopped, Stop asks first again.
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-yes")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert questioned == 0 and asked == []
+    assert kept == own_stop_refused and closed
+    assert named == ("Close the note", True)
+    assert focused == "sb-stop", focused
+    assert apart
+    assert kept_again and kept_over
+
+
+def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_path):  # noqa: F811
+    """A run of the GUI's own process asked to stop goes on to its next
+    frame: the page said "Stopped.", went on offering Stop, and a second
+    press of a parallel study's killed its workers. It says "Stopping..." in
+    the status bar and on the Overview, and offers no Stop, until the run
+    has stopped."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    state = {"running": True, "stopping": False}
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=state["running"], stopping=state["stopping"],
+                    status="running" if state["running"] else "stopped")
+        route.fulfill(response=response, json=body)
+
+    def stop(route):
+        # Said by the answer: the app state, read again only half a minute
+        # later in a quiet phase, says nothing of it yet.
+        route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
+                            "next frame with a checkpoint there.",
+                            "state": {"process_running": True, "stopping": True}})
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", stop)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.click("#sb-stop")
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
+        page.wait_for_selector("#health-stop-ask .stop-run-stopping", state="attached")
+        offered_at_once = page.evaluate(
+            "() => [...document.querySelectorAll('[data-stop-run]')].filter(b => !b.hidden).length")
+        state["stopping"] = True
+        page.wait_for_timeout(5000)
+        during = page.evaluate("""() => ({
+            bar: document.querySelector('#sb-stop-ask').textContent,
+            overview: document.querySelector('#health-stop-ask').textContent,
+            offered: [...document.querySelectorAll('[data-stop-run]')]
+                .filter(b => !b.hidden).length,
+            palette: window.FastMDXStop.running(),
+        })""")
+        state.update(running=False, stopping=False)
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector(".stop-run-stopping", state="detached")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert offered_at_once == 0
+    assert during == {"bar": "Stopping…", "overview": "Stopping…", "offered": 0,
+                      "palette": False}, during
+
+
+def test_a_study_of_runs_in_production_is_asked_as_production(browser, tmp_path):  # noqa: F811
+    """A study of runs has no stage of its own: Stop asked it as one that
+    had not reached production, with its runs in production, and a stop
+    that keeps their work was said to leave nothing to carry on."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", runs=[
+            {"run_id": "a", "state": "running", "stage": "npt"},
+            {"run_id": "b", "state": "running", "stage": "production"}])
+        route.fulfill(response=response, json=body)
+
+    def status(route):
+        response = route.fetch()
+        body = response.json()
+        (body.get("status") or {}).pop("stage", None)   # a study of runs has none of its own
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/status*", status)
+        page.route("**/api/stream*", lambda route: route.abort())  # read as polled
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-yes")
+        question = page.text_content("#sb-stop-ask")
+        page.click("#sb-stop-ask .stop-run-no")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert "ends at its next frame with a checkpoint" in question, question
+    assert "not reached production" not in question
+
+
+def test_a_study_whose_process_goes_on_is_said_running(browser, tmp_path):  # noqa: F811
+    """A study of runs, one stopped and another going on to its frame: its
+    status said stopped, and the page said Stopped with a run still going."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running")
+        route.fulfill(response=response, json=body)
+
+    def status(route):
+        response = route.fetch()
+        body = response.json()
+        body.setdefault("status", {})["status"] = "stopped"
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/status*", status)
+        page.route("**/api/stream*", lambda route: route.abort())  # read as polled
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        said = page.text_content("#topbar-status-text")
+        run = page.get_attribute("#status-run", "data-run")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert (said, run) == ("Running", "running"), (said, run)
+
+
+#: A state read asked before Stop's Yes, its answer held until a moment
+#: after Stop's own answer has been taken.
+_LATE_READ = """(() => {
+  const real = window.fetch;
+  let answered; const stopAnswered = new Promise((done) => { answered = done; });
+  window.__holdNextRead = false;
+  window.fetch = function (url) {
+    const asked = real.apply(this, arguments);
+    const at = String(url);
+    if (at.includes('/api/explore/stop')) {
+      asked.then(() => setTimeout(answered, 300));
+    } else if (window.__holdNextRead && at.includes('/api/app-state')) {
+      window.__holdNextRead = false;
+      return asked.then((res) => stopAnswered.then(() => res));
+    }
+    return asked;
+  };
+})();"""
+
+
+def test_a_read_asked_before_stop_and_answered_after_it_puts_no_stop_back(
+        browser, tmp_path):  # noqa: F811
+    """A state read asked before Yes and answered after Stop's answer said
+    the run was not stopping: Stop came back, Cmd+K's with it, until the
+    next read, half a minute later in a quiet phase."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    state = {"stopping": False, "running": True}
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=state["running"], status="running",
+                    stopping=state["stopping"] and state["running"])
+        route.fulfill(response=response, json=body)
+
+    def stop(route):
+        # Answered as the server answers, its state read numbered after any
+        # read asked before it.
+        now = route.fetch(url=session.url.split("#")[0].rstrip("/") + "/api/app-state",
+                          method="GET").json()
+        state["stopping"] = True
+        route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
+                            "next frame.", "state": {"process_running": True, "stopping": True,
+                                                     "read": now.get("read"),
+                                                     "read_of": now.get("read_of")}})
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script(_LATE_READ)
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", stop)
+        page.route("**/api/stream*", lambda route: route.abort())   # a quiet phase
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.evaluate("() => { window.__holdNextRead = true; "
+                      "document.getElementById('refresh-now').click(); }")
+        page.wait_for_timeout(300)
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
+        page.wait_for_timeout(1500)   # the late read has landed
+        after = page.evaluate("""() => ({
+            offered: [...document.querySelectorAll('[data-stop-run]')]
+                .filter(b => !b.hidden).length,
+            palette: window.FastMDXStop.running(),
+            said: document.querySelector('#sb-stop-ask').textContent,
+        })""")
+        # A read asked later says the run has ended: Stopping goes.
+        state["running"] = False
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector(".stop-run-stopping", state="detached")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert after == {"offered": 0, "palette": False, "said": "Stopping…"}, after
+
+
+def test_a_stop_refused_from_cmd_k_puts_the_keyboard_on_its_note(browser, tmp_path):  # noqa: F811
+    """Cmd+K's Stop, refused, says so under the Overview's Stop; the keyboard
+    stayed in the status bar, and Tab never reached the note's Close."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "nvt")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused="Not here.")
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.keyboard.press("Control+k")
+        page.keyboard.type("stop")
+        page.wait_for_timeout(500)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        page.wait_for_timeout(300)
+        focused = page.evaluate(
+            "() => document.activeElement.matches('#health-stop-ask .stop-run-close')")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert focused
+
+
+
+def test_a_page_kept_open_across_a_gui_started_again_offers_stop(browser, tmp_path):  # noqa: F811
+    """The page kept a stop's read number across a GUI started again, which
+    numbers from 0: every read of the new GUI was taken for one asked
+    before the stop, "Stopping..." stayed over an idle GUI, and no Stop was
+    offered for a new run."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    state = {"running": True, "stopping": False}
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=state["running"], stopping=state["stopping"],
+                    status="running" if state["running"] else "stopped")
+        route.fulfill(response=response, json=body)
+
+    def stop(route):
+        # The GUI before it was started again had numbered its reads far on.
+        route.fulfill(json={"stopped": True, "detail": "Stopping: production ends at its "
+                            "next frame.", "state": {"process_running": True, "stopping": True,
+                                                     "read": 5000, "read_of": "the GUI before"}})
+
+    def offered():
+        return page.evaluate("""() => ({
+            offered: [...document.querySelectorAll('[data-stop-run]')]
+                .filter(b => !b.hidden).length,
+            stopping: document.querySelectorAll('.stop-run-stopping').length})""")
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/explore/stop", stop)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.click("#sb-stop")
+        page.click("#sb-stop-ask .stop-run-yes")
+        page.wait_for_selector("#sb-stop-ask .stop-run-stopping")
+        # The GUI is started again: idle, its reads numbered from 0.
+        state["running"] = False
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_timeout(1500)
+        idle = offered()
+        # A new run.
+        state["running"] = True
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#sb-stop:not([hidden])", timeout=10000)
+        going = offered()
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert idle == {"offered": 0, "stopping": 0}, idle
+    assert going["offered"] >= 1 and going["stopping"] == 0, going
+
+
+def test_a_refusal_gone_by_itself_gives_the_keyboard_back(browser, tmp_path):  # noqa: F811
+    """A refusal took the keyboard to its Close; when it went by itself (the
+    status bar's fade, or production reached) the keyboard fell to the
+    page's body. And with the Stop that asked gone, Close gives it to the
+    shown page's heading."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "nvt")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    refused = ["Not here."]
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused=refused[0])
+        route.fulfill(response=response, json=body)
+
+    def active():
+        return page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        # The status bar's card fades.
+        page.click("#sb-stop")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached", timeout=20000)
+        after_fade = active()
+        # The Overview's is lifted once production is reached.
+        page.click("#health-stop")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        refused[0] = None
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused", state="detached")
+        after_lift = active()
+        # The Stop that asked gone, Close gives the keyboard to the heading.
+        refused[0] = "Not here."
+        page.evaluate("() => document.getElementById('refresh-now').click()")
+        page.wait_for_timeout(1500)
+        page.click("#health-stop")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        page.evaluate("() => { document.getElementById('health-stop').hidden = true; }")
+        page.click("#health-stop-ask .stop-run-close")
+        heading = page.evaluate("() => document.activeElement.tagName === 'H1' "
+                                "&& document.activeElement.offsetParent !== null")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert (after_fade, after_lift) == ("sb-stop", "health-stop")
+    assert heading

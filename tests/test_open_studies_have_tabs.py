@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from tests._agent_page import ready
+
 sync_api = pytest.importorskip("playwright.sync_api")
 expect = sync_api.expect
 
@@ -76,11 +78,14 @@ def _active(page, key):
 
 
 def _outside_open(page, site, index, route="overview"):
+    # Opened once the evaluation has returned: the page it opens loads in
+    # place of this one, and an evaluation still returning then was lost
+    # with it ("Execution context was destroyed").
     page.evaluate("""async ({path, route}) => {
         const answer = await (await fetch('/api/explore/switch', {
             method: 'POST', headers: {'content-type': 'application/json'},
             body: JSON.stringify({folder: path})})).json();
-        window.FastMDXDashboard.studyOpened(answer, route);
+        setTimeout(() => window.FastMDXDashboard.studyOpened(answer, route), 0);
     }""", {"path": str(site["studies"][index]), "route": route})
     _active(page, site["keys"][index])
 
@@ -307,6 +312,7 @@ def test_an_agent_reply_holds_the_switch_until_it_finishes(browser, site, stream
             page.evaluate("window.ReadableStream = undefined")
         held = []
         page.route("**/api/agent/propose*", lambda route: held.append(route))
+        ready(page)
         page.fill("#agent-request", "Describe this study.")
         page.keyboard.press("Enter")
         page.locator("#agent-propose.is-writing").wait_for()
@@ -370,6 +376,17 @@ def test_an_attachment_still_loading_holds_the_switch(browser, site):
         assert page.errors == []
     finally:
         page.context.close()
+
+
+def _structure_read(page):
+    # The structure's facts and its preview are read after the form is
+    # drawn, and each draws the settings again: a fill begun as one lands
+    # lost its selection and put its text after what the field held.
+    page.wait_for_function("""() => {
+        const state = window.FastMDXRun.state;
+        return state.systems.length && state.systems[0].facts && state.estimate
+            && !document.getElementById('run-system-preview').classList.contains('is-loading');
+    }""")
 
 
 def _builder(page, site):
@@ -732,6 +749,7 @@ def test_many_tabs_fit_the_page_and_work_by_keyboard(browser, site, width, besid
             page.click("#agent-beside-open")
             page.locator("#agent-drawer").wait_for()
         page.wait_for_function("document.getElementById('study-tabs').matches('.more-before, .more-after')")
+        page.wait_for_function("() => (" + LAYOUT + ")().currentInView")
         facts = page.evaluate(LAYOUT)
         # The open study is in view at the end of a long strip; a fade says
         # more tabs lie past the edge; nothing runs past the page or under
@@ -1199,6 +1217,7 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         page.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('6.5'))")
         other.goto(site["session"].url + "#run", wait_until="domcontentloaded")
         expect(_ph(other)).to_have_value("6.5")
+        _structure_read(other)
         _ph(other).fill("7.2")
         other.keyboard.press("Tab")
         other.wait_for_function("() => Object.keys(localStorage).some(k => k.startsWith('fmx.builderDraft') && localStorage.getItem(k).includes('7.2'))")
@@ -1212,6 +1231,7 @@ def test_a_newer_draft_from_another_window_is_kept_and_does_not_hold_the_switch(
         # and said as that, not as a draft that could not be saved.
         page.evaluate("window.FastMDXDashboard.navigate('run')")
         expect(_ph(page)).to_have_value("7.2")
+        _structure_read(page)
         _ph(page).fill("6.1")
         other.evaluate("""() => {
             const key = Object.keys(localStorage).find(k => k.startsWith('fmx.builderDraft'));

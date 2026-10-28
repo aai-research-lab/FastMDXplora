@@ -91,6 +91,96 @@ def _get(root, name):
     return payload
 
 
+@pytest.mark.parametrize("linked", [False, True])
+def test_projection_keyboard_skips_missing_coordinates(tmp_path, linked) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import expect, sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _write(tmp_path / "study")
+    path = root / "analysis" / "dimred" / "dimred_pca.dat"
+    path.write_text("frame,component_1,component_2\n"
+                    "0,nan,1\n1,1,2\n2,nan,nan\n3,3,4\n4,5,nan\n")
+    payload = _get(root, "dimred/dimred_pca")
+    payload["linked"] = linked
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url, wait_until="domcontentloaded")
+            page.evaluate("""data => {
+              const host = document.createElement('div');
+              host.id = 'projection-keyboard-check';
+              document.body.appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", payload)
+            chart = page.locator("#projection-keyboard-check")
+            svg = chart.locator("svg")
+            svg.scroll_into_view_if_needed()
+            svg.focus()
+            expect(chart.locator(".series-tip")).to_contain_text("frame 2")
+            svg.press("End")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            svg.press("Home")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 2")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text("frame 6")
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+
+def test_a_figure_s_arrows_go_along_its_points_and_move_no_view(tmp_path) -> None:
+    """Not zoomed in, a figure's arrows are its points' (`keyboard`): the
+    zoom keys (plot-tools.js) took them too, and moved the view a quarter
+    along with every step, so the plot was drawn again zoomed."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import expect, sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _write(tmp_path / "study")
+    payload = _get(root, "dimred/dimred_pca")
+    frames = payload["frames"]
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            errors = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url, wait_until="domcontentloaded")
+            page.evaluate("""data => {
+              const host = document.createElement('div');
+              host.id = 'arrows-check';
+              document.body.appendChild(host);
+              window.FastMDXFigures.plot(host, data);
+            }""", payload)
+            chart = page.locator("#arrows-check")
+            svg = chart.locator("svg").first
+            svg.scroll_into_view_if_needed()
+            svg.focus()
+            expect(chart.locator(".series-tip")).to_contain_text(f"frame {frames[0]} ")
+            svg.press("ArrowRight")
+            svg.press("ArrowRight")
+            expect(chart.locator(".series-tip")).to_contain_text(f"frame {frames[2]} ")
+            view = page.evaluate("() => document.getElementById('arrows-check')._view || null")
+            hint = chart.locator("svg").first.get_attribute("data-zoom-hint") or ""
+            assert errors == []
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert view is None
+    assert "(or the arrows)" not in hint
+
+
 class TestEachFigureIsGivenInItsShape:
 
     def test_secondary_structure_in_the_analysis_s_three_classes(self, study) -> None:
@@ -160,6 +250,8 @@ class TestEachFigureIsGivenInItsShape:
         assert 0 < tree["cut"] < 9
 
     def test_the_rmsd_between_frames_is_averaged_in_blocks_past_its_size(self, tmp_path) -> None:
+        from fastmdxplora.gui.series import analysed_axis
+
         root = _write(tmp_path / "study")
         n = MOST_CELLS + 51
         big = np.random.default_rng(1).random((n, n)).astype(np.float32)
@@ -169,9 +261,76 @@ class TestEachFigureIsGivenInItsShape:
         cells = math.ceil(n / 2)
         assert matrix["block"] == 2 and len(matrix["values"]) == cells
         assert matrix["values"][0][0] == pytest.approx(big[:2, :2].mean(), rel=1e-4)
+        read = analysed_axis(root, n)[0]
+        assert matrix["frame_groups"][0] == {"first": read[0], "last": read[1], "count": 2}
         # The last cell is a block wide too: the axis ends where it does.
         assert matrix["extent"] == pytest.approx([-0.005, (cells * 2 - 0.5) * 0.01])
+        assert matrix["frame_groups"][-1] == {"first": read[-1], "last": read[-1], "count": 1}
         assert matrix["values"][-1][-1] == pytest.approx(float(big[-1, -1]), rel=1e-4)
+
+    def test_the_rmsd_matrix_names_the_trajectory_frames_its_rows_were_read_from(
+            self, tmp_path) -> None:
+        from fastmdxplora.gui.series import analysed_axis
+
+        root = _write(tmp_path / "study")
+        manifest_path = root / "analysis" / "analysis_manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["load_kwargs"].update({"first": 1, "stride": 2})
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        # The clustering wrote the frames it compared by their place among
+        # the frames the analysis loaded: here from the second one loaded.
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((3, 3), dtype=np.float32),
+            frames=np.array([1, 2, 3]), time_ns=np.full(3, np.nan))
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        # The same trajectory frames a series of that analysis gives.
+        assert matrix["frames"] == analysed_axis(root, 4)[0][1:4] == [4, 6, 8]
+        assert matrix["axis_label"] == "Frame"
+        assert matrix["extent"] == pytest.approx([3.0, 9.0])
+        assert matrix["linked"] is False
+        manifest["resolved"] = {"trajectory": str(root / "simulation" / "production.dcd")}
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        assert _get(root, "cluster/cluster_rmsd_matrix")["linked"] is True
+        manifest["resolved"]["trajectory"] = str(root / "other.dcd")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        assert _get(root, "cluster/cluster_rmsd_matrix")["linked"] is False
+
+    def test_a_matrix_saved_in_blocks_names_the_frames_each_cell_holds(self, tmp_path) -> None:
+        """A matrix the clustering saved averaged in blocks of frames (its
+        ``block``) with every frame it read (``frames``, ``time_ns``): each
+        cell stands for its block's frames, none for one frame alone."""
+        from fastmdxplora.gui.series import analysed_axis
+
+        root = _write(tmp_path / "study")
+        frames = 14
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((5, 5), dtype=np.float32), block=np.int64(3),
+            frames=np.arange(frames), time_ns=np.arange(frames) * 0.01)
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        read = analysed_axis(root, frames)[0]
+        assert matrix["frames"] is None and matrix["block"] == 3
+        assert matrix["frame_groups"][0] == {"first": read[0], "last": read[2], "count": 3}
+        assert matrix["frame_groups"][-1] == {"first": read[12], "last": read[13], "count": 2}
+        # Five cells of three frames each, the last one as wide.
+        assert matrix["extent"] == pytest.approx([-0.005, (15 - 0.5) * 0.01])
+
+    def test_a_matrix_whose_frames_do_not_fit_its_cells_names_none(self, tmp_path) -> None:
+        root = _write(tmp_path / "study")
+        np.savez_compressed(
+            root / "analysis" / "cluster" / "cluster_rmsd_matrix.npz",
+            rmsd_nm=np.zeros((5, 5), dtype=np.float32),
+            frames=np.arange(14), time_ns=np.arange(14) * 0.01)
+
+        matrix = _get(root, "cluster/cluster_rmsd_matrix")
+
+        assert matrix["frames"] is None and matrix["frame_groups"] is None
+        assert matrix["axis_label"] == "Frame"
 
     def test_a_projection_names_its_components_by_their_share(self, study) -> None:
         pca = _get(study, "dimred/dimred_pca")

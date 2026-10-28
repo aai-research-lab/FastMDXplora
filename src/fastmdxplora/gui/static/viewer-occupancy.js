@@ -155,7 +155,7 @@
   }
 
   /* What the study offers: a map where it has a ligand, the sites where
-   * its `water_sites` analysis ran. */
+   * its `water_sites` analysis ran, where it plays its frames. */
   async function offer() {
     var v = viewer();
     if (!v || !v.STATE) return;
@@ -166,7 +166,9 @@
     var analysed = !!(sites && (sites.ok
       || !/^The study has no water sites/.test(String(sites.reason || ""))));
     byId("occ-sites-row").hidden = !analysed;
-    byId("side-occupancy").hidden = !(ligand || analysed);
+    // Placed on the frames played: not offered where they were not read.
+    var played = !!(v.STATE.playbackPayload && v.STATE.playbackPayload.playback_available);
+    byId("side-occupancy").hidden = !played || !(ligand || analysed);
   }
 
   /* The frames loaded again: what was shown is placed on them again. */

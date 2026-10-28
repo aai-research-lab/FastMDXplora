@@ -3038,7 +3038,7 @@
     button.setAttribute("aria-label", on ? "Stop" : "Send");
     button.title = on ? "Stop the reply being written"
       : blank ? "Write a message to send it"
-      : waits ? SEND_WAITS
+      : waits ? (sendWaits() === "run" ? SEND_WAITS : SEND_READS)
       : "Send (Enter). Shift+Enter for a new line.";
   }
 

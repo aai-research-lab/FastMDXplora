@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 import tracemalloc
 
 import mdtraj as md
@@ -380,6 +381,19 @@ class TestTheBudgetIsTheProcesss:
         assert self._cgroup(tmp_path / "v1", v2=False, limit=str(9223372036854771712),
                             usage=10**9)[0] is None
 
+    @pytest.mark.parametrize("name,field", [("RLIMIT_AS", "VmSize"), ("RLIMIT_DATA", "VmData")])
+    def test_a_process_limit_subtracts_what_is_held(self, monkeypatch, name, field):
+        resource = pytest.importorskip("resource")
+        which = getattr(resource, name)
+        monkeypatch.setattr(clustering, "_process_status", lambda: {field: 200 * 2**20})
+        monkeypatch.setattr(resource, "getrlimit", lambda asked: (
+            (500 * 2**20, 600 * 2**20) if asked == which
+            else (resource.RLIM_INFINITY, resource.RLIM_INFINITY)))
+        room, said = clustering._rlimit_room()
+        assert room == 300 * 2**20
+        assert said == f"{name} less what this process holds ({field})"
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
     def test_an_address_space_limit_is_read(self, tmp_path):
         import subprocess
         import sys
@@ -390,7 +404,10 @@ class TestTheBudgetIsTheProcesss:
             "sys.path.insert(0, sys.argv[1])\n"
             "from fastmdxplora.analysis import cluster\n"
             "held = cluster._process_status().get('VmSize', 0)\n"
-            "resource.setrlimit(resource.RLIMIT_AS, (held + 300 * 2**20, resource.RLIM_INFINITY))\n"
+            "_, hard = resource.getrlimit(resource.RLIMIT_AS)\n"
+            "limit = held + 300 * 2**20\n"
+            "if hard != resource.RLIM_INFINITY: limit = min(limit, hard)\n"
+            "resource.setrlimit(resource.RLIMIT_AS, (limit, hard))\n"
             "room, said = cluster.memory_available()\n"
             "print(room, said)\n")
         src = str(Path(clustering.__file__).resolve().parents[2])

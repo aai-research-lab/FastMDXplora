@@ -290,6 +290,10 @@ CODES: tuple[Code, ...] = (
          "An external service answered with something unreadable.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
          detail_keys=("url", "resource")),
+    Code("environment.service.busy",
+         "The GUI was preparing other trajectory frames, and this one waited its "
+         "turn too long.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True),
     Code("environment.service.machine_unreachable",
          "A machine did not answer over SSH.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
@@ -336,6 +340,10 @@ CODES: tuple[Code, ...] = (
          "Writing here would overwrite something.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("path",)),
+    Code("environment.path.not_saved",
+         "A record of the study could not be saved: its writer failed, as on "
+         "a full disk.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.budget.absent",
          "An unattended run was asked for with no ceiling on what it may "
          "spend.",
@@ -791,6 +799,13 @@ CODES: tuple[Code, ...] = (
          "one the run simulated.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("recorded", "found")),
+    Code("analysis.frame.outside",
+         "A trajectory frame named by its number is not in the trajectory.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY),
+    Code("analysis.frame.changed",
+         "The trajectory a frame was named in has changed since: extended, "
+         "joined or written again.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION),
 
     # -- analysis: not enough to answer with --------------------------------
     # The family this software exists to take seriously. Separated from
@@ -839,6 +854,9 @@ CODES: tuple[Code, ...] = (
          detail_keys=("frames",)),
 
     # -- batch and report ---------------------------------------------------
+    Code("batch.manifest.invalid",
+         "A batch manifest does not hold a JSON object.",
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
     Code("batch.sweep.invalid",
          "A parameter sweep that does not describe a set of runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,
@@ -1180,6 +1198,14 @@ class OutsideWorkspace(CodedError, PermissionError):
     is to a caller that does not know the codes."""
 
     default_code = "environment.workspace.outside"
+
+
+class RecordNotSaved(CodedError, OSError):
+    """A record of a study could not be saved: its writer failed (MDTraj's
+    own error on a full disk). An ``OSError``, as a failed write is, so a
+    caller that catches those says it was not saved."""
+
+    default_code = "environment.path.not_saved"
 
 
 class MissingPathError(CodedError, FileNotFoundError):

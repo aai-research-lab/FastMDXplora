@@ -186,6 +186,9 @@ def _csv(page, selector):
 
 
 def _drag(page, selector, a, b, shift=False):
+    # In view first: a chart below its From/To range form can start below
+    # the window, where the pointer reaches nothing.
+    page.locator(selector + " svg").scroll_into_view_if_needed()
     box = page.locator(selector + " svg").bounding_box()
     if shift:
         page.keyboard.down("Shift")
@@ -249,7 +252,18 @@ def test_the_range_is_marked_on_the_viewer_s_timeline(study):
             browser, page, errors = _page(pw, session)
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
-            _drag(page, '.series-chart[data-analysis="rmsd"]', (0.4, 0.4), (0.8, 0.45))
+            # Dragged under the loading screen, the range was not drawn.
+            page.wait_for_selector("body.state-ready")
+            # A chart whose width changes is drawn again, and a drag begun on
+            # the plot it replaced is lost: dragged once every plot is in,
+            # and again on a plot drawn while it was dragged.
+            page.wait_for_function("() => !document.querySelector('[data-series-ready=\"pending\"]')")
+            chart = '.series-chart[data-analysis="rmsd"]'
+            for _ in range(3):
+                page.evaluate(f"() => {{ document.querySelector('{chart} svg').dataset.dragOn = '1'; }}")
+                _drag(page, chart, (0.4, 0.4), (0.8, 0.45))
+                if page.evaluate(f"() => !!document.querySelector('{chart} svg').dataset.dragOn"):
+                    break
             page.wait_for_selector("#analysis-cell-range:not([hidden])")
             page.click('[data-view-link="viewer"]')
             page.wait_for_selector("#timeline-ruler svg .timeline-range")
@@ -366,6 +380,7 @@ def test_a_plot_is_zoomed_moved_and_shown_whole_by_the_keyboard(study):
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector('.series-chart[data-analysis="rmsd"] .plot-tools')
             page.wait_for_selector('.figure-chart[data-figure-kind="states"] .plot-tools')
+            page.wait_for_selector("body.state-ready")
             view = "(s) => document.querySelector(s).dataset.view"
             rmsd = '.series-chart[data-analysis="rmsd"]'
             page.locator(rmsd + " svg").focus()

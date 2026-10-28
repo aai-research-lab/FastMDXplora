@@ -148,10 +148,11 @@ def test_a_live_frame_is_named_by_its_step(browser, tmp_path) -> None:
     session, page = _overview(browser, _study(tmp_path / "study", residues=12))
     try:
         page.wait_for_function(
-            "() => document.getElementById('overlay-frame').textContent.startsWith('step')",
+            "() => document.getElementById('overlay-step').textContent.startsWith('step')",
             timeout=60000)
-        label = page.evaluate("() => document.getElementById('overlay-frame').textContent")
+        label = page.evaluate("() => document.getElementById('overlay-step').textContent")
         assert label in ("step 6,000", "step 6000")
+        assert page.locator("#overlay-frame").inner_text() == ""
     finally:
         page.close()
         session.server.shutdown()

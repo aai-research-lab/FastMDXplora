@@ -345,6 +345,15 @@
       card.insertBefore(line, head ? head.nextSibling : card.firstChild);
     }
     var why = (data && data.unavailable_why) || {};
+    // A record in a folder linked out of the study is said as that folder,
+    // once, as the page says it elsewhere.
+    var folders = Object.keys(why).filter(function (name) {
+      return why[name] === "folder outside";
+    });
+    names = names.map(function (name) {
+      var folder = folders.filter(function (f) { return name.indexOf(f) === 0; })[0];
+      return folder || name;
+    }).filter(function (name, at, all) { return all.indexOf(name) === at; });
     var keys = [];
     names.forEach(function (name) {
       var key = reasonOf(why, name);
@@ -355,9 +364,12 @@
       : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
     line.textContent = "";
     line.appendChild(make("b", "", "Production means not read. "));
-    line.appendChild(document.createTextNode(listed + " " +
-      BECAUSE[key][names.length === 1 ? 0 : 1] + ", so the means over the production " +
-      "are not shown."));
+    // A folder linked out is said once, under the page's title, with why:
+    // here only that the means are in it.
+    line.appendChild(document.createTextNode(key === "folder outside"
+      ? "They are recorded in " + listed + ", so they are not shown."
+      : listed + " " + BECAUSE[key][names.length === 1 ? 0 : 1] +
+        ", so the means over the production are not shown."));
   }
 
   /* Why a record was not read (`unavailable_why`, `series.NOT_READ_BECAUSE`),
@@ -373,6 +385,9 @@
                      "are files of the study that are not among its results",
                      "a file of the study that is not one of its results"],
     "not a file": ["is not a regular file", "are not regular files", "not a regular file"],
+    "folder outside": ["is a link out of the study, so its records are not read here",
+                       "are links out of the study, so their records are not read here",
+                       "a link out of the study, so its records are not read here"],
     "": ["leads outside the study, or to a file of the study that is not one of its results",
          "each lead outside the study, or to a file of the study that is not one of its results",
          "outside the study, or not one of its results"],
@@ -391,6 +406,16 @@
    * Analysis page: the first MOST_NAMED named, the rest counted. */
   function unreadSaid(names, why) {
     names = names.slice().sort();
+    // A folder linked out of the study is said once, as a folder, in a
+    // sentence of its own: not as each of its records a link to a file.
+    var folders = names.filter(function (name) { return reasonOf(why, name) === "folder outside"; });
+    if (folders.length) {
+      var rest = names.filter(function (name) { return folders.indexOf(name) < 0; });
+      var listed = folders.length === 1 ? folders[0]
+        : folders.slice(0, -1).join(", ") + " and " + folders[folders.length - 1];
+      var first = listed + " " + BECAUSE["folder outside"][folders.length === 1 ? 0 : 1] + ".";
+      return rest.length ? first + " " + unreadSaid(rest, why) : first;
+    }
     var groups = {};
     names.forEach(function (name) {
       var key = reasonOf(why, name);

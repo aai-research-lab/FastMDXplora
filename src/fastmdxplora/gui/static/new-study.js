@@ -7,12 +7,12 @@
  * The refusal `/api/schema` gives (`defaults_refused`) is said above the
  * form each time New study is opened, with the way to This folder.
  *
- * The form is drawn from the defaults read when it was first drawn
+ * The form is filled from the defaults read when it was first filled
  * (run-builder.js): put right, refused or changed in This folder since,
  * the fields still said the old ones beside a note that said the new. A
  * read that differs from the form's is said as that, above the form, with
- * Read the defaults again, which draws the form from the file as it is.
- * A file refused since the form was drawn from it is said as refused, as
+ * Read the defaults again, which fills the form from the file as it is.
+ * A file refused since the form was filled from it is said as refused, as
  * on opening: the start refuses it, so it is not one a study runs with.
  *
  * A phone's page scrolls as a whole, and New study was come back to where
@@ -47,7 +47,7 @@
     note.appendChild(make("b", "", "Your defaults are not used. "));
     words(note, refused);
     note.appendChild(document.createTextNode(drawnFromFile
-      ? " This form was drawn with the file's values; read the defaults again to offer"
+      ? " This form was filled with the file's values; read the defaults again to offer"
         + " FastMDXplora's own. "
       : " This form offers FastMDXplora's own values until the file is put right. "));
     var link = make("a", "", "This folder in Settings");
@@ -85,7 +85,7 @@
 
   function builder() { return window.FastMDXRun && window.FastMDXRun.schema ? window.FastMDXRun : null; }
 
-  /* The form drawn again from the file as it is now, and what that says. */
+  /* The form filled again from the file as it is now, and what that says. */
   function again(note, button) {
     button.disabled = true;
     builder().schema(true).then(function (schema) {
@@ -105,9 +105,9 @@
 
   function changed(note) {
     note.textContent = "";
-    note.appendChild(make("b", "", "Your defaults changed since this form was drawn. "));
+    note.appendChild(make("b", "", "Your defaults changed since this form was filled. "));
     note.appendChild(document.createTextNode(
-      "Its fields say the defaults it was drawn with, and a study runs with the file as it is now."));
+      "Its fields say the defaults it was filled with, and a study runs with the file as it is now."));
     note.appendChild(againButton(note));
     note.hidden = false;
   }

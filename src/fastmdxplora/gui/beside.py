@@ -23,7 +23,7 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["BESIDE", "ONE_LETTER", "beside", "beside_file"]
+__all__ = ["BESIDE", "ONE_LETTER", "beside", "beside_file", "the_other"]
 
 #: Where the other study's fitted frames are written, under this study.
 BESIDE = "viewer_beside"
@@ -95,20 +95,18 @@ def anchored(mine: list[dict[str, Any]], theirs: list[dict[str, Any]]) -> int:
         None, first, second, autojunk=False).get_matching_blocks() if block.size >= ANCHOR)
 
 
-def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str, Any]:
-    """The other study's frames fitted beside this one's and timed to them,
-    written once beside this study's frames, with the residues paired and
-    those that differ; or why not."""
-    import mdtraj as md
-
-    from fastmdxplora.analysis.base import superposed
+def the_other(other: str | Path, *, most_frames: int) -> dict[str, Any]:
+    """The study named to be played beside this one, read as it is named
+    (outside any read held to this study): its run played, its frames'
+    details, their topology's atoms and its RMSF; or why not. The GUI reads
+    it held to itself (`server._confined`), so a record of it linked out of
+    it is refused, and its frames are named for MDTraj only where they are
+    its own (`_sent_here`)."""
     from fastmdxplora.gui.browse import is_study
     from fastmdxplora.gui.runs_together import run_shown
     from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines,
-                                                    _read, _write_dcd, _write_text, frames_info)
-    from fastmdxplora.utils.native_output import suppress_native_output
+                                                    _read, _sent_here, frames_info)
 
-    this = Path(root)
     that = Path(other).expanduser()
     try:
         that = that.resolve()
@@ -116,31 +114,73 @@ def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str
         pass
     if not that.is_dir() or not is_study(that):
         return {"ok": False, "reason": f"{that} is not a study."}
+    from fastmdxplora import record_access
+
     name = that.name
     that = run_shown(that) or that
+    total = _load_json(that / "simulation" / "simulation_parameters.json").get(
+        "duration_ns_actual")
+    with record_access.refusals_noted() as refused:
+        theirs = frames_info(that, most_frames=most_frames, simulation_time_ns_total=total)
+        own = _sent_here(that / "simulation", FRAMES_FILE, FRAMES_TOPOLOGY)
+    framed = {f"simulation/{FRAMES_FILE}", f"simulation/{FRAMES_TOPOLOGY}"}
+    if (own is False and theirs.get("available")) or any(
+            record.endswith(tuple(framed)) for record in refused):
+        # Its frames or their topology linked out of it: not that it has none.
+        return {"ok": False, "name": name, "reason": (
+            f"{name}'s frames are not its own records, so they are not played beside.")}
+    if not theirs.get("available"):
+        return {"ok": False, "reason": f"{name} has no frames to play yet.", "name": name}
+    return {"ok": True, "study": that, "name": name, "frames": theirs,
+            "lines": _atom_lines(_read(that / "simulation" / FRAMES_TOPOLOGY)),
+            "rmsf": _rmsf(that)}
+
+
+def beside(root: str | Path, other: dict[str, Any] | str | Path, *,
+           most_frames: int) -> dict[str, Any]:
+    """The other study's frames (`the_other`, or the study named) fitted beside this one's and
+    timed to them, written once beside this study's frames, with the
+    residues paired and those that differ; or why not. This study's records
+    are read through `record_access`, so in a read held to it one linked out
+    of it is refused and named, never read where it leads."""
+    import mdtraj as md
+
+    from fastmdxplora import record_access
+    from fastmdxplora.analysis.base import superposed
+    from fastmdxplora.gui.trajectory_frames import (FRAMES_FILE, FRAMES_TOPOLOGY, _atom_lines,
+                                                    _read, _write_dcd, _write_text, frames_info)
+    from fastmdxplora.utils.native_output import suppress_native_output
+
+    if not isinstance(other, dict):
+        other = the_other(other, most_frames=most_frames)
+    if not other.get("ok"):
+        return other
+    this = Path(root)
+    that, name, theirs = other["study"], other["name"], other["frames"]
     if that.resolve() == this.resolve():
         return {"ok": False, "reason": "That is the study shown."}
     # With each run's length, as the server gives the frames, so the frames
     # have their times.
-    mine, theirs = (frames_info(study, most_frames=most_frames,
-                                simulation_time_ns_total=_load_json(
-                                    study / "simulation" / "simulation_parameters.json")
-                                .get("duration_ns_actual"))
-                    for study in (this, that))
+    mine = frames_info(this, most_frames=most_frames, simulation_time_ns_total=_load_json(
+        this / "simulation" / "simulation_parameters.json").get("duration_ns_actual"))
     if not mine.get("available"):
         return {"ok": False, "reason": "This study has no frames to play beside yet."}
-    if not theirs.get("available"):
-        return {"ok": False, "reason": f"{name} has no frames to play yet."}
     key = hashlib.sha1(str(that).encode("utf-8")).hexdigest()[:16]
     out = this / BESIDE
-    signature = json.dumps([mine.get("signature"), theirs.get("signature"), str(that)])
-    cached = _load_json(out / f"{key}.json")
-    if cached.get("signature") == signature and (out / f"{key}.dcd").is_file():
-        return cached["said"]
+    # With each side's clock as read now: a pairing by simulation time is not
+    # given again once a clock is no longer read.
+    signature = json.dumps([mine.get("signature"), theirs.get("signature"), str(that),
+                            mine.get("frame_times_ns"), theirs.get("frame_times_ns")])
     lines_a = _atom_lines(_read(this / "simulation" / FRAMES_TOPOLOGY))
-    lines_b = _atom_lines(_read(that / "simulation" / FRAMES_TOPOLOGY))
+    lines_b = other["lines"]
     residues_a, residues_b = _residues(lines_a), _residues(lines_b)
     pairs, mutations, unpaired = paired(residues_a, residues_b)
+    cached = _load_json(out / f"{key}.json")
+    if cached.get("signature") == signature and record_access.is_file(out / f"{key}.dcd"):
+        # The difference of the two RMSFs read again each time: this
+        # study's, held to it, may have been linked out since.
+        return {**cached["said"], "property": _difference(
+            this, other.get("rmsf"), name, residues_a, residues_b, pairs)}
     shorter = min(len(residues_a), len(residues_b))
     shared = anchored(residues_a, residues_b)
     # One sequence is one protein's at any length: two runs of a tripeptide
@@ -156,6 +196,8 @@ def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str
     atoms_b = np.array([residues_b[j]["atom"] for _, j in pairs])
     chosen, timed = _timed(mine, theirs)
     with suppress_native_output():
+        # This study's frames by their names, which the held read found its
+        # own (`_frames_refused`); the other's as it is named.
         first = md.load_dcd(str(this / "simulation" / FRAMES_FILE),
                             top=str(this / "simulation" / FRAMES_TOPOLOGY), frame=0)
         frames = md.load_dcd(str(that / "simulation" / FRAMES_FILE),
@@ -178,10 +220,10 @@ def beside(root: str | Path, other: str | Path, *, most_frames: int) -> dict[str
             "said": (f"{name}, its {len(pairs):,} residues paired with this study's by sequence"
                      + (f" ({len(differ)} differ" + (f", {unpaired} unpaired)" if unpaired
                                                      else ")") if differ or unpaired else "")
-                     + f", fitted on their alpha carbons to this study's first frame, {timed}."),
-            "property": _difference(this, that, name, residues_a, residues_b, pairs)}
+                     + f", fitted on their alpha carbons to this study's first frame, {timed}.")}
     _write_text(out / f"{key}.json", json.dumps({"signature": signature, "said": said}))
-    return said
+    return {**said, "property": _difference(this, other.get("rmsf"), name, residues_a,
+                                            residues_b, pairs)}
 
 
 def _timed(mine: dict[str, Any], theirs: dict[str, Any]) -> tuple[list[int], str]:
@@ -202,21 +244,23 @@ def _timed(mine: dict[str, Any], theirs: dict[str, Any]) -> tuple[list[int], str
                     "clock was not recorded")
 
 
-def _difference(this: Path, that: Path, name: str, residues_a: list[dict[str, Any]],
-                residues_b: list[dict[str, Any]], pairs: list[tuple[int, int]]
-                ) -> dict[str, Any] | None:
-    """The other study's RMSF less this one's over the paired residues, as
-    the Viewer colours by a result, white at no difference."""
+def _rmsf(study: Path) -> dict[tuple, float] | None:
+    """A study's RMSF by residue (`values_by_residue`), or None."""
     from fastmdxplora.gui.by_residue import values_by_residue
 
-    def rmsf(study: Path) -> dict[tuple, float] | None:
-        found = next((p for p in values_by_residue(study)["properties"]
-                      if p.get("analysis") == "rmsf"), None)
-        if found is None:
-            return None
-        return {(row[0], row[1], row[2] or ""): row[3] for row in found["values"]}
+    found = next((p for p in values_by_residue(study)["properties"]
+                  if p.get("analysis") == "rmsf"), None)
+    if found is None:
+        return None
+    return {(row[0], row[1], row[2] or ""): row[3] for row in found["values"]}
 
-    ours, theirs = rmsf(this), rmsf(that)
+
+def _difference(this: Path, theirs: dict[tuple, float] | None, name: str,
+                residues_a: list[dict[str, Any]], residues_b: list[dict[str, Any]],
+                pairs: list[tuple[int, int]]) -> dict[str, Any] | None:
+    """The other study's RMSF (``theirs``) less this one's over the paired
+    residues, as the Viewer colours by a result, white at no difference."""
+    ours = _rmsf(this)
     if not ours or not theirs:
         return None
 
@@ -241,8 +285,11 @@ def _difference(this: Path, that: Path, name: str, residues_a: list[dict[str, An
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    # Through `record_access`: held to its study where the read is.
+    from fastmdxplora import record_access
+
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(record_access.read_text(path, encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}

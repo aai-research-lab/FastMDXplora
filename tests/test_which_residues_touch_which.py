@@ -178,7 +178,7 @@ def test_the_viewer_maps_them_and_follows_a_pair(study):
             page.evaluate("() => window.dispatchEvent(new CustomEvent("
                           "'dashboard:trajectory-seek', {detail: {frame: 25}}))")
             page.wait_for_function("() => document.getElementById('cmap-note')"
-                                   ".textContent.endsWith('in frame 25.')")
+                                   ".textContent.endsWith('in trajectory frame 25.')")
             page.click("#cmap-clear")
             page.wait_for_function(f"() => {VIEWER}.STATE.engine"
                                    ".interactionsHeld('contact-pair') === 0")
@@ -202,7 +202,7 @@ def test_the_viewer_maps_them_and_follows_a_pair(study):
     assert errors == []
     assert hover.endswith(f"in contact in {round(pair[2] * 100)}% of frames")
     assert selected == 2
-    assert "in contact in" in note and note.endswith("in frame 0.")
+    assert "in contact in" in note and note.endswith("in trajectory frame 0.")
     assert compared == [0, 1] and every
     # "State 1 vs 0", and a key that says which colour is which state.
     assert labels == ["State", "vs"]

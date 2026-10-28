@@ -994,8 +994,13 @@ class _StopRequests:
     the old behaviour.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, folder: Any = None) -> None:
+        #: The study whose production this is, so a stop asked without a
+        #: signal reaches this one (`stop_what_listens_here`).
+        self.folder = folder
         self.signal: int | None = None
+        #: Asked without a signal, by the GUI in this process.
+        self.asked_here = False
         self.at_step: int | None = None
         self.on_frame = False
         self._previous: dict[int, Any] = {}
@@ -1008,6 +1013,8 @@ class _StopRequests:
     def name(self) -> str:
         import signal as _signal
 
+        if self.asked_here:
+            return "GUI"
         try:
             return _signal.Signals(self.signal).name
         except (ValueError, TypeError):
@@ -1017,6 +1024,7 @@ class _StopRequests:
         import signal as _signal
         import threading
 
+        _LISTENING.append(self)
         if threading.current_thread() is not threading.main_thread():
             return self
         _listen_afresh()
@@ -1057,8 +1065,69 @@ class _StopRequests:
         self._previous = {}
 
     def __exit__(self, *_exc: Any) -> bool:
+        if self in _LISTENING:
+            _LISTENING.remove(self)
         self._restore()
         return False
+
+    def ask_here(self) -> str:
+        return _asked_here(self)
+
+
+#: What in this process listens for a stop now, newest last: a production
+#: (`_StopRequests`), or the parent of a parallel study (its `_StudyStop`).
+#: Each has ``folder``, its study, and ``ask_here()``, which asks it to stop
+#: as a first SIGTERM does, without a signal, and says how it will stop.
+_LISTENING: list[Any] = []
+
+
+def _asked_here(stop: "_StopRequests") -> str:
+    import signal as _signal
+
+    if stop.signal is not None:
+        return "Stopping: asked already."
+    stop.signal = _signal.SIGTERM
+    stop.asked_here = True
+    logger.warning(
+        "Stop asked from the GUI: production will stop at the next frame, where it "
+        "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
+    return ("Stopping: production ends at its next frame with a checkpoint there, "
+            "and `fastmdx resume` carries it on.")
+
+
+def stop_what_listens_here(root: Any = None) -> str | None:
+    """Ask what in this process listens for a stop, for the study at
+    ``root`` (or within it), to stop as SIGTERM asks, without a signal: for
+    the GUI of `fastmdx explore --dashboard`, which runs in the run's own
+    process and must not signal it. What it said, where something listens;
+    None where nothing does (a phase outside production), and nothing is
+    asked."""
+    listener = _listener_for(root)
+    return None if listener is None else listener.ask_here()
+
+
+def listens_here(root: Any = None) -> bool:
+    """Whether something in this process listens for a stop of the study at
+    ``root`` (`stop_what_listens_here`), asking nothing."""
+    return _listener_for(root) is not None
+
+
+def _listener_for(root: Any) -> Any:
+    import os as _os
+
+    def within(folder: Any) -> bool:
+        # One of no known study is not taken for the study named.
+        if root is None:
+            return True
+        if folder is None:
+            return False
+        there, here = _os.path.realpath(folder), _os.path.realpath(root)
+        return there == here or there.startswith(here.rstrip(_os.sep) + _os.sep)
+
+    for listener in reversed(list(_LISTENING)):
+        if within(getattr(listener, "folder", None)):
+            return listener
+    return None
 
 
 def _cap_for_stopping(chunk: int, done: int, elapsed: float) -> int:
@@ -1137,7 +1206,8 @@ def _who_asked(signal_name: str) -> str:
     """A stop by what asked for it: Stop in the GUI, a scheduler and `kill`
     all send SIGTERM, which the page said as "stopped by SIGTERM"."""
     return {"SIGINT": "Ctrl+C",
-            "SIGTERM": "a request to stop (SIGTERM)"}.get(signal_name, signal_name)
+            "SIGTERM": "a request to stop (SIGTERM)",
+            "GUI": "a request to stop from the GUI"}.get(signal_name, signal_name)
 
 
 def _attach_checkpoint_reporter(
@@ -3211,7 +3281,7 @@ def run_simulation(
                 telemetry.event("Production skipped (0 steps)")
         # A stop asked for now ends production on a frame, with a
         # checkpoint there (see `_StopRequests`).
-        with _StopRequests() as stop:
+        with _StopRequests(folder=output_dir.parent) as stop:
             if telemetry is not None:
                 current_step = _run_md_stage_with_live_metrics(
                     omm,

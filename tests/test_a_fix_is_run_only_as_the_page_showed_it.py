@@ -79,7 +79,10 @@ def test_the_fix_shown_is_run(tmp_path):
 
 def test_a_fix_that_is_not_the_one_shown_is_refused(tmp_path):
     """The Manifest linked out: the page shows that it was not read, and the
-    resume that the record read through the link would give is not run."""
+    resume that the record read through the link would give is not run.
+    The study is walked first (`server._fix_walked`), so it is refused by
+    the link, before the fix shown is compared; a study with no link out is
+    refused as not the fix shown (below)."""
     root = _stopped(tmp_path)
     _linked_out(root, tmp_path, "manifest.json")
     _said_outside(tmp_path / "outside" / "manifest.json")
@@ -89,8 +92,9 @@ def test_a_fix_that_is_not_the_one_shown_is_refused(tmp_path):
     assert page["unavailable"] == ["manifest.json"]
     (fix,) = page["fixes"]
     assert not fix["runnable"] and fix["command"] == ""
-    assert ran["ok"] is False and ran["error"].startswith(REFUSED)
-    assert started == []
+    assert ran["ok"] is False and ran["error"].startswith(
+        "manifest.json is a link out of the study"), ran
+    assert MARK not in json.dumps(ran) and started == []
 
 
 def test_a_fix_not_shown_is_refused(tmp_path):

@@ -558,8 +558,9 @@ def test_a_run_linked_out_is_named_not_an_unavailable_record(tmp_path):
     card, opened = _opened_outside(outside, lambda: card_of(reps))
     assert opened == []
     assert "an unavailable record" not in card["unavailable"]
-    assert card["unavailable"][0] == "runs/seed2"
-    assert card["not_read"].startswith("runs/seed2") and "unavailable" not in card["not_read"]
+    # A run's folder linked out is named as a folder, with its "/".
+    assert card["unavailable"][0] == "runs/seed2/"
+    assert card["not_read"].startswith("runs/seed2/") and "unavailable" not in card["not_read"]
     assert _named_first(["an unavailable record", "runs/seed2", "a non-regular record",
                          "members.json"]) == ["members.json", "runs/seed2",
                                               "a non-regular record", "an unavailable record"]

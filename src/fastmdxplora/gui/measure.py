@@ -10,26 +10,31 @@ name exactly one atom in the topology the analyses read.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from fastmdxplora import record_access as _records
 
 __all__ = ["over_frames"]
 
 
-def over_frames(root: Path | str, a: str, b: str) -> dict[str, Any]:
+def over_frames(root: Path | str, a: str, b: str, *, relative: bool = False) -> dict[str, Any]:
     """The command that measures the distance between two atoms at every
-    frame, or why there is none."""
+    frame, or why there is none. Its files are the study's own, read as a
+    chart's residues are (`series.topology_held`): in a read held to the
+    study, one linked out of it, or named outside it, is refused and named.
+    ``relative`` says them from the study's folder, where the command is
+    then run (a page beyond this computer is told no path on it)."""
     from fastmdxplora.gui.figure_provenance import _said
-    from fastmdxplora.gui.selection import topology_the_analyses_read
+    from fastmdxplora.gui.selection import analysed_structure
 
     base = Path(root)
     picked = [str(a or "").strip(), str(b or "").strip()]
     if not all(picked):
         return {"ok": False, "reason": "Two atoms are needed for a distance."}
-    where = topology_the_analyses_read(base)
-    if where is None:
-        return {"ok": False, "reason": "No topology to check the atoms against."}
+    where = analysed_structure(base)
+    if not isinstance(where, Path):
+        return {"ok": False, "reason": where.replace("a selection", "the atoms")}
     try:
         from fastmdxplora.utils.native_output import topology_quietly
 
@@ -48,42 +53,63 @@ def over_frames(root: Path | str, a: str, b: str) -> dict[str, Any]:
     if picked[0] == picked[1]:
         return {"ok": False, "reason": "The two atoms are the same atom."}
 
-    analysis = _the_trajectory(base)
-    if analysis is None:
-        return {"ok": False, "reason": "This study has no trajectory to compute it over."}
+    analysis = _the_trajectory(base, where)
+    if not isinstance(analysis, dict):
+        return {"ok": False, "reason": analysis}
+    output = _a_folder_of_its_own(base)
+    if relative:
+        # From the study's folder: no path on this computer is said.
+        import os
+
+        here = base.resolve()
+        analysis["trajectory"] = os.path.relpath(analysis["trajectory"], here)
+        analysis["topology"] = os.path.relpath(analysis["topology"], here)
+        output = Path(os.path.relpath(output, here))
     analysis["include"] = ["pair_distance"]
     analysis["options"] = {"pair_distance": {"selection_a": picked[0],
                                              "selection_b": picked[1],
                                              "measure": "closest"}}
     config = {"systems": [{"system": analysis["topology"]}],
               "include_phase": ["analysis"],
-              "output": str(_a_folder_of_its_own(base)),
+              "output": str(output),
               "analysis": analysis}
     command, text = _said(config)
-    return {"ok": True, "command": command, "config": text, "against": where.name,
+    said = {"ok": True, "command": command, "config": text, "against": where.name,
             "output": config["output"]}
+    if relative:
+        said["note"] = "Run it in the study's folder: its files are named from there."
+    return said
 
 
-def _the_trajectory(base: Path) -> dict[str, Any] | None:
-    """The trajectory and frames the study's analyses read, else the
-    trajectory its simulation wrote with the topology beside it."""
-    try:
-        manifest = json.loads((base / "analysis" / "analysis_manifest.json")
-                              .read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        manifest = {}
+def _the_trajectory(base: Path, topology: Path) -> dict[str, Any] | str:
+    """The trajectory and frames the study's analyses read, with the
+    structure they selected atoms in (``topology``), else the trajectory
+    its simulation wrote; or why there is none. The study's own: one named
+    outside it is its own file in that place (a study copied whole), as the
+    trajectory a chart's frame opens is (`series.trajectory_of_this_study`),
+    else not named."""
+    from fastmdxplora.gui.series import _json, trajectory_of_this_study
+
+    manifest = _json(base / "analysis" / "analysis_manifest.json")
     resolved = manifest.get("resolved") if isinstance(manifest.get("resolved"), dict) else {}
     if resolved.get("trajectory") and resolved.get("topology"):
-        found = {"trajectory": resolved["trajectory"], "topology": resolved["topology"]}
+        named = resolved["trajectory"]
+        if not isinstance(named, str):
+            return "The trajectory the analyses read is in several files; none is named here."
+        trajectory = trajectory_of_this_study(base, manifest, Path(named))
+        if trajectory is None:
+            return ("The trajectory the analyses read is not one of this study's own records, "
+                    "so it is not named here.")
+        found = {"trajectory": str(trajectory), "topology": str(topology)}
         for key in ("stride", "first", "last"):
             if resolved.get(key) is not None:
                 found[key] = resolved[key]
         return found
     trajectory = base / "simulation" / "production.dcd"
-    topology = base / "simulation" / "trajectory_topology.pdb"
-    if trajectory.is_file() and topology.is_file():
-        return {"trajectory": str(trajectory), "topology": str(topology)}
-    return None
+    saved = base / "simulation" / "trajectory_topology.pdb"
+    if _records.is_file(trajectory) and _records.is_file(saved):
+        return {"trajectory": str(trajectory), "topology": str(saved)}
+    return "This study has no trajectory to compute it over."
 
 
 def _a_folder_of_its_own(base: Path) -> Path:

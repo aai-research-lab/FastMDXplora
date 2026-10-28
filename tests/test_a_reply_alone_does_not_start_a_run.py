@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from fastmdxplora.agent.propose import told_to_run
+from tests._agent_page import ready
 
 
 @pytest.mark.parametrize("message", [
@@ -115,6 +116,7 @@ class TestInTheBrowser:
         shown = (".agent-attempt, .agent-answer, .agent-study:not([hidden]), .agent-confirm, "
                  ".agent-running")
         count = page.eval_on_selector_all(shown, "n => n.length")
+        ready(page)
         page.fill("#agent-request", text)
         page.click("#agent-propose")
         page.wait_for_function(

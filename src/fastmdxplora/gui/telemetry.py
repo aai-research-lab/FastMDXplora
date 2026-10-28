@@ -185,7 +185,7 @@ class TelemetryWriter:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             now = datetime.now(timezone.utc)
-            persisted = _read_status_path(self.status_path)
+            persisted = _own_status(self.status_path)
             status = {
                 # A run that has not reported a stage does not have one yet.
                 # Written as "not available" this travelled to the page and
@@ -236,9 +236,9 @@ class TelemetryWriter:
             status["elapsed_wall_time_s"] = round((now - started).total_seconds(), 3)
             status["last_update_timestamp"] = _utc_now()
             self._last_status = dict(status)
-            tmp = self.status_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
-            os.replace(tmp, self.status_path)
+            # A new temporary file of its own, renamed into place: a link at
+            # the record, or planted at a temporary name, is never followed.
+            _records.save(self.status_path, json.dumps(status, indent=2, default=str))
         except Exception:
             return
 
@@ -246,7 +246,7 @@ class TelemetryWriter:
         """Only the analysis and report stages, the status and the error,
         over the simulation's record as it stands."""
         try:
-            status = _read_status_path(self.status_path)
+            status = _own_status(self.status_path)
             if not status:
                 return
             if not self._last_status:
@@ -286,9 +286,9 @@ class TelemetryWriter:
             if "latest_error" in updates:
                 status["latest_error"] = updates["latest_error"]
             status["phases_updated_at"] = _utc_now()
-            tmp = self.status_path.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(status, indent=2, default=str), encoding="utf-8")
-            os.replace(tmp, self.status_path)
+            # A new temporary file of its own, renamed into place: a link at
+            # the record, or planted at a temporary name, is never followed.
+            _records.save(self.status_path, json.dumps(status, indent=2, default=str))
         except Exception:
             return
 
@@ -304,7 +304,7 @@ class TelemetryWriter:
         name = str(stage or "").strip().lower()
         if name not in STAGE_ORDER:
             return
-        persisted = _read_status_path(self.status_path)
+        persisted = _own_status(self.status_path)
         states = persisted.get("stage_states")
         if not isinstance(states, dict):
             states = {}
@@ -327,7 +327,8 @@ class TelemetryWriter:
             exists = self.metrics_path.exists()
             clean_row = {field: row.get(field, "") for field in METRIC_FIELDS}
             clean_row["timestamp"] = clean_row["timestamp"] or _utc_now()
-            with self.metrics_path.open("a", newline="", encoding="utf-8") as fh:
+            # Never through a link (`record_access.open_to_append`).
+            with _records.open_to_append(self.metrics_path, newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=METRIC_FIELDS)
                 if not exists:
                     writer.writeheader()
@@ -340,7 +341,7 @@ class TelemetryWriter:
             return
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8") as fh:
+            with _records.open_to_append(self.events_path) as fh:
                 fh.write(f"{_utc_now()}\t{level}\t{message}\n")
         except Exception:
             return
@@ -353,6 +354,18 @@ _PHASES_AFTER = ("analysis", "report")
 def _read_status_path(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(_records.read_text(path, encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _own_status(path: Path) -> dict[str, Any]:
+    """The status record a writer merges what it writes into, read never
+    through a link (`record_access.read_own_text`): a record linked out of
+    the study is read as no record, and nothing it says is merged into
+    the study's own."""
+    try:
+        data = json.loads(_records.read_own_text(path, encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}

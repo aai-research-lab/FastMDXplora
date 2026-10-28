@@ -249,8 +249,8 @@ def test_the_viewer_lists_them_and_shows_those_of_the_frame(built):
     assert sent["ok"] and sent["total"] == 2
     assert visible
     assert rows == ["A:LYS2 ↔ B:ASP275%", "A:GLY1 ↔ B:GLY150%"]
-    assert seen[0] == {"said": "2 of 2 present in frame 0", "present": rows}
-    assert seen[2] == {"said": "1 of 2 present in frame 2", "present": rows[:1]}
-    assert seen[3] == {"said": "0 of 2 present in frame 3", "present": []}
+    assert seen[0] == {"said": "2 of 2 present in trajectory frame 0", "present": rows}
+    assert seen[2] == {"said": "1 of 2 present in trajectory frame 2", "present": rows[:1]}
+    assert seen[3] == {"said": "0 of 2 present in trajectory frame 3", "present": []}
     assert ligand == 0
     assert errors == []

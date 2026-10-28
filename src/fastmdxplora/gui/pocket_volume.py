@@ -173,9 +173,10 @@ def pocket_volume(root: str | Path, ligand: Any, cutoff_angstrom: Any = 5.0) -> 
                          f"{values.mean():,.0f} Å³, standard deviation over the frames "
                          f"{values.std():,.0f} Å³ (not the error of the mean: the frames are "
                          "correlated).")}
-        temporary = record.with_name(f".{record.name}.tmp")
-        temporary.write_text(json.dumps(said), encoding="utf-8")
-        temporary.replace(record)
+        from fastmdxplora import record_access
+
+        # A new temporary file, never one of a fixed name.
+        record_access.save(record, json.dumps(said))
         return said
 
 

@@ -84,11 +84,41 @@ def _when(mtime: object) -> tuple[str, str]:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    # Through `record_access`: held to the study where the read is
+    # (`/api/files-page`), so a record linked out of it is not read.
+    from fastmdxplora import record_access
+
     try:
-        said = json.loads(path.read_text(encoding="utf-8"))
+        said = json.loads(record_access.read_text(path, encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return said if isinstance(said, dict) else {}
+
+
+def _status_not_read(root: Path, where: Path) -> str:
+    """What an analysis's "not read" pill says on hover, where its manifest
+    was refused: the manifest named, why, as the answer's `not_read` says
+    it, and that its status, not its value, was not read."""
+    from fastmdxplora.gui.series import NOT_READ_BECAUSE, why_not_read
+
+    try:
+        named = where.relative_to(root).as_posix()
+    except ValueError:
+        named = where.name
+    return (f"Its status was not read: {named} was not read, "
+            f"{NOT_READ_BECAUSE[why_not_read(root, where)]}. The value beside it is read "
+            "from the analysis's own record.")
+
+
+def _held(read: Callable[..., Any], path: Path) -> tuple[Any, str]:
+    """``read(path)``, and where a read held to the study refused the
+    record, the line a tile says of it ("<name> not read"); "" otherwise,
+    and outside a held read."""
+    from fastmdxplora import record_access
+
+    with record_access.refusals_noted() as refused:
+        value = read(path)
+    return value, (f"{path.name} not read" if refused else "")
 
 
 # ---------------------------------------------------------------------------
@@ -105,8 +135,11 @@ def atoms_in(path: Path) -> tuple[int, int]:
     """How many atoms a PDB holds, and how many of them are water's.
     Counted once a version of the file: a topology is read on every
     listing otherwise."""
+    # Through `record_access`, as `_load_json` reads.
+    from fastmdxplora import record_access
+
     try:
-        info = path.stat()
+        info = record_access.stat(path)
     except OSError:
         return 0, 0
     key = (str(path), info.st_mtime_ns, info.st_size)
@@ -115,7 +148,7 @@ def atoms_in(path: Path) -> tuple[int, int]:
             return _ATOMS[key]
     atoms = water = 0
     try:
-        with path.open("rb") as handle:
+        with record_access.open_binary(path) as handle:
             for line in handle:
                 if line.startswith((b"ATOM  ", b"HETATM")):
                     atoms += 1
@@ -253,9 +286,17 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
     for (run, folder), group in analyses.items():
         prefix = f"runs/{run}/" if run else ""
         if run not in manifests:
-            manifests[run] = (_load_json(root / prefix / "analysis" / "analysis_manifest.json")
-                              .get("results") or {})
+            where = root / prefix / "analysis" / "analysis_manifest.json"
+            manifest, unread = _held(_load_json, where)
+            # Refused (a link out of the study): each analysis says its
+            # status was not read, not a status read through the link, with
+            # why as the answer's `not_read` says it. The value beside it is
+            # its own record's, read held to the study.
+            manifests[run] = _status_not_read(root, where) if unread else (
+                manifest.get("results") or {})
         result = manifests[run].get(folder) if isinstance(manifests[run], dict) else None
+        if isinstance(manifests[run], str):
+            group["status"], group["message"] = "not read", manifests[run]
         if isinstance(result, dict):
             group["status"] = str(result.get("status") or "")
             if group["status"] not in ("ok", ""):
@@ -283,7 +324,25 @@ def files_model(root: Path, records: list[dict[str, Any]], *,
         counts[entry["filter"]] = counts.get(entry["filter"], 0) + 1
     return {"files": files, "analyses": ordered, "runs": runs,
             "keys": _key_files(root, files, runs, not_produced), "counts": counts,
-            "total": sum(entry["size"] for entry in files)}
+            "total": sum(entry["size"] for entry in files),
+            "folders_out": _folders_out(root)}
+
+
+def _folders_out(root: Path) -> list[str]:
+    """The study's folders of its phases that are links leading out of it
+    (`series.folder_out`): not listed, so the page says why, once each."""
+    from fastmdxplora.gui.series import folder_out
+
+    found = (folder_out(root, Path(root) / name)
+             for name in ("setup", "simulation", "analysis", "report"))
+    return [folder for folder in found if folder]
+
+
+def _folders_out_said(model: dict[str, Any]) -> str:
+    from fastmdxplora.gui.series import FOLDER_OUT
+
+    return "".join(f'<p class="files-folder-out" role="note">{escape(FOLDER_OUT.format(name))}.</p>'
+                   for name in model.get("folders_out") or ())
 
 
 def _key_files(root: Path, files: list[dict[str, Any]], runs: list[dict[str, str]],
@@ -310,16 +369,20 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
 
     trajectory = (there("joined/production.dcd") if there("joined/joined.json") else None) \
         or there("simulation/production.dcd")
-    record = _load_json(root / prefix / "simulation" / "simulation_parameters.json")
+    # Each record read held to the study where the read is: one refused
+    # (a link out of it) is said not read, and nothing it says is shown.
+    record, unread = _held(_load_json, root / prefix / "simulation" / "simulation_parameters.json")
     if trajectory is not None:
         opens_with = by_path.get(trajectory["opens_with"]) if trajectory["opens_with"] else None
         said = []
         frames = record.get("n_production_frames")
         span = record.get("duration_ns_actual")
         if trajectory["path"].startswith(prefix + "joined/"):
-            joined = _load_json(root / prefix / "joined" / "joined.json")
+            joined, unread = _held(_load_json, root / prefix / "joined" / "joined.json")
             frames = joined.get("n_frames") or joined.get("frames") or None
             span = joined.get("duration_ns") or joined.get("ns") or None
+        if unread:
+            said.append(unread)
         if isinstance(frames, (int, float)) and frames > 0:
             said.append(f"{int(frames):,} frames")
             if isinstance(span, (int, float)) and span > 0:
@@ -327,9 +390,11 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
                 if frames > 1:
                     said.append(f"one every {_number(span * 1000 / frames)} ps")
         if opens_with is not None:
-            atoms, water = atoms_in(root / opens_with["path"])
+            (atoms, water), unread = _held(atoms_in, root / opens_with["path"])
             if atoms:
                 said.append(f"{atoms:,} atoms" + ("" if water else ", no water"))
+            elif unread:
+                said.append(unread)
         paths = [trajectory["path"]] + ([opens_with["path"]] if opens_with else [])
         load = ""
         if opens_with is not None:
@@ -345,8 +410,11 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
     if report is not None:
         what = "Written"
         if report["path"].endswith(".md") and there("report/report.pdf") is None:
-            said = (not_produced if not_produced is not None
-                    else _load_json_list(root / prefix / "report" / "not_produced.json"))
+            said, unread = ((not_produced, "") if not_produced is not None
+                            else _held(_load_json_list,
+                                       root / prefix / "report" / "not_produced.json"))
+            if unread:
+                what += " · " + unread
             for item in said:
                 if str(item.get("artifact")) == "report.pdf":
                     what += " · no PDF: " + str(item.get("reason") or "").split(". ")[0].rstrip(".")
@@ -362,8 +430,9 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
     solvated = there("setup/solvated.pdb")
     system = there("setup/system.xml")
     if solvated is not None:
-        atoms, _ = atoms_in(root / solvated["path"])
-        what = f"{atoms:,} atoms, solvated" if atoms else "Solvated"
+        (atoms, _), unread = _held(atoms_in, root / solvated["path"])
+        what = (f"{atoms:,} atoms, solvated" if atoms
+                else "Solvated" + (f" · {unread}" if unread else ""))
         if system is not None:
             what += ", with the force field as OpenMM built it"
         tiles.append({"key": "system", "run": run, "icon": "structure",
@@ -385,8 +454,11 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
 
 
 def _load_json_list(path: Path) -> list[dict[str, Any]]:
+    # Through `record_access`, as `_load_json` reads.
+    from fastmdxplora import record_access
+
     try:
-        said = json.loads(path.read_text(encoding="utf-8"))
+        said = json.loads(record_access.read_text(path, encoding="utf-8"))
     except (OSError, ValueError):
         return []
     return [item for item in said if isinstance(item, dict)] if isinstance(said, list) else []
@@ -556,8 +628,15 @@ def _analysis_row(group: dict[str, Any], entries: list[dict[str, Any]], links: L
              if group["value"] else "")
     state = ""
     if group["status"] and group["status"] != "ok":
+        # Its own line under the name, not clipped with it on a narrow page;
+        # its words reachable without a pointer (described, and focusable).
+        said = "files-state-" + "".join(c if c.isalnum() else "-"
+                                         for c in f'{group["run"]}/{group["folder"]}')
+        described = (f' tabindex="0" aria-describedby="{said}"' if group["message"] else "")
         state = (f'<span class="files-state" data-state="{_attr(group["status"])}" '
-                 f'title="{_attr(group["message"])}">{escape(group["status"])}</span>')
+                 f'title="{_attr(group["message"])}"{described}>{escape(group["status"])}</span>'
+                 + (f'<span class="files-sr" id="{said}">{escape(group["message"])}</span>'
+                    if group["message"] else ""))
     run = (f'<span class="files-run">{escape(runs.get(group["run"], group["run"]))}</span>'
            if group["run"] else "")
     names = [by_path[p]["name"] for p in sorted(group["files"], key=_chip_order)
@@ -591,7 +670,7 @@ def _analysis_row(group: dict[str, Any], entries: list[dict[str, Any]], links: L
         f'<span class="files-sr">{escape(group["title"])}: its files</span></button>'
         f'<span class="files-thumbs">{thumb}{more}</span>'
         f'<div class="files-what"><div class="files-name">{escape(group["title"])}{run}{value}'
-        f'{state}</div><div class="files-chips">{chips}</div></div>'
+        f'</div>{state}<div class="files-chips">{chips}</div></div>'
         f'<span class="files-size">{len(names)} file{"s" if len(names) != 1 else ""}'
         f'<br>{escape(human_size(group["size"]))}</span>'
         f'<div class="files-acts">{"".join(acts)}</div></div>'
@@ -744,12 +823,13 @@ def render(model: dict[str, Any], links: Links, *, view: str = "phases") -> str:
     standalone dashboard, which has no server to ask for the other)."""
     if not model["files"]:
         # The page's one empty block (page-states.css), as every page says it.
-        return ('<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
-                'This study has not written any files yet.</span></div>')
+        return _folders_out_said(model) + (
+            '<div class="fmx-state" data-kind="empty" role="status"><span class="fmx-state-title">'
+            'This study has not written any files yet.</span></div>')
     by_path = {entry["path"]: entry for entry in model["files"]}
     runs = {run["id"]: run["label"] for run in model["runs"]}
     tiles = "".join(_tile(tile, by_path, links, runs) for tile in model["keys"])
-    parts = [icons(), _toolbar(model, links), _usage(model, links)]
+    parts = [icons(), _folders_out_said(model), _toolbar(model, links), _usage(model, links)]
     if tiles:
         parts.append(f'<div class="files-keys"><h2 class="files-keys-title">What you came for</h2>'
                      f'<div class="files-tiles">{tiles}</div></div>')
@@ -954,9 +1034,17 @@ def _why_kept(folder: Path) -> str:
     going writes and reads them; a run with no trajectory has only them to
     play; and a run that failed or ended without saying so may have a
     trajectory cut short, which the Viewer plays the snapshots instead of."""
+    from fastmdxplora import record_access
     from fastmdxplora.gui.telemetry import status_as_it_stands
 
-    status = status_as_it_stands(folder)
+    # Held to the study where the read is (`POST /api/files/clear-scratch`):
+    # a record of the run linked out of it is not read, and what it would
+    # have said is not known, so nothing of the run's is removed.
+    with record_access.refusals_noted() as refused:
+        status = status_as_it_stands(folder)
+    if refused:
+        return ("its record of how it ran was not read (it leads outside the study), so "
+                "whether its snapshots are needed is not known")
     said = str(status.get("status") or "").lower()
     if said in _GOING:
         return "it is still running"
@@ -967,7 +1055,7 @@ def _why_kept(folder: Path) -> str:
     has_trajectory = False
     for trajectory in (folder / "joined" / "production.dcd", folder / "simulation" / "production.dcd"):
         try:
-            if trajectory.stat().st_size > 0:
+            if record_access.stat(trajectory).st_size > 0:
                 has_trajectory = True
                 break
         except OSError:

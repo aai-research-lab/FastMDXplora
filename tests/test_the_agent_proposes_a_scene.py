@@ -20,6 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 from fastmdxplora.agent.propose import _scene_in, prompt_for, propose_config
+from tests._agent_page import ready
 
 
 @pytest.mark.parametrize("line, scene", [
@@ -132,6 +133,7 @@ def test_the_person_writes_it_and_sees_it(study, monkeypatch):
             errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
             page.fill("#agent-request", "Which residues move most?")
             page.keyboard.press("Enter")
             page.wait_for_selector("#agent-thread .agent-scene")

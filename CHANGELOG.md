@@ -587,6 +587,96 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Compare, or All studies again after opening a study, returns to where the
   page was, with its search.
 
+- The Viewer names the frame of the trajectory it shows from a finished
+  run ("trajectory frame 1,234") beside the counter, in the overlay and in
+  the per-frame panels, and gives its time, there and in the charts' hover
+  boxes, to as many decimals as tell it from the next frame. On a narrow
+  page each part of the label stays on one line.
+
+- A chart's hover box fits its text: a long value or hint wraps inside
+  the chart instead of running past the box.
+
+- The Analysis page shows its charts as soon as the results arrive,
+  without waiting for the trajectory and structure details the Viewer
+  reads.
+
+- Choosing a point on an RMSF chart, a contact or interaction bar, or a
+  secondary structure cell selects that residue in the Viewer by its
+  chain, number, insertion code and name, so a number two chains share is
+  no longer guessed. A row that matches no single residue says so and
+  selects nothing. An atom RMSF chart is labelled by atom and selects the
+  atom it names, and the Agent is told which atom is selected.
+
+- A view saved, or written as a scene, at a frame opened from a chart
+  keeps that source frame and its coordinates, and opens at it again. It
+  keeps which trajectory the frame is of: once that trajectory has been
+  extended, joined or written again, the view says so instead of opening
+  another frame of the same number. A source-frame scene of smoothed
+  coordinates is refused, and writing a scene no longer rewrites the
+  frames the Viewer was sent.
+
+- The RMSD matrix names the frames each of its cells stands for from what
+  its file records: a file averaged in blocks of frames (its `block`) has
+  each cell said as its block's frames and none opened as one frame, and
+  a file whose frames do not fit its cells names none.
+
+- A point on an analysis chart opens the trajectory frame it was
+  computed from. Before, the nearest of the few hundred frames the Viewer
+  plays was opened. A frame the Viewer does not hold is read from the
+  production trajectory, fitted as the Viewer fits its frames, and placed
+  among the playback frames in time order. An RMSD matrix cell opens its
+  row frame on a click and its column frame on a Shift-click, and a cell
+  that averages groups of frames says which. A drag along the series under
+  the Viewer follows the frames it holds, and the frame where the drag
+  ends is read. The per-frame panels (backbone angles, contacts, pocket)
+  say they have no value at a frame read so, rather than show another
+  frame's. Fitting or smoothing the frames again keeps them and that frame
+  in step: the frame is read again fitted the new way, and smoothed frames
+  show the nearest frame sent instead. On Windows, writing the record of
+  the frames sent is tried again for a moment where another request is
+  replacing it.
+
+- The Viewer's playback counter counts the frames loaded, from 1. While a
+  study runs, a snapshot's integrator step is shown beside it rather than
+  read as its frame number. The counter, the
+  slider and the overlay change only once the frame they name is on screen;
+  a frame that cannot be rendered leaves them as they were and says so. A
+  trajectory of one frame is shown without starting a playback timer.
+
+- A frame opened from a chart or a saved view is named on the counter once
+  it is drawn: the frame shown before it was given against the new total
+  for up to two seconds.
+
+- A frame that cannot be opened (its trajectory not read, named in a
+  trajectory since changed, or the GUI busy preparing others) is said in
+  the page's notice as well as read out. A residue chart whose structure
+  was not read says so in its hover box, and a figure says it under its
+  plot, rather than that no residue matched.
+
+- A residue profile's points and measured squares are drawn whole at both
+  ends, and its line no longer joins one chain's last residue to the next
+  chain's first. A source-frame scene whose topology holds other atoms than
+  the frame read is refused.
+
+- A series chart whose newly opened study has no such series shows the
+  card's figure again, and a range chosen on a chart is forgotten when
+  another study is opened.
+
+- The Viewer of a study whose frames were not read says so in its playback
+  note, and goes on saying it; its overlay waits for no frame once the run
+  has ended, and Play says why nothing plays.
+
+- A refused frame is read out once, the notice showing it without saying
+  it again; a frame whose frames could not be loaded is said in the notice;
+  a live frame's time under 1 ns is said in ps on the overlay; a drag along
+  the series track selects no text of the page.
+
+- The Runs panel says a run linked out of the study was not read, not that
+  it has no trajectory yet; the maps over the frames are offered only where
+  the frames were read, as Motion and Pocket are; the pocket's frame time is
+  said in ps under 1 ns; the frames' pieces linked out of the study are said
+  in the notice as the frames are played whole.
+
 - The phone-to-desktop browser check waits for the side panel to return
   after its dialog closes, avoiding a timing-sensitive assertion.
 
@@ -733,6 +823,36 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 - Once a refused message is taken out, the Agent's welcome is shown from its
   top; its heading was under the Agent bar.
+
+- A run made in a process that goes on (a notebook, a test) no longer leaves
+  its process record behind, so a GUI opened in that process no longer takes
+  itself for the study's run. The record goes when the run ends, finished,
+  failed, refused or stopped, where this process wrote it; a record of
+  another process is left alone. The record stays while a run of this
+  process still holds the folder: a study of one keeps it while it is
+  extended in rounds, reported again or compared with its campaign. The GUI
+  of `fastmdx explore --dashboard` holds the run, and its Stop reaches it,
+  from the moment the run records itself, not only once the study is
+  opened again; once the run is over it no longer says the study is
+  running, or offers Stop. A record left empty or cut short (a full disk)
+  no longer keeps it saying so either.
+
+- A printed report no longer carries the loading screen, or its blur, when
+  printed before the page had finished loading.
+
+- A batch manifest that does not hold a JSON object is refused as
+  `batch.manifest.invalid`.
+
+- The Agent's Send, while the page reads the study open and its
+  conversation, says so as it is hovered, not that a run is starting.
+
+- Tests: every Agent browser test waits for the page to read its study and
+  conversation before it sends; the tests of a run's study opened elsewhere
+  each have a browser of their own, so the file passes run whole; browser
+  tests wait for the page they print, read, drag, reload or switch from;
+  Python 3.10's pathlib calls what a test patches; tests that bound an
+  address no machine has, read a process limit on macOS, timed a busy
+  runner or read text in the locale's encoding no longer do.
 
 ### Added
 
@@ -1117,6 +1237,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   chosen values and decisions for inactive phases as well as the phases
   running now.
 
+- A figure's arrows step along its points and leave its view alone until
+  it is zoomed in; the zoom keys took them too and moved the view with each
+  step.
+
+- Analysis charts can be stepped through with the keyboard: the arrows
+  choose a point, bar or cell, Home and End go to the ends, and Enter opens
+  its frame or residue. A click outside a chart's plot does nothing.
+
+- Backbone order parameters (S²) are plotted on the Analysis page, on a
+  fixed 0 to 1.05 scale, with measured values as squares where they were
+  given and the analysis's note where S² is only an upper bound. A point
+  selects its residue in the Viewer.
+
+- A chart's range of times is chosen in the unit its axis reads in, ps
+  for a run under a nanosecond, and the measured S² squares stay inside
+  the axes when the chart is zoomed.
+
+- An analysis chart can be limited to a range of times, frames or
+  residues, chosen by their names on a residue chart, and reset. A point
+  in the range opens the same frame or residue as before. The mean line is
+  labelled as the mean of the whole analysis.
+
 - A Problems tab beside Log and Files lists the open study's recorded
   refusals (its phases' and the report formats it could not produce), a
   run interrupted or stopped as the Overview says it, the report's verdict
@@ -1388,6 +1530,182 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   said while no study is open.
 
 ### Security
+
+- An exact frame opened from a chart is read from the study's own
+  trajectory, topology and browser frames alone: one of them linked out of
+  the study is not opened where it leads, on this computer or on a public
+  bind; `/api/exact-frame` says it was not read, and the binary routes
+  give a fixed reason.
+
+- A chart's residues are named from the study's own records: the profile's
+  table, the analyses' manifest and the structure it names are read held
+  to the study, so a structure linked out of it, or named outside it, is
+  not opened for a page, and its points are left value-only. The bars of a
+  ligand's contacts and interactions and the secondary-structure map name
+  theirs the same way, and each says the structure was not read.
+
+- The frames the Viewer plays are read from the study's own trajectory and
+  topology alone, as an exact frame is: one linked out of the study, or a
+  topology its join names outside it, is not played, on this computer or
+  on a public bind, and the Viewer is told it was not read; frames written
+  from it before are not sent, and frames linked out are not written over.
+
+- What the Viewer computes from the frames it plays (the frames superposed,
+  a motion, the backbone angles, the contacts between chains and between
+  residues, the states and two of them compared, the maps of the ligand and
+  the water, the water sites, the pocket's room, the frames' secondary
+  structure, a selection typed in them and the interactions over them) is
+  read held to the study, and only of the frames it plays: frames, their
+  topology or a record read beside them linked out of the study is not
+  read, on this computer or on a public bind, and each answer says so.
+
+- For a study of several runs, the run the Viewer plays is chosen held to
+  the study: a run folder linked out of it is passed over, so its frames
+  and exact frames are not read, written or sent. The run played's
+  parameters and the index of the runs set beside it are read held to the
+  study too, and said not read where they are linked out.
+
+- Nothing is written through a link out of the study: the frames' pieces
+  or their index, the frames as XTC or with frames in between, or the folder
+  the runs set beside the run played are written to, linked out of it, is
+  refused before anything is written.
+
+- A study copied whole, whose analyses name its structure where the
+  original is, reads its own structure in that place, so its charts' points
+  select residues again; a file named outside the study is said not read as
+  that, not as a link.
+
+- A trajectory linked out of the study is refused and said not read where
+  no topology is left to read it with, and a saved topology refused has no
+  other read in its place.
+
+- The routes a page asks for of a study read only inside it (the Agent's
+  conversation routes are not yet held to it, and answer on this computer
+  only). A scene is made
+  of the study's own frames, trajectory and structure, and none is written
+  through a link; another study set beside this one reads this one's
+  parameters, manifest and RMSF held to it; a residue's or two atoms'
+  selections and a residue's states read the study's own structure and
+  index, and the command that measures a distance names no path on this
+  computer beyond it. The structure the Viewer is sent, the live frame, the
+  structure's details and ligands, the preview, a typed selection and the
+  secondary structure of either, the views, selections, scenes and movies
+  saved, the figures zipped, the stopping record, what can be run again and
+  the deposit are read held to the study, on this computer and on a public
+  bind; each answer says what it did not read, no other file is read in
+  its place, and no view, selection, deposit or movie is written over or
+  through a record linked out.
+
+- A study copied whole is read as its own only where it is the same
+  structure: its own file in the place its analyses name is read only where
+  it holds as many atoms as they read (`n_atoms`), and its trajectory the
+  same way, so a copied study's time points open its own frames with the
+  original still there; a structure of other atoms is said not read.
+
+- Every record the GUI saves in a study (what the Viewer computes from the
+  frames, the frames written for it, a scene, the views and selections) is
+  written to a new temporary file of its own and renamed into place. A link
+  planted at the temporary name it was written through had a public GET
+  write over a file outside the study; a link there, or a record or folder
+  linked out of the study, is now never written through.
+
+- The Files page reads the run's parameters, the analysis manifest, the
+  report's record of what it did not write and the structures it counts
+  atoms in held to the study, on this computer and on a public bind: a
+  record linked out of it is not read, its tile or analysis says it was not
+  read, and the answer names it.
+
+- What can be run again offers ticked the analyses the study's own manifest
+  names. Its runs and batch manifest are read held to the study too.
+
+- The study set beside the open one is read held to itself: its frames,
+  topology or RMSF linked out of it are not read, its frames are not played
+  beside, and the answer names each by that study's name.
+
+- A run's status, its events and its metrics, and the log of a run the
+  GUI starts, are written through no link at the record itself. A status
+  linked out is not read, by the Stop, by a run's checks failing after it
+  or by the run's own writer, so nothing it says is copied into the
+  study's record or sent. The run's own process otherwise reads and writes
+  the study's folder as the person made it, following its links (a
+  `simulation/` on a cluster's scratch, say), as a run started at the
+  terminal does.
+
+- A record the GUI could not save is named in the answer, as not saved
+  (linked out of the study) or as not saved for want of room (a full disk,
+  MDTraj's own errors on one included), rather than as records not read or
+  an error of the server. With the index of the frames written for the
+  Viewer linked out, the frames are played and not written again on each
+  request; the Viewer's tools answer from the study's own frames (the
+  states, two states compared, where the ligand and the water went, the
+  water sites, the frames' secondary structure and an atom picked in them
+  among them), the index said not saved.
+  MDTraj writes a DCD or XTC by name in a new folder of its own.
+
+- The GUI starts no run (Analyze again, Write it again, the Agent's
+  analyze again, write the report again and run the fix, a fix from the
+  Problems panel, a study carried on in place) in a study that holds a link
+  leading out of it, wherever it is in the study (its `previous/`,
+  `manifest.json`, batch manifest, log, process record, an analysis's
+  record, its trajectory, a run of a study of several), or any file that is
+  a hard link, since a run rewrites some records in place (its Config
+  among them) and could write into another copy of it. The study is walked
+  before any record of it is read for the run. Nothing is offered: the
+  Problems panel offers no Run it, and what was found is named with the
+  command the GUI would start, quoted and set as code, to run at the
+  terminal instead (the report written again where any run of a study of
+  several has one, the analyses asked for named). Asked anyway, nothing is
+  started, and the refusal takes the keyboard from the button it
+  replaces. A link that stays in the study is no reason, nor one elsewhere
+  in a person's project folder holding the study in its own `runs/`. Nor
+  is Analyze again or Write it again offered where the study's Config or
+  analysis manifest was not read; the person is not offered analyses
+  ticked in their place.
+
+- The study beside says why it is not shown where its frames are not its
+  own records, and what of it was not read beside what is shown; it is
+  paired again once its clock is no longer read.
+
+- On the Files page, an analysis whose manifest was not read says "not
+  read" under its name, and that its status, not the value beside it, was
+  not read, and why, as the answer says it: on hover, and to a keyboard or
+  a screen reader. It fits a page 390 pixels wide.
+
+- A folder of the study linked out of it (`simulation/` on a cluster's
+  scratch, say) is said once, as a folder: "simulation/ is a link out of
+  the study, so its records are not read here", not each of its records as
+  a link to a file, on the Overview (its production's means say only
+  that they are recorded there), the Analysis and Files pages and the
+  Viewer.
+
+- The Stop's question, where the run's status was not read, says its stage
+  was not read rather than guess it; a view, a scene or a selection refused
+  beyond this computer says why, the server's sentence after a colon with
+  a small first letter.
+
+- Write it again on a GUI served beyond this computer says it is not
+  offered there, with no Yes to press; on this computer the keyboard is on
+  Yes once the server has said it would write it.
+
+- A writer's own error (not the system's) is logged by the server and said
+  to the person as "could not be saved: its writer failed", without its
+  Python text; the study beside names a record not saved on a full disk in
+  the reason it is not shown.
+
+- Running a study's analyses or report again starts nothing where its
+  Config or analysis manifest is linked out of the study, as nothing is
+  offered then; clearing the scratch keeps a run's snapshots where the
+  run's record is linked out, rather than judge them by what it says.
+
+- With the analysis manifest linked out of the study, a residue or two
+  atoms are not selected or measured in the saved topology in its place.
+
+- A copy whose analyses name its trajectory outside it, of other atoms than
+  its own, says on its time charts that the file named outside the study
+  was not read.
+
+- A residue's states read the structure a Config names relative to the
+  study in the study, not in the folder the GUI was started in.
 
 - `fastmdx remote send`, from the command line, MCP, the Python API and the
   GUI, sends only a study's config: a file that names no `systems`, nor a

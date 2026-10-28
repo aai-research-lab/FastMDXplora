@@ -960,12 +960,17 @@ button {
     top: 14px;
     right: 14px;
     display: flex;
+    /* Narrow, its parts go on a second line whole, not each over three. */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: calc(100% - 28px);
+    box-sizing: border-box;
     align-items: center;
-    gap: 10px;
+    gap: 2px 10px;
     /* Dark enough to read over a white viewer background as well. */
     background: rgba(5, 5, 5, 0.82);
     border: 1px solid var(--border-primary);
-    border-radius: 999px;
+    border-radius: 14px;
     padding: 6px 12px;
     color: var(--text-secondary);
     font-family: var(--font-mono);
@@ -973,6 +978,8 @@ button {
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
 }
+.viewer-overlay .overlay-detail { white-space: nowrap; }
+.viewer-overlay .overlay-detail:empty { display: none; }
 .overlay-tag {
     color: var(--status-stale);
     font-weight: 700;
@@ -1148,6 +1155,9 @@ button {
    screen reader; the transport under the canvas, its scrubber taking the
    width. */
 .control-row.transport, .control-row.view-tools, .control-row.display-tools { align-items: center; }
+/* Frames not read: the transport shows why, and nothing to play them with. */
+.control-row.transport[data-not-read] > :not(#traj-loaded) { display: none; }
+.control-row.transport[data-not-read] #traj-loaded { color: var(--text-primary); }
 /* The series under the transport, as tracks taking the width
    (frame-series.js; the rest of them with the timeline's). */
 .frame-series-chart { min-width: 200px; }
@@ -1201,7 +1211,12 @@ button {
     background: var(--background-elevated); border: 1px solid var(--border-primary);
     border-radius: 6px; padding: 4px 6px;
 }
-.traj-time { color: var(--text-secondary); font-size: var(--text-xs); }
+/* One line: what does not fit ends in an ellipsis, the whole kept in its title. */
+.traj-time {
+    color: var(--text-secondary); font-size: var(--text-xs);
+    min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ============================================================ */
 /* Info panel                            */
@@ -4214,6 +4229,9 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .sidebar-stop[hidden], .stop-run-ask[hidden] { display: none; }
 .sidebar-stop:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
 .stop-run-ask { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-xs); }
+/* A refused stop's Close on a line of its own, so it and its focus ring cover
+   none of the words. */
+.stop-run-close { display: block; width: fit-content; margin-top: 6px; padding: 2px 10px; }
 .health-stop { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .health-stop:has(> [hidden] + [hidden]) { display: none; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }
@@ -4511,6 +4529,9 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .chain-contact { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs);
                  color: var(--text-muted); }
 .chain-contact.is-present { color: var(--text-primary); font-weight: 600; }
+/* At a frame read from the trajectory, not one played: neither present nor
+   absent, as the line above the list says. */
+.chain-contacts[data-unplayed] .chain-contact { opacity: 0.55; font-style: italic; }
 .chain-contact-kind { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 2px; }
 .chain-contact-residues { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .chain-contact-share { flex: 0 0 auto; }
@@ -4807,14 +4828,37 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
     border-bottom: 1px solid var(--border-subtle);
     min-height: 260px;
 }
+/* The hover box is placed against the plot, under the range form. */
+.series-plot { position: relative; }
 .series-svg { display: block; width: 100%; height: 260px; cursor: crosshair; outline: none; }
 .series-svg:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; }
 .series-svg text { font-family: var(--font-mono); }
+.series-range {
+    display: flex; align-items: end; flex-wrap: wrap; gap: 8px 12px;
+    margin: 0 0 6px; font-size: var(--text-2xs); color: var(--text-muted);
+}
+.series-range-field { display: grid; gap: 3px; flex: 0 1 132px; min-width: 88px; }
+.series-range-field input,
+.series-range-field select {
+    width: 100%; box-sizing: border-box; min-height: 30px; padding: 4px 7px;
+    border-radius: 5px; border: 1px solid var(--border-primary);
+    background: var(--background-soft); color: var(--text-primary); font: inherit;
+    font-variant-numeric: tabular-nums;
+}
+.series-range-field input[aria-invalid="true"] { border-color: var(--accent-red); }
+.series-range .line-btn {
+    width: auto; height: auto; min-height: 30px; padding: 4px 9px; white-space: nowrap;
+    border: 1px solid var(--border-primary); color: var(--text-primary);
+}
+.series-range-status { flex: 1 1 180px; min-height: 1.4em; }
+.series-range-empty { margin: 18px 0; color: var(--text-muted); font-size: var(--text-sm); }
 .series-tip {
     position: absolute;
     z-index: 3;
     pointer-events: none;
-    max-width: 260px;
+    width: max-content;
+    max-width: calc(100% - 8px);
+    box-sizing: border-box;
     padding: 6px 9px;
     border-radius: 6px;
     border: 1px solid var(--border-primary);
@@ -4824,7 +4868,8 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     line-height: 1.45;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .series-tip strong { color: var(--text-primary); font-weight: 600; }
 
@@ -5766,8 +5811,9 @@ body.agent-beside .nav-beside { color: var(--accent-text); }
     }
     html, body { height: auto; overflow: visible; background: #ffffff; }
     .app-shell { display: block; height: auto; min-height: 0; background: none; }
+    body.state-loading .app-shell { filter: none; }
     .main { height: auto; overflow: visible; }
-    .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
+    .loading-screen, .sidebar, .side-panel, .col-handle, .sidebar-expand, .side-expand,
     .agent-dialog, .agent-drawer, .page-header-actions, .report-notices, .report-write-ask,
     .report-figure-made, .figure-provenance {
         display: none !important;

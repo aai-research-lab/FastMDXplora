@@ -35,6 +35,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora import record_access as _records
+from fastmdxplora.refusals import CodedError
+
 __all__ = ["HIGHLIGHT_COLOUR", "MVS_VERSION", "SCENES_DIR", "build_scene", "highlighted",
            "read_scene", "scene_bytes", "scenes_of", "write_scene"]
 
@@ -83,41 +86,85 @@ def _atom_lines(text: str) -> list[str]:
 
 
 def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
-                 notes: list[str]) -> tuple[list[str], int] | None:
+                 notes: list[str], most_frames: int | None = None
+                 ) -> tuple[list[str], int, dict[str, Any] | None] | None:
     """The frames' atoms at the frame the view shows, superposed where it
     is; None where the study has no frames to show it at."""
     from fastmdxplora.gui.trajectory_frames import (
+        _NOT_SENT,
         FRAMES_FILE,
         FRAMES_TOPOLOGY,
+        _sent_here,
         frames_info,
+        most_frames_sent,
         superposed_frames,
     )
+    from fastmdxplora.refusals import StudyError
 
+    # As many frames as the Viewer was sent: another number would write
+    # the browser's frames again.
+    most = most_frames if most_frames is not None else most_frames_sent(root)
     frame = view.get("frame")
     if not isinstance(frame, int):
         return None
-    info = frames_info(root)
+    if view.get("frame_source") is True:
+        from fastmdxplora.gui.by_residue import _dssp
+        from fastmdxplora.gui.trajectory_frames import exact_frame
+
+        if (view.get("smoothed_over") or 1) > 1:
+            raise StudyError("A source-frame scene needs unsmoothed coordinates.",
+                             code="config.option.not_permitted", option="smoothed_over")
+        exact, details = exact_frame(root, frame, most_frames=most,
+                                     source_signature=view.get("frame_signature"),
+                                     on=view.get("superposed") or "none",
+                                     ligand=ligands[0] if ligands else None,
+                                     cutoff_angstrom=view.get("pocket_cutoff") or 5.0,
+                                     to=view.get("superposed_to") or "first")
+        if exact is None:
+            raise StudyError(details.get("reason") or "The source frame is unavailable.",
+                             code=details.get("code") or "analysis.data.absent")
+        # Through `record_access`: in a read held to the study, a topology
+        # linked out of it is refused, never read where it leads.
+        text = _records.read_text(root / "simulation" / FRAMES_TOPOLOGY, encoding="utf-8")
+        lines = _atom_lines(text)
+        xyz = exact.xyz[0] * 10.0
+        if len(xyz) != len(lines):
+            # As the frames played are checked below: a coordinate given to
+            # another atom, or an atom left with none, is not a scene.
+            from fastmdxplora.analysis.loading import TrajectoryLoadError
+
+            raise TrajectoryLoadError("The frame's coordinates are not of its topology's atoms.")
+        secondary = _dssp(text, exact.xyz)
+        return ([f"{line[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}"
+                 for line, (x, y, z) in zip(lines, xyz)], frame, secondary)
+    info = frames_info(root, most_frames=most)
     if not info.get("available") or not 0 <= frame < int(info.get("n_frames_browser") or 0):
         notes.append(f"The study has no frame {frame} to show; the structure is shown.")
         return None
     simulation = root / "simulation"
     coordinates = simulation / FRAMES_FILE
+    if not _sent_here(simulation, FRAMES_FILE, FRAMES_TOPOLOGY):
+        # Held to the study: frames or a topology linked out of it are
+        # refused and named, not opened where they lead.
+        raise StudyError(_NOT_SENT[0], code=_NOT_SENT[1])
     on = view.get("superposed") or "none"
     if on in ("backbone", "pocket"):
         said = superposed_frames(root, on, ligand=ligands[0] if ligands else None,
                                  cutoff_angstrom=view.get("pocket_cutoff") or 5.0,
                                  to=view.get("superposed_to") or "first",
                                  smooth=view.get("smoothed_over") or 1)
-        if said.get("ok"):
+        if said.get("ok") and _sent_here(simulation, said["file"]):
             coordinates = simulation / said["file"]
+        elif said.get("ok"):
+            raise StudyError(_NOT_SENT[0], code=_NOT_SENT[1])
         else:
             notes.append(f"The frames are not superposed: {said.get('reason')}")
     import mdtraj as md
 
     from fastmdxplora.utils.native_output import suppress_native_output
 
-    lines = _atom_lines((simulation / FRAMES_TOPOLOGY).read_text(encoding="utf-8",
-                                                                 errors="replace"))
+    lines = _atom_lines(_records.read_text(simulation / FRAMES_TOPOLOGY, encoding="utf-8",
+                                           errors="replace"))
     with suppress_native_output(), md.formats.DCDTrajectoryFile(str(coordinates)) as handle:
         handle.seek(frame)
         xyz = handle.read(1)[0][0]                    # angstroms, as the DCD holds them
@@ -126,7 +173,7 @@ def _frame_lines(root: Path, view: dict[str, Any], ligands: list[str],
 
         raise TrajectoryLoadError("The frames' coordinates are not of their topology's atoms.")
     return [f"{line[:30]}{x:8.3f}{y:8.3f}{z:8.3f}{line[54:]}"
-            for line, (x, y, z) in zip(lines, xyz)], frame
+            for line, (x, y, z) in zip(lines, xyz)], frame, None
 
 
 def _structure_lines(root: Path, view: dict[str, Any]) -> list[str] | None:
@@ -155,11 +202,12 @@ def _polymer(name: str) -> bool:
     return name.upper() in POLYMER_RESNAMES or name.upper() in _CAPS
 
 
-def _secondary_records(root: Path, of: str, frame: int, runs: list[Any]) -> list[str]:
+def _secondary_records(root: Path, of: str, frame: int, runs: list[Any], *,
+                       secondary: dict[str, Any] | None = None) -> list[str]:
     """HELIX and SHEET records of the study's DSSP for the residues shown."""
     from fastmdxplora.gui.by_residue import secondary_structure
 
-    said = secondary_structure(root, of)
+    said = secondary if secondary is not None else secondary_structure(root, of)
     if not said.get("available"):
         return []
     codes_of_frame = said["frames"][frame if len(said["frames"]) > 1 else 0]
@@ -406,7 +454,8 @@ def _view(view: Any) -> dict[str, Any]:
 def build_scene(root: str | Path, view: dict[str, Any] | None = None,
                 selections: list[dict[str, Any]] | None = None, *,
                 ligands: list[str] | None = None, title: str | None = None,
-                results: str | Path | None = None) -> dict[str, Any]:
+                results: str | Path | None = None,
+                most_frames: int | None = None) -> dict[str, Any]:
     """The scene of a view of the study at ``root``: ``{"ok": True,
     "state": <MVS state>, "files": {name: text}, "notes": [...]}``, or why
     there is none.
@@ -433,10 +482,11 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
         from fastmdxplora.ligand_detection import detect_ligands
 
         ligands = list(detect_ligands((run[0], run[3], str(run[1])) for run in runs)["resnames"])
-    framed = _frame_lines(base, view, ligands, notes)
+    framed = _frame_lines(base, view, ligands, notes, most_frames)
     of, frame = "structure", 0
+    secondary = None
     if framed is not None:
-        lines, frame = framed
+        lines, frame, secondary = framed
         runs = residue_runs(lines)
         of = "frames"
         if shown.get("water"):
@@ -539,7 +589,7 @@ def build_scene(root: str | Path, view: dict[str, Any] | None = None,
     if shown.get("box"):
         notes.append("The periodic box is not part of a scene.")
 
-    records = _secondary_records(base, of, frame, runs)
+    records = _secondary_records(base, of, frame, runs, secondary=secondary)
     structure = _node("structure", {"type": "model"}, components)
     tree = [_node("download", {"url": "structure.pdb"}, [
         _node("parse", {"format": "pdb"}, [structure])])]
@@ -595,7 +645,8 @@ def scene_bytes(scene: dict[str, Any]) -> bytes:
 def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None, *,
                 selections: list[dict[str, Any]] | None = None,
                 ligands: list[str] | None = None,
-                source: str | Path | None = None) -> dict[str, Any]:
+                source: str | Path | None = None,
+                most_frames: int | None = None) -> dict[str, Any]:
     """The scene of a view written with the study, as
     ``scenes/<name>.mvsx``, in place of one of that name: of ``source``
     where it is given (the run a study of several plays), else the
@@ -606,28 +657,51 @@ def write_scene(root: str | Path, name: Any, view: dict[str, Any] | None = None,
                                        "dots, dashes and underscores, from a letter or digit."}
     try:
         scene = build_scene(source or root, view, selections, ligands=ligands, title=name,
-                            results=root if source is not None else None)
+                            results=root if source is not None else None,
+                            most_frames=most_frames)
+    except CodedError as exc:
+        # Said with its code: a frame of a changed trajectory, or one the
+        # GUI was too busy to read, is told apart from a broken scene.
+        return {"ok": False, "reason": f"The scene could not be made: {exc}", "code": exc.code}
     except Exception as exc:  # noqa: BLE001 - said, not raised
         return {"ok": False, "reason": f"The scene could not be made: {exc}"}
     if not scene.get("ok"):
         return scene
+    from fastmdxplora.gui.trajectory_frames import _linked_out
+
     folder = Path(root) / SCENES_DIR
-    folder.mkdir(exist_ok=True)
     target = folder / f"{name}.mvsx"
-    temporary = folder / f".{name}.mvsx.tmp"
-    temporary.write_bytes(scene_bytes(scene))
-    temporary.replace(target)
+    if any(_linked_out(path) for path in (folder, target)):
+        # Held to the study: nothing is written through a link out of it.
+        return {"ok": False, "reason": "Where the scene would be written is not one of this "
+                                       "study's own records, so it is not written."}
+    folder.mkdir(exist_ok=True)
+    try:
+        # A new temporary file, never one of a fixed name (`record_access.save`).
+        _records.save(target, scene_bytes(scene))
+    except _records.OutsideWorkspace:
+        return {"ok": False, "reason": "Where the scene would be written is not one of this "
+                                       "study's own records, so it is not written."}
     return {"ok": True, "name": name, "path": str(target), "notes": scene["notes"],
             "of": scene["of"], "frame": scene["frame"]}
 
 
 def scenes_of(root: str | Path) -> dict[str, Any]:
-    """The scenes written with the study, newest first."""
+    """The scenes written with the study, newest first. Through
+    `record_access`: in a read held to the study, a scene or the folder of
+    them linked out of it is refused and named, never listed where it
+    leads."""
     folder = Path(root) / SCENES_DIR
-    found = sorted(folder.glob("*.mvsx"), key=lambda p: p.stat().st_mtime, reverse=True) \
-        if folder.is_dir() else []
-    return {"ok": True, "scenes": [{"name": p.stem, "bytes": p.stat().st_size}
-                                   for p in found if _NAME.match(p.stem)]}
+    found = []
+    for path in (_records.glob(folder, "*.mvsx") if _records.is_dir(folder) else ()):
+        try:
+            stat = _records.stat(path)
+        except OSError:
+            continue
+        if _NAME.match(path.stem):
+            found.append((stat.st_mtime, path.stem, stat.st_size))
+    found.sort(key=lambda one: one[0], reverse=True)
+    return {"ok": True, "scenes": [{"name": stem, "bytes": size} for _, stem, size in found]}
 
 
 def read_scene(root: str | Path, name: Any, member: str = "index.mvsj") -> bytes | None:
@@ -637,7 +711,8 @@ def read_scene(root: str | Path, name: Any, member: str = "index.mvsj") -> bytes
         return None
     path = Path(root) / SCENES_DIR / f"{name}.mvsx"
     try:
-        with zipfile.ZipFile(path) as archive:
+        # Through `record_access`: held to the study where the read is.
+        with zipfile.ZipFile(io.BytesIO(_records.read_bytes(path))) as archive:
             if member not in archive.namelist():
                 return None
             return archive.read(member)

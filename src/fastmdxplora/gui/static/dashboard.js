@@ -37,9 +37,11 @@
     bindingPocketCutoff: 5,
     playbackAvailable: false,
     playbackFrames: 0,
-    playbackTotalFrames: 0,
     playbackFrameTimes: [],
+    playbackSimulationSteps: [],
     playbackSignature: null,
+    playbackData: null,
+    exactFrame: null,
     metrics: [],
     status: {},
     health: {},
@@ -597,16 +599,20 @@
       "/api/events", "/api/results",
       "/api/structure-info", "/api/frames-info",
     ];
-    const settled = await Promise.allSettled(urls.map(fetchJSON));
-    // A successful switch can precede its HTTP answer. Do not paint the
-    // new study under the previous study's address while navigation waits.
-    if (state.addressAsking) return;
-    // Asked before one already applied: what it read is older.
-    if (number < state.pollApplied) return;
-    state.pollApplied = number;
+    const responses = urls.map((url) => fetchJSON(url).then(
+      (value) => ({status: "fulfilled", value}),
+      (reason) => ({status: "rejected", reason})
+    ));
     let successes = 0;
 
-    settled.forEach((result, index) => {
+    function applyResponse(result, index) {
+      // A successful switch can precede its HTTP answer. Do not paint the
+      // new study under the previous study's address while navigation waits.
+      if (state.addressAsking) return;
+      // Asked before one already applied: what it read is older. The app
+      // state, applied first, marks this poll as the one applied.
+      if (number < state.pollApplied) return;
+      if (index === 0) state.pollApplied = number;
       const name = names[index];
       if (result.status === "rejected") {
         state.apiErrors[name] = String(result.reason || "request failed");
@@ -633,7 +639,21 @@
       if (name === "results") safeApply(name, () => applyResults(payload));
       if (name === "structure") safeApply(name, () => applyStructure(payload));
       if (name === "playback") safeApply(name, () => applyPlayback(payload));
-    });
+    }
+
+    // Establish the study before its panels, but do not hold results behind
+    // an unrelated trajectory/topology request that is still being read.
+    // The app state and the status are applied together, as one: a study
+    // run changed with no status to name it was read by the Agent's thread
+    // as the study before, and read again only at the next poll, after the
+    // study's results (L10 F6).
+    const [app, status] = await Promise.all(responses.slice(0, 2));
+    applyResponse(app, 0);
+    applyResponse(status, 1);
+    await Promise.all(responses.slice(2).map(async (response, index) => {
+      applyResponse(await response, index + 2);
+    }));
+    if (state.addressAsking) return;
 
     if (successes) {
       state.lastUpdateMs = Date.now();
@@ -792,9 +812,23 @@
     state.phases = [];
     state.playbackAvailable = false;
     state.playbackFrames = 0;
-    state.playbackTotalFrames = 0;
     state.playbackFrameTimes = [];
+    state.playbackSimulationSteps = [];
     state.playbackSignature = null;
+    state.playbackData = null;
+    state.exactFrame = null;
+    const slider = byId("traj-slider");
+    if (slider) {
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+    }
+    const row = byId("trajectory-row");
+    if (row) {
+      sayNotPlayed(row, "");
+      row.hidden = true;
+    }
+    setPlaybackPosition(0, 0, null, null);
     if (window.FastMDXCharts) window.FastMDXCharts.update([]);
     renderLiveProgress({});
     renderStructureTab({valid: false, reason: "missing"});
@@ -1417,7 +1451,9 @@
     const run = runState(status, statusName);
     // The card's word is where the run is (running, stopped, failed);
     // for a finished run, the health verdict's.
-    const word = run === "running" ? String(status.status || "running") : (run || statusName);
+    const recorded = String(status.status || "running");
+    const word = run === "running" ? (recorded.toLowerCase() === "stopped" ? "running" : recorded)
+      : (run || statusName);
     setText("topbar-status-text", statusWord(word));
     // Its dot: live while it runs, green once it finished well, red when
     // it failed, grey otherwise (stopped, waiting, no recent word).
@@ -1513,6 +1549,11 @@
   function runState(status, statusName) {
     const raw = String(status.status || "").toLowerCase();
     if (["failed", "error"].includes(raw) || ["failed", "error"].includes(statusName)) return "failed";
+    // Its process still going (a study of runs, one run stopped and another
+    // going on to its frame): running, not stopped.
+    if ((raw === "stopped" || statusName === "stopped") && state.appState?.process_running) {
+      return "running";
+    }
     if (raw === "stopped" || statusName === "stopped") return "stopped";
     // Ended without saying so (telemetry.status_as_it_stands): its record
     // still said it was going, weeks after the run had gone.
@@ -2296,6 +2337,21 @@
     renderAnalysisMeta();
     if (cards.length) empty.setAttribute("hidden", "");
     else empty.removeAttribute("hidden");
+    // A folder of the study linked out of it (`analysis/`, `simulation/`):
+    // said in place of "not available yet", which it is not.
+    const why = payload.unavailable_why || {};
+    const out = Object.keys(why).filter((name) => why[name] === "folder outside");
+    const title = empty.querySelector(".empty-title");
+    const detail = empty.querySelector(".empty-detail");
+    if (title && !title.dataset.plain) title.dataset.plain = title.textContent;
+    if (title) {
+      title.textContent = out.length
+        ? out.map((name) => `${name} is a link out of the study, so its records are not read here.`)
+          .join(" ")
+        : title.dataset.plain;
+    }
+    if (detail) detail.hidden = out.length > 0;
+    if (out.length && !cards.length) setText("analysis-meta", `${out.join(", ")} not read`);
   }
 
   function renderAnalysisMeta() {
@@ -2486,45 +2542,172 @@
     return escapeHTML(parts.join(" · "));
   }
 
-  function applyPlayback(payload) {
+  function applyPlayback(payload, {counter = true} = {}) {
     const previousSignature = state.playbackSignature;
+    const previousPayload = state.playbackData;
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const previousFrame = parseInt(byId("traj-slider")?.value || "0", 10) || 0;
+    const sourceChanged = previousSignature !== null && previousSignature !== signature;
+
+    if (previousSignature && signature !== previousSignature) state.exactFrame = null;
+    state.playbackData = payload || null;
+    if (state.exactFrame && state.exactFrame.signature === signature
+        && payload?.playback_available && Array.isArray(payload.frame_indices)) {
+      const entries = payload.frame_indices.map((frame, index) => ({
+        frame,
+        time: payload.frame_times_ns?.[index] ?? null,
+        step: payload.simulation_steps?.[index] ?? null,
+      }));
+      if (!entries.some((entry) => entry.frame === state.exactFrame.frame)) {
+        entries.push({frame: state.exactFrame.frame, time: state.exactFrame.time, step: null});
+      }
+      entries.sort((a, b) => a.frame - b.frame);
+      payload = Object.assign({}, payload, {
+        n_frames_browser: entries.length,
+        frame_indices: entries.map((entry) => entry.frame),
+        frame_times_ns: entries.map((entry) => entry.time),
+        simulation_steps: entries.map((entry) => entry.step),
+      });
+    }
 
     state.playbackAvailable = !!payload?.playback_available;
     state.playbackFrames = Number(payload?.n_frames_browser || 0);
-    state.playbackTotalFrames = Number(payload?.n_frames_total || 0);
-    state.playbackFrameTimes = Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : [];
+    // The range and counter describe only frames the browser can play. A
+    // live-history payload may grow while the viewer intentionally keeps its
+    // already-loaded snapshot until the user reloads it.
+    const viewer = window.FastMDXMoleculeViewer?.STATE;
+    const viewerKeepsGrowingHistory = !sourceChanged
+      && previousPayload?.source_kind === "live-history"
+      && payload?.source_kind === "live-history"
+      && viewer?.playbackLoaded;
+    const viewerShowsPlayback = !!viewer?.playbackLoaded
+      && (viewer.playbackSignature === signature || viewerKeepsGrowingHistory);
+    // While a frame is being opened the counter is the viewer's to write,
+    // once that frame is drawn: the frame before it against the new total
+    // named a frame that was never shown.
+    const writesCounter = counter && !viewer?.seeking;
+    if (viewerKeepsGrowingHistory) {
+      state.playbackFrames = Math.min(state.playbackFrames, Number(viewer.playbackFrames || 0));
+    }
+    state.playbackFrameTimes = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameTimes : (Array.isArray(payload?.frame_times_ns) ? payload.frame_times_ns : []);
+    state.playbackSimulationSteps = viewerKeepsGrowingHistory
+      ? viewer.playbackFrameSteps : (Array.isArray(payload?.simulation_steps)
+        ? payload.simulation_steps : []);
     state.playbackSignature = signature;
 
     const slider = byId("traj-slider");
     const row = byId("trajectory-row");
     if (!slider || !row) return;
-    if (!state.playbackAvailable) {
-      row.hidden = true;
+    if (!state.playbackAvailable || state.playbackFrames < 1) {
+      state.playbackAvailable = false;
+      state.playbackFrames = 0;
+      slider.min = "0";
+      slider.max = "0";
+      slider.value = "0";
+      setPlaybackPosition(0, 0, null, null);
+      // Frames not read are said where the transport would be, and stay.
+      sayNotPlayed(row, payload?.not_read);
+      row.hidden = !payload?.not_read;
       emit("playback-ready", payload || {});
       return;
     }
 
     const maxFrame = Math.max(0, state.playbackFrames - 1);
-    const frame = Math.min(previousFrame, maxFrame);
+    let frame = sourceChanged ? 0 : Math.min(previousFrame, maxFrame);
+    if (viewerShowsPlayback) {
+      const displayed = viewer.playbackEngineIndices.indexOf(viewer.engine.frame());
+      if (displayed >= 0) frame = displayed;
+    }
     slider.min = "0";
     slider.max = String(maxFrame);
-    // Do not reset the user's scrubber on every three-second API poll.
-    slider.value = String(frame);
-    setText("traj-current", String(frame));
-    setText("traj-total", String(state.playbackFrames));
-    setText(
-      "traj-simtime",
-      window.FastMDXSeries?.frameTimeSaid
-        ? window.FastMDXSeries.frameTimeSaid(state.playbackFrameTimes[frame], state.playbackFrameTimes)
-        : state.playbackFrameTimes[frame] != null
-          ? formatNumber(state.playbackFrameTimes[frame], 3) + " ns" : "—"
-    );
+    const production = payload?.source_kind === "production-dcd";
+    if (writesCounter) {
+      // A different trajectory starts at its first loaded frame; a periodic
+      // update to the same source preserves the position.
+      slider.value = String(frame);
+      setPlaybackPosition(viewerShowsPlayback ? frame : null, state.playbackFrames,
+        viewerShowsPlayback ? state.playbackFrameTimes[frame] : null,
+        viewerShowsPlayback ? state.playbackSimulationSteps[frame] : null,
+        viewerShowsPlayback && production ? payload.frame_indices?.[frame] : null);
+    }
+    sayNotPlayed(row, "");
     row.hidden = false;
     emit("playback-ready", Object.assign({}, payload, {
-      source_changed: previousSignature !== null && previousSignature !== signature,
+      source_changed: sourceChanged,
     }));
+  }
+
+  /* Why the frames are not played (a record not read), in the playback
+   * note: the row then shows it alone (dashboard.css). Cleared once they
+   * are, the note left to the frames loaded. */
+  function sayNotPlayed(row, notRead) {
+    const said = notRead ? `Not played: ${notRead}` : "";
+    const note = byId("traj-loaded");
+    row.toggleAttribute("data-not-read", !!said);
+    if (!note || (!said && !note.hasAttribute("data-not-read"))) return;
+    note.toggleAttribute("data-not-read", !!said);
+    // Written once: the note is a status, read out at each change.
+    if (note.textContent !== said) note.textContent = said;
+    note.hidden = !said;
+  }
+
+  /* Where the frame shown is in the run: the integrator step a snapshot was
+   * written at, or the frame of the trajectory a played frame is. */
+  function placeInRun(step, sourceFrame) {
+    if (step != null && Number.isFinite(Number(step))) {
+      return `step ${Number(step).toLocaleString()}`;
+    }
+    if (Number.isInteger(sourceFrame)) return `trajectory frame ${sourceFrame.toLocaleString()}`;
+    return null;
+  }
+
+  /* The places, in a time's unit (``factor`` from ns: 1000 for ps), that
+   * tell a frame of the trajectory from the next, for times (ns) of the
+   * trajectory frames they were read at, the charts' included: at least
+   * three of a nanosecond. Null where the times do not say. */
+  function timeDigitsOf(times, frames, factor = 1) {
+    times = Array.isArray(times) ? times : [];
+    frames = Array.isArray(frames) ? frames : [];
+    const known = frames.map((frame, at) => [frame, times[at]]).filter(([frame, time]) =>
+      Number.isInteger(frame) && time != null && Number.isFinite(Number(time)));
+    if (known.length < 2) return null;
+    const [first, last] = [known[0], known[known.length - 1]];
+    const interval = (Number(last[1]) - Number(first[1])) / (last[0] - first[0]) * factor;
+    if (!(interval > 0)) return null;
+    const least = factor === 1 ? 3 : 0;
+    return Math.max(least, Math.min(6, Math.ceil(-Math.log10(interval) - 1e-9)));
+  }
+
+  /* A played frame's time in the ruler's unit (ps for a run under a
+   * nanosecond), to as many places as tell a frame of the trajectory from
+   * the next, an exact frame opened between two played ones too. */
+  function timeSaid(time, times) {
+    const series = window.FastMDXSeries;
+    const shown = times || state.playbackFrameTimes;
+    const scale = series?.timeScale ? series.timeScale(shown, "Time (ns)") : {factor: 1, unit: "ns"};
+    const payload = state.playbackData || {};
+    const digits = timeDigitsOf(payload.frame_times_ns, payload.frame_indices, scale.factor);
+    if (digits == null && series?.frameTimeSaid) return series.frameTimeSaid(Number(time), shown);
+    return `${(Number(time) * scale.factor).toFixed(digits ?? 3)} ${scale.unit}`;
+  }
+
+  function setPlaybackPosition(index, total, time, step, sourceFrame) {
+    const frameCount = Number(total);
+    if (!Number.isInteger(frameCount) || frameCount < 0) return false;
+    const hasCurrentFrame = frameCount > 0 && index != null;
+    const frameIndex = hasCurrentFrame ? Number(index) : null;
+    if (hasCurrentFrame && (!Number.isInteger(frameIndex)
+        || frameIndex < 0 || frameIndex >= frameCount)) return false;
+    setText("traj-current", frameIndex == null ? (frameCount ? "\u2014" : "0") : String(frameIndex + 1));
+    setText("traj-total", String(frameCount));
+    setText("traj-step", placeInRun(step, sourceFrame) ?? "\u2014");
+    setText("traj-simtime", time == null || !Number.isFinite(Number(time))
+      ? "\u2014" : `time ${timeSaid(time)}`);
+    // Cut to one line where narrow: the whole is its title.
+    const line = byId("traj-current")?.closest(".traj-time");
+    if (line) line.title = line.textContent;
+    return true;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2791,6 +2974,8 @@
     }
     toast.querySelectorAll(".dashboard-toast-action").forEach((old) => old.remove());
     said.textContent = message;
+    // Read out, unless whoever showed it has said it already (`refuse`).
+    said.removeAttribute("aria-hidden");
     toast.setAttribute("data-kind", kind || "ok");
     const offered = action && action.label && typeof action.run === "function";
     toast.style.pointerEvents = offered ? "auto" : "";
@@ -2985,15 +3170,44 @@
     window.dispatchEvent(new CustomEvent(`dashboard:${name}`, {detail}));
   }
 
+  function focusEntity(entity) {
+    if (!entity) return;
+    navigate("viewer");
+    emit("residue-focus", entity);
+  }
+
+  function setExactFrame(frame, time, signature) {
+    if (state.playbackSignature !== signature || !Number.isInteger(frame) || frame < 0) return false;
+    state.exactFrame = {frame, time: Number.isFinite(time) ? time : null, signature};
+    // The total and the slider's range; the counter is written once the
+    // frame is drawn (the viewer's `setPlaybackFrame`).
+    applyPlayback(state.playbackData, {counter: false});
+    return true;
+  }
+
+  function clearExactFrame(signature) {
+    if (signature && state.exactFrame?.signature !== signature) return false;
+    state.exactFrame = null;
+    applyPlayback(state.playbackData);
+    return true;
+  }
+
   window.FastMDXDashboard = {
     get state() { return JSON.parse(JSON.stringify(state)); },
     navigate,
     showAnalysis,
+    focusEntity,
     applyStatus,
     applyAppState,
     applyMetrics,
     applyStructure,
     applyPlayback,
+    setPlaybackPosition,
+    placeInRun,
+    timeDigitsOf,
+    timeSaid,
+    setExactFrame,
+    clearExactFrame,
     applyResults,
     on(eventName, handler) {
       window.addEventListener(`dashboard:${eventName}`, (event) => handler(event.detail));

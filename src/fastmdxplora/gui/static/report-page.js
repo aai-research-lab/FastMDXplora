@@ -266,11 +266,38 @@
     return made;
   }
 
-  function say(text) {
+  /* A command to run at the terminal, set as code that breaks only between
+   * its words: never between "--" and the word it marks. */
+  function commandNode(command) {
+    var code = document.createElement("code");
+    code.className = "again-terminal";
+    String(command).split(" ").forEach(function (word, at) {
+      if (at) code.appendChild(document.createTextNode(" "));
+      var piece = document.createElement("span");
+      piece.style.whiteSpace = "nowrap";
+      piece.textContent = word;
+      code.appendChild(piece);
+    });
+    return code;
+  }
+
+  /* A sentence, its command (``terminal``, its last words) set as code. */
+  function withCommand(said, text, terminal) {
+    text = String(text || "");
+    if (terminal && text.slice(-terminal.length) === terminal) {
+      said.textContent = text.slice(0, text.length - terminal.length);
+      said.appendChild(commandNode(terminal));
+    } else {
+      said.textContent = text;
+    }
+    return said;
+  }
+
+  function say(text, terminal) {
     var ask = el("report-write-ask");
     if (!ask) return;
     ask.innerHTML = "";
-    ask.appendChild(node("span", "fix-said", text));
+    ask.appendChild(withCommand(node("span", "fix-said", ""), text, terminal));
     ask.hidden = false;
   }
 
@@ -290,9 +317,49 @@
     }).catch(function () { say("Could not reach the server to start it."); });
   }
 
+  /* Asked only where the server would write it: what it offers of the
+   * study (`GET /api/again`), from which the POST decides. A record not
+   * read (its Config or analysis manifest) is said instead. */
   function askFirst() {
     var ask = el("report-write-ask");
     if (!ask) return;
+    // The question at once, its Yes held until the server has said it
+    // would write it.
+    var yes = askNow();
+    if (yes) yes.disabled = true;
+    fetch("/api/again").then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (d) {
+        return { ok: res.ok, data: d || {} };
+      });
+    }).then(function (answer) {
+      var d = answer.data;
+      if (!answer.ok) {
+        // Refused here (a GUI served beyond this computer answers no
+        // question that starts a run): not offered, and said why.
+        var why = String(d.error || d.reason || "");
+        say("Writing the report again is not offered here" +
+            (!why ? "." : ": " + (/^[A-Z][a-z]/.test(why)
+              ? why.charAt(0).toLowerCase() + why.slice(1) : why)));
+        return;
+      }
+      var report = d.report;
+      if (d.available === false) { say(d.why || "Nothing is open to write again."); return; }
+      if (report && !report.can) {
+        say(report.why || d.not_read || "The report cannot be written again here.",
+            report.terminal);
+        return;
+      }
+      if (yes) {
+        yes.disabled = false;
+        // The keyboard on Yes once it can be pressed, as before it was held.
+        yes.focus();
+      }
+    }).catch(function () { say("Could not ask the server whether it would write it again."); });
+  }
+
+  function askNow() {
+    var ask = el("report-write-ask");
+    if (!ask) return null;
     ask.innerHTML = "";
     ask.appendChild(node("span", "fix-said",
       "Write " + (several ? "each run's report" : "the report") + " again from " +
@@ -310,6 +377,7 @@
     ask.appendChild(no);
     ask.hidden = false;
     yes.focus();
+    return yes;
   }
 
   /* Shown while a study is open; held while anything runs. A writing
