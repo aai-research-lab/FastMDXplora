@@ -181,7 +181,7 @@
     if (!pair) {
       var paletteKeys = window.FastMDXKeys && window.FastMDXKeys.of("palette");
       var paletteShortcut = paletteKeys
-        ? paletteKeys.join(window.FastMDXKeys.mac ? "" : " ") : "⌘K";
+        ? paletteKeys.join(window.FastMDXKeys.mac ? "" : "+") : "⌘K";
       byId("compare-said").textContent = "Two studies, or two runs, side by side.";
       say({ kind: "empty", title: "Nothing to compare yet",
             detail: "Choose two studies in All studies, two runs on a study's Overview, or Compare " +
