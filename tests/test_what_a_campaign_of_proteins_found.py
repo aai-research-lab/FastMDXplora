@@ -412,3 +412,55 @@ def test_a_ligand_s_atoms_in_two_conformers_are_counted_once(tmp_path, monkeypat
     with pytest.raises(Asked):
         pipeline._auto_ligands(params, built, tmp_path, "1ake")
     assert expected == [57]
+
+
+# -- What the refusals say ------------------------------------------------
+
+def test_heme_s_refusal_does_not_send_one_to_charmm36(tmp_path) -> None:
+    """2HHB's hemes were refused "CHARMM36 covers heme", and a study set to
+    charmm36 was refused the same: OpenMM's charmm36.xml has the HEME
+    template but not the patch that bonds the iron to its histidine."""
+    from fastmdxplora.setup import heterogens
+
+    path = tmp_path / "input.pdb"
+    path.write_bytes(gzip.decompress((DEPOSITED / "2HHB.pdb.gz").read_bytes()))
+    (heme,) = [d for d in heterogens.decide(path) if d.resname == "HEM"]
+    assert heme.action is heterogens.Action.STOP
+    assert "CHARMM36 covers heme" not in heme.reason
+    assert "whichever force field is chosen" in heme.reason
+
+
+def _settle(smiles: str, groups: tuple, decided: tuple):
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    from fastmdxplora.setup.protonation import ProtonationState, apply_settled_state
+
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    AllChem.EmbedMolecule(mol, randomSeed=1)
+    chemistry = SimpleNamespace(resname="LIG", formal_charge=0,
+                                titratable_groups=tuple(label for label, _ in decided))
+    state = ProtonationState("LIG", True, groups, "test", per_group=decided)
+    return apply_settled_state(Chem.MolToMolBlock(mol), chemistry, state)
+
+
+def test_both_nitrogens_of_a_piperazine_are_not_protonated() -> None:
+    """1HSG's indinavir: PROPKA put its piperazine's nitrogens at 9.4 and
+    11.2, each judged alone, and it was simulated at +2. Measured, they are
+    6.2 and below 4: the first proton keeps the second off."""
+    from fastmdxplora.setup.protonation import GroupPka, ProtonationError
+
+    both = (GroupPka("LIG", "B", 902, "N33", 9.42, 10.0),
+            GroupPka("LIG", "B", 902, "N33", 11.23, 10.0))
+    with pytest.raises(ProtonationError, match="titrate as a pair"):
+        _settle("CN1CCN(Cc2cccnc2)CC1", both, (("tertiary amine", True),))
+
+
+def test_two_amines_far_apart_are_both_protonated() -> None:
+    """Cadaverine's nitrogens are five carbons apart and both hold a proton."""
+    from fastmdxplora.setup.protonation import GroupPka
+
+    both = (GroupPka("LIG", "A", 1, "N30", 10.0, 10.0),
+            GroupPka("LIG", "A", 1, "N30", 10.9, 10.0))
+    _, charge = _settle("NCCCCCN", both, (("primary or secondary amine", True),))
+    assert charge == 2

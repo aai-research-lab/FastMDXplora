@@ -106,7 +106,9 @@ SUGARS = frozenset({
 
 # Cofactors and prosthetic groups that need parameters a general small-molecule
 # force field does not supply. Most of these do have published parameters:
-# CHARMM36 covers heme and NAD/NADH natively, CGenFF and CHARMM-GUI's Ligand
+# CHARMM36 has heme and NAD/NADH templates (OpenMM's charmm36.xml carries
+# them, without the patches that bond a heme's iron to its histidine or
+# cysteine, so choosing it does not make heme work), CGenFF and CHARMM-GUI's Ligand
 # Reader cover FAD and FMN, and AmberTools' MCPB.py builds bonded models for
 # metal centres. What none of them do is apply automatically, because PDB atom
 # names do not match the force field templates. So these are real, essential,
@@ -772,10 +774,12 @@ def _classify_one(
             resname,
             Action.STOP,
             f"{UNPARAMETERIZABLE[resname]} needs dedicated parameters that are "
-            "not assigned automatically. Parameters exist for most cofactors "
-            "(CHARMM36 covers heme and NAD/NADH; CGenFF and CHARMM-GUI's Ligand "
-            "Reader cover FAD and FMN; AmberTools' MCPB.py builds metal-centre "
-            "models), but they must be supplied deliberately. Provide them, or "
+            "not assigned automatically, whichever force field is chosen. "
+            "Parameters exist for most cofactors (CHARMM36's heme stream with "
+            "its patches bonding the iron to its histidine or cysteine; CGenFF "
+            "and CHARMM-GUI's Ligand Reader for NAD, FAD and FMN; AmberTools' "
+            "MCPB.py for metal centres), but they must be built and supplied "
+            "deliberately, for example through CHARMM-GUI. Provide them, or "
             "exclude this component",
             pack,
         )

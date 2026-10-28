@@ -9,6 +9,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A ligand whose pKa calculation would protonate two amines two carbons
+  apart, a piperazine or an ethylenediamine, is refused rather than built
+  at +2. PROPKA judges each nitrogen alone at a model pKa of 10; 1HSG's
+  indinavir came out at 9.4 and 11.2 and was simulated at +2, where
+  measured its piperazine is 6.2 and below 4, since the first proton
+  lowers the second nitrogen's pKa by three to four units. Imatinib's
+  piperazine is the same. Which nitrogen holds the one proton is not
+  determined, so the ligand is asked for in the state intended.
+- A heme's refusal no longer says CHARMM36 covers heme. A study set to
+  `forcefield: charmm36` was refused the same: OpenMM's charmm36.xml has
+  the HEME template without the patch that bonds the iron to its
+  histidine, so choosing it changes nothing. The refusal now says so, and
+  that the parameters are built deliberately, for example in CHARMM-GUI.
 - A residue of the chain deposited as HETATM stays in its chain when the
   assembly is built. Each copy's polymer was written as its ATOM records,
   and the rest after its TER with the heterogens; 1A8O's selenomethionine
