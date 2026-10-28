@@ -701,3 +701,37 @@ def test_production_asked_twice_says_it_was_asked_already(tmp_path):
         assert stop.requested and stop.name == "GUI"
     assert first.startswith("Stopping: production ends at its next frame")
     assert second == "Stopping: asked already."
+
+
+def test_a_stop_asked_of_one_run_is_not_said_of_the_next_run_here(tmp_path, monkeypatch):
+    """Two runs of one study, one after the other in one process (a
+    notebook), the GUI not read between them: the stop asked of the first
+    was said of the second, `stopping` for the whole of it, and no Stop
+    offered where one could be asked."""
+    from fastmdxplora.simulation import runner
+
+    root = tmp_path / "study"
+    seen: list = []
+    gui: list = []
+
+    def phase(self, name, options):
+        # Stands in for production, listening as production does.
+        with runner._StopRequests(folder=self.output_dir) as stop:
+            if not gui:
+                gui.append(_runtime(root))
+                gui[0].stop()
+                seen.append(("first", gui[0].snapshot()["stopping"]))
+                if stop.requested:
+                    raise RunStopped(stop.name)
+            else:
+                seen.append(("next", gui[0].snapshot()["stopping"],
+                             gui[0].snapshot()["process_running"]))
+        return PhaseResult(name=name, status="ok", output_dir=Path(self.output_dir) / name)
+
+    monkeypatch.setattr(FastMDXplora, "_run_phase", phase)
+    monkeypatch.setattr(FastMDXplora, "_refuse_to_overwrite", lambda *a, **k: None)
+    study = FastMDXplora("1L2Y", output_dir=str(root))
+    with pytest.raises(RunStopped):
+        study.explore(include_phase=["simulation"])
+    study.explore(include_phase=["simulation"])
+    assert seen == [("first", True), ("next", False, True)], seen

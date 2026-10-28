@@ -932,8 +932,11 @@ class DashboardRuntime:
     stopped_roots: set[Path] = field(default_factory=set)
     #: Whether the process last run here ended because Stop was pressed.
     stopped_here: bool = False
-    #: The run of this GUI's own process a stop was asked of (`stop`), so
-    #: the page says it is stopping, and offers no Stop, until it ends.
+    #: What in this GUI's own process a stop was asked of (`stop`): the
+    #: listener of that run (`runner._LISTENING`), so the page says it is
+    #: stopping, and offers no Stop, while that one listens. The process is
+    #: the same for the next run there: tied to it, a next run begun before
+    #: the page read the state again was said stopping for the whole of it.
     _stop_asked_of: Any = field(default=None, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
@@ -1324,9 +1327,7 @@ class DashboardRuntime:
                 "stop_refused": (self._own_stop_refused()
                                  if running and viewing_running else None),
                 # Asked to stop, and not yet stopped: no Stop is offered again.
-                "stopping": bool(running and viewing_running
-                                 and self._stop_asked_of is not None
-                                 and self._stop_asked_of is self.process),
+                "stopping": bool(running and viewing_running and self._still_stopping()),
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
@@ -2167,8 +2168,9 @@ class DashboardRuntime:
                 # record. What listens for a stop here (production, or a
                 # parallel study's parent) is asked as SIGTERM asks, without
                 # a signal; where nothing listens, the stop is refused.
-                from fastmdxplora.simulation.runner import stop_what_listens_here
+                from fastmdxplora.simulation.runner import _listener_for, stop_what_listens_here
 
+                asked = _listener_for(where)
                 said = stop_what_listens_here(where)
                 if said is None:
                     said = OWN_STOP_REFUSED
@@ -2176,7 +2178,7 @@ class DashboardRuntime:
                             "error": said, "state": self.snapshot()}
                 if where is not None:
                     self.stopped_roots.add(Path(where).resolve())
-                self._stop_asked_of = self.process
+                self._stop_asked_of = asked
                 return {"stopped": True, "detail": said, "state": self.snapshot()}
             if where is not None:
                 self.stopped_roots.add(Path(where).resolve())
@@ -2211,6 +2213,19 @@ class DashboardRuntime:
                 "state": self.snapshot(),
             }
 
+
+    def _still_stopping(self) -> bool:
+        """Whether what a stop was asked of here still listens: its run is
+        stopping. Forgotten once it has stopped. Called with the lock held."""
+        from fastmdxplora.simulation.runner import _LISTENING
+
+        asked = self._stop_asked_of
+        if asked is None:
+            return False
+        if not any(listener is asked for listener in list(_LISTENING)):
+            self._stop_asked_of = None
+            return False
+        return True
 
     def _own_stop_refused(self) -> str | None:
         """Why Stop would be refused now, where the run held is in this
