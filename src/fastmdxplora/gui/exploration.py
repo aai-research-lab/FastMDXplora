@@ -938,6 +938,10 @@ class DashboardRuntime:
     #: the same for the next run there: tied to it, a next run begun before
     #: the page read the state again was said stopping for the whole of it.
     _stop_asked_of: Any = field(default=None, repr=False)
+    #: And that run's process record as it stood when asked: the listener
+    #: leaves as the run winds down, a moment before the run ends, and the
+    #: stop is still going while this same record stands.
+    _stop_asked_record: Any = field(default=None, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     # A study whose run could not yet be identified, and the thread asking
     # again. Cleared when a different study is opened, so a retry never
@@ -1311,6 +1315,7 @@ class DashboardRuntime:
             elif self.process is not None and self.process_returncode is not None and viewing_running:
                 status = "failed"
             no_study = self._no_study_open()
+            stopping = bool(running and viewing_running and self._still_stopping())
             open_root = None if no_study or self.data_stale else self.active_root
             # Its runs, and the study it is a run of, read held to the study.
             held = _runs_held(open_root) if open_root else {}
@@ -1323,11 +1328,12 @@ class DashboardRuntime:
                 "workspace": str(self.workspace_root),
                 "exploration_root": str(self.exploration_root),
                 "process_running": running and viewing_running,
+                # Asked to stop, and not yet stopped: no Stop is offered again,
+                # and none is refused.
+                "stopping": stopping,
                 # Said at once, in place of asking, where Stop would be refused.
                 "stop_refused": (self._own_stop_refused()
-                                 if running and viewing_running else None),
-                # Asked to stop, and not yet stopped: no Stop is offered again.
-                "stopping": bool(running and viewing_running and self._still_stopping()),
+                                 if running and viewing_running and not stopping else None),
                 "running_elsewhere": (str(self.running_root)
                                       if running and not viewing_running else None),
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
@@ -2171,6 +2177,7 @@ class DashboardRuntime:
                 from fastmdxplora.simulation.runner import _listener_for, stop_what_listens_here
 
                 asked = _listener_for(where)
+                record = _process_record_held(Path(where)) if where is not None else {}
                 said = stop_what_listens_here(where)
                 if said is None:
                     said = OWN_STOP_REFUSED
@@ -2179,6 +2186,7 @@ class DashboardRuntime:
                 if where is not None:
                     self.stopped_roots.add(Path(where).resolve())
                 self._stop_asked_of = asked
+                self._stop_asked_record = record or None
                 return {"stopped": True, "detail": said, "state": self.snapshot()}
             if where is not None:
                 self.stopped_roots.add(Path(where).resolve())
@@ -2215,17 +2223,22 @@ class DashboardRuntime:
 
 
     def _still_stopping(self) -> bool:
-        """Whether what a stop was asked of here still listens: its run is
-        stopping. Forgotten once it has stopped. Called with the lock held."""
+        """Whether the run a stop was asked of here is still stopping: what
+        was asked still listens, or that run's process record still stands.
+        Forgotten once neither holds; a next run here writes a record of its
+        own. Called with the lock held."""
         from fastmdxplora.simulation.runner import _LISTENING
 
-        asked = self._stop_asked_of
-        if asked is None:
+        asked, record = self._stop_asked_of, self._stop_asked_record
+        if asked is None and record is None:
             return False
-        if not any(listener is asked for listener in list(_LISTENING)):
-            self._stop_asked_of = None
-            return False
-        return True
+        if asked is not None and any(listener is asked for listener in list(_LISTENING)):
+            return True
+        where = self.running_root or self.active_root
+        if record is not None and where is not None and _process_record_held(Path(where)) == record:
+            return True
+        self._stop_asked_of = self._stop_asked_record = None
+        return False
 
     def _own_stop_refused(self) -> str | None:
         """Why Stop would be refused now, where the run held is in this

@@ -735,3 +735,33 @@ def test_a_stop_asked_of_one_run_is_not_said_of_the_next_run_here(tmp_path, monk
         study.explore(include_phase=["simulation"])
     study.explore(include_phase=["simulation"])
     assert seen == [("first", True), ("next", False, True)], seen
+
+
+def test_a_run_is_said_stopping_until_it_has_ended(tmp_path):
+    """What was asked to stop leaves as the run winds down, a moment before
+    the run ends (a parallel study's parent shuts its pool and writes its
+    record first). For that moment the run was said going, not stopping,
+    Stop offered again and refused as one that would end the GUI."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.gui.exploration import _AdoptedProcess
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+
+    class Pool:
+        _processes: dict = {}
+
+    _hold_run_process(tmp_path)
+    try:
+        gui = _runtime(tmp_path)
+        record = json.loads((tmp_path / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+        gui.process = _AdoptedProcess(os.getpid(), tmp_path, record)
+        gui.running_root = tmp_path
+        with explorer._StudyStop(Pool(), folder=tmp_path):
+            assert gui.stop()["stopped"] is True
+        # The study's parent no longer listens; its run has not yet ended.
+        winding = gui.snapshot()
+    finally:
+        _release_run_process(tmp_path)
+    ended = gui.snapshot()
+    assert (winding["process_running"], winding["stopping"], winding["stop_refused"]) == (
+        True, True, None), winding["stop_refused"]
+    assert (ended["process_running"], ended["stopping"]) == (False, False)
