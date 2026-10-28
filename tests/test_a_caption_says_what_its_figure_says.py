@@ -46,22 +46,49 @@ def _row(root: Path, start: str):
     return next(r for r in _metric_rows(root, {}) if r.metric.startswith(start))
 
 
+@pytest.mark.parametrize(("samples", "expected"), [
+    (9.99, "9.9 independent samples"),
+    (24.999999999999996, "24.9 independent samples"),
+    (21.27, "21.2 independent samples"),
+    (21.0, "21 independent samples"),
+    (1.001, "1 independent sample"),
+    (0.3, "fewer than one independent sample"),
+])
+def test_captions_records_and_report_table_say_the_same_count(tmp_path, samples, expected):
+    from fastmdxplora.gui.figure_data import figure_payload
+    from fastmdxplora.gui.records_answer import _means
+    from fastmdxplora.statistics import MEAN_RULES
+
+    _analysis(tmp_path, "rmsd", RMSD, _measured(effective_samples=samples, rules=MEAN_RULES))
+    assert _row(tmp_path, "RMSD").samples == expected
+    assert f", {expected}" in _caption(tmp_path, "RMSD")
+    assert f", {expected}," in _means(tmp_path)[0]
+
+    folder = tmp_path / "analysis" / "thermodynamics"
+    folder.mkdir()
+    (folder / "thermodynamics.dat").write_text(
+        "observable,mean,standard_error,effective_samples\n"
+        f"temperature,300.1,0.6,{samples}\n", encoding="utf-8")
+    figure = figure_payload(tmp_path, "analysis/thermodynamics/thermodynamics.png")
+    assert figure["bars"][0]["said"][-1] == expected
+
+
 class TestTheCaption:
 
     def test_the_mean_after_equilibration_with_its_error(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsd", RMSD, _measured())
         assert _caption(tmp_path, "RMSD") == (
-            "mean 0.0130 ± 0.0021 nm after equilibration, 21 independent samples")
+            "mean 0.0130 ± 0.0021 nm after equilibration, 21.2 independent samples")
 
     def test_nothing_discarded_is_not_said_to_be(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(discard=0, mean=1.4231,
                                                   standard_error=0.012))
         assert _caption(tmp_path, "Radius of gyration") == (
-            "mean 1.423 ± 0.012 nm, 21 independent samples")
+            "mean 1.423 ± 0.012 nm, 21.2 independent samples")
 
     def test_too_few_independent_samples(self, tmp_path) -> None:
         _analysis(tmp_path, "rmsd", RMSD, _measured(effective_samples=4.2))
-        assert _caption(tmp_path, "RMSD").endswith("4 independent samples, too few to determine the mean")
+        assert _caption(tmp_path, "RMSD").endswith("4.2 independent samples, too few to determine the mean")
 
     def test_a_series_too_short_to_measure(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(
@@ -114,7 +141,7 @@ class TestTheTable:
         _analysis(tmp_path, "rmsd", RMSD, _measured())
         row = _row(tmp_path, "RMSD")
         assert (row.metric, row.average, row.samples, row.status) == (
-            "RMSD", "0.0130 ± 0.0021 nm", "21.2", "Determined")
+            "RMSD", "0.0130 ± 0.0021 nm", "21.2 independent samples", "Determined")
         from fastmdxplora.gui.analysis_overview import overview_of
 
         [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
@@ -122,9 +149,10 @@ class TestTheTable:
 
     def test_fractional_samples_keep_their_meaning_in_the_table(self, tmp_path) -> None:
         for index, (samples, expected) in enumerate((
-                (0.3, "< 1"), (1.0, "1"), (1.001, "1.001"),
-                (9.501928863580078, "9.5"), (9.99, "9.99"),
-                (10.0, "10"), (21.2, "21.2"))):
+                (0.3, "fewer than one independent sample"), (1.0, "1 independent sample"),
+                (1.001, "1 independent sample"), (9.501928863580078, "9.5 independent samples"),
+                (9.99, "9.9 independent samples"), (10.0, "10 independent samples"),
+                (21.2, "21.2 independent samples"))):
             root = tmp_path / str(index)
             _analysis(root, "rmsd", RMSD, _measured(effective_samples=samples))
             assert _row(root, "RMSD").samples == expected
@@ -135,9 +163,9 @@ class TestTheTable:
         _analysis(tmp_path, "rmsd", RMSD, _measured(
             effective_samples=samples, standard_error=None))
         row = _row(tmp_path, "RMSD")
-        assert row.samples == str(samples)
+        assert row.samples == "24.9 independent samples"
         assert row.why == (
-            f"About {samples} independent samples, fewer than the 25 an error bar needs.")
+            "About 24.9 independent samples, fewer than the 25 an error bar needs.")
         from fastmdxplora.gui.analysis_overview import overview_of
 
         [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]

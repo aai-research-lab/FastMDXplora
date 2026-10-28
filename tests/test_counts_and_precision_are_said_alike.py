@@ -27,24 +27,30 @@ from fastmdxplora.statistics import independent_samples_said
     (0.42, "fewer than one independent sample"),
     (0.999, "fewer than one independent sample"),
     (1.0, "1 independent sample"),
-    (1.49, "1 independent sample"),
-    (2.6, "3 independent samples"),
-    (9.6, "9 independent samples"),
-    (9.96, "9 independent samples"),
-    (10.4, "10 independent samples"),
-    (30.2, "30 independent samples"),
+    (1.001, "1 independent sample"),
+    (1.49, "1.4 independent samples"),
+    (2.6, "2.6 independent samples"),
+    (9.6, "9.6 independent samples"),
+    (9.96, "9.9 independent samples"),
+    (9.99, "9.9 independent samples"),
+    (10.4, "10.4 independent samples"),
+    (21.27, "21.2 independent samples"),
+    (21.0, "21 independent samples"),
+    (24.999999999999996, "24.9 independent samples"),
+    (25.0, "25 independent samples"),
+    (30.2, "30.2 independent samples"),
     (float("nan"), "a number of independent samples that could not be counted"),
 ])
 def test_a_count_is_said_one_way(count, said):
     assert independent_samples_said(count) == said
 
 
-def test_about_hedges_a_whole_count_and_nothing_else():
-    assert independent_samples_said(16.9, about=True) == "about 17 independent samples"
+def test_about_hedges_the_count_unless_it_is_under_one():
+    assert independent_samples_said(16.9, about=True) == "about 16.9 independent samples"
     assert independent_samples_said(0.4, about=True) == "fewer than one independent sample"
     # Beside a threshold of ten, a count under ten never reads as ten.
-    assert independent_samples_said(9.6, about=True) == "about 9 independent samples"
-    assert independent_samples_said(2.4, about=True) == "about 2 independent samples"
+    assert independent_samples_said(9.6, about=True) == "about 9.6 independent samples"
+    assert independent_samples_said(2.4, about=True) == "about 2.4 independent samples"
 
 
 def test_the_slides_say_a_count_under_one_as_the_report_does(monkeypatch, tmp_path):
@@ -80,7 +86,7 @@ def test_the_reweighted_caption_says_a_count_under_one(monkeypatch, tmp_path):
 @pytest.mark.parametrize("independent, said", [
     (0.3, "fewer than one independent sample"),
     (1.0, "about 1 independent sample"),
-    (2.4, "about 2 independent samples"),
+    (2.4, "about 2.4 independent samples"),
 ])
 def test_the_report_s_reweighted_line_says_the_count_as_its_plot_does(independent, said):
     from fastmdxplora.report.reweighted import _rests_on
@@ -102,7 +108,7 @@ def test_a_reweighted_mean_withheld_for_too_few_samples_says_the_count_one_way()
     record = reweighted_estimate(values, Weights(weights, kish, True))
     said = str(record.get("not_a_measurement") or "")
     assert record.get("refusal") == "analysis.sampling.too_few_independent"
-    assert "hold about 7 independent samples." in said
+    assert "hold about 6.8 independent samples." in said
 
 
 # -- the exemption's 2, from one place -----------------------------------------
@@ -178,4 +184,4 @@ def test_a_count_just_under_ten_is_not_said_as_ten_beside_the_threshold():
     record = reweighted_estimate(values, Weights(weights, kish, True))
     assert record.get("refusal") == "analysis.sampling.too_few_independent"
     said = str(record.get("not_a_measurement") or "")
-    assert "hold about 9 independent samples. Below 10" in said
+    assert "hold about 9.6 independent samples. Below 10" in said

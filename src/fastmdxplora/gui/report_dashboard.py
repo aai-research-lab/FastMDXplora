@@ -608,6 +608,7 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
     """
     from fastmdxplora.gui.analysis_overview import _reweighted, overview_of
     from fastmdxplora.report.reweighted import load_reweighted
+    from fastmdxplora.statistics import independent_samples_said
 
     specs: tuple[tuple[str, str, str], ...] = (
         ("RMSD", "rmsd", "nm"),
@@ -674,23 +675,10 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         suffix = (" (reweighted)" if quantity.get("reweighted")
                   else " (biased ensemble)" if biased else "")
         samples = quantity.get("samples")
-        if _finite(samples):
-            if 0 <= samples < 1:
-                samples_said = "< 1"
-            else:
-                samples_said = f"{samples:,.1f}"
-                rounded_samples = float(samples_said.replace(",", ""))
-                if ((rounded_samples.is_integer() and rounded_samples > samples)
-                        or 1 < samples and rounded_samples == 1):
-                    samples_said = str(samples)
-                elif samples_said.endswith(".0"):
-                    samples_said = samples_said[:-2]
-        else:
-            samples_said = "—"
         rows.append(MetricRow(
             metric=label + suffix,
             average=str(quantity.get("said") or "—"),
-            samples=samples_said,
+            samples=independent_samples_said(samples) if _finite(samples) else "—",
             status=("Not read" if quantity.get("unavailable")
                     else "Determined" if quantity.get("determined") else "Not determined"),
             why=str(quantity.get("why") or ""),

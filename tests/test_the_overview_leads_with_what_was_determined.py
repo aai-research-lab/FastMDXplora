@@ -608,6 +608,38 @@ def test_a_running_run_s_speed_is_one_number(tmp_path) -> None:
     assert value in cell, (value, cell)
 
 
+@pytest.mark.parametrize(("samples", "expected"), [
+    (9.99, "9.9 independent samples"),
+    (24.999999999999996, "24.9 independent samples"),
+    (21.27, "21.2 independent samples"),
+    (21.0, "21 independent samples"),
+    (1.001, "1 independent sample"),
+])
+def test_the_production_chart_note_says_the_shared_sample_count(tmp_path, monkeypatch, samples, expected):
+    from fastmdxplora.gui import overview_view
+
+    root = _browser_study(tmp_path / "study", "completed")
+    payload_of = overview_view.overview_payload
+
+    def production(where, **kwargs):
+        payload = payload_of(where, **kwargs)
+        payload["thermodynamics"]["means"]["temperature"].update(
+            samples=samples, determined=True)
+        return payload
+
+    monkeypatch.setattr(overview_view, "overview_payload", production)
+
+    def check(page):
+        page.wait_for_function(
+            "expected => document.querySelector('[data-chart-note=temperature]')"
+            ".textContent.includes(expected)", arg=expected)
+        return page.text_content('[data-chart-note="temperature"]')
+
+    note, errors = _open(root, check)
+    assert not errors, errors
+    assert note.startswith(f"production mean, {expected}"), note
+
+
 def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
     """A tile read "0 independent samples · from 17.6 ps" beside its mean."""
     pytest.importorskip("playwright.sync_api")
@@ -635,7 +667,7 @@ def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.parametrize(("samples", "expected"), [
     (9.501928863580078, "9.5 independent samples"),
-    (9.99, "9.99 independent samples"),
+    (9.99, "9.9 independent samples"),
 ])
 def test_fractional_independent_samples_stay_finite_and_below_ten(
         tmp_path, samples, expected) -> None:

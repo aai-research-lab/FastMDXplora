@@ -24,10 +24,8 @@
     n = Number(n);
     if (!Number.isFinite(n)) return "";
     if (n < 1) return (belowOne || "under 1") + " independent sample";
-    var rounded = Math.round(n * 10) / 10;
-    var count = Number.isInteger(rounded) && rounded > n ? String(n)
-      : Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-    if (rounded === 1 && n > 1) count = String(n);
+    var rounded = Math.floor(n * 10) / 10;
+    var count = rounded.toFixed(1).replace(/\.0$/, "");
     return (about ? "about " : "") + count + " independent sample" +
       (Number(count) === 1 ? "" : "s");
   }

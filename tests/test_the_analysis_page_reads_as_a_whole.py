@@ -394,9 +394,14 @@ class TestThePage:
 
     @pytest.mark.parametrize(("samples", "expected"), [
         (9.501928863580078, "9.5 independent samples"),
-        (9.99, "9.99 independent samples"),
+        (9.99, "9.9 independent samples"),
+        (24.999999999999996, "24.9 independent samples"),
+        (21.27, "21.2 independent samples"),
+        (21.0, "21 independent samples"),
+        (1.001, "1 independent sample"),
+        (None, "—"),
     ])
-    def test_sample_count_display_does_not_round_up_to_ten(self, page, samples, expected) -> None:
+    def test_sample_count_display_rounds_down_without_float_noise(self, page, samples, expected) -> None:
         import json
 
         def sample_count(route):
@@ -414,6 +419,7 @@ class TestThePage:
             ".analysis-results-samples'); return cell && cell.textContent.trim() !== ''; }")
         cell = page.locator('#analysis-results tr[data-analysis="rmsd"] .analysis-results-samples')
         assert cell.text_content().strip() == expected
+        assert page.errors == []
 
     def test_a_series_under_a_nanosecond_is_plotted_in_picoseconds(self, page) -> None:
         """The panel's time axes read "Time (ns)" with ticks of 0.0004 for a
