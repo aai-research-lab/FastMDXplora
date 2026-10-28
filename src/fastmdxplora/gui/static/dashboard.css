@@ -4214,6 +4214,9 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .sidebar-stop[hidden], .stop-run-ask[hidden] { display: none; }
 .sidebar-stop:hover { background: color-mix(in srgb, var(--accent-red) 10%, transparent); }
 .stop-run-ask { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-xs); }
+/* A refused stop's Close on a line of its own, so it and its focus ring cover
+   none of the words. */
+.stop-run-close { display: block; width: fit-content; margin-top: 6px; padding: 2px 10px; }
 .health-stop { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .health-stop:has(> [hidden] + [hidden]) { display: none; }
 .sidebar .sidebar-controls { align-items: center; gap: 2px; flex-wrap: nowrap; }

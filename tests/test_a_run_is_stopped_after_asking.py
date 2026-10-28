@@ -322,6 +322,15 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
         # goes back to the Stop that asked.
         close = page.locator("#sb-stop-ask .stop-run-close")
         named = (close.get_attribute("aria-label"), "ghost-btn" in close.get_attribute("class"))
+        # On a line of its own: neither it nor its ring covers the words.
+        apart = page.evaluate("""() => {
+            const said = document.querySelector('#sb-stop-ask .stop-run-refused');
+            const range = document.createRange();
+            range.selectNodeContents(said.firstChild);
+            const words = [...range.getClientRects()];
+            const close = said.querySelector('.stop-run-close').getBoundingClientRect();
+            return words.every(r => r.bottom <= close.top + 0.5);
+        }""")
         close.focus()
         page.keyboard.press("Enter")
         closed = page.is_hidden("#sb-stop-ask")
@@ -331,6 +340,11 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
         page.wait_for_selector("#sb-stop-ask .stop-run-refused")
         page.wait_for_timeout(7000)
         kept_again = page.is_visible("#sb-stop-ask .stop-run-refused")
+        # Stop pressed again over a card still up: its timer goes with it,
+        # and the new card has the whole of its own.
+        page.click("#sb-stop")
+        page.wait_for_timeout(7000)
+        kept_over = page.is_visible("#sb-stop-ask .stop-run-refused")
         refused[0] = None   # production reached: Stop works here now
         page.evaluate("() => document.getElementById('refresh-now').click()")
         page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached")
@@ -344,8 +358,9 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
     assert questioned == 0 and asked == []
     assert kept == own_stop_refused and closed
     assert named == ("Close the note", True)
-    assert focused in ("sb-stop", "H1"), focused
-    assert kept_again
+    assert focused == "sb-stop", focused
+    assert apart
+    assert kept_again and kept_over
 
 
 def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_path):  # noqa: F811

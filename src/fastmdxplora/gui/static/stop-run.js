@@ -34,7 +34,7 @@
         if (!host.children.length) host.hidden = true;
         // The keyboard back on the Stop that asked, or the page's heading.
         var asker = host.id && document.querySelector('[data-stop-run="' + host.id + '"]');
-        var back = asker && !asker.hidden ? asker : document.querySelector(".page:not([hidden]) h1, h1");
+        var back = asker && !asker.hidden ? asker : visibleHeading();
         if (back) {
           if (!back.hasAttribute("tabindex") && back.tagName === "H1") back.setAttribute("tabindex", "-1");
           back.focus();
@@ -44,6 +44,16 @@
     answer.appendChild(document.createTextNode(" "));
     answer.appendChild(close);
     return answer;
+  }
+
+  /* The heading of the page shown: a selector list gave the first heading
+   * of the document, a hidden one. */
+  function visibleHeading() {
+    var headings = document.querySelectorAll(".page:not([hidden]) h1, h1");
+    for (var i = 0; i < headings.length; i += 1) {
+      if (headings[i].offsetParent !== null) return headings[i];
+    }
+    return null;
   }
 
   /* Asked to stop, and not yet stopped: said, in place of a second Stop. */
