@@ -233,14 +233,21 @@
    * time: a finished study's state does not change, so nothing else would
    * ask again, and the page would say there is no report. */
   var retrying = 0;
+  var asked = 0;
   function load() {
+    var mine = ++asked;
     return fetch("/api/report").then(function (r) { return r.json(); })
-      .then(function (data) { retrying = 0; render(data); })
+      .then(function (data) {
+        if (mine !== asked) return;
+        retrying = 0;
+        render(data);
+      })
       .catch(function () {
+        if (mine !== asked) return;
         render(null);
         if (retrying < 5) {
           retrying += 1;
-          setTimeout(load, 1000 * retrying);
+          setTimeout(function () { if (mine === asked) load(); }, 1000 * retrying);
         }
       });
   }
@@ -420,6 +427,10 @@
       });
       window.FastMDXDashboard.on("navigate", function (detail) {
         if (detail === "report" || (detail && detail.page === "report")) load();
+      });
+      window.FastMDXDashboard.on("study-changed-elsewhere", function () {
+        var doc = el("report-document");
+        if (doc) delete doc.dataset.rendered;
       });
     }
   });
