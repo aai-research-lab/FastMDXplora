@@ -681,6 +681,10 @@ def _links_out(study: Path, most: int = _LINKS_NAMED) -> list[tuple[str, str]]:
         try:
             with os.scandir(folder) as listing:
                 entries = sorted(listing, key=lambda entry: entry.name)
+        except FileNotFoundError:
+            # A study not yet written (or gone) has nothing to read or write
+            # through: what refuses its run is said where it is started.
+            continue
         except OSError:
             found.append((named(str(folder)) + "/" if folder != Path(study) else "./",
                           "unlisted"))
