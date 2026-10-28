@@ -1007,12 +1007,56 @@ def _write_manifest(
         "prepared_system": prepared_system,
         "n_production_frames": n_frames,
         "duration_ns_actual": duration_ns_actual,
+        # Each stage's length in ns and where it came from, the equilibration
+        # stages included where the study left them unset: a reader of the
+        # record took an unset `nvt_duration_ns` for none, and a table of
+        # runs said "0/0/20 ns" of runs that equilibrated for 1.5 ns.
+        "stage_lengths": _stage_lengths_record(params, resolved, output_dir,
+                                               finished=duration_ns_actual is not None),
         "artifacts_planned": canonical,
         "artifacts_written": list(artifacts),
         "notes": notes,
     }
     with (output_dir / "simulation_parameters.json").open("w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, default=str)
+
+
+def _stage_lengths_record(params: dict[str, Any] | None,
+                          resolved: dict[str, Any] | None,
+                          output_dir: Path | None = None, *,
+                          finished: bool = False) -> dict[str, Any]:
+    """The stage lengths a simulation record carries, under the settings'
+    names, each with its source (`lengths.stage_lengths`). A variable-step
+    run's production is its own clock, read from the final state it has
+    just written; not recorded, with why, where that is not there."""
+    from fastmdxplora.simulation.lengths import (
+        FROM_CLOCK,
+        NOT_RECORDED,
+        STAGES,
+        _piece_clock,
+        _variable_step,
+        stage_lengths,
+    )
+
+    said = stage_lengths({"parameters": dict(params or {}),
+                          "resolved": dict(resolved or {})})
+    written = {"timestep_fs": said["timestep_fs"],
+               **{ns_key: said[stage]["ns"] for stage, ns_key, _ in STAGES},
+               "sources": {ns_key: said[stage]["source"] for stage, ns_key, _ in STAGES}}
+    if _variable_step(dict(params or {})):
+        try:
+            clock, how = (_piece_clock(output_dir) if finished and output_dir is not None
+                          else (None, "the run did not finish"))
+        except PermissionError:
+            clock, how = None, "its records are linked out of the study"
+        if clock is not None:
+            written["duration_ns"] = round(clock / 1000.0, 9)
+            written["sources"]["duration_ns"] = FROM_CLOCK
+        else:
+            written["sources"]["duration_ns"] = (
+                f"{NOT_RECORDED}: the integrator chose its own step, and its clock "
+                f"is not there ({how})")
+    return written
 
 
 def _continuation_of(params: dict[str, Any] | None) -> dict[str, Any] | None:

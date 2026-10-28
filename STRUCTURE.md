@@ -100,7 +100,7 @@ FastMDXplora/
 │       │   ├── diagnose.py        # What a failed simulation can be told from its state
 │       │   ├── stopping.py        # Run until what was asked is determined, and no longer
 │       │   ├── sampling_ask.py    # How much longer a study has to run for the means it withheld
-│       │   ├── lengths.py         # How long each stage runs when a config does not say
+│       │   ├── lengths.py         # Stage lengths: the defaults, each one a study's records give with its source, a variable step's clock
 │       │   ├── ensembles.py       # Which ensemble production runs in
 │       │   ├── resume.py          # Whether a run may be stopped and picked up again
 │       │   ├── seeding.py         # Umbrella windows' starting structures, from a steered pull

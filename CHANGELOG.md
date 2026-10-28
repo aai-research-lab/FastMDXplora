@@ -7,8 +7,50 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Behaviour changes
+
+- The methods paragraph gives a variable-step run's production by the run's
+  own clock (its final state's time, else its energy log's row at its last
+  checkpoint), each piece's summed for a study carried on in pieces, and its
+  equilibration in steps; it gave steps times the timestep, 4 ps for a run
+  whose clock read 3.28 ps. `recorded_stage_lengths` gives such a summed
+  production no steps beside it, the first piece's as `first_piece_steps`.
+
 ### Fixed
 
+- The simulation record carries each stage's length, `stage_lengths`: the
+  NVT and NPT lengths of a study that left them unset, from the run's step
+  counts and timestep, with the source of each ("set", "from steps and
+  timestep", "not recorded"). They were `null` beside the step counts, and a
+  script tabulating runs read them as 0 ("0/0/20 ns" of runs that
+  equilibrated for 1.5 ns).
+  `simulation.lengths.recorded_stage_lengths(study)` reads them from any
+  study's records, older ones included: a length not recorded is None, never
+  0; a variable-step integrator's stages have no length in time; where a
+  length in ns and the steps run disagree, the steps are what ran, said so;
+  a study extended in pieces gives their summed production and how many; and
+  every mean an analysis recorded, one level down included (thermodynamics'
+  by its samples, each entry saying its unit), gives the frames left after
+  its equilibration discard, an analysis record not read or linked out of
+  the study named; a variable-step run's production comes from the run's own
+  clock, as the methods give it, and the run's own record gives it so. A
+  piece stopped between checkpoints is read at the checkpoint the next piece
+  continued from, never at its energy log's last line, which said 16.7 ps of
+  a production that ran 13.3 ps; a last piece stopped is said to its last
+  checkpoint. A study carried on in pieces whose first piece was stopped
+  before writing its record is read from its `resolved_config.yml` where
+  that is the study's own, a stage it leaves unset from the first piece's
+  planned steps (its live status, else its log), then its first piece's
+  record and its checkpoint's, `read_from` naming each: a variable-step one
+  was given 12 ps where its clocks gave 9.96 ps, and a fixed-step one every
+  stage and the timestep as not recorded. A study never carried on is not
+  read from its config, which is what was asked, nor is one holding a
+  piece's config, which gave NVT and NPT as 0. Its methods paragraph gives
+  its protocol where it said the simulation did not run, and a record
+  without its plan says its equilibration lengths are not recorded rather
+  than leaving them out. A piece linked out of the study is "not read".
+  Called on its own, it holds its reads to the study. See [the
+  manifest](docs/manifest.md).
 - Clustering checks its frame-by-frame RMSD matrix against the memory this
   process can take before it makes it: the least of the machine's available
   memory (psutil where installed, else `/proc/meminfo` or `os.sysconf`; on a

@@ -203,6 +203,68 @@ that becomes a list where several ligands were found — neither of which is a
 Config setting. `resolved` is built from named values rather than by copying and
 filtering, so nothing that would break a replay can reach it.
 
+### `stage_lengths`: how long each stage was planned, and from what
+
+The simulation record also carries each stage's length in nanoseconds, under
+the settings' names, and where it came from:
+
+```json
+"stage_lengths": {
+  "timestep_fs": 2.0,
+  "nvt_duration_ns": 0.5,
+  "npt_duration_ns": 1.0,
+  "duration_ns": 20.0,
+  "sources": {"nvt_duration_ns": "from steps and timestep",
+              "npt_duration_ns": "from steps and timestep",
+              "duration_ns": "set"}
+}
+```
+
+"set" is a length the study gave in ns; "from steps and timestep" is the run's
+step count times its timestep, which is how a stage left to its default is
+recorded; "not recorded" is a length the record does not hold, written as
+`null`, never 0. It is outside `resolved`, so `resolved_config.yml` does not
+give a stage's steps and its duration both. To read any study's lengths,
+older records included, use
+`fastmdxplora.simulation.lengths.recorded_stage_lengths(study)`: each stage
+with its source, what production ran and the frames saved (for a study
+extended in pieces, summed over them, with the number of pieces), and for
+every mean an analysis recorded the frames left after its equilibration
+discard (each `{"frames", "unit", "discarded", "kept"}`, `unit` "samples" for
+thermodynamics' quantities). A variable-step integrator chose its own step, so
+its equilibration stages have no length in time ("not recorded"), and its
+production is read from the run's own clock, each piece's summed ("from the
+run's clock"), as the methods give it, its `steps` then `null` and the
+first piece's plan given as `first_piece_steps`; where a length given in ns
+and the steps the run ran disagree, the steps are what ran, and said so.
+A variable-step run's own record gives its production by its clock too,
+`duration_ns` "from the run's clock"; its `duration_ns_actual` is steps
+times the timestep, not its length.
+
+A piece stopped before its end is read at its last checkpoint, the step in
+`checkpoint.chk.json` that the next piece continued from, by its energy
+log's row at that step: the log runs on past it, and those steps were run
+again. Where no row falls on that step, production is "not recorded",
+naming the piece; where the piece is linked out of the study, "not read". A
+last piece that stopped is said as its production to its last checkpoint.
+
+A study carried on in pieces whose first piece was stopped before writing
+its simulation record is read from:
+
+- its `resolved_config.yml`, where that is the study's own: a config whose
+  `simulation.resume_from` names a checkpoint in the study is a piece's,
+  put there while the joined trajectory is analysed;
+- for a stage the config leaves unset, the steps the first piece planned,
+  in `simulation/live_status.json` (`nvt_steps_planned`,
+  `npt_steps_planned`), else as `simulation/simulation.log` says them;
+- its first piece's record, for the integrator, the timestep and the
+  pressure, then its checkpoint's for the timestep.
+
+`read_from` names the record each of `integrator`, `timestep_fs`, `nvt`,
+`npt`, `production`, `pressure` and `minimize` came from, `null` for one no
+record holds. A study not carried on in pieces is not read from its config:
+its simulation may never have run.
+
 **The input structure's checksum lives in `setup/setup_parameters.json`**,
 under `input.structure`, not in `manifest.json`:
 

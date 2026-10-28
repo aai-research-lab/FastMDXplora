@@ -145,6 +145,27 @@ def _nm(value: Any) -> str:
     return f"{float(value):.2f} nm" if value is not None else "not recorded"
 
 
+def _ps_said(ps: float) -> str:
+    return f"{ps / 1000:.3g} ns" if ps >= 1000 else f"{ps:.3g} ps"
+
+
+def _ns_said(ns: float) -> str:
+    return f"{ns:.3g} ns" if ns >= 1 else f"{ns * 1000:.3g} ps"
+
+
+def _unwritten_simulation(root: Path) -> dict[str, Any]:
+    """The simulation record of a study carried on in pieces whose first
+    piece never wrote its own (`lengths.unwritten_record`); empty for any
+    other study, or one whose records may not be read here."""
+    from fastmdxplora.refusals import OutsideWorkspace
+    from fastmdxplora.simulation.lengths import unwritten_record
+
+    try:
+        return unwritten_record(root)[0]
+    except (OSError, ValueError, OutsideWorkspace):
+        return {}
+
+
 def _steps_to_ns(steps: Any, timestep_fs: Any) -> str:
     """Steps are what somebody sets; nanoseconds are what a reader needs."""
     try:
@@ -330,6 +351,12 @@ def methods_paragraphs(
 
     parts: list[str] = []
     versions = versions or {}
+    if not sim and project_root is not None:
+        # A study whose first piece was stopped before writing its record,
+        # then carried on in pieces: what it ran is in its config. It said
+        # "simulation did not run, or recorded nothing" of a study that ran.
+        sim = _unwritten_simulation(Path(project_root))
+    record = sim if isinstance(sim, dict) else {}
     # From the whole record, before it is flattened: the runner's own answer
     # where it gave one, and its resolver over what it recorded where not.
     production_ensemble = recorded_ensemble(sim)
@@ -579,7 +606,6 @@ def methods_paragraphs(
         # runner is the only place that knew.
         pressure = _get(sim, "pressure_bar_used", "pressure_bar")
         barostat_every = _get(sim, "barostat_frequency")
-        nvt = _get(sim, "nvt_steps")
         npt = _get(sim, "npt_steps")
         production = _get(sim, "production_steps")
         interval = _get(sim, "trajectory_interval_steps")
@@ -694,33 +720,118 @@ def methods_paragraphs(
             if _get(sim, block):
                 protocol.append(paragraph)
 
-        stages = []
-        if nvt:
-            stages.append(f"{_steps_to_ns(nvt, timestep)} in the NVT ensemble")
-        if npt:
-            stages.append(f"{_steps_to_ns(npt, timestep)} in the NPT ensemble")
+        # A variable-step integrator chose its own step, so a stage's steps
+        # times the timestep is not its length: the stages are said in steps,
+        # and production at the run's own clock. Said as 4 ps where its clock
+        # read 3.28 ps, the methods disagreed with the run by a fifth.
+        from fastmdxplora.simulation.runner import VARIABLE_STEP_INTEGRATORS
+
+        own_step = str(_get(sim, "integrator")).lower() in VARIABLE_STEP_INTEGRATORS
+
+        def length_of(steps: Any) -> str:
+            if own_step:
+                try:
+                    return f"{int(steps):,} steps"
+                except (TypeError, ValueError):
+                    return "not recorded"
+            return _steps_to_ns(steps, timestep)
+
+        # Each stage's length as `recorded_stage_lengths` reads it, so the
+        # paragraph and the reader are one derivation: a record without its
+        # plan left the equilibration out of the paragraph, unsaid.
+        from fastmdxplora.simulation.lengths import stage_lengths
+
+        # The flattened view as the settings, so a caller handing the
+        # settings without their `parameters` block is read the same.
+        lengths = stage_lengths({"parameters": sim,
+                                 "resolved": record.get("resolved") or {}})
+        if npt is None:
+            npt = lengths["npt"]["steps"]
+
+        def stage_said(stage: str) -> tuple[float, str] | None:
+            entry = lengths[stage]
+            if own_step:
+                steps = entry["steps"] if entry["steps"] is not None else _get(
+                    sim, f"{stage}_steps")
+                return None if steps is None else (steps, length_of(steps))
+            return None if entry["ns"] is None else (entry["ns"], _ns_said(entry["ns"]))
+
+        stages, unrecorded = [], []
+        for stage, name in (("nvt", "NVT"), ("npt", "NPT")):
+            said_stage = stage_said(stage)
+            if said_stage is None:
+                unrecorded.append(name)
+            elif said_stage[0]:
+                stages.append(f"{said_stage[1]} in the {name} ensemble")
         if stages:
             protocol.append("Equilibration comprised " + " followed by ".join(stages) + ".")
-        if production and extended:
+        if unrecorded:
+            protocol.append(
+                f"The {'lengths' if len(unrecorded) > 1 else 'length'} of the "
+                f"{' and '.join(unrecorded)} equilibration "
+                + ("stages are" if len(unrecorded) > 1 else "stage is") + " not recorded.")
+        production_said = stage_said("production")
+        if own_step and lengths["production"]["steps"] is not None:
+            production = lengths["production"]["steps"]
+        elif production is None and production_said is not None:
+            production = lengths["production"]["steps"]
+        # By the run's own clock, each piece's summed for a study carried on
+        # in pieces: steps times the timestep said 6 ps of an extended run
+        # whose pieces' clocks read 3.28 and 1.67. Read whether or not the
+        # steps are, as `recorded_stage_lengths` reads it.
+        from fastmdxplora.simulation.lengths import last_piece_stopped, production_clock
+
+        clock = production_clock(project_root) if own_step else None
+        if own_step and (production or clock["ps"] is not None or clock["pieces"] > 1):
+            pieces = clock["pieces"]
+            in_pieces = (f", in {pieces} pieces each continuing from the checkpoint of "
+                         "the one before" if pieces > 1 else "")
+            stopped = (("; the last piece to its last checkpoint" if pieces > 1
+                        else "; to its last checkpoint") if clock["stopped"] else "")
+            if clock["ps"] is not None:
+                detail = (f", summed over {pieces} pieces" if pieces > 1
+                          else f", {length_of(production)}"
+                          if production and not clock["stopped"] else "")
+                sentence = (f"Production dynamics were run for {_ps_said(clock['ps'])} "
+                            f"(the length by the integrator's own clock{detail}{stopped}) "
+                            f"in the {production_ensemble.upper()} ensemble{in_pieces}.")
+            elif pieces > 1:
+                sentence = (f"Production ran in the {production_ensemble.upper()} ensemble"
+                            f"{in_pieces}; its length in time is "
+                            + ("not read, a piece's records being linked out of the study."
+                               if clock["source"] == "not read" else "not recorded."))
+            else:
+                sentence = (f"Production dynamics were run for {length_of(production)} "
+                            "(its length in time not recorded) in the "
+                            f"{production_ensemble.upper()} ensemble.")
+            protocol.append(sentence + " The integrator chose its own step, so the "
+                            "equilibration is given in steps.")
+        elif extended and production != 0:
+            # Summed over the pieces, whatever the first piece's record
+            # holds: a study read from its pieces may have no plan at all.
             total, pieces = extended
             length = f"{total:.3g} ns" if total >= 1 else f"{total * 1000:.3g} ps"
             protocol.append(
                 f"Production dynamics were run for {length} in the "
                 f"{production_ensemble.upper()} ensemble, in {pieces} pieces, "
-                "each continuing from the checkpoint of the one before."
+                "each continuing from the checkpoint of the one before"
+                + (", the last to its last checkpoint" if last_piece_stopped(project_root)
+                   else "") + "."
             )
-        elif production:
+        elif production or (production is None and production_said and production_said[0]):
             protocol.append(
                 f"Production dynamics were run for "
-                f"{_steps_to_ns(production, timestep)} in the "
-                f"{production_ensemble.upper()} ensemble."
+                f"{production_said[1] if production_said else _steps_to_ns(production, timestep)}"
+                f" in the {production_ensemble.upper()} ensemble."
             )
-        elif production == 0:
+        elif production == 0 or (production_said and production_said[0] == 0):
             protocol.append("No production was run: the study equilibrated only.")
+        else:
+            protocol.append("The length of production is not recorded.")
         if integrator and timestep:
             protocol.append(
                 f"Equations of motion were integrated with the {integrator} "
-                f"integrator and a {timestep} fs timestep"
+                + ("integrator" if own_step else f"integrator and a {timestep} fs timestep")
                 # Each clause only where the value is there. A methods
                 # section reading "a friction coefficient of None" is worse
                 # than one that omits it: the reader cannot tell whether the
@@ -761,7 +872,7 @@ def methods_paragraphs(
         if interval and timestep and production != 0:
             protocol.append(
                 f"Coordinates were written every "
-                f"{_steps_to_ns(interval, timestep)}."
+                f"{length_of(interval)}."
             )
         if platform:
             protocol.append(
