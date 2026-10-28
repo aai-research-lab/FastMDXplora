@@ -1417,7 +1417,9 @@
     const run = runState(status, statusName);
     // The card's word is where the run is (running, stopped, failed);
     // for a finished run, the health verdict's.
-    const word = run === "running" ? String(status.status || "running") : (run || statusName);
+    const recorded = String(status.status || "running");
+    const word = run === "running" ? (recorded.toLowerCase() === "stopped" ? "running" : recorded)
+      : (run || statusName);
     setText("topbar-status-text", statusWord(word));
     // Its dot: live while it runs, green once it finished well, red when
     // it failed, grey otherwise (stopped, waiting, no recent word).
@@ -1513,6 +1515,11 @@
   function runState(status, statusName) {
     const raw = String(status.status || "").toLowerCase();
     if (["failed", "error"].includes(raw) || ["failed", "error"].includes(statusName)) return "failed";
+    // Its process still going (a study of runs, one run stopped and another
+    // going on to its frame): running, not stopped.
+    if ((raw === "stopped" || statusName === "stopped") && state.appState?.process_running) {
+      return "running";
+    }
     if (raw === "stopped" || statusName === "stopped") return "stopped";
     // Ended without saying so (telemetry.status_as_it_stands): its record
     // still said it was going, weeks after the run had gone.

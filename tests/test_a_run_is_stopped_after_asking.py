@@ -440,3 +440,43 @@ def test_a_study_of_runs_in_production_is_asked_as_production(browser, tmp_path)
     assert errors == []
     assert "ends at its next frame with a checkpoint" in question, question
     assert "not reached production" not in question
+
+
+def test_a_study_whose_process_goes_on_is_said_running(browser, tmp_path):  # noqa: F811
+    """A study of runs, one stopped and another going on to its frame: its
+    status said stopped, and the page said Stopped with a run still going."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "production")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running")
+        route.fulfill(response=response, json=body)
+
+    def status(route):
+        response = route.fetch()
+        body = response.json()
+        body.setdefault("status", {})["status"] = "stopped"
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.route("**/api/status*", status)
+        page.route("**/api/stream*", lambda route: route.abort())  # read as polled
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        said = page.text_content("#topbar-status-text")
+        run = page.get_attribute("#status-run", "data-run")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert (said, run) == ("Running", "running"), (said, run)
