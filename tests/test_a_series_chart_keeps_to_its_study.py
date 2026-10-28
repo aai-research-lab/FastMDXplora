@@ -69,3 +69,29 @@ def test_a_chart_s_range_is_forgotten_and_a_study_without_the_series_shows_its_f
     assert plotted.startswith("RMSD, 11 points"), plotted
     assert got == {"figure": True, "toggle": True}, got
     assert errors == []
+
+
+def test_a_null_series_value_leaves_a_gap_in_the_chart() -> None:
+    pytest.importorskip("playwright.sync_api")
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "series-chart.js")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.set_content('<div id="chart" style="width:440px"></div>')
+        page.add_script_tag(path=str(script))
+        path = page.evaluate("""() => {
+          const host = document.getElementById('chart');
+          window.FastMDXSeries.draw(host, {
+            label: 'RMSD', unit: 'nm', kind: 'time', x_label: 'Frame',
+            x: [0, 1, 2], y: [0.1, null, 0.3], frames: [0, 1, 2],
+            mean: null, linked: false
+          });
+          return host.querySelector('.series-line').getAttribute('d');
+        }""")
+        browser.close()
+    assert path.count("M") == 2 and "L" not in path

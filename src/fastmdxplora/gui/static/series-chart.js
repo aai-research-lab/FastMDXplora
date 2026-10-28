@@ -180,6 +180,7 @@
       : timeScale(view || data.x, data.x_label);
     var xs = clock.factor === 1 ? data.x : data.x.map(function (x) { return x * clock.factor; });
     var ys = data.y;
+    function hasY(index) { return ys[index] != null && isFinite(ys[index]); }
     var xLow = view ? view[0] * clock.factor : xs[0];
     var xHigh = view ? view[1] * clock.factor : xs[xs.length - 1];
     if (data.kind === "residue") {
@@ -190,8 +191,11 @@
     }
     if (xHigh === xLow) xHigh = xLow + 1;
     // The values in view set the height, so a range zoomed into is read.
-    var seen = ys.filter(function (y, i) { return xs[i] >= xLow && xs[i] <= xHigh; });
-    if (!seen.length) seen = ys;
+    var seen = ys.filter(function (y, i) {
+      return hasY(i) && xs[i] >= xLow && xs[i] <= xHigh;
+    });
+    if (!seen.length) seen = ys.filter(function (y, i) { return hasY(i); });
+    if (!seen.length) return;
     var yLow = Math.min.apply(null, seen);
     var yHigh = Math.max.apply(null, seen);
     var mean = data.mean || null;
@@ -279,11 +283,16 @@
     // A profile's line goes along each chain, not from one chain's last
     // residue to the next one's first.
     var residues = data.kind === "residue" && Array.isArray(data.residues) ? data.residues : null;
-    var path = xs.map(function (x, i) {
-      var joined = i > 0 && !(residues && residues[i] && residues[i - 1]
-        && residues[i].chain !== residues[i - 1].chain);
-      return (joined ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
-    }).join("");
+    var path = "";
+    var joined = false;
+    xs.forEach(function (x, i) {
+      if (!hasY(i)) { joined = false; return; }
+      var chainChanged = residues && residues[i] && residues[i - 1]
+        && residues[i].chain !== residues[i - 1].chain;
+      path += (joined && !chainChanged ? "L" : "M")
+        + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+      joined = true;
+    });
     el("path", {
       d: path, fill: "none", stroke: c.line, "stroke-width": 1.5,
       "stroke-linejoin": "round", class: "series-line",
@@ -376,6 +385,13 @@
     }
     function show(index) {
       if (index < 0 || index >= xs.length) return;
+      if (!hasY(index)) {
+        cursor.setAttribute("visibility", "hidden");
+        dot.setAttribute("visibility", "hidden");
+        tip.hidden = true;
+        host.removeAttribute("data-at");
+        return;
+      }
       at = index;
       host._keyAt = data.x[index];
       var x = px(xs[index]);

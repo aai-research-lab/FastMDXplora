@@ -58,6 +58,25 @@ def test_the_series_over_time_are_listed_in_order(tmp_path) -> None:
     assert series_over_time(tmp_path / "nothing") == {"ok": True, "series": []}
 
 
+def test_nonfinite_series_values_are_json_nulls(tmp_path) -> None:
+    _analysis(tmp_path, "rmsd", [0.1, float("nan"), 0.3], None)
+    from fastmdxplora.gui.server import start_test_server
+
+    server, url = start_test_server(tmp_path)
+    try:
+        body = urllib.request.urlopen(url + "/api/series?analysis=rmsd", timeout=30).read()
+
+        def reject_constant(value):
+            raise AssertionError(f"non-standard JSON value: {value}")
+
+        payload = json.loads(body, parse_constant=reject_constant)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert payload["y"] == [0.1, None, 0.3]
+    assert len(payload["x"]) == len(payload["y"]) == len(payload["frames"]) == 3
+
+
 @pytest.fixture(scope="module")
 def study(tmp_path_factory) -> Path:
     from tests.test_the_cartoon_is_dssp_of_each_frame import _helical_study
