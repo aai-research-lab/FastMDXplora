@@ -310,7 +310,7 @@ def test_frames_pieces_linked_out_are_said_not_read_in_the_viewer(tmp_path):
                                    f" && {viewer}.STATE.playbackPayload")
             page.evaluate(f"async () => {{ await {viewer}.movie.frames(); }}")
             page.wait_for_function("() => document.getElementById('sr-live').textContent"
-                                   ".includes('frames_pieces was not read')")
+                                   ".includes('frames_pieces/ is a link out of the study')")
             # In the notice, which shows it for a while (`showToast`).
             said = page.text_content("#dashboard-toast .dashboard-toast-said")
             played = page.evaluate(f"() => {viewer}.STATE.playbackPayload.playback_available")
@@ -318,7 +318,9 @@ def test_frames_pieces_linked_out_are_said_not_read_in_the_viewer(tmp_path):
     finally:
         session.server.shutdown()
     assert errors == []
-    assert said.startswith("The frames are played whole: simulation/frames_pieces was not read")
+    # A folder linked out is said as a folder, once (round 7).
+    assert said == ("The frames are played whole: simulation/frames_pieces/ is a link out of "
+                    "the study, so its records are not read here."), said
     assert played is True
     assert list(elsewhere.iterdir()) == []
 
