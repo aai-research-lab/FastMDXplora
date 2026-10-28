@@ -585,3 +585,40 @@ def test_a_read_asked_before_stop_and_answered_after_it_puts_no_stop_back(browse
         session.server.shutdown()
     assert errors == []
     assert after == {"offered": 0, "palette": False, "said": "Stopping…"}, after
+
+
+def test_a_stop_refused_from_cmd_k_puts_the_keyboard_on_its_note(browser, tmp_path):  # noqa: F811
+    """Cmd+K's Stop, refused, says so under the Overview's Stop; the keyboard
+    stayed in the status bar, and Tab never reached the note's Close."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = _going(tmp_path / "study", "nvt")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors: list = []
+
+    def app_state(route):
+        response = route.fetch()
+        body = response.json()
+        body.update(process_running=True, status="running", stop_refused="Not here.")
+        route.fulfill(response=response, json=body)
+
+    try:
+        page.set_default_timeout(60000)
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.route("**/api/app-state*", app_state)
+        page.goto(session.url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#sb-stop:not([hidden])")
+        page.wait_for_timeout(1500)
+        page.keyboard.press("Control+k")
+        page.keyboard.type("stop")
+        page.wait_for_timeout(500)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#health-stop-ask .stop-run-refused")
+        page.wait_for_timeout(300)
+        focused = page.evaluate("() => document.activeElement.matches('#health-stop-ask .stop-run-close')")
+    finally:
+        page.close()
+        session.server.shutdown()
+    assert errors == []
+    assert focused

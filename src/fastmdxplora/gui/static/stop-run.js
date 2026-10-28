@@ -110,6 +110,10 @@
     if (refusedNow) {
       host.replaceChildren(refusal(refusedNow));
       host.hidden = false;
+      // The keyboard by the note, wherever Stop was asked (Cmd+K's left it
+      // in the status bar, and Tab never reached the note).
+      var close = host.querySelector(".stop-run-close");
+      if (close) close.focus();
       if (done) done(refusedNow);
       return;
     }
