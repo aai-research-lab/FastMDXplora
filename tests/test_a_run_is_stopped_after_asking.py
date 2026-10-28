@@ -318,11 +318,19 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
         kept = (page.evaluate("() => document.querySelector('#sb-stop-ask .stop-run-refused')"
                               ".firstChild.textContent")
                 if page.is_visible("#sb-stop-ask") else "")
-        # It can be put away.
-        page.click("#sb-stop-ask .stop-run-close")
+        # It can be put away, by a button said as one, and the keyboard
+        # goes back to the Stop that asked.
+        close = page.locator("#sb-stop-ask .stop-run-close")
+        named = (close.get_attribute("aria-label"), "ghost-btn" in close.get_attribute("class"))
+        close.focus()
+        page.keyboard.press("Enter")
         closed = page.is_hidden("#sb-stop-ask")
+        focused = page.evaluate("() => document.activeElement.id || document.activeElement.tagName")
+        # Asked again: the first card's timer does not take the second away.
         page.click("#sb-stop")
         page.wait_for_selector("#sb-stop-ask .stop-run-refused")
+        page.wait_for_timeout(7000)
+        kept_again = page.is_visible("#sb-stop-ask .stop-run-refused")
         refused[0] = None   # production reached: Stop works here now
         page.evaluate("() => document.getElementById('refresh-now').click()")
         page.wait_for_selector("#sb-stop-ask .stop-run-refused", state="detached")
@@ -335,6 +343,9 @@ def test_a_stop_refused_is_said_at_once_until_it_can_be_stopped(browser, tmp_pat
     assert errors == []
     assert questioned == 0 and asked == []
     assert kept == own_stop_refused and closed
+    assert named == ("Close the note", True)
+    assert focused in ("sb-stop", "H1"), focused
+    assert kept_again
 
 
 def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_path):  # noqa: F811
@@ -384,6 +395,7 @@ def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_pa
             bar: document.querySelector('#sb-stop-ask').textContent,
             overview: document.querySelector('#health-stop-ask').textContent,
             offered: [...document.querySelectorAll('[data-stop-run]')].filter(b => !b.hidden).length,
+            palette: window.FastMDXStop.running(),
         })""")
         state.update(running=False, stopping=False)
         page.evaluate("() => document.getElementById('refresh-now').click()")
@@ -393,7 +405,8 @@ def test_a_run_asked_to_stop_is_said_stopping_and_offers_no_stop(browser, tmp_pa
         session.server.shutdown()
     assert errors == []
     assert offered_at_once == 0
-    assert during == {"bar": "Stopping…", "overview": "Stopping…", "offered": 0}, during
+    assert during == {"bar": "Stopping…", "overview": "Stopping…", "offered": 0,
+                      "palette": False}, during
 
 
 def test_a_study_of_runs_in_production_is_asked_as_production(browser, tmp_path):  # noqa: F811

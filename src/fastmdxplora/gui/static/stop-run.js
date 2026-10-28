@@ -23,12 +23,23 @@
    * is closed. */
   function refusal(said) {
     var answer = el("span", "fix-said stop-run-answer stop-run-refused", said);
-    var close = el("button", "stop-run-close", "Close");
+    var close = el("button", "ghost-btn stop-run-close", "Close");
     close.type = "button";
+    close.setAttribute("aria-label", "Close the note");
     close.addEventListener("click", function () {
       var host = answer.parentNode;
       answer.remove();
-      if (host && !host.children.length) host.hidden = true;
+      if (host) {
+        clearTimeout(host.stopFade);
+        if (!host.children.length) host.hidden = true;
+        // The keyboard back on the Stop that asked, or the page's heading.
+        var asker = host.id && document.querySelector('[data-stop-run="' + host.id + '"]');
+        var back = asker && !asker.hidden ? asker : document.querySelector(".page:not([hidden]) h1, h1");
+        if (back) {
+          if (!back.hasAttribute("tabindex") && back.tagName === "H1") back.setAttribute("tabindex", "-1");
+          back.focus();
+        }
+      }
     });
     answer.appendChild(document.createTextNode(" "));
     answer.appendChild(close);
@@ -177,7 +188,9 @@
           if (said && host && host.hasAttribute("data-stop-fades")
               && !host.querySelector(".stop-run-stopping")) {
             var refusedHere = Boolean(host.querySelector(".stop-run-refused"));
-            setTimeout(function () {
+            // One timer at a time: an earlier one went off over a later answer.
+            clearTimeout(host.stopFade);
+            host.stopFade = setTimeout(function () {
               if (host.querySelector(".stop-run-answer:not(.stop-run-stopping)")) {
                 host.innerHTML = "";
                 host.hidden = true;
