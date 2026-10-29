@@ -210,13 +210,24 @@ def choose_assembly(
 
 def _contents(input_pdb: Path, assembly: Assembly, present: list[str],
               select: Callable[..., Path]) -> tuple:
-    """The sequences and heterogens an assembly would put in the box."""
+    """The sequences and heterogens an assembly would put in the box.
+
+    What setup discards is not in the box: 1IEP's two monomers differ by
+    two chlorides, and two copies differing by a glycerol or a sulfate from
+    the crystallization liquor were asked about as different molecules.
+    """
+    from fastmdxplora.setup.heterogens import Action, decide
+
     with tempfile.TemporaryDirectory() as scratch:
         copy = Path(scratch) / "input.pdb"
         shutil.copy2(input_pdb, copy)
         kept = (copy if sorted(assembly.chains) == present
                 else select(copy, list(assembly.chains), quiet=True))
         lines = kept.read_text(encoding="utf-8", errors="replace").splitlines()
+        try:
+            discarded = {d.resname for d in decide(kept) if d.action is Action.DISCARD}
+        except Exception:  # noqa: BLE001 - setup's own classification says why later
+            discarded = set()
     sequences: dict[str, list[str]] = {}
     heterogens: Counter = Counter()
     seen: set[tuple[str, str, str]] = set()
@@ -225,7 +236,7 @@ def _contents(input_pdb: Path, assembly: Assembly, present: list[str],
             sequences.setdefault(line[11:12].strip(), []).extend(line[19:70].split())
         elif line.startswith("HETATM"):
             key = (line[21:22], line[17:20].strip(), line[22:27])
-            if key[1] not in _WATER and key not in seen:
+            if key[1] not in _WATER and key[1] not in discarded and key not in seen:
                 seen.add(key)
                 heterogens[key[1]] += 1
     polymers = tuple(sorted(" ".join(s) for s in sequences.values())) * assembly.copies

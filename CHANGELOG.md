@@ -9,6 +9,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A gap in a chain wider than its missing residues could reach is left a
+  cut, and each part given its charged ends. 1ACB's chymotrypsin is one
+  chain E without Ser14 and Arg15, the dipeptide its activation cuts out;
+  Leu13 and Ile16 are 17.9 A apart and two residues reach 11.4 A, so the
+  two were built as a loop stretched across the protein, and Ile16 lost
+  the free amine whose salt bridge to Asp194 makes the enzyme active.
+  Left unbuilt, OpenMM bonded Leu13 to Ile16 across the gap. A gap the
+  missing residues could close is still built.
+- Termini not built are said by the chain's ID: 1ACB's eglin c was "chain
+  1", and 6M0J's two chains "chain 0" and "chain 1".
+- Biological assemblies are compared by what setup keeps. 1IEP's two
+  monomers differ by two chlorides, and copies differing by a glycerol or
+  a sulfate setup drops were asked about as different molecules.
+- B-factor comparison does not run on a structure without B-factors that
+  mean anything: a solution NMR model, or a column of one value. 2JOF's
+  models write 20.00 on every atom, and its fluctuations were correlated
+  against that constant and reported.
 - A ligand whose pKa calculation would protonate two amines two carbons
   apart, a piperazine or an ethylenediamine, is refused rather than built
   at +2. PROPKA judges each nitrogen alone at a model pKa of 10; 1HSG's

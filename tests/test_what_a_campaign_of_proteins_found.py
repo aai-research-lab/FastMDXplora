@@ -464,3 +464,52 @@ def test_two_amines_far_apart_are_both_protonated() -> None:
             GroupPka("LIG", "A", 1, "N30", 10.9, 10.0))
     _, charge = _settle("NCCCCCN", both, (("primary or secondary amine", True),))
     assert charge == 2
+
+
+# -- A chain cut where it was deposited whole -----------------------------
+
+def _repaired_1acb(tmp_path):
+    pytest.importorskip("pdbfixer")
+    import logging
+
+    from openmm import app
+
+    from fastmdxplora.setup.pdbfix import fix_pdb_with_pdbfixer
+
+    given = tmp_path / "1acb.pdb"
+    given.write_text("\n".join(_deposition("1ACB")) + "\n")
+    heard: list[logging.LogRecord] = []
+    handler = logging.Handler(logging.INFO)
+    handler.emit = heard.append
+    logger = logging.getLogger("fastmdx.setup.pdbfix")
+    level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        fix_pdb_with_pdbfixer(str(given), str(tmp_path / "fixed.pdb"), ph=7.4)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(level)
+    return app.PDBFile(str(tmp_path / "fixed.pdb")).topology, [r.getMessage() for r in heard]
+
+
+def test_a_gap_no_chain_could_close_is_left_a_cut(tmp_path) -> None:
+    """1ACB's chymotrypsin is one chain E without Ser14 and Arg15, the
+    dipeptide activation cuts out; Leu13 and Ile16 are 17.9 A apart. The two
+    were built across the protein, and Ile16 lost its free amine."""
+    topology, said = _repaired_1acb(tmp_path)
+    parts = [list(chain.residues()) for chain in topology.chains() if chain.id == "E"]
+    assert [(part[0].id, part[-1].id) for part in parts] == [("1", "13"), ("16", "245")]
+    assert "OXT" in {atom.name for atom in parts[0][-1].atoms()}
+    assert {"H2", "H3"} <= {atom.name for atom in parts[1][0].atoms()}
+    assert not any(bond[0].residue.id == "13" and bond[1].residue.id == "16"
+                   for bond in topology.bonds())
+    assert {"147", "148"} <= {residue.id for residue in parts[1]}, \
+        "a gap the missing residues can close is built"
+    assert any("LEU13 and ILE16" in line for line in said), said
+
+
+def test_termini_not_built_are_said_by_their_chain(tmp_path) -> None:
+    """1ACB's eglin c is chain I, and was said as "chain 1"."""
+    _, said = _repaired_1acb(tmp_path)
+    assert any("(chain I: 7)" in line for line in said), said

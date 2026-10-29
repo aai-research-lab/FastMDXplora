@@ -350,6 +350,9 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
                        if not ignoring or residue.name.upper() not in ignoring)
             for index, chain in enumerate(fixer.topology.chains())
         }
+        # Said by the chain's ID: 1ACB's "chain 1: 7" was its chain I.
+        chain_ids = {index: getattr(chain, "id", "") or str(index)
+                 for index, chain in enumerate(fixer.topology.chains())}
     except (AttributeError, TypeError):
         return
 
@@ -374,7 +377,7 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
         return
 
     summary = ", ".join(
-        f"chain {index}: {count}" for index, count in sorted(dropped.items())
+        f"chain {chain_ids.get(index, index)}: {count}" for index, count in sorted(dropped.items())
     )
     logger.info(
         "Not building %d unresolved residue(s) at chain termini (%s). They "
@@ -385,6 +388,111 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
         sum(dropped.values()), summary,
     )
     fixer.missingResidues = kept
+
+
+#: The farthest apart, in angstrom, two alpha carbons one peptide bond
+#: apart can be: trans, and in a line no chain can quite reach.
+CA_CA_REACH_A = 3.8
+
+
+def _split_unbridgeable_gaps(fixer) -> None:
+    """End a chain where its gap is wider than the residues missing can reach.
+
+    1ACB's chymotrypsin is deposited as one chain E, numbered as its
+    zymogen, and missing Ser14 and Arg15: they are the dipeptide its
+    activation cuts out. Leu13 and Ile16 stand 17.9 A apart, and two
+    residues reach 11.4 A at most, so building them stretched a loop across
+    the protein and joined what activation cut, taking the free amine of
+    Ile16, the salt bridge to Asp194 that makes the enzyme active, with it.
+    Left unbuilt in one chain, OpenMM bonded Leu13 to Ile16 across the gap.
+
+    A gap no chain could close is a cut, so the chain is ended there and
+    its parts given their charged ends. A gap the missing residues could
+    close is still built: whether it was cut is not the structure's to say,
+    and chymotrypsin's other excised dipeptide, 147 and 148, is one.
+    """
+    missing = getattr(fixer, "missingResidues", None)
+    if not missing:
+        return
+    try:
+        chains = [list(chain.residues()) for chain in fixer.topology.chains()]
+        positions = fixer.positions
+    except (AttributeError, TypeError):
+        return
+
+    def alpha_carbon(residue):
+        for atom in residue.atoms():
+            if atom.name == "CA":
+                return positions[atom.index].value_in_unit(_angstrom())
+        return None
+
+    cuts: dict[int, list[int]] = {}
+    said: list[str] = []
+    for (chain_index, offset), names in missing.items():
+        residues = chains[chain_index] if chain_index < len(chains) else []
+        if not 0 < offset < len(residues):
+            continue
+        before, after = residues[offset - 1], residues[offset]
+        first, second = alpha_carbon(before), alpha_carbon(after)
+        if first is None or second is None:
+            continue
+        span = sum((a - b) ** 2 for a, b in zip(first, second)) ** 0.5
+        reach = (len(names) + 1) * CA_CA_REACH_A
+        if span > reach:
+            cuts.setdefault(chain_index, []).append(offset)
+            chain = before.chain.id
+            said.append(f"chain {chain} between {before.name}{before.id} and "
+                        f"{after.name}{after.id}, {span:.1f} A apart, where the "
+                        f"{len(names)} missing reach {reach:.1f} A at most")
+    if not cuts:
+        return
+
+    from openmm.app import Topology
+
+    old = fixer.topology
+    new = Topology()
+    new.setPeriodicBoxVectors(old.getPeriodicBoxVectors())
+    atoms, part_of, index_of = {}, {}, {}
+    for chain in old.chains():
+        target = new.addChain(chain.id)
+        part = 0
+        for position, residue in enumerate(chain.residues()):
+            if position in cuts.get(chain.index, ()):
+                target = new.addChain(chain.id)
+                part += 1
+            copy = new.addResidue(residue.name, target, residue.id, residue.insertionCode)
+            part_of[residue] = (chain.index, part)
+            for atom in residue.atoms():
+                atoms[atom] = new.addAtom(atom.name, atom.element, copy, atom.id)
+        for part in range(part + 1):
+            index_of[(chain.index, part)] = len(index_of)
+    for bond in old.bonds():
+        first, second = bond[0], bond[1]
+        if part_of[first.residue] != part_of[second.residue] \
+                and first.residue.chain is second.residue.chain:
+            continue
+        new.addBond(atoms[first], atoms[second], bond.type, bond.order)
+
+    scheduled: dict = {}
+    for (chain_index, offset), names in missing.items():
+        ends = sorted(cuts.get(chain_index, ()))
+        if offset in ends:
+            continue
+        part = sum(1 for end in ends if end < offset)
+        start = ends[part - 1] if part else 0
+        scheduled[(index_of[(chain_index, part)], offset - start)] = names
+    fixer.topology = new
+    fixer.missingResidues = scheduled
+    logger.warning(
+        "Ended the chain at %d gap(s) wider than the residues missing could "
+        "close: %s. A chain is cut there, as activation cuts chymotrypsin; "
+        "the residues are not built across it and each part has its charged "
+        "ends.", len(said), "; ".join(said))
+
+
+def _angstrom():
+    from openmm.unit import angstrom
+    return angstrom
 
 
 #: One-letter to three-letter, for reading the convention people write
@@ -808,6 +916,7 @@ def fix_pdb_with_pdbfixer(
     _drop_untemplated_gaps(fixer)
     _drop_terminal_extensions(fixer, build_termini=build_missing_termini,
                               ignoring=around)
+    _split_unbridgeable_gaps(fixer)
     observe_fixer(audit, "missing_residue_schedule", fixer,
                   lambda: {
                       "scheduled": [

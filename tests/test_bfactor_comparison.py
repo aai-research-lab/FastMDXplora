@@ -70,6 +70,16 @@ class TestReadingTheColumn:
         assert not has_crystallographic_bfactors(
             _pdb(tmp_path, values, name="sparse.pdb"))
 
+    def test_one_value_on_every_atom_is_not_a_b_factor(self, tmp_path):
+        """2JOF's NMR models write 20.00 on every atom."""
+        assert not has_crystallographic_bfactors(
+            _pdb(tmp_path, [20.0] * 8, name="flat.pdb"))
+
+    def test_a_solution_nmr_model_has_none(self, tmp_path):
+        path = _pdb(tmp_path, [12.0, 20.0, 35.0, 18.0, 22.0, 30.0], name="nmr.pdb")
+        path.write_text("EXPDTA    SOLUTION NMR\n" + path.read_text())
+        assert not has_crystallographic_bfactors(path)
+
 
 def _traj(amplitudes, n_frames=300, seed=0):
     """A chain of alpha carbons, each jittering by its own amount."""

@@ -90,12 +90,22 @@ def has_crystallographic_bfactors(path: str | Path) -> bool:
     against a column of zeros is not a comparison. One non-zero value is
     not enough either: a file where a handful of atoms carry a placeholder
     would pass, so this asks that most of them do.
+
+    Nor does a column of one value, or a solution NMR model's. 2JOF's 28
+    models write 20.00 on every atom, and its fluctuations were correlated
+    against that constant and reported; an NMR ensemble is refined against
+    restraints, not against a density whose spread a B-factor measures.
     """
     try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
         values = list(bfactors_from_pdb(path).values())
     except OSError:
         return False
-    if len(values) < 3:
+    if len(values) < 3 or len(set(values)) == 1:
+        return False
+    method = next((line[10:].upper() for line in text.splitlines()
+                   if line.startswith("EXPDTA")), "")
+    if "NMR" in method:
         return False
     return float(np.mean(np.array(values) > 0.0)) > 0.5
 
