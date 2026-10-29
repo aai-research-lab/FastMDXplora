@@ -48,6 +48,9 @@ _CONFIDENCE = {
     "perceived": "inferred from the coordinates -- bond orders are a guess",
 }
 
+#: The routes, strongest first.
+_ROUTES = tuple(_CONFIDENCE)
+
 
 @dataclass(frozen=True)
 class ResolvedChemistry:
@@ -329,6 +332,47 @@ def deposit_perceived_chemistry(
     return target
 
 
+def _copies(topology: Any, atom_indices: Any) -> list[list[int]] | None:
+    """The ligand's atoms copy by copy, where it is more than one residue.
+
+    4DFR holds methotrexate in both its chains. The setup's SDF is one
+    molecule and matched neither copy as the pair, so the pair went to
+    perception, whose bond-order search over two molecules at once ran
+    past the run's 25 minutes without an answer.
+    """
+    order = [int(i) for i in atom_indices]
+    groups: dict[int, list[int]] = {}
+    for index in order:
+        groups.setdefault(topology.atom(index).residue.index, []).append(index)
+    if len(groups) < 2:
+        return None
+    copies = list(groups.values())
+    # The combined molecule's atoms are its copies' in turn, which is the
+    # selection's order only where each copy's atoms come together.
+    if [i for copy in copies for i in copy] != order:
+        return None
+    return copies
+
+
+def _combined(parts: list[ResolvedChemistry]) -> ResolvedChemistry:
+    """One chemistry for several copies, atoms in the copies' order."""
+    from rdkit import Chem
+
+    mol = parts[0].mol
+    for part in parts[1:]:
+        mol = Chem.CombineMols(mol, part.mol)
+    first = parts[0]
+    # The weakest route any copy took is the claim the whole can make.
+    weakest = max(parts, key=lambda part: _ROUTES.index(part.source)
+                  if part.source in _ROUTES else len(_ROUTES))
+    return ResolvedChemistry(
+        mol, weakest.source,
+        f"{len(parts)} copies, each resolved alone: {weakest.detail}",
+        first.resname, mol.GetNumAtoms(),
+        charge_was_ambiguous=any(part.charge_was_ambiguous for part in parts),
+    )
+
+
 def resolve_ligand_chemistry(
     traj: Any,
     resname: str,
@@ -373,6 +417,13 @@ def resolve_ligand_chemistry(
     ValueError
         Where no route works, saying which would.
     """
+    copies = _copies(traj.topology, atom_indices)
+    if copies:
+        return _combined([
+            resolve_ligand_chemistry(traj, resname, copy, supplied=supplied,
+                                     run_dir=run_dir, net_charge=net_charge)
+            for copy in copies])
+
     tried: list[str] = []
     # Read only where there is a file to match against it.
     topology = traj.topology if (supplied or run_dir) else None

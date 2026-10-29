@@ -107,3 +107,40 @@ class TestNothingIsFetched:
         chemistry = resolve_ligand_chemistry(traj, "LIG", lig, net_charge=-1)
         assert chemistry.source == "perceived"
         assert calls == []
+
+
+def _two_acetates_beside_two_arginines():
+    """The acetate above in two copies, as 4DFR holds methotrexate in both
+    its chains, each 0.44 nm from an arginine of its own."""
+    one, _lig, _arg = _acetate_beside_arginine()
+    topology = md.Topology()
+    xyz = []
+    for shift in (0.0, 3.0):
+        residue = topology.add_residue("LIG", topology.add_chain())
+        for atom, position in zip(list(one.topology.atoms)[:7], one.xyz[0][:7]):
+            topology.add_atom(atom.name, atom.element, residue)
+            xyz.append(position + (shift, 0, 0))
+    for shift in (0.0, 3.0):
+        residue = topology.add_residue("ARG", topology.add_chain())
+        for atom, position in zip(list(one.topology.atoms)[7:], one.xyz[0][7:]):
+            topology.add_atom(atom.name, atom.element, residue)
+            xyz.append(position + (shift, 0, 0))
+    listed = list(topology.atoms)
+    for start in (0, 7):
+        for i, j in ((0, 1), (1, 2), (1, 3), (0, 4), (0, 5), (0, 6)):
+            topology.add_bond(listed[start + i], listed[start + j])
+    return md.Trajectory(np.array([xyz], dtype=float), topology), list(range(14)), list(range(14, 22))
+
+
+class TestEachCopyIsMatchedAlone:
+    def test_a_file_of_one_copy_resolves_both(self, tmp_path):
+        """4DFR's MTX.sdf is one molecule and matched neither copy as the
+        pair, so the pair went to perception, which ran past 25 minutes."""
+        traj, lig, arg = _two_acetates_beside_two_arginines()
+        chemistry = resolve_ligand_chemistry(
+            traj, "LIG", lig, supplied=_sdf_with_hydrogens_interleaved(tmp_path / "a.sdf"))
+        assert chemistry.source == "supplied"
+        assert chemistry.n_atoms == 14
+        _positive, negative = ligand_charged_groups(chemistry, lig)
+        assert sorted(sorted(group) for group in negative) == [[2, 3], [9, 10]]
+        assert len(salt_bridges(traj, chemistry, lig, arg, periodic=False)) == 2

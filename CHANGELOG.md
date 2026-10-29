@@ -9,6 +9,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A ligand held in more than one copy has its chemistry resolved copy by
+  copy. 4DFR holds methotrexate in both chains; the setup's SDF is one
+  molecule and matched neither copy as the pair, so the pair went to bond
+  perception from the coordinates, which ran on for 22 minutes inside
+  `pl_interactions` until the run was stopped. Each copy now matches the
+  setup's file, and the interactions take half a second.
 - A gap in a chain wider than its missing residues could reach is left a
   cut, and each part given its charged ends. 1ACB's chymotrypsin is one
   chain E without Ser14 and Arg15, the dipeptide its activation cuts out;
