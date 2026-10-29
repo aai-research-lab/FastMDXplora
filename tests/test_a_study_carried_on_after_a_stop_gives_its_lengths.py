@@ -113,7 +113,7 @@ class TestAPieceStoppedBetweenCheckpoints:
         record = json.loads((root / "simulation" / "simulation_parameters.json")
                             .read_text(encoding="utf-8"))
         text = methods_paragraphs(root, {}, record)
-        assert ("Production dynamics were run for 13.3 ps (the length by the "
+        assert ("Production dynamics were run for 13.33 ps (the length by the "
                 "integrator's own clock, summed over 3 pieces)") in text
         assert "16.7 ps" not in text
 

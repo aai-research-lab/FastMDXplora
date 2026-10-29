@@ -146,24 +146,119 @@ def _nm(value: Any) -> str:
 
 
 def _ps_said(ps: float) -> str:
-    return f"{ps / 1000:.3g} ns" if ps >= 1000 else f"{ps:.3g} ps"
+    """A clock's length with two decimals at every scale, as 3.29 ps is said:
+    10.02 ps and 10.02 ns, not "10 ps" and "10 ns", and 0.50 ps below 1 ps.
+    Rounded before its unit is chosen, so 999.996 ps is 1.00 ns, not
+    "1000.00 ps", and 0.9996 ps is 1.00 ps, not "1 ps"."""
+    if round(ps, 2) >= 1000:
+        return f"{ps / 1000:.2f} ns"
+    if ps > 0 and round(ps, 2) == 0:
+        # Too short for two decimals of ps: said in fs.
+        return f"{ps * 1000:.2f} fs"
+    return f"{ps:.2f} ps"
 
 
 def _ns_said(ns: float) -> str:
     return f"{ns:.3g} ns" if ns >= 1 else f"{ns * 1000:.3g} ps"
 
 
-def _unwritten_simulation(root: Path) -> dict[str, Any]:
+def _unwritten_simulation(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """The simulation record of a study carried on in pieces whose first
-    piece never wrote its own (`lengths.unwritten_record`); empty for any
-    other study, or one whose records may not be read here."""
+    piece never wrote its own, and where each part came from
+    (`lengths.unwritten_record`); empty for any other study, or one whose
+    records may not be read here."""
     from fastmdxplora.refusals import OutsideWorkspace
     from fastmdxplora.simulation.lengths import unwritten_record
 
     try:
-        return unwritten_record(root)[0]
+        return unwritten_record(root)
     except (OSError, ValueError, OutsideWorkspace):
-        return {}
+        return {}, {}
+
+
+def _started_from(record: dict[str, Any]) -> str | None:
+    """Where a study's own record or config says it was started from,
+    another study's checkpoint, as the methods say it: "the study `X`", by
+    the folder's name alone (the path is the machine's), or "another study"
+    where the name is not a study's; None where it was not started so.
+
+    One name per origin: the checkpoint's own record's study (the record's
+    ``continues.study``, from the sidecar) where it is there, else the study
+    folder of ``simulation.resume_from``, which is a study's only in its
+    layout, ``<study>/simulation/<checkpoint>.chk`` (or a
+    ``segment-NNN``'s). Nothing outside the study is opened to tell.
+    """
+    import re
+    from pathlib import PurePath
+
+    parameters = record.get("parameters") if isinstance(record, dict) else None
+    named = parameters.get("resume_from") if isinstance(parameters, dict) else None
+    continues = record.get("continues") if isinstance(record, dict) else None
+    name = None
+    if isinstance(continues, dict) and isinstance(continues.get("study"), str) \
+            and continues["study"]:
+        folder = PurePath(continues["study"])
+        if re.fullmatch(r"segment-\d+", folder.name):
+            folder = folder.parent
+        name = folder.name or None
+    elif isinstance(named, str) and named:
+        parts = PurePath(named.replace("\\", "/")).parts
+        if len(parts) >= 3 and parts[-2] == "simulation" and parts[-1].endswith(".chk"):
+            owner = parts[-3]
+            if re.fullmatch(r"segment-\d+", owner):
+                owner = parts[-4] if len(parts) >= 4 else ""
+            name = owner if owner not in ("", "/", "~", ".", "..") else None
+    else:
+        return None
+    if not name:
+        return "another study"
+    # A backtick in the name would end the code span early.
+    return (f"the study `` {name} ``" if "`" in name else f"the study `{name}`")
+
+
+def _platforms_said(platforms: dict[str, Any]) -> str:
+    """Each piece's platform (``{"the first piece": X or None, "segment-NNN":
+    Y, ...}``), the first piece's said not recorded where it is None."""
+    first = platforms.get("the first piece")
+    later = [(name, used) for name, used in platforms.items() if name != "the first piece"]
+    if first is not None:
+        return ("The platform differed between pieces: "
+                + ", ".join(f"{used} for {name}" for name, used in platforms.items()) + ".")
+    if len({used for _, used in later}) == 1:
+        names = [name for name, _ in later]
+        numbers = [int(name[8:]) for name in names]
+        if len(names) == 1:
+            which = names[0]
+        elif numbers == list(range(numbers[0], numbers[0] + len(numbers))):
+            which = f"{names[0]} to {names[-1]}"
+        else:
+            which = ", ".join(names[:-1]) + " and " + names[-1]
+        return (f"Simulations used OpenMM on the {later[0][1]} platform for {which}; the "
+                "first piece's platform is not recorded.")
+    return ("The first piece's platform is not recorded; "
+            + ", ".join(f"{name} ran on {used}" if index == 0 else f"{name} on {used}"
+                        for index, (name, used) in enumerate(later)) + ".")
+
+
+def _equilibrates(record: dict[str, Any]) -> bool:
+    """Whether a record gives either equilibration stage any steps."""
+    from fastmdxplora.simulation.lengths import stage_lengths
+
+    lengths = stage_lengths(record)
+    return any(lengths[stage]["steps"] for stage in ("nvt", "npt"))
+
+
+def _stopped_before_its_record(root: Any) -> bool:
+    """Whether a study's simulation ran and stopped before writing its
+    record: a checkpoint's record or an energy log, and no record."""
+    from fastmdxplora import record_access
+
+    if root is None:
+        return False
+    folder = Path(root) / "simulation"
+    return not record_access.is_file(folder / "simulation_parameters.json") and any(
+        record_access.is_file(folder / name)
+        for name in ("checkpoint.chk.json", "energy.csv", "equilibration_energy.csv"))
 
 
 def _steps_to_ns(steps: Any, timestep_fs: Any) -> str:
@@ -355,7 +450,9 @@ def methods_paragraphs(
         # A study whose first piece was stopped before writing its record,
         # then carried on in pieces: what it ran is in its config. It said
         # "simulation did not run, or recorded nothing" of a study that ran.
-        sim = _unwritten_simulation(Path(project_root))
+        sim, unwritten_from = _unwritten_simulation(Path(project_root))
+    else:
+        unwritten_from = {}
     record = sim if isinstance(sim, dict) else {}
     # From the whole record, before it is flattened: the runner's own answer
     # where it gave one, and its resolver over what it recorded where not.
@@ -625,6 +722,18 @@ def methods_paragraphs(
         seed = _get(sim, "random_seed")
 
         protocol = []
+        started_from = _started_from(record)
+        if started_from is not None:
+            # A study started from another study's checkpoint, named by its
+            # folder alone: a private path is not a methods section's. A
+            # checkpoint written before production is minimised and
+            # equilibrated from, so production continued only where
+            # nothing ran before it.
+            if not _get(sim, "minimize", default=True) and not _equilibrates(record):
+                protocol.append(f"Production continued from the checkpoint of {started_from}; "
+                                "no minimisation or equilibration was run.")
+            else:
+                protocol.append(f"The run started from the checkpoint of {started_from}.")
         if _get(sim, "minimize", default=True):
             protocol.append("The system was energy-minimized before dynamics.")
 
@@ -766,10 +875,15 @@ def methods_paragraphs(
         if stages:
             protocol.append("Equilibration comprised " + " followed by ".join(stages) + ".")
         if unrecorded:
+            from fastmdxplora.simulation.lengths import NOT_READ
+
+            unread = all(unwritten_from.get(name.lower()) == NOT_READ for name in unrecorded)
             protocol.append(
                 f"The {'lengths' if len(unrecorded) > 1 else 'length'} of the "
                 f"{' and '.join(unrecorded)} equilibration "
-                + ("stages are" if len(unrecorded) > 1 else "stage is") + " not recorded.")
+                + ("stages are" if len(unrecorded) > 1 else "stage is")
+                + (" not read, the first piece's live status and log being linked out of "
+                   "the study." if unread else " not recorded."))
         production_said = stage_said("production")
         if own_step and lengths["production"]["steps"] is not None:
             production = lengths["production"]["steps"]
@@ -784,8 +898,8 @@ def methods_paragraphs(
         clock = production_clock(project_root) if own_step else None
         if own_step and (production or clock["ps"] is not None or clock["pieces"] > 1):
             pieces = clock["pieces"]
-            in_pieces = (f", in {pieces} pieces each continuing from the checkpoint of "
-                         "the one before" if pieces > 1 else "")
+            in_pieces = (", each piece continuing from the checkpoint of the one before"
+                         if pieces > 1 else "")
             stopped = (("; the last piece to its last checkpoint" if pieces > 1
                         else "; to its last checkpoint") if clock["stopped"] else "")
             if clock["ps"] is not None:
@@ -797,15 +911,17 @@ def methods_paragraphs(
                             f"in the {production_ensemble.upper()} ensemble{in_pieces}.")
             elif pieces > 1:
                 sentence = (f"Production ran in the {production_ensemble.upper()} ensemble"
-                            f"{in_pieces}; its length in time is "
+                            f", in {pieces} pieces each continuing from the checkpoint of "
+                            "the one before; its length in time is "
                             + ("not read, a piece's records being linked out of the study."
                                if clock["source"] == "not read" else "not recorded."))
             else:
                 sentence = (f"Production dynamics were run for {length_of(production)} "
                             "(its length in time not recorded) in the "
                             f"{production_ensemble.upper()} ensemble.")
-            protocol.append(sentence + " The integrator chose its own step, so the "
-                            "equilibration is given in steps.")
+            # Said only where a stage was given in steps.
+            protocol.append(sentence + (" The integrator chose its own step, so the "
+                                        "equilibration is given in steps." if stages else ""))
         elif extended and production != 0:
             # Summed over the pieces, whatever the first piece's record
             # holds: a study read from its pieces may have no plan at all.
@@ -874,7 +990,13 @@ def methods_paragraphs(
                 f"Coordinates were written every "
                 f"{length_of(interval)}."
             )
-        if platform:
+        platforms = record.get("platforms")
+        if isinstance(platforms, dict) and platforms:
+            # Each piece chose its own: one platform said of the study would
+            # be one piece's hardware, and a segment's is never said as the
+            # first piece's.
+            protocol.append(_platforms_said(platforms))
+        elif platform:
             protocol.append(
                 f"Simulations used OpenMM on the {platform} platform"
                 + (f" in {precision} precision" if precision else "")
@@ -924,6 +1046,11 @@ def methods_paragraphs(
             parts.append(sentence)
 
     gaps = missing_from_methods(setup, sim)
+    if not sim and _stopped_before_its_record(project_root):
+        # It ran, and stopped before writing what it ran: not "did not run".
+        gaps = [("simulation protocol (the simulation stopped before writing its "
+                 "record, and has not been carried on)") if gap.startswith(
+                     "simulation protocol") else gap for gap in gaps]
     if gaps:
         parts.append(
             "**Not recorded.** This run does not supply "

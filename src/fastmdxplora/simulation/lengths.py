@@ -114,6 +114,10 @@ def stage_lengths(record: dict) -> dict:
                 # The runner's plan: the steps that length would be at the
                 # timestep (`runner.plan_stages`), each of whatever size.
                 steps = steps_in(given, timestep)
+            if steps == 0:
+                # No step is no time, whoever chose the step.
+                said[stage] = {"ns": 0.0, "steps": 0, "source": FROM_STEPS}
+                continue
             said[stage] = {"ns": None, "steps": steps, "source": NOT_RECORDED,
                            "said": f"{parameters.get('integrator')} chose its own "
                                    "step, so the stage's length in time is not "
@@ -319,7 +323,17 @@ MINIMIZED_RECORD = "simulation/state_minimized.xml"
 
 #: What `read_from` names a record for.
 READ_FROM = ("integrator", "timestep_fs", "nvt", "npt", "production", "pressure",
-             "minimize")
+             "minimize", "settings")
+
+#: The run settings every piece of a study runs at, its config's, which a
+#: piece's record gives where the study's own does not: the temperature,
+#: the friction, the barostat's interval and the frame interval.
+_PIECE_SETTINGS = ("temperature_K", "friction_per_ps", "barostat_frequency",
+                   "trajectory_interval_steps")
+#: What each piece chose for itself (``auto`` picks per machine), so the
+#: first piece's are its own live status's: the platform and precision.
+_HARDWARE = ("platform", "precision")
+_RUN_SETTINGS = _PIECE_SETTINGS + _HARDWARE
 
 
 def own_read_from(record: dict) -> dict:
@@ -338,48 +352,133 @@ def own_read_from(record: dict) -> dict:
         holds[stage] = (_number(parameters.get(ns_key)) is not None
                         or _count(resolved.get(steps_key)) is not None
                         or _count(parameters.get(steps_key)) is not None)
-    return {key: OWN_RECORD if holds[key] else None for key in READ_FROM}
+    read_from = {key: OWN_RECORD if holds.get(key) else None for key in READ_FROM}
+    given = {key: parameters.get(key) if parameters.get(key) is not None
+             else resolved.get(key) for key in _PIECE_SETTINGS}
+    given["platform"] = (record.get("platform_used")
+                         if record.get("platform_used") not in (None, "auto")
+                         else parameters.get("platform")
+                         if parameters.get("platform") not in (None, "auto") else None)
+    given["precision"] = parameters.get("precision")
+    read_from["settings"] = {key: OWN_RECORD for key, value in given.items()
+                             if value is not None}
+    return read_from
 
 
-def _inside(root: object, named: object) -> bool:
-    """Whether a path a config names lies in the study (by name: nothing is
-    opened to tell)."""
-    import os
-    from pathlib import Path
+def _first_piece_status(root: object) -> tuple[dict | None, bool]:
+    """The first piece's own live status, and whether a read held to the
+    study refused it. One whose ``current_checkpoint_path`` is a piece's
+    (``segment-NNN/simulation/checkpoint.chk``) is that piece's, not the
+    first piece's, and is not taken."""
+    import json
+    import re
+    from pathlib import PurePath
 
-    path = Path(str(named)).expanduser()
-    path = Path(os.path.normpath(path if path.is_absolute() else Path(str(root)) / path))
-    base = Path(os.path.normpath(os.path.abspath(str(root))))
-    return path == base or base in path.parents
+    from fastmdxplora import record_access
+
+    refused = _refused(root / STATUS_RECORD)
+    try:
+        status = json.loads(record_access.read_text(root / STATUS_RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, refused
+    if not isinstance(status, dict):
+        return None, refused
+    named = status.get("current_checkpoint_path")
+    if isinstance(named, str) and re.fullmatch(
+            r"segment-\d+", PurePath(named).parent.parent.name) is not None:
+        return None, refused
+    return status, refused
 
 
 def _planned_steps(root: object) -> tuple[dict, str | None]:
     """The steps the first piece planned for each stage, as its own live
-    status or its log says them, and which record."""
-    import json
+    status or its log says them, and which record: "not read" where none
+    is found and either of them is linked out of the study."""
     import re
 
     from fastmdxplora import record_access
 
-    try:
-        status = json.loads(record_access.read_text(root / STATUS_RECORD, encoding="utf-8"))
-    except (OSError, ValueError):
-        status = None
-    if isinstance(status, dict):
+    status, refused = _first_piece_status(root)
+    if status is not None:
         planned = {f"{stage}_steps": _count(status.get(f"{stage}_steps_planned"))
                    for stage, _, _ in STAGES}
         if any(value is not None for value in planned.values()):
             return planned, STATUS_RECORD
+    refused = refused or _refused(root / LOG_RECORD)
     try:
         log = record_access.read_text(root / LOG_RECORD, encoding="utf-8")
     except (OSError, ValueError):
-        return {}, None
+        return {}, (NOT_READ if refused else None)
     planned = {}
     for key, title in (("nvt_steps", "NVT equilibration"), ("npt_steps", "NPT equilibration"),
                        ("production_steps", "Production")):
         found = re.search(rf"^{title}: ([0-9][0-9,]*) steps$", log, re.M)
         planned[key] = int(found.group(1).replace(",", "")) if found else None
-    return (planned, LOG_RECORD) if any(v is not None for v in planned.values()) else ({}, None)
+    if any(v is not None for v in planned.values()):
+        return planned, LOG_RECORD
+    return {}, (NOT_READ if refused else None)
+
+
+def _segment_configs_resume_from(root: object) -> list:
+    """The ``simulation.resume_from`` each ``segment-NNN.yml`` beside the
+    study's pieces names."""
+    import re
+
+    import yaml
+
+    from fastmdxplora import record_access
+
+    named = []
+    try:
+        configs = [f for f in record_access.glob(root, "segment-*.yml")
+                   if re.fullmatch(r"segment-\d+\.yml", f.name)]
+    except OSError:
+        return named
+    for path in configs:
+        try:
+            config = yaml.safe_load(record_access.read_text(path, encoding="utf-8")) or {}
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+        simulation = config.get("simulation") if isinstance(config, dict) else None
+        if isinstance(simulation, dict) and simulation.get("resume_from"):
+            named.append(simulation["resume_from"])
+    return named
+
+
+def _a_piece_s(root: object, simulation: dict) -> bool:
+    """Whether a config with ``resume_from`` set is a piece's, written by
+    `fastmdx resume` (``resume_unsealed`` set, as it sets it, or the
+    checkpoint a ``segment-NNN.yml`` beside it names), or names a
+    checkpoint of this study's own pieces: inside the study, or, for a study
+    moved or copied, a ``simulation/checkpoint.chk`` (or a
+    ``segment-NNN``'s) under a folder of the study's name. Otherwise it is
+    the study's own, started from another study's checkpoint."""
+    import os
+    import re
+    from pathlib import Path, PurePath
+
+    if simulation.get("resume_unsealed") is True:
+        return True
+    named = simulation["resume_from"]
+    # The config `fastmdx resume` wrote for a piece is beside it, as
+    # `segment-NNN.yml`, naming the same checkpoint: wherever the study now
+    # is, under whatever name, and whatever its `resume_unsealed`.
+    if named in _segment_configs_resume_from(root):
+        return True
+    real = Path(os.path.realpath(str(root)))
+    try:
+        target = Path(os.path.realpath(os.path.expanduser(str(named))))
+    except (OSError, ValueError):
+        return True
+    if target == real or real in target.parents:
+        return True
+    parts = PurePath(str(named)).parts
+    if len(parts) >= 3 and parts[-2:] == ("simulation", "checkpoint.chk"):
+        owner = parts[-3]
+        if re.fullmatch(r"segment-\d+", owner) and len(parts) >= 4:
+            owner = parts[-4]
+        return owner == real.name
+    return PurePath(str(named)).name == real.name
 
 
 def unwritten_record(root: object) -> tuple[dict, dict]:
@@ -390,19 +489,30 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
 
     Read, best first:
 
-    - ``resolved_config.yml``, only where it is the study's own: a
-      ``simulation.resume_from`` naming a checkpoint in the study is a
-      piece's config, which `resume._extend_study` puts in its place while
-      the joined trajectory is analysed (no equilibration, the production
-      that piece ran);
+    - ``resolved_config.yml``, only where it is the study's own. A piece's
+      config, which `resume._extend_study` puts in its place while the
+      joined trajectory is analysed (no equilibration, the production that
+      piece ran), and which stays there where that analysis is stopped, is
+      told by what it is (:func:`_a_piece_s`), not only by the path it
+      names, which is the study's old one once the study is moved or
+      copied. A config whose ``resume_from`` is another study's checkpoint
+      is the study's own, started from there, and its zero equilibration is
+      what ran;
     - for each stage the config leaves unset, the steps the first piece
       planned, in its ``simulation/live_status.json``, else as its
       ``simulation.log`` says them;
-    - the integrator, the timestep and the pressure the barostat held, where
+    - the integrator, the timestep, the pressure the barostat held and the
+      run settings every piece runs at (:data:`_PIECE_SETTINGS`), where
       those leave them unset, from the first piece's record that holds them
       (``segment-NNN/simulation/...``), the timestep then from the study's
       checkpoint record; and whether it was minimized, where the config is
-      not read, from its minimized state.
+      not read, from its minimized state;
+    - the platform and precision, which each piece chose for itself, from
+      the first piece's own live status, else a platform the config names,
+      else the first piece's record that gives one; where the pieces' differ,
+      each piece's, as ``platforms`` (:func:`_platform`).
+
+    ``read_from["settings"]`` names the record each run setting came from.
 
     The stage lengths are never read from a piece's record, which holds the
     plan of that piece, not the study's. Empty for a study not carried on in
@@ -425,8 +535,11 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
         config = yaml.safe_load(record_access.read_text(root / CONFIG_RECORD,
                                                         encoding="utf-8")) or {}
         simulation = config.get("simulation") if isinstance(config, dict) else None
-        if isinstance(simulation, dict) and not (
-                simulation.get("resume_from") and _inside(root, simulation["resume_from"])):
+        # A piece's config, or the study's own where it was started from
+        # another study's checkpoint (whose zero equilibration is then its).
+        if isinstance(simulation, dict) and (
+                not simulation.get("resume_from")
+                or not _a_piece_s(root, simulation)):
             parameters = dict(simulation)
     except (OSError, ValueError, yaml.YAMLError):
         pass
@@ -435,6 +548,8 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
                        ("pressure", ("pressure_bar",)), ("minimize", ("minimize",))):
         if any(parameters.get(name) is not None for name in names):
             read_from[key] = CONFIG_RECORD
+    settings_from: dict = {key: CONFIG_RECORD for key in _PIECE_SETTINGS
+                           if parameters.get(key) is not None}
     resolved: dict = {}
     for stage, ns_key, steps_key in STAGES:
         if parameters.get(ns_key) is not None or parameters.get(steps_key) is not None:
@@ -446,6 +561,8 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
             if planned.get(f"{stage}_steps") is not None:
                 resolved[f"{stage}_steps"] = planned[f"{stage}_steps"]
                 read_from[stage] = where
+            elif where == NOT_READ:
+                read_from[stage] = NOT_READ
     for folder in pieces:
         try:
             piece = json.loads(record_access.read_text(
@@ -466,7 +583,16 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
             beside = {key: piece[key] for key in ("pressure_bar_used", "barostat")
                       if piece.get(key) is not None}
             read_from["pressure"] = f"{folder.name}/{OWN_RECORD}"
+        # The settings every piece runs at, as the integrator is.
+        held = (piece.get("resolved") if isinstance(piece.get("resolved"), dict) else {})
+        for key in _PIECE_SETTINGS:
+            value = given.get(key) if given.get(key) is not None else held.get(key)
+            if parameters.get(key) is None and value is not None:
+                parameters[key] = value
+                settings_from[key] = f"{folder.name}/{OWN_RECORD}"
         break
+    _platform(root, pieces, parameters, beside, settings_from)
+    read_from["settings"] = settings_from
     if read_from["timestep_fs"] is None:
         from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
@@ -479,10 +605,65 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
         # a piece carried on from a checkpoint is past it.
         parameters["minimize"] = record_access.is_file(root / MINIMIZED_RECORD)
         read_from["minimize"] = MINIMIZED_RECORD
-    if not any(read_from[key] for key in READ_FROM if key != "minimize"):
+    if not any(read_from[key] not in (None, NOT_READ) and read_from[key] != {}
+               for key in READ_FROM if key != "minimize"):
         return {}, dict.fromkeys(READ_FROM)
     return ({"parameters": parameters, **beside, **({"resolved": resolved} if resolved else {})},
             read_from)
+
+
+def _platform(root: object, pieces: list, parameters: dict, beside: dict,
+              settings_from: dict) -> None:
+    """The platform and precision a study ran on, where its own record was
+    never written. The first piece's is its own live status's, else a
+    platform the config names; a later piece's is its record's, said by its
+    folder. One platform for the study only where the first piece's is
+    known and every piece's agrees; otherwise each piece's, as
+    ``platforms``, the first piece's None where it is not recorded: a
+    segment's platform is never said as the first piece's."""
+    import json
+
+    from fastmdxplora import record_access
+
+    status, _ = _first_piece_status(root)
+    status = status or {}
+    first = status.get("platform") if isinstance(status.get("platform"), str) else None
+    each: dict = {}
+    for folder in pieces:
+        try:
+            piece = json.loads(record_access.read_text(folder / OWN_RECORD, encoding="utf-8"))
+        except (OSError, ValueError):
+            piece = None
+        used = piece.get("platform_used") if isinstance(piece, dict) else None
+        if isinstance(used, str) and used != "auto":
+            each[folder.name] = (used, f"{folder.name}/{OWN_RECORD}")
+    if first is not None:
+        beside["platform_used"] = first
+        settings_from["platform"] = STATUS_RECORD
+        if isinstance(status.get("precision"), str) and status.get("precision_applied") is not False:
+            parameters["precision"] = status["precision"]
+            settings_from["precision"] = STATUS_RECORD
+    elif parameters.get("platform") not in (None, "auto"):
+        settings_from["platform"] = CONFIG_RECORD
+        first = parameters["platform"]
+    if first is not None and parameters.get("precision") is not None \
+            and "precision" not in settings_from:
+        settings_from["precision"] = CONFIG_RECORD
+    if first is not None and all(used == first for used, _ in each.values()):
+        return
+    # The first piece's not known, or a piece's differing: each piece's.
+    beside["platform_used"] = None
+    parameters["platform"] = None
+    parameters.pop("precision", None)
+    settings_from.pop("precision", None)
+    if not each and first is None:
+        settings_from.pop("platform", None)
+        return
+    beside["platforms"] = {"the first piece": first,
+                           **{name: used for name, (used, _) in each.items()}}
+    settings_from["platform"] = ", ".join(
+        ([settings_from["platform"]] if first is not None else [])
+        + [where for _, where in each.values()])
 
 
 def last_piece_stopped(root: object) -> bool:
@@ -557,6 +738,11 @@ def recorded_stage_lengths(study: object) -> dict:
     root = Path(str(study))
     if _held():
         return _recorded(root)
+    # The folder named is the study, reached through a link or not: held to
+    # the name as given, every record of a study named through a link
+    # resolved outside it, and nothing was read. A link inside the study
+    # still leads out of the resolved folder, and is refused.
+    root = root.resolve()
     with record_access.confined_records(root, lambda _path: True):
         return _recorded(root)
 
@@ -594,12 +780,17 @@ def _recorded(root: object) -> dict:
             said[stage]["source"] = NOT_READ
     elif unwritten:
         for stage, _, _ in STAGES:
-            if read_from[stage]:
+            if read_from[stage] == NOT_READ:
+                said[stage] = {**said[stage], "source": NOT_READ,
+                               "said": "not read: the first piece's live status and "
+                                       "log are linked out of the study"}
+            elif read_from[stage]:
                 said[stage]["said"] = (
                     f"from {read_from[stage]}: the study's simulation record was not "
                     "written, its first piece stopped before writing it"
                     + ("; the study's whole production, as its config gives it"
                        if stage == "production" and read_from[stage] == CONFIG_RECORD
+                       else "; the first piece's plan" if stage == "production"
                        else "")
                     + (f"; {said[stage]['said']}" if said[stage].get("said") else ""))
 
@@ -617,6 +808,8 @@ def _recorded(root: object) -> dict:
         extended, refused = None, True
         said["production_ran_ns"], said["production_ran_source"] = None, NOT_READ
         said["frames_saved"], said["frames_saved_source"] = None, NOT_READ
+        # Its pieces are counted by their folders, a refused one among them.
+        said["pieces"] = 1 + len(_segments(root))
     # The plan the production's steps are: the first piece's, from the
     # study's own record or the first piece's status; the whole study's,
     # from its config; none, where nothing gave them.
@@ -626,7 +819,7 @@ def _recorded(root: object) -> dict:
         ("planned_steps", "the whole study's plan, as its config gives it")
         if production_from == CONFIG_RECORD else
         ("first_piece_steps", f"the first piece's plan, as its {production_from} gives it")
-        if production_from else (None, None))
+        if production_from in (STATUS_RECORD, LOG_RECORD) else (None, None))
     stopped = last_piece_stopped(root)
     if extended:
         total, pieces = extended

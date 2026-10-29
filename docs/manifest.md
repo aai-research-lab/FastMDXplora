@@ -220,26 +220,27 @@ the settings' names, and where it came from:
 }
 ```
 
-"set" is a length the study gave in ns; "from steps and timestep" is the run's
-step count times its timestep, which is how a stage left to its default is
-recorded; "not recorded" is a length the record does not hold, written as
-`null`, never 0. It is outside `resolved`, so `resolved_config.yml` does not
-give a stage's steps and its duration both. To read any study's lengths,
-older records included, use
+"set" is a length the study gave in ns; "from steps and timestep" is the
+run's step count times its timestep, which is how a stage left to its
+default is recorded; "not recorded" is a length the record does not hold,
+written as `null`, never 0. It is outside `resolved`, so
+`resolved_config.yml` does not give a stage's steps and its duration both.
+To read any study's lengths, older records included, use
 `fastmdxplora.simulation.lengths.recorded_stage_lengths(study)`: each stage
 with its source, what production ran and the frames saved (for a study
 extended in pieces, summed over them, with the number of pieces), and for
 every mean an analysis recorded the frames left after its equilibration
-discard (each `{"frames", "unit", "discarded", "kept"}`, `unit` "samples" for
-thermodynamics' quantities). A variable-step integrator chose its own step, so
-its equilibration stages have no length in time ("not recorded"), and its
-production is read from the run's own clock, each piece's summed ("from the
-run's clock"), as the methods give it, its `steps` then `null` and the
-first piece's plan given as `first_piece_steps`; where a length given in ns
-and the steps the run ran disagree, the steps are what ran, and said so.
-A variable-step run's own record gives its production by its clock too,
-`duration_ns` "from the run's clock"; its `duration_ns_actual` is steps
-times the timestep, not its length.
+discard (each `{"frames", "unit", "discarded", "kept"}`, `unit` "samples"
+for thermodynamics' quantities). A variable-step integrator chose its own
+step, so its equilibration stages have no length in time ("not recorded"),
+and its production is read from the run's own clock, each piece's summed
+("from the run's clock"), as the methods give it, its `steps` then `null`
+and the plan beside it as `first_piece_steps` (the first piece's), or as
+`planned_steps` (the whole study's, for a study read from its config); where
+a length given in ns and the steps the run ran disagree, the steps are what
+ran, and said so. A variable-step run's own record gives its production by
+its clock too, `duration_ns` "from the run's clock"; its
+`duration_ns_actual` is steps times the timestep, not its length.
 
 A piece stopped before its end is read at its last checkpoint, the step in
 `checkpoint.chk.json` that the next piece continued from, by its energy
@@ -251,19 +252,45 @@ last piece that stopped is said as its production to its last checkpoint.
 A study carried on in pieces whose first piece was stopped before writing
 its simulation record is read from:
 
-- its `resolved_config.yml`, where that is the study's own: a config whose
-  `simulation.resume_from` names a checkpoint in the study is a piece's,
-  put there while the joined trajectory is analysed;
+- its `resolved_config.yml`, where that is the study's own: a piece's
+  config, put there while the joined trajectory is analysed and left there
+  where that analysis is stopped, is told by what it is (`resume_unsealed`
+  set, the checkpoint a `segment-NNN.yml` beside it names, or a
+  `resume_from` in the study or under a folder of its name), not only by
+  the path it names, which is the old one once the study is moved or
+  copied. A config whose `resume_from` is another study's checkpoint is
+  the study's own, and its zero equilibration is what ran;
 - for a stage the config leaves unset, the steps the first piece planned,
   in `simulation/live_status.json` (`nvt_steps_planned`,
-  `npt_steps_planned`), else as `simulation/simulation.log` says them;
-- its first piece's record, for the integrator, the timestep and the
-  pressure, then its checkpoint's for the timestep.
+  `npt_steps_planned`; not one whose `current_checkpoint_path` is a
+  piece's), else as `simulation/simulation.log` says them; a production
+  read there is said as the first piece's plan;
+- its first piece's record, for the integrator, the timestep, the pressure
+  and the run settings every piece runs at (temperature, friction, the
+  barostat's interval, the frame interval), then its checkpoint's for the
+  timestep;
+- the platform and precision, which each piece chose for itself: the first
+  piece's from its own live status, else a platform the config names; each
+  later piece's from its record, said by its folder. One platform is said
+  for the study only where the first piece's is known and every piece's
+  agrees; otherwise each piece's, the first piece's said not recorded
+  where it is not found.
+
+The methods of a study started from another study's checkpoint say so: by
+the folder's name alone, the study the checkpoint's own record names, else
+the study folder of `resume_from` where its layout is a study's
+(`<study>/simulation/<checkpoint>.chk`), else "another study". Where nothing
+ran before production they say production continued from it, with no
+minimisation or equilibration; otherwise that the run started from it.
 
 `read_from` names the record each of `integrator`, `timestep_fs`, `nvt`,
 `npt`, `production`, `pressure` and `minimize` came from, `null` for one no
-record holds. A study not carried on in pieces is not read from its config:
-its simulation may never have run.
+record holds, "not read" for a stage whose live status or log is linked out
+of the study and nothing else gives it; `settings` maps each run setting
+given to the record it came from. A variable-step stage of 0 steps is 0 ns.
+A study not carried on in pieces is not read from its config: its simulation
+may never have run. A study named through a link is read from the folder the
+link leads to, and a record that folder links out is still not read.
 
 **The input structure's checksum lives in `setup/setup_parameters.json`**,
 under `input.structure`, not in `manifest.json`:

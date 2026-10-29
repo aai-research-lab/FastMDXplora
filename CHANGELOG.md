@@ -18,6 +18,35 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- `recorded_stage_lengths` and the methods tell a piece's config in a
+  study's place by what it is (`resume_unsealed` set, the checkpoint a
+  `segment-NNN.yml` beside it names, or a `resume_from` in the study or
+  under a folder of its name), not only by the path it names: a study
+  stopped during a resume's analysis and then moved, copied or reached
+  through a link read NVT and NPT as 0 ns, and its methods left out the
+  minimisation and the equilibration; a config whose `resume_from` is
+  another study's checkpoint is the study's own, and its methods say the
+  study it started from, by folder name where the checkpoint's layout is a
+  study's (else "another study"), and either that production continued from
+  it with no minimisation or equilibration, or that the run started from it,
+  its minimisation and equilibration said as ever. A study named through a
+  link is read from the folder it leads to; it read "not read" throughout.
+  Where the study's own record is missing, the methods give the temperature,
+  the friction, the barostat's interval and the frame interval its first
+  piece's record holds, and the platform and precision its first piece's own
+  live status gives; where the pieces differ, or the first piece's is not
+  found, each piece's by its folder, the first piece's said not recorded,
+  never a segment's said as the first piece's. A study stopped and not yet
+  carried on is said to have stopped before writing its record, not "did not
+  run". A clock's length keeps two decimals at every scale (0.50 ps, 10.02
+  ps and 10.02 ns, not "0.5 ps", "10 ps" and "10 ns"), in fs only where it
+  is under 0.005 ps. A variable-step stage of 0 steps is 0 ns. A stage whose
+  live status or log is linked out, and nothing else gives it, is "not
+  read"; a later piece's live status in the study's folder is not taken as
+  the first piece's plan; a production read from the live status is said as
+  the first piece's plan; `pieces` counts a piece linked out; and the
+  methods name the pieces once and say the equilibration is given in steps
+  only where it is.
 - The simulation record carries each stage's length, `stage_lengths`: the
   NVT and NPT lengths of a study that left them unset, from the run's step
   counts and timestep, with the source of each ("set", "from steps and
