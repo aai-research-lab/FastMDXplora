@@ -396,8 +396,12 @@ def test_a_study_s_rounds_are_read_once_for_all_its_runs(tmp_path, done_so_far, 
     _write(study / "batch_manifest.json", manifest)
     real = telemetry._rounds_record
     read = []
+    # Only this study's: a GUI an earlier test opened answers requests its
+    # page left going, and reads its own (`test_a_study_s_runs_are_read_once_each`).
     monkeypatch.setattr(telemetry, "_rounds_record",
-                        lambda where: read.append(where) or real(where))
+                        lambda where: (read.append(where)
+                                       if Path(where).is_relative_to(study) else None)
+                        or real(where))
     runs = runs_of_a_study(study)
     assert sum(run["state"] == "waiting" for run in runs) == 7
     assert len(read) == 1
@@ -539,8 +543,11 @@ def test_the_runs_behind_are_worked_out_once_for_the_study(tmp_path, done_so_far
     _write(study / "batch_manifest.json", manifest)
     real = telemetry._production_done
     asked = []
+    # Only this study's, as above.
     monkeypatch.setattr(telemetry, "_production_done",
-                        lambda where: asked.append(Path(where).name) or real(where))
+                        lambda where: (asked.append(Path(where).name)
+                                       if Path(where).is_relative_to(study) else None)
+                        or real(where))
     runs = runs_of_a_study(study)
     assert sum(run["state"] == "waiting" for run in runs) == 7
     assert len(asked) == len(set(asked)) == 7
