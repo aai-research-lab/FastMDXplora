@@ -218,6 +218,38 @@ def report_removed_heterogens(
         )
 
 
+#: The twenty, as a trace is counted among them.
+_AMINO_ACIDS = frozenset(
+    "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split())
+# The modified residue whose standard form is the same molecule to a force
+# field: a selenium for a sulfur. Every other loses what modified it.
+_SAME_WHEN_STANDARD = frozenset({"MSE"})
+
+
+def _refuse_a_trace(fixer) -> None:
+    """Refuse a chain given as a trace rather than build a protein on it.
+
+    A file of alpha carbons alone (a coarse model, a trace from low-resolution
+    density) had every other atom placed by PDBFixer from its templates, and
+    1UBQ's 76 alpha carbons were prepared, simulated and reported as though
+    they were a deposited structure, with nothing said.
+    """
+    residues = [residue for residue in fixer.topology.residues()
+                if residue.name.upper() in _AMINO_ACIDS]
+    bare = [residue for residue in residues
+            if len(fixer.missingAtoms.get(residue, ())) >= 3
+            and sum(1 for atom in residue.atoms()
+                    if atom.element is None or atom.element.symbol != "H") <= 1]
+    if len(bare) >= 3 and 2 * len(bare) >= len(residues):
+        raise StudyError(
+            f"{len(bare)} of the structure's {len(residues)} amino acids hold one "
+            "atom each, the alpha carbon: it is a trace of the chain, not a "
+            "structure of it, and the rest of every residue would be built from "
+            "templates rather than read. Build a full-atom model from the trace "
+            "first (PULCHRA, MODELLER, or a structure predictor), and give that.",
+            code="setup.structure.trace_only", residues=len(bare))
+
+
 def _standard_residue_names() -> frozenset[str]:
     """Amino acids and nucleotides, which are not heterogens."""
     amino = (
@@ -318,6 +350,9 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
                        if not ignoring or residue.name.upper() not in ignoring)
             for index, chain in enumerate(fixer.topology.chains())
         }
+        # Said by the chain's ID: 1ACB's "chain 1: 7" was its chain I.
+        chain_ids = {index: getattr(chain, "id", "") or str(index)
+                 for index, chain in enumerate(fixer.topology.chains())}
     except (AttributeError, TypeError):
         return
 
@@ -342,7 +377,7 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
         return
 
     summary = ", ".join(
-        f"chain {index}: {count}" for index, count in sorted(dropped.items())
+        f"chain {chain_ids.get(index, index)}: {count}" for index, count in sorted(dropped.items())
     )
     logger.info(
         "Not building %d unresolved residue(s) at chain termini (%s). They "
@@ -353,6 +388,111 @@ def _drop_terminal_extensions(fixer, *, build_termini: bool = False,
         sum(dropped.values()), summary,
     )
     fixer.missingResidues = kept
+
+
+#: The farthest apart, in angstrom, two alpha carbons one peptide bond
+#: apart can be: trans, and in a line no chain can quite reach.
+CA_CA_REACH_A = 3.8
+
+
+def _split_unbridgeable_gaps(fixer) -> None:
+    """End a chain where its gap is wider than the residues missing can reach.
+
+    1ACB's chymotrypsin is deposited as one chain E, numbered as its
+    zymogen, and missing Ser14 and Arg15: they are the dipeptide its
+    activation cuts out. Leu13 and Ile16 stand 17.9 A apart, and two
+    residues reach 11.4 A at most, so building them stretched a loop across
+    the protein and joined what activation cut, taking the free amine of
+    Ile16, the salt bridge to Asp194 that makes the enzyme active, with it.
+    Left unbuilt in one chain, OpenMM bonded Leu13 to Ile16 across the gap.
+
+    A gap no chain could close is a cut, so the chain is ended there and
+    its parts given their charged ends. A gap the missing residues could
+    close is still built: whether it was cut is not the structure's to say,
+    and chymotrypsin's other excised dipeptide, 147 and 148, is one.
+    """
+    missing = getattr(fixer, "missingResidues", None)
+    if not missing:
+        return
+    try:
+        chains = [list(chain.residues()) for chain in fixer.topology.chains()]
+        positions = fixer.positions
+    except (AttributeError, TypeError):
+        return
+
+    def alpha_carbon(residue):
+        for atom in residue.atoms():
+            if atom.name == "CA":
+                return positions[atom.index].value_in_unit(_angstrom())
+        return None
+
+    cuts: dict[int, list[int]] = {}
+    said: list[str] = []
+    for (chain_index, offset), names in missing.items():
+        residues = chains[chain_index] if chain_index < len(chains) else []
+        if not 0 < offset < len(residues):
+            continue
+        before, after = residues[offset - 1], residues[offset]
+        first, second = alpha_carbon(before), alpha_carbon(after)
+        if first is None or second is None:
+            continue
+        span = sum((a - b) ** 2 for a, b in zip(first, second)) ** 0.5
+        reach = (len(names) + 1) * CA_CA_REACH_A
+        if span > reach:
+            cuts.setdefault(chain_index, []).append(offset)
+            chain = before.chain.id
+            said.append(f"chain {chain} between {before.name}{before.id} and "
+                        f"{after.name}{after.id}, {span:.1f} A apart, where the "
+                        f"{len(names)} missing reach {reach:.1f} A at most")
+    if not cuts:
+        return
+
+    from openmm.app import Topology
+
+    old = fixer.topology
+    new = Topology()
+    new.setPeriodicBoxVectors(old.getPeriodicBoxVectors())
+    atoms, part_of, index_of = {}, {}, {}
+    for chain in old.chains():
+        target = new.addChain(chain.id)
+        part = 0
+        for position, residue in enumerate(chain.residues()):
+            if position in cuts.get(chain.index, ()):
+                target = new.addChain(chain.id)
+                part += 1
+            copy = new.addResidue(residue.name, target, residue.id, residue.insertionCode)
+            part_of[residue] = (chain.index, part)
+            for atom in residue.atoms():
+                atoms[atom] = new.addAtom(atom.name, atom.element, copy, atom.id)
+        for part in range(part + 1):
+            index_of[(chain.index, part)] = len(index_of)
+    for bond in old.bonds():
+        first, second = bond[0], bond[1]
+        if part_of[first.residue] != part_of[second.residue] \
+                and first.residue.chain is second.residue.chain:
+            continue
+        new.addBond(atoms[first], atoms[second], bond.type, bond.order)
+
+    scheduled: dict = {}
+    for (chain_index, offset), names in missing.items():
+        ends = sorted(cuts.get(chain_index, ()))
+        if offset in ends:
+            continue
+        part = sum(1 for end in ends if end < offset)
+        start = ends[part - 1] if part else 0
+        scheduled[(index_of[(chain_index, part)], offset - start)] = names
+    fixer.topology = new
+    fixer.missingResidues = scheduled
+    logger.warning(
+        "Ended the chain at %d gap(s) wider than the residues missing could "
+        "close: %s. A chain is cut there, as activation cuts chymotrypsin; "
+        "the residues are not built across it and each part has its charged "
+        "ends.", len(said), "; ".join(said))
+
+
+def _angstrom():
+    from openmm.unit import angstrom
+    return angstrom
 
 
 #: One-letter to three-letter, for reading the convention people write
@@ -675,6 +815,64 @@ def fix_pdb_with_pdbfixer(
                       {"chain": chain_id, "applied": applied})
 
     around = frozenset(str(name).upper() for name in reinstated)
+    # Modified residues are part of the polymer, not ligands: a selenomethionine
+    # or an oxidised cysteine belongs in the chain. Left in place they reach the
+    # heterogen classifier, which can only refuse them, and a structure with a
+    # single modified cysteine becomes unusable. PDBFixer substitutes the
+    # standard equivalent, which is the ordinary preparation choice and what
+    # every comparable tool does. Before the heterogens go: removing them
+    # took 1HVR's two CSO with them, and the gap was then built as a CYS of
+    # new coordinates rather than the deposited residue made standard.
+    if replace_nonstandard:
+        fixer.findNonstandardResidues()
+        # Of a chain, not alone: chains B of 1HVR kept carries chain A's
+        # CSO67 beside it, which made standard is a cysteine of no chain and
+        # no template, where it went with the heterogens.
+        substitutions = [(residue, standard) for residue, standard
+                         in getattr(fixer, "nonstandardResidues", []) or []
+                         if residue.name.upper() not in around
+                         and any(other.name.upper() in _AMINO_ACIDS
+                                 for other in residue.chain.residues())]
+        fixer.nonstandardResidues = substitutions
+        if substitutions:
+            described = ", ".join(
+                f"{residue.name}{getattr(residue, 'id', '')}->{standard}"
+                for residue, standard in substitutions
+            )
+            logger.info(
+                "Replaced %d modified residue(s) with their standard "
+                "equivalents: %s", len(substitutions), described,
+            )
+            # A selenium for a sulfur changes nothing simulated; a phosphate
+            # or a hydroxyl taken off does. 1QMZ's TPO160, the phosphate that
+            # activates CDK2, became a threonine, and 1CAG's thirty
+            # hydroxyprolines, which hold collagen's triple helix, prolines,
+            # each said only at INFO (10-27).
+            lost = [f"{residue.name}{getattr(residue, 'id', '')}"
+                    for residue, _ in substitutions
+                    if residue.name.upper() not in _SAME_WHEN_STANDARD]
+            if lost:
+                logger.warning(
+                    "%d modified residue(s) were simulated as the plain amino "
+                    "acid, without what modified them (a phosphate, hydroxyl, "
+                    "oxidation, methyl or acetyl group): %s. A study of the "
+                    "modified form needs parameters for them supplied "
+                    "deliberately.", len(lost), ", ".join(lost),
+                )
+            observe_fixer(
+                audit,
+                "nonstandard_substitution_requests",
+                fixer,
+                lambda: {
+                    "substitutions": [
+                        {"residue": residue_identity(residue), "standard": standard}
+                        for residue, standard in substitutions
+                    ]
+                },
+            )
+            fixer.replaceNonstandardResidues()
+            observe_fixer(audit, "replace_nonstandard_residues", fixer)
+
     if not keep_heterogens:
         removed = _heterogen_residue_counts(fixer.topology)
         with _protect_capping_groups(fixer.topology) as caps:
@@ -718,6 +916,7 @@ def fix_pdb_with_pdbfixer(
     _drop_untemplated_gaps(fixer)
     _drop_terminal_extensions(fixer, build_termini=build_missing_termini,
                               ignoring=around)
+    _split_unbridgeable_gaps(fixer)
     observe_fixer(audit, "missing_residue_schedule", fixer,
                   lambda: {
                       "scheduled": [
@@ -728,41 +927,6 @@ def fix_pdb_with_pdbfixer(
                       "build_missing_termini": build_missing_termini,
                       "note": "Existing missing-residue filters have already run.",
                   })
-
-    # Modified residues are part of the polymer, not ligands: a selenomethionine
-    # or an oxidised cysteine belongs in the chain. Left in place they reach the
-    # heterogen classifier, which can only refuse them, and a structure with a
-    # single modified cysteine becomes unusable. PDBFixer substitutes the
-    # standard equivalent, which is the ordinary preparation choice and what
-    # every comparable tool does.
-    if replace_nonstandard:
-        fixer.findNonstandardResidues()
-        substitutions = [(residue, standard) for residue, standard
-                         in getattr(fixer, "nonstandardResidues", []) or []
-                         if residue.name.upper() not in around]
-        fixer.nonstandardResidues = substitutions
-        if substitutions:
-            described = ", ".join(
-                f"{residue.name}{getattr(residue, 'id', '')}->{standard}"
-                for residue, standard in substitutions
-            )
-            logger.info(
-                "Replaced %d modified residue(s) with their standard "
-                "equivalents: %s", len(substitutions), described,
-            )
-            observe_fixer(
-                audit,
-                "nonstandard_substitution_requests",
-                fixer,
-                lambda: {
-                    "substitutions": [
-                        {"residue": residue_identity(residue), "standard": standard}
-                        for residue, standard in substitutions
-                    ]
-                },
-            )
-            fixer.replaceNonstandardResidues()
-            observe_fixer(audit, "replace_nonstandard_residues", fixer)
 
     fixer.findMissingAtoms()
     observe_fixer(audit, "missing_atom_requests", fixer,
@@ -777,6 +941,7 @@ def fix_pdb_with_pdbfixer(
                           for residue, atoms in fixer.missingTerminals.items()
                       ],
                   })
+    _refuse_a_trace(fixer)
     fixer.addMissingAtoms(seed=seed)
     observe_fixer(audit, "add_missing_atoms", fixer)
     if complex_pdb is not None:

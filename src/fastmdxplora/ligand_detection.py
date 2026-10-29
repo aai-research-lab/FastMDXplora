@@ -47,6 +47,14 @@ AMINO_ACID_RESNAMES = frozenset({
 #: backbone terminus.
 CAPPING_RESNAMES = frozenset({"ACE", "NME", "NHE", "NH2", "FOR", "NMA"})
 
+#: DNA and RNA, as deposited and as Amber's terminal variants name them.
+#: Not a ligand: 1BNA's dodecamer was offered as 24 ligands, its bases drawn
+#: as ball and stick with a binding pocket around them (10-27).
+NUCLEIC_RESNAMES = frozenset(
+    "DA DC DG DT DU DI A C G U RA RC RG RU "
+    "DA5 DC5 DG5 DT5 DA3 DC3 DG3 DT3 RA5 RC5 RG5 RU5 RA3 RC3 RG3 RU3 "
+    "A5 C5 G5 U5 A3 C3 G3 U3".split())
+
 #: What counts as the polymer, for deciding what is left over.
 POLYMER_RESNAMES = AMINO_ACID_RESNAMES | CAPPING_RESNAMES
 
@@ -120,7 +128,7 @@ def detect_ligands(
         if rn not in explicit_set:
             if rn in WATER_RESNAMES or rn in ION_RESNAMES:
                 continue
-            if rn in POLYMER_RESNAMES:
+            if rn in POLYMER_RESNAMES or rn in NUCLEIC_RESNAMES:
                 continue
         is_cofactor = rn in COMMON_COFACTORS and rn not in explicit_set
         if is_cofactor:

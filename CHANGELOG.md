@@ -9,6 +9,71 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A ligand held in more than one copy has its chemistry resolved copy by
+  copy. 4DFR holds methotrexate in both chains; the setup's SDF is one
+  molecule and matched neither copy as the pair, so the pair went to bond
+  perception from the coordinates, which ran on for 22 minutes inside
+  `pl_interactions` until the run was stopped. Each copy now matches the
+  setup's file, and the interactions take half a second.
+- A gap in a chain wider than its missing residues could reach is left a
+  cut, and each part given its charged ends. 1ACB's chymotrypsin is one
+  chain E without Ser14 and Arg15, the dipeptide its activation cuts out;
+  Leu13 and Ile16 are 17.9 A apart and two residues reach 11.4 A, so the
+  two were built as a loop stretched across the protein, and Ile16 lost
+  the free amine whose salt bridge to Asp194 makes the enzyme active.
+  Left unbuilt, OpenMM bonded Leu13 to Ile16 across the gap. A gap the
+  missing residues could close is still built.
+- Termini not built are said by the chain's ID: 1ACB's eglin c was "chain
+  1", and 6M0J's two chains "chain 0" and "chain 1".
+- Biological assemblies are compared by what setup keeps. 1IEP's two
+  monomers differ by two chlorides, and copies differing by a glycerol or
+  a sulfate setup drops were asked about as different molecules.
+- B-factor comparison does not run on a structure without B-factors that
+  mean anything: a solution NMR model, or a column of one value. 2JOF's
+  models write 20.00 on every atom, and its fluctuations were correlated
+  against that constant and reported.
+- A ligand whose pKa calculation would protonate two amines two carbons
+  apart, a piperazine or an ethylenediamine, is refused rather than built
+  at +2. PROPKA judges each nitrogen alone at a model pKa of 10; 1HSG's
+  indinavir came out at 9.4 and 11.2 and was simulated at +2, where
+  measured its piperazine is 6.2 and below 4, since the first proton
+  lowers the second nitrogen's pKa by three to four units. Imatinib's
+  piperazine is the same. Which nitrogen holds the one proton is not
+  determined, so the ligand is asked for in the state intended.
+- A heme's refusal no longer says CHARMM36 covers heme. A study set to
+  `forcefield: charmm36` was refused the same: OpenMM's charmm36.xml has
+  the HEME template without the patch that bonds the iron to its
+  histidine, so choosing it changes nothing. The refusal now says so, and
+  that the parameters are built deliberately, for example in CHARMM-GUI.
+- A residue of the chain deposited as HETATM stays in its chain when the
+  assembly is built. Each copy's polymer was written as its ATOM records,
+  and the rest after its TER with the heterogens; 1A8O's selenomethionine
+  151, the chain's first residue, began a chain of its own, and both copies
+  of the dimer were simulated without it, said only as an unresolved
+  terminus not built. A chain's records up to the TER that closes it are
+  now its polymer.
+- A ligand modelled in two conformers is counted by its atoms, not its
+  records: 1AKE's AP5 holds seven of its 57 heavy atoms twice, and was
+  refused as "64 heavy atoms in the structure but 57 in its chemical
+  definition, so it is only partially resolved".
+- A modified residue made standard is warned of, but for selenomethionine,
+  which is the same molecule to a force field: 1QMZ's TPO160, the phosphate
+  that activates CDK2, became a threonine, and 1CAG's thirty hydroxyprolines,
+  which hold collagen's triple helix, prolines, each said only at INFO.
+- DNA and RNA are the polymer, not ligands: 1BNA's dodecamer was offered as
+  24 ligands, and the Viewer drew its bases as ball and stick with a binding
+  pocket around them.
+- The Viewer's molecule takes the window's room again: the timeline under
+  it, its ruler and three tracks counted whole, left it 420px wide in a
+  1280px window and 373px in one 800px high. It is fitted to leave the
+  transport in view, and the ruler and tracks follow under it as the column
+  scrolls. A window resized to a width now fits the molecule as one opened
+  at it (a 900px window had 420px or 373px by the width it came from).
+- On the narrowest phones the bar across the top leaves the study its name:
+  "1L2Y" read "1L..." and Completed "Com" at 360px between five icons 12px
+  apart, and the pages' tabs ran past the edge. Files' tiles are as many
+  across as the page has room for, not three by the window's width, which
+  left them 155px each beside the side panel.
 - The GUI answers a request it cannot use as the caller's mistake, not its
   own failure: a POST body that is not JSON, or JSON that is not an object,
   is a 400 saying so on every route (it was a 500, "Dashboard request
@@ -43,6 +108,36 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Extending a study that ran no production (`duration_ns: 0`) is refused
   before a segment is simulated: the segment ran and the join then refused
   it as "segments [0] are missing".
+- A `water_model` other than a named force field's own water is refused
+  with the config (`config.option.conflicting`), with the `force_field`
+  files that pair them: the force field's water file was used whatever the
+  setting, so `tip4pew` beside AMBER14 stopped setup on "no parameters for
+  HOH", and `spce` would have run TIP3P under the name SPC/E.
+- A ligand on a chain the assembly's operators build is fetched from the
+  copy the entry deposits and placed where the built structure has it:
+  1STP's biotin was asked of RCSB at B300, which the entry does not hold,
+  and its four copies then had one pose to share. The pose is read from the
+  chains kept or the assembly built, not the deposited file.
+- A cyclic peptide (a LINK from a chain's first N to its last C, as 1JBL's
+  Gly1 to Asp14) is refused (`setup.structure.cyclic_backbone`): it was
+  prepared, simulated and reported as a linear peptide with two charged
+  ends, with nothing said.
+- A structure of alpha carbons alone is refused
+  (`setup.structure.trace_only`): every other atom was built from templates
+  and the result simulated as though it had been deposited.
+- A modified residue of the chain (1HVR's oxidised cysteines) is made
+  standard where it was deposited: it went with the heterogens, its gap was
+  built as a residue of new coordinates, and the log said a heterogen that
+  might be the ligand had been removed.
+- A small box is solvated with room for the density it will reach: 1L2Y at
+  0.1 nm of padding was solvated at 0.82 g/mL, the barostat shrank it under
+  twice the cutoff, and production stopped.
+- A study with `budget_hours` whose setup fails says setup's own refusal:
+  it said setup had "finished without recording how many particles", and
+  that its output was kept for reuse.
+- The report's Download menu stays on the screen of a phone, where it ran
+  off the left edge; and a page's actions, wrapped onto several rows in a
+  narrow window, no longer sit against the rule above them.
 
 - Clustering checks its frame-by-frame RMSD matrix against the memory this
   process can take before it makes it: the least of the machine's available

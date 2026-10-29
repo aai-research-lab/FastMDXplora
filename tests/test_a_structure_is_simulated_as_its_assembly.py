@@ -267,3 +267,18 @@ def test_the_setup_record_names_the_assembly(tmp_path) -> None:
     _write_manifest(tmp_path / "setup", orchestrator, "pdb_id", {}, [], [])
     record = json.loads((tmp_path / "setup" / "setup_parameters.json").read_text())
     assert record["input"]["assembly"]["assembly"] == 1
+
+
+def test_copies_differing_by_what_setup_discards_are_chosen_between(tmp_path) -> None:
+    # 1AKE as deposited, with a glycerol beside chain A only. Glycerol is
+    # cryoprotectant and setup drops it, so the two monomers still hold the
+    # same things; 1IEP's differ by two chlorides and were asked about.
+    path = _deposited("1AKE", tmp_path)
+    lines = path.read_text().splitlines()
+    at = max(i for i, line in enumerate(lines) if line.startswith("HETATM") and line[21] == "A")
+    glycerol = (f"{'HETATM':6}{9999:5d} {'C1':^4} {'GOL':3} A{900:4d}    "
+                f"{40.0:8.3f}{40.0:8.3f}{40.0:8.3f}{1.0:6.2f}{30.0:6.2f}{'C':>12}")
+    assert glycerol[17:20] == "GOL" and glycerol[21] == "A"
+    path.write_text("\n".join(lines[:at + 1] + [glycerol] + lines[at + 1:]) + "\n")
+    choice = choose_assembly(path, select=_select_chains)
+    assert choice.chosen.chains == ["A"]

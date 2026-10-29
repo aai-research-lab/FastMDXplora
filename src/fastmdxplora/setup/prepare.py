@@ -206,6 +206,36 @@ def sized_by_the_padding(*, grown_nm: float, nonbonded_cutoff_nm: float,
     return abs(float(grown_nm) - half) <= 1e-9 * max(1.0, half)
 
 
+def _contraction_to_density(topology: Any, vectors: Any, unit: Any) -> float:
+    """How far the box's widths will shrink as the barostat brings the
+    system to the density of water, as a factor of at least one.
+
+    A small box is under-filled at its faces: 1L2Y at 0.36 nm of padding
+    was solvated at 0.82 g/mL, shrank 9% in width under the barostat, past
+    the fixed margin, and production stopped on "The periodic box size has
+    decreased to less than twice the nonbonded cutoff". A box of ordinary
+    size is solvated near 1 g/mL, and this is then about one.
+    """
+    try:
+        volume = 1.0
+        for i in range(3):
+            volume *= float(vectors[i][i].value_in_unit(unit.nanometer))
+        dalton = sum(atom.element.mass.value_in_unit(unit.dalton)
+                     for atom in topology.atoms() if atom.element is not None)
+    except (TypeError, ValueError, AttributeError):
+        return 1.0
+    return contraction_to_density(dalton, volume)
+
+
+def contraction_to_density(dalton: float, volume_nm3: float) -> float:
+    """The contraction of `_contraction_to_density` from the system's mass
+    and its box's volume, so the estimate grows the box as setup does."""
+    if volume_nm3 <= 0.0 or dalton <= 0.0:
+        return 1.0
+    grams_per_ml = dalton * 1.66053907e-24 / (volume_nm3 * 1e-21)
+    return max(1.0, (1.0 / grams_per_ml) ** (1.0 / 3.0))
+
+
 def _what_would_fit(*, smallest_nm: float, padding_nm: float,
                     nonbonded_cutoff_nm: float, box_shape: str) -> str:
     """The refusal of a box too small for its cutoff, with what would run:
@@ -269,8 +299,9 @@ def _solvate_with_room_for_the_cutoff(
     Where the padding sizes the box (a solute smaller than the padding),
     the box grown to is the smallest the cutoff allows for any solute, and
     it is grown to whatever the amount. 1.0 nm of padding (the default before
-    2.0 nm) in a dodecahedron with a 1.0 nm cutoff needs 1.56 nm for a peptide
-    of a few residues; refusing that stopped every such study at setup.
+    2.0 nm) in a dodecahedron with a 1.0 nm cutoff needs at least 1.56 nm for
+    a peptide of a few residues; refusing that stopped every such study at
+    setup.
     """
     kwargs = dict(add_solvent_kwargs)
     padding = float(padding_nm)
@@ -300,7 +331,9 @@ def _solvate_with_room_for_the_cutoff(
         # topology could not say, which is not a problem this can solve.
         if smallest <= 0.0:
             return padding
-        wanted = 2.0 * nonbonded_cutoff_nm * NPT_CONTRACTION_MARGIN
+        margin = NPT_CONTRACTION_MARGIN * _contraction_to_density(
+            modeller.topology, vectors, unit)
+        wanted = 2.0 * nonbonded_cutoff_nm * margin
         if smallest >= wanted or attempt == attempts - 1:
             return padding
 
@@ -314,10 +347,12 @@ def _solvate_with_room_for_the_cutoff(
             padding_nm=padding,
             nonbonded_cutoff_nm=nonbonded_cutoff_nm,
             box_shape=str(kwargs.get("boxShape", "cube")),
+            margin=margin,
         )
         shape = str(kwargs.get("boxShape", "cube"))
         smallest_box = sized_by_the_padding(
-            grown_nm=grown, nonbonded_cutoff_nm=nonbonded_cutoff_nm, box_shape=shape)
+            grown_nm=grown, nonbonded_cutoff_nm=nonbonded_cutoff_nm, box_shape=shape,
+            margin=margin)
         if grown - float(padding_nm) > most_it_may_grow_nm and not smallest_box:
             # Said out loud, because the check further down reports the
             # padding the config asked for and knows nothing of what was
@@ -336,10 +371,11 @@ def _solvate_with_room_for_the_cutoff(
             return padding
         padding = grown
         logger.info(
-            "Box came out %.2f nm across, which is under twice the %.2f nm "
-            "cutoff. Re-solvating with %.2f nm padding so no particle sees "
-            "its own periodic image%s.",
-            smallest, nonbonded_cutoff_nm, padding,
+            "Box came out %.2f nm across, under the %.2f nm that twice the "
+            "%.2f nm cutoff needs with room for the barostat to shrink it. "
+            "Re-solvating with %.2f nm padding so no particle sees its own "
+            "periodic image%s.",
+            smallest, wanted, nonbonded_cutoff_nm, padding,
             " (the smallest box this cutoff allows for any solute this small)"
             if smallest_box else "",
         )
@@ -495,6 +531,7 @@ def prepare_system(
     ligand_name: str | list[str] | None = "LIG",
     ligand_net_charge: int | None = None,
     ligand_pose: str = "auto",
+    ligand_poses_from: str | Path | None = None,
     check_ligand_clashes: bool = True,
     ligand_clash_threshold_nm: float = 0.15,
     solvent_padding_nm: float = DEFAULT_PADDING_NM,
@@ -723,7 +760,11 @@ def prepare_system(
             # The structure as it arrived, not the prepared one: PDBFixer
             # has removed the heterogens by the time that is written, so the
             # ligand's crystallographic coordinates are only in the input.
-            original = Path(output_dir) / "input.pdb"
+            # The chains chosen, or the assembly built, where setup made one:
+            # 1STP's deposition holds the biotin of chain A alone, and the
+            # three its operators build had no pose to be placed at.
+            original = (Path(ligand_poses_from) if ligand_poses_from
+                        else Path(output_dir) / "input.pdb")
             if original.is_file() or ligand_pose == "file":
                 # `file` needs no structure to consult, so an absent
                 # input.pdb does not turn a deliberate pose into silence.

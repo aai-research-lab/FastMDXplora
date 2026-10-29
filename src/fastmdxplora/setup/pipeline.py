@@ -338,6 +338,11 @@ def _the_chains_to_simulate(orchestrator: Any, input_pdb: Path, input_form: str,
 
         input_pdb, copies = build_assembly(input_pdb, choice.chosen, _CHAIN_COLUMNS)
         orchestrator._assembly["built_chains"] = copies
+        # Each built chain by the deposited one it copies: the entry holds
+        # only the deposited copy of a ligand, so its chemistry is asked for
+        # there. 1STP's biotin is A300, and B300 came back empty.
+        params["_copied_from"] = {target: source for source, targets in copies.items()
+                                  for target in targets}
         logger.info(
             "Built assembly %d from its %d symmetry operators: %s.",
             choice.chosen.number, choice.chosen.copies,
@@ -1064,6 +1069,61 @@ def decision_records(decisions: list[Any]) -> list[dict[str, Any]]:
             for d in decisions]
 
 
+def _backbone_rings(input_pdb: Path) -> list[str]:
+    """The LINK records that join a chain's backbone into a ring.
+
+    A peptide bond the file links from the N of a chain's first residue to
+    the C of its last, as 1JBL (SFTI-1) closes Gly1 onto Asp14. Read by the
+    chain's first and last residues rather than by their numbers, which may
+    jump inside a linear chain. Side chains linked by their NZ or CD are
+    crosslinks rather than the backbone, and are left to the heterogen layer.
+    """
+    try:
+        lines = Path(input_pdb).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    ends: dict[str, list[str]] = {}
+    for line in lines:
+        if line.startswith("ATOM  "):
+            residue = line[22:27].strip()
+            chain = ends.setdefault(line[21:22], [residue, residue])
+            chain[1] = residue
+        elif line.startswith("ENDMDL"):
+            break
+    rings: list[str] = []
+    for line in lines:
+        if not line.startswith("LINK  "):
+            continue
+        sides = {line[12:16].strip(): (line[17:20].strip(), line[21:22], line[22:27].strip()),
+                 line[42:46].strip(): (line[47:50].strip(), line[51:52], line[52:57].strip())}
+        if set(sides) != {"N", "C"} or sides["N"][1] != sides["C"][1]:
+            continue
+        first, last = ends.get(sides["N"][1], [None, None])
+        if first != last and sides["N"][2] == first and sides["C"][2] == last:
+            rings.append(f"{sides['N'][0]} {sides['N'][1]}{sides['N'][2]} N to "
+                         f"{sides['C'][0]} {sides['C'][1]}{sides['C'][2]} C")
+    return rings
+
+
+def _refuse_a_backbone_ring(input_pdb: Path) -> None:
+    """Refuse a cyclic peptide rather than simulate it opened.
+
+    PDBFixer reads the chain as linear and caps both ends, so 1JBL was
+    prepared, simulated and reported as a linear peptide with charged
+    termini where the molecule has none, and nothing said the ring was gone.
+    """
+    rings = _backbone_rings(input_pdb)
+    if rings:
+        raise StudyError(
+            "The structure joins a chain's backbone into a ring ("
+            + "; ".join(rings) + "), and preparation would open it into a "
+            "linear chain with two charged ends that the molecule does not "
+            "have. Cyclic backbones are not prepared here. To simulate the "
+            "opened chain deliberately, give a copy of the file without that "
+            "LINK record.",
+            code="setup.structure.cyclic_backbone", links=rings)
+
+
 def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> list[str]:
     """Turn the classifier's SIMULATE decisions into files the ligand path takes.
 
@@ -1162,11 +1222,14 @@ def _auto_ligands(params: dict, input_pdb, setup_dir, entry_id: str | None) -> l
         chemistry = fetch_chemistry(
             entry_id,
             decision.resname,
-            chain=instance.chain,
+            chain=(params.get("_copied_from") or {}).get(instance.chain, instance.chain),
             resseq=instance.resseq,
-            expected_heavy_atoms=sum(
-                1 for atom in instance.atoms if atom.element.upper() != "H"
-            ),
+            # Each atom once, whatever its alternate locations: 1AKE's AP5
+            # holds seven atoms in two conformers, and its 57 counted as 64
+            # were refused as "only partially resolved" (10-27).
+            expected_heavy_atoms=len({
+                atom.name for atom in instance.atoms if atom.element.upper() != "H"
+            }),
         )
         # A pKa is a property of the environment, so the environment should be
         # the one that will be simulated: repaired, with the missing side
@@ -1470,6 +1533,8 @@ def _run(
 
         input_pdb = _the_chains_to_simulate(
             orchestrator, input_pdb, input_form, params, presenter=presenter)
+        if Path(input_pdb).name != "input.pdb":
+            params["_poses_from"] = str(input_pdb)
         if audit:
             audit.capture_file(
                 input_pdb,
@@ -1578,6 +1643,7 @@ def _run(
     # downgrades failures to a warning and carries on, which would turn a
     # refusal into a run that reports success while having simulated nothing
     # of the kind.
+    _refuse_a_backbone_ring(input_pdb)
     auto = str(params.get("heterogens", "auto")).strip().lower() == "auto" \
         and not params.get("keep_heterogens")
     filtered_out = None
@@ -1730,6 +1796,7 @@ def _run(
             ),
             ligand_net_charge=params["ligand_net_charge"],
             ligand_pose=str(params.get("ligand_pose", "auto")),
+            ligand_poses_from=params.get("_poses_from"),
             check_ligand_clashes=bool(params["check_ligand_clashes"]),
             ligand_clash_threshold_nm=float(params["ligand_clash_threshold_nm"]),
             solvent_padding_nm=float(params["solvent_padding_nm"]),

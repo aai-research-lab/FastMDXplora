@@ -241,6 +241,55 @@ def _remove_proton(Chem, mol, index):
     return built
 
 
+#: The amine classes, whose sites a pKa calculation titrates one at a time.
+AMINES = ("primary or secondary amine", "tertiary amine")
+
+#: Bonds apart at or under which two amines titrate as a pair: N-C-C-N, a
+#: piperazine or an ethylenediamine. The first proton lowers the second
+#: nitrogen's pKa by three to four units (piperazine 9.7 then 5.4,
+#: ethylenediamine 9.9 then 6.9); a 1,3-diamine's falls by about two
+#: (10.5 then 8.6), which leaves a model pKa of 10 above any working pH.
+COUPLED_AMINE_BONDS = 3
+
+
+def _refuse_coupled_amines(Chem, mol, resname, protonating) -> None:
+    """Refuse to protonate two amines that titrate as a pair.
+
+    PROPKA gives each amine the model pKa of its class, 10, and shifts it by
+    the pocket alone, never by the other's charge. 1HSG's indinavir came out
+    at 9.4 and 11.2 for the two nitrogens of its piperazine, so both took a
+    proton and it was simulated at +2; measured, they are 6.2 and below 4.
+    Imatinib's piperazine is the same. Which nitrogen holds the one proton is
+    a question the class-level answer cannot settle, so it is asked rather
+    than guessed.
+    """
+    sites = []
+    for label in protonating:
+        if label not in AMINES:
+            continue
+        pattern = Chem.MolFromSmarts(PROTONATION_SITE[label][0])
+        sites += [match[PROTONATION_SITE[label][1]]
+                  for match in mol.GetSubstructMatches(pattern)]
+    if len(sites) < 2:
+        return
+    distance = Chem.GetDistanceMatrix(mol)
+    pairs = [(a, b) for i, a in enumerate(sites) for b in sites[i + 1:]
+             if distance[a][b] <= COUPLED_AMINE_BONDS]
+    if pairs:
+        raise ProtonationError(
+            f"{resname} has two amine nitrogens two carbons apart (a "
+            "piperazine or an ethylenediamine), and the pKa calculation put a "
+            "proton on both. They titrate as a pair: once one holds a proton "
+            "the other's pKa falls by three to four units (piperazine 9.7 then "
+            "5.4), which the calculation, judging each alone, does not see. "
+            "The ligand is more likely +1 or neutral than +2, and which "
+            "nitrogen is charged is not determined.\nSupply the ligand with "
+            "--setup-ligand as an SDF or MOL2 already in the state you intend, "
+            "with explicit hydrogens and its net charge set."
+        , code="setup.chemistry.protonation_undetermined", resname=resname,
+            groups=list(AMINES))
+
+
 def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
     """Put the reference chemistry into the state determined in the complex.
 
@@ -325,6 +374,9 @@ def apply_settled_state(sdf_text: str, chemistry, state) -> tuple[str, int]:
             f"The reference chemistry for {chemistry.resname} could not be read "
             "as a molecule, so its protonation cannot be adjusted."
         , code="setup.chemistry.uninterpretable", resname=chemistry.resname)
+
+    _refuse_coupled_amines(Chem, mol, chemistry.resname,
+                           [label for label in changes if decisions[label]])
 
     expected = chemistry.formal_charge
     for label in changes:

@@ -3406,17 +3406,30 @@
     const foot = column ? column.getBoundingClientRect().bottom : window.innerHeight;
     const room = Math.max(520, Math.floor(foot - Math.max(0, top) - 20));
     layout.style.setProperty("--viewer-height", `${room}px`);
-    // Twice: the playback's rows wrap by the width the first pass gives.
-    for (let pass = 0; pass < 2; pass += 1) {
+    // Until it settles: the playback's rows wrap by the width the last
+    // pass gave, so two passes left a window narrowed to 900px with a
+    // molecule wider than one opened there (10-26). Where the rows wrap
+    // one way and back, the narrower fit, which keeps the transport in view.
+    // From the layout as it is unfitted, so a window resized to a width
+    // fits as one opened at it: the settings and the transport's wrap were
+    // taken from the last fit, and differed by the window's history.
+    layout.style.removeProperty("--viewer-canvas-width");
+    if (page) page.style.removeProperty("--viewer-content-width");
+    let last = null;
+    for (let pass = 0; pass < 4; pass += 1) {
       const fitted = canvasWidth(layout, room);
       if (fitted == null) {
         layout.style.removeProperty("--viewer-canvas-width");
         if (page) page.style.removeProperty("--viewer-content-width");
         return;
       }
-      layout.style.setProperty("--viewer-canvas-width", `${fitted.canvas}px`);
+      const settled = last && last.canvas === fitted.canvas;
+      const chosen = last && pass === 3 ? (last.canvas < fitted.canvas ? last : fitted) : fitted;
+      layout.style.setProperty("--viewer-canvas-width", `${chosen.canvas}px`);
       // The page's header as wide as what is under it, so the two line up.
-      if (page) page.style.setProperty("--viewer-content-width", `${fitted.whole}px`);
+      if (page) page.style.setProperty("--viewer-content-width", `${chosen.whole}px`);
+      if (settled) return;
+      last = fitted;
     }
   }
 
@@ -3438,14 +3451,32 @@
     const gutter = Math.max(0, wrap.offsetWidth - wrap.clientWidth);
     const across = page.clientWidth - gap - sideWidth - gutter;
     const between = parseFloat(getComputedStyle(wrap).rowGap) || 0;
+    // The timeline whole, its ruler and tracks in view under the molecule,
+    // while that leaves the molecule three quarters of what it has with
+    // the transport alone; past that, the transport alone, and the tracks
+    // follow as the column scrolls. Three tracks, all counted, left the
+    // molecule 373px wide on a 1280 by 800 window (10-26).
     let others = 0;
+    let transportOnly = 0;
     Array.from(wrap.children).forEach((child) => {
       if (child === frame || !isVisible(child)) return;
       others += closedHeight(child) + between;
+      transportOnly += (child.id === "viewer-timeline" ? transportHeight(child) : closedHeight(child)) + between;
     });
-    const high = Math.max(SMALLEST_CANVAS, Math.min(room - others, across / CANVAS_SHAPE));
+    const tall = (taken) => Math.min(room - taken, across / CANVAS_SHAPE);
+    const fits = tall(others) >= 0.75 * tall(transportOnly) ? tall(others) : tall(transportOnly);
+    const high = Math.max(SMALLEST_CANVAS, fits);
     const canvas = Math.floor(Math.min(across, high * CANVAS_SHAPE)) + gutter;
     return {canvas, whole: Math.ceil(canvas + gap + sideWidth)};
+  }
+
+  /* The timeline's height down to its transport, with its own edges: what
+   * stays in view under the molecule when its tracks are left below. */
+  function transportHeight(node) {
+    const transport = node.querySelector("#trajectory-row");
+    if (!transport || !isVisible(transport)) return closedHeight(node);
+    const below = parseFloat(getComputedStyle(node).paddingBottom) || 0;
+    return transport.getBoundingClientRect().bottom - node.getBoundingClientRect().top + below;
   }
 
   /* The height a fold takes closed, its head and its own edges, whether it

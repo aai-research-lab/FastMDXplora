@@ -462,6 +462,16 @@ CODES: tuple[Code, ...] = (
          "A structure larger than the PDB format can hold, which setup works in.",
          Kind.SEMANTIC, Disclosure.ACTION,
          detail_keys=("path",)),
+    Code("setup.structure.cyclic_backbone",
+         "A chain whose backbone the file links into a ring, which "
+         "preparation would open into two charged ends.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("links",)),
+    Code("setup.structure.trace_only",
+         "A chain given as its alpha carbons alone, whose every other atom "
+         "would be built from templates.",
+         Kind.SEMANTIC, Disclosure.ACTION,
+         detail_keys=("residues",)),
     Code("setup.structure.unreadable",
          "An mmCIF file with no atoms mmCIF can name.",
          Kind.SEMANTIC, Disclosure.ACTION,

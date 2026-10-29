@@ -1124,6 +1124,7 @@ def _check_one_run(options: dict[str, dict[str, Any]], *, where: str) -> None:
                 "decides the cutoff and how a ligand is parameterized.",
                 code="config.option.conflicting",
                 options=["setup.forcefield", "setup.force_field"])
+    _check_water_is_the_force_field_s(setup, where=where)
 
     simulation = options.get("simulation") or {}
     _check_lengths_agree(simulation, where=where)
@@ -1170,6 +1171,43 @@ def _check_one_run(options: dict[str, dict[str, Any]], *, where: str) -> None:
             "read, so it must be above `first`.",
             code="config.option.conflicting",
             options=["analysis.first", "analysis.last"])
+
+
+def _check_water_is_the_force_field_s(setup: dict[str, Any], *, where: str) -> None:
+    """A `water_model` other than a named force field's own water, refused.
+
+    The name decides the water's parameters (`amber14/tip3p.xml` for the
+    AMBER ones) and `water_model` only the box Modeller fills. A four-site
+    box then failed setup on "no parameters for HOH", and a three-site one
+    (`spce`) ran with TIP3P's parameters while the record said SPC/E. Give
+    the files with `force_field` to pair a force field with another water.
+    """
+    water = setup.get("water_model")
+    if not isinstance(water, str) or not water.strip() or setup.get("force_field"):
+        return
+    from fastmdxplora.setup.forcefields import resolve_forcefield
+
+    try:
+        choice = resolve_forcefield(setup.get("forcefield"))
+    except Exception:  # noqa: BLE001 - an unknown name is refused by its own check
+        return
+    # CHARMM36 leaves the box to Modeller, whose default is `tip3p`, the
+    # geometry `charmm36/water.xml` parameterises.
+    own = choice.water_model or "tip3p"
+    if water.strip().lower() == own:
+        return
+    folder = "charmm36" if choice.name == "charmm36" else "amber14"
+    raise ConfigError(
+        f"setup.water_model is {water!r}{where}, but the force field "
+        f"{choice.name!r} brings its own water, {choice.water_name or own.upper()} "
+        f"({', '.join(choice.xmls)}): the box would be built for one water and "
+        "parameterised as another. Leave `water_model` out, or give the files "
+        "with `force_field` instead of `forcefield`, for example "
+        f"`force_field: [{choice.xmls[0]}, {folder}/{water.strip().lower()}.xml]` "
+        f"with `water_model: {water.strip().lower()}`.",
+        code="config.option.conflicting",
+        options=["setup.forcefield", "setup.water_model"],
+        context="setup")
 
 
 def _check_restraints(simulation: dict[str, Any], *, where: str) -> None:

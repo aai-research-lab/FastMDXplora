@@ -101,6 +101,14 @@ WATER_MOLARITY = 55.4
 WATER_SITES = {"tip3p": 3, "spce": 3, "tip3pfb": 3, "opc3": 3, "tip4pew": 4,
                "tip4pfb": 4, "opc": 4, "tip5p": 5}
 
+#: Atomic masses in daltons of the elements a solute is mostly made of, for
+#: the density setup grows a small box by; anything else counts as carbon.
+ATOMIC_MASS = {"H": 1.008, "C": 12.011, "N": 14.007, "O": 15.999, "S": 32.06,
+               "P": 30.974, "SE": 78.97}
+
+#: Daltons of a water molecule.
+WATER_DALTON = 18.015
+
 #: Volume of a box per cube of its width.
 VOLUME_PER_WIDTH_CUBED = {"cube": 1.0, "dodecahedron": math.sqrt(2) / 2,
                           "octahedron": 4 * math.sqrt(3) / 9}
@@ -288,13 +296,18 @@ def estimate_system(structure: str | Path, setup: dict[str, Any] | None = None,
     # A given 0.0 is a padding (the schema's least), not an unset one.
     given = setup.get("solvent_padding_nm")
     padding = float(_DEFAULT_PADDING_NM if given is None else given)
-    used, narrowest, width, grows, refuses = _box(radius, padding, shape, setup)
+    heavy = [c for c, element in zip(coordinates, elements) if element != "H"] or coordinates
+    excluded = _excluded_volume(heavy)
+    # The solute's mass, its missing hydrogens counted, for the density
+    # setup reads off the box it builds first.
+    weighed = [ATOMIC_MASS.get(e, ATOMIC_MASS["C"]) for e in elements if e != "H"]
+    dalton = sum(weighed) + ATOMIC_MASS["H"] * max(0, count - len(weighed))
+    used, narrowest, width, grows, refuses = _box(
+        radius, padding, shape, setup,
+        dalton=lambda volume: dalton + WATER_DALTON * _waters(volume, excluded))
     volume = VOLUME_PER_WIDTH_CUBED.get(shape, 1.0) * width ** 3
 
-    heavy = [c for c, element in zip(coordinates, elements) if element != "H"] or coordinates
-    in_the_box = (WATER_PER_NM3 * (volume - _excluded_volume(heavy))
-                  - WATERS_LOST_AT_THE_FACES * volume ** (2 / 3))
-    waters = max(0, int(round(in_the_box)))
+    waters = _waters(volume, excluded)
     positive = negative = 0
     if setup.get("neutralize", True):
         if charge > 0:
@@ -497,14 +510,27 @@ def _excluded_volume(points: list[tuple[float, float, float]]) -> float:
     return float(inside.sum()) * step ** 3
 
 
-def _box(radius: float, padding: float, shape: str, setup: dict[str, Any]
-         ) -> tuple[float, float, float, bool, bool]:
+def _waters(volume: float, excluded: float) -> int:
+    """The waters `addSolvent` puts in a box of this volume around a solute
+    that leaves ``excluded`` nm^3 of it dry."""
+    in_the_box = (WATER_PER_NM3 * (volume - excluded)
+                  - WATERS_LOST_AT_THE_FACES * volume ** (2 / 3))
+    return max(0, int(round(in_the_box)))
+
+
+def _box(radius: float, padding: float, shape: str, setup: dict[str, Any],
+         dalton: Any = None) -> tuple[float, float, float, bool, bool]:
     """The padding setup uses, the narrowest width and the width of the box it
     builds, whether it grows the padding for the cutoff and whether it
-    refuses; by OpenMM's rule and setup's growth, as `prepare` applies them."""
+    refuses; by OpenMM's rule and setup's growth, as `prepare` applies them.
+
+    ``dalton`` gives the mass of the system solvated in a box of a volume,
+    for the contraction setup allows for as the barostat brings an
+    under-filled box to the density of water; without it, none is."""
     from fastmdxplora.setup.prepare import (
         NARROWEST_WIDTH_PER_SIZE,
         NPT_CONTRACTION_MARGIN,
+        contraction_to_density,
         padding_that_reaches,
         sized_by_the_padding,
     )
@@ -516,12 +542,17 @@ def _box(radius: float, padding: float, shape: str, setup: dict[str, Any]
     method = str(setup.get("nonbonded_method") or "PME")
     if cutoff is None or method not in ("PME", "Ewald", "CutoffPeriodic"):
         return padding, narrowest, width, False, False
-    wanted = 2.0 * cutoff * NPT_CONTRACTION_MARGIN
+    margin = NPT_CONTRACTION_MARGIN
+    if dalton is not None:
+        volume = VOLUME_PER_WIDTH_CUBED.get(shape, 1.0) * width ** 3
+        margin *= contraction_to_density(dalton(volume), volume)
+    wanted = 2.0 * cutoff * margin
     if narrowest >= wanted:
         return padding, narrowest, width, False, False
     grown = padding_that_reaches(smallest_nm=narrowest, padding_nm=padding,
-                                 nonbonded_cutoff_nm=cutoff, box_shape=shape)
-    if sized_by_the_padding(grown_nm=grown, nonbonded_cutoff_nm=cutoff, box_shape=shape) \
+                                 nonbonded_cutoff_nm=cutoff, box_shape=shape, margin=margin)
+    if sized_by_the_padding(grown_nm=grown, nonbonded_cutoff_nm=cutoff, box_shape=shape,
+                            margin=margin) \
             or grown - padding <= 0.5:
         width = max(2 * radius + grown, 2 * grown)
         return grown, factor * width, width, True, False

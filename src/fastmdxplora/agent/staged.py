@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastmdxplora.refusals import Refusal, StudyError, refusal_of
+from fastmdxplora.refusals import Refusal, StudyError, StudyFailed, refusal_of
 
 __all__ = ["StagedRun", "particles_after_setup", "run_in_stages"]
 
@@ -175,7 +175,14 @@ def run_in_stages(
     asked = _phases_asked(config)
     setup_only = _with_phases(config, ["setup"])
     try:
-        runner(config=setup_only, output_dir=str(out))
+        results = runner(config=setup_only, output_dir=str(out))
+        # A phase that fails is recorded in its run, not raised: GroEL's
+        # ADP, refused in setup, was then priced as a setup that "finished
+        # without recording how many particles", and kept for reuse.
+        failure = (StudyFailed.from_results(results)
+                   if isinstance(results, list) else None)
+        if failure is not None:
+            raise failure
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
