@@ -163,6 +163,15 @@ def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
       with as well (at most 1 GiB, its working memory, and 9 n^2) and its
       lists of neighbours, read again and copied (13 n^2, as measured).
 
+    Making the matrix symmetric holds one block of it beside it at any n,
+    halved in place and freed before the next is made (:func:`_pairwise_rmsd`):
+    8 n^2 up to about 2,900 frames, where the block is the whole matrix, and
+    at most :data:`ROWS_BYTES` past them. That is within the least any method
+    here counts beside the matrix, which is 8 n^2. On Python 3.13's NumPy,
+    ``0.5 * (a + b.T)`` held two blocks, and the distances alone peaked at
+    24 n^2; past about 2,900 frames, the last pass's block was held while the
+    next was made, on any Python.
+
     Terms in n alone (the trajectory's frames, labels, a few rows of
     distances at a time) and the figures are left to the share of memory not
     planned on (:data:`MEMORY_SHARE`). Measured on SciPy 1.17 and
@@ -1027,14 +1036,22 @@ def _pairwise_rmsd(traj: md.Trajectory, atom_idx: np.ndarray) -> np.ndarray:
         dist[i] = md.rmsd(traj, traj, frame=i, atom_indices=atom_idx)
     # Symmetrize (MDTraj's RMSD is symmetric up to float precision), a block
     # at a time and in place: `0.5 * (dist + dist.T)` made two more matrices.
+    # The mean is halved in place and freed before the next is made, so one
+    # block is held beside the matrix at any n: `0.5 * (a + b.T)` held two on
+    # Python 3.13's NumPy, which does not reuse the sum for the product there,
+    # and up to about 2,900 frames, where the block is the whole matrix, that
+    # was 24 n^2 where 16 n^2 were counted. Past them, the last pass's block
+    # was held while the next was made.
     step = max(1, int(ROWS_BYTES // (8 * max(n, 1))))
     for low in range(0, n, step):
         high = min(low + step, n)
         for left in range(low, n, step):
             right = min(left + step, n)
-            mean = 0.5 * (dist[low:high, left:right] + dist[left:right, low:high].T)
+            mean = dist[low:high, left:right] + dist[left:right, low:high].T
+            mean *= 0.5
             dist[low:high, left:right] = mean
             dist[left:right, low:high] = mean.T
+            del mean
     np.fill_diagonal(dist, 0.0)
     return dist
 

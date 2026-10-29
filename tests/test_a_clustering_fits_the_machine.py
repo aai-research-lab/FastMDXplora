@@ -271,6 +271,7 @@ class TestTheEstimateIsWhatTheMethodsMake:
         {"methods": ["hierarchical"], "linkage": "ward"},
         {"methods": ["dbscan"], "eps": 5.0},
         {"features": "coordinates", "methods": ["hierarchical"]},
+        {"methods": ["hierarchical"], "linkage": "single"},
     ])
     def test_the_peak_is_within_the_estimate(self, options):
         n = 700
@@ -286,6 +287,31 @@ class TestTheEstimateIsWhatTheMethodsMake:
         estimate = memory_needed(n, analysis.methods, analysis.features, analysis.linkage)
         assert peak <= estimate + 2000 * n, (peak / n**2, estimate / n**2)
         assert estimate <= 1.35 * peak, (peak / n**2, estimate / n**2)
+
+    @pytest.mark.parametrize("n, step", [(700, None), (2000, None), (2000, 1000)],
+                             ids=["700", "2000", "2000-blocks-of-1000"])
+    def test_the_matrix_is_made_symmetric_with_one_block_beside_it(self, n, step,
+                                                                  monkeypatch):
+        """`0.5 * (a + b.T)` held two blocks on Python 3.13's NumPy, which
+        does not reuse the sum for the product: up to about 2,900 frames the
+        block is the whole matrix, and the distances alone peaked at 24 n^2,
+        more than the 16 n^2 counted for k-means and Ward, and the 21 n^2 for
+        single linkage. Past them, where the block is smaller than the matrix,
+        the last pass's block was held while the next was made."""
+        if step is not None:
+            monkeypatch.setattr(clustering, "ROWS_BYTES", 8 * n * step)
+        traj = _chain(n)
+        atoms = traj.topology.select("name CA")
+        step = min(n, max(1, clustering.ROWS_BYTES // (8 * n)))
+        tracemalloc.start()
+        try:
+            before = tracemalloc.get_traced_memory()[0]
+            _pairwise_rmsd(traj, atoms)
+            peak = tracemalloc.get_traced_memory()[1] - before
+        finally:
+            tracemalloc.stop()
+        # The matrix and one block of it, and terms in n alone.
+        assert peak <= 8 * n * n + 8 * step * step + 2000 * n, peak / n**2
 
     def test_k_means_on_coordinates_makes_no_matrix(self):
         analysis = Cluster(features="coordinates", methods=["kmeans", "dbscan"],

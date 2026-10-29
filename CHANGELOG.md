@@ -104,6 +104,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   and their projections saved, the refusal recorded and said in the report;
   "every 2nd frame"), and makes
   its matrix as clustering does, without the five copies of it it made.
+- The frame-by-frame RMSD matrix is made symmetric with one block of it
+  beside it at any n, halved in place and freed before the next. On Python
+  3.13's NumPy `0.5 * (a + b.T)` held two, so up to about 2,900 frames,
+  where the block is the whole matrix, making the distances alone peaked at
+  24 n^2: k-means, Ward and MDS, counted at 16 n^2, and single linkage, at
+  21, took more than their check planned on (25 n^2 on GitHub's
+  ubuntu-latest). Past them, on any Python, the last block was held while
+  the next was made. The estimates are unchanged.
 - Clustering no longer writes the frame-by-frame matrix twice:
   `hierarchical_distance_matrix.npy` is gone (the dendrogram is the
   linkage's), and `cluster_rmsd_matrix.npz` holds the map of time against
