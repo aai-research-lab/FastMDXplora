@@ -31,7 +31,17 @@ def test_a_step_installs_the_browser():
 
 def test_on_the_job_coverage_is_measured_on():
     step = next(s for s in _steps() if s.get("name") == STEP)
-    assert "ubuntu-latest" in step["if"] and "'3.11'" in step["if"]
+    assert "ubuntu-latest" in step["if"] and "'3.13'" in step["if"]
+
+
+def test_the_coverage_leg_measures_with_sys_monitoring():
+    """On 3.11 coverage's per-thread trace function raised in the GUI
+    server's request thread and a page never loaded. The traced run sets
+    the sys.monitoring core and fails if coverage fell back from it."""
+    run = next(s for s in _steps() if s.get("name") == "Run tests")["run"]
+    assert "export COVERAGE_CORE=sysmon" in run
+    assert "core: SysMonitor" in run
+    assert "--cov-branch" not in run
 
 
 def test_before_the_tests_run():

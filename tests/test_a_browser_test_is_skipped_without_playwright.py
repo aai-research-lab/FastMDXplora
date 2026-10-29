@@ -1,8 +1,8 @@
 """A test that drives a browser is skipped where Playwright is not installed.
 
-Only the Ubuntu 3.11 leg installs Playwright. Three tests imported it as
-their first line, before the helper that skips without it, so they failed
-on every other leg (CI run #729).
+Only the coverage leg, Ubuntu 3.13, installs Playwright. Three tests
+imported it as their first line, before the helper that skips without it,
+so they failed on every other leg (CI run #729).
 """
 
 from __future__ import annotations

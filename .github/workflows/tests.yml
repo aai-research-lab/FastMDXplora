@@ -136,16 +136,21 @@ jobs:
     # at 51% and 97%, with nothing failed: 90 for them too. The coverage
     # leg took 138 minutes on 10-25 and on 10-26 was cancelled at 150 at 97%
     # of its browser tests, its ffmpeg alone taking 9 minutes: 180 for it.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && 180 || 90 }}
+    # Those times were on ubuntu 3.11; the coverage leg is ubuntu 3.13 since
+    # 10-28 (the reason is at "Run tests") and keeps the 180.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' && 180 || 90 }}
     strategy:
       fail-fast: false
       matrix:
         # Linux and macOS are what FastMDXplora supports. AmberTools, which
         # gives every ligand its charges, has no Windows build.
         os: [ubuntu-latest, macos-latest]
-        # The floor, the coverage leg, and the ceiling: 3.10 keeps the
-        # `>=3.10` claim honest, 3.11 is the one job codecov reads, and
-        # the ceiling is where what is coming breaks first. The floor was
+        # The floor, the middle, and the ceiling: 3.10 keeps the `>=3.10`
+        # claim honest, 3.11 is a plain leg like the others, and the
+        # ceiling is where what is coming breaks first. Ubuntu at the
+        # ceiling is the coverage leg, the one job codecov reads; it moves
+        # with the ceiling only to a version sys.monitoring can measure
+        # (see "Run tests"). The floor was
         # 3.9 until OpenMM stopped publishing wheels for it, which made
         # every 3.9 job the one without the physics; that role is kept on
         # purpose below, on the floor. The versions in between are bracketed --
@@ -196,14 +201,14 @@ jobs:
           # The physics too, except on the floor. Without OpenMM the suite
           # skips everything that touches it, and for three rounds "low
           # coverage" meant "the dependency was silently absent where
-          # coverage was measured"; the 3.11 job carries it and is the one
-          # codecov reads. The floor job stays without it on purpose: a
+          # coverage was measured"; the ubuntu 3.13 job carries it and is the
+          # one codecov reads. The floor job stays without it on purpose: a
           # base install with no physics is what an analysis-only user
           # has, and the jobs that lacked OpenMM were the ones that found
           # an unguarded import, a missing markdown fallback and a launch
           # that never checked its stack. Best-effort elsewhere: a job that
           # cannot install it skips those tests. Coverage is measured and
-          # uploaded from the ubuntu 3.11 job only, not merged across jobs.
+          # uploaded from the ubuntu 3.13 job only, not merged across jobs.
           if [ "${{ matrix.python-version }}" = "3.10" ]; then echo "::notice::the floor job runs the base install, without the [md] extra, on purpose"; else
           python -m pip install -e ".[md]" || echo "::notice::the [md] extra has no wheels here; physics-dependent tests will skip"
           fi
@@ -229,11 +234,13 @@ jobs:
         # builder submits. Those tests drive Chromium through Playwright and
         # skip where it is absent, which was every job here, so they had only
         # ever run on machines that happened to have it. One job holds them,
-        # the one coverage is measured on. A test tool, not a dependency:
+        # the one coverage is measured on, ubuntu 3.13. Ubuntu 3.11 runs no
+        # browser test since 10-28: they skip there, as on every other leg.
+        # A test tool, not a dependency:
         # nobody installing FastMDXplora gets it. poppler-utils gives
         # pdftotext, which reads back the Report printed to a PDF; without it
         # that test skipped.
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         shell: bash
         run: |
           python -m pip install playwright pytest-xdist
@@ -245,9 +252,22 @@ jobs:
         # Coverage is measured where it is uploaded and nowhere else. The
         # tracer taxes every line of every test, and fourteen of the fifteen
         # term-missing tables were written into logs nobody reads while the
-        # upload step below only ever sends the ubuntu-3.11 file. The other
+        # upload step below only ever sends the ubuntu-3.13 file. The other
         # legs exist to prove the suite passes there, and they prove it
         # faster untraced.
+        #
+        # Measured on 3.13 with sys.monitoring (PEP 669), not on 3.11 with a
+        # trace function. On 3.11 coverage installs a trace function in each
+        # new thread through `threading.settrace`, and that raised "Cannot
+        # install a trace function while another trace function is being
+        # installed" as the GUI server's request thread started, so a page
+        # never loaded (`Page.goto` timeout), at 31b7da54 and in the run
+        # before it. sys.monitoring is set once for the whole
+        # interpreter and installs nothing per thread. coverage measures
+        # with it only for line coverage on 3.12 and 3.13 (branch coverage
+        # needs 3.14) and falls back to its trace function with a warning
+        # for any setting it does not support, so the run writes which core
+        # it used to a debug file and fails if that was not sys.monitoring.
         shell: bash
         run: |
           # -rfEs lists each failed test, each error and each skipped test
@@ -266,13 +286,21 @@ jobs:
           # #65). A file drives Chromium if it names Playwright, or opens a
           # page or takes a browser from a fixture it imports from another.
           # pytest-cov appends the second run to the first.
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.11" ]; then
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.13" ]; then
+            export COVERAGE_CORE=sysmon COVERAGE_DEBUG=sys
+            export COVERAGE_DEBUG_FILE="$RUNNER_TEMP/coverage-debug.txt"
             browser=$(grep -lE 'playwright|\.goto\(|new_page\(|^def test_[a-z0-9_]+\([^)]*\bbrowser\b' tests/*.py)
             status=0
             pytest -rfEs -n auto --dist loadfile --cov=fastmdxplora --cov-report= \
               $(printf -- '--ignore=%s ' $browser) || status=1
             pytest -rfEs --cov=fastmdxplora --cov-append \
               --cov-report=term-missing --cov-report=xml $browser || status=1
+            grep -E '^ *core: ' "$COVERAGE_DEBUG_FILE" | sort | uniq -c || true
+            if grep -qE '^ *core: (CTracer|PyTracer)' "$COVERAGE_DEBUG_FILE" || \
+               ! grep -qE '^ *core: SysMonitor' "$COVERAGE_DEBUG_FILE"; then
+              echo "::error::coverage did not measure with sys.monitoring; its warning is near the top of this step's log"
+              status=1
+            fi
             exit $status
           else
             pytest -rfEs
@@ -294,8 +322,9 @@ jobs:
         # pass.
         #
         # One OS and one version: lint findings do not vary by platform, and
-        # fifteen copies of the same answer is fifteen runner-minutes.
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        # fifteen copies of the same answer is fifteen runner-minutes. On the
+        # coverage leg, with the rest of what one job alone carries.
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         shell: bash
         run: ruff check src tests --select F,B
 
@@ -308,7 +337,7 @@ jobs:
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         with:
           files: ./coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
