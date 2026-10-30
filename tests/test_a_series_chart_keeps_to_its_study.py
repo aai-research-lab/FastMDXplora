@@ -95,3 +95,58 @@ def test_a_null_series_value_leaves_a_gap_in_the_chart() -> None:
         }""")
         browser.close()
     assert path.count("M") == 2 and "L" not in path
+
+
+@pytest.mark.parametrize("values, expected", [
+    ([0.1, None, 0.3, 0.4], "3"),
+    ([None, 0.2, 0.3], "2"),
+])
+def test_keyboard_navigation_passes_missing_values(values, expected) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "series-chart.js")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.set_content('<div id="chart" style="width:440px"></div>')
+        page.add_script_tag(path=str(script))
+        page.evaluate("""values => {
+          window.FastMDXSeries.draw(document.getElementById('chart'), {
+            label: 'RMSD', unit: 'nm', kind: 'time', x_label: 'Frame',
+            x: values.map((_, i) => i), y: values, frames: values.map((_, i) => i),
+            mean: null, linked: false
+          });
+        }""", values)
+        chart = page.locator("#chart svg")
+        chart.focus()
+        for _ in range(4):
+            chart.press("ArrowRight")
+        assert page.locator("#chart").get_attribute("data-at") == expected
+        assert page.locator(".series-tip").is_visible()
+        browser.close()
+
+
+def test_an_all_missing_series_explains_why_there_is_no_chart() -> None:
+    pytest.importorskip("playwright.sync_api")
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "series-chart.js")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.set_content('<div id="chart"></div>')
+        page.add_script_tag(path=str(script))
+        page.evaluate("""() => window.FastMDXSeries.draw(document.getElementById('chart'), {
+          label: 'RMSD', unit: 'nm', kind: 'time', x_label: 'Frame',
+          x: [0, 1, 2], y: [null, null, null], frames: [0, 1, 2], mean: null
+        })""")
+        assert page.locator("#chart").inner_text() == "Every value is missing."
+        assert page.locator("#chart svg").count() == 0
+        browser.close()

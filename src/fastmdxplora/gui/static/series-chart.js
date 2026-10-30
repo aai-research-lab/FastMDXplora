@@ -195,7 +195,10 @@
       return hasY(i) && xs[i] >= xLow && xs[i] <= xHigh;
     });
     if (!seen.length) seen = ys.filter(function (y, i) { return hasY(i); });
-    if (!seen.length) return;
+    if (!seen.length) {
+      host.textContent = "Every value is missing.";
+      return;
+    }
     var yLow = Math.min.apply(null, seen);
     var yHigh = Math.max.apply(null, seen);
     var mean = data.mean || null;
@@ -385,6 +388,8 @@
     }
     function show(index) {
       if (index < 0 || index >= xs.length) return;
+      at = index;
+      host._keyAt = data.x[index];
       if (!hasY(index)) {
         cursor.setAttribute("visibility", "hidden");
         dot.setAttribute("visibility", "hidden");
@@ -392,8 +397,6 @@
         host.removeAttribute("data-at");
         return;
       }
-      at = index;
-      host._keyAt = data.x[index];
       var x = px(xs[index]);
       var y = py(ys[index]);
       cursor.setAttribute("x1", x); cursor.setAttribute("x2", x);

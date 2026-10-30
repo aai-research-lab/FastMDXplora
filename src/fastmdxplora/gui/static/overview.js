@@ -245,7 +245,9 @@
       var xs = found.x, ys = found.y;
       if (!xs || xs.length < 2) return;
       var x0 = timed ? 0 : xs[0], x1 = xs[xs.length - 1];
-      var lo = Math.min.apply(null, ys), hi = Math.max.apply(null, ys);
+      var finite = ys.filter(function (y) { return y != null && isFinite(y); });
+      if (!finite.length) return;
+      var lo = Math.min.apply(null, finite), hi = Math.max.apply(null, finite);
       var pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.01 || 1;
       lo -= pad; hi += pad;
       var px = function (x) { return 1 + (x - x0) / ((x1 - x0) || 1) * (width - 2); };
@@ -259,8 +261,11 @@
         svg("line", { x1: px(from), x2: px(from), y1: 0, y2: height, class: "spark-from" }, plot);
       }
       var d = "";
+      var joined = false;
       for (var i = 0; i < xs.length; i += 1) {
-        d += (i ? "L" : "M") + px(xs[i]).toFixed(1) + " " + py(ys[i]).toFixed(1);
+        if (ys[i] == null || !isFinite(ys[i])) { joined = false; continue; }
+        d += (joined ? "L" : "M") + px(xs[i]).toFixed(1) + " " + py(ys[i]).toFixed(1);
+        joined = true;
       }
       svg("path", { d: d, class: "spark-line" }, plot);
       var cross = svg("line", { y1: 0, y2: height, class: "spark-cross" }, plot);

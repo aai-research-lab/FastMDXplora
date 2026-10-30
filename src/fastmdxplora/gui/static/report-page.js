@@ -234,16 +234,20 @@
    * ask again, and the page would say there is no report. */
   var retrying = 0;
   var asked = 0;
+  function shownStudy() {
+    return ((window.FastMDXDashboard || {}).state || {}).studyShown || "";
+  }
   function load() {
     var mine = asked;
+    var study = shownStudy();
     return fetch("/api/report").then(function (r) { return r.json(); })
       .then(function (data) {
-        if (mine !== asked) return;
+        if (mine !== asked || study !== shownStudy()) return;
         retrying = 0;
         render(data);
       })
       .catch(function () {
-        if (mine !== asked) return;
+        if (mine !== asked || study !== shownStudy()) return;
         render(null);
         if (retrying < 5) {
           retrying += 1;

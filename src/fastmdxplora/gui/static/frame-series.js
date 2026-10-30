@@ -176,6 +176,7 @@
     var chart = node.querySelector(".frame-track-chart");
     var d = track.data;
     chart.replaceChildren();
+    track.plot = null;
     if (!d) return;
     var width = Math.max(200, Math.round(chart.clientWidth || host().clientWidth || 600));
     var c = colours();
@@ -189,8 +190,10 @@
     var xLow = Math.min(xs[0], xOfFrame(d, frames[0]));
     var xHigh = Math.max(xs[xs.length - 1], xOfFrame(d, frames[frames.length - 1]));
     if (xHigh === xLow) xHigh = xLow + 1;
-    var yLow = Math.min.apply(null, ys);
-    var yHigh = Math.max.apply(null, ys);
+    var finite = ys.filter(function (y) { return y != null && isFinite(y); });
+    if (!finite.length) return;
+    var yLow = Math.min.apply(null, finite);
+    var yHigh = Math.max.apply(null, finite);
     var mean = d.mean && d.mean.value != null ? d.mean : null;
     if (mean) {
       yLow = Math.min(yLow, mean.value);
@@ -221,9 +224,13 @@
         "font-size": 8, "text-anchor": "end" }, svg);
       label.textContent = format(pair[0]);
     });
+    var joined = false;
     el("path", {
       d: xs.map(function (x, i) {
-        return (i ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+        if (ys[i] == null || !isFinite(ys[i])) { joined = false; return ""; }
+        var point = (joined ? "L" : "M") + px(x).toFixed(1) + " " + py(ys[i]).toFixed(1);
+        joined = true;
+        return point;
       }).join(""),
       fill: "none", stroke: c.line, "stroke-width": 1.3, "stroke-linejoin": "round",
       class: "frame-series-line",
@@ -302,7 +309,7 @@
     var spacing = d.frames.length > 1 ? (d.frames[d.frames.length - 1] - d.frames[0])
       / (d.frames.length - 1) : 0;
     var close = Math.abs(d.frames[point] - frame) <= Math.max(0.5, spacing / 2 + 1e-9);
-    if (close) {
+    if (close && d.y[point] != null && isFinite(d.y[point])) {
       dot.setAttribute("cx", track.plot.px(d.x[point]));
       dot.setAttribute("cy", track.plot.py(d.y[point]));
       dot.setAttribute("visibility", "visible");

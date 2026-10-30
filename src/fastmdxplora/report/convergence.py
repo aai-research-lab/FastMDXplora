@@ -302,6 +302,7 @@ def assess_series(name: str, values: Any,
         equilibrated, reason = summarise(series)
     if isinstance(record, dict) and _number(record.get("mean")) is not None:
         # The analysis's own record, as written.
+        error = _number(record.get("standard_error"))
         discard = int(_number(record.get("discard")) or 0)
         # The record counts source frames; the assessment uses finite frames.
         discard = int(np.isfinite(raw[:discard]).sum())
