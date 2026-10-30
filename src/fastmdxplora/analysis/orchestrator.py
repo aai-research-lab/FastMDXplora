@@ -181,6 +181,8 @@ class AnalysisOrchestrator:
         does not override it.
     stride, first, last : int, optional
         Frame-selection parameters applied at load time.
+    first_frame_only : bool, optional
+        Read only the first frame for planning, ignoring frame selection.
 
     Examples
     --------
@@ -218,6 +220,7 @@ class AnalysisOrchestrator:
         saving_interval_ps: float | None = None,
         figure_colours: str | None = None,
         figure_width: str | None = None,
+        first_frame_only: bool = False,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -257,6 +260,7 @@ class AnalysisOrchestrator:
         self.traj: md.Trajectory = load_trajectory(
             trajectory, topology, stride=stride, first=first, last=last,
             saving_interval_ps=saving_interval_ps,
+            first_frame_only=first_frame_only,
         )
         # The insertion codes read with this topology, put back when it is
         # run: the table holds the codes of the topology read last, so an

@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_a_phase_command_is_explore_with_one_phase import _analysed, _made  # noqa: E402
+from test_a_phase_command_is_explore_with_one_phase import _analysed, _campaign, _made  # noqa: E402
 
 from fastmdxplora.gui.exploration import DashboardRuntime  # noqa: E402
 
@@ -126,6 +126,59 @@ def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path)
 
     assert offered["recorded"] == []
     assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+
+
+@pytest.mark.parametrize("top_config", [False, True])
+def test_a_study_of_several_runs_offers_the_same_defaults_as_its_first_run(tmp_path, top_config):
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _campaign(tmp_path)
+    for run in (root / "runs").iterdir():
+        _forget_analysis_selection(run)
+    if not top_config:
+        (root / "resolved_config.yml").unlink()
+
+    answers = []
+    for study in (root / "runs" / "a", root):
+        session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+        try:
+            answers.append(json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read()))
+        finally:
+            session.server.shutdown()
+
+    for offered in answers:
+        assert offered["recorded"] == []
+        assert offered["analysis"]["can"]
+        assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+        assert not offered["analysis"].get("defaults_why")
+
+
+def test_automatic_choices_read_only_one_frame_and_match_the_full_plan(tmp_path, monkeypatch):
+    from fastmdxplora.analysis import AnalysisOrchestrator, loading, orchestrator
+    from fastmdxplora.gui.again_view import _automatic_analyses
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False,
+                     stride=2, first=3, last=9)
+    _forget_analysis_selection(root)
+    full = AnalysisOrchestrator(
+        trajectory=root / "simulation" / "production.dcd",
+        topology=root / "simulation" / "topology.pdb", output_dir=root / "analysis",
+        stride=2, first=3, last=9)
+    assert full.traj.n_frames == 6
+    expected = list(full.planned_analyses())
+    load = orchestrator.load_trajectory
+    frames_read = []
+
+    def read(*args, **kwargs):
+        trajectory = load(*args, **kwargs)
+        frames_read.append(trajectory.n_frames)
+        return trajectory
+
+    monkeypatch.setattr(orchestrator, "load_trajectory", read)
+    with mock.patch.object(loading.md, "load", side_effect=AssertionError("full trajectory read")):
+        assert _automatic_analyses(root) == expected
+    assert frames_read == [1]
 
 
 def test_an_unplannable_trajectory_has_no_automatic_fallback(tmp_path):

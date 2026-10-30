@@ -13,14 +13,15 @@ from typing import Any
 
 
 def _automatic_analyses(study: Path) -> list[str]:
+    from fastmdxplora.again import _first_run
     from fastmdxplora.analysis import AnalysisOrchestrator
     from fastmdxplora.analysis.analyze import (
         _detect_ligand_resname,
-        _saving_interval_ps,
         analysis_paths,
     )
     from fastmdxplora.config.recorded import RECORDED, phase_settings
 
+    study = _first_run(study)
     settings = phase_settings(study / RECORDED, "analysis", study=study)
     trajectory, topology = analysis_paths(
         study, trajectory=settings.get("trajectory"), topology=settings.get("topology"))
@@ -33,10 +34,7 @@ def _automatic_analyses(study: Path) -> list[str]:
         scope=settings.get("scope", "solute"),
         ligand_resname=(settings.get("ligand_resname")
                         or _detect_ligand_resname(study)),
-        stride=settings.get("stride"),
-        first=settings.get("first"),
-        last=settings.get("last"),
-        saving_interval_ps=_saving_interval_ps(study, trajectory=trajectory),
+        first_frame_only=True,
         figure_colours=settings.get("figure_colours"),
         figure_width=settings.get("figure_width"),
     )
