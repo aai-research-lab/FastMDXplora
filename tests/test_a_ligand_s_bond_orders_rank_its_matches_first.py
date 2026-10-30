@@ -291,14 +291,17 @@ def test_an_imine_s_hydrogen_keeps_the_file_s_e_or_z(tmp_path: Path, smiles: str
             folder = tmp_path / f"{seed}-{torsion:g}"
             folder.mkdir()
             file, held = _built(smiles, 100 + seed), _built(smiles, 200 + seed)
+            # The file's =N-H on the ring's side, against a methyl, however
+            # the build lays it (RDKit 2026.09 builds every benzamidine
+            # here with it on the other side).
+            ring, c, n = file.GetSubstructMatch(pattern)[2:5]
+            hydrogen = next(a.GetIdx() for a in file.GetAtomWithIdx(n).GetNeighbors()
+                            if a.GetAtomicNum() == 1)
+            rdMolTransforms.SetDihedralDeg(file.GetConformer(), hydrogen, n, c, ring, 0.0)
             match = held.GetSubstructMatch(pattern)
             rdMolTransforms.SetDihedralDeg(held.GetConformer(), match[0], match[2],
                                            match[3], match[4], torsion)
             xyz, record = _place(folder, file, held, seed=seed)
-            c, n = file.GetSubstructMatch(pattern)[3:5]
-            hydrogen = next(a.GetIdx() for a in file.GetAtomWithIdx(n).GetNeighbors()
-                            if a.GetAtomicNum() == 1)
-            ring = file.GetSubstructMatch(pattern)[2]
             before = _dihedral(file.GetConformer().GetPositions(), hydrogen, n, c, ring)
             after = _dihedral(np.asarray(xyz) * 10.0, hydrogen, n, c, ring)
             assert (abs(before) < 90.0) == (abs(after) < 90.0), (seed, torsion)

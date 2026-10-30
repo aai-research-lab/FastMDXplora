@@ -247,12 +247,39 @@ def test_a_double_bond_held_within_noise_the_other_way_is_refused(
         assert "within noise on the other side" in refused.args[0], degrees
 
 
+def _off_trans(smiles: str, seed: int, degrees: float) -> np.ndarray:
+    """``smiles`` built and its stated double bond turned (:func:`_turned`)
+    until its two arms lie ``degrees`` from trans, however the build lays
+    them: a turn of 60 from a build at 179.4 or 180.6 degrees lands either
+    side of the edge of noise, a cosine of 0.5."""
+    held = _built(smiles, 200 + seed)
+    bond = next(b for b in held.GetBonds() if b.GetBondType() == Chem.BondType.DOUBLE
+                and b.GetStereo() != Chem.BondStereo.STEREONONE)
+    i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+    a, b = (min(n.GetIdx() for n in held.GetAtomWithIdx(k).GetNeighbors()
+                if n.GetAtomicNum() > 1 and n.GetIdx() != m) for k, m in ((i, j), (j, i)))
+
+    def off(xyz: np.ndarray) -> float:
+        b0, b1, b2 = xyz[i] - xyz[a], xyz[j] - xyz[i], xyz[b] - xyz[j]
+        n1, n2 = np.cross(b0, b1), np.cross(b1, b2)
+        cosine = float(np.dot(n1, n2) / (np.linalg.norm(n1) * np.linalg.norm(n2)))
+        return 180.0 - float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
+
+    start = off(held.GetConformer().GetPositions())
+    for turn in (degrees - start, degrees + start, start - degrees, -degrees - start):
+        xyz = _turned(smiles, seed, turn)
+        if abs(off(xyz) - degrees) < 0.1:
+            return xyz
+    raise AssertionError(f"no turn lays {smiles} {degrees} degrees from trans")
+
+
 def test_a_double_bond_held_within_noise_is_named_once(tmp_path: Path) -> None:
-    """Turned 60 degrees, on the file's side of square: said as a bond, not
-    as two centres ("C3 held within noise; C5 held within noise")."""
+    """Turned 65 degrees from trans, on the file's side of square: said as a
+    bond, not as two centres ("C3 held within noise; C5 held within
+    noise")."""
     smiles = "OC/C=C/c1ccccc1"
     _, record, line = _place(tmp_path, _built(smiles, 101),
-                             _held(tmp_path, smiles, 1, _turned(smiles, 1, 60)))
+                             _held(tmp_path, smiles, 1, _off_trans(smiles, 1, 65.0)))
     names = {m["file_atom"]: m["structure_name"] for m in record["mapping"]}
     assert f"{names[2]}={names[3]} held within noise" in line or \
         f"{names[3]}={names[2]} held within noise" in line
