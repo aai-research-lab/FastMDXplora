@@ -2535,7 +2535,7 @@ class TestTheResultsCarryTheMeasurement:
         # The error to two figures, the mean to the same place: as the GUI
         # beside the report gives it.
         assert "0.0121 ± 0.0029" in said
-        assert "8 independent samples" in said
+        assert "8.1 independent samples" in said
         assert "discarding 40 frames" in said
 
     def test_a_mean_that_is_not_a_measurement_says_so(self) -> None:

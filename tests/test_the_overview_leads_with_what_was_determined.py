@@ -608,6 +608,38 @@ def test_a_running_run_s_speed_is_one_number(tmp_path) -> None:
     assert value in cell, (value, cell)
 
 
+@pytest.mark.parametrize(("samples", "expected"), [
+    (9.99, "9.9 independent samples"),
+    (24.999999999999996, "24.9 independent samples"),
+    (21.27, "21.2 independent samples"),
+    (21.0, "21 independent samples"),
+    (1.001, "1 independent sample"),
+])
+def test_the_production_chart_note_says_the_shared_sample_count(tmp_path, monkeypatch, samples, expected):
+    from fastmdxplora.gui import overview_view
+
+    root = _browser_study(tmp_path / "study", "completed")
+    payload_of = overview_view.overview_payload
+
+    def production(where, **kwargs):
+        payload = payload_of(where, **kwargs)
+        payload["thermodynamics"]["means"]["temperature"].update(
+            samples=samples, determined=True)
+        return payload
+
+    monkeypatch.setattr(overview_view, "overview_payload", production)
+
+    def check(page):
+        page.wait_for_function(
+            "expected => document.querySelector('[data-chart-note=temperature]')"
+            ".textContent.includes(expected)", arg=expected)
+        return page.text_content('[data-chart-note="temperature"]')
+
+    note, errors = _open(root, check)
+    assert not errors, errors
+    assert note.startswith(f"production mean, {expected}"), note
+
+
 def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
     """A tile read "0 independent samples · from 17.6 ps" beside its mean."""
     pytest.importorskip("playwright.sync_api")
@@ -630,7 +662,48 @@ def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
 
     note, errors = _open(root, check)
     assert not errors, errors
-    assert note.startswith("under 1 independent sample"), note
+    assert note.startswith("fewer than one independent sample"), note
+
+
+@pytest.mark.parametrize(("samples", "expected"), [
+    (9.501928863580078, "9.5 independent samples"),
+    (9.99, "9.9 independent samples"),
+])
+def test_fractional_independent_samples_stay_finite_and_below_ten(
+        tmp_path, samples, expected) -> None:
+    """The displayed count keeps its fractional value and cannot cross 10."""
+    pytest.importorskip("playwright.sync_api")
+    from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.statistics import _summary
+
+    root = _browser_study(tmp_path / "study", "completed")
+    options_path = root / "analysis" / "rg" / "options.json"
+    options = json.loads(options_path.read_text(encoding="utf-8"))
+    finding = options["findings"]["mean"]
+    mean, reason = _summary(
+        np.tile([0.0, 1.0], 8), 0, 1.0, (16 / samples, 15),
+        lambda: (16 / samples, 15), 10)
+    finding.update(mean.as_record())
+    finding["not_a_measurement"] = reason
+    options_path.write_text(json.dumps(options), encoding="utf-8")
+    mean = next(q for row in overview_of(root)["rows"] if row["analysis"] == "rg"
+                for q in row["quantities"] if q["key"] == "mean")
+
+    def check(page):
+        note = page.text_content('#overview-tiles [data-tile-analysis="rg"] .tile-note')
+        payload = page.evaluate("() => fetch('/api/overview').then(response => response.json())")
+        tile = next(item for item in payload["tiles"] if item.get("analysis") == "rg")
+        return note, tile
+
+    (note, tile), errors = _open(root, check)
+    assert mean["samples"] == pytest.approx(samples)
+    assert not errors, errors
+    assert note.startswith(expected), note
+    assert tile["samples"] == pytest.approx(samples)
+    assert tile["determined"] is False
+    assert tile["reason"] == "Fewer than 10 independent samples: the run has to be longer."
+    assert f"{expected} in 16 frames" in tile["why"]
+    assert "10.0 independent samples" not in tile["why"]
 
 
 def test_the_run_s_speed_is_production_s_as_the_fix_card_prices_it(tmp_path) -> None:
