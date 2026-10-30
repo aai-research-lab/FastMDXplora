@@ -322,6 +322,292 @@ campaign.
 
 ---
 
+## A ligand's atoms against its pose
+
+Where a ligand's chemistry comes from an SDF or MOL2 and its pose from the
+structure, preparation matches the file's heavy atoms to the structure's
+residue by element and bond graph, never by the order either lists them in,
+and a residue's own hydrogens are left out of the match. Only three things
+refuse:
+
+- another molecule: the residue's heavy-atom graph is not the file's
+  (`setup.ligand.atoms_unmatched`, the atoms that do not match named);
+- a stereoisomer no match explains: every match the deposit's bond lengths
+  allow turns a centre or a double bond the file states
+  (`setup.ligand.stereo_mismatch`). The refusal names the centres and says
+  whether bond lengths took part, with the lengths that did;
+- a hydrogen overlap left after its rotor's scan: a hydrogen within 1.0 Å of
+  an atom three or more bonds away (`setup.ligand.hydrogens_overlap`).
+
+Everything else is recorded: how far the deposit's bonds lie from the file's
+(a deposit's lie up to 0.2 Å from an ideal component's), the worst H-X-Y
+angle, and the closest contact. Of the graph's matches, setup takes the one
+the file's chemistry says:
+
+1. those tied best on the file's bond orders. Each bond is held to one length
+   for its symmetry class (the mean of the file's lengths over the class, or
+   ideal ones for a flat file, a carboxylate's, amidinium's, phosphate's or
+   sulfonate's resonance taken as one order), so a molecule's own symmetry
+   costs nothing. Two matches that expect lengths e and e' of a bond differ in
+   score by an amount a deposit's noise moves by 2 |e - e'| sigma; they are
+   tied where their scores differ by no more than that, summed over the bonds
+   they expect differently. Sigma is the copy's own noise on a bond: 0.025 Å,
+   or for a copy clearly worse its own: its bonds' departures from typical
+   lengths for their elements, order and hybridisation, read only over the
+   bonds no tied match lays another order on. A conjugated bond between two
+   sp2 or sp atoms (its length is its conjugation's: a porphyrin's all lie
+   between C-C and C=C) is counted only where the others are fewer than
+   four, then all of them, each against the nearest of its single, 1.5 and
+   double lengths; a read mostly from them is used only over three times
+   0.025 Å, their typical lengths being their conjugation's guess. A bond
+   whose length fits another order past once a first read is left out of
+   the conjugated bonds read and of the read another molecule is held to, so
+   a misfit does not raise the noise that hides it. From
+   eight bonds or more the noise is their RMS departure, the largest left
+   out; from four to seven, the spread about their median departure (1.4826
+   times the median absolute deviation), so one bond of another order, or a
+   copy stretched as a whole (5TG4's A303, every bond 0.05 Å long), is not
+   its noise. From four or more it is used where it is over twice 0.025 Å:
+   typical lengths are averages, and a good deposit's bonds lie 0.02 to 0.04
+   Å from them, so a read that close is not told from a good deposit's.
+   Under four bonds, there being no spread to set a threshold by, the read is
+   used as it is, never under 0.025 Å. It is recorded as `bond_noise_nm` and
+   said in the line: 5TED's shikimate, its ring 0.05 to 0.16 Å off any order,
+   is held to 0.12 Å. A C=O and a C-OH swapped are told
+   apart only where a good deposit's two C-O differ by more than about 0.05 Å.
+   A bond longer than any bond of its elements has (a C-C of 1.73 Å) and a
+   metal's coordination (its length the metal's oxidation and spin state's,
+   not an order's; any element the covalent table lacks counts as one) are
+   left out of the score and the window, the other bonds still deciding; a
+   bond shorter than any (1T5E's C-O of 0.97 Å), an atom laid where no bond
+   puts it, leaves undecided the swap that changes its order. This comes
+   first: two arms of a centre differing only in bond order (a CHO and a
+   CH2OH) swapped turn the centre over, so with the stereochemistry first a
+   wrong isomer agreed;
+2. among those, only the ones agreeing with the stereochemistry the file
+   states (its stereo flags, else its 3D coordinates), at every centre and
+   double bond. A centre whose three bonds span a volume under 0.25 (a
+   tetrahedral one spans 0.77), or a double bond within 30 degrees of square,
+   is held within noise. A structure atom the pose has flat (under 0.12, an
+   sp2 one's) holds against a match the stated centres it lays there beyond
+   the fewest any tied match does; the others are recorded "not judged: the
+   structure models this atom flat" (`modelled_flat`). Where a tied match
+   turns a centre only by laying the bond orders on other bonds, the deposit
+   did not decide which arm carries the double bond: the file's isomer is
+   placed, and the record says so with the bonds whose order differs, their
+   lengths and which the file calls double (`bond_orders_undecided`;
+   glyceraldehyde on 4PTN chains A to C), and that the other isomer fits too,
+   or, where its match scores better, that the lengths lean to the other
+   isomer, within the copy's noise.
+   Setup's stereochemistry record and the line it returns name each such
+   centre, and each modelled flat or held within noise, by the structure's
+   names, apart from those that agree with the pose. None left, the ligand is
+   refused. A meso compound, a ring's cis/trans centre, or a sugar dimer whose
+   halves the graph cannot tell apart is placed as itself. Then each bond
+   every tied match lays one order on whose deposited length fits another
+   order past the copy's noise (and lies within 0.1 Å of that order's typical
+   length: a C-O of 1.01 Å is a broken deposit, not a C=O) is either another
+   molecule or said. It is another molecule, and the ligand refused
+   (`setup.ligand.atoms_unmatched`), where the length lies past the midpoint
+   by twice the copy's noise as read (a copy reading over 0.046 Å cannot say
+   another molecule, and has it said instead) and a carbon of the bond has
+   the other order's shape: three heavy neighbours flat for a double bond
+   where the file has it tetrahedral, or tetrahedral for a single where the
+   file has it flat; two, outside a ring of five or fewer, the angle between
+   them over 118.3 degrees for flat (the 99th percentile of 391 sp3 CH2
+   angles in 74 clean copies of 44 components restrained to their CCD
+   files) and under 114 for tetrahedral (the lower of 114 and 116.9, the
+   1st percentile of 340 sp2 angles in 77 such copies of 41 components);
+   between, where sp2 and sp3 carbons both lie, the angle decides nothing,
+   and the ligand is placed as stated, the bond and the angle said ("C1-O1
+   1.42 A fits C-O, the file has C=O; C1's angle 116 degrees does not
+   tell": 1U0G's erythrose phosphate); for a double bond, the other atom
+   not tetrahedral. Three such bonds or more say
+   it together, though none is clear by twice the noise alone (a
+   cyclohexane's file on toluene's ring). An alcohol's file on its ketone's
+   deposit, retinal's on retinol's 1KT6 (its C15 tetrahedral), DHT's on
+   testosterone's and on 1I37, p-menthene's on limonene's and benzyl
+   alcohol's on benzaldehyde's are refused so, and so is a C=C of the file
+   beside a C-C that both fit the other order in every tied match: the
+   double bond lies elsewhere (a 5-ene steroid on 3S79's 4-ene, alpha- on
+   gamma-terpinene). Where every tied match lays such a bond, each on
+   another like bond, it is refused where each is confirmed by shape and the
+   tie turns no centre (1-hexene's file on hexane's deposit, laid at either
+   end), and said otherwise (1-pyrroline's C=N on pyrrolidine's either
+   C-N); it is never left unsaid as the tie's to decide. The refusal says
+   what the deposit shows, by the structure's names ("Its C4-C5 is 1.31 A, a
+   C=C, where the file has C-C, and its C5 is flat"), and that its geometry
+   and validation report be checked; to go on, another deposit of the
+   file's molecule, the deposited molecule's own file where the residue is
+   named for another, or the file's own coordinates (`setup.ligand_pose:
+   file`, set for the whole study, so each file's in the binding site), the
+   fix line naming that setting. A C=N against a C-N is never another molecule, and
+   is said: the other redox form where the carbon's hydrogens change with
+   it (an amine and its imine, the carbon sp3 in the file or tetrahedral in
+   the deposit), else another protonation, tautomeric or redox form ("C46-N48
+   1.27 A fits C=N, the file has C-N (another protonation, tautomeric or
+   redox form)": 3HEC's imatinib). Where no shape confirms the length, the
+   ligand is placed as stated, the bond said ("C8-C7 1.49 A fits C-C, the
+   file has C=C"): a vinyl modelled 1.52 Å long (2HRE), DHF's file on
+   folate's deposit (4PSS), 6V87's hydroxytamoxifen, retinal's on 1KT3. A
+   terminal C=O or C-OH at a carbon flat in both, beside an atom that can
+   give or take the hydrogen, and two bonds beside each other that move a
+   hydrogen between a heteroatom and the ring, are "(the other tautomer)"
+   (warfarin, the pyridones, an enol and its ketone). A bond the file calls
+   aromatic whose length fits a single is "the file has it aromatic (the
+   other redox or tautomeric form)" only beside another of its ring that
+   fits it too, at an atom the deposit has tetrahedral, as a reduced ring's
+   is: folate's file on DHF's deposit (6CXK). A ring of four or five, whose
+   angles are the ring's, is read as reduced instead where the deposit
+   puckers it (a torsion over 20 degrees; an aromatic ring's lie within a
+   few degrees of 0), or, in a five-ring of C, N and O, where the shared
+   carbon's angle is under 106 degrees (the 5th percentile, 105.9, of 35
+   aromatic carbons of such rings in the clean deposits; 64 sp3 carbons
+   there have a median of 104.6): indole's file on indoline's deposit,
+   furan's on THF's. In a ring the deposit lays flat, two such bonds at an
+   atom of two heavy neighbours, each past twice the noise, are said as
+   lengths only, "the deposit lays its ring flat", with no form named, and
+   at an atom of three (an N-acyl indole's N, 3FO7's indomethacin,
+   6C9F's staurosporine) not at all. One long bond of a ring (an
+   adenine's C4-N9 at 1.47 Å) is the deposit's, and not said. A conjugated
+   C-C or an aromatic bond is said only clear of its conjugation's own
+   range, past the midpoint by twice the noise. A length past the midpoint
+   by less than the noise is said only where a carbon of it has the other
+   order's shape past any right ligand's (three heavy neighbours spanning
+   at least 0.55 for tetrahedral or under 0.06 for flat, or two as above:
+   "C6-O1 1.33 A leans to C-O, with its C6 tetrahedral as in C-O"), or at
+   an open-chain carbon whose angle lies between ("leans to C-C, the file
+   has C=C; C2's angle 118 degrees does not tell"), or where it leans to the other tautomer at an
+   aromatic ring's C-OH laid short (2-hydroxypyridine's file on a pyridone)
+   or beside a bond of its carbon leaning the other way; a
+   carbon a double bond makes flat that the deposit bends under
+   114 degrees is said on a bond longer than a double's by more than the
+   noise ("with its C4
+   tetrahedral (110 degrees)"), and so is a length past even the other
+   order's ("past even a C-O's length"). None of these is ever refused. No
+   note names an order the atoms cannot take: not across an O or N bridging
+   two phosphorus atoms, past an atom's valence (an ether's O, a
+   sulfonyl's S), at a carboxyl's carbon or at a stated centre the deposit
+   holds tetrahedral, and never a triple bond. The oxygens of a
+   carboxylate, phosphate or sulfonate, whose orders are resonance, are
+   left out;
+3. among those, the best on its bond lengths (within 0.025 Å, squared, for
+   each bond two of them lay differently: a porphine's NH pair, which the
+   tie leaves open, is still taken from the lengths), then on the 1-3
+   distances, a few degrees of noise allowed, then the rigid fit.
+
+Interchangeable terminal atoms (the F of a CF3, the methyls of a tBu, the O of
+a PO3 or SO3) are not searched: they are given to the structure's by their
+bond lengths (a carboxyl's, phosphate's or sulfate's oxygens against ideal
+lengths for =O, -OH and -O-), then their 1-3 distances, then position, so
+phytate, suramin and BArF place in a few thousand steps. A group whose giving
+the deposit's lengths do not decide by the same rule (a P=O and a P-OH
+deposited 1.52 and 1.54 Å) is recorded (`assigned_within_noise`), with each
+oxygen's deposited length and which carries the double bond: which carries the
+proton is then the file's choice. A centre whose handedness is only which of
+interchangeable atoms is which (a phosphate's P) is not counted, and said so.
+A 3D file of a molecule without stereocentres is recorded "no stereocentre or
+stereo double bond in the molecule"; a flat file without stereo flags,
+"stereochemistry not stated in the file".
+
+Each hydrogen is built from internal coordinates: the file's X-H length and
+H-X-Y angles, in the frame of its own atom's bonds, a methine's carried with
+its three neighbours, or laid opposite their bonds where two of them are alike
+and the match gives them the other way round from the file's. A file with no
+extent in z (a 2D depiction, read as such whatever its bond lengths), or whose
+X-H lengths no bond has, has its hydrogens built at ideal geometry for each
+atom's hybridisation (a methine's equally inclined to its three bonds, which
+for a flattened centre is not opposite their sum), and its stereochemistry
+only from its stereo flags; an imine's =N-H keeps the side the file gives it.
+At a stated centre the deposit models flat or holds within noise, the hydrogen
+goes on the side the file's handedness gives, not the side the deposit's heavy
+atoms lean to. A rotor whose hydrogens come within 1.5 Å of an atom three or
+more bonds away is turned: an sp3 one (OH, NH3+, CH3) to its clearest torsion,
+a planar one (an amide's NH2, a vinyl's =CH2, an amidinium's) only to the
+other of its two in-plane positions; an imine's =N-H, whose two are its E and
+Z, keeps the file's and is recorded crowded (`kept_crowded`). Setup keeps a
+copy of each ligand file in `setup/ligands/`, and the setup record keeps the
+copy's path and SHA-256, where it came from, the mapping of its heavy atoms to
+the structure's, and the stereochemistry checked (`ligand_poses`).
+
+For a study already prepared, reading only:
+
+```python
+from fastmdxplora.validation.ligand_mapping import check_ligand_mappings
+
+for ligand in check_ligand_mappings("studies/3ptb"):
+    print(ligand["ligand"], ligand["copy"], ligand["status"], ligand["code"] or "")
+```
+
+The check holds the prepared system's own ligand atoms (`setup/topology.pdb`)
+to the copy of the file setup kept, never to a pose it has just placed. The
+prepared ligand must be the same molecule, in the file's order and bonded as
+the file's, every heavy atom within 0.002 nm of the structure atom the mapping
+puts it on, with the file's stereochemistry wherever it is judged, no hydrogen
+within 1.0 Å of an atom three or more bonds away or inside its own atom's
+bonds (every H-X-Y under 90 degrees), and its atoms on the ones the file's
+bond orders choose, by setup's tie, under a recorded mapping as under one
+found again; and where a SHA-256 was recorded, the file read is the one
+prepared from.
+
+Such a ligand is then said to be:
+- "verified": every stated centre decided by the structure and agreeing, and
+  no hydrogen more than 30 degrees from where it should be;
+- "placed as stated": a centre the structure did not decide ("placed as
+  stated; the structure did not decide C3 (O3-C3 1.41 A, C1=O1 1.45 A (double
+  in the file)); the other isomer fits too"), one it models flat ("the
+  structure models C5 flat") or one it holds within noise ("C2 held within
+  noise", "C3=C5 held within noise" for a double bond), each by the
+  structure's name, a bond whose length fits another order ("C8-C7 1.49 A
+  fits C-C, the file has C=C"), and the copy's noise where it is over 0.025
+  Å, which alone is reason enough: a copy that rough cannot have decided
+  the file's orders at a good deposit's precision. Where the structure
+  models a stated centre flat or holds it within noise, its hydrogen is
+  laid on the file's side; a centre with no hydrogen has its terminal
+  neighbour laid there ("O7 laid on the file's side of S1, which the
+  structure holds within noise the other way, 0.62 A from its deposited
+  place"), turned about the centre to lean at least 0.15 the file's way, and
+  the check holds that atom to the distance setup laid it from its
+  deposited place. Such a centre with no terminal neighbour, and a stated
+  double bond held within noise on the other side of square, is refused
+  (`setup.ligand.stereo_mismatch`), the lean said as a share of a
+  tetrahedral centre's. A stated double bond the deposit lays truly single
+  is "laid as a single bond, its E or Z not judged", its bond said as above:
+  where a carbon of it with two heavy neighbours is bent under 114 degrees
+  (a CH2 in the single's molecule) and its length lies past the midpoint
+  to an sp3 single by twice the copy's noise, so that noise alone never
+  does it, or where it is a tautomer's, its length nearer
+  a conjugated single's (about 1.47 Å) beside a C-OH or C-N of its carbon
+  laid at a double's length. Acetylacetone's enol file on its keto deposit
+  is placed so, as the other tautomer. Its E or Z is then not judged, and
+  the simulated isomer follows the deposit's geometry, not the file's. A
+  shape alone never does it, nor a length alone at flat carbons: a planar
+  C=C stretched to 1.48 Å, or at a carbon bent to 113 degrees, is judged,
+  and a match laying the double bond on a bond the structure lays single
+  is held against where another tied match lays it on a double. So,
+  elsewhere, the placed ligand relaxes to the file's isomer, and the check
+  holds the prepared atoms to it; it is never said to agree with the pose;
+- "agrees": as verified, but for a hydrogen more than 30 degrees from where
+  its atom's bonds put it ("agrees, with a hydrogen 50 degrees from ideal at
+  H12").
+
+The worst bond-length departure, the worst H-X-Y angle (for a flat or roughly
+built file, against the ideal for the atom's hybridisation) and the closest
+contact are reported as numbers. A hydrogen at a stated centre on the other
+side from the file's handedness is the other stereoisomer, and "does not
+agree", whatever the deposit's heavy atoms say.
+A study prepared before the mapping was recorded is checked with its prepared
+atoms given to the structure's by position, and is "not verifiable" where its
+prepared coordinates cannot be read, as is one whose stereochemistry RDKit
+cannot read. Otherwise a ligand "does not agree" (said how), is "refused" as
+setup would refuse it today, "file changed", "pose from the file"
+(`ligand_pose: file`, or a structure without the residue), or "not read". A
+run given `setup_from` is checked against the system it was simulated from.
+Called on its own, the check holds its reads to the study, so a record linked
+out of it is "not read". It writes nothing in the study.
+
+---
+
 ## Pre-registration
 
 `preregistration/` at the repository root holds the thresholds and the claims
