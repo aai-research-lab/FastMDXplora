@@ -46,21 +46,22 @@ def _row(root: Path, start: str):
     return next(r for r in _metric_rows(root, {}) if r.metric.startswith(start))
 
 
-@pytest.mark.parametrize(("samples", "expected"), [
-    (9.99, "9.9 independent samples"),
-    (24.999999999999996, "24.9 independent samples"),
-    (21.27, "21.2 independent samples"),
-    (21.0, "21 independent samples"),
-    (1.001, "1 independent sample"),
-    (0.3, "fewer than one independent sample"),
+@pytest.mark.parametrize(("samples", "expected", "cell"), [
+    (9.99, "9.9 independent samples", "9.9"),
+    (24.999999999999996, "24.9 independent samples", "24.9"),
+    (21.27, "21.2 independent samples", "21.2"),
+    (21.0, "21 independent samples", "21"),
+    (1.001, "1 independent sample", "1"),
+    (0.3, "fewer than one independent sample", "0.3"),
+    (12345.67, "12345.6 independent samples", "12,345.6"),
 ])
-def test_captions_records_and_report_table_say_the_same_count(tmp_path, samples, expected):
+def test_captions_records_and_report_table_say_the_same_count(tmp_path, samples, expected, cell):
     from fastmdxplora.gui.figure_data import figure_payload
     from fastmdxplora.gui.records_answer import _means
     from fastmdxplora.statistics import MEAN_RULES
 
     _analysis(tmp_path, "rmsd", RMSD, _measured(effective_samples=samples, rules=MEAN_RULES))
-    assert _row(tmp_path, "RMSD").samples == expected
+    assert _row(tmp_path, "RMSD").samples == cell
     assert f", {expected}" in _caption(tmp_path, "RMSD")
     assert f", {expected}," in _means(tmp_path)[0]
 
@@ -141,7 +142,7 @@ class TestTheTable:
         _analysis(tmp_path, "rmsd", RMSD, _measured())
         row = _row(tmp_path, "RMSD")
         assert (row.metric, row.average, row.samples, row.status) == (
-            "RMSD", "0.0130 ± 0.0021 nm", "21.2 independent samples", "Determined")
+            "RMSD", "0.0130 ± 0.0021 nm", "21.2", "Determined")
         from fastmdxplora.gui.analysis_overview import overview_of
 
         [page] = [r for r in overview_of(tmp_path)["rows"] if r["analysis"] == "rmsd"]
@@ -149,10 +150,10 @@ class TestTheTable:
 
     def test_fractional_samples_keep_their_meaning_in_the_table(self, tmp_path) -> None:
         for index, (samples, expected) in enumerate((
-                (0.3, "fewer than one independent sample"), (1.0, "1 independent sample"),
-                (1.001, "1 independent sample"), (9.501928863580078, "9.5 independent samples"),
-                (9.99, "9.9 independent samples"), (10.0, "10 independent samples"),
-                (21.2, "21.2 independent samples"))):
+                (0.3, "0.3"), (1.0, "1"),
+                (1.001, "1"), (9.501928863580078, "9.5"),
+                (9.99, "9.9"), (10.0, "10"),
+                (21.2, "21.2"), (12345.67, "12,345.6"), (None, "—"))):
             root = tmp_path / str(index)
             _analysis(root, "rmsd", RMSD, _measured(effective_samples=samples))
             assert _row(root, "RMSD").samples == expected
@@ -163,7 +164,7 @@ class TestTheTable:
         _analysis(tmp_path, "rmsd", RMSD, _measured(
             effective_samples=samples, standard_error=None))
         row = _row(tmp_path, "RMSD")
-        assert row.samples == "24.9 independent samples"
+        assert row.samples == "24.9"
         assert row.why == (
             "About 24.9 independent samples, fewer than the 25 an error bar needs.")
         from fastmdxplora.gui.analysis_overview import overview_of

@@ -152,6 +152,29 @@ def test_the_overview_shows_the_runs_and_opens_one(replicas):
     assert said["page"] == "overview"
 
 
+@pytest.mark.parametrize("samples, expected", [
+    (0.4, "fewer than one independent sample"),
+    (1.05, "1 independent sample"),
+    (1.15, "1.1 independent samples"),
+    (9.99, "9.9 independent samples"),
+])
+def test_a_withheld_runs_count_keeps_its_singular_and_floor(variants, samples, expected):
+    run = sorted((variants / "runs").iterdir())[0]
+    options = run / "analysis" / "rmsd" / "options.json"
+    record = json.loads(options.read_text(encoding="utf-8"))
+    record["findings"]["mean"].update(
+        effective_samples=samples, standard_error=None,
+        not_a_measurement="Too short against its correlation time.")
+    options.write_text(json.dumps(record), encoding="utf-8")
+
+    def look(page, url):
+        page.goto(url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#overview-runs-undetermined-list li")
+        return page.locator("#overview-runs-undetermined-list").text_content()
+
+    assert f"({expected})" in _serve(variants, look)
+
+
 def test_a_run_going_is_said_as_it_goes(variants):
     run = sorted((variants / "runs").iterdir())[1]
     (run / "simulation" / "live_status.json").write_text(json.dumps(

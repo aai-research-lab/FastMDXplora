@@ -44,7 +44,7 @@ def test_the_report_says_it_as_the_gui_and_the_agent_do():
     from fastmdxplora.report.document import _findings_notes
 
     said = " ".join(_findings_notes({"mean": RECORD}))
-    assert "-123,457 ± 12 kJ/mol, from 30 independent samples" in said
+    assert "-123,457 ± 12 kJ/mol, from 30.2 independent samples" in said
     assert _with_its_error(-123456.7, 12.0) == with_error(-123456.7, 12.0) == "-123,457 ± 12"
 
 

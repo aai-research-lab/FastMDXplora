@@ -250,7 +250,7 @@
       '<td class="analysis-results-frames mono" data-label="Frames averaged">' + escapeHTML(frames) +
         (from ? '<span class="analysis-results-from">' + escapeHTML(from) + "</span>" : "") + "</td>" +
       '<td class="analysis-results-samples mono" data-label="Independent samples">' +
-        escapeHTML(quantity.samples == null ? "—" : window.FastMDXOverview.samplesSaid(quantity.samples)) + "</td>" +
+        escapeHTML(quantity.samples == null ? "—" : count(Math.floor(quantity.samples * 10) / 10)) + "</td>" +
       statusCell(status.key, status.said, quantity.why) + "</tr>";
   }
 

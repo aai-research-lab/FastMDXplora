@@ -674,16 +674,17 @@ def test_fractional_independent_samples_stay_finite_and_below_ten(
     """The displayed count keeps its fractional value and cannot cross 10."""
     pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.statistics import _summary
 
     root = _browser_study(tmp_path / "study", "completed")
     options_path = root / "analysis" / "rg" / "options.json"
     options = json.loads(options_path.read_text(encoding="utf-8"))
     finding = options["findings"]["mean"]
-    finding["effective_samples"] = samples
-    finding["not_a_measurement"] = (
-        f"{expected.split(' independent samples')[0]} independent samples in 16 frames "
-        "(one every 2). Below 10 "
-        "independent samples, so this mean is not determined.")
+    mean, reason = _summary(
+        np.tile([0.0, 1.0], 8), 0, 1.0, (16 / samples, 15),
+        lambda: (16 / samples, 15), 10)
+    finding.update(mean.as_record())
+    finding["not_a_measurement"] = reason
     options_path.write_text(json.dumps(options), encoding="utf-8")
     mean = next(q for row in overview_of(root)["rows"] if row["analysis"] == "rg"
                 for q in row["quantities"] if q["key"] == "mean")
@@ -701,6 +702,8 @@ def test_fractional_independent_samples_stay_finite_and_below_ten(
     assert tile["samples"] == pytest.approx(samples)
     assert tile["determined"] is False
     assert tile["reason"] == "Fewer than 10 independent samples: the run has to be longer."
+    assert f"{expected} in 16 frames" in tile["why"]
+    assert "10.0 independent samples" not in tile["why"]
 
 
 def test_the_run_s_speed_is_production_s_as_the_fix_card_prices_it(tmp_path) -> None:

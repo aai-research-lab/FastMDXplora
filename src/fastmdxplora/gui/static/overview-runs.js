@@ -349,7 +349,7 @@
       var reason = withheld[0].withheld;
       li.appendChild(document.createTextNode("Not determined in " + listed(names)
         + (samples.length === withheld.length ? " (" + listed(samples) + " independent "
-          + (samples.every(function (n) { return n === "fewer than one"; }) ? "sample" : "samples")
+          + (samples.every(function (n) { return n === "fewer than one" || n === "1"; }) ? "sample" : "samples")
           + ")" : "")
         + ". " + firstWords(reason) + ". " + remedy(reason)));
       li.title = reason;

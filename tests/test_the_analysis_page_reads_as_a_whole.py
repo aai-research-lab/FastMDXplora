@@ -393,12 +393,14 @@ class TestThePage:
         assert "so about 1.2 independent samples." in said, said
 
     @pytest.mark.parametrize(("samples", "expected"), [
-        (9.501928863580078, "9.5 independent samples"),
-        (9.99, "9.9 independent samples"),
-        (24.999999999999996, "24.9 independent samples"),
-        (21.27, "21.2 independent samples"),
-        (21.0, "21 independent samples"),
-        (1.001, "1 independent sample"),
+        (9.501928863580078, "9.5"),
+        (9.99, "9.9"),
+        (24.999999999999996, "24.9"),
+        (21.27, "21.2"),
+        (21.0, "21"),
+        (1.001, "1"),
+        (0.3, "0.3"),
+        (12345.67, "12,345.6"),
         (None, "—"),
     ])
     def test_sample_count_display_rounds_down_without_float_noise(self, page, samples, expected) -> None:

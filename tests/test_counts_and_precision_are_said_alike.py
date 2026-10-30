@@ -53,33 +53,43 @@ def test_about_hedges_the_count_unless_it_is_under_one():
     assert independent_samples_said(2.4, about=True) == "about 2.4 independent samples"
 
 
-def test_the_slides_say_a_count_under_one_as_the_report_does(monkeypatch, tmp_path):
+@pytest.mark.parametrize("samples, expected", [
+    (0.42, "fewer than one independent sample"),
+    (9.99, "9.9 independent samples"),
+    (24.999999999999996, "24.9 independent samples"),
+])
+def test_the_slides_say_the_count_as_the_report_does(monkeypatch, tmp_path, samples, expected):
     from fastmdxplora.report import document, slides
 
     assessed = {"observables": {"rmsd": {
         "observable": "RMSD", "mean": 0.0789, "standard_error": float("nan"),
-        "effective_samples": 0.42, "equilibrated": None}}, "findings": []}
+        "effective_samples": samples, "equilibrated": None}}, "findings": []}
     monkeypatch.setattr(document, "_assess_this_run", lambda root: assessed)
     [bullet] = slides._findings_bullets(tmp_path)
-    assert "[fewer than one independent sample]" in bullet
+    assert f"[{expected}]" in bullet
     assert "0 independent" not in bullet
 
 
-def test_the_reweighted_caption_says_a_count_under_one(monkeypatch, tmp_path):
+@pytest.mark.parametrize("samples, expected", [
+    (0.3, "fewer than one independent sample"),
+    (9.99, "about 9.9 independent samples"),
+    (24.999999999999996, "about 24.9 independent samples"),
+])
+def test_the_reweighted_caption_says_the_count(monkeypatch, tmp_path, samples, expected):
     pytest.importorskip("matplotlib")
     from fastmdxplora.analysis import reweighted_averages
 
     saved = []
     monkeypatch.setattr(reweighted_averages, "save_figure",
                         lambda fig, path, *a, **k: saved.append(fig))
-    record = {"effective_sample_size": 3.2, "n_frames": 400, "independent_samples": 0.3,
+    record = {"effective_sample_size": 3.2, "n_frames": 400, "independent_samples": samples,
               "converged": True,
               "quantities": [{"label": "RMSD (nm)", "shift_percent": 4.0,
                               "raw_mean": 0.25, "reweighted_mean": 0.26}]}
     reweighted_averages._plot(record, tmp_path / "plot.png")
     [figure] = saved
     caption = figure.axes[0].get_xlabel()
-    assert "fewer than one independent sample" in caption
+    assert expected in caption
     assert "about 0 independent" not in caption
 
 
@@ -87,6 +97,8 @@ def test_the_reweighted_caption_says_a_count_under_one(monkeypatch, tmp_path):
     (0.3, "fewer than one independent sample"),
     (1.0, "about 1 independent sample"),
     (2.4, "about 2.4 independent samples"),
+    (9.99, "about 9.9 independent samples"),
+    (24.999999999999996, "about 24.9 independent samples"),
 ])
 def test_the_report_s_reweighted_line_says_the_count_as_its_plot_does(independent, said):
     from fastmdxplora.report.reweighted import _rests_on
@@ -185,3 +197,40 @@ def test_a_count_just_under_ten_is_not_said_as_ten_beside_the_threshold():
     assert record.get("refusal") == "analysis.sampling.too_few_independent"
     said = str(record.get("not_a_measurement") or "")
     assert "hold about 9.6 independent samples. Below 10" in said
+
+
+@pytest.mark.parametrize("samples, raw, expected", [
+    (9.99, 1.0, "9.9 independent samples in 80 frames"),
+    (9.99, 3.0, "80 frames hold 9.9 independent samples"),
+    (24.99, 3.0, "80 frames hold 24.9 independent samples"),
+])
+def test_the_reason_a_mean_is_withheld_rounds_its_count_down(samples, raw, expected):
+    mean, reason = statistics._summary(
+        np.tile([0.0, 1.0], 40), 0, raw, (80 / samples, 79),
+        lambda: (80 / samples, 79), 10)
+    assert mean.effective_samples == pytest.approx(samples)
+    assert expected in reason
+
+
+@pytest.mark.parametrize("resolved", [False, True])
+@pytest.mark.parametrize("samples, target, expected", [
+    (9.99, 10, "9.9 independent samples"),
+    (24.999999999999996, 25, "24.9 independent samples"),
+])
+def test_a_shortfall_does_not_round_up_to_its_target(resolved, samples, target, expected):
+    short = statistics.Shortfall(target, samples, 2.0, 1, resolved=resolved)
+    assert not short.met
+    assert expected in str(short)
+
+
+@pytest.mark.parametrize("samples, error, expected", [
+    (24.999999999999996, float("nan"), "holds 24.9 independent samples"),
+    (4.995, 0.1, "9.9 independent samples across 2 segment(s)"),
+])
+def test_joined_segments_do_not_round_up_a_withheld_count(monkeypatch, samples, error, expected):
+    mean = statistics.Equilibrated(
+        discard=0, inefficiency=40 / samples, effective_samples=samples, mean=0.5,
+        standard_error=error, standard_deviation=0.5)
+    monkeypatch.setattr(statistics, "summarise", lambda *a, **k: (mean, None))
+    _, reason = statistics.summarise_segments(np.tile([0.0, 1.0], 40), [40])
+    assert expected in reason
