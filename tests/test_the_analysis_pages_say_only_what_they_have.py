@@ -167,3 +167,25 @@ def test_what_find_suggests_is_found(tmp_path):
         session.server.shutdown()
     assert hint and "ligand" not in hint.lower()
     assert found and all(not said.startswith("0 of") for said in found.values()), found
+
+
+def test_protein_ligand_interactions_are_named_only_with_a_ligand():
+    """"Trajectory analyses and protein-ligand interactions" was the Analysis
+    page's subtitle for a protein with no ligand."""
+    from fastmdxplora.gui.report_dashboard import (
+        ANALYSIS_THEMES,
+        DashboardSection,
+        LIGAND_THEME,
+        _render_analysis_page,
+        analysis_subtitle,
+    )
+
+    assert LIGAND_THEME in {theme for theme, _ in ANALYSIS_THEMES}
+    assert analysis_subtitle(["The protein", "Conformations"]) == "Trajectory analyses"
+    assert analysis_subtitle(["The protein", LIGAND_THEME]).endswith(
+        "protein-ligand interactions")
+    page = _render_analysis_page([DashboardSection("RMSD", "rmsd", [], "The protein")], {})
+    assert "protein-ligand" not in page
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "dashboard.js").read_text(encoding="utf-8")
+    assert f'section.theme === "{LIGAND_THEME}"' in script

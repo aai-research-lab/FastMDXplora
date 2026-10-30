@@ -118,3 +118,14 @@ def test_a_record_of_runs_linked_out_is_not_read_not_a_folder_of_runs(sweep, tmp
     health = _confined_health(sweep)["health"]
     assert health["state"] == "not read"
     assert health["message"].startswith("batch_manifest.json was not read")
+
+
+def test_its_results_summary_says_the_same_state(sweep):
+    """The Overview's "Project status" read only the study's own manifest,
+    which a study of runs has none of: thirty-six completed windows were said
+    "not run"."""
+    from fastmdxplora.gui.server import _results_payload
+    from fastmdxplora.gui.workspace import study_state
+
+    said = {row["label"]: row["value"] for row in _results_payload(sweep)["summary"]}
+    assert said["Project status"] == study_state(sweep) == "completed"

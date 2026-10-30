@@ -18,6 +18,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A study of several runs has the Overview's "Project status" its runs give
+  (`workspace.study_state`, as All studies says it): it read only the
+  study's own `manifest.json`, which such a study has none of, and an
+  umbrella study of 36 completed windows was said "not run".
+- An umbrella study's free energy (`free_energy/pmf/`) is a figure on its
+  Analysis page, and counts as an analysis: the page said its windows were
+  "compared below" and showed nothing. A study whose `pmf.json` refused the
+  profile shows none, whatever an earlier run left there.
+- A folder of Python source (one with an `__init__.py`) is not a study: a
+  checkout's `src/fastmdxplora`, whose `simulation`, `analysis` and `report`
+  packages are a study's markers, was listed among the studies as one not
+  started.
+- The Viewer stops asking for the newest frame once its run has ended and
+  the last frame is read, and asks again when the run writes: a finished
+  study was polled every few seconds for as long as it was open.
+- The Analysis page names protein-ligand interactions in its subtitle only
+  where the study has a ligand's analyses.
 - `recorded_stage_lengths` and the methods tell a piece's config in a
   study's place by what it is (`resume_unsealed` set, the checkpoint a
   `segment-NNN.yml` beside it names, or a `resume_from` in the study or

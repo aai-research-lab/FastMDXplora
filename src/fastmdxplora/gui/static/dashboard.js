@@ -2000,6 +2000,10 @@
     }
 
     const sections = Array.isArray(payload.analysis_sections) ? payload.analysis_sections : [];
+    // Protein-ligand interactions named only where there is a ligand's
+    // analysis (`report_dashboard.analysis_subtitle`).
+    setText("analysis-subtitle", sections.some((section) => section.theme === "The ligand")
+      ? "Trajectory analyses and protein-ligand interactions" : "Trajectory analyses");
     const host = byId("analysis-sections");
     const flatGrid = byId("analysis-grid");
     if (!host) return;
