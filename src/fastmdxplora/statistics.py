@@ -38,7 +38,7 @@ the average, discard too much and there is nothing left to average.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -583,7 +583,8 @@ def summarise(
     is worth.
     """
     values = np.asarray(series, dtype=float)
-    values = values[np.isfinite(values)]
+    finite_frames = np.flatnonzero(np.isfinite(values))
+    values = values[finite_frames]
     if values.size < 3:
         return None, Withholding(
             f"{values.size} usable frame(s): there is nothing to average, and "
@@ -596,8 +597,10 @@ def summarise(
     later = min(int(start_at_least), int(values.size * 2 / 3))
     if later > discard:
         discard, raw = later, statistical_inefficiency(values[later:])
-    return _summary(values, discard, raw, _for_the_mean(values[discard:]),
-                    lambda: _for_the_mean(values), minimum_effective_samples)
+    equilibrated, reason = _summary(
+        values, discard, raw, _for_the_mean(values[discard:]),
+        lambda: _for_the_mean(values), minimum_effective_samples)
+    return replace(equilibrated, discard=int(finite_frames[discard])), reason
 
 
 def _summary(
@@ -902,8 +905,7 @@ def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", t
     at 1 sample in 5 frames asked for 5 more frames where 45 were wanted.
     Read from the summary's own count, an unresolved correlation needs at
     least as long again, and only that figure is a floor."""
-    finite = int(np.isfinite(np.asarray(values, dtype=float)).sum())
-    kept = max(finite - int(equilibrated.discard), 1)
+    kept = max(int(np.isfinite(values[int(equilibrated.discard):]).sum()), 1)
     have = float(equilibrated.effective_samples)
     g = kept / have if have > 0 else float(kept)
     more = max(int(np.ceil(float(target) * g)) - kept, kept if unresolved else 1)

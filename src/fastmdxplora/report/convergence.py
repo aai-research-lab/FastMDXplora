@@ -107,6 +107,7 @@ class Assessment:
     #: Why the analyses' record gives this mean no error, where it gives
     #: none (`statistics.summarise`); None where the mean is determined.
     withheld: str | None = None
+    error: float | None = None
 
     @property
     def standard_error(self) -> float:
@@ -118,7 +119,11 @@ class Assessment:
         Dividing by the frame count instead would understate it by the square
         root of the correlation time -- a factor of three or four is ordinary.
         """
-        if self.withheld is not None or self.effective_samples < 2:
+        if self.withheld is not None:
+            return float("nan")
+        if self.error is not None:
+            return float(self.error)
+        if self.effective_samples < 2:
             return float("nan")
         return float(self.spread / np.sqrt(self.effective_samples))
 
@@ -248,8 +253,8 @@ def assess_series(name: str, values: Any,
     wrote one (`statistics.mean_record`): its mean, discard, independent
     samples and verdict are taken as written, so one mean has one verdict.
     """
-    series = np.asarray(values, dtype=np.float64)
-    series = series[np.isfinite(series)]
+    raw = np.asarray(values, dtype=np.float64)
+    series = raw[np.isfinite(raw)]
     n = series.size
     if n == 0:
         return Assessment(name, 0, 0, float("nan"), float("nan"), 1.0, 0.0, 0.0,
@@ -258,6 +263,7 @@ def assess_series(name: str, values: Any,
     from fastmdxplora.statistics import summarise
 
     reason: Any = None
+    error: float | None = None
     if joins:
         # A joined run read as a single series loses most of it: the
         # equilibration detector finds a join, calls it a transient, and
@@ -282,6 +288,7 @@ def assess_series(name: str, values: Any,
             reason = withheld or "The joined run supports no mean."
         else:
             equilibrated = pooled.segments[0] if pooled.segments else None
+            error = pooled.standard_error
             # The pooled mean and error are what the run supports. The
             # discard and inefficiency come from the first segment, since
             # per-segment equilibration is what was actually done and there
@@ -295,7 +302,10 @@ def assess_series(name: str, values: Any,
         equilibrated, reason = summarise(series)
     if isinstance(record, dict) and _number(record.get("mean")) is not None:
         # The analysis's own record, as written.
+        error = _number(record.get("standard_error"))
         discard = int(_number(record.get("discard")) or 0)
+        # The record counts source frames; the assessment uses finite frames.
+        discard = int(np.isfinite(raw[:discard]).sum())
         effective = _number(record.get("effective_samples"))
         spread = _number(record.get("standard_deviation"))
         equilibrated = _replace_summary(
@@ -335,6 +345,7 @@ def assess_series(name: str, values: Any,
         correlation_is_measurable=code != "analysis.sampling.correlation_unresolved",
         drift_is_measurable=bool(kept.size >= 6),
         withheld=str(reason) if reason else None,
+        error=error,
     )
 
 

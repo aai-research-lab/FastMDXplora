@@ -171,3 +171,66 @@ def test_a_failed_fetch_leaves_the_report_standing(study) -> None:
     finally:
         session.server.shutdown()
     assert shown and visible
+
+
+@pytest.mark.parametrize("elsewhere", [True, False], ids=["elsewhere", "own-or-later"])
+def test_a_late_report_cannot_replace_a_newer_report_after_a_study_switch(elsewhere) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    report_script = (Path(__file__).resolve().parents[1]
+                     / "src" / "fastmdxplora" / "gui" / "static" / "report-page.js")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.set_content("""<div id="report-document"></div>
+            <div id="report-empty"><p>Report not written yet</p>
+            <p id="report-empty-reason"></p></div>
+            <div id="report-notices"></div><div id="report-downloads"></div>
+            <div id="report-subtitle"></div>""")
+        page.evaluate("""() => {
+          window.FastMDXIcons = {svg: () => ''};
+          window.heldReports = [];
+          window.dashboardListeners = {};
+          window.FastMDXDashboard = {
+            state: {appState: {}, studyShown: 'study-a'},
+            on: (name, callback) => { window.dashboardListeners[name] = callback; }
+          };
+          window.fetch = () => new Promise(resolve => window.heldReports.push(resolve));
+        }""")
+        page.add_script_tag(path=str(report_script))
+        page.evaluate("() => document.dispatchEvent(new Event('DOMContentLoaded'))")
+        result = page.evaluate("""async elsewhere => {
+          const doc = document.getElementById('report-document');
+          const oldLoad = window.FastMDXReport.load();
+          const changed = window.dashboardListeners['study-changed-elsewhere'];
+          window.FastMDXDashboard.state.studyShown = 'study-b';
+          if (elsewhere) changed(); // Own and unanswered launches emit no such event.
+          const newLoad = window.FastMDXReport.load();
+          window.heldReports[2]({json: async () => ({
+            ok: true, html: '<h1>STUDY_B_REPORT</h1>', downloads: {}
+          })});
+          await newLoad;
+          const afterNew = doc.textContent;
+          window.heldReports[1]({json: async () => ({
+            ok: true, html: '<h1>STUDY_A_REPORT</h1>', downloads: {}
+          })});
+          await oldLoad;
+          const afterOld = doc.textContent;
+          changed();
+          const rendered = doc.dataset.rendered;
+          const slowLoad = window.FastMDXReport.load();
+          window.FastMDXReport.load(); // The next poll arrives before the response.
+          window.heldReports[3]({json: async () => ({
+            ok: true, html: '<h1>SAME_STUDY_REPORT</h1>', downloads: {}
+          })});
+          await slowLoad;
+          return {afterNew, afterOld, rendered, afterPoll: doc.textContent};
+        }""", elsewhere)
+        browser.close()
+    assert result == {
+        "afterNew": "STUDY_B_REPORT",
+        "afterOld": "STUDY_B_REPORT",
+        "rendered": None,
+        "afterPoll": "SAME_STUDY_REPORT",
+    }

@@ -4272,8 +4272,8 @@ def _artifact_records(root: Path) -> list[dict[str, str]]:
             {
                 "path": rel,
                 "name": path.name,
-                "href": f"/artifacts/{rel}?v={version}",
-                "download_href": f"/artifacts/{rel}?download=1&v={version}",
+                "href": f"/artifacts/{quote(rel)}?v={version}",
+                "download_href": f"/artifacts/{quote(rel)}?download=1&v={version}",
                 "size": str(info.st_size),
                 "mtime": str(info.st_mtime),
                 "display_path": _compact_path(rel),
@@ -4388,9 +4388,9 @@ def _report_panels(root: Path) -> dict[str, Any]:
                         "summary": panel.summary,
                         "mode": panel.mode,
                         "source": panel.source,
-                        "href": f"/artifacts/{panel.source}",
+                        "href": f"/artifacts/{quote(panel.source)}",
                         "original_source": panel.original_source,
-                        "original_href": f"/artifacts/{panel.original_source}",
+                        "original_href": f"/artifacts/{quote(panel.original_source)}",
                     }
                     for panel in section.panels
                 ],

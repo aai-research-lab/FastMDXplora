@@ -47,7 +47,7 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
 
     def segment(self, index, *, frames=10, finished=True, study="A",
-                trajectory=True):
+                trajectory=True, trajectory_atoms=None):
         directory = self.root / f"segment-{index:03d}" / "simulation"
         directory.mkdir(parents=True)
         topology = mdtraj.Topology()
@@ -59,7 +59,11 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         trace = mdtraj.Trajectory(xyz, topology)
         trace[0].save_pdb(str(directory / "topology.pdb"))
         if trajectory:
-            trace.save_dcd(str(directory / "production.dcd"))
+            saved = (trace.atom_slice(np.arange(trajectory_atoms))
+                     if trajectory_atoms is not None else trace)
+            if trajectory_atoms is not None:
+                saved[0].save_pdb(str(directory / "trajectory_topology.pdb"))
+            saved.save_dcd(str(directory / "production.dcd"))
         # What the runner leaves either way: a sealed checkpoint, whose
         # sidecar says whether the run reached its end. A killed run's last
         # checkpoint is sealed too; only the sidecar tells the two apart.
@@ -77,6 +81,12 @@ class TestJoiningRefusesWhatItShould(unittest.TestCase):
         self.assertEqual(record["frames"], 30)
         self.assertEqual(record["segments"], [0, 1, 2])
         self.assertFalse(record["ran_through"])
+
+    def test_a_subset_trajectory_joins_with_its_saved_topology(self):
+        for index in range(2):
+            self.segment(index, trajectory_atoms=2)
+        record = join_segments(self.root, self.root / "joined.dcd")
+        self.assertEqual(record["frames"], 20)
 
     def test_the_join_records_itself_beside_the_output(self):
         # A joined trajectory is derived, and a reader should see that

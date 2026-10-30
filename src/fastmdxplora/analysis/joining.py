@@ -356,8 +356,13 @@ def join_segments(
 
     import mdtraj
 
-    topology_path = Path(topology) if topology else (
-        pieces[0].directory / "simulation" / "topology.pdb")
+    if topology:
+        topology_path = Path(topology)
+    else:
+        simulation = pieces[0].directory / "simulation"
+        topology_path = simulation / "trajectory_topology.pdb"
+        if not topology_path.is_file():
+            topology_path = simulation / "topology.pdb"
     if not topology_path.is_file():
         raise MissingResultError(
             f"No topology at {topology_path}, and a trajectory cannot be "
