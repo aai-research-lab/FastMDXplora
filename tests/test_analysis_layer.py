@@ -177,6 +177,30 @@ class TestLoadTrajectory:
         sliced = load_trajectory(dcd, top=pdb, first=2, last=7)
         assert sliced.n_frames == 5
 
+    @pytest.mark.parametrize("extension", ["dcd", "xtc", "pdb", "h5"])
+    @pytest.mark.parametrize("multiple", [False, True])
+    def test_planning_reads_the_first_frame(self, tmp_path, synthetic_traj, extension, multiple,
+                                           monkeypatch):
+        synthetic_traj.unitcell_lengths = np.tile([5.0, 5.0, 5.0], (synthetic_traj.n_frames, 1))
+        synthetic_traj.unitcell_angles = np.tile([90.0, 90.0, 90.0], (synthetic_traj.n_frames, 1))
+        source = tmp_path / f"first.{extension}"
+        synthetic_traj.save(str(source))
+        topology = tmp_path / "topology.pdb"
+        synthetic_traj[0].save_pdb(str(topology))
+        paths = [source, source] if multiple else source
+        top = topology if extension in ("dcd", "xtc") else None
+        full = load_trajectory(paths, top=top)
+
+        def no_full_read(*args, **kwargs):
+            pytest.fail("planning must not load the full trajectory")
+
+        monkeypatch.setattr(md, "load", no_full_read)
+        first = load_trajectory(paths, top=top, first_frame_only=True)
+        assert first.n_frames == 1
+        assert first.topology == full.topology
+        np.testing.assert_allclose(first.xyz, full.xyz[:1])
+        np.testing.assert_allclose(first.unitcell_vectors, full.unitcell_vectors[:1])
+
     def test_invalid_slice_raises(self, traj_files: tuple[Path, Path]):
         dcd, pdb = traj_files
         with pytest.raises(TrajectoryLoadError, match="Invalid frame slice"):
@@ -364,7 +388,9 @@ class TestAnalysisOrchestrator:
         )
         assert ao.traj.n_frames > 0
         assert ao.output_dir == tmp_path / "run"
-        assert ao.output_dir.exists()
+        assert not ao.output_dir.exists()
+        ao.planned_analyses(include=["rmsd"])
+        assert not ao.output_dir.exists()
 
     def test_run_executes_registered_analyses(
         self, tmp_path: Path, traj_files: tuple[Path, Path]

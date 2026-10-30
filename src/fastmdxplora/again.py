@@ -253,6 +253,15 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
                  left_out=tuple(left_out) if several else ())
 
 
+def _first_run(study: str | Path) -> Path:
+    """The run whose records represent a single study or a study of several."""
+    root = Path(study)
+    if _several(root):
+        runs = _runs_of(root)
+        root = runs[0] if runs else root
+    return root
+
+
 def recorded_analyses(study: str | Path) -> list[str]:
     """The analyses a study ran last, to offer them ticked: those its last
     analysis made, else those it recorded asking for."""
@@ -260,10 +269,7 @@ def recorded_analyses(study: str | Path) -> list[str]:
 
     from fastmdxplora import record_access
 
-    root = Path(study)
-    if _several(root):
-        runs = _runs_of(root)
-        root = runs[0] if runs else root
+    root = _first_run(study)
     try:
         # Held to the study where the read is: a manifest linked out of it
         # is refused, and those the study asked for are offered instead.

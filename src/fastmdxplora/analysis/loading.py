@@ -472,6 +472,7 @@ def load_trajectory(
     first: int | None = None,
     last: int | None = None,
     saving_interval_ps: float | None = None,
+    first_frame_only: bool = False,
 ) -> md.Trajectory:
     """Load one or more trajectory files into a single MDTraj trajectory.
 
@@ -495,12 +496,15 @@ def load_trajectory(
         above all -- on a real time axis; without it such a trajectory is
         given a NaN clock and every time series is drawn against frame
         number. Ignored for formats that carry the clock themselves.
+    first_frame_only : bool, optional
+        Read only frame zero of the first file for planning. Ignores frame
+        selection, imaging and clock reconstruction, which a plan does not use.
 
     Returns
     -------
     mdtraj.Trajectory
-        A single trajectory with the requested topology attached. Always
-        the concatenation of all input files.
+        A single trajectory with the requested topology attached: the
+        concatenation of all input files, or one frame for planning.
 
     Raises
     ------
@@ -554,6 +558,9 @@ def load_trajectory(
 
     try:
         with suppress_native_output():
+            if first_frame_only:
+                return md.load_frame(str(traj_paths[0]), 0,
+                                     top=str(top_path) if top_path is not None else None)
             if top_path is not None:
                 trajectory = md.load(
                     [str(p) for p in traj_paths],
