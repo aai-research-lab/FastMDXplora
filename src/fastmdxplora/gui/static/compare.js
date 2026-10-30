@@ -179,10 +179,13 @@
     clear();
     shown = null;
     if (!pair) {
+      var paletteKeys = window.FastMDXKeys && window.FastMDXKeys.of("palette");
+      var paletteShortcut = paletteKeys
+        ? paletteKeys.join(window.FastMDXKeys.mac ? "" : " ") : "⌘K";
       byId("compare-said").textContent = "Two studies, or two runs, side by side.";
       say({ kind: "empty", title: "Nothing to compare yet",
             detail: "Choose two studies in All studies, two runs on a study's Overview, or Compare " +
-                    "with\u2026 in the palette (\u2318K)." });
+                    "with\u2026 in the palette (" + paletteShortcut + ")." });
       return Promise.resolve(null);
     }
     say({ kind: "loading", title: "Comparing\u2026" });
