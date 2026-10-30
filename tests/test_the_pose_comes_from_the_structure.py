@@ -55,7 +55,11 @@ class _Molecule:
         unit = np.array([[np.cos(a), np.sin(a), 0.0]
                          for a in np.linspace(0, 2 * np.pi, 6, endpoint=False)])
         ring, hydrogens = unit * 1.40, unit * 2.48
-        self._conformers = [_Quantity(np.vstack([ring, hydrogens]) * 0.1
+        # Tilted out of the page: a file in one plane is a 2D depiction,
+        # and its hydrogens are built at ideal lengths rather than kept.
+        tilt = np.array([[1.0, 0.0, 0.0], [0.0, np.cos(0.5), -np.sin(0.5)],
+                         [0.0, np.sin(0.5), np.cos(0.5)]])
+        self._conformers = [_Quantity(np.vstack([ring, hydrogens]) @ tilt.T * 0.1
                                       + offset)]
 
     @property

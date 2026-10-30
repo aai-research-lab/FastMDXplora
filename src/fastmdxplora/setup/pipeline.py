@@ -1846,7 +1846,8 @@ def _run(
                     box=(produced or {}).get("box"),
                     resolved=(produced or {}).get("resolved"),
                     membrane=_with_opm_s_thickness(
-                        (produced or {}).get("membrane"), opm))
+                        (produced or {}).get("membrane"), opm),
+                    ligand_poses=(produced or {}).get("ligand_poses"))
     artifacts.append("setup_parameters.json")
 
     if presenter:
@@ -1916,6 +1917,7 @@ def _write_manifest(
     box: dict[str, Any] | None = None,
     resolved: dict[str, Any] | None = None,
     membrane: dict[str, Any] | None = None,
+    ligand_poses: list[dict[str, Any]] | None = None,
 ) -> None:
     """Write ``setup_parameters.json`` with the full provenance record.
 
@@ -2038,6 +2040,13 @@ def _write_manifest(
         # or re-added with its own chemistry. Empty where no decision was
         # taken per component (the `drop` and `keep` policies).
         "heterogen_decisions": list(params.get("_heterogen_decisions") or []),
+        # Each ligand as placed: its file by path and SHA-256, where its pose
+        # came from, and from a structure the residue, which of the file's
+        # heavy atoms went on which of the structure's, and the
+        # stereochemistry checked ("stereochemistry not stated in the file"
+        # where there was none). `validation.ligand_mapping` checks a study
+        # against it. Absent without ligands.
+        **({"ligand_poses": list(ligand_poses)} if ligand_poses else {}),
         # Settings this phase decided, under their config names, for
         # `resolved_config.yml` to carry. The force field resolution above
         # answers the same question in its own shape and stays where it is;

@@ -553,6 +553,22 @@ CODES: tuple[Code, ...] = (
          "The pose policy asked for a source that does not hold one.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("policy", "reason")),
+    Code("setup.ligand.atoms_unmatched",
+         "The structure's residue is not the ligand file's molecule: its "
+         "heavy atoms do not match the file's by element and bond.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("resname", "file_atoms", "structure_atoms", "option")),
+    Code("setup.ligand.stereo_mismatch",
+         "The structure holds another stereoisomer of the ligand file's "
+         "molecule.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("resname", "atoms", "option")),
+    Code("setup.ligand.hydrogens_overlap",
+         "A hydrogen from the ligand file, built on the structure's pose, "
+         "still overlaps an atom three or more bonds away after its rotor's "
+         "scan.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("resname", "atoms", "option")),
     Code("setup.ligand.clash",
          "The ligand pose overlaps the protein beyond the threshold.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,

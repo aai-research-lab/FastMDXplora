@@ -64,7 +64,11 @@ class TestAuto:
         copy = 1 if structure == "one copy for two" else 0
         with pytest.raises(LigandError) as refused:
             pose_by_policy(_Molecule(), path, "BNZ", policy="auto", copy=copy)
-        assert refused.value.code == "setup.ligand.pose_unavailable"
+        # Four atoms where the file has six is not its molecule, said as
+        # such; a copy there is none of is a pose not there to take.
+        assert refused.value.code == ("setup.ligand.atoms_unmatched"
+                                      if structure == "four atoms"
+                                      else "setup.ligand.pose_unavailable")
         assert "ligand_pose: file" in str(refused.value)
         # Asked for by name, the file's pose still stands on the same files.
         _, said = pose_by_policy(_Molecule(), path, "BNZ", policy="file", copy=copy)

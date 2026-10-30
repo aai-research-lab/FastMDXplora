@@ -169,7 +169,7 @@ class TestNotTheSameMolecule:
         for required in (False, True):
             with pytest.raises(LigandError, match="do not match") as refused:
                 pose_from_structure(molecule, structure, "LIG", required=required)
-            assert refused.value.code == "setup.ligand.pose_unavailable"
+            assert refused.value.code == "setup.ligand.atoms_unmatched"
 
     def test_a_broken_deposited_geometry_is_not_taken(self, tmp_path: Path) -> None:
         molecule = _Supplied(PARACETAMOL)
