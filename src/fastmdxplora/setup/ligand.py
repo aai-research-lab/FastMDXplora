@@ -1752,10 +1752,11 @@ def _laid_as_single(chemistry: "_Chemistry", u: int, v: int, xyz: Any, order: An
     truly single, so that its E or Z is not the deposit's to say: a carbon of
     it with two heavy neighbours bent past the band sp2 and sp3 carbons share
     (:func:`_carbon_shape`), a CH2 in the single bond's molecule, with the
-    bond's length nearer an sp3 single's than a double's (acetylacetone's
-    enol file on its keto deposit, its C7 a CH2), or the bond a tautomer's, its length past the midpoint to a
-    conjugated single (about 1.47 A) beside a C-OH or C-N of its carbon laid
-    at a double bond's length. A shape alone never does it (1KT3's C9 at a
+    bond's length past the midpoint to an sp3 single's by twice the copy's
+    noise (acetylacetone's enol file on its keto deposit, its C7 a CH2), or
+    the bond a tautomer's, its length past the midpoint to a conjugated
+    single (about 1.47 A) beside a C-OH or C-N of its carbon laid at a
+    double bond's length. A shape alone never does it (1KT3's C9 at a
     volume of 0.26 on a planar 1.38 A C9=C10, 6V87's C7 and C8 at 0.72 on a
     1.49 A C7=C8, whose E or Z is held within noise), nor a length alone at
     flat carbons (a stilbene's C=C stretched to 1.48 A)."""
@@ -1795,17 +1796,21 @@ def _in_a_small_ring(chemistry: "_Chemistry", k: int) -> bool:
         chemistry.mol.GetRingInfo().IsAtomInRingOfSize(k, size) for size in (3, 4, 5))
 
 
-def _ring_torsion(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -> float | None:
+def _ring_torsion(chemistry: "_Chemistry", k: int, order: Any, xyz: Any,
+                  within: Any = ()) -> float | None:
     """The largest torsion (degrees, 0 for a flat ring) the deposit gives a
-    ring of four or five atoms holding the file's atom k, or None where
-    there is none (a three-ring has no torsion to read)."""
+    ring of four or five atoms holding the file's atom k and the atoms
+    ``within``, or None where there is none (a three-ring has no torsion to
+    read). Only the ring asked about: an aromatic ring's bridgehead is not
+    read by the pucker of a saturated ring fused to it (dihydropyrrolizine's
+    N)."""
     import numpy as _np
 
     if chemistry.mol is None:
         return None
     largest = None
     for ring in chemistry.mol.GetRingInfo().AtomRings():
-        if k not in ring or not 4 <= len(ring) <= 5:
+        if k not in ring or not 4 <= len(ring) <= 5 or not set(within) <= set(ring):
             continue
         n = len(ring)
         for t in range(n):
@@ -1822,11 +1827,13 @@ def _ring_torsion(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -> floa
     return largest
 
 
-def _puckered(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -> bool:
-    """Whether a ring of four or five holding the file's atom k is laid by
-    the deposit puckered past :data:`RING_PUCKER_MIN_DEG`, as a saturated
-    ring is and an aromatic one is not."""
-    torsion = _ring_torsion(chemistry, k, order, xyz)
+def _puckered(chemistry: "_Chemistry", k: int, order: Any, xyz: Any,
+              within: Any = ()) -> bool:
+    """Whether a ring of four or five holding the file's atom k and the atoms
+    ``within`` is laid by the deposit puckered past
+    :data:`RING_PUCKER_MIN_DEG`, as a saturated ring is and an aromatic one
+    is not."""
+    torsion = _ring_torsion(chemistry, k, order, xyz, within)
     return torsion is not None and torsion > RING_PUCKER_MIN_DEG
 
 
@@ -1840,12 +1847,13 @@ def _puckered(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -> bool:
 FIVE_RING_SP3_ANGLE_MAX_DEG = 106.0
 
 
-def _small_ring_reduced(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -> bool:
+def _small_ring_reduced(chemistry: "_Chemistry", k: int, order: Any, xyz: Any,
+                        within: Any = ()) -> bool:
     """Whether the deposit lays the ring of four or five holding the file's
-    atom k as a reduced ring: puckered (:func:`_puckered`), or k a carbon with
-    two heavy neighbours in a five-ring of C, N and O at under
-    :data:`FIVE_RING_SP3_ANGLE_MAX_DEG`."""
-    if _puckered(chemistry, k, order, xyz):
+    atom k and the atoms ``within`` as a reduced ring: puckered
+    (:func:`_puckered`), or k a carbon with two heavy neighbours in a
+    five-ring of C, N and O at under :data:`FIVE_RING_SP3_ANGLE_MAX_DEG`."""
+    if _puckered(chemistry, k, order, xyz, within):
         return True
     around = sorted(chemistry.graph[k])
     if chemistry.mol is None or chemistry.elements[k] != 6 or len(around) != 2:
@@ -1854,7 +1862,7 @@ def _small_ring_reduced(chemistry: "_Chemistry", k: int, order: Any, xyz: Any) -
     # in a flat ring too (1X7Y's thiazolium C2 at 101 degrees, its C2-S1
     # 1.83 A).
     rings = [ring for ring in chemistry.mol.GetRingInfo().AtomRings()
-             if len(ring) == 5 and k in ring
+             if len(ring) == 5 and k in ring and set(within) <= set(ring)
              and all(chemistry.elements[m] in (6, 7, 8) for m in ring)]
     return bool(rings) and _angle_deg(xyz, order[k], order[around[0]], order[around[1]]) \
         < FIVE_RING_SP3_ANGLE_MAX_DEG
@@ -2174,8 +2182,11 @@ def _order_misfits(chemistry: "_Chemistry", chosen: dict[str, Any], xyz_b: Any,
                 if x == y or not shared:
                     continue
                 k = next(iter(shared))
+                # Read in the ring that holds both bonds.
+                both = set(found[x]["atoms"]) | set(found[y]["atoms"])
                 reduced = (_carbon_shape(chemistry, k, order, xyz_b, any_element=True)
-                           == "tetrahedral" or _small_ring_reduced(chemistry, k, order, xyz_b))
+                           == "tetrahedral"
+                           or _small_ring_reduced(chemistry, k, order, xyz_b, both))
                 if reduced:
                     kept |= {x, y}
                     if _in_a_small_ring(chemistry, k):
@@ -2185,9 +2196,10 @@ def _order_misfits(chemistry: "_Chemistry", chosen: dict[str, Any], xyz_b: Any,
                 elif (_in_a_small_ring(chemistry, k) and len(chemistry.graph[k]) == 2
                       and found[x]["clear"] and found[y]["clear"]):
                     # Both long past twice the noise in a ring the deposit
-                    # lays flat: the lengths said, the form not (1X7Y's
-                    # thiazolium). At a flat atom of three heavy neighbours
-                    # (an N-acyl indole's N1, 3FO7's indomethacin) not said.
+                    # lays flat: the lengths said, the form not (indole's
+                    # file on a shallow indoline's deposit). At a flat atom
+                    # of three heavy neighbours (an N-acyl indole's N1,
+                    # 3FO7's indomethacin) not said.
                     kept |= {x, y}
                     found[x]["flat_ring"] = found[y]["flat_ring"] = True
         found = [m for x, m in enumerate(found) if not m["aromatic"] or x in kept]

@@ -457,10 +457,11 @@ the file's chemistry says:
    aromatic whose length fits a single is "the file has it aromatic (the
    other redox or tautomeric form)" only beside another of its ring that
    fits it too, at an atom the deposit has tetrahedral, as a reduced ring's
-   is: folate's file on DHF's deposit (6CXK). A ring of four or five, whose
-   angles are the ring's, is read as reduced instead where the deposit
-   puckers it (a torsion over 20 degrees; an aromatic ring's lie within a
-   few degrees of 0), or, in a five-ring of C, N and O, where the shared
+   is: folate's file on DHF's deposit (6CXK). The ring of four or five that
+   holds both bonds, whose angles are the ring's, is read as reduced
+   instead (a saturated ring fused to it, as at dihydropyrrolizine's N, says
+   nothing of it) where the deposit puckers it (a torsion over 20 degrees;
+   an aromatic ring's lie within a few degrees of 0), or, in a five-ring of C, N and O, where the shared
    carbon's angle is under 106 degrees (the 5th percentile, 105.9, of 35
    aromatic carbons of such rings in the clean deposits; 64 sp3 carbons
    there have a median of 104.6): indole's file on indoline's deposit,

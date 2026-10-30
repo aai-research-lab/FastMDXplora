@@ -125,15 +125,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   tautomer (warfarin, the pyridones, an enol and its ketone), and an
   aromatic bond whose length fits a single is the other redox or
   tautomeric form only beside another of its ring that does at an atom the
-  deposit has tetrahedral (folate's file on DHF's 6CXK), a ring of four or
-  five read as reduced by its puckering (a torsion over 20 degrees) or, in
-  a five-ring of C, N and O, by the shared carbon's angle under 106 degrees
-  (indole's file on indoline's deposit, furan's on THF's). In a ring laid
-  flat, two such bonds at an atom of two heavy neighbours, each past twice
-  the noise, are said as lengths only ("the deposit lays its ring flat"),
-  and at an atom of three (3FO7's and 2BXK's indomethacin, 6C9F's
-  staurosporine) not at all: one long bond of a ring (NAD's adenine on 4MDH, 1HA2's
-  phenyl) is not. No note names an
+  deposit has tetrahedral (folate's file on DHF's 6CXK), or the ring of
+  four or five that holds both read as reduced by its puckering (a torsion
+  over 20 degrees) or, in a five-ring of C, N and O, by the shared carbon's
+  angle under 106 degrees (indole's file on indoline's deposit, furan's on
+  THF's); a saturated ring fused to it says nothing of it
+  (dihydropyrrolizine's N). In a ring laid flat, two such bonds at an atom
+  of two heavy neighbours, each past twice the noise, are said as lengths
+  only ("the deposit lays its ring flat"), and at an atom of three (3FO7's
+  and 2BXK's indomethacin, 6C9F's staurosporine) not at all: one long bond
+  of a ring (NAD's adenine on 4MDH, 1HA2's phenyl) is not. No note names an
   order the atoms cannot take: none across an O or N bridging two
   phosphorus atoms (FAD, GNP, ANP), past an atom's valence (a sulfonyl's
   C=S), at a carboxyl's carbon, at a stated centre the deposit holds
@@ -183,14 +184,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the lean said as a share of a tetrahedral centre's and the double bond's
   stated arms named. A stated double bond the deposit lays truly single (a
   carbon of it with two heavy neighbours bent under 114 degrees and its
-  length past the midpoint to an sp3 single by twice the copy's noise, or a tautomer's, its length nearer a
-  conjugated single's beside a C-OH or C-N laid at a double's) is "laid as
-  a single bond, its E or Z not judged", left to the bond's own note, the
-  simulated isomer following the deposit's geometry: acetylacetone's enol
-  file on its keto deposit is placed as the other tautomer, where it was
-  refused as another stereoisomer. A planar C=C a little long, or at a
-  bent carbon, is still judged (a stilbene at 1.48 Å, 1KT3's 9-cis
-  retinol, 4PMF's curcumin).
+  length past the midpoint to an sp3 single by twice the copy's noise, or a
+  tautomer's, its length nearer a conjugated single's beside a C-OH or C-N
+  laid at a double's) is "laid as a single bond, its E or Z not judged",
+  left to the bond's own note, the simulated isomer following the
+  deposit's geometry: acetylacetone's enol file on its keto deposit is
+  placed as the other tautomer, where it was refused as another
+  stereoisomer. A planar C=C a little long, or at a bent carbon, is still
+  judged (a stilbene at 1.48 Å, 1KT3's 9-cis retinol, 4PMF's curcumin).
   Both were placed as deposited and relaxed to the other isomer, said
   "placed as stated". A rotor that
   comes within 1.5 Å of an atom is turned: an sp3 one to its clearest

@@ -222,3 +222,36 @@ def test_noise_alone_never_skips_a_bent_c_c_s_e_or_z(tmp_path: Path, noise: floa
                          noise, seed)
         with pytest.raises(LigandError):
             _place(tmp_path, _built("OC(=O)/C=C\\c1ccccc1", 100 + seed % 3), noisy)
+
+
+def _n_laid_long(smiles: str, seed: int, length: float) -> np.ndarray:
+    """``smiles`` built, its aromatic five-ring N of three heavy neighbours
+    moved out along its bisector, with its third neighbour, until both its
+    ring bonds are ``length`` (A) or longer, as 2BXK's N-acyl indole lays
+    them."""
+    held = _built(smiles, 200 + seed)
+    xyz = held.GetConformer().GetPositions()
+    n = held.GetSubstructMatches(Chem.MolFromSmarts("[n;X3]"))[0][0]
+    ring = next(r for r in held.GetRingInfo().AtomRings() if n in r and len(r) == 5
+                and all(held.GetAtomWithIdx(a).GetIsAromatic() for a in r))
+    near = [a.GetIdx() for a in held.GetAtomWithIdx(n).GetNeighbors() if a.GetIdx() in ring]
+    out = [a.GetIdx() for a in held.GetAtomWithIdx(n).GetNeighbors() if a.GetIdx() not in ring]
+    u = xyz[n] - (xyz[near[0]] + xyz[near[1]]) / 2.0
+    u = u / np.linalg.norm(u)
+    while min(np.linalg.norm(xyz[n] - xyz[k]) for k in near) < length:
+        for k in [n, *out]:
+            xyz[k] = xyz[k] + 0.002 * u
+    return xyz
+
+
+@pytest.mark.parametrize("smiles", ["C1Cc2cccn2C1", "C1Cc2nccn2C1"],
+                         ids=["dihydropyrrolizine", "dihydropyrroloimidazole"])
+def test_a_fused_saturated_ring_does_not_make_an_aromatic_one_reduced(
+        tmp_path: Path, smiles: str) -> None:
+    """The bridgehead N was read by the saturated ring's pucker, so its two
+    long aromatic bonds were "the other redox or tautomeric form" of the
+    right file."""
+    for seed in (1, 2):
+        _, _, line = _place(tmp_path, _built(smiles, 100 + seed),
+                            _held(tmp_path, smiles, seed, _n_laid_long(smiles, seed, 1.46)))
+        assert "the file has it aromatic" not in line, (seed, line)
