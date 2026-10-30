@@ -46,7 +46,7 @@ def test_empty_compare_names_the_palette_shortcut_for_this_platform(page) -> Non
     page.wait_for_function("() => document.documentElement.dataset.page === 'compare'")
     keys = page.evaluate("() => window.FastMDXKeys.of('palette')")
     mac = page.evaluate("() => window.FastMDXKeys.mac")
-    joiner = "" if mac else "+"
+    joiner = "" if mac else " "
     detail = page.text_content("#compare-empty")
     assert f"palette ({joiner.join(keys)})" in detail, detail
 
