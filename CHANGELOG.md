@@ -9,6 +9,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- The line said of a run that starts from velocities drawn at another
+  temperature reaches the run's manifest notes, is a warning in the live
+  events, and prints once on the terminal, not twice.
+- Comparing one study across environments treats `setup.random_seed` as
+  environmental where setup drew it in every run (`random_seed.drawn` in
+  its record), and as the study where the study gave it. The key it
+  named before, `seed_source`, was written by nothing.
+
 - A pose taken from the structure says the two files list the ligand's
   atoms in different orders only where they do, element by element and
   bond by bond. A phenyl turned over by its symmetry, from files that list
