@@ -448,6 +448,11 @@ def write_resolved_config(
         "#   fastmdx explore --config resolved_config.yml\n"
         "#\n"
     )
+    # A setting the run worked out from another, said beside the value.
+    for name, said in (merged.get("derived") or {}).items():
+        header += f"# {name}: {said['value']}, taken from {said['from']}\n"
+    if merged.get("derived"):
+        header += "#\n"
     path = out / filename
     with path.open("w", encoding="utf-8") as fh:
         fh.write(header)

@@ -61,6 +61,25 @@ _RECORDER: ContextVar[Any] = ContextVar("preparation_recorder", default=None)
 DEFAULTS: dict[str, Any] = SETUP.defaults()
 
 
+def _starting_temperature(params: dict[str, Any], orchestrator: Any) -> float:
+    """`setup.temperature_K`, or the run's simulation temperature when unset.
+
+    A study fills it before setup runs; setup called directly through Python
+    may not have, and is told what it gets.
+    """
+    if params.get("temperature_K") is not None:
+        return float(params["temperature_K"])
+    options = getattr(orchestrator, "options", None) or {}
+    given = (options.get("simulation") or {}).get("temperature_K")
+    if given is not None:
+        logger.info("Starting velocities at %s K, the simulation temperature: "
+                    "setup.temperature_K is not set.", float(given))
+        return float(given)
+    logger.info("Starting velocities at 300 K: neither setup.temperature_K "
+                "nor simulation.temperature_K is set.")
+    return 300.0
+
+
 def _the_list_is_the_name(name: Any, xmls: Any) -> bool:
     """Whether a raw force-field list is exactly what a named one resolves to."""
     from fastmdxplora.setup.forcefields import resolve_forcefield
@@ -1758,7 +1777,7 @@ def _run(
             constraints=str(params["constraints"]),
             rigid_water=bool(params["rigid_water"]),
             hydrogen_mass_amu=params["hydrogen_mass_amu"],
-            temperature_K=float(params["temperature_K"]),
+            temperature_K=_starting_temperature(params, orchestrator),
         )
 
         # Only the files. What preparation returns now includes the system

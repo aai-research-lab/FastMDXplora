@@ -670,6 +670,8 @@ class FastMDXplora:
                          say=self._presenter.info)
 
         merged_options = self._merge_options(options)
+        self._derived = (_fill_setup_temperature(merged_options)
+                         if "setup" in plan else {})
         dashboard_writer = self._dashboard_writer(merged_options, plan)
         if dashboard_writer is not None and not dashboard_writer.phases_only:
             self._initialize_dashboard_timeline(dashboard_writer, plan)
@@ -1716,6 +1718,7 @@ class FastMDXplora:
             "include_phase": include,
             "exclude_phase": exclude,
             "options": getattr(self, "_resolved_options", None) or self.options,
+            "derived": getattr(self, "_derived", None) or {},
             # How the study was written travels with it. The config that
             # comes back out has to say the same thing the one that went in
             # did, or re-running an agent-written study produces a record
@@ -2106,3 +2109,29 @@ def _document_the_phase_methods() -> None:
 
 
 _document_the_phase_methods()
+
+
+def _fill_setup_temperature(
+    merged: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Draw the starting velocities at the run's own temperature.
+
+    `setup.temperature_K` left unset is this run's
+    `simulation.temperature_K`, so a study at 310 K, from its own block, a
+    folder's defaults, a system entry or a sweep value, is not started from
+    velocities drawn at 300 K. A value the study sets is kept. Returns what
+    was filled and from where, for the resolved config.
+    """
+    from fastmdxplora.config.schema import SIMULATION
+
+    setup = merged.setdefault("setup", {})
+    if setup.get("temperature_K") is not None:
+        return {}
+    simulation = merged.get("simulation") or {}
+    if simulation.get("temperature_K") is not None:
+        value, source = float(simulation["temperature_K"]), "simulation.temperature_K"
+    else:
+        value = float(SIMULATION.get("temperature_K").default)
+        source = "the default of simulation.temperature_K"
+    setup["temperature_K"] = value
+    return {"setup.temperature_K": {"value": value, "from": source}}
