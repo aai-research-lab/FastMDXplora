@@ -26,44 +26,45 @@ below. Each set's coverage is a sample too: bins within a set move
 together, so the coverage carries a 95% interval from its spread over sets
 (a t interval on the per-set coverages), not a binomial one over bins.
 
-Two gauges are read. The reported one sets the curve, and each resample,
-to zero at its own lowest bin. Noise puts a curve's lowest bin low, so this
-lifts the curve above the truth everywhere away from its minimum (barriers
-read high), and lifts each resample above the curve again: the band's
-middle sits above the curve, and the truth below both. The second gauge
-sets the curve, each resample and the truth to zero at their mean over the
-bins between the window centres, where no single bin's noise sets the
-zero; it is read from the same resamples, so both gauges come from one
-bootstrap at the same seeds. ``--block-factor`` reruns the count with
-blocks of that many correlation times (the package's is 2), to see how
-much of a short error is the block length.
+Two gauges are read. The reported one sets the curve to zero at its lowest
+bin, and each resample to zero at that same bin, as `compute_pmf` does.
+Noise puts a curve's lowest bin low, so this lifts the curve above the
+truth everywhere away from its minimum (barriers read high); the band's
+middle sits on the curve. The second gauge sets the curve, each resample
+and the truth to zero at their mean over the bins between the window
+centres, where no single bin's noise sets the zero; it is read from the
+same resamples, so both gauges come from one bootstrap at the same seeds.
+``--block-factor`` reruns the count with blocks of that many correlation
+times (the package's is 2), to see how much of a short error is the block
+length.
 
-On the default sets (seeds 1000 to 1099, the command below), zeroed at
-the lowest bin as reported, the band held the truth in 75.5% of bins at
-200 resamples (+/- 3.8 points at 95% over sets) and 76.2% at 400, against
-the 95% it states: short by about 19 points. On the same sets 400
-resamples add 0.7 points, small against that shortfall, so it is not for
-want of resamples. Between the centres the curve sat a median 0.82 of its
-error above the truth, and the band's middle a further 0.47 above the
-curve. Value +/- 1.96 SE held the truth in 87.6% of the bins between the
-centres, a figure that still carries the curve's offset. Zeroed at the
-mean over the bins between the centres, from the same resamples, the curve
-sat on the truth (+0.01 SE), the band's middle on the curve (+0.01 SE),
-and the band held the truth in 89.5% of the bins between the centres at
-200 resamples (74.7% there in the reported gauge) and 90.0% at 400 (75.4%).
+On the default sets (seeds 1000 to 1099, the command below), zeroed as
+reported, the band held the truth in 86.4% of bins at 200 resamples (+/-
+3.2 points at 95% over sets) and 87.0% at 400, against the 95% it states:
+short by about 9 points. With each resample zeroed at its own lowest bin
+instead, as before, it held 75.5% (76.2% at 400), and its middle sat 0.47
+of its error above the curve. Between the centres the curve sat a median
+0.81 of its error above the truth, and the band's middle +0.01 from the
+curve. Value +/- 1.96 SE held the truth in 87.2% of the bins between the
+centres, against the band's 86.2% (74.7% with the old zeroing): both carry
+the curve's offset. Zeroed at the mean over the bins between the centres,
+from the same resamples, the curve sat on the truth (+0.01 SE), the band's
+middle on the curve (+0.01 SE), and the band held the truth in 89.5% of
+the bins between the centres at 200 resamples and 90.0% at 400.
 
 What is left is the error's size, read in the second gauge: the stated
 error is about 13% smaller than the curve's spread from set to set (0.869
 on these sets at 200 and 400 resamples). That reading moves with the seeds
-too, from 0.82 on seeds 1000 to 1029 to 0.91 on seeds 52000 to 52039, but
-is below one on each. Blocks of four correlation times, twice the
-package's (``--block-factor 4``, 200 resamples), raise it to 0.916, and
-the coverage between the centres to 90.7%; on seeds 52000 to 52039 blocks
-of four gave 0.949 and blocks of eight 0.936, no further. The same reading
-in the reported gauge (0.884 here) is not a reading of the error alone:
-there the error and the spread both carry the noise of the lowest bin, and
-it moves more with the seeds, from 0.79 on seeds 1000 to 1029 to 1.00 on
-seeds 52000 to 52039. The band is reported as computed, not corrected.
+too, from 0.82 on seeds 1000 to 1029 (the first 30 of these) to 0.91 on
+seeds 52000 to 52039, but is below one on each. Blocks of four correlation
+times, twice the package's (``--block-factor 4``, 200 resamples), raise it
+to 0.916, and the coverage between the centres to 90.7%; on seeds 52000 to
+52039 blocks of four gave 0.949 and blocks of eight 0.936, no further. The
+same reading in the reported gauge (0.968 here) is not a reading of the
+error alone: there the error and the spread both carry the noise of the
+lowest bin, and it moves more with the seeds, from 0.86 on seeds 1000 to
+1029 to 1.10 on seeds 52000 to 52039. The band is reported as computed,
+not corrected.
 
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 400 --out pmf_coverage.json
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 --block-factor 4
@@ -237,6 +238,8 @@ def _one_set(profile: Profile, design: Design, seed: int,
     coordinate = np.asarray(base["pmf"]["coordinate"], dtype=float)
     between = (coordinate >= base["covered"][0]) & (coordinate <= base["covered"][1])
     n = coordinate.size
+    # The curve's lowest bin, where `compute_pmf` sets each resample to zero.
+    anchor = int(np.nanargmin(_floats(base["pmf"]["free_energy_kjmol"])))
 
     def curve(sampled: dict[int, np.ndarray]) -> np.ndarray:
         inner = compute_pmf(sampled, plan, temperature_K=design.temperature_K,
@@ -246,7 +249,7 @@ def _one_set(profile: Profile, design: Design, seed: int,
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             anchored = values - np.nanmean(values[between])
-        return np.concatenate([values, anchored])
+        return np.concatenate([values - values[anchor], anchored])
 
     truth = true_profile(profile, design, coordinate)
     truth_mean = truth - truth[between].mean()

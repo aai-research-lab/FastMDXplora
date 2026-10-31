@@ -128,21 +128,39 @@ def test_the_reported_gauge_is_the_band_compute_pmf_reports():
     assert read["mean_between_centres"]["error"] != band["standard_error"]
 
 
-def test_a_small_count_at_fixed_seeds_is_held():
+@pytest.fixture(scope="module")
+def small_count():
+    """The guard's four sets at 20 resamples, counted once for both tests."""
+    return pmf_coverage.coverage(4, (20,))["by_resamples"]["20"]
+
+
+def test_the_bands_middle_sits_on_the_curve(small_count):
+    # Each resample zeroed at its own lowest bin put the band's middle 0.58
+    # of its error above the curve on these sets (0.47 on seeds 1000 to
+    # 1099). Zeroed at the curve's lowest bin, it sits on the curve.
+    assert abs(small_count["band_offset_between_centres"]) < 0.15
+
+
+def test_a_small_count_at_fixed_seeds_is_held(small_count):
     # A guard: a change to WHAM, the bootstrap or the sets moves these.
     # Exact counts: on another numpy a percentile tie at a band's edge can
     # flip one bin, and the count is then one off without anything wrong.
-    row = pmf_coverage.coverage(4, (20,))["by_resamples"]["20"]
+    # Each resample zeroed at the curve's lowest bin, not its own, moved the
+    # reported gauge's counts (177, 164 and 198 before) and its offsets
+    # (0.45581 and 0.57685): the band's middle came down onto the curve,
+    # and the error, now of each bin against that one, changed. The mean
+    # gauge's counts did not move: that zero is the same either way.
+    row = small_count
     assert row["bins_with_a_band"] == 240
-    assert row["coverage"] == pytest.approx(177 / 240, abs=1e-12)
-    assert row["coverage_between_centres"] == pytest.approx(164 / 222, abs=1e-12)
-    assert row["coverage_1_96_se_between_centres"] == pytest.approx(198 / 222, abs=1e-12)
+    assert row["coverage"] == pytest.approx(191 / 240, abs=1e-12)
+    assert row["coverage_between_centres"] == pytest.approx(178 / 222, abs=1e-12)
+    assert row["coverage_1_96_se_between_centres"] == pytest.approx(197 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_between_centres"] == pytest.approx(
         187 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_1_96_se_between_centres"] == pytest.approx(
         199 / 222, abs=1e-12)
-    assert row["curve_offset_between_centres"] == pytest.approx(0.45581, abs=1e-4)
-    assert row["band_offset_between_centres"] == pytest.approx(0.57685, abs=1e-4)
+    assert row["curve_offset_between_centres"] == pytest.approx(0.40827, abs=1e-4)
+    assert row["band_offset_between_centres"] == pytest.approx(0.03484, abs=1e-4)
     assert abs(row["mean_gauge"]["band_offset_between_centres"]) < 0.01
 
 

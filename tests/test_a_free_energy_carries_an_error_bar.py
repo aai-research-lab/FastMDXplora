@@ -159,6 +159,56 @@ class TestThePmfCarriesOne:
         result = compute_pmf(self._samples(plan), plan, bootstrap_resamples=0)
         assert result["pmf"]["uncertainty"] is None
 
+    def test_each_resample_is_zeroed_at_the_curves_lowest_bin(
+            self, monkeypatch) -> None:
+        """Zeroed at its own lowest bin, which noise puts low, each resample
+        sat above the curve, and the band's middle with it. At the curve's
+        lowest bin every resample now reads 0, so the band there has no
+        width, and the record says where that is and what the zero does."""
+        from fastmdxplora.simulation import umbrella
+
+        resampled: list[np.ndarray] = []
+        real = umbrella.block_bootstrap
+
+        def recording(samples, statistic, **kwargs):
+            def recorded_one(drawn):
+                values = np.asarray(statistic(drawn), dtype=float)
+                resampled.append(values)
+                return values
+            return real(samples, recorded_one, **kwargs)
+
+        monkeypatch.setattr(umbrella, "block_bootstrap", recording)
+        # A double well sampled exactly, so the lowest bin is in a well
+        # rather than a lone sample at an end of the grid.
+        from fastmdxplora.validation import pmf_coverage
+
+        profile, design = pmf_coverage.Profile(), pmf_coverage.Design()
+        plan = pmf_coverage._plan(design)
+        sampled = pmf_coverage._window_samples(profile, design, plan,
+                                               np.random.default_rng(1000))
+        result = umbrella.compute_pmf(sampled, plan,
+                                      temperature_K=design.temperature_K,
+                                      bins=design.bins, bootstrap_resamples=30)
+        curve = np.array([np.nan if v is None else v
+                          for v in result["pmf"]["free_energy_kjmol"]])
+        anchor = int(np.nanargmin(curve))
+        # The first call is the real data; the rest are the resamples.
+        drawn = np.array(resampled[1:])
+        assert len(drawn) == 30
+        # A resample with nothing in that bin is left out whole, and counted.
+        out = np.isnan(drawn[:, anchor])
+        assert np.all(np.isnan(drawn[out]))
+        assert np.all(drawn[~out, anchor] == 0.0) and (~out).sum() >= 25
+        # Not each at its own lowest bin: some go below zero elsewhere.
+        assert np.nanmin(drawn) < 0.0
+        band = result["pmf"]["uncertainty"]
+        assert band["resamples_left_out"] == int(out.sum())
+        assert band["confidence_low"][anchor] == band["confidence_high"][anchor] == 0.0
+        assert band["standard_error"][anchor] == 0.0
+        assert band["zeroed_at"] == result["pmf"]["coordinate"][anchor]
+        assert band["zero"] == umbrella.THE_CURVE_SITS_HIGH
+        assert "about 0.8 of their error high" in band["zero"]
+
 
 class TestAReweightedAverageSaysWhenItsBarIsAFloor:
     """The concrete half of AUD7.
