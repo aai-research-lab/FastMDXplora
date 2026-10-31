@@ -1334,6 +1334,20 @@ def _detach_all_reporters(simulation: Any) -> None:
 # ---------------------------------------------------------------------------
 # Stage runners
 # ---------------------------------------------------------------------------
+def _velocities_drawn_at(state_xml: Path) -> float | None:
+    """The temperature setup drew a prepared system's velocities at.
+
+    Read from the setup record beside its `state.xml`; None where there is
+    no record, or it does not say.
+    """
+    record = Path(state_xml).parent / "setup_parameters.json"
+    try:
+        value = json.loads(record.read_text(encoding="utf-8"))["parameters"]["temperature_K"]
+        return None if value is None else float(value)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def _run_minimize(
     omm: dict,
     simulation: Any,
@@ -2828,6 +2842,16 @@ def run_simulation(
         # moves atoms and there is no reason for it to run free.
         if plumed and plumed.get("hold_from_the_start"):
             _attach_the_bias(resolved_name="plumed_equilibration.dat")
+
+        if not minimize and resume_from is None:
+            drawn = _velocities_drawn_at(state_xml_path)
+            if drawn is not None and abs(drawn - float(temperature_K)) > 1e-6:
+                said = (f"Starting from the prepared system's velocities, drawn "
+                        f"at {drawn:.1f} K, for a run at {float(temperature_K):.1f} K: "
+                        "minimization is off, so they are not reassigned. With "
+                        "`minimize: true` they are drawn at the run's own.")
+                logger.warning(said)
+                _log_step(said)
 
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:

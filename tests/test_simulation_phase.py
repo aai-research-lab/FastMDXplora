@@ -773,3 +773,37 @@ class TestSimulatingFromASystemPreparedElsewhere:
             _pipeline.run(orchestrator=self._orchestrator(tmp_path),
                           output_dir=tmp_path / "simulation")
         assert "Run the setup phase first" in str(raised.value)
+
+
+class TestVelocitiesFromAnotherTemperature:
+    """A run that does not minimize starts from the prepared velocities.
+
+    A `setup_from` run at 330 K from a system prepared at 300 K started from
+    velocities drawn at 300 K and nothing said so. They are kept, as a run
+    without minimization keeps its own setup's, and the log says it.
+    """
+
+    @staticmethod
+    def _run(tmp_path: Path, drawn_at: float, temperature_K: float) -> str:
+        prepared = tmp_path / "prepared" / "setup"
+        prepared.mkdir(parents=True)
+        for name in ("system.xml", "state.xml"):
+            (prepared / name).write_text("<x />")
+        (prepared / "topology.pdb").write_text("ATOM\nEND\n")
+        (prepared / "setup_parameters.json").write_text(
+            json.dumps({"parameters": {"temperature_K": drawn_at}}))
+        with patch.object(_runner, "_import_openmm", return_value=_build_fake_omm()):
+            result = _runner.run_simulation(
+                system_xml=prepared / "system.xml", state_xml=prepared / "state.xml",
+                topology_pdb=prepared / "topology.pdb", output_dir=tmp_path / "out",
+                temperature_K=temperature_K,
+                nvt_steps=0, npt_steps=0, production_steps=0, minimize=False)
+        return result.log_file.read_text(encoding="utf-8")
+
+    def test_a_run_at_another_temperature_says_so(self, tmp_path: Path):
+        log = self._run(tmp_path, drawn_at=300.0, temperature_K=330.0)
+        assert "drawn at 300.0 K, for a run at 330.0 K" in log
+
+    def test_a_run_at_the_same_temperature_says_nothing(self, tmp_path: Path):
+        log = self._run(tmp_path, drawn_at=330.0, temperature_K=330.0)
+        assert "drawn at" not in log
