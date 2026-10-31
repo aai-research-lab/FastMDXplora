@@ -230,7 +230,11 @@ fastmdx explore --config psi.yml
 
 The free energy lands in `pmf.json` with the barrier, the minima, the range the
 windows covered, and — on a closed turn — how far the profile misses meeting
-itself, which is what that study's statistics are worth.
+itself, which is what that study's statistics are worth. The profile is zeroed
+at its lowest bin, which noise puts low, so the profile and its barrier sit
+about 0.8 of their error high: said, not corrected, in `summary.barrier_zero`
+and `pmf.uncertainty.zero`, with that bin in `pmf.uncertainty.zeroed_at` and
+the resamples left out of the band there in `pmf.uncertainty.resamples_left_out`.
 
 Sizing a real study, and what to do when one force constant will not hold every
 window, is in [Umbrella sampling](studies.md#umbrella-sampling).

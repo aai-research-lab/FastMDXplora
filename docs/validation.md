@@ -99,7 +99,7 @@ compared field by field.
 | What is compared | Must match |
 |---|---|
 | `resolved_config.yml` | **Exactly** |
-| The input structure's SHA-256, where the run's `manifest.json` records it | **Exactly** |
+| The input structure's SHA-256, where setup records it | **Exactly** |
 | The results | **Not compared** |
 
 The first row is exact because [`resolved_config.yml` names every setting the
@@ -109,7 +109,8 @@ it can only be caught in a file that writes the defaults down. Keys that say
 where or when a run happened rather than what it was are reported separately
 and are not a difference in the study, wherever in the file they sit: output
 paths, run id, start and finish times, host, platform, device index,
-precision, threads, versions, Python and duration. Comparing runs from two
+precision, threads, versions, Python, duration and `seed_source` (whether a
+seed was given or drawn). Comparing runs from two
 **versions** is a real comparison, not a false alarm: if a default moved
 between them, the studies differ.
 
@@ -129,10 +130,11 @@ platform's arithmetic does; across environments the platform and its builds
 differ, so the trajectories diverge, and their observables should agree within
 the spread between replicas, not exactly.
 
-The digest is read from each run's `manifest.json`. This release writes it in
-`setup/setup_parameters.json` instead (`input.structure.sha256`), so on its
-runs the comparison reports the digest as not recorded (`not_recorded_for`),
-and the second row is not checked.
+The digest is read from where setup writes it, each run's
+`setup/setup_parameters.json` (`input.structure.sha256`), or the setup a run
+given `setup_from` simulated. A run with no such record, a sequence input or
+one that prepared nothing, is listed in `not_recorded_for`, and its digest is
+not checked.
 
 See [Reproducing a run](config.md#reproducing-a-run) for what that means when
 you repeat a study yourself.
@@ -400,7 +402,7 @@ over those bins, read from the same resamples, it held it in 89.5%. Value
 to the band's 86.2%, and about what a band of the right width set 0.8 of
 its error off gives (87%). At the curve's lowest bin the band holds the
 truth only where the truth's own lowest bin is the same one. The offset is
-said in `pmf.json` beside the band (`uncertainty.zero`) and beside a
+said in `pmf.json` beside the band (`pmf.uncertainty.zero`) and beside a
 barrier (`summary.barrier_zero`), and not corrected: the curve is zeroed at
 its lowest bin, which noise puts low, so the curve and a barrier read off it
 sit about 0.8 of their error high.

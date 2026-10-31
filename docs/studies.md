@@ -467,6 +467,12 @@ interval to a few per cent and is the part of recombination that takes time:
 on seventeen windows the curve took a twentieth of a second and its interval
 fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
 more for a figure, 0 for the curve alone; the count used is in `pmf.json`.
+The curve is zeroed at its lowest bin, which noise puts low, so the curve and a
+barrier read off it sit about 0.8 of their error high. The interval has no
+width at that bin, recorded as `pmf.uncertainty.zeroed_at`; the offset is said
+in `pmf.uncertainty.zero` and `summary.barrier_zero`, not corrected, and
+`pmf.uncertainty.resamples_left_out` counts the resamples empty there and so
+left out of the interval.
 
 ```yaml
     bootstrap_resamples: 50
