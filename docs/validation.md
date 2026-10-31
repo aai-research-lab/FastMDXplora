@@ -99,23 +99,40 @@ compared field by field.
 | What is compared | Must match |
 |---|---|
 | `resolved_config.yml` | **Exactly** |
-| The input structure's SHA-256, from `setup/setup_parameters.json` | **Exactly** |
-| The results | **No** |
-
-The last row is the point. Solvation places water from a generator that is not
-fixed by the dynamics seed, so two preparations of the same molecule have
-different atom counts and the trajectories differ. **Saying so is part of the
-comparison** — an environment check that demanded identical results would either
-fail always or be measuring something other than what it claims.
+| The input structure's SHA-256, where the run's `manifest.json` records it | **Exactly** |
+| The results | **Not compared** |
 
 The first row is exact because [`resolved_config.yml` names every setting the
 run used](config.md#reproducing-a-run), defaults included. A default that
 resolves differently on another machine is what this check exists to catch, and
 it can only be caught in a file that writes the defaults down. Keys that say
-where a run happened rather than what it was — output paths, platform, device
-index, thread count — are reported separately and are not a difference in the
-study. Comparing runs from two **versions** is a real comparison, not a false
-alarm: if a default moved between them, the studies differ.
+where or when a run happened rather than what it was are reported separately
+and are not a difference in the study, wherever in the file they sit: output
+paths, run id, start and finish times, host, platform, device index,
+precision, threads, versions, Python and duration. Comparing runs from two
+**versions** is a real comparison, not a false alarm: if a default moved
+between them, the studies differ.
+
+The preparation is seeded (`setup.random_seed`) and the seed is written into
+`resolved_config.yml`, drawn and recorded where the Config gave none. So give
+`setup.random_seed` in the Config, or run one environment's
+`resolved_config.yml` in the others: otherwise each environment picks a seed
+of its own, and the comparison reports `setup.random_seed` as a difference in the
+study, which it is, since the hydrogens, the ions and so the box and its water
+were placed differently. With one seed, the same structure and settings
+prepare the same atoms again, where the packages that place them are the same
+versions.
+
+The results are not compared. The dynamics repeat their start only where
+`simulation.random_seed` is given, and step for step only as far as the
+platform's arithmetic does; across environments the platform and its builds
+differ, so the trajectories diverge, and their observables should agree within
+the spread between replicas, not exactly.
+
+The digest is read from each run's `manifest.json`. This release writes it in
+`setup/setup_parameters.json` instead (`input.structure.sha256`), so on its
+runs the comparison reports the digest as not recorded (`not_recorded_for`),
+and the second row is not checked.
 
 See [Reproducing a run](config.md#reproducing-a-run) for what that means when
 you repeat a study yourself.
@@ -331,7 +348,7 @@ an interval of 6.9 to 18.3, whose reciprocal, 0.055 to 0.145, is the
 interval on the preprint's ratio. The combined mean's error is
 SD / sqrt(R). The intervals are exact for normal means with one common,
 exactly known error; with errors that differ from run to run, or are
-themselves estimates, the true interval is at least this wide.
+themselves estimates, the true interval is wider.
 
 R counts the runs that determined their mean: a run whose record withheld
 it is left out of the spread, R and the combined mean's error, and the
@@ -348,41 +365,58 @@ report. It writes nothing in the campaign.
 ## The free-energy band against a known profile
 
 A PMF's 95% band comes from a moving-block bootstrap over each window's
-samples. How often it holds the truth is counted on synthetic umbrella
-sets with a known double well, each window sampled exactly from its biased
-distribution with correlated samples:
+samples, each resampled curve set to zero at the curve's own lowest bin, so
+the band is of the curve as it is reported and has no width at that bin. How
+often it holds the truth is counted on synthetic umbrella sets with a known
+double well, each window sampled exactly from its biased distribution with
+correlated samples:
 
 ```bash
 python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 400 --out pmf_coverage.json
+python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 --block-factor 4
+python -m fastmdxplora.validation.pmf_coverage --sets 30 --first-seed 1000 --resamples 200
+python -m fastmdxplora.validation.pmf_coverage --sets 40 --first-seed 52000 --resamples 200
+python -m fastmdxplora.validation.pmf_coverage --sets 40 --first-seed 52000 --resamples 200 --block-factor 4
+python -m fastmdxplora.validation.pmf_coverage --sets 40 --first-seed 52000 --resamples 200 --block-factor 8
 ```
 
-On 100 sets (seeds 1000 to 1099) the band held the true profile in 75.5%
-of bins at 200 resamples, +/- 3.8 points at 95% over sets, against the 95%
-it states: short by about 19 points. On the same sets 400 resamples add
-0.7 points, small against that shortfall. The band is not validated, and
-is reported as computed rather than corrected. Two things account for the
-shortfall.
+On 100 sets (seeds 1000 to 1099) the band held the true profile in 86.4%
+of bins at 200 resamples, +/- 3.2 points at 95% over sets, against the 95%
+it states: short by about 9 points. On the same sets 400 resamples add 0.6
+points. With each resample set to zero at its own lowest bin instead, as
+before this release, it held 75.5%. The band is not validated, and is
+reported as computed rather than corrected. Two things account for most of
+the shortfall.
 
-First, the curve and each resample are set to zero at their own lowest
-bin, which noise puts low: the curve sits about 0.8 of its error above the
-truth away from its minimum, so barriers read high, and the band's middle
-about 0.47 of its error above the curve. Over the bins between the window
-centres the band held the truth in 74.7% of them; with the curve, each
-resample and the truth zeroed instead at their mean over those bins, read
-from the same resamples, it held it in 89.5%.
+First, the curve is set to zero at its lowest bin, which noise puts low:
+between the window centres it sits about 0.8 of its error above the truth
+(a median 0.81), so barriers read high. The band's middle sits on the
+curve (+0.01 of its error), so the band carries the curve's offset and adds
+none. Over the bins between the window centres the band held the truth in
+86.2% of them (74.7% with each resample zeroed at its own lowest bin);
+with the curve, each resample and the truth zeroed instead at their mean
+over those bins, read from the same resamples, it held it in 89.5%. Value
++/- 1.96 SE held the truth in 87.2% of the bins between the centres, close
+to the band's 86.2%, and about what a band of the right width set 0.8 of
+its error off gives (87%). At the curve's lowest bin the band holds the
+truth only where the truth's own lowest bin is the same one. The offset is
+said in `pmf.json` beside the band (`uncertainty.zero`) and beside a
+barrier (`summary.barrier_zero`), and not corrected: the curve is zeroed at
+its lowest bin, which noise puts low, so the curve and a barrier read off it
+sit about 0.8 of their error high.
 
 Second, the bootstrap error is about 13% smaller than the curve's spread
 from set to set, read with the mean zeroing: 0.869 on these sets, 0.82 on
-seeds 1000 to 1029 and 0.91 on seeds 52000 to 52039, below one on each.
-Blocks twice as long (`--block-factor 4`) raise it to 0.916, and the
-coverage between the centres with the mean zeroing from 89.5% to 90.7%; on
-seeds 52000 to 52039, blocks four times as long went no further (0.949 at
-twice, 0.936 at four times). The same reading with the lowest-bin zeroing
-(0.884 here) is not a reading of the error alone, since the error and the
-spread there both carry the lowest bin's noise: it moves more with the
-seeds, from 0.79 on seeds 1000 to 1029 to 1.00 on seeds 52000 to 52039.
-Value +/- 1.96 SE held the truth in 87.6% of the bins between the
-centres, a figure that still carries the curve's offset.
+seeds 1000 to 1029 (the first 30 of them) and 0.91 on seeds 52000 to 52039
+(40 sets of their own), below one on each. Blocks twice as long
+(`--block-factor 4`) raise it to 0.916, and the coverage between the
+centres with the mean zeroing from 89.5% to 90.7%; on seeds 52000 to 52039,
+blocks four times as long went no further (0.949 at twice, 0.936 at four
+times), so the block length does not explain all of it. The same reading
+with the lowest-bin zeroing (0.968 here) is not a reading of the error
+alone, since the error and the spread there both carry the lowest bin's
+noise: it moves more with the seeds, from 0.86 on seeds 1000 to 1029 to
+1.10 on seeds 52000 to 52039.
 
 ---
 
