@@ -313,12 +313,76 @@ python -m fastmdxplora.validation.replica_calibration <campaign folder> --out ca
 ```
 
 For every analysis that wrote a series of its frames in every replica, it
-gives the spread of the means against the mean stated error three ways: as
-the runs recorded them, computed again by this release from each run's own
-start, and from the start the replicas share. One is honest; with ten
-replicas the spread is itself uncertain by about a quarter, so a ratio
-between one half and two cannot be told from one. It writes nothing in the
-campaign.
+gives the observed between-replica variability, the SD of the replicas'
+means, against what each run's stated error predicts for it, three ways:
+as the runs recorded them, computed again by this release from each run's
+own start, and from the start the replicas share. The variance ratio is
+the SD squared over the mean of the runs' errors squared; one is honest.
+Its 95% interval is the chi-square one on R - 1 degrees of freedom: at
+R = 10 it runs from 0.47 to 3.3 times the variance ratio, so a variance
+ratio of one half or two cannot be told from one. The ratio is the SD over
+the mean stated error, with an interval on the square roots of the same
+factors (0.69 to 1.8 times it at R = 10). Honest errors put it near one,
+not at one: below it at small R, and above it where the runs' errors
+differ; well above one, the errors were stated too small. The 2.5.7
+preprint's ratio is the reciprocal of this one, stated error over observed
+SD: over the same runs, its Rg ratio of 0.10 reads here as about 10, with
+an interval of 6.9 to 18.3, whose reciprocal, 0.055 to 0.145, is the
+interval on the preprint's ratio. The combined mean's error is
+SD / sqrt(R). The intervals are exact for normal means with one common,
+exactly known error; with errors that differ from run to run, or are
+themselves estimates, the true interval is at least this wide.
+
+R counts the runs that determined their mean: a run whose record withheld
+it is left out of the spread, R and the combined mean's error, and the
+report says how many were. The spread is then of the runs that stayed.
+Runs withheld for too few independent samples can hold the means furthest
+out, so leaving them out can make the spread look smaller: with many
+withheld, a ratio near one is not agreement among all the replicas. (On
+V5r, 6 of 10 RMSD means were withheld, so this release reads RMSD there
+on R = 4.) Two replicas, or runs that stated no error, are said in the
+report. It writes nothing in the campaign.
+
+---
+
+## The free-energy band against a known profile
+
+A PMF's 95% band comes from a moving-block bootstrap over each window's
+samples. How often it holds the truth is counted on synthetic umbrella
+sets with a known double well, each window sampled exactly from its biased
+distribution with correlated samples:
+
+```bash
+python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 400 --out pmf_coverage.json
+```
+
+On 100 sets (seeds 1000 to 1099) the band held the true profile in 75.5%
+of bins at 200 resamples, +/- 3.8 points at 95% over sets, against the 95%
+it states: short by about 19 points. On the same sets 400 resamples add
+0.7 points, small against that shortfall. The band is not validated, and
+is reported as computed rather than corrected. Two things account for the
+shortfall.
+
+First, the curve and each resample are set to zero at their own lowest
+bin, which noise puts low: the curve sits about 0.8 of its error above the
+truth away from its minimum, so barriers read high, and the band's middle
+about 0.47 of its error above the curve. Over the bins between the window
+centres the band held the truth in 74.7% of them; with the curve, each
+resample and the truth zeroed instead at their mean over those bins, read
+from the same resamples, it held it in 89.5%.
+
+Second, the bootstrap error is about 13% smaller than the curve's spread
+from set to set, read with the mean zeroing: 0.869 on these sets, 0.82 on
+seeds 1000 to 1029 and 0.91 on seeds 52000 to 52039, below one on each.
+Blocks twice as long (`--block-factor 4`) raise it to 0.916, and the
+coverage between the centres with the mean zeroing from 89.5% to 90.7%; on
+seeds 52000 to 52039, blocks four times as long went no further (0.949 at
+twice, 0.936 at four times). The same reading with the lowest-bin zeroing
+(0.884 here) is not a reading of the error alone, since the error and the
+spread there both carry the lowest bin's noise: it moves more with the
+seeds, from 0.79 on seeds 1000 to 1029 to 1.00 on seeds 52000 to 52039.
+Value +/- 1.96 SE held the truth in 87.6% of the bins between the
+centres, a figure that still carries the curve's offset.
 
 ---
 

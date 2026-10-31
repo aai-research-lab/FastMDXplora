@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 import numpy as np
 import pytest
@@ -132,6 +133,14 @@ def test_the_report_says_what_each_number_is(tmp_path, capsys):
     said = capsys.readouterr().out
     assert "Observed between-replica variability" in said
     assert "Combined mean's error" in said and "SD over sqrt(R)" in said
-    # The ratio's interval is in the table, beside the ratio.
+    # The ratio's interval is in the table, beside the ratio, in each row.
     assert "Ratio (95% interval)" in said
+    row = replica_calibration.calibrate(tmp_path)["analyses"]["rg"]["own_start"]
+    cell = (f"| {row['ratio']:.4g} ({row['ratio_interval'][0]:.3g} to "
+            f"{row['ratio_interval'][1]:.3g}) |")
+    assert cell in said
+    rows = [line for line in said.splitlines() if line.startswith("| rg |")]
+    assert len(rows) == 3 and all(
+        re.search(r"\| [0-9.e+-]+ \([0-9.e+-]+ to [0-9.e+-]+\) \| [0-9.e+-]+ \(", line)
+        for line in rows)
     assert "error bar" not in said

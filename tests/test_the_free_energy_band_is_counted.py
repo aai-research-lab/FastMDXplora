@@ -119,6 +119,10 @@ def test_the_reported_gauge_is_the_band_compute_pmf_reports():
     assert one["coordinate"] == pmf["coordinate"]
     assert read["lowest_bin"]["deviation"] == [float(v) for v in curve - truth]
     assert read["lowest_bin"]["inside"] == ((truth >= low) & (truth <= high)).tolist()
+    # Both edges themselves, so a shift in either is caught here and not
+    # only by the count.
+    assert read["lowest_bin"]["low"] == band["confidence_low"]
+    assert read["lowest_bin"]["high"] == band["confidence_high"]
     # The second gauge is from the same resamples, re-zeroed: its errors
     # differ, its curve sits on the truth.
     assert read["mean_between_centres"]["error"] != band["standard_error"]

@@ -26,11 +26,11 @@ predicts for it. Each way gives:
   this one: stated error over observed SD;
 - **the variance ratio**: the SD of the means squared over the mean of the
   runs' own errors squared, which honest errors put at one in expectation.
-  Its 95% interval is the
-  chi-square one on R - 1 degrees of freedom for R replicas, taking the
-  stated errors as fixed, so it says only how uncertain the observed
-  spread is: at R = 10 it runs from 0.47 to 3.3 times the ratio, so a
-  variance ratio of one half or two cannot be told from one. The ratio's
+  Its 95% interval is the chi-square one on R - 1 degrees of freedom for R
+  replicas, taking the stated errors as fixed, so it says only how
+  uncertain the observed spread is: at R = 10 it runs from 0.47 to 3.3
+  times the variance ratio, so a variance ratio of one half or two cannot
+  be told from one. The ratio's
   interval uses the same chi-square factors, square-rooted; it is not the
   square root of the variance ratio's interval where the runs' errors
   differ, since the ratio divides by their mean and the variance ratio by
@@ -230,8 +230,9 @@ def _said(result: dict[str, Any]) -> str:
              "chi-square on R - 1 degrees of freedom. The ratio is the SD over "
              "the mean stated error, near one where errors are honest and well "
              "above it where they were stated too small; its interval uses the "
-             "same chi-square factors, and the preprint's ratio is the "
-             "reciprocal of this one. The combined mean's error is the SD over sqrt(R), R "
+             "square roots of the same chi-square factors, and the preprint's "
+             "ratio is the reciprocal of this one. The combined mean's error "
+             "is the SD over sqrt(R), R "
              "the runs that determined their mean; runs that withheld theirs "
              "are left out, so the spread is of the runs that stayed.", "",
              "| Analysis | Way | Withheld | Mean of means | SD of means "

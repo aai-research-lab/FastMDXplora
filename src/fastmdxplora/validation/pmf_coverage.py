@@ -54,15 +54,16 @@ and the band held the truth in 89.5% of the bins between the centres at
 
 What is left is the error's size, read in the second gauge: the stated
 error is about 13% smaller than the curve's spread from set to set (0.869
-on these sets at 200 and 400 resamples; 0.908 on seeds 52000 to 52039).
-Blocks of four correlation times, twice the package's (``--block-factor
-4``, 200 resamples), raise it to 0.916, and the coverage between the
-centres to 90.7%; on seeds 52000 to 52039 blocks of four gave 0.949 and
-blocks of eight 0.936, no further. The same reading in the reported gauge (0.884 here) is not a
-reading of the error alone: there the error and the spread both carry the
-noise of the lowest bin, and it moves with the seeds, from 0.79 on seeds
-1000 to 1029 to 1.00 on seeds 52000 to 52039. The band is reported as
-computed, not corrected.
+on these sets at 200 and 400 resamples). That reading moves with the seeds
+too, from 0.82 on seeds 1000 to 1029 to 0.91 on seeds 52000 to 52039, but
+is below one on each. Blocks of four correlation times, twice the
+package's (``--block-factor 4``, 200 resamples), raise it to 0.916, and
+the coverage between the centres to 90.7%; on seeds 52000 to 52039 blocks
+of four gave 0.949 and blocks of eight 0.936, no further. The same reading
+in the reported gauge (0.884 here) is not a reading of the error alone:
+there the error and the spread both carry the noise of the lowest bin, and
+it moves more with the seeds, from 0.79 on seeds 1000 to 1029 to 1.00 on
+seeds 52000 to 52039. The band is reported as computed, not corrected.
 
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 400 --out pmf_coverage.json
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 --block-factor 4
@@ -83,7 +84,7 @@ from typing import Any
 
 import numpy as np
 
-__all__ = ["Profile", "Design", "coverage", "main"]
+__all__ = ["Profile", "Design", "build_parser", "coverage", "main"]
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,8 @@ def _read(truth: np.ndarray, value: np.ndarray, boot: Any, part: slice) -> dict[
         "inside": ((truth >= low) & (truth <= high)).tolist(),
         "inside_1_96_se": (np.abs(value - truth) <= 1.96 * error).tolist(),
         "has_band": (np.isfinite(low) & np.isfinite(high)).tolist(),
+        "low": _listed(low),
+        "high": _listed(high),
         "error": _listed(error),
         "deviation": _listed(value - truth),
         # Where the band's middle sits from the curve, and the curve from
@@ -424,7 +427,8 @@ def _said(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The command's flags, which the docs name and a test reads."""
     parser = argparse.ArgumentParser(
         prog="python -m fastmdxplora.validation.pmf_coverage",
         description="Count how often WHAM's free-energy band holds a known profile.")
@@ -434,7 +438,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--block-factor", type=float, default=None,
                         help="Blocks of this many correlation times (the package's is 2).")
     parser.add_argument("--out", default=None, help="Also write the counts as JSON here.")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     if args.sets < 2 or any(r < 2 for r in args.resamples) or (
             args.block_factor is not None and args.block_factor <= 0):
         print("At least two sets and two resamples, and blocks of a positive "
