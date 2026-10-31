@@ -1070,8 +1070,10 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: selection) and `physics-nonbonded` (`dispersion_correction` the force
 #: field's own unless given); no verdict changed. Set again by `core-bounds`
 #: (`image_check` among the analyses `include` and `exclude` accept, then
-#: `solvent_padding_nm` defaulting to 2.0); no verdict changed.
-ASKED_NOW = "3d96ec615c9c87ea0e495d13e702ed0dd804e243b646f53dcbd6bbe528431a98"
+#: `solvent_padding_nm` defaulting to 2.0); no verdict changed. Set again by
+#: `setup-temp` (`setup.temperature_K` has no default of its own, as unset
+#: it is the run's `simulation.temperature_K`); no verdict changed.
+ASKED_NOW = "980d9b027dd5f721d6435b4bc72317e5fcc7d6af8d1a7652fddb502a8f8fddd6"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1432,8 +1434,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "dce8f776a81eab0c905c2357c76647152c8c59aabe9d425de674dc1cf9f3eb38",
-    False: "cfe96c1d99f55cbb5baa20bbd292ecf636580deb7dcb55e49c2664de8008c187"}
+    True: "795b135d191274174adaa482fd7fbf06cb34870f85bb6550a8de78e8e435403d",
+    False: "4205b3fd103a96386db38300fe969249e3918886fb52bf085af44d40a5431e33"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:
