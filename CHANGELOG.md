@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A run with `minimize: false` whose prepared system's velocities were
+  drawn at another temperature (a `setup_from` run at 330 K from a system
+  prepared at 300 K) keeps them, as a run without minimization keeps its
+  own setup's, and its log says so, with both temperatures.
 - `setup.temperature_K` left unset is the run's `simulation.temperature_K`,
   so a study at 310 K, from its own block, a folder's defaults, a system
   entry or a sweep value, draws its starting velocities at 310 K and not at
