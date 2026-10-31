@@ -11,19 +11,23 @@ filled in, and a default that resolves differently on another machine is
 the failure this file exists to catch: the study said one thing and two
 machines heard two.
 
-**The input digests must match exactly.** The manifest records the SHA-256
-of the structure that entered the run. Two runs of one study that started
-from different bytes are not two runs of one study, whatever their
-configurations say.
+**The input digests must match exactly.** Setup records the SHA-256 of
+the structure that entered the run, in ``setup/setup_parameters.json``
+(``input.structure.sha256``). Two runs of one study that started from
+different bytes are not two runs of one study, whatever their
+configurations say. A run with no such record (a sequence input, or no
+setup) is reported as not recorded, and its digest is not checked.
 
 **The results must not be expected to match exactly, and saying so is part
-of the comparison.** Solvation places water from a generator whose state is
-not fixed by the dynamics seed, so two runs of one configuration begin from
-different coordinates and diverge from there. Reporting that as a failure
-would make an honest limitation look like a defect; ignoring it would make
-a real difference invisible. The observables are therefore compared against
-the spread across environments rather than for equality, and the reason is
-carried with the result.
+of the comparison.** The preparation is seeded by ``setup.random_seed``,
+written into ``resolved_config.yml``, so one seed, structure and settings
+prepare the same atoms again where the packages that place them are the
+same versions. The dynamics repeat their start only where
+``simulation.random_seed`` is given, and step for step only as far as the
+platform's arithmetic does; across environments the platform and its
+builds differ, so the trajectories diverge. The observables are therefore
+compared against the spread across environments rather than for equality,
+and the reason is carried with the result.
 """
 
 from __future__ import annotations
@@ -90,26 +94,30 @@ def _read_config(run_dir: Path) -> dict[str, Any]:
     return {}
 
 
-def _read_manifest(run_dir: Path) -> dict[str, Any]:
-    path = run_dir / "manifest.json"
-    if not path.is_file():
-        return {}
+def _input_digest(run_dir: Path) -> str | None:
+    """The structure's SHA-256, as setup recorded it, or None.
+
+    Setup writes it in ``setup_parameters.json`` under
+    ``input.structure.sha256``; the run's ``manifest.json`` does not carry
+    it. A run given `setup_from` is read from the setup it simulated.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+        from fastmdxplora.simulation.pipeline import setup_records_of
 
-
-def _input_digest(manifest: dict[str, Any]) -> str | None:
-    """The structure's digest, wherever the manifest recorded it."""
-    for key in ("input_sha256", "structure_sha256", "sha256"):
-        if manifest.get(key):
-            return str(manifest[key])
-    structure = manifest.get("structure")
-    if isinstance(structure, dict):
-        for key in ("sha256", "digest"):
-            if structure.get(key):
-                return str(structure[key])
+        setup = setup_records_of(run_dir) or run_dir / "setup"
+    except Exception:  # noqa: BLE001 - a record to read, not to repair
+        setup = run_dir / "setup"
+    path = setup / "setup_parameters.json"
+    if not path.is_file():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    structure = (record.get("input") or {}).get("structure") \
+        if isinstance(record, dict) else None
+    if isinstance(structure, dict) and structure.get("sha256"):
+        return str(structure["sha256"])
     return None
 
 
@@ -136,7 +144,7 @@ def compare_environments(
             missing.append(name)
             continue
         configs[name] = _flatten(config)
-        digests[name] = _input_digest(_read_manifest(path))
+        digests[name] = _input_digest(path)
 
     if len(configs) < 2:
         return {"agreed": None, "refused": (
@@ -176,12 +184,15 @@ def compare_environments(
         },
         "missing_configuration": missing,
         "what_is_not_compared": (
-            "Results. Solvation places water from a generator the dynamics "
-            "seed does not fix, so two runs of one configuration start from "
-            "different coordinates and diverge from there. Their observables "
-            "should agree within the spread between replicas, not exactly, "
-            "and exact reproduction needs the prepared system carried over "
-            "rather than only the configuration."
+            "Results. The preparation is seeded by setup.random_seed, so "
+            "one seed, structure and settings prepare the same atoms again "
+            "where the packages that place them are the same versions. The "
+            "dynamics repeat their start only where simulation.random_seed "
+            "is given, and step for step only as far as the platform's "
+            "arithmetic does; across environments the platform and its "
+            "builds differ, so the trajectories diverge, and their "
+            "observables should agree within the spread between replicas, "
+            "not exactly."
         ),
         "refused": None,
     }
