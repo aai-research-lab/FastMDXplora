@@ -223,6 +223,8 @@ class SimulationResult:
     #: and repeating what it managed to do before it was interrupted
     #: reproduces the interruption.
     resolved: dict[str, Any] = field(default_factory=dict)
+    #: What this run said of how it went, for the manifest's notes.
+    notes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -2685,6 +2687,8 @@ def run_simulation(
     # Open the log file once and route the per-stage progress notes
     # through it in addition to whatever on_progress does.
     log_fh = log_path.open("w", encoding="utf-8")
+    #: What the run's record should say of how it went, for its manifest.
+    run_notes: list[str] = []
     telemetry = None
     if live_telemetry:
         from fastmdxplora.gui.telemetry import TelemetryWriter
@@ -2850,8 +2854,14 @@ def run_simulation(
                         f"at {drawn:.1f} K, for a run at {float(temperature_K):.1f} K: "
                         "minimization is off, so they are not reassigned. With "
                         "`minimize: true` they are drawn at the run's own.")
+                # Printed once, by the logger; the log file, the live
+                # events (as a warning) and the run's record carry it too.
                 logger.warning(said)
-                _log_step(said)
+                log_fh.write(said + "\n")
+                log_fh.flush()
+                if telemetry is not None:
+                    telemetry.event(said, level="warning")
+                run_notes.append(said)
 
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:
@@ -3488,6 +3498,7 @@ def run_simulation(
     duration_ns_actual = produced_steps * timestep_fs / 1_000_000.0
 
     return SimulationResult(
+        notes=list(run_notes),
         trajectory=traj_path,
         topology=topo_out,
         final_state=final_state_path,

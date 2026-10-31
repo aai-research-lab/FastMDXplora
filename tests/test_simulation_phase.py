@@ -807,3 +807,53 @@ class TestVelocitiesFromAnotherTemperature:
     def test_a_run_at_the_same_temperature_says_nothing(self, tmp_path: Path):
         log = self._run(tmp_path, drawn_at=330.0, temperature_K=330.0)
         assert "drawn at" not in log
+
+    def test_it_reaches_the_record_once_and_as_a_warning(self, tmp_path: Path):
+        """The run's notes carry it to the manifest; the live events hold it
+        as a warning; the terminal prints it once, by the logger, and not
+        again through the progress line."""
+        prepared = tmp_path / "prepared" / "setup"
+        prepared.mkdir(parents=True)
+        for name in ("system.xml", "state.xml"):
+            (prepared / name).write_text("<x />")
+        (prepared / "topology.pdb").write_text("ATOM\nEND\n")
+        (prepared / "setup_parameters.json").write_text(
+            json.dumps({"parameters": {"temperature_K": 300.0}}))
+        progress: list[str] = []
+        with patch.object(_runner, "_import_openmm", return_value=_build_fake_omm()):
+            result = _runner.run_simulation(
+                system_xml=prepared / "system.xml", state_xml=prepared / "state.xml",
+                topology_pdb=prepared / "topology.pdb", output_dir=tmp_path / "out",
+                temperature_K=330.0, live_telemetry=True, on_progress=progress.append,
+                nvt_steps=0, npt_steps=0, production_steps=0, minimize=False)
+        assert not any("drawn at 300.0 K" in line for line in progress)
+        events = [line.split("\t")[1] for line in
+                  (tmp_path / "out" / "live_events.log").read_text().splitlines()
+                  if "drawn at 300.0 K" in line]
+        assert events == ["warning"]
+        assert any("drawn at 300.0 K" in note for note in result.notes)
+
+    def test_the_pipeline_writes_the_run_s_notes_to_its_manifest(
+            self, stub_orchestrator):
+        import sys
+        from types import ModuleType
+
+        out = stub_orchestrator.output_dir / "simulation"
+        out.mkdir()
+        said = "Starting from the prepared system's velocities, drawn at 300.0 K"
+        fake_result = _runner.SimulationResult(
+            trajectory=out / "production.dcd", topology=out / "topology.pdb",
+            final_state=out / "state_final.xml", energy_csv=out / "energy.csv",
+            log_file=out / "simulation.log", platform_used="CPU",
+            n_production_frames=1, duration_ns_actual=0.001)
+        object.__setattr__(fake_result, "notes", [said])  # frozen; works without the field too
+        for path in (fake_result.trajectory, fake_result.topology,
+                     fake_result.final_state, fake_result.energy_csv,
+                     fake_result.log_file):
+            path.write_text("stub")
+        fake_mod = ModuleType("fastmdxplora.simulation.runner")
+        fake_mod.run_simulation = lambda **kw: fake_result
+        with patch.dict(sys.modules, {"fastmdxplora.simulation.runner": fake_mod}):
+            _pipeline.run(orchestrator=stub_orchestrator, output_dir=out)
+        manifest = json.loads((out / "simulation_parameters.json").read_text(encoding="utf-8"))
+        assert said in manifest["notes"]
