@@ -25,43 +25,26 @@
     return node;
   }
 
-  /* A mean with its error, to the error's second significant figure; with
-   * none, ``said4``, its four figures as the route gives them
-   * (`statistics.four_figures`, compare_view.py). */
-  function withError(mean, error, unit, said4) {
-    if (mean === null || mean === undefined) return "not recorded";
-    var said;
-    if (error !== null && error !== undefined && error > 0) {
-      var places = Math.max(0, 1 - Math.floor(Math.log10(error)));
-      if (places > 6) {
-        // Past six places a fixed figure reads 0.000000: the two in the
-        // error's own powers of ten instead.
-        var power = Math.floor(Math.log10(error));
-        var scale = Math.pow(10, power);
-        said = "(" + (mean / scale).toFixed(1) + " \u00b1 " + (error / scale).toFixed(1) +
-          ")e" + power;
-      } else {
-        said = mean.toFixed(places) + " \u00b1 " + error.toFixed(places);
-      }
-    } else {
-      said = said4 != null ? said4 : String(mean);
-    }
+  /* A number as the route says it (compare_view.py `_numbers_said`, from
+   * `statistics.with_its_error` and `four_figures`), with its unit: the
+   * page rounds nothing itself. */
+  function withUnit(said, unit) {
+    if (said === null || said === undefined) return "not recorded";
     return said + (unit ? " " + unit : "");
   }
 
   /* A mean as the comparison sets it: with the error the difference is
    * set against where that is not its own (two replicas: the replicas'
    * spread). */
-  function meanSaid(record, error) {
+  function meanSaid(record) {
     if (!record) return "not recorded";
     // Its record was not read (compare_view.py): said so, never as a study
     // that recorded no mean.
     if (record.not_read) return "not read";
     // Its analysis ran and gave no mean, and said why (below the table).
     if (record.mean == null && record.withheld) return "not determined";
-    if (record.withheld) return withError(record.mean, null, record.unit, record.mean_said) + ", not determined";
-    return withError(record.mean, error != null ? error : record.error, record.unit,
-                     record.mean_said);
+    if (record.withheld) return withUnit(record.mean_said, record.unit) + ", not determined";
+    return withUnit(record.said, record.unit);
   }
 
   /* What the error of a difference between two replicas is, by which
@@ -77,10 +60,9 @@
    * errors too tight. */
   function spreadSaid(check) {
     if (!check) return ", not set against their own errors: neither gave one above zero";
-    var times = Number(check.ratio.toPrecision(2));
-    return ", their spread " + times + " times their own errors" +
+    return ", their spread " + check.ratio_said + " times their own errors" +
       (check.too_tight ? ": those errors are too tight"
-        : ", within the factor of " + check.factor);
+        : ", within the factor of " + check.factor_said);
   }
 
   /* A cell of a table, with the column it is in for a phone, where the
@@ -320,9 +302,9 @@
       var used = m.versus && m.versus.errors ? m.versus.errors : [null, null];
       [m.first, m.second].forEach(function (side, i) {
         var said = i ? data.second.said : data.first.said;
-        var node = cell("mono", meanSaid(side, used[i]), said);
+        var node = cell("mono", meanSaid(side), said);
         if (used[i] != null && side && side.error != null && used[i] !== side.error) {
-          node.title = "Its own error: " + withError(side.error, null, m.unit, side.error_said);
+          node.title = "Its own error: " + withUnit(side.own_error_said, m.unit);
         }
         if (side && side.mean != null && side.noted) {
           // Its image note beside it (image_note.py), said in full under
@@ -351,14 +333,11 @@
         // study's replicas are aggregated (batch/aggregate.py).
         // Without the error the same cell calls too tight.
         var check = m.versus.spread_against_own;
-        difference.textContent = withError(m.versus.difference,
-                                           check && check.too_tight ? null : m.versus.error, m.unit,
-                                           m.versus.difference_said) +
+        difference.textContent = withUnit(m.versus.said, m.unit) +
           spreadSaid(check);
         difference.dataset.errorOf = "alone";
       } else if (m.versus) {
-        difference.textContent = withError(m.versus.difference, m.versus.error, m.unit,
-                                           m.versus.difference_said) +
+        difference.textContent = withUnit(m.versus.said, m.unit) +
           (m.versus.resolved ? ", resolved" : ", within the errors") +
           (ERROR_OF[m.versus.error_of] || "");
         if (m.versus.error_of) difference.dataset.errorOf = m.versus.error_of;
@@ -461,7 +440,7 @@
     var found = (data.measures || []).map(function (m) {
       return m.versus && m.versus.spread_against_own;
     }).filter(Boolean)[0];
-    return found ? found.factor : null;
+    return found ? found.factor_said : null;
   }
 
   function colourOf(i) {
@@ -577,5 +556,5 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
   else wire();
 
-  window.FastMDXCompare = { open: open, load: load, pairOf: pairOf, withError: withError };
+  window.FastMDXCompare = { open: open, load: load, pairOf: pairOf };
 }());

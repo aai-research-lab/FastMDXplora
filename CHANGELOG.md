@@ -9,6 +9,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- The Compare page prints each mean, error and difference from the route's
+  strings (`statistics.with_its_error` and `four_figures`), not its own
+  rounding: 1,234.5 ± 1.2 read "1234.5 ± 1.2" and 1.0625 ± 0.012 read
+  "1.063" where every other page reads "1.062". An error below a millionth
+  reads to its two figures (0.00000150 ± 0.00000025), as on the other
+  pages, not in powers of ten; the replicas' factor and their spread's
+  ratio to their own errors read to two figures, grouped (1,400), and a
+  cell's own error in its hover title to the cell's places, or to its own
+  two figures where those are finer, never as zero.
 - A study of replicas sets their spread against the error the runs
   predicted at a factor from how many there are, the upper end of the 95%
   interval of a standard deviation from n values

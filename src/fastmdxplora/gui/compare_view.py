@@ -19,6 +19,7 @@ a record the study does not have.
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 from typing import Any, Callable
@@ -44,7 +45,6 @@ def compared(first: Path | str, second: Path | str) -> dict[str, Any]:
     # A length in nanoseconds also said as every page says one, in
     # picoseconds under one nanosecond, as the Timeline says a piece's.
     said["settings"] = [lengths_said(d) for d in said.get("settings") or ()]
-    _four_figures_said(said)
     if replicas.get("errors") or replicas.get("alone"):
         _the_replicas_said(said, replicas)
     elif replicas.get("unfinished"):
@@ -63,6 +63,7 @@ def compared(first: Path | str, second: Path | str) -> dict[str, Any]:
             f"Whether these two runs are replicas is not known: {places[0]['study']}'s "
             "batch_manifest.json could not be read. Each difference is set against the errors "
             "the two runs estimated for themselves, which replicas can show too tight.")
+    _numbers_said(said)
     said["first"] = {**sides[0]["head"], **places[0]["where"]}
     said["second"] = {**sides[1]["head"], **places[1]["where"]}
     series, drawn, unread = _series_of_both(a, b, sides)
@@ -91,25 +92,87 @@ def compared(first: Path | str, second: Path | str) -> dict[str, Any]:
     return said
 
 
-def _four_figures_said(said: dict[str, Any]) -> None:
-    """Each mean, its own error and each difference also as the page prints
-    one without an error, from `statistics.four_figures`: one printer, where
-    the page's own differed from it on ties and near its switch to an
-    exponent (1.0025, 1000500)."""
-    from fastmdxplora.statistics import four_figures
+def _numbers_said(said: dict[str, Any]) -> None:
+    """Every number the page prints, as `statistics` prints it, so no
+    rounding stays in the page: each mean with the error it is set against
+    (`with_its_error`; the replicas' spread where that is the error used),
+    with its four figures and its own error's beside it (`four_figures`);
+    each difference with its error, none where the cell calls that error
+    too tight; and the factor two replicas' spread is held to, to two
+    figures. The page's own printer used JavaScript's `toFixed`, with no
+    grouping and ties away from zero: 1,234.5 read 1234.5 and 1.0625 read
+    1.063 where every other page reads 1.062."""
+    from fastmdxplora.statistics import four_figures, with_its_error
 
-    def text(value: Any) -> str | None:
-        return (four_figures(float(value)) if isinstance(value, (int, float))
+    def number(value: Any) -> float | None:
+        return (float(value) if isinstance(value, (int, float))
                 and not isinstance(value, bool) else None)
 
+    def figures(value: Any) -> str | None:
+        value = number(value)
+        return None if value is None else four_figures(value)
+
+    def with_error(value: Any, error: Any) -> str | None:
+        value, error = number(value), number(error)
+        if value is None:
+            return None
+        # An error of zero or none: four figures, as the page gave them.
+        return with_its_error(value, error if error is not None and error > 0 else None)
+
     for row in said.get("measures") or ():
-        for side in (row.get("first"), row.get("second")):
+        versus = row.get("versus") if isinstance(row.get("versus"), dict) else None
+        used = (versus or {}).get("errors") or [None, None]
+        for side, error in zip((row.get("first"), row.get("second")), used):
             if isinstance(side, dict):
-                side["mean_said"] = text(side.get("mean"))
-                side["error_said"] = text(side.get("error"))
-        versus = row.get("versus")
-        if isinstance(versus, dict):
-            versus["difference_said"] = text(versus.get("difference"))
+                side["mean_said"] = figures(side.get("mean"))
+                side["error_said"] = figures(side.get("error"))
+                set_against = error if error is not None else side.get("error")
+                side["said"] = with_error(side.get("mean"), set_against)
+                # Its own error, where another is the cell's, to the cell's places.
+                side["own_error_said"] = _to_places_of(side.get("error"), set_against)
+        if versus is None:
+            continue
+        check = versus.get("spread_against_own")
+        if isinstance(check, dict) and isinstance(check.get("factor"), (int, float)):
+            versus["spread_against_own"] = {**check,
+                                            "factor_said": f"{check['factor']:#.2g}",
+                                            "ratio_said": _two_figures(check.get("ratio"))}
+        too_tight = versus.get("error_of") == "alone" and bool((check or {}).get("too_tight"))
+        versus["difference_said"] = figures(versus.get("difference"))
+        versus["said"] = with_error(versus.get("difference"),
+                                    None if too_tight else versus.get("error"))
+
+
+def _two_figures(value: Any) -> str | None:
+    """A ratio to two significant figures, grouped as every page groups a
+    number: 1,400 and 870,000, where the page printed 1400."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool) \
+            or not math.isfinite(value):
+        return None
+    if value == 0:
+        return "0"
+    rounded = float(f"{value:.2g}")
+    places = max(0, 1 - math.floor(math.log10(abs(rounded))))
+    return f"{rounded:,.{places}f}"
+
+
+def _to_places_of(value: Any, error: Any) -> str | None:
+    """``value``, an error, to the decimal place `with_its_error` gives a
+    mean whose error is ``error``, or to its own two figures where those
+    are finer: a cell's own error, in its hover title, to the places of the
+    cell beside it, never rounded to zero (1e-7 beside a spread of 0.003
+    read "0.0000")."""
+    from fastmdxplora.statistics import four_figures
+
+    if not isinstance(value, (int, float)) or isinstance(value, bool) \
+            or not math.isfinite(value):
+        return None
+    if not isinstance(error, (int, float)) or not math.isfinite(error) or error <= 0:
+        return four_figures(float(value))
+    places = max(0, 1 - math.floor(math.log10(error)))
+    if value > 0:
+        places = max(places, 1 - math.floor(math.log10(value)))
+    return f"{float(value):,.{places}f}"
 
 
 def _as_replicas(a: Path, b: Path, places: list[dict[str, Any]],
