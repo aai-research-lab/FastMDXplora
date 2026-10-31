@@ -50,8 +50,14 @@ __all__ = [
 ENVIRONMENTAL_KEYS = frozenset({
     "output_dir", "output", "run_id", "started_at", "finished_at",
     "hostname", "platform", "device_index", "precision", "threads",
-    "version", "versions", "python", "duration_s", "seed_source",
+    "version", "versions", "python", "duration_s",
 })
+
+#: A setting that holds a seed setup drew where the study gave none. Setup
+#: records which it was as `random_seed.drawn` in `setup_parameters.json`;
+#: a drawn one differs from place to place by construction, and one the
+#: study gave is the study.
+DRAWN_SEEDS = {"setup.random_seed": "random_seed"}
 
 
 def digest_of(path: str | Path) -> str:
@@ -101,24 +107,30 @@ def _input_digest(run_dir: Path) -> str | None:
     ``input.structure.sha256``; the run's ``manifest.json`` does not carry
     it. A run given `setup_from` is read from the setup it simulated.
     """
+    structure = (_setup_record(run_dir).get("input") or {}).get("structure")
+    if isinstance(structure, dict) and structure.get("sha256"):
+        return str(structure["sha256"])
+    return None
+
+
+def _setup_record(run_dir: Path) -> dict[str, Any]:
+    """The run's `setup_parameters.json`, or {}."""
     try:
         from fastmdxplora.simulation.pipeline import setup_records_of
 
         setup = setup_records_of(run_dir) or run_dir / "setup"
     except Exception:  # noqa: BLE001 - a record to read, not to repair
         setup = run_dir / "setup"
-    path = setup / "setup_parameters.json"
-    if not path.is_file():
-        return None
     try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    structure = (record.get("input") or {}).get("structure") \
-        if isinstance(record, dict) else None
-    if isinstance(structure, dict) and structure.get("sha256"):
-        return str(structure["sha256"])
-    return None
+        record = json.loads((setup / "setup_parameters.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _drawn(record: dict[str, Any], entry: str) -> bool:
+    said = record.get(entry)
+    return isinstance(said, dict) and said.get("drawn") is True
 
 
 def compare_environments(
@@ -136,6 +148,7 @@ def compare_environments(
 
     configs: dict[str, dict[str, Any]] = {}
     digests: dict[str, str | None] = {}
+    records: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     for name, directory in runs.items():
         path = Path(directory)
@@ -145,6 +158,7 @@ def compare_environments(
             continue
         configs[name] = _flatten(config)
         digests[name] = _input_digest(path)
+        records[name] = _setup_record(path)
 
     if len(configs) < 2:
         return {"agreed": None, "refused": (
@@ -163,7 +177,9 @@ def compare_environments(
                 for v in values.values()}) == 1:
             continue
         leaf = key.split(".")[-1]
-        if leaf in ENVIRONMENTAL_KEYS:
+        drawn = key in DRAWN_SEEDS and all(
+            _drawn(records.get(name) or {}, DRAWN_SEEDS[key]) for name in configs)
+        if leaf in ENVIRONMENTAL_KEYS or drawn:
             environmental[key] = values
         else:
             study_differences[key] = values

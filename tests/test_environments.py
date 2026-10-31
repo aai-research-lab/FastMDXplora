@@ -187,3 +187,36 @@ class TestTheDigestItself:
         path = tmp_path / "structure.pdb"
         path.write_bytes(b"ATOM\n")
         assert digest_of(path) == hashlib.sha256(b"ATOM\n").hexdigest()
+
+
+class TestADrawnSeed:
+    """Setup draws a seed where the study gave none and records it as
+    `random_seed.drawn`; two places draw two seeds, which is not a
+    difference in the study. The key the comparison named, `seed_source`,
+    is written by nothing."""
+
+    @staticmethod
+    def _seeded(root: Path, name: str, seed: int, drawn: bool) -> Path:
+        config = {**STUDY, "setup": {**STUDY["setup"], "random_seed": seed}}
+        run = _run(root, name, config=config)
+        record = {"input": {"structure": {"sha256": "abc123"}},
+                  "random_seed": {"seed": seed, "drawn": drawn}}
+        (run / "setup" / "setup_parameters.json").write_text(
+            json.dumps(record), encoding="utf-8")
+        return run
+
+    def test_seeds_drawn_in_each_place_are_environmental(self, tmp_path):
+        result = compare_environments({
+            "a": self._seeded(tmp_path, "a", 11, drawn=True),
+            "b": self._seeded(tmp_path, "b", 22, drawn=True),
+        })
+        assert result["agreed"] is True
+        assert "setup.random_seed" in result["environmental_differences"]
+
+    def test_seeds_the_study_gave_are_the_study(self, tmp_path):
+        result = compare_environments({
+            "a": self._seeded(tmp_path, "a", 11, drawn=False),
+            "b": self._seeded(tmp_path, "b", 22, drawn=True),
+        })
+        assert result["agreed"] is False
+        assert "setup.random_seed" in result["study_differences"]
