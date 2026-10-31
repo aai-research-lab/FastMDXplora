@@ -1169,6 +1169,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- `python -m fastmdxplora.validation.replica_calibration` gives, beside the
+  ratio (the SD of the replica means over the mean stated error, near one
+  for honest errors; the preprint's ratio is the reciprocal of this one),
+  the variance ratio (that SD squared over the mean of the runs' own errors
+  squared, one for honest errors) with its chi-square 95% interval on
+  R - 1 degrees of freedom, the ratio's interval on the same factors, and
+  the combined mean's error, SD / sqrt(R). R counts the runs that
+  determined their mean: a run whose record withheld it is left out of the
+  spread, R and the combined mean's error, and the report says how many
+  were; the spread is then of the runs that stayed, which can be the ones
+  nearest together. Two replicas, or runs that stated no error, are said in
+  the report, not raised.
+- `python -m fastmdxplora.validation.pmf_coverage` counts how often WHAM's
+  95% band holds a known double well, bin by bin, over synthetic umbrella
+  sets sampled exactly with correlated samples and fixed seeds. On 100 sets
+  (seeds 1000 to 1099) it held the truth in 75.5% of bins at 200 resamples,
+  +/- 3.8 points at 95% over sets; on the same sets 400 resamples add 0.7
+  points. The curve and each resample are zeroed at their own lowest bin,
+  which noise puts low: the curve sits about 0.8 of its error above the
+  truth away from its minimum (barriers read high), and the band's middle
+  about 0.47 above the curve. Zeroed instead at their mean over the bins
+  between the window centres, read from the same resamples, the band held
+  the truth in 89.5% of those bins, against 74.7% there as reported; the
+  rest is an error 0.87 of the curve's spread from set to set, 0.92 with
+  blocks twice as long. The band is not corrected.
 - `fastmdxplora.validation.ligand_mapping.check_ligand_mappings(study)`
   checks each ligand a study prepared, reading only, against the copy of
   the file setup kept, never against a pose it has just placed. "Verified"
