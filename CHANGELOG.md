@@ -9,6 +9,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- `setup.temperature_K` left unset is the run's `simulation.temperature_K`,
+  so a study at 310 K, from its own block, a folder's defaults, a system
+  entry or a sweep value, draws its starting velocities at 310 K and not at
+  300 K. The run's `resolved_config.yml` records the value and where it
+  came from; a value the study sets is kept. Setup called directly through
+  Python without either falls back to 300 K and says so.
 - The Compare page prints each mean, error and difference from the route's
   strings (`statistics.with_its_error` and `four_figures`), not its own
   rounding: 1,234.5 ± 1.2 read "1234.5 ± 1.2" and 1.0625 ± 0.012 read

@@ -141,6 +141,12 @@ decisions:
     why: Our assays run at body temperature.
 ```
 
+The starting velocities follow: `setup.temperature_K` left unset is each
+run's `simulation.temperature_K`, whether that comes from the study, these
+defaults, a system entry or a sweep value, and the run's
+`resolved_config.yml` says which. A `setup.temperature_K` the study sets
+is kept.
+
 The file holds the blocks that say how a study is simulated (`setup`,
 `simulation`, `analysis`, `report`, `execution`), each setting checked as
 a Config's is, and a `why` for any of them. A folder's defaults say how
