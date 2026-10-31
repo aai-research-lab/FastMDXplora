@@ -49,6 +49,9 @@
     liveCoordinates: null,
     liveFrameIndex: null,
     liveUpdates: true,
+    // Read once after its run ended: no newer frame comes, and the poll
+    // rests until the run writes again (`onStatusUpdated`).
+    liveSettled: false,
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
@@ -176,8 +179,10 @@
     document.addEventListener("fullscreenchange", () => requestAnimationFrame(resizeViewers));
     wireFolds();
     const refreshSeconds = Number(document.body?.dataset.refreshSeconds || 3);
+    // A finished study was asked for its newest frame every few seconds,
+    // as long as it was open.
     window.setInterval(
-      pollLiveFrame,
+      () => { if (!STATE.liveSettled) void pollLiveFrame(); },
       Math.max(1000, Math.min(60000, refreshSeconds * 1000))
     );
   }
@@ -195,6 +200,7 @@
     STATE.framesPieces = null;
     pausePlayback();
     STATE.liveUpdates = true;
+    STATE.liveSettled = false;
     STATE.liveFrameIndex = null;
     STATE.liveOverlay = null;
     STATE.liveTopology = null;
@@ -622,6 +628,7 @@
       if (!response.ok) return;
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
+      STATE.liveSettled = Boolean(STATE.runStatus) && !runIsWriting();
       if (!index.live_frame_available) {
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
         return;
@@ -3365,6 +3372,7 @@
     // Updates" beside its last frame. Kept while paused, so there is a way
     // to resume.
     const writing = running || STATE.runStatus === "starting";
+    if (writing) STATE.liveSettled = false;
     document.querySelectorAll("[data-while-running]").forEach((control) => {
       control.hidden = !writing && STATE.liveUpdates !== false;
     });

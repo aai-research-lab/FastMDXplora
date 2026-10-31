@@ -1478,6 +1478,22 @@ class TestTheSolventTogglesShowSolvent:
         assert "STATE.currentPdb = null" in handler
         assert "onStructureUpdated" in handler
 
+    def test_a_finished_run_is_not_polled_for_frames(self) -> None:
+        """A finished study was asked for its newest frame every few seconds
+        for as long as it was open: the poll rests once the run has ended and
+        its last frame is read, and wakes when the run writes again."""
+        js = self._text("molecule-viewer.js")
+        timer = js.split("window.setInterval(", 1)[1].split("\n    );", 1)[0]
+        assert "if (!STATE.liveSettled) void pollLiveFrame()" in timer
+        live_frame = js.split("async function pollLiveFrame(", 1)[1].split(
+            "\n  function ", 1
+        )[0]
+        assert "STATE.liveSettled = Boolean(STATE.runStatus) && !runIsWriting();" in live_frame
+        status = js.split("function onStatusUpdated(", 1)[1].split("\n  function ", 1)[0]
+        assert "if (writing) STATE.liveSettled = false;" in status
+        changed = js.split("function onRunChanged(", 1)[1].split("\n  function ", 1)[0]
+        assert "STATE.liveSettled = false;" in changed
+
 
 class TestAListOfChoicesIsOfferedAsChoices:
     """`include` and `exclude` take several analyses from a known set, and the

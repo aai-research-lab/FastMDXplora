@@ -1054,7 +1054,12 @@ DASHBOARD_ASSET_TITLES = {
     "dihedrals_dashboard": "Dihedrals",
 }
 
+#: Where an umbrella study writes its free energy, beside its runs.
+FREE_ENERGY_DIR = "free_energy"
+FREE_ENERGY_TITLE = "Free energy profile (PMF)"
+
 PLOT_CATEGORY_BY_TITLE = {
+    FREE_ENERGY_TITLE: "Free energy",
     "RMSD": "Core Metrics",
     "RMSF": "Core Metrics",
     "Radius of gyration": "Core Metrics",
@@ -4430,6 +4435,11 @@ def _results_payload(root: Path) -> dict[str, Any]:
     manifest = _load_json(root / "manifest.json")
     analysis_manifest = _load_json(root / "analysis" / "analysis_manifest.json")
     sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
+    if _load_json(root / "pmf.json").get("refused"):
+        # A study that refused its free energy (windows too far apart to
+        # overlap) can keep the previous run's figure; it is not this one's.
+        artifacts = [record for record in artifacts
+                     if not record["path"].startswith(f"{FREE_ENERGY_DIR}/")]
     plots = _plot_records(artifacts)
     report_suffixes = {".md", ".html", ".htm", ".pdf", ".pptx", ".zip"}
     reports = [
@@ -4462,7 +4472,8 @@ def _results_payload(root: Path) -> dict[str, Any]:
     system = _system_info(root, manifest, analysis_manifest, sim_manifest)
     return {
         "refreshed_at": _iso_now(),
-        "has_analysis": any(record["path"].startswith("analysis/") for record in artifacts),
+        "has_analysis": any(record["path"].startswith(("analysis/", f"{FREE_ENERGY_DIR}/"))
+                            for record in artifacts),
         "has_report": any(record["path"].startswith("report/") for record in artifacts),
         # No folder and no title where no study is open: the root is then a
         # name that is never created, and it was shown as the study's.
@@ -4815,6 +4826,13 @@ def _summary_records(
         status = "stopped" if stopped else "failed"
     elif phase_statuses:
         status = "in progress"
+    elif os.path.isfile(root / "batch_manifest.json"):
+        # A study of several runs has no manifest of its own: its runs' states
+        # say it, as on All studies. Thirty-six completed windows were said
+        # "not run".
+        from fastmdxplora.gui.workspace import study_state
+
+        status = study_state(root)
     elif read_status(root):
         # No manifest yet, but telemetry says a run is going. The manifest is
         # written when the run ends, so its absence is not a fact about the
@@ -5371,6 +5389,9 @@ def _plot_records(artifacts: list[dict[str, str]]) -> list[dict[str, str]]:
         and (
             record["path"].startswith("report/dashboard_assets/")
             or record["path"].startswith("analysis/")
+            # An umbrella study's free energy, its result: the Analysis page
+            # said its 36 windows were "compared below" and showed nothing.
+            or record["path"].startswith(f"{FREE_ENERGY_DIR}/")
         )
     ]
     grouped: dict[str, list[dict[str, str]]] = {}
@@ -5426,6 +5447,8 @@ def _plot_priority(path: str) -> int:
 
 
 def _plot_title(path: str) -> str | None:
+    if path.startswith(f"{FREE_ENERGY_DIR}/pmf/"):
+        return FREE_ENERGY_TITLE
     stem = Path(path).stem
     if stem in DASHBOARD_ASSET_TITLES:
         return DASHBOARD_ASSET_TITLES[stem]
