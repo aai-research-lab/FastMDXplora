@@ -9,6 +9,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A study of replicas sets their spread against the error the runs
+  predicted at a factor from how many there are, the upper end of the 95%
+  interval of a standard deviation from n values
+  (sqrt(chi2_0.975(n - 1) / (n - 1)), rounded up to two figures: 2.3 for 2,
+  2.0 for 3, 1.7 for 5, 1.5 for 10), which the spread passes by chance in
+  2.5% of studies or fewer,
+  not a fixed 2 said as "the factor of 2 that ten replicas can resolve"
+  whatever their number; `comparison_report.md` and the Compare page say
+  the factor and the number (`spread_against_own` saves both, `factor` and
+  `replicas`). `CALIBRATION_FACTOR` is replaced by `calibration_factor(n)`.
+- `statistics.four_figures` keeps a value's trailing zeros: 1.0004 nm reads
+  "1.000 nm", not "1 nm", and 1.5 with no error "1.500".
+  The Compare page gives a mean with no error the same way.
 - A PMF's bootstrap resamples are each set to zero at the curve's lowest
   bin, not their own, so the band's middle sits on the curve (+0.01 of its
   error, from 0.47 above it) and the band has no width at that bin. On the

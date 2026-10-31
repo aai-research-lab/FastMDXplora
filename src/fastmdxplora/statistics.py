@@ -1421,17 +1421,20 @@ def heterogeneity_ratio(means: np.ndarray, weights: np.ndarray) -> float:
 def four_figures(value: float) -> str:
     """A value to four significant figures, grouped, and as an exponent only
     where it is very large or very small: -45,472 rather than -4.547e+04,
-    which the Overview, the report and the Agent each printed differently;
-    trailing zeros dropped, as `{:.4g}` drops them."""
+    which the Overview, the report and the Agent each printed differently.
+    A trailing zero is one of the four figures and stays: 1.0004 nm is
+    "1.000 nm", where dropping it said "1 nm", a value known to one."""
     if not math.isfinite(value) or value == 0:
         return f"{value:g}"
     magnitude = math.floor(math.log10(abs(value)))
     if magnitude >= 6 or magnitude < -4:
-        return f"{value:.4g}"
+        return f"{value:#.4g}"
     places = max(0, 3 - magnitude)
     said = f"{value:,.{places}f}"
-    # As `{:.4g}` gives it: no zeros after the last figure that is not one.
-    return said.rstrip("0").rstrip(".") if "." in said else said
+    # Rounding up to the next power of ten (9.9996 to "10.000") gives a fifth.
+    if len(said.lstrip("-").replace(",", "").replace(".", "").lstrip("0")) > 4 and places:
+        said = f"{value:,.{places - 1}f}"
+    return said
 
 
 def with_its_error(value: float, error: float | None, *, sign: bool = False) -> str:

@@ -25,8 +25,10 @@
     return node;
   }
 
-  /* A mean with its error, to the error's second significant figure. */
-  function withError(mean, error, unit) {
+  /* A mean with its error, to the error's second significant figure; with
+   * none, ``said4``, its four figures as the route gives them
+   * (`statistics.four_figures`, compare_view.py). */
+  function withError(mean, error, unit, said4) {
     if (mean === null || mean === undefined) return "not recorded";
     var said;
     if (error !== null && error !== undefined && error > 0) {
@@ -42,7 +44,7 @@
         said = mean.toFixed(places) + " \u00b1 " + error.toFixed(places);
       }
     } else {
-      said = Number(mean.toPrecision(4)).toString();
+      said = said4 != null ? said4 : String(mean);
     }
     return said + (unit ? " " + unit : "");
   }
@@ -57,8 +59,9 @@
     if (record.not_read) return "not read";
     // Its analysis ran and gave no mean, and said why (below the table).
     if (record.mean == null && record.withheld) return "not determined";
-    if (record.withheld) return withError(record.mean, null, record.unit) + ", not determined";
-    return withError(record.mean, error != null ? error : record.error, record.unit);
+    if (record.withheld) return withError(record.mean, null, record.unit, record.mean_said) + ", not determined";
+    return withError(record.mean, error != null ? error : record.error, record.unit,
+                     record.mean_said);
   }
 
   /* What the error of a difference between two replicas is, by which
@@ -319,7 +322,7 @@
         var said = i ? data.second.said : data.first.said;
         var node = cell("mono", meanSaid(side, used[i]), said);
         if (used[i] != null && side && side.error != null && used[i] !== side.error) {
-          node.title = "Its own error: " + withError(side.error, null, m.unit);
+          node.title = "Its own error: " + withError(side.error, null, m.unit, side.error_said);
         }
         if (side && side.mean != null && side.noted) {
           // Its image note beside it (image_note.py), said in full under
@@ -349,11 +352,13 @@
         // Without the error the same cell calls too tight.
         var check = m.versus.spread_against_own;
         difference.textContent = withError(m.versus.difference,
-                                           check && check.too_tight ? null : m.versus.error, m.unit) +
+                                           check && check.too_tight ? null : m.versus.error, m.unit,
+                                           m.versus.difference_said) +
           spreadSaid(check);
         difference.dataset.errorOf = "alone";
       } else if (m.versus) {
-        difference.textContent = withError(m.versus.difference, m.versus.error, m.unit) +
+        difference.textContent = withError(m.versus.difference, m.versus.error, m.unit,
+                                           m.versus.difference_said) +
           (m.versus.resolved ? ", resolved" : ", within the errors") +
           (ERROR_OF[m.versus.error_of] || "");
         if (m.versus.error_of) difference.dataset.errorOf = m.versus.error_of;

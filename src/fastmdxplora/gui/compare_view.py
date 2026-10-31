@@ -44,6 +44,7 @@ def compared(first: Path | str, second: Path | str) -> dict[str, Any]:
     # A length in nanoseconds also said as every page says one, in
     # picoseconds under one nanosecond, as the Timeline says a piece's.
     said["settings"] = [lengths_said(d) for d in said.get("settings") or ()]
+    _four_figures_said(said)
     if replicas.get("errors") or replicas.get("alone"):
         _the_replicas_said(said, replicas)
     elif replicas.get("unfinished"):
@@ -88,6 +89,27 @@ def compared(first: Path | str, second: Path | str) -> dict[str, Any]:
     if not_read:
         said["not_read"] = " ".join(not_read)
     return said
+
+
+def _four_figures_said(said: dict[str, Any]) -> None:
+    """Each mean, its own error and each difference also as the page prints
+    one without an error, from `statistics.four_figures`: one printer, where
+    the page's own differed from it on ties and near its switch to an
+    exponent (1.0025, 1000500)."""
+    from fastmdxplora.statistics import four_figures
+
+    def text(value: Any) -> str | None:
+        return (four_figures(float(value)) if isinstance(value, (int, float))
+                and not isinstance(value, bool) else None)
+
+    for row in said.get("measures") or ():
+        for side in (row.get("first"), row.get("second")):
+            if isinstance(side, dict):
+                side["mean_said"] = text(side.get("mean"))
+                side["error_said"] = text(side.get("error"))
+        versus = row.get("versus")
+        if isinstance(versus, dict):
+            versus["difference_said"] = text(versus.get("difference"))
 
 
 def _as_replicas(a: Path, b: Path, places: list[dict[str, Any]],

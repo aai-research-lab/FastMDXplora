@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 from fastmdxplora.batch.aggregate import (
-    CALIBRATION_FACTOR,
     aggregate_members,
+    calibration_factor,
     read_member_findings,
 )
 
@@ -106,7 +106,7 @@ class TestTheCalibrationComparison:
             {"simulation.random_seed": []}))
         entry = result["analyses"]["rmsd"]
 
-        assert entry["ratio_observed_to_predicted"] < CALIBRATION_FACTOR
+        assert entry["ratio_observed_to_predicted"] < calibration_factor(10)
         assert "supported by repeating it" in entry["calibration"]
 
     def test_an_optimistic_estimate_is_named(self, tmp_path):
@@ -123,7 +123,7 @@ class TestTheCalibrationComparison:
             {"simulation.random_seed": []}))
         entry = result["analyses"]["rmsd"]
 
-        assert entry["ratio_observed_to_predicted"] > CALIBRATION_FACTOR
+        assert entry["ratio_observed_to_predicted"] > calibration_factor(10)
         assert "too tight" in entry["calibration"]
         assert "replicas are the honest figure" in entry["calibration"]
 
