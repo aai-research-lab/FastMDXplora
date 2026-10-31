@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A pose taken from the structure says the two files list the ligand's
+  atoms in different orders only where they do, element by element and
+  bond by bond. A phenyl turned over by its symmetry, from files that list
+  the atoms alike, was said to be another order.
 - A run with `minimize: false` whose prepared system's velocities were
   drawn at another temperature (a `setup_from` run at 330 K from a system
   prepared at 300 K) keeps them, as a run without minimization keeps its
