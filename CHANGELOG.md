@@ -9,6 +9,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A PMF's bootstrap resamples are each set to zero at the curve's lowest
+  bin, not their own, so the band's middle sits on the curve (+0.01 of its
+  error, from 0.47 above it) and the band has no width at that bin. On the
+  known profiles of `validation.pmf_coverage` (seeds 1000 to 1099, 200
+  resamples) the band holds the truth in 86.4% of bins, from 75.5%, and
+  86.2% between the window centres, from 74.7%; the mean gauge does not
+  move (89.5%). `pmf.json` says where the band is zeroed
+  (`uncertainty.zeroed_at`), how many resamples had nothing in that bin and
+  were left out (`uncertainty.resamples_left_out`), and that the curve, and
+  a barrier read off it, sit about 0.8 of their error high
+  (`uncertainty.zero`, `summary.barrier_zero`); that offset is said, not
+  corrected. A barrier's two-error gate reads the new errors.
 - Where a ligand's pose is taken from the structure, only three things now
   refuse: another molecule (the residue's heavy-atom graph is not the
   file's; `setup.ligand.atoms_unmatched`, the atoms named, where it was
@@ -242,6 +254,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Docs: "Across environments" in `docs/validation.md` said two preparations
+  of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
+  drawn and recorded where none is given), so it now says to give the seed or
+  rerun one resolved config, that the results are not compared, which keys
+  are environmental, and that the input digest is read from `manifest.json`,
+  where this release does not write it.
 - `recorded_stage_lengths` and the methods tell a piece's config in a
   study's place by what it is (`resume_unsealed` set, the checkpoint a
   `segment-NNN.yml` beside it names, or a `resume_from` in the study or
