@@ -16,11 +16,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   resamples) the band holds the truth in 86.4% of bins, from 75.5%, and
   86.2% between the window centres, from 74.7%; the mean gauge does not
   move (89.5%). `pmf.json` says where the band is zeroed
-  (`uncertainty.zeroed_at`), how many resamples had nothing in that bin and
-  were left out (`uncertainty.resamples_left_out`), and that the curve, and
+  (`pmf.uncertainty.zeroed_at`), how many resamples had nothing in that bin
+  and were left out (`pmf.uncertainty.resamples_left_out`), and that the curve, and
   a barrier read off it, sit about 0.8 of their error high
-  (`uncertainty.zero`, `summary.barrier_zero`); that offset is said, not
+  (`pmf.uncertainty.zero`, `summary.barrier_zero`); that offset is said, not
   corrected. A barrier's two-error gate reads the new errors.
+- `validation.environments` reads the input structure's SHA-256 from
+  `setup/setup_parameters.json` (`input.structure.sha256`), where setup
+  writes it; it read `manifest.json`, which does not carry it, so the
+  digest was never checked. Its record's `what_is_not_compared` no longer
+  says the dynamics seed leaves solvation unfixed: the preparation is
+  seeded by `setup.random_seed`.
 - Where a ligand's pose is taken from the structure, only three things now
   refuse: another molecule (the residue's heavy-atom graph is not the
   file's; `setup.ligand.atoms_unmatched`, the atoms named, where it was
