@@ -486,7 +486,13 @@ def pose_from_structure(molecule: Any, structure: str | Path, resname: str,
             f"{_FILE_POSE_SAID}",
             code="setup.ligand.atoms_unmatched", resname=wanted,
             atoms=named, option="setup.ligand_pose")
-    reordered = order != list(range(len(heavy)))
+    # Another order only where the files' own orders do not agree, element
+    # by element and bond by bond. A ring's symmetry can pick a match other
+    # than the identity (a phenyl turned over) from two files that list the
+    # atoms alike.
+    reordered = (order != list(range(len(heavy)))
+                 and (list(file_elements) != elements
+                      or [set(n) for n in file_graph] != [set(n) for n in crystal_graph]))
     moved = positions.copy()
     moved[heavy] = crystal[order]
 
