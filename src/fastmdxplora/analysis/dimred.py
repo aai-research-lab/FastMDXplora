@@ -174,6 +174,17 @@ class DimRed(Analysis):
             self.options["start"] = self.start
 
     def compute(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
+        """Each method's projection (:meth:`_projected`), with BLAS and
+        OpenMP held to one thread under an address-space limit, as
+        clustering's are (:func:`~fastmdxplora.analysis.cluster.threads_held_to_one`):
+        an OpenBLAS thread whose buffer could not be mapped there retried for
+        ever."""
+        from fastmdxplora.analysis.cluster import threads_held_to_one
+
+        with threads_held_to_one(self.findings):
+            return self._projected(traj)
+
+    def _projected(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
         """Run all requested DimRed methods.
 
         Returns
@@ -592,10 +603,10 @@ def _refuse_mds_past_memory(self: "DimRed", n: int) -> None:
     with the stride that fits; record the check either way."""
     from fastmdxplora.analysis.cluster import (
         MEMORY_SHARE,
-        _gigabytes,
         _ordinal,
         memory_available,
         room_said,
+        sizes_apart,
     )
 
     needed = mds_memory_needed(n)
@@ -603,18 +614,21 @@ def _refuse_mds_past_memory(self: "DimRed", n: int) -> None:
     check: dict[str, Any] = {"frames": n, "bytes_needed": needed,
                              "bytes_available": available, "available_read_from": read_from,
                              "share_usable": MEMORY_SHARE, "method": "mds"}
-    self.findings["memory"] = check
+    # Beside what holding the threads said (`threads_held_to_one`).
+    self.findings.setdefault("memory", {}).update(check)
     if available is None or needed <= MEMORY_SHARE * available:
         return
     stride = 2
     while stride < n and mds_memory_needed(-(-n // stride)) > MEMORY_SHARE * available:
         stride += 1
-    check["stride_that_fits"] = stride
+    self.findings["memory"]["stride_that_fits"] = stride
+    # Two numbers that differ read differently (`sizes_apart`).
+    need_said, room, planned_said = sizes_apart(needed, available, MEMORY_SHARE * available)
     raise StudyError(
-        f"MDS of {n:,} frames needs about {_gigabytes(needed)} for their "
+        f"MDS of {n:,} frames needs about {need_said} for their "
         f"frame-by-frame RMSD matrix and its centred square, and "
-        f"{room_said(available, read_from)}, of which an analysis "
-        f"plans on {MEMORY_SHARE:.0%}. PCA, t-SNE and UMAP make no such matrix "
+        f"{room_said(available, read_from, room)}, of which an analysis "
+        f"plans on {MEMORY_SHARE:.0%}, {planned_said}. PCA, t-SNE and UMAP make no such matrix "
         f"(`methods: [pca]`); or load every {_ordinal(stride)} frame for the analyses "
         f"(`analysis: {{stride: {stride}}}`, which every analysis then reads), "
         f"{-(-n // stride):,} frames, which fits. Read as {read_from}.",

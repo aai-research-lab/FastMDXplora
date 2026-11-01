@@ -49,6 +49,11 @@ def _chain(n_frames: int, n_atoms: int = 4, seed: int = 0) -> md.Trajectory:
 LONG = MOST_MAP_CELLS + 100
 
 
+def _room_for(n: int, methods=("kmeans", "hierarchical")) -> int:
+    """Memory in which clustering ``n`` frames, and no more, is planned."""
+    return int(memory_needed(n, list(methods), "rmsd", "average") / MEMORY_SHARE) + 1
+
+
 @pytest.fixture(scope="module")
 def clustered(tmp_path_factory):
     out = tmp_path_factory.mktemp("long")
@@ -207,13 +212,14 @@ class TestTheMemoryCheck:
     def test_the_refusal_carries_its_numbers(self, monkeypatch):
         from fastmdxplora.refusals import StudyError, refusal_of
 
-        monkeypatch.setattr(clustering, "memory_available", lambda: (10**6, "mocked"))
+        room = _room_for(self.N // 2)
+        monkeypatch.setattr(clustering, "memory_available", lambda: (room, "mocked"))
         with pytest.raises(StudyError) as raised:
             Cluster().compute(_chain(self.N))
         refusal = refusal_of(raised.value)
         assert refusal.code == "analysis.memory.matrix_too_large"
         assert refusal.details["frames"] == self.N
-        assert refusal.details["bytes_available"] == 10**6
+        assert refusal.details["bytes_available"] == room
         assert refusal.details["stride"] > 1
 
     def test_within_the_memory_it_clusters(self, tmp_path, monkeypatch):
@@ -226,7 +232,8 @@ class TestTheMemoryCheck:
         traj = _chain(self.N)
         traj[0].save_pdb(str(tmp_path / "top.pdb"))
         traj.save_dcd(str(tmp_path / "traj.dcd"))
-        monkeypatch.setattr(clustering, "memory_available", lambda: (10**6, "mocked"))
+        room = _room_for(self.N // 2)
+        monkeypatch.setattr(clustering, "memory_available", lambda: (room, "mocked"))
         results = AnalysisOrchestrator(str(tmp_path / "traj.dcd"), str(tmp_path / "top.pdb"),
                                        output_dir=tmp_path / "analysis").run(
             include=["rg", "cluster"])
@@ -284,7 +291,8 @@ class TestTheEstimateIsWhatTheMethodsMake:
             peak = tracemalloc.get_traced_memory()[1] - before
         finally:
             tracemalloc.stop()
-        estimate = memory_needed(n, analysis.methods, analysis.features, analysis.linkage)
+        estimate = clustering.matrix_needed(n, analysis.methods, analysis.features,
+                                            analysis.linkage)
         assert peak <= estimate + 2000 * n, (peak / n**2, estimate / n**2)
         assert estimate <= 1.35 * peak, (peak / n**2, estimate / n**2)
 
@@ -318,7 +326,7 @@ class TestTheEstimateIsWhatTheMethodsMake:
                            linkage="ward")
         analysis.compute(_chain(300))
         assert analysis._distances is None
-        assert memory_needed(10**6, ["kmeans"], "coordinates", "average") == 0
+        assert clustering.matrix_needed(10**6, ["kmeans"], "coordinates", "average") == 0
 
 
 
@@ -454,9 +462,9 @@ class TestTheBudgetIsTheProcesss:
 
     def test_average_and_complete_linkage_count_scipy_s_copy(self):
         n = 1000
-        assert memory_needed(n, ["hierarchical"], "rmsd", "average") == 25 * n * n
-        assert memory_needed(n, ["hierarchical"], "rmsd", "complete") == 25 * n * n
-        assert memory_needed(n, ["hierarchical"], "rmsd", "single") == 21 * n * n
+        assert clustering.matrix_needed(n, ["hierarchical"], "rmsd", "average") == 25 * n * n
+        assert clustering.matrix_needed(n, ["hierarchical"], "rmsd", "complete") == 25 * n * n
+        assert clustering.matrix_needed(n, ["hierarchical"], "rmsd", "single") == 21 * n * n
 
 
 _PEAK_SCRIPT = r"""
@@ -519,7 +527,8 @@ class TestThePeakIsMeasuredAsResidentMemory:
                               timeout=600, cwd=tmp_path)
         assert done.returncode == 0, done.stderr[-2000:]
         found = json.loads(done.stdout.strip().splitlines()[-1])
-        estimate = memory_needed(n, found["methods"], found["features"], found["linkage"])
+        estimate = clustering.matrix_needed(n, found["methods"], found["features"],
+                                            found["linkage"])
         # Terms in n alone, and the allocator's own pages: 20 MB.
         assert found["peak"] <= estimate + 20 * 2**20, (found["peak"] / n**2, estimate / n**2)
         assert estimate <= 1.5 * found["peak"] + 20 * 2**20, (found["peak"] / n**2,
@@ -551,6 +560,194 @@ def chain(n):
     traj.time = np.arange(n) * 10.0
     return traj
 """
+
+_RUN_SCRIPT = _CHAIN_SCRIPT + r"""
+n, out, room = int(sys.argv[2]), sys.argv[3], json.loads(sys.argv[4])
+traj = chain(n)
+clustering.Cluster(output_dir=os.path.join(out, "warm")).run(traj[:300])
+stride = 1
+if room is not None:
+    # The room a container leaves, read as the check reads it.
+    clustering.memory_available = lambda: (room, "the cgroup v2 limit, mocked")
+    refused = clustering.Cluster(output_dir=os.path.join(out, "refused")).run(traj)
+    found = json.load(open(os.path.join(out, "refused", "cluster", "options.json")))
+    stride = found["findings"]["memory"].get("stride_that_fits")
+    if refused.status != "error" or not stride:
+        raise SystemExit("not refused: " + refused.message)
+with open("/proc/self/clear_refs", "w") as refs:  # the peak counted from here
+    refs.write("5")
+before = status("VmRSS")
+analysis = clustering.Cluster(output_dir=os.path.join(out, "run"), stride=stride)
+result = analysis.run(traj)
+frames = -(-n // stride)
+print(json.dumps({"peak": status("VmHWM") - before, "status": result.status,
+                  "message": result.message, "stride": stride, "frames": frames,
+                  "needed": clustering.memory_needed(frames, analysis.methods,
+                                                     analysis.features, analysis.linkage)}))
+"""
+
+
+def _peak_of_a_run(tmp_path, n: int, room: int | None = None) -> dict:
+    import subprocess
+    from pathlib import Path
+
+    if not Path("/proc/self/clear_refs").exists():
+        pytest.skip("the peak resident memory is read from Linux's /proc")
+    src = str(Path(clustering.__file__).resolve().parents[2])
+    done = subprocess.run([sys.executable, "-c", _RUN_SCRIPT, src, str(n), str(tmp_path),
+                           json.dumps(room)], capture_output=True, text=True, timeout=900,
+                          cwd=tmp_path)
+    assert done.returncode == 0, done.stderr[-2000:] + done.stdout[-500:]
+    found = json.loads(done.stdout.strip().splitlines()[-1])
+    assert found["status"] == "ok", found["message"]
+    return found
+
+
+class TestTheFiguresAreCounted:
+    """The check left the figures out: the map of 2,000 frames, 1,000 cells
+    across, took 160 to 180 MiB to plot beside the whole matrix, so under a
+    container's limit of 84 to 116 MB a clustering the check allowed, and
+    one at the stride its refusal gave, were killed plotting it."""
+
+    def test_a_whole_run_s_peak_is_within_the_estimate(self, tmp_path):
+        """Measured as the resident peak of a process running the clustering
+        whole, its figures and files with it."""
+        found = _peak_of_a_run(tmp_path, 2000)
+        # Terms in n alone, and the allocator's own pages: 20 MB.
+        assert found["peak"] <= found["needed"] + 20 * 2**20, (
+            found["peak"] / 2**20, found["needed"] / 2**20)
+
+    def test_the_stride_a_refusal_gives_fits_the_room(self, tmp_path):
+        room = 110 * 10**6
+        found = _peak_of_a_run(tmp_path, 2000, room)
+        assert found["stride"] > 1
+        assert found["peak"] <= room, (found["stride"], found["peak"] / 2**20)
+
+    @pytest.mark.parametrize("n", [1000, 2000])
+    def test_the_map_is_in_the_plan(self, n):
+        """At 1,000 frames, and at 2,000 in blocks of two, the map is 1,000
+        cells across, 126 MiB to plot as measured
+        (``FIGURE_BYTES_PER_CELL``): in the plan of a clustering that makes
+        the least of its matrix."""
+        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 126 * 2**20
+
+
+_ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""
+import faulthandler, resource
+n = int(sys.argv[2])
+traj = chain(n)
+clustering.Cluster().compute(traj[:60])  # every library and thread started
+faulthandler.dump_traceback_later(120, exit=True)
+analysis = clustering.Cluster()
+needed = clustering.memory_needed(n, analysis.methods, analysis.features, analysis.linkage)
+# Room the check allows: what it plans on is the need, and a little more.
+room = int(needed / clustering.MEMORY_SHARE) + 6 * 2**20
+held = clustering._process_status()["VmSize"]
+resource.setrlimit(resource.RLIMIT_AS, (held + room, resource.RLIM_INFINITY))
+try:
+    analysis.compute(traj)
+    said = "ok"
+except BaseException as error:  # noqa: BLE001 -- said, whatever it is
+    said = type(error).__name__ + ": " + str(error)[:300]
+memory = analysis.findings.get("memory", {})
+print(json.dumps({"said": said, "needed": memory.get("bytes_needed"),
+                  "available": memory.get("bytes_available"),
+                  "threads": memory.get("threads")}))
+"""
+
+
+class TestAnAddressSpaceLimit:
+    """Under `ulimit -v`, scikit-learn's k-means calls BLAS from its OpenMP
+    threads, and an OpenBLAS thread whose buffer could not be mapped retried
+    for ever: a clustering the check allowed hung, the process idle. The
+    room was read as address space and planned on as resident memory."""
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
+    def test_a_clustering_the_check_allows_finishes(self, tmp_path):
+        import os
+        import subprocess
+        from pathlib import Path
+
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        # Two threads of each, as a machine of two cores or more runs them.
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}
+        env["OMP_NUM_THREADS"] = "2"
+        try:
+            done = subprocess.run([sys.executable, "-c", _ADDRESS_SCRIPT, src, "300"],
+                                  capture_output=True, text=True, timeout=180, cwd=tmp_path,
+                                  env=env)
+        except subprocess.TimeoutExpired:
+            pytest.fail("the clustering hung under the address-space limit")
+        assert done.returncode == 0, "hung: " + done.stderr[-2000:]
+        found = json.loads(done.stdout.strip().splitlines()[-1])
+        assert found["needed"] <= MEMORY_SHARE * found["available"], found
+        assert found["said"] == "ok", found
+        assert found["threads"].startswith("BLAS and OpenMP held to one thread"), found
+
+    def test_the_refusal_says_the_need_and_the_room_apart(self, monkeypatch):
+        """It said 0.4 GB needed and 0.4 GB the process may use."""
+        import re
+
+        from fastmdxplora.refusals import StudyError
+
+        n = 600
+        needed = memory_needed(n, ["kmeans", "hierarchical"], "rmsd", "average")
+        room = needed + 1000
+        monkeypatch.setattr(clustering, "memory_available", lambda: (
+            room, "RLIMIT_AS less what this process holds (VmSize)"))
+        with pytest.raises(StudyError) as raised:
+            Cluster().compute(_chain(n))
+        said = str(raised.value)
+        need = re.search(r"need about ([\d.,]+ [MG]B)", said)
+        may = re.search(r"may use ([\d.,]+ [MG]B)", said)
+        assert need and may, said
+        assert need.group(1) != may.group(1), said
+        # And what it plans on, the share of that, as a number too.
+        assert re.search(r"plans on 75%, [\d.,]+ [MG]B", said), said
+
+    def test_mds_s_refusal_says_the_need_and_the_room_apart(self, monkeypatch):
+        import re
+
+        from fastmdxplora.analysis.dimred import DimRed, mds_memory_needed
+        from fastmdxplora.refusals import StudyError
+
+        n = 600
+        room = mds_memory_needed(n) + 1000
+        monkeypatch.setattr(clustering, "memory_available", lambda: (
+            room, "RLIMIT_AS less what this process holds (VmSize)"))
+        with pytest.raises(StudyError) as raised:
+            DimRed(methods=["mds"]).compute(_chain(n))
+        said = str(raised.value)
+        need = re.search(r"needs about ([\d.,]+ [MG]B)", said)
+        may = re.search(r"may use ([\d.,]+ [MG]B)", said)
+        assert need and may, said
+        assert need.group(1) != may.group(1), said
+        assert re.search(r"plans on 75%, [\d.,]+ [MG]B", said), said
+
+    @pytest.mark.parametrize("name", ["cluster", "dimred"])
+    def test_its_threads_are_held_to_one_and_said(self, monkeypatch, name):
+        """Projections call BLAS as k-means does, so dimred holds them too."""
+        import threadpoolctl
+
+        from fastmdxplora.analysis.orchestrator import get_analysis_class
+
+        monkeypatch.setattr(clustering, "_rlimit_room", lambda: (
+            10**12, "RLIMIT_AS less what this process holds (VmSize)"))
+        held = []
+        real = threadpoolctl.threadpool_limits
+
+        def limits(*args, **kwargs):
+            held.append(kwargs.get("limits", args[0] if args else None))
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(threadpoolctl, "threadpool_limits", limits)
+        analysis = get_analysis_class(name)()
+        analysis.compute(_chain(60))
+        said = analysis.findings.get("memory", {}).get("threads") or ""
+        assert said.startswith("BLAS and OpenMP held to one thread, as RLIMIT_AS"), said
+        assert 1 in held, held
+
 
 _SYMMETRIC_SCRIPT = _CHAIN_SCRIPT + r"""
 n, step = int(sys.argv[2]), int(sys.argv[3])

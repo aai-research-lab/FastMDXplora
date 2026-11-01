@@ -233,12 +233,21 @@ holds, the record saying which was least and the refusal saying it in words
 ("the container allows", "this machine has", "the process may use"). The
 peak is counted as resident memory measured it, compiled code's copies
 included (17 n^2 bytes beside the matrix for an average or complete
-linkage). Several workers clustering at once each read the same memory, and
-one's matrix is not seen by another until it is written: that is not planned
-for yet.
+linkage). The map is plotted after the matrix is freed, from the averaged
+one, and planned on beside it alone (`findings.memory.bytes_map`: about 144
+bytes a cell and 8 MiB, some 150 MB for a map 1,000 cells across, as
+measured): the peak planned on is the larger of the matrix's part
+(`bytes_matrix`) and the map's. Under an address-space or data limit, BLAS
+and OpenMP are held to one thread while `cluster` and `dimred` run
+(`findings.memory.threads`): k-means calls BLAS from its threads, and an
+OpenBLAS thread whose buffer could not be mapped under the limit retried
+for ever. Several workers
+clustering at once each read the same memory, and one's matrix is not seen
+by another until it is written: that is not planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
-with the stride that fits, then the frames, the bytes needed and available,
-and last where the memory was read, and said in the log;
+with the stride that fits, then the frames, the bytes needed, the room and
+the three quarters of it planned on (to as many decimals as tell them
+apart), and last where the memory was read, and said in the log;
 `stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
 the other analyses still read every frame. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same

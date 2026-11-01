@@ -47,14 +47,16 @@ whether the equilibration the RMSD detects is among them
 **Memory is checked before the matrix is made.** The frames' pairwise
 matrix grows with the square of their number (128,000 frames want 131 GB
 of it in float64, before any copy a method makes), so its peak, the matrix
-and the largest copy the methods asked for make of it, is estimated
-(:func:`memory_needed`) and compared with the memory this machine has
-available (:func:`memory_available`). Past it, clustering is refused with
-the code ``analysis.memory.matrix_too_large``, naming the frames, the
-bytes needed and available, and the stride that fits; the other analyses
-of the study still run. A method that needs no matrix does not build one:
-k-means, Ward's linkage and DBSCAN on ``features: coordinates`` work from
-the frames' coordinates.
+and the largest copy the methods asked for make of it, or the map plotted
+once it is freed where that is more, is estimated (:func:`memory_needed`)
+and compared with the memory this machine has available
+(:func:`memory_available`). Past it, clustering is refused with the code
+``analysis.memory.matrix_too_large``, naming the frames, the bytes needed
+and available, and the stride that fits; the other analyses of the study
+still run. Under an address-space limit, BLAS and OpenMP are held to one
+thread while clustering (:func:`threads_held_to_one`). A method that needs
+no matrix does not build one: k-means, Ward's linkage and DBSCAN on
+``features: coordinates`` work from the frames' coordinates.
 
 Because this analysis produces multiple files per run, it overrides the
 base class's :meth:`save_data` and :meth:`_do_plot` methods.
@@ -67,8 +69,9 @@ Lloyd, S. *IEEE Trans. Inf. Theory* **1982**, 28, 129 (k-means).
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterator, Sequence
 
 import matplotlib.pyplot as plt
 import mdtraj as md
@@ -124,6 +127,15 @@ MEMORY_SHARE = 0.75
 #: About how much a block of distance rows read at a time may take, in bytes.
 ROWS_BYTES = 64 * 2**20
 
+#: What plotting the time-against-time map takes, per cell of the map
+#: squared and once, in bytes: Matplotlib's mesh of the cells and its
+#: rendering to PNG and SVG. Measured as the peak resident memory of a
+#: process plotting it (about 132 bytes a cell at 1,000 cells across, 126
+#: MiB; ``tests/test_a_clustering_fits_the_machine.py``), and planned on
+#: beside the map's own numbers once the frames' matrix is freed.
+FIGURE_BYTES_PER_CELL = 136
+FIGURE_BYTES = 8 * 2**20
+
 
 def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
     """Whether a clustering makes the frames' n by n distance matrix.
@@ -139,7 +151,16 @@ def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
 
 
 def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
-    """The peak bytes, of order n squared, that clustering ``n`` frames makes.
+    """The peak bytes, of order n squared, that clustering ``n`` frames makes:
+    the larger of what the clustering makes of their matrix
+    (:func:`matrix_needed`) and what plotting its map makes once the matrix
+    is freed (:func:`map_needed`)."""
+    return max(matrix_needed(n, methods, features, linkage), map_needed(n))
+
+
+def matrix_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
+    """The peak bytes, of order n squared, the clustering of ``n`` frames
+    makes of their matrix.
 
     The matrix, float64 (8 n^2 bytes), held from when it is made to the end,
     plus the largest of what each method makes of it while it runs (they run
@@ -164,18 +185,26 @@ def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
       with as well (at most 1 GiB, its working memory, and 9 n^2) and its
       lists of neighbours, read again and copied (13 n^2, as measured).
 
-    Making the matrix symmetric holds one block of it beside it at any n,
-    halved in place and freed before the next is made (:func:`_pairwise_rmsd`):
-    8 n^2 up to about 2,900 frames, where the block is the whole matrix, and
-    at most :data:`ROWS_BYTES` past them. That is within the least any method
-    here counts beside the matrix, which is 8 n^2. On Python 3.13's NumPy,
-    ``0.5 * (a + b.T)`` held two blocks, and the distances alone peaked at
-    24 n^2; past about 2,900 frames, the last pass's block was held while the
-    next was made, on any Python.
+    Making the matrix symmetric holds one block of it beside it at any n, in
+    one buffer made once and given back to the system after
+    (:func:`_pairwise_rmsd`): 8 n^2 up to about 2,900 frames, where the
+    block is the whole matrix, and at most :data:`ROWS_BYTES` past them.
+    That is within the least any method here counts beside the matrix,
+    which is 8 n^2. On Python 3.13's NumPy, ``0.5 * (a + b.T)`` held two
+    blocks, and the distances alone peaked at 24 n^2; past about 2,900
+    frames, the last pass's block was held while the next was made, on any
+    Python, and a block freed stayed resident in glibc's heap after.
+
+    The map of the matrix (:func:`map_needed`) is plotted after the matrix
+    is freed, so it is counted beside its own numbers and not beside the
+    matrix (:func:`memory_needed`: whichever is larger). It was left to the
+    share not planned on, and at 2,000 frames under a container's limit of
+    about 100 MB a clustering the check allowed, and the stride its refusal
+    gave, were killed plotting it (160 to 180 MiB the check did not count).
 
     Terms in n alone (the trajectory's frames, labels, a few rows of
-    distances at a time) and the figures are left to the share of memory not
-    planned on (:data:`MEMORY_SHARE`). Measured on SciPy 1.17 and
+    distances at a time) and the other figures are left to the share of
+    memory not planned on (:data:`MEMORY_SHARE`). Measured on SciPy 1.17 and
     scikit-learn 1.9 as the peak resident memory of a process clustering
     (``tests/test_a_clustering_fits_the_machine.py``), which counts what
     compiled code takes as well.
@@ -197,6 +226,22 @@ def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
             each.append(8 * n2 if features == "coordinates"
                         else 21 * n2 + min(2**30, 9 * n2))
     return int(matrix + max(each))
+
+
+def map_block(n: int) -> int:
+    """How many consecutive frames each cell of the map averages, so that it
+    is at most :data:`MOST_MAP_CELLS` across."""
+    return max(1, -(-int(n) // MOST_MAP_CELLS))
+
+
+def map_needed(n: int) -> int:
+    """The peak bytes of the map of ``n`` clustered frames, once their matrix
+    is freed: its cells in float64 (8 bytes a cell), and Matplotlib's mesh
+    of them and its rendering (:data:`FIGURE_BYTES_PER_CELL` a cell, and
+    :data:`FIGURE_BYTES` once). 1,000 frames, and each whole multiple of
+    them, make a map 1,000 cells across, about 145 MiB."""
+    cells = -(-int(n) // map_block(n)) if n > 0 else 0
+    return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
 
 def _machine_available() -> tuple[int | None, str]:
@@ -344,6 +389,33 @@ def _process_status() -> dict[str, int]:
     return found
 
 
+@contextmanager
+def threads_held_to_one(findings: dict[str, Any]) -> Iterator[None]:
+    """BLAS and OpenMP held to one thread, where the process has an
+    address-space or data limit (``ulimit -v``), and said in ``findings``
+    (``memory.threads``).
+
+    Each OpenBLAS thread maps a buffer of its own the first time it works,
+    address space that is not resident memory until written; under the
+    limit, a thread whose buffer could not be mapped retried for ever, and a
+    clustering the check allowed hung in k-means with the process idle. One
+    thread maps none past the one it started with, already among what the
+    process holds, so the limit's room is planned on as the other readings
+    are (:func:`memory_available`)."""
+    room, said = _rlimit_room()
+    if room is None:
+        yield
+        return
+    from threadpoolctl import threadpool_limits
+
+    limit = said.split(" less ")[0]
+    findings.setdefault("memory", {})["threads"] = (
+        f"BLAS and OpenMP held to one thread, as {limit} "
+        f"({'ulimit -v' if limit == 'RLIMIT_AS' else 'ulimit -d'}) limits this process")
+    with threadpool_limits(limits=1):
+        yield
+
+
 def memory_available() -> tuple[int | None, str]:
     """The memory a clustering can take now, in bytes, and where that was
     read: the least of what the machine has available
@@ -391,20 +463,35 @@ def _sysconf_bytes(name: str) -> int | None:
     return int(pages) * int(size) if pages > 0 and size > 0 else None
 
 
-def _gigabytes(n_bytes: float) -> str:
-    return f"{n_bytes / 1e9:,.1f} GB" if n_bytes >= 1e8 else f"{n_bytes / 1e6:,.1f} MB"
+def _gigabytes(n_bytes: float, places: int = 1) -> str:
+    return (f"{n_bytes / 1e9:,.{places}f} GB" if n_bytes >= 1e8
+            else f"{n_bytes / 1e6:,.{places}f} MB")
 
 
-def room_said(available: int, read_from: str) -> str:
+def sizes_apart(*sizes: float) -> list[str]:
+    """Each size said as :func:`_gigabytes` says it, to one decimal, or to
+    as many more (up to three) as it takes for sizes that differ to read
+    differently: a refusal said a need of 0.4 GB against a room of 0.4 GB."""
+    distinct = len(set(int(size) for size in sizes))
+    for places in (1, 2, 3):
+        said = [_gigabytes(size, places) for size in sizes]
+        if len(set(said)) == distinct:
+            break
+    return said
+
+
+def room_said(available: int, read_from: str, said: str | None = None) -> str:
     """The memory planned on, said by the reading that was least: "the
     container allows" (a control group's limit, a container's or a SLURM
     job's), "the process may use" (``ulimit -v`` or a data limit), else
-    "this machine has ... available"."""
+    "this machine has ... available". ``said`` is the size as said beside
+    others (:func:`sizes_apart`)."""
+    said = said or _gigabytes(available)
     if read_from.startswith("the cgroup"):
-        return f"the container allows {_gigabytes(available)}"
+        return f"the container allows {said}"
     if read_from.startswith("RLIMIT"):
-        return f"the process may use {_gigabytes(available)}"
-    return f"this machine has {_gigabytes(available)} available"
+        return f"the process may use {said}"
+    return f"this machine has {said} available"
 
 
 def _ordinal(k: int) -> str:
@@ -611,7 +698,12 @@ class Cluster(Analysis):
 
         # Before anything of the frames' square is made.
         self._refuse_past_memory(n_frames, first, record)
+        with threads_held_to_one(self.findings):
+            return self._clustered_by_each_method(traj, atom_idx)
 
+    def _clustered_by_each_method(self, traj: md.Trajectory,
+                                  atom_idx: np.ndarray) -> dict[str, np.ndarray]:
+        """The frames' distances, and each method's labels of them."""
         if self.features == "coordinates":
             embedding = _superposed_coordinates(traj, atom_idx)
             # Only a linkage read from distances needs them all at once;
@@ -663,9 +755,14 @@ class Cluster(Analysis):
         available, read_from = memory_available()
         check: dict[str, Any] = {
             "frames": n, "bytes_needed": needed,
+            "bytes_matrix": matrix_needed(n, self.methods, self.features, self.linkage),
+            "bytes_map": map_needed(n),
             "bytes_available": available, "available_read_from": read_from,
             "share_usable": MEMORY_SHARE,
         }
+        # The address space a limit leaves, apart from the resident memory
+        # the machine and a container leave: the least of them is planned on.
+        check["bytes_address_space"] = _rlimit_room()[0]
         self.findings["memory"] = check
         if available is None or needed <= MEMORY_SHARE * available:
             return
@@ -676,8 +773,31 @@ class Cluster(Analysis):
                 self.linkage) > MEMORY_SHARE * available:
             stride += 1
         fits = -(-given // stride)
-        check["stride_that_fits"] = stride
         starting = (f" from frame {first}" if first else "")
+        if memory_needed(fits, self.methods, self.features,
+                         self.linkage) > MEMORY_SHARE * available:
+            # Even a frame or two: the map's figure alone is more than the
+            # room planned on.
+            least, room, planned_said = sizes_apart(
+                memory_needed(min(given, max(2, self.n_clusters)), self.methods,
+                              self.features, self.linkage),
+                available, MEMORY_SHARE * available)
+            raise StudyError(
+                f"Clustering does not fit in the memory at any stride: clustering "
+                f"{n:,} frames{starting}, or as few as there are clusters, needs at "
+                f"least {least}, and {room_said(available, read_from, room)}, of which "
+                f"clustering plans on {MEMORY_SHARE:.0%}, {planned_said}. Run it where "
+                f"more memory is given, or leave `cluster` out of the analyses. "
+                f"Read as {read_from}.",
+                code="analysis.memory.matrix_too_large", frames=n,
+                bytes_needed=needed, bytes_available=available, stride=None)
+        check["stride_that_fits"] = stride
+        planned = MEMORY_SHARE * available
+        need_said, room, planned_said = sizes_apart(needed, available, planned)
+        made = (f"for their frame-by-frame RMSD matrix and the copies "
+                f"{', '.join(self.methods)} make of it"
+                if check["bytes_matrix"] >= check["bytes_map"] else
+                "to plot the map of their RMSD matrix, once the matrix is freed")
         # What to do first, in a sentence a row gives alone; where the memory
         # was read last, as the record keeps it (`available_read_from`).
         raise StudyError(
@@ -685,10 +805,9 @@ class Cluster(Analysis):
             f"memory, where clustering {n:,} frames{starting} does not. "
             f"Set `stride: {stride}` under the analysis's `options: {{cluster: ...}}` "
             "for it; the other analyses keep every frame. "
-            f"The {n:,} frames need about {_gigabytes(needed)} for their "
-            f"frame-by-frame RMSD matrix and the copies {', '.join(self.methods)} "
-            f"make of it, and {room_said(available, read_from)}, of which "
-            f"clustering plans on {MEMORY_SHARE:.0%}. Read as {read_from}.",
+            f"The {n:,} frames need about {need_said} {made}, and "
+            f"{room_said(available, read_from, room)}, of which clustering plans on "
+            f"{MEMORY_SHARE:.0%}, {planned_said}. Read as {read_from}.",
             code="analysis.memory.matrix_too_large", frames=n,
             bytes_needed=needed, bytes_available=available, stride=stride)
 
@@ -868,10 +987,12 @@ class Cluster(Analysis):
         """Each clustered frame's index in the trajectory given."""
         return self._first_frame + self.stride * np.arange(n)
 
-    def _distance_rows(self, rows: np.ndarray, columns: np.ndarray | None = None) -> np.ndarray:
+    def _distance_rows(self, rows: np.ndarray | slice,
+                       columns: np.ndarray | None = None) -> np.ndarray:
         """The distances from the frames ``rows`` to ``columns`` (every
         clustered frame where None), from the matrix where one was made, else
-        from the points, a block at a time."""
+        from the points, a block at a time. Rows given as a slice, to every
+        frame, are read from the matrix in place, not copied."""
         distances = getattr(self, "_distances", None)
         if distances is not None:
             if columns is None:
@@ -900,15 +1021,20 @@ class Cluster(Analysis):
         the same numbers. A study written before kept the whole matrix here,
         with no ``block``, and is read as it was.
 
-        The whole matrix is written only when ``save_full_matrix`` asks.
+        The whole matrix is written only when ``save_full_matrix`` asks. It is
+        freed before the map is plotted, which plots from the averaged one
+        (:func:`map_needed`): plotted beside the whole matrix, the map was
+        more than the room planned on at 2,000 frames under a container's
+        limit of about 100 MB, and the process was killed.
         """
         distances = getattr(self, "_distances", None)
         if distances is None and getattr(self, "_embedding", None) is None:
             return []
         n = distances.shape[0] if distances is not None else self._embedding.shape[0]
+        del distances
         frames = self._frames_given(n)
         times = self._times_ns()
-        block = max(1, -(-n // MOST_MAP_CELLS))
+        block = map_block(n)
         averaged = self._averaged_in_blocks(n, block)
         self.findings["matrix"] = {
             "frames": int(n), "block": int(block), "cells": int(averaged.shape[0]),
@@ -926,6 +1052,8 @@ class Cluster(Analysis):
         written = [data_path]
         if self.save_full_matrix:
             written.append(self._write_full_matrix(n))
+        # Nothing reads the whole matrix past here.
+        self._distances = None
 
         figure_path = self.output_dir / "cluster_rmsd_matrix.png"
         title = ("RMSD between frames" if block == 1
@@ -943,14 +1071,20 @@ class Cluster(Analysis):
         frames, read a few rows at a time, in float64."""
         starts = np.arange(0, n, block)
         sizes = np.diff(np.append(starts, n)).astype(np.float64)
+        if block == 1 and getattr(self, "_distances", None) is not None:
+            # At most MOST_MAP_CELLS frames: the matrix is the map.
+            return np.asarray(self._distances, dtype=np.float64)
         summed = np.zeros((starts.size, starts.size), dtype=np.float64)
         step = max(block, self._rows_at_a_time(n) // block * block)
         for low in range(0, n, step):
-            rows = np.arange(low, min(low + step, n))
-            part = np.add.reduceat(self._distance_rows(rows), starts, axis=1)
-            summed[low // block:(rows[-1] // block) + 1] += np.add.reduceat(
-                part, np.arange(0, rows.size, block), axis=0)
-        return summed / np.outer(sizes, sizes)
+            high = min(low + step, n)
+            part = np.add.reduceat(self._distance_rows(slice(low, high)), starts, axis=1)
+            summed[low // block:((high - 1) // block) + 1] += np.add.reduceat(
+                part, np.arange(0, high - low, block), axis=0)
+            del part
+        summed /= sizes[:, None]
+        summed /= sizes[None, :]
+        return summed
 
     def _write_full_matrix(self, n: int) -> Path:
         """Every pair, in float32, written a block of rows at a time; its size
