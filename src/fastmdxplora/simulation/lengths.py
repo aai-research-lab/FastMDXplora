@@ -636,9 +636,10 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
 
     from fastmdxplora import record_access
 
-    status, _ = _first_piece_status(root)
+    status, status_refused = _first_piece_status(root)
     status = status or {}
     first = status.get("platform") if isinstance(status.get("platform"), str) else None
+    logged, log_refused = (None, False) if first is not None else _platform_logged(root)
     each: dict = {}
     for folder in pieces:
         try:
@@ -654,9 +655,23 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
         if isinstance(status.get("precision"), str) and status.get("precision_applied") is not False:
             parameters["precision"] = status["precision"]
             settings_from["precision"] = STATUS_RECORD
+    elif logged is not None:
+        # The study's own log, where the first piece's run said what it
+        # selected (`runner`): what ran, which a platform the config asks
+        # for is only where it was not "auto".
+        first, precision = logged
+        beside["platform_used"] = first
+        settings_from["platform"] = LOG_OF_THE_STUDY
+        if precision is not None:
+            parameters["precision"] = precision
+            settings_from["precision"] = LOG_OF_THE_STUDY
     elif parameters.get("platform") not in (None, "auto"):
         settings_from["platform"] = CONFIG_RECORD
         first = parameters["platform"]
+    elif status_refused or log_refused:
+        # Linked out of the study, the first piece's live status or log may
+        # say: not read, not "not recorded".
+        beside["first_piece_platform"] = NOT_READ
     if first is not None and parameters.get("precision") is not None \
             and "precision" not in settings_from:
         settings_from["precision"] = CONFIG_RECORD
@@ -675,6 +690,34 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
     settings_from["platform"] = ", ".join(
         ([settings_from["platform"]] if first is not None else [])
         + [where for _, where in each.values()])
+
+
+#: The study's own log, which says the platform its first piece's run
+#: selected.
+LOG_OF_THE_STUDY = "fastmdxplora.log"
+
+
+def _platform_logged(root: object) -> tuple[tuple[str, str | None] | None, bool]:
+    """The platform the first piece's run selected and the precision it
+    applied (None where the platform has none), as the study's own log says
+    it last ("Selected OpenMM platform: CUDA (precision=mixed)"); and
+    whether a read held to the study refused the log."""
+    import re
+
+    from fastmdxplora import record_access
+
+    path = root / LOG_OF_THE_STUDY
+    refused = _refused(path)
+    try:
+        log = record_access.read_text(path, encoding="utf-8", errors="replace")
+    except (OSError, ValueError, TypeError):
+        return None, refused
+    found = re.findall(r"Selected OpenMM platform: (\S+) \(([^)\n]*)\)", log)
+    if not found:
+        return None, refused
+    name, said = found[-1]
+    applied = re.match(r"precision=(\w+)", said)
+    return (name, applied.group(1) if applied else None), refused
 
 
 def last_piece_stopped(root: object) -> bool:
