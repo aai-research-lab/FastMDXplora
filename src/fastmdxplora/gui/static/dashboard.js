@@ -2387,9 +2387,17 @@
       : svgArtifact;
     const dataArtifact = artifacts.find((item) => !/\.(png|jpe?g|gif|svg)$/i.test(item?.path || item?.name || ""));
     const primary = dataArtifact || artifacts[0] || displayPlot;
+    // An analysis that failed or was refused has no figure because it did
+    // not finish: what it said, below, says what to set. "Re-run the
+    // analysis" was said of a clustering refused for memory, which run
+    // again as it was is refused again.
+    const failed = status === "error" || status === "failed";
+    const setting = failed ? (/Set `[^`]+`.*?\.(?=\s|$)/.exec(analysis.message || "") || [""])[0] : "";
     const image = displayPlot?.href
       ? `<div class="ac-frame"><img src="${escapeAttr(displayPlot.href)}" alt="${escapeAttr(title)}" loading="lazy"></div>`
-      : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
+      : failed
+        ? `<div class="ac-frame ac-no-plot"><div class="muted">Not plotted: the analysis did not finish. ${escapeHTML(setting.replace(/`/g, "") || "What it said is below.")}</div></div>`
+        : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
     const links = [];
     if (displayPlot?.href) {
       links.push(`<a class="file-action" href="${escapeAttr(displayPlot.href)}" target="_blank" rel="noopener">Open figure</a>`);

@@ -367,6 +367,9 @@ def _hierarchy(root: Path, method: str) -> dict[str, Any] | None:
         "groups": [groups[int(merge)] for merge in laid["color_list"]],
         "leaves": len(laid["leaves"]), "frames": n, "truncated": truncated,
         "cut": cut, "x_label": "Frame", "y_label": "Distance",
+        # The merges' heights are the linkage's distance: RMSD, or Ward's
+        # distance between the points, in nm either way.
+        "unit": "nm",
     }
 
 
@@ -594,7 +597,26 @@ def _projection(root: Path, method: str) -> dict[str, Any] | None:
         "x": x, "y": y, "t": t, "t_label": t_label, "frames": frames,
         "axes": _axes_of(root, method), "unit": unit, "linked": _linked(root),
         "thinned": len(rows) if len(keep) < len(rows) else None,
+        "note": _mds_refused(root),
     }
+
+
+def _mds_refused(root: Path) -> str:
+    """MDS refused for memory, as the report says it (its findings' note),
+    under each projection that was run beside it: the card said nothing of
+    it while the record and the report did."""
+    try:
+        record = json.loads(_records.read_text(root / "analysis" / "dimred" / "options.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    findings = record.get("findings") if isinstance(record, dict) else None
+    if not isinstance(findings, dict) or not isinstance(findings.get("mds_refused"), dict):
+        return ""
+    from fastmdxplora.report.document import _findings_notes
+
+    return next((note for note in _findings_notes({"mds_refused": findings["mds_refused"]})
+                 if note.startswith("MDS was not run")), "")
 
 
 def _landscape(root: Path, method: str) -> dict[str, Any] | None:

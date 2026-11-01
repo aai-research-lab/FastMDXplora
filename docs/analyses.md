@@ -256,7 +256,7 @@ square), checked before any of its methods runs and refused past it with the
 stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA,
 t-SNE and UMAP make none, and asked for beside a refused MDS they still run
 and their projections are saved, the refusal recorded (`findings.mds_refused`)
-and said in the report.
+and said in the report and under each projection's figure in the GUI.
 
 `rmsd`, `cluster` and `dimred` superpose the frames on their selection, which
 needs three atoms. On one (alanine dipeptide's one alpha carbon, the
@@ -462,7 +462,9 @@ against another tool.
   seed and the number of starts are written to `options.json`. A Ward
   hierarchy is built on the points its labels came from (the superposed
   coordinates, or an MDS embedding of the pairwise RMSD), so its dendrogram
-  and `hierarchical_linkage.npy` cut to the same clusters.
+  and `hierarchical_linkage.npy` cut to the same clusters. The dendrogram's
+  heights are the linkage's distance in nm, said on its axis and in the
+  GUI's CSV of it (`height1 (nm)`).
 
 - **SASA per residue** gives each residue's mean and its spread over the
   frames, and the spread is the sample standard deviation, dividing by the

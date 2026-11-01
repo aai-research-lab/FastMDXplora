@@ -1474,7 +1474,8 @@ def _plot_hierarchical_dendrogram_from_linkage(
 
     dendrogram(linkage_matrix, ax=ax, no_labels=True, color_threshold=None)
     ax.set_xlabel("Frame")
-    ax.set_ylabel("Distance")
+    # The linkage's distance: RMSD, or Ward's between the points, in nm.
+    ax.set_ylabel("Distance (nm)")
     ax.set_ylim(bottom=0)
 
 
