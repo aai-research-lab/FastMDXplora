@@ -431,8 +431,6 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     last segment, not from where its first run stopped, and what it has
     done is then counted across all of its segments.
     """
-    import yaml
-
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
     root = Path(parent).expanduser().resolve()
@@ -446,11 +444,9 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     _refuse(resolved)
     if not _records.is_file(resolved):
         return Continuation(**empty, refusal="the study has no resolved_config.yml")
-    try:
-        config = yaml.load(_records.read_text(resolved, encoding="utf-8"),
-                           Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        return Continuation(**empty, refusal=f"the study's config could not be read: {exc}")
+    config, why = _read_config(resolved)
+    if config is None:
+        return Continuation(**empty, refusal=f"the study's config could not be read: {why}")
     verdict = segmentability(config)
     if not verdict.allowed:
         return Continuation(**empty, refusal=verdict.reason)
@@ -472,6 +468,7 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     sim = dict(config.get("simulation") or {})
     dt_fs = float(sim.get("timestep_fs") or 2.0)
     dt_ns = dt_fs * 1e-6
+    # Checked by `_read_config`, as the numbers below are.
     # A stated zero is zero, as the runner reads it.
     nvt_ns = sim.get("nvt_duration_ns")
     npt_ns = sim.get("npt_duration_ns")
@@ -641,7 +638,9 @@ def last_segment(study: str | Path) -> Path:
 
 def extended_production(study: str | Path) -> tuple[float, int] | None:
     """Production across an extended study's pieces, and how many pieces
-    ran; None for a study that ran in one.
+    ran; None for a study that ran in one, and for one where a piece's
+    ``resolved_config.yml`` does not read as a config, so what it ran is
+    not known (:func:`production_unreadable` says why).
 
     An extension writes its own folder inside the study (``segment-001``
     onward) and leaves the study's own ``simulation_parameters.json`` as
@@ -660,6 +659,10 @@ def extended_production(study: str | Path) -> tuple[float, int] | None:
         if not any(folder.name[8:].isdigit()
                    for folder in _records.glob(Path(study), "segment-*")):
             return None
+        # A piece's config that does not read: what it ran is not known, so
+        # nothing is summed (`production_unreadable` says why).
+        if production_unreadable(study) is not None:
+            return None
         ran = [piece for piece in survey_segments(study) if piece.trajectory is not None]
     except OutsideWorkspace:
         raise
@@ -668,6 +671,72 @@ def extended_production(study: str | Path) -> tuple[float, int] | None:
     if len(ran) < 2:
         return None
     return production_done_ns(study), len(ran)
+
+
+def _read_config(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """A piece's ``resolved_config.yml`` as a config, or None and why: not
+    there or not read, not UTF-8, not YAML, not a mapping of settings, or a
+    simulation block whose timestep or lengths are not numbers. Each of
+    these raised where the production was counted, and the study's stage
+    lengths with it."""
+    import yaml
+
+    from fastmdxplora.refusals import OutsideWorkspace
+
+    try:
+        text = _records.read_text(path, encoding="utf-8")
+    except OutsideWorkspace:
+        raise
+    except UnicodeDecodeError:
+        return None, "it is not UTF-8 text"
+    except OSError as exc:
+        return None, f"it could not be read ({exc.strerror or exc})"
+    try:
+        config = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
+    except yaml.YAMLError:
+        return None, "it is not YAML"
+    if not isinstance(config, dict):
+        return None, "it is not a mapping of settings"
+    simulation = config.get("simulation")
+    if simulation is None:
+        return config, None
+    if not isinstance(simulation, dict):
+        return None, "its `simulation` is not a mapping of settings"
+    for key in ("timestep_fs", "duration_ns", "nvt_duration_ns", "npt_duration_ns",
+                "production_steps", "nvt_steps", "npt_steps"):
+        value = simulation.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 \
+                or value != value or (key == "timestep_fs" and value == 0):
+            return None, f"its `simulation.{key}` ({value!r}) is not a length"
+    return config, None
+
+
+def production_unreadable(study: str | Path) -> str | None:
+    """Why the production of a study carried on in pieces is not known: the
+    first piece whose ``resolved_config.yml`` is there and does not read
+    as a config (:func:`_read_config`), named by its folder; None where
+    every one that is there reads."""
+    import re
+
+    root = Path(study)
+    try:
+        folders = [root] + sorted(
+            (folder for folder in _records.glob(root, "segment-*")
+             if re.fullmatch(r"segment-\d+", folder.name)),
+            key=lambda folder: int(folder.name[8:]))
+    except OSError:
+        return None
+    for folder in folders:
+        resolved = folder / "resolved_config.yml"
+        if not _records.is_file(resolved):
+            continue
+        _config, why = _read_config(resolved)
+        if why is not None:
+            where = "the study's" if folder == root else f"{folder.name}'s"
+            return f"{where} resolved_config.yml does not read: {why}"
+    return None
 
 
 def _refuse(*paths: Path) -> None:
@@ -704,8 +773,6 @@ def production_done_ns(study: str | Path) -> float:
     """Production across the pieces of this study: each finished piece at
     its length, each stopped one as far as its checkpoint, and a piece
     stopped before its first checkpoint not at all."""
-    import yaml
-
     from fastmdxplora.analysis.joining import survey_segments
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
@@ -737,10 +804,8 @@ def production_done_ns(study: str | Path) -> float:
         if not found.finished and str((read_checkpoint_sidecar(checkpoint) or {})
                                       .get("stage") or "") != "production":
             continue
-        try:
-            config = yaml.load(_records.read_text(resolved, encoding="utf-8"),
-                               Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
-        except (OSError, yaml.YAMLError):
+        config, _why = _read_config(resolved)
+        if config is None:
             continue
         piece = continuation_of(folder)
         total += piece.production_done_ns if piece.production_done_ns else float(

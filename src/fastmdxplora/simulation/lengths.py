@@ -821,6 +821,17 @@ def _recorded(root: object) -> dict:
         said["frames_saved"], said["frames_saved_source"] = None, NOT_READ
         # Its pieces are counted by their folders, a refused one among them.
         said["pieces"] = 1 + len(_segments(root))
+    unreadable = None
+    if not extended and not refused and _segments(root):
+        from fastmdxplora.simulation.resume import production_unreadable
+
+        # A piece's config that does not read: what the pieces ran is not
+        # known, said so, never the first piece's alone.
+        unreadable = production_unreadable(root)
+        if unreadable is not None:
+            said["production_ran_ns"], said["production_ran_source"] = None, NOT_RECORDED
+            said["production_ran_said"] = f"not recorded: {unreadable}"
+            said["pieces"] = 1 + len(_segments(root))
     # The plan the production's steps are: the first piece's, from the
     # study's own record or the first piece's status; the whole study's,
     # from its config; none, where nothing gave them.
