@@ -58,8 +58,12 @@ class TestTheCaption:
             "mean 1.423 ± 0.012 nm, 21 independent samples")
 
     def test_too_few_independent_samples(self, tmp_path) -> None:
+        # Recorded as determined by an earlier version: not determined by
+        # this one's count, as the Overview says it.
         _analysis(tmp_path, "rmsd", RMSD, _measured(effective_samples=4.2))
-        assert _caption(tmp_path, "RMSD").endswith("4 independent samples, too few to determine the mean")
+        assert _caption(tmp_path, "RMSD") == (
+            "mean 0.01297 nm, not determined: 4 independent samples, fewer than the 10 this "
+            "version determines a mean on")
 
     def test_a_series_too_short_to_measure(self, tmp_path) -> None:
         _analysis(tmp_path, "rg", RMSD, _measured(

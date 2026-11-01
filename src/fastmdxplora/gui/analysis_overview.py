@@ -296,6 +296,34 @@ def _noted(found: dict[str, Any] | None, findings: dict[str, Any] | None, *,
     return {"noted": short, "noted_why": paragraph or None}
 
 
+def too_few_by_these_rules(found: Any) -> str | None:
+    """Why a mean an earlier version's rules called determined is not one by
+    this version's: it rests on fewer independent samples than this version
+    determines a mean on (:data:`fastmdxplora.statistics.MINIMUM_EFFECTIVE_SAMPLES`),
+    which its record says. None for any other record.
+
+    One verdict for the Overview, the Analysis page's table, its card and
+    the convergence panel: a short study's RMSD read "Determined" on the
+    Overview (its record judged by an earlier version) and "too few to
+    determine the mean" on its card, which applied this version's count."""
+    from fastmdxplora.statistics import (
+        MINIMUM_EFFECTIVE_SAMPLES,
+        independent_samples_said,
+        judged_by_earlier_rules,
+    )
+
+    if not isinstance(found, dict) or not judged_by_earlier_rules(found):
+        return None
+    samples = _finite(found.get("effective_samples"))
+    if samples is None or samples >= MINIMUM_EFFECTIVE_SAMPLES:
+        return None
+    count = independent_samples_said(samples)
+    return (f"{count[:1].upper()}{count[1:]}, fewer than the "
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} this version determines a mean on. Its record, "
+            "from an earlier version, called it determined; Analyze again to record this "
+            "version's verdict.")
+
+
 def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
               timed: bool = True, *, include_time: bool = True,
               findings: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -313,7 +341,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     n = _count(found.get("n_frames"))
     discard = _count(found.get("discard")) or 0
     why = found.get("not_a_measurement")
-    why = str(why) if why else None
+    why = str(why) if why else too_few_by_these_rules(found)
     if biased and timed:
         why = ("The run was biased, so this is an average over the ensemble the "
                "bias flattened, not the equilibrium one; no reweighted value was "
@@ -462,7 +490,10 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
     from fastmdxplora.statistics import four_figures, with_its_error
 
     mean, error = _finite(found.get("mean")), _finite(found.get("standard_error"))
-    withheld = bool(found.get("not_a_measurement"))
+    # Withheld by its record, or by this version's count of a record an
+    # earlier version judged (:func:`too_few_by_these_rules`).
+    withheld = (str(found["not_a_measurement"]) if found.get("not_a_measurement")
+                else too_few_by_these_rules(found))
     if withheld:
         error = None
     unit = unit_of(analysis, found)
@@ -480,8 +511,7 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
             "mean": mean,
             "standard_error": error,
             "said": said,
-            "not_a_measurement": str(found["not_a_measurement"])
-            if found.get("not_a_measurement") else None,
+            "not_a_measurement": withheld or None,
             "error_withheld_because": found.get("error_withheld_because") or None,
             # Its image note, as the table above says it.
             **_noted(found, findings),

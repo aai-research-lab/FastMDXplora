@@ -934,6 +934,17 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
                 if because else
                 f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
                 ) + _image_noted(record)
+    from fastmdxplora.gui.analysis_overview import too_few_by_these_rules
+
+    too_few = too_few_by_these_rules(found)
+    if too_few:
+        # Its verdict and its figures as the Overview and the table give
+        # them: one judged by an earlier version on fewer samples than this
+        # one determines a mean on is not determined, its error not given.
+        from fastmdxplora.statistics import four_figures
+
+        return (f"mean {four_figures(mean)}{unit}, not determined: "
+                f"{too_few.split('. ', 1)[0].rstrip('.')}") + _image_noted(record)
     error = found.get("standard_error")
     text = (f"mean {_with_its_error(mean, error)}{unit}" if _finite(error) and error > 0
             else f"mean {_format_metric_value(mean)}{unit}")
@@ -942,12 +953,9 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
         text += " after equilibration"
     samples = found.get("effective_samples")
     if _finite(samples):
-        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+        from fastmdxplora.statistics import independent_samples_said
 
-        count = int(round(samples))
-        text += f", {count} independent sample{'s' if count != 1 else ''}"
-        if samples < MINIMUM_EFFECTIVE_SAMPLES:
-            text += ", too few to determine the mean"
+        text += f", {independent_samples_said(samples)}"
     return text + _image_noted(record)
 
 
