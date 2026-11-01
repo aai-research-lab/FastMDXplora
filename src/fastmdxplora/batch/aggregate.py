@@ -333,6 +333,7 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
     """
     from fastmdxplora import record_access
     from fastmdxplora.image_note import note_of
+    from fastmdxplora.statistics import withheld_reason
 
     root = Path(batch_dir)
     manifest_path = root / "batch_manifest.json"
@@ -371,7 +372,10 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
                 # Carried through rather than summarised away: a member that
                 # said its own number was not a measurement must not be
                 # averaged into one silently.
-                "not_a_measurement": mean.get("not_a_measurement"),
+                # Withheld as every page reads it (`statistics.withheld_reason`):
+                # a mean an earlier version called determined on too few
+                # independent samples was counted as backing the spread.
+                "not_a_measurement": withheld_reason(mean),
                 # Its image note (`image_note`), for the mean of the means
                 # to say how many of the replicas' means carry one.
                 "solute_image": note_of(mean),

@@ -918,6 +918,8 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
     recorded, the measures a card names first leading."""
     from fastmdxplora.batch.aggregate import read_member_findings
     from fastmdxplora.gui.report_dashboard import unit_of
+    from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.statistics import withheld_reason
 
     try:
         found = read_member_findings(base)
@@ -929,8 +931,10 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
         mean = record.get("mean") if isinstance(record.get("mean"), dict) else None
         if mean is None:
             continue
-        withheld = mean.get("not_a_measurement") or None
-        from fastmdxplora.image_note import note_of, said_short
+        # The verdict every page reads (`statistics.withheld_reason`): a
+        # mean an earlier version called determined on too few independent
+        # samples was compared on its error.
+        withheld = withheld_reason(mean)
 
         out.append((name, {
             "label": _label_of(name),

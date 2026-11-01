@@ -934,9 +934,9 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
                 if because else
                 f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
                 ) + _image_noted(record)
-    from fastmdxplora.gui.analysis_overview import too_few_by_these_rules
+    from fastmdxplora.statistics import withheld_reason
 
-    too_few = too_few_by_these_rules(found)
+    too_few = withheld_reason(found)
     if too_few:
         # Its verdict and its figures as the Overview and the table give
         # them: one judged by an earlier version on fewer samples than this

@@ -145,16 +145,28 @@ def _value(name: str, mean: dict[str, Any] | None) -> str:
         unit_of,
     )
 
+    from fastmdxplora.statistics import withheld_reason
+
     if mean is None:
         return ""
     value = mean.get("mean")
+    withheld = withheld_reason(mean)
     if not _finite(value):
-        return "no mean" if mean.get("not_a_measurement") else ""
+        return "no mean" if withheld else ""
     unit = unit_of(name, mean)
     unit = f" {unit}" if unit else ""
     error = mean.get("standard_error")
-    if _finite(error) and error > 0 and not mean.get("not_a_measurement"):
+    # No error where the mean is withheld, by its record or by this
+    # version's count of one an earlier version judged: the chip gave
+    # "0.0078 \u00b1 0.0010 nm" beside a tile saying it was not determined.
+    if _finite(error) and error > 0 and not withheld:
         return f"{_with_its_error(value, error)}{unit}"
+    if withheld:
+        # To four figures, as the tile and the table give a mean not
+        # determined: the chip said 0.0078 beside the tile's 0.007766.
+        from fastmdxplora.statistics import four_figures
+
+        return f"{four_figures(value)}{unit}"
     return f"{_format_metric_value(value)}{unit}"
 
 
@@ -166,5 +178,8 @@ def _noted(mean: dict[str, Any] | None) -> str:
 
 
 def _withheld(mean: dict[str, Any] | None) -> str:
-    reason = (mean or {}).get("not_a_measurement")
-    return str(reason) if reason else ""
+    """Why the mean is not determined, as every page reads it
+    (:func:`fastmdxplora.statistics.withheld_reason`); empty where it is."""
+    from fastmdxplora.statistics import withheld_reason
+
+    return withheld_reason(mean) or ""

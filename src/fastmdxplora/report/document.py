@@ -294,8 +294,10 @@ def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
 
 
 def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
-    """Each analysis's mean record, by name, as the analysis wrote it."""
+    """Each analysis's mean record, by name, as the analysis wrote it, its
+    verdict as this version reads it."""
     from fastmdxplora import record_access
+    from fastmdxplora.statistics import withheld_reason
 
     means: dict[str, dict[str, Any]] = {}
     for path in sorted(record_access.glob(project_root / "analysis", "*/options.json")):
@@ -303,6 +305,13 @@ def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
         found = document.get("findings") if isinstance(document, dict) else None
         record = found.get("mean") if isinstance(found, dict) else None
         if isinstance(record, dict):
+            # With the verdict every page reads (`statistics.withheld_reason`):
+            # a mean an earlier version called determined on fewer independent
+            # samples than this one determines a mean on is withheld here too,
+            # so the Methods name it among those given no error.
+            withheld = withheld_reason(record)
+            if withheld and not record.get("not_a_measurement"):
+                record = {**record, "not_a_measurement": withheld}
             means[path.parent.name] = record
     return means
 
@@ -1247,6 +1256,7 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     belongs in a document is what they amount to.
     """
     from fastmdxplora.image_note import note_of
+    from fastmdxplora.statistics import withheld_reason
 
     notes: list[str] = []
 
@@ -1254,12 +1264,16 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     # shown nowhere: a results section carried a figure and the settings that
     # produced it, and no number.
     measured = findings.get("mean")
+    # Withheld as every page reads it: by its record, or by this version's
+    # count of a mean an earlier version called determined on too few
+    # independent samples, which was given here with its error.
+    withheld = withheld_reason(measured)
     if isinstance(measured, dict) and measured.get("mean") is not None:
         from fastmdxplora.statistics import with_its_error
 
         error = measured.get("standard_error")
         error = error if isinstance(error, (int, float)) and error > 0 else None
-        if measured.get("not_a_measurement"):
+        if withheld:
             # Its record says the mean is not a measurement: no error beside
             # it, as every page says it (an error was given with "from 9
             # independent samples" beside a mean withheld for them).
@@ -1278,8 +1292,8 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
             said += f" after discarding {discarded:,} " + (
                 "frame" if discarded == 1 else "frames")
         notes.append(said + ".")
-    if isinstance(measured, dict) and measured.get("not_a_measurement"):
-        reason = str(measured["not_a_measurement"])
+    if withheld:
+        reason = withheld
         # "The remedy is a longer run" (", or better, replicas" in some):
         # neither lifts the bias of a solute in contact with its image in
         # every frame the mean uses, as the Convergence part says of the run.

@@ -445,7 +445,7 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     from fastmdxplora.batch.aggregate import read_member_findings
     from fastmdxplora.gui.report_dashboard import _format_metric_value, unit_of
     from fastmdxplora.image_note import note_of, said_short
-    from fastmdxplora.statistics import with_its_error
+    from fastmdxplora.statistics import with_its_error, withheld_reason
 
     axes: list[str] = sorted({axis for r in runs for axis in (r.get("values") or {})})
     short = {axis: axis.split(".")[-1] for axis in axes}
@@ -502,7 +502,8 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
             cell = (with_its_error(record["mean"], error)
                     if isinstance(error, (int, float)) and not isinstance(error, bool)
                     else _format_metric_value(record["mean"]))
-            if record.get("not_a_measurement"):
+            # Withheld as every page reads it (`statistics.withheld_reason`).
+            if withheld_reason(record):
                 cell += " \\*"
                 qualified = True
             # Its image note, a mark here and said in full under the table.

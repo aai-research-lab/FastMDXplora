@@ -347,7 +347,12 @@ def assess_series(name: str, values: Any,
         recorded |= {"mean", "verdict"}
         recorded |= {"discard"} if found is not None else set()
         recorded |= {"effective_samples"} if effective is not None else set()
-        reason = record.get("not_a_measurement") or None
+        # The verdict every page reads (`statistics.withheld_reason`): one an
+        # earlier version called determined on too few independent samples
+        # was tabled with its error.
+        from fastmdxplora.statistics import withheld_reason
+
+        reason = withheld_reason(record)
         recorded_error = _number(record.get("standard_error"))
         if reason is None and recorded_error is None:
             reason = "No error was recorded."

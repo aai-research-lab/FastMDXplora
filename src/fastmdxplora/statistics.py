@@ -56,6 +56,8 @@ __all__ = [
     "Settled",
     "MEAN_RULES",
     "judged_by_earlier_rules",
+    "too_few_by_these_rules",
+    "withheld_reason",
     "statistical_inefficiency",
     "correlation_is_resolved",
     "detect_equilibration",
@@ -973,6 +975,45 @@ def judged_by_earlier_rules(record: Any) -> bool:
         return False
     rules = record.get("rules")
     return not isinstance(rules, int) or isinstance(rules, bool) or rules < MEAN_RULES
+
+
+def too_few_by_these_rules(record: Any) -> str | None:
+    """Why a mean an earlier version's rules called determined is not one by
+    this version's: it rests on fewer independent samples than this version
+    determines a mean on (:data:`MINIMUM_EFFECTIVE_SAMPLES`), which its
+    record says. None for any other record."""
+    if not judged_by_earlier_rules(record):
+        return None
+    samples = record.get("effective_samples")
+    if (isinstance(samples, bool) or not isinstance(samples, (int, float))
+            or not math.isfinite(float(samples)) or samples >= MINIMUM_EFFECTIVE_SAMPLES):
+        return None
+    count = independent_samples_said(samples)
+    return (f"{count[:1].upper()}{count[1:]}, fewer than the "
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} this version determines a mean on. Its record, "
+            "from an earlier version, called it determined; Analyze again to record this "
+            "version's verdict.")
+
+
+def withheld_reason(record: Any) -> str | None:
+    """Whether a recorded mean is withheld, and why: the reason its record
+    gives (``not_a_measurement``), or, for a mean an earlier version called
+    determined on fewer independent samples than this version determines one
+    on, :func:`too_few_by_these_rules`. None where the mean is determined.
+
+    The one reader of a mean's verdict: every page, the Agent, the report and
+    Compare ask it, and none gives an error where it returns a reason. A
+    mean judged by an earlier version on 7 independent samples read "not
+    determined" on the Overview and with its error in the Agent's citation,
+    the report and Compare, each of which read ``not_a_measurement`` alone."""
+    if not isinstance(record, dict):
+        return None
+    reason = record.get("not_a_measurement")
+    if reason:
+        if isinstance(reason, dict):
+            reason = reason.get("message") or reason.get("reason") or "not determined"
+        return str(reason)
+    return too_few_by_these_rules(record)
 
 
 @dataclass(frozen=True)

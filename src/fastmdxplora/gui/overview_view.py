@@ -682,11 +682,12 @@ def _said(record: dict[str, Any], unit: str, of: int | None) -> dict[str, Any] |
     if mean is None:
         return None
     error = _number(record.get("standard_error"))
-    reason = record.get("not_a_measurement")
+    # Withheld as every page reads it (`statistics.withheld_reason`).
+    from fastmdxplora.statistics import withheld_reason
+
+    reason = withheld_reason(record)
     determined = not reason and error is not None
     said = with_its_error(mean, error) if determined else _four_figures(mean)
-    if isinstance(reason, dict):
-        reason = reason.get("message") or reason.get("reason") or ""
     return {
         "mean": mean, "error": error if determined else None,
         "said": f"{said} {unit}".strip(), "number": said, "determined": determined,

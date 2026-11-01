@@ -658,6 +658,7 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     """The mean an analysis recorded (`findings.mean`), or None where it
     recorded none."""
     from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.statistics import withheld_reason
 
     record = (findings or {}).get("mean") if isinstance(findings, dict) else None
     if not isinstance(record, dict):
@@ -671,7 +672,8 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     discard = record.get("discard")
     return {"mean": float(value), "error": error,
             "discard": int(discard) if isinstance(discard, (int, float)) else None,
-            "qualified": record.get("not_a_measurement") or None, "recorded": True,
+            # Withheld as every page reads it (`statistics.withheld_reason`).
+            "qualified": withheld_reason(record), "recorded": True,
             # Its image note (`image_note`), said beside it in the table.
             "noted": said_short(note_of(record)) or None}
 

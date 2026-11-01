@@ -207,6 +207,7 @@ def _means_moved(before: Path, after: Path) -> dict[str, Any]:
     One whose record was not read on either side is said not read, never
     added, dropped or kept."""
     from fastmdxplora.gui.report_dashboard import unit_of
+    from fastmdxplora.statistics import withheld_reason
 
     (old, unread_before), (new, unread_after) = _means(before), _means(after)
     not_read = sorted(unread_before | unread_after)
@@ -218,8 +219,9 @@ def _means_moved(before: Path, after: Path) -> dict[str, Any]:
         a, b = old[name], new[name]
         value_a, value_b = _finite(a.get("mean")), _finite(b.get("mean"))
         error_a, error_b = _finite(a.get("standard_error")), _finite(b.get("standard_error"))
-        determined_a = error_a is not None and not a.get("not_a_measurement")
-        determined_b = error_b is not None and not b.get("not_a_measurement")
+        # Determined as every page reads it (`statistics.withheld_reason`).
+        determined_a = error_a is not None and not withheld_reason(a)
+        determined_b = error_b is not None and not withheld_reason(b)
         scale = max(abs(value_a or 0.0), abs(value_b or 0.0), error_a or 0.0, error_b or 0.0, 1e-300)
         changed = (value_a is None) != (value_b is None) or (
             value_a is not None and abs(value_b - value_a) > MOVED * scale)

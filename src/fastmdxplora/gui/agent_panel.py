@@ -1441,8 +1441,9 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     # before a reason, how the reason is joined on, and the reason (or None).
     from fastmdxplora import record_access
     from fastmdxplora.image_note import note_of, paragraph_of, said_short
+    from fastmdxplora.statistics import withheld_reason
 
-    rows: list[tuple[str, str, list[tuple[str, str, str | None]]]] = []
+    rows: list[tuple[str, str, list[tuple[str, str, str | None, str]]]] = []
     # Each analysis's image note in full, said once for the analysis where
     # one of its means carries it.
     paragraphs: dict[str, str] = {}
@@ -1455,14 +1456,17 @@ def _results_summary(root: Any, first: str | None = None) -> str:
         findings = data.get("findings") or {}
         if not isinstance(findings, dict):
             continue
-        parts: list[tuple[str, str, str | None]] = []
+        parts: list[tuple[str, str, str | None, str]] = []
         for key, f in findings.items():
             if not isinstance(f, dict):
                 continue
             # A series too short to measure records why and no mean, and the
             # AI model was told nothing: asked whether the RMSD had equilibrated it
-            # had no number and no reason, only silence to read.
-            withheld = f.get("not_a_measurement")
+            # had no number and no reason, only silence to read. Withheld as
+            # every page reads it (`statistics.withheld_reason`): a mean an
+            # earlier version called determined on 7 independent samples was
+            # handed over with its error and no verdict.
+            withheld = withheld_reason(f)
             # The findings key is usually "mean", and some analyses key their
             # finding by their own name; naming it again reads as a stutter
             # ("order_parameters: order_parameters mean 0.8565"). Name the
@@ -1471,7 +1475,7 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             if "mean" not in f:
                 if withheld:
                     label = "" if own else f"{key} "
-                    parts.append((label, "no mean: ", str(withheld)))
+                    parts.append((label, "no mean: ", withheld, ""))
                 continue
             mean = f.get("mean")
             se = f.get("standard_error")
@@ -1483,7 +1487,8 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             # AI model answering in Angstrom had nothing to say it was nm.
             unit = unit_of(name, f) if own else (
                 f["unit"] if isinstance(f.get("unit"), str) else "")
-            has_error = isinstance(se, (int, float)) and math.isfinite(se)
+            has_error = (isinstance(se, (int, float)) and math.isfinite(se)
+                         and not withheld)
             # As the report and the citations under the answer give it: the
             # error to two figures and the mean to the same place. To four
             # figures each, an energy of -123,456.7 +/- 12 read -1.235e+05,
@@ -1503,13 +1508,14 @@ def _results_summary(root: Any, first: str | None = None) -> str:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
-            # Its image note beside its verdict, which it does not change, as
-            # every page says it; the analysis's paragraph once, below.
+            # Its image note after its verdict, which it does not change, as
+            # the citation under an answer says it; the analysis's paragraph
+            # once, below.
             noted = said_short(note_of(f))
             if noted:
-                piece += f" -- {noted}"
                 paragraphs.setdefault(options.parent.name, paragraph_of(findings))
-            parts.append((piece, " -- not determined: ", str(withheld) if withheld else None))
+            parts.append((piece, " -- not determined: ", withheld,
+                          f" -- {noted}" if noted else ""))
         if parts:
             rows.append((options.parent.name, name, parts))
     # An analysis asked about that recorded no mean and no reason is said
@@ -1527,13 +1533,13 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     lines = [f"  {first}: nothing it recorded gives a mean or a reason"] if silent else []
     for folder, name, parts in rows[:20]:
         said_parts = []
-        for head, joiner, withheld in parts:
+        for head, joiner, withheld, tail in parts:
             if withheld is None:
-                said_parts.append(head)
+                said_parts.append(head + tail)
             elif folder == first:
-                said_parts.append(head + joiner + " ".join(withheld.split()))
+                said_parts.append(head + joiner + " ".join(withheld.split()) + tail)
             else:
-                said_parts.append(head + joiner + _reason_said_once(withheld, notes))
+                said_parts.append(head + joiner + _reason_said_once(withheld, notes) + tail)
         paragraph = paragraphs.get(folder)
         if paragraph:
             said_parts.append(("the image note: " + " ".join(paragraph.split()))
