@@ -19,6 +19,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   `noted`; the chip says the value, its verdict, then the note on a line of
   its own, left-aligned where it wraps. "Not determined" followed the note,
   as if said of the image.
+- In a study of replicas, a run whose records the study writes again from
+  the start the replicas share (after its report, at the study's end or by
+  the stopping rule) has its report written again from those records. Seed
+  1's report said 0.07415 nm over all 100 frames while its record said
+  0.0799 nm over frames 38-99.
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -334,6 +339,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - The Agent's looks validation reasons the 1AKE box width's tolerance from
   the 2.0 nm default padding: 5% of 7.9 nm is 0.39 nm, and a width at the
   1.0 nm padding before it (6.9 nm) is told apart.
+- The report's Convergence table reads each mean, its error, its frames
+  discarded and its independent samples from the analyses' records as
+  written, and says which it works out from the series where no record holds
+  them. It worked each mean out again and rounded it twice, so SASA's
+  recorded 4.7592 read 4.7591.
+- The report's checks table says the fewest independent samples with their
+  noun and the mean temperature as such, so the Report page traces both to
+  their records; a mean temperature no record holds is said to be worked out
+  there.
+- A report mean its record says is not a measurement is given no error
+  ("12.661 ± 0.026 nm², from 9 independent samples").
+- A record whose image note is on its mean alone (`mean.solute_image`) gets
+  its note in the report.
+- Under a mean in contact with its own image in every frame, the report
+  names what does not lift the bias ("A longer run does not lift ...", or
+  "Neither a longer run nor replicas lift ..." where the reason names both);
+  "Neither lifts ..." followed reasons naming one remedy.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
   of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
   drawn and recorded where none is given), so it now says to give the seed or
