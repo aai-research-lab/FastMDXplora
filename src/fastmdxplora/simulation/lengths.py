@@ -518,10 +518,12 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
       (``segment-NNN/simulation/...``), the timestep then from the study's
       checkpoint record; and whether it was minimized, where the config is
       not read, from its minimized state;
-    - the platform and precision, which each piece chose for itself, from
-      the first piece's own live status, else a platform the config names,
-      else the first piece's record that gives one; where the pieces' differ,
-      each piece's, as ``platforms`` (:func:`_platform`).
+    - the platform and precision, which each piece chose for itself: the
+      first piece's from its own live status, else the study's log
+      (``fastmdxplora.log``), else a platform the config names; a later
+      piece's from its own record. Where the pieces' differ, or the first
+      piece's is not known, each piece's, as ``platforms``
+      (:func:`_platform`), never a later piece's said as the first's.
 
     ``read_from["settings"]`` names the record each run setting came from.
 
@@ -626,8 +628,9 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
 def _platform(root: object, pieces: list, parameters: dict, beside: dict,
               settings_from: dict) -> None:
     """The platform and precision a study ran on, where its own record was
-    never written. The first piece's is its own live status's, else a
-    platform the config names; a later piece's is its record's, said by its
+    never written. The first piece's is its own live status's, else what
+    the study's log says its run selected, else a platform the config names;
+    a later piece's is its record's, said by its
     folder. One platform for the study only where the first piece's is
     known and every piece's agrees; otherwise each piece's, as
     ``platforms``, the first piece's None where it is not recorded: a
