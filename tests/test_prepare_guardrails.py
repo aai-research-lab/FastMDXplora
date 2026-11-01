@@ -259,9 +259,10 @@ class TestABoxBigEnoughForItsCutoff:
 
     def test_a_small_solute_gets_the_smallest_box_its_cutoff_allows(self):
         """However much padding that takes: it is the least water any solute
-        that small can have under this cutoff. The defaults (1.0 nm padding,
-        1.0 nm cutoff, dodecahedron) needed 0.56 nm more for a dipeptide, and
-        refusing it stopped every such study at setup."""
+        that small can have under this cutoff. The settings before 2.0 nm
+        became the default (1.0 nm padding, 1.0 nm cutoff, dodecahedron)
+        needed 0.56 nm more for a dipeptide, and refusing it stopped every
+        such study at setup."""
         modeller = _Modeller(across_nm=0.3)
         used = self._solvate(modeller, cutoff=1.5, padding=0.4, most_it_may_grow_nm=0.5)
         assert used == pytest.approx(1.5 * 1.10)

@@ -1,10 +1,11 @@
 """A small solute gets a box its cutoff fits in, and the record says so.
 
-The defaults (1.0 nm of padding, a dodecahedron, a 1.0 nm cutoff) could not
-prepare a peptide of a few residues: OpenMM sizes a padded box as the
-solute's bounding sphere plus the padding, or twice the padding for a solute
-smaller than that, so the box came out 1.41 nm at its narrowest where the
-cutoff needs 2.2 with room for the barostat. Setup grew the padding by at
+The settings before 2.0 nm became the default (1.0 nm of padding, a
+dodecahedron, a 1.0 nm cutoff) could not prepare a peptide of a few
+residues: OpenMM sizes a padded box as the solute's bounding sphere plus the
+padding, or twice the padding for a solute smaller than that, so the box
+came out 1.41 nm at its narrowest where the cutoff needs 2.2 with room for
+the barostat. Setup grew the padding by at
 most 0.5 nm, 0.56 was needed, and it failed with "box edge 1.41 nm" of a box
 whose edges were 2.0. Found in the MDXplora rehearsal (alanine dipeptide),
 and again building this release's GUI (tri-alanine).
