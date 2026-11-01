@@ -39,7 +39,8 @@ class TestFromPython:
     def _asked(self, monkeypatch, answer):
         asked = []
 
-        def extend(study, *, total_ns=None, more_ns=None, analyse=True):
+        def extend(study, *, total_ns=None, more_ns=None, analyse=True,
+                   checkpoint_interval_steps=None):
             asked.append((pathlib.Path(study), total_ns, more_ns))
             return answer
 
