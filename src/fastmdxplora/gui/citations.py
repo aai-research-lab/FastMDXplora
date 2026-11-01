@@ -70,11 +70,12 @@ def cited_findings(answer: str, root: Any) -> list[dict[str, Any]]:
 
     Each is ``{"analysis", "label", "value", "withheld", "noted"}``:
     ``value`` is the recorded mean as its caption gives it ("0.0130 ± 0.0021
-    nm", its image note after it where it has one), or empty for an analysis
-    with no mean (a per-residue profile, a map); ``withheld`` is the
-    analysis's reason where its mean is not a measurement; ``noted`` is the
-    mean's image note alone (`image_note.said_short`), empty where it has
-    none.
+    nm"), plain, or empty for an analysis with no mean (a per-residue
+    profile, a map); ``withheld`` is the analysis's reason where its mean is
+    not a measurement; ``noted`` is the mean's image note alone
+    (`image_note.said_short`), empty where it has none. The chip says the
+    value, its verdict, then the note on a line of its own: the note inside
+    the value put "not determined" after it, read as of the image.
     """
     if not answer or not root:
         return []
@@ -106,9 +107,7 @@ def cited_findings(answer: str, root: Any) -> list[dict[str, Any]]:
     for name in sorted(found, key=found.__getitem__)[:MOST]:
         mean = _recorded_mean(held[name])
         value, noted = _value(name, mean), _noted(mean)
-        cites.append({"analysis": name, "label": _label(name),
-                      # Its image note beside the value, as every page says it.
-                      "value": f"{value}; {noted}" if value and noted else value,
+        cites.append({"analysis": name, "label": _label(name), "value": value,
                       "withheld": _withheld(mean), "noted": noted})
     return cites
 

@@ -360,12 +360,15 @@
       host.appendChild(make("p", "muted small compare-noted", line));
     });
     if (notedResolved.length) {
-      // As the runs compared say it (runs_compared.py).
+      // As the runs compared say it (runs_compared.py), of the settings
+      // that differ: two studies differ in more than one.
       var one = notedResolved.length === 1;
+      var differ = (data.settings || []).length;
       host.appendChild(make("p", "muted small compare-noted",
         (one ? "One resolved difference has" : notedResolved.length + " resolved differences have") +
         " a mean that may be biased by the solute's own image: " + (one ? "it" : "each") +
-        " may be that bias and not the setting."));
+        " may be that bias" + (differ === 1 ? " and not the setting."
+          : differ > 1 ? " and not the settings that differ." : ".")));
     }
     // Resolved or not is said of two measurements; of two replicas read
     // alone no row is judged so, and the rule is not said beside them.

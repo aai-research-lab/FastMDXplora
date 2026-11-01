@@ -93,7 +93,9 @@
   /* What an answer drew on: each analysis it names, with the mean the
    * study recorded for it, opening its figure on the Analysis page. The
    * value is the record's, so a number in the prose can be read against
-   * it. Built as elements, never as markup: a label is data. */
+   * it; then its verdict, then its image note on a line of its own (the
+   * note inside the value put "not determined" after it, read as of the
+   * image). Built as elements, never as markup: a label is data. */
   function cite(box, cites) {
     if (!cites || !cites.length) return null;
     var row = document.createElement("div");
@@ -114,10 +116,23 @@
       chip.appendChild(name);
       var value = document.createElement("span");
       value.className = "agent-cite-value";
-      value.textContent = c.value
-        ? c.value + (c.withheld ? ", not determined" : "")
+      var plain = c.value || "";
+      // An answer saved before the note was sent alone carries it inside
+      // the value: taken out, to be said once, below.
+      if (c.noted && plain.slice(-(c.noted.length + 2)) === "; " + c.noted) {
+        plain = plain.slice(0, -(c.noted.length + 2));
+      }
+      value.textContent = plain
+        ? plain + (c.withheld ? ", not determined" : "")
         : "figure";
       chip.appendChild(value);
+      if (c.noted) {
+        var note = document.createElement("span");
+        note.className = "agent-cite-note";
+        note.textContent = c.noted.charAt(0).toUpperCase() + c.noted.slice(1) + ".";
+        chip.appendChild(note);
+        chip.classList.add("is-noted");
+      }
       chip.title = (c.withheld ? c.withheld + " " : "") +
         "Open the " + (c.label || c.analysis) + " figure on the Analysis page.";
       chip.addEventListener("click", function () {
