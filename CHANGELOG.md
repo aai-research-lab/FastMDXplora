@@ -20,10 +20,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   its own, left-aligned where it wraps. "Not determined" followed the note,
   as if said of the image.
 - In a study of replicas, a run whose records the study writes again from
-  the start the replicas share (after its report, at the study's end or by
-  the stopping rule) has its report written again from those records. Seed
-  1's report said 0.07415 nm over all 100 frames while its record said
-  0.0799 nm over frames 38-99.
+  the start the replicas share (after its report, at the study's end, by
+  the stopping rule or by `FastMDXplora.compare()`) has its report written
+  again from those records. Seed 1's report said 0.07415 nm over all 100
+  frames while its record said 0.0799 nm over frames 38-99. Which reports
+  are written again is decided by content: each report saves the shared
+  start of each mean it read (`report/records_read.json`), compared with
+  the records as they end. The runs are the study's own, from its
+  manifest; a run folder linked in from outside the study is not written
+  into. Inside the stopping rule's rounds each run's extension no longer
+  writes the other runs' reports: each is written again once, after the
+  last round.
+- A run's report written again by its study records the report alone, and
+  marks it written again (`written_again` in the manifest): a run given
+  `simulation.setup_from` was recorded as set up again, at the time of the
+  report. The study's timeline places the last round before the reports
+  written again after it, for a study of replicas as for one of one run.
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -344,6 +356,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   written, and says which it works out from the series where no record holds
   them. It worked each mean out again and rounded it twice, so SASA's
   recorded 4.7592 read 4.7591.
+- The Convergence table's thermodynamic rows take their frame count from
+  the thermodynamics' record (`findings.thermodynamics.samples`), and the
+  Report page traces it there, not to the trajectory's frame count in
+  `analysis_manifest.json`. The sentence under the table names the records
+  only where an analysis recorded them: with none, it said the frame counts
+  and means were the analyses' records, then that no record held them.
 - The report's checks table says the fewest independent samples with their
   noun and the mean temperature as such, so the Report page traces both to
   their records; a mean temperature no record holds is said to be worked out
