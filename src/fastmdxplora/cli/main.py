@@ -3266,9 +3266,18 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     """`fastmdx resume STUDY`: carry a stopped study on to its end."""
     import json
 
+    import contextlib
+
     from fastmdxplora.simulation.resume import resume_study
 
-    answer = resume_study(args.study)
+    if getattr(args, "json", False):
+        # What the runs print goes to stderr, so the answer on stdout is the
+        # one line of JSON a program reads; it followed every phase's
+        # progress there, and no JSON reader read it.
+        with contextlib.redirect_stdout(sys.stderr):
+            answer = resume_study(args.study)
+    else:
+        answer = resume_study(args.study)
     if getattr(args, "json", False):
         if not answer.get("ok"):
             from fastmdxplora.remedies import remedies_of

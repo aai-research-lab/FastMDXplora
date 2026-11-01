@@ -99,3 +99,24 @@ def test_a_resume_carries_a_stopped_piece_on_at_the_interval_it_asked(monkeypatc
     monkeypatch.setattr(resume, "_set_aside_a_segment_never_checkpointed", lambda root: None)
     assert resume.resume_study(study)["did"] == "continued"
     assert asked.get("checkpoint_interval_steps") == 1000
+
+
+def test_a_resume_s_json_is_the_one_line_on_stdout(tmp_path, monkeypatch, capsys) -> None:
+    """`fastmdx resume --json` printed every phase's progress before its
+    JSON on stdout, so a program reading the answer read none."""
+    import json
+
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation import resume
+
+    def carried_on(study, **_):
+        print("▸ Phase: analysis")
+        return {"study": str(study), "ok": True, "did": "analysed",
+                "production_done_ns": 0.013080697,
+                "production_done_source": "from the run's clock"}
+
+    monkeypatch.setattr(resume, "resume_study", carried_on)
+    assert main(["resume", str(tmp_path), "--json"]) == 0
+    out = capsys.readouterr().out
+    assert json.loads(out)["production_done_ns"] == 0.013080697
+    assert "Phase" not in out
