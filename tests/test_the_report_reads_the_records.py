@@ -1,6 +1,9 @@
-"""The report says what the records hold.
+"""The report says what the records hold, as they hold it at the end.
 
-The Convergence table worked each mean out again and gave SASA's
+In a study of replicas each run's report was written before the study
+averaged its runs again from the start they share, so seed 1's report said
+0.07415 nm over all 100 frames while its record said 0.0799 nm over frames
+38-99. The Convergence table worked each mean out again and gave SASA's
 recorded 4.7592 as 4.7591. A mean its record says is not a measurement was
 given an error, a record noted on its mean alone got no note, "Neither
 lifts ..." followed reasons naming one remedy, and two numbers of the
@@ -11,12 +14,113 @@ not traced to the records that hold them.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
-from fastmdxplora.statistics import with_its_error
+from fastmdxplora.statistics import mean_record, with_its_error
+
+
+def _ar1(n: int, seed: int, phi: float = 0.95, sigma: float = 0.05) -> np.ndarray:
+    from scipy.signal import lfilter
+
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0.0, sigma * math.sqrt(1.0 - phi ** 2), n)
+    return lfilter([1.0], [1.0, -phi], noise, zi=[phi * rng.normal(0.0, sigma)])[0]
+
+
+def _relaxing(n: int, seed: int) -> np.ndarray:
+    return 1.0 + 0.15 * np.exp(-np.arange(n) / 300.0) + _ar1(n, seed)
+
+
+# ---------------------------------------------------------------------------
+# (a) Each run's report after the start its replicas share
+# ---------------------------------------------------------------------------
+
+def _replicas(root: Path) -> list[Path]:
+    """Three replicas over a seed, analysed and reported, their relaxation
+    one the shared start sees later than two of them do."""
+    runs, members = [], []
+    for k in range(3):
+        run = root / "runs" / f"r{k}"
+        where = run / "analysis" / "rmsd"
+        where.mkdir(parents=True)
+        series = _relaxing(2200, 70 + k)
+        record = {**mean_record(series, frame_interval_ns=0.01), "unit": "nm"}
+        record = {key: (str(v) if key == "not_a_measurement" else v)
+                  for key, v in record.items()}
+        (where / "options.json").write_text(json.dumps({"findings": {"mean": record}}),
+                                            encoding="utf-8")
+        np.savetxt(where / "rmsd.dat", series, fmt="%.17g", header="rmsd")
+        (run / "analysis" / "analysis_manifest.json").write_text(json.dumps(
+            {"plan": ["rmsd"], "n_frames": 2200, "results": {"rmsd": {"status": "ok"}}}),
+            encoding="utf-8")
+        (run / "manifest.json").write_text(json.dumps(
+            {"system": "1L2Y", "phases": [{"name": "analysis", "status": "ok"}]}),
+            encoding="utf-8")
+        (run / "resolved_config.yml").write_text(yaml.safe_dump(
+            {"systems": [{"system": "1L2Y"}], "include_phase": ["analysis", "report"],
+             "report": {"slides": False, "pdf": False, "bundle": False}}), encoding="utf-8")
+        runs.append({"run_id": f"r{k}", "status": "ok", "system": "1L2Y",
+                     "output_dir_relative": f"runs/r{k}",
+                     "sweep_values": {"simulation.random_seed": k}})
+        members.append(run)
+    (root / "batch_manifest.json").write_text(json.dumps(
+        {"sweep": {"simulation.random_seed": [0, 1, 2]}, "runs": runs}), encoding="utf-8")
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    explorer = BatchExplorer.__new__(BatchExplorer)
+    for run in members:
+        explorer._report_again(run)
+    return members
+
+
+def _recorded(run: Path) -> dict:
+    return json.loads((run / "analysis" / "rmsd" / "options.json").read_text(
+        encoding="utf-8"))["findings"]["mean"]
+
+
+def _said_in_its_report(run: Path) -> str:
+    lines = (run / "report" / "report.md").read_text(encoding="utf-8").splitlines()
+    (line,) = [line for line in lines if "Mean over the equilibrated part" in line]
+    return line
+
+
+def _as_recorded(record: dict) -> str:
+    return (f"{with_its_error(record['mean'], record['standard_error'])} nm, from "
+            f"{record['effective_samples']:.0f} independent samples after discarding "
+            f"{record['discard']:,} frames")
+
+
+def test_each_run_s_report_says_its_mean_from_the_start_the_replicas_share(tmp_path):
+    from fastmdxplora.batch.explorer import compare_the_runs_again
+
+    members = _replicas(tmp_path)
+    before = [_recorded(run) for run in members]
+    compare_the_runs_again(tmp_path)
+    after = [_recorded(run) for run in members]
+    moved = [run for run, old, new in zip(members, before, after)
+             if new["discard"] != old["discard"]]
+    assert moved, "the shared start moved no run's start: the test shows nothing"
+    for run, record in zip(members, after):
+        assert _as_recorded(record) in _said_in_its_report(run), run.name
+
+
+def test_a_report_older_than_the_stopping_rule_s_shared_start_is_written_again(tmp_path):
+    """The stopping rule shares the start after each round's reports: read
+    again with nothing left to share, the study still writes each report
+    from its records."""
+    from fastmdxplora.batch.explorer import compare_the_runs_again
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    members = _replicas(tmp_path)
+    assert share_the_start(members, "rmsd") > 0
+    compare_the_runs_again(tmp_path)
+    for run in members:
+        assert _as_recorded(_recorded(run)) in _said_in_its_report(run), run.name
 
 
 # ---------------------------------------------------------------------------

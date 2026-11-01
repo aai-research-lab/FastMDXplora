@@ -939,6 +939,40 @@ def campaign_of(run: Path) -> Path | None:
     return None
 
 
+def _records_written(study: Path) -> dict[Path, int]:
+    """When each run's analysis records were last written, by path."""
+    written = {}
+    for path in Path(study).glob("runs/*/analysis/*/options.json"):
+        try:
+            written[path] = path.stat().st_mtime_ns
+        except OSError:
+            continue
+    return written
+
+
+def reported_before_the_shared_start(run: Path) -> bool:
+    """Whether a run's report was written before a mean of it was written
+    again from the start its replicas share: a record holding that start
+    (``start_shared_with_replicas``) newer than ``report/report.md``. The
+    stopping rule shares the start after each round's reports."""
+    try:
+        reported = (Path(run) / "report" / "report.md").stat().st_mtime_ns
+    except OSError:
+        return False
+    for path in sorted(Path(run).glob("analysis/*/options.json")):
+        try:
+            if path.stat().st_mtime_ns <= reported:
+                continue
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        findings = document.get("findings") if isinstance(document, dict) else None
+        mean = findings.get("mean") if isinstance(findings, dict) else None
+        if isinstance(mean, dict) and "start_shared_with_replicas" in mean:
+            return True
+    return False
+
+
 def compare_the_runs_again(campaign: Path) -> Path | None:
     """A study of several runs' table of members and comparison, built
     again from its runs' analyses as they are now, marked as the study
@@ -1739,6 +1773,22 @@ class BatchExplorer:
             # The record of what the study ran, not of this one step.
             resolved.write_bytes(kept)
 
+    def _report_after_the_shared_start(self, before: dict[Path, int]) -> None:
+        """Each run's report written again where its records changed after
+        it was written: rewritten from the start the replicas share since
+        ``before`` (each record's time, :func:`_records_written`), or
+        holding that start and newer than the report. A run with no report
+        is left without one."""
+        after = _records_written(self.output_dir)
+        changed = {path.parent.parent.parent for path, stamp in after.items()
+                   if before.get(path) != stamp}
+        for run in sorted(Path(self.output_dir).glob("runs/*")):
+            if (run / "report" / "report.md").is_file() and (
+                    run in changed or reported_before_the_shared_start(run)):
+                print(f"The report of {run.name}, written again from its records "
+                      "as the shared start left them.")
+                self._report_again(run)
+
     # ------------------------------------------------------------------
     def _maybe_aggregate_members(self) -> None:
         """One table across the members, written beside the manifest.
@@ -1753,6 +1803,7 @@ class BatchExplorer:
 
         from fastmdxplora.batch.aggregate import aggregate_members
 
+        before = _records_written(self.output_dir)
         try:
             summary = aggregate_members(self.output_dir)
         except Exception as exc:  # noqa: BLE001 - a summary must not
@@ -1760,6 +1811,14 @@ class BatchExplorer:
             # are already on disk and are the thing worth keeping.
             logger.warning("Could not aggregate members: %s", exc)
             return
+        finally:
+            # Replicas' means are written again from the start they share
+            # (`stopping.share_the_start`), here or by the stopping rule,
+            # after each run wrote its report: seed 1's report said 0.07415
+            # nm over all 100 frames while its record said 0.0799 nm over
+            # frames 38-99. Each run's report is written again from its
+            # records as they end.
+            self._report_after_the_shared_start(before)
 
         destination = Path(self.output_dir) / "members.json"
         destination.write_text(
