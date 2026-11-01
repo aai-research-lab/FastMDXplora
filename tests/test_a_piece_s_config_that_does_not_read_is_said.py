@@ -81,3 +81,16 @@ def test_a_config_that_does_not_read_is_said_not_recorded(tmp_path: Path, case: 
         f"not recorded: {owner} resolved_config.yml does not read: {why}")
     assert said["pieces"] == 2
     assert extended_production(root) is None
+
+
+def test_a_variable_step_study_s_clock_is_read_without_its_configs(tmp_path: Path) -> None:
+    """A variable-step study's production is its pieces' clocks, read from
+    their states and checkpoints: a piece's config that does not read
+    leaves it known, never said "not recorded" beside its number."""
+    from tests.test_a_piece_stopped_off_an_energy_row_is_read_by_its_clock import _varyc
+
+    root = _varyc(tmp_path)
+    (root / "segment-001" / "resolved_config.yml").write_text("- a\n- b\n", encoding="utf-8")
+    said = recorded_stage_lengths(root)
+    assert said["production_ran_ns"] == 0.013080697
+    assert "production_ran_said" not in said

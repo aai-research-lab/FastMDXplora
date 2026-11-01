@@ -944,6 +944,11 @@ def _recorded(root: object) -> dict:
                                      "last checkpoint" if clock["stopped"] else "")
                                   + plan + "."}
             said["production_ran_ns"], said["production_ran_source"] = ns, FROM_CLOCK
+            if unreadable is not None:
+                # The clock is read from the pieces' states and checkpoints,
+                # not their configs: a config that does not read leaves it
+                # known, and it is not said "not recorded" beside its number.
+                said.pop("production_ran_said", None)
         else:
             source = NOT_READ if clock["source"] == NOT_READ or refused else NOT_RECORDED
             said["production"] = {**said["production"], "ns": None, "source": source,
