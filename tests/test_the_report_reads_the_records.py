@@ -123,6 +123,176 @@ def test_a_report_older_than_the_stopping_rule_s_shared_start_is_written_again(t
         assert _as_recorded(_recorded(run)) in _said_in_its_report(run), run.name
 
 
+def test_a_report_stamped_in_the_same_second_as_its_record_is_decided_by_content(tmp_path):
+    """On a filesystem stamping whole seconds a record rewritten from the
+    shared start in the second its report was written was not newer: the
+    report still said the mean from the run's own start."""
+    import os
+
+    from fastmdxplora.batch.explorer import compare_the_runs_again
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    members = _replicas(tmp_path)
+    assert share_the_start(members, "rmsd") > 0
+    for run in members:
+        stamp = int((run / "report" / "report.md").stat().st_mtime)
+        for path in (run / "report" / "report.md", run / "analysis" / "rmsd" / "options.json"):
+            os.utime(path, (stamp, stamp))
+    compare_the_runs_again(tmp_path)
+    for run in members:
+        assert _as_recorded(_recorded(run)) in _said_in_its_report(run), run.name
+
+
+def test_compare_writes_the_replicas_reports_again(tmp_path):
+    """`FastMDXplora.compare()` shares the replicas' start and left each
+    report saying the mean from the run's own start."""
+    pytest.importorskip("matplotlib")
+    from fastmdxplora import FastMDXplora
+
+    members = _replicas(tmp_path)
+    before = [_recorded(run) for run in members]
+    FastMDXplora.__new__(FastMDXplora).compare(output_dir=tmp_path)
+    after = [_recorded(run) for run in members]
+    assert any(new["discard"] != old["discard"] for old, new in zip(before, after))
+    for run, record in zip(members, after):
+        assert _as_recorded(record) in _said_in_its_report(run), run.name
+
+
+def test_the_stopping_rule_writes_each_report_again_once_after_its_rounds(tmp_path, monkeypatch):
+    """Each run's extension built the study's comparison again and wrote
+    the other runs' reports again, mid-round: written once, after the
+    rule's last round; a run analysed again on its own keeps its rewrite."""
+    from fastmdxplora.batch import explorer as module
+    from fastmdxplora.batch.explorer import BatchExplorer, compare_the_runs_again
+    from fastmdxplora.simulation import resume
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    members = _replicas(tmp_path)
+    written = BatchExplorer.__new__(BatchExplorer)._report_again
+    calls: list[str] = []
+
+    def counted(run):
+        calls.append(Path(run).name)
+        written(run)
+
+    def extended(run, *, more_ns, device_index=None):
+        """A run's piece analysed and reported, then its study compared
+        again, as `resume.extend_study` and a run's own explore do."""
+        where = Path(run) / "analysis" / "rmsd"
+        series = np.loadtxt(where / "rmsd.dat")
+        longer = np.concatenate([series, 1.0 + _ar1(400, len(series))])
+        np.savetxt(where / "rmsd.dat", longer, fmt="%.17g", header="rmsd")
+        record = {**mean_record(longer, frame_interval_ns=0.01), "unit": "nm"}
+        (where / "options.json").write_text(json.dumps({"findings": {"mean": {
+            k: (str(v) if k == "not_a_measurement" else v) for k, v in record.items()}}}),
+            encoding="utf-8")
+        written(Path(run))
+        compare_the_runs_again(tmp_path)
+        return {"ok": True}
+
+    monkeypatch.setattr(BatchExplorer, "_report_again", staticmethod(counted))
+    monkeypatch.setattr(resume, "extend_study", extended)
+    study = BatchExplorer.__new__(BatchExplorer)
+    study.output_dir, study.mode, study.devices = tmp_path, "sequential", []
+    study._raw = {}
+    for _ in range(2):
+        study._extend_runs(members, 0.004)
+        share_the_start(members, "rmsd")
+    assert calls == []
+    study._maybe_aggregate_members()
+    assert len(calls) == len(set(calls)) <= len(members), calls
+    for run in members:
+        assert _as_recorded(_recorded(run)) in _said_in_its_report(run), run.name
+    # One run analysed again on its own, outside the rule's rounds.
+    calls.clear()
+    assert module._extending_in_rounds is False
+    extended(members[0], more_ns=0.004)
+    for run in members:
+        assert _as_recorded(_recorded(run)) in _said_in_its_report(run), run.name
+
+
+def test_a_report_written_again_records_no_phase_it_did_not_run(tmp_path):
+    """A run given `setup_from` was recorded as set up again, skipped, at
+    the time its report was written again; its report is marked written
+    again, for the study's timeline."""
+    prepared = tmp_path / "prepared"
+    prepared.mkdir()
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (prepared / name).write_text("x", encoding="utf-8")
+    members = _replicas(tmp_path / "study")
+    run = members[0]
+    config = yaml.safe_load((run / "resolved_config.yml").read_text(encoding="utf-8"))
+    config["simulation"] = {"setup_from": str(prepared)}
+    (run / "resolved_config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
+    setup = {"name": "setup", "status": "skipped", "started_at": "2026-10-18T06:00:00+00:00",
+             "finished_at": "2026-10-18T06:00:00+00:00", "taken_from": str(prepared)}
+    manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+    manifest["phases"] = [setup] + manifest["phases"]
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    from fastmdxplora.batch.explorer import BatchExplorer
+
+    BatchExplorer.__new__(BatchExplorer)._report_again(run)
+    phases = {p["name"]: p for p in json.loads(
+        (run / "manifest.json").read_text(encoding="utf-8"))["phases"]}
+    assert phases["setup"] == setup
+    assert phases["report"]["written_again"] is True
+
+
+def test_the_last_round_comes_before_the_replicas_reports_written_again(tmp_path):
+    """Every replica's report written again after the rounds was placed
+    before the study's last round, read only for a study of one run."""
+    from tests.test_the_study_has_a_timeline import _a_piece, _phase, _round, _stopping
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    from fastmdxplora.gui.study_timeline import timeline_of
+
+    root = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2])
+    first, second = sorted((root / "runs").iterdir())
+    for run, piece, analysed, again in (
+            (first, ("08:00:00", "08:10:00"), ("08:10:00", "08:15:00"), "08:41:00"),
+            (second, ("08:20:00", "08:30:00"), ("08:30:00", "08:35:00"), "08:42:00")):
+        (run / "manifest.json").write_text(json.dumps({"phases": [
+            _phase("simulation", "07:00:00", "07:30:00"), _phase("analysis", *analysed),
+            {**_phase("report", again, again), "written_again": True}]}), encoding="utf-8")
+        _a_piece(run, 1, 0.5, *piece)
+    _stopping(root, [first.name, second.name],
+              [_round("extend", 1.0, 0.5), _round("met", 1.5)], "met",
+              "After 1.5 ns of production: rmsd 0.150 ± 0.001 nm.")
+    said = [e["said"] for e in timeline_of(root)["events"]]
+    assert said[:3] == ["Report written", "Report written",
+                        "Round 2: determined as asked, so stopped"], said
+
+
+def test_only_the_study_s_own_runs_have_their_reports_written_again(tmp_path):
+    """The reports to write again were found under `runs/` by name: a run
+    folder linked in from outside the study, or one its manifest does not
+    list, was written into."""
+    import shutil
+
+    from fastmdxplora.batch.explorer import compare_the_runs_again
+    from fastmdxplora.simulation.stopping import share_the_start
+
+    study = tmp_path / "study"
+    members = _replicas(study)
+    outside = tmp_path / "outside"
+    shutil.move(str(members[2]), str(outside))
+    (study / "runs" / "r2").symlink_to(outside, target_is_directory=True)
+    stray = study / "runs" / "stray"
+    shutil.copytree(members[1], stray)
+    assert share_the_start(members, "rmsd") > 0
+    record = json.loads((stray / "analysis" / "rmsd" / "options.json").read_text(
+        encoding="utf-8"))
+    record["findings"]["mean"]["start_shared_with_replicas"] = 5
+    (stray / "analysis" / "rmsd" / "options.json").write_text(json.dumps(record),
+                                                             encoding="utf-8")
+    reports = {run: (run / "report" / "report.md").read_text(encoding="utf-8")
+               for run in (outside, stray)}
+    compare_the_runs_again(study)
+    for run, text in reports.items():
+        assert (run / "report" / "report.md").read_text(encoding="utf-8") == text, run.name
+    assert _as_recorded(_recorded(members[0])) in _said_in_its_report(members[0])
+
+
 # ---------------------------------------------------------------------------
 # (e) The Convergence table reads the recorded mean, error and verdict
 # ---------------------------------------------------------------------------

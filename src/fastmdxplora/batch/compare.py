@@ -734,6 +734,15 @@ def _across_the_replicas(root: Path) -> list[str]:
         return []
     if summary.get("refused") or not summary.get("replicas"):
         return []
+    try:
+        # The replicas' means were written again from the start they share:
+        # each run's report from its records as they now are, here too, as
+        # `FastMDXplora.compare()` builds this after runs are run again.
+        from fastmdxplora.batch.explorer import write_the_reports_again
+
+        write_the_reports_again(root)
+    except Exception as exc:  # noqa: BLE001 - the comparison stands without it
+        logger.warning("The runs' reports were not written again: %s", exc)
     lines = ["## Across the replicas", "",
              f"These runs are replicas: {summary.get('why')}. That spread is set "
              "here against the error each run estimated for itself.", "",

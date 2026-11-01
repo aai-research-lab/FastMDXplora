@@ -1593,8 +1593,34 @@ def build_document(
     doc = "\n\n".join(sections) + "\n"
     md_path = output_dir / "report.md"
     md_path.write_text(doc, encoding="utf-8")
+    _save_the_starts_read(project_root, output_dir)
 
     return ["report.md"]
+
+
+#: Beside ``report.md``: the start shared with its replicas that each mean
+#: the report read was taken from, by analysis (None where its record held
+#: none). A study compares it with each record as it ends
+#: (`batch.explorer.reported_before_the_shared_start`), and writes the
+#: report again where they differ.
+RECORDS_READ = "records_read.json"
+
+
+def _save_the_starts_read(project_root: Path, output_dir: Path) -> None:
+    """Save which shared start each mean the report read was taken from."""
+    from fastmdxplora import record_access
+
+    starts: dict[str, Any] = {}
+    try:
+        for path in sorted(record_access.glob(project_root / "analysis", "*/options.json")):
+            found = (_load_json_safely(path) or {}).get("findings")
+            mean = found.get("mean") if isinstance(found, dict) else None
+            if isinstance(mean, dict):
+                starts[path.parent.name] = mean.get("start_shared_with_replicas")
+        (output_dir / RECORDS_READ).write_text(json.dumps(
+            {"start_shared_with_replicas": starts}, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not save which records the report read: %s", exc)
 
 
 def _software_versions() -> dict[str, str]:

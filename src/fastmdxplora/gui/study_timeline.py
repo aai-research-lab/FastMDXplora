@@ -373,10 +373,11 @@ def _rounds(base: Path) -> list[dict[str, Any]]:
     piece of the length the round asked for, the next in the run's order),
     or, where it began none, just after the last step before the pieces a
     later round began: the analyses and report it judged, which each piece
-    is followed by (`resume.extend_study`). A study of one run writes its
-    report again once its rounds end (`explorer._report_again`), so its
-    report is not a step before its last round unless its record still
-    says it is running."""
+    is followed by (`resume.extend_study`). A study writes a run's report
+    again once its rounds end (`explorer._report_again`), so that report is
+    not a step before its last round: one its Manifest marks
+    ``written_again``, for every study, and, for one run recorded before
+    the mark, its report unless its record still says it is running."""
     from fastmdxplora.simulation.sampling_ask import length_said
     from fastmdxplora.simulation.stopping import RECORD, record_said, study_ended
 
@@ -414,7 +415,8 @@ def _rounds(base: Path) -> list[dict[str, Any]]:
         bound = min((t for starts in later for t in starts), default=None)
         before = [str(time) for time, phase in times
                   if (bound is None or str(time) < str(bound))
-                  and not (last and written_again and phase == "report")]
+                  and not (last and (phase == AGAIN
+                                     or (written_again and phase == "report")))]
         return {"at": max(before), "before": False} if before else None
 
     events: list[dict[str, Any]] = []
@@ -493,12 +495,20 @@ def _run_folder(base: Path, name: str, *, alone: bool = False) -> Path | None:
     return base if base.name == name else None
 
 
+#: A report its Manifest marks written again after the study's rounds
+#: (`explorer._report_again`), as `_steps_of` gives its phase.
+AGAIN = "report written again"
+
+
 def _steps_of(folder: Path) -> list[tuple[str, str]]:
     """When a run's own simulation, analyses and report began and ended, as
-    its Manifest last recorded them, each with its phase."""
+    its Manifest last recorded them, each with its phase (`AGAIN` for a
+    report written again after the study's rounds)."""
     manifest = _json(folder / "manifest.json")
     phases = manifest.get("phases") if isinstance(manifest, dict) else None
-    return [(str(p[key]), str(p["name"])) for p in phases or [] if isinstance(p, dict)
+    return [(str(p[key]), AGAIN if p["name"] == "report" and p.get("written_again") is True
+             else str(p["name"]))
+            for p in phases or [] if isinstance(p, dict)
             and p.get("name") in ("simulation", "analysis", "report")
             for key in ("started_at", "finished_at") if p.get(key)]
 

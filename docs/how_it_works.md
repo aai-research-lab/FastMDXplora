@@ -230,6 +230,11 @@ WeasyPrint; where it or the slide deck cannot be written, the run records which
 and why in `not_produced.json` (code `report.format.unavailable`) and writes the
 rest.
 
+Beside `report.md`, `records_read.json` saves the start shared with its
+replicas that each mean the report read was taken from. A study of replicas
+writes a run's report again where its records now hold another, once the
+study has given them the start they share.
+
 Scenes written with the study (`scenes/*.mvsx`, from the GUI, `fastmdx
 scene` or an AI app) are listed in `report.md` under Scenes, each linked and
 said in a line; a scene opens as it was shown in any viewer built on Mol\*,

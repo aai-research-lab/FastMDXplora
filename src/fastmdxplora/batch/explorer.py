@@ -265,11 +265,29 @@ def _without_the_study_rule(options: dict[str, Any]) -> dict[str, Any]:
     return options
 
 
+#: Set while the study's stopping rule extends its runs: each run's
+#: extension builds the study's comparison again, and the runs' reports are
+#: written again once, after the rule's last round, not after each run.
+_extending_in_rounds = False
+
+
+@contextmanager
+def _within_the_rounds():
+    """While the stopping rule extends the runs (`_extending_in_rounds`)."""
+    global _extending_in_rounds
+    was, _extending_in_rounds = _extending_in_rounds, True
+    try:
+        yield
+    finally:
+        _extending_in_rounds = was
+
+
 def _extend_one(run: str, more_ns: float, device: str | None) -> dict[str, Any]:
     """One run extended, in a worker of its own."""
     from fastmdxplora.simulation.resume import extend_study
 
-    return extend_study(run, more_ns=more_ns, device_index=device)
+    with _within_the_rounds():
+        return extend_study(run, more_ns=more_ns, device_index=device)
 
 
 def _was_stopped(result: Any) -> bool:
@@ -939,38 +957,108 @@ def campaign_of(run: Path) -> Path | None:
     return None
 
 
-def _records_written(study: Path) -> dict[Path, int]:
-    """When each run's analysis records were last written, by path."""
-    written = {}
-    for path in Path(study).glob("runs/*/analysis/*/options.json"):
-        try:
-            written[path] = path.stat().st_mtime_ns
-        except OSError:
-            continue
-    return written
-
-
 def reported_before_the_shared_start(run: Path) -> bool:
-    """Whether a run's report was written before a mean of it was written
-    again from the start its replicas share: a record holding that start
-    (``start_shared_with_replicas``) newer than ``report/report.md``. The
-    stopping rule shares the start after each round's reports."""
-    try:
-        reported = (Path(run) / "report" / "report.md").stat().st_mtime_ns
-    except OSError:
+    """Whether a run's report was written from a start its replicas share
+    other than the one its records now hold: each record's
+    ``start_shared_with_replicas`` against the one the report saved that it
+    read (`report.document.RECORDS_READ`). A report that saved none is read
+    as from no shared start. Decided by content: a record rewritten in the
+    same second as the report was not newer by the clock of a filesystem
+    that stamps whole seconds."""
+    from fastmdxplora import record_access
+    from fastmdxplora.report.document import RECORDS_READ
+
+    run = Path(run)
+    if not record_access.is_file(run / "report" / "report.md"):
         return False
-    for path in sorted(Path(run).glob("analysis/*/options.json")):
+    try:
+        read = json.loads(record_access.read_text(run / "report" / RECORDS_READ))
+    except (OSError, ValueError):
+        read = {}
+    starts = read.get("start_shared_with_replicas") if isinstance(read, dict) else None
+    starts = starts if isinstance(starts, dict) else {}
+    for path in sorted(record_access.glob(run, "analysis/*/options.json")):
         try:
-            if path.stat().st_mtime_ns <= reported:
-                continue
-            document = json.loads(path.read_text(encoding="utf-8"))
+            document = json.loads(record_access.read_text(path))
         except (OSError, ValueError):
             continue
         findings = document.get("findings") if isinstance(document, dict) else None
         mean = findings.get("mean") if isinstance(findings, dict) else None
-        if isinstance(mean, dict) and "start_shared_with_replicas" in mean:
+        if not isinstance(mean, dict):
+            continue
+        if mean.get("start_shared_with_replicas") != starts.get(path.parent.name):
             return True
     return False
+
+
+def write_the_reports_again(study: Path) -> list[Path]:
+    """Each run's report written again where its records now hold another
+    start shared with its replicas than the one it was written from
+    (:func:`reported_before_the_shared_start`). The runs are the study's
+    own, from its manifest (`aggregate.finished_members`); a run folder
+    linked in from outside the study is not written into, and a run with
+    no report is left without one. Not while the stopping rule extends the
+    runs: once, after its last round. Returns the runs written again."""
+    if _extending_in_rounds:
+        return []
+    from fastmdxplora.batch.aggregate import finished_members
+
+    root = Path(study)
+    try:
+        members, _, _ = finished_members(root)
+    except (OSError, ValueError):
+        return []
+    inside = root.resolve()
+    written = []
+    for _, run in members:
+        if not reported_before_the_shared_start(run):
+            continue
+        if not run.resolve().is_relative_to(inside):
+            logger.warning("The report of %s was not written again: its folder is outside "
+                           "the study.", run.name)
+            continue
+        print(f"The report of {run.name}, written again from its records "
+              "as the shared start left them.")
+        BatchExplorer._report_again(run)
+        written.append(run)
+    return written
+
+
+def _json_or_none(path: Path) -> Any:
+    """A JSON record as written, or None where it cannot be read."""
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _only_the_report_recorded(path: Path, before: Any) -> None:
+    """A run's manifest after its report was written again: every phase but
+    the report as it was before (a run given `setup_from` was recorded as
+    set up again, at the time of the report, and placed so on the study's
+    timeline), and the report marked written again (``written_again``), so
+    the timeline places the study's last round before it."""
+    after = _json_or_none(path)
+    if not isinstance(after, dict) or not isinstance(after.get("phases"), list):
+        return
+    earlier = before.get("phases") if isinstance(before, dict) else None
+    earlier = {str(p.get("name")): p for p in earlier or [] if isinstance(p, dict)}
+    phases = []
+    for record in after["phases"]:
+        name = str(record.get("name")) if isinstance(record, dict) else ""
+        if name == "report":
+            if record != earlier.get("report"):
+                record = {**record, "written_again": True}
+            phases.append(record)
+        elif name in earlier:
+            phases.append(earlier[name])
+    if phases == after["phases"]:
+        return
+    after["phases"] = phases
+    try:
+        Path(path).write_text(json.dumps(after, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("The manifest of %s was not written: %s", Path(path).parent.name, exc)
 
 
 def compare_the_runs_again(campaign: Path) -> Path | None:
@@ -1719,10 +1807,11 @@ class BatchExplorer:
 
             device = str(self.devices[0]) if self.devices else None
             answers = []
-            for run in runs:
-                answers.append(extend_study(run, more_ns=more_ns, device_index=device))
-                if not answers[-1].get("ok"):
-                    break
+            with _within_the_rounds():
+                for run in runs:
+                    answers.append(extend_study(run, more_ns=more_ns, device_index=device))
+                    if not answers[-1].get("ok"):
+                        break
             return answers
         workers = min(self._resolve_workers(), len(runs))
         pool = ProcessPoolExecutor(
@@ -1747,14 +1836,19 @@ class BatchExplorer:
             stop.__exit__(None, None, None)
             pool.shutdown(wait=True, cancel_futures=True)
 
-    def _report_again(self, run: Path) -> None:
-        """The study's report once more, now that the record of how long it
-        ran and why is complete. Each extension rewrote it, but before the
-        round that decided to stop."""
+    @staticmethod
+    def _report_again(run: Path) -> None:
+        """A run's report once more: for a study of one run, now that the
+        record of how long it ran and why is complete (each extension
+        rewrote it, but before the round that decided to stop); for a
+        replica, from its records as the start its replicas share left
+        them. Only the report is recorded as run: a run given `setup_from`
+        was recorded as set up again, at the time of the report."""
         import yaml
 
         from fastmdxplora import FastMDXplora
 
+        run = Path(run)
         resolved = run / "resolved_config.yml"
         try:
             kept = resolved.read_bytes()
@@ -1762,6 +1856,7 @@ class BatchExplorer:
         except (OSError, yaml.YAMLError) as exc:
             logger.warning("The report was not written again: %s", exc)
             return
+        manifest = _json_or_none(run / "manifest.json")
         config = {key: value for key, value in config.items() if key != "exclude_phase"}
         config["output"] = str(run)
         config["include_phase"] = ["report"]
@@ -1772,22 +1867,7 @@ class BatchExplorer:
         finally:
             # The record of what the study ran, not of this one step.
             resolved.write_bytes(kept)
-
-    def _report_after_the_shared_start(self, before: dict[Path, int]) -> None:
-        """Each run's report written again where its records changed after
-        it was written: rewritten from the start the replicas share since
-        ``before`` (each record's time, :func:`_records_written`), or
-        holding that start and newer than the report. A run with no report
-        is left without one."""
-        after = _records_written(self.output_dir)
-        changed = {path.parent.parent.parent for path, stamp in after.items()
-                   if before.get(path) != stamp}
-        for run in sorted(Path(self.output_dir).glob("runs/*")):
-            if (run / "report" / "report.md").is_file() and (
-                    run in changed or reported_before_the_shared_start(run)):
-                print(f"The report of {run.name}, written again from its records "
-                      "as the shared start left them.")
-                self._report_again(run)
+            _only_the_report_recorded(run / "manifest.json", manifest)
 
     # ------------------------------------------------------------------
     def _maybe_aggregate_members(self) -> None:
@@ -1803,7 +1883,6 @@ class BatchExplorer:
 
         from fastmdxplora.batch.aggregate import aggregate_members
 
-        before = _records_written(self.output_dir)
         try:
             summary = aggregate_members(self.output_dir)
         except Exception as exc:  # noqa: BLE001 - a summary must not
@@ -1818,7 +1897,7 @@ class BatchExplorer:
             # nm over all 100 frames while its record said 0.0799 nm over
             # frames 38-99. Each run's report is written again from its
             # records as they end.
-            self._report_after_the_shared_start(before)
+            write_the_reports_again(self.output_dir)
 
         destination = Path(self.output_dir) / "members.json"
         destination.write_text(
