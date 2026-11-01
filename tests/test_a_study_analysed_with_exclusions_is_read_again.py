@@ -84,7 +84,7 @@ def test_a_record_written_with_both_is_said_in_the_log(caplog, tmp_path):
     log = tmp_path / "study" / "fastmdxplora.log"
     try:
         with caplog.at_level(logging.INFO, logger="fastmdx"):
-            validate_config(record, as_record=True)
+            validate_config(record, as_record=True, study=log.parent)
             attach_file_logger(log)
     finally:
         detach_file_logger(log)

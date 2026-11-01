@@ -27,7 +27,10 @@ def phase_settings(source: Path, phase: str, *, study: Path | None = None) -> di
     from fastmdxplora.config.loader import load_config_file, phase_options, validate_config
 
     data = load_config_file(source)
-    validate_config(data, as_record=True)
+    # A line about the record is said in the log of the study it is the
+    # record of, where it is now: ``study``, or the folder the record is in.
+    validate_config(data, as_record=True, study=study if study is not None else (
+        Path(source).parent if Path(source).name == RECORDED else None))
     settings = dict(phase_options(data).get(phase, {}))
     if study is not None:
         leave_the_study_s_own_files(settings, data.get("output"), study)
@@ -93,6 +96,12 @@ def study_config(study: Path, phases: list[str] | None = None) -> dict[str, Any]
         analysis = dict(analysis)
         leave_the_study_s_own_files(analysis, recorded_at, study)
         config["analysis"] = analysis
+        # Both lists, read as the analyses that ran, said in this study's
+        # log: the record's ``output`` was dropped above, so the check of
+        # the config returned saw no study to say it in.
+        from fastmdxplora.config.loader import read_as_the_analyses_that_ran
+
+        read_as_the_analyses_that_ran(config, study)
     simulation = config.get("simulation")
     if phases is not None and "simulation" not in phases and isinstance(simulation, dict):
         config["simulation"] = {key: value for key, value in simulation.items()

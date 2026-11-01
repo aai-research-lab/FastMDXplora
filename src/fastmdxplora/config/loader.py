@@ -580,8 +580,36 @@ def normalise_config(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def read_as_the_analyses_that_ran(data: dict[str, Any], study: str | Path | None) -> None:
+    """A study's record written with both ``analysis.include`` and
+    ``analysis.exclude``: the analyses left out by name and, beside them,
+    the plan they resolved to. That plan is what ran, so it is read as the
+    record's (``exclude`` dropped) and the study is not refused; said in the
+    log of the study at ``study``, the folder it is in now, since a run it
+    starts runs the plan, which the image check joins, its exclusion not
+    kept. The record is read before the study's log is attached, so the
+    line is held for it (:func:`fastmdxplora.utils.logging.log_in_the_study_s_log`);
+    on the console alone where the study is not known. The folder the
+    record names (``output``) is where the study was, not where it is: a
+    copied study's line was held for its old folder and said nowhere."""
+    analysis = data.get("analysis")
+    if not (isinstance(analysis, dict) and analysis.get("include") and analysis.get("exclude")):
+        return
+    left = analysis.pop("exclude")
+    named = [str(name) for name in left] if isinstance(left, list) else [str(left)]
+    from fastmdxplora.utils.logging import log_in_the_study_s_log
+
+    what = (f"lists the analyses that ran and those left out ({', '.join(named)}); "
+            "it is read as the analyses that ran"
+            + (", which the image check joins, its exclusion not kept"
+               if "image_check" in named else "") + ".")
+    log_in_the_study_s_log(
+        "config", "The study's record " + what, study,
+        in_a_run=f"The record of the study this run is one of ({study}) " + what)
+
+
 def validate_config(data: dict[str, Any], *, require_systems: bool = False,
-                    as_record: bool = False) -> None:
+                    as_record: bool = False, study: str | Path | None = None) -> None:
     """Strictly validate a parsed config dict against the schema.
 
     Parameters
@@ -596,6 +624,10 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
         The config is a study's record, read to report or analyse what ran
         rather than to run it: a choice refused since (an integrator with no
         thermostat) describes the study and is not refused again.
+    study : path, optional
+        The folder the study whose record this is is in now, where known:
+        a line about its record is said in its log
+        (:func:`read_as_the_analyses_that_ran`).
 
     Raises
     ------
@@ -737,26 +769,9 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
         check_umbrella_keys(simulation["umbrella"])
 
     # analysis include/exclude mutual exclusion (nested)
+    if as_record:
+        read_as_the_analyses_that_ran(data, study)
     analysis = data.get("analysis", {})
-    if (as_record and isinstance(analysis, dict) and analysis.get("include")
-            and analysis.get("exclude")):
-        # A study's record written with both: the analyses left out by name
-        # and, beside them, the plan they resolved to. That plan is what ran,
-        # so it is read as the record's and the study is not refused; said
-        # in the study's log, since a run it starts runs the plan, which the
-        # image check joins, its exclusion not kept. The record is read
-        # before the study's log is attached, so the line is held for it.
-        left = analysis.pop("exclude")
-        named = [str(name) for name in left] if isinstance(left, list) else [str(left)]
-        from fastmdxplora.utils.logging import log_in_the_study_s_log
-
-        log_in_the_study_s_log(
-            "config",
-            "The study's record lists the analyses that ran and those left out "
-            f"({', '.join(named)}); it is read as the analyses that ran"
-            + (", which the image check joins, its exclusion not kept"
-               if "image_check" in named else "") + ".",
-            data.get("output") if isinstance(data.get("output"), str) else None)
     if isinstance(analysis, dict) and analysis.get("include") and analysis.get("exclude"):
         raise ConfigError(
             "The 'analysis' block sets both 'include' and 'exclude'; "
