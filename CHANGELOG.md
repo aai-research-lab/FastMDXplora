@@ -112,6 +112,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   piece's platform, the study's `fastmdxplora.log` does; where its live
   status or log is linked out, its platform is "not read", not "not
   recorded"; two pieces are "segment-001 and segment-002".
+- `rmsd`, `cluster` and `dimred` given fewer than three atoms to superpose on
+  (alanine dipeptide's one alpha carbon, named in `include`) are refused
+  (`analysis.selection.arity`), naming the selection that works here and how
+  many atoms it matches. On one atom every RMSD read 0 and clustering found
+  one cluster, said as results, while `dimred` said there was nothing to
+  decompose.
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -585,6 +591,26 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   variable-step study's, read by its pieces' clocks, is still given);
   `recorded_stage_lengths`, and the methods and study pages that read it,
   raised.
+- Clustering under an address-space limit (`ulimit -v`) holds BLAS and
+  OpenMP to one thread, as `dimred` does, and records it
+  (`findings.memory.threads`): an OpenBLAS thread whose buffer could not be
+  mapped retried for ever, and a clustering the memory check allowed hung.
+- The clustering memory check counts the map of the frames' RMSD matrix,
+  plotted once the matrix is freed (`findings.memory.bytes_map`): at 2,000
+  frames under a container's limit of about 100 MB, a clustering the check
+  allowed, and the stride its refusal gave, were killed plotting it.
+- A refusal for memory, clustering's or MDS's, says the need, the room and
+  the three quarters of it planned on as numbers that read apart; it said
+  0.4 GB needed and 0.4 GB available.
+- Making the clustering matrix symmetric past about 2,900 frames leaves no
+  block resident after it: each pass's block came from glibc's heap and the
+  last one freed stayed.
+- The GUI says MDS was refused for memory under each projection that ran
+  beside it, as the record and the report do.
+- The card of an analysis that was refused or failed says what to set, from
+  its refusal, where it said to re-run it.
+- The dendrogram's heights carry their unit (nm) on its axis and in the
+  GUI's CSV of it.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
   of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
   drawn and recorded where none is given), so it now says to give the seed or
