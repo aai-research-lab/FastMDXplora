@@ -802,11 +802,14 @@ def study_to_continue(config: dict[str, Any] | None) -> Path | None:
 def extend_study(study: str | Path, *, total_ns: float | None = None,
                  more_ns: float | None = None,
                  analyse: bool = True,
-                 device_index: str | int | None = None) -> dict[str, Any]:
+                 device_index: str | int | None = None,
+                 checkpoint_interval_steps: int | None = None) -> dict[str, Any]:
     """Run the next segment, join the study, and analyse the whole.
 
     A study being carried on by another process is said, not carried on
-    twice.
+    twice. ``checkpoint_interval_steps`` is how often the new piece writes
+    its checkpoint, where the extension's config sets it; otherwise the
+    study's.
 
     Three steps, so that asking for more sampling is one instruction
     rather than three: simulate the segment into the study; join every
@@ -820,7 +823,8 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     try:
         with _carrying_on(root):
             return _extend_study(root, total_ns=total_ns, more_ns=more_ns, analyse=analyse,
-                                 device_index=device_index)
+                                 device_index=device_index,
+                                 checkpoint_interval_steps=checkpoint_interval_steps)
     except _CarriedOnElsewhere:
         return {"ok": False, "stage": "planning", "error": _STILL_GOING_TO_EXTEND}
 
@@ -828,7 +832,8 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
 def _extend_study(study: str | Path, *, total_ns: float | None = None,
                   more_ns: float | None = None,
                   analyse: bool = True,
-                  device_index: str | int | None = None) -> dict[str, Any]:
+                  device_index: str | int | None = None,
+                  checkpoint_interval_steps: int | None = None) -> dict[str, Any]:
     """The work of :func:`extend_study`, under the study's lock."""
     import yaml
 
@@ -869,6 +874,14 @@ def _extend_study(study: str | Path, *, total_ns: float | None = None,
         # The device this run was given now, where a campaign shares out
         # its cards, rather than the one it had before it stopped.
         plan.config.setdefault("simulation", {})["device_index"] = device_index
+    if checkpoint_interval_steps is not None:
+        # Asked of this piece, as a run on a machine with a wall time asks
+        # for checkpoints often enough to lose little at the stop. The
+        # study's own was used whatever the extension said, so a piece of
+        # 6,000 steps with the study's 10,000 wrote none, and a stop lost
+        # all of it.
+        plan.config.setdefault("simulation", {})[
+            "checkpoint_interval_steps"] = int(checkpoint_interval_steps)
 
     segment = Path(plan.config["output"])
     config_path = segment.with_name(segment.name + ".yml")
@@ -1388,6 +1401,32 @@ def _length_asked_of(aside: Path) -> tuple[float | None, str | None, str | None]
         return None, None, None
 
 
+def _checkpoint_interval_asked(root: Path) -> int | None:
+    """The checkpoint interval the study's newest extension was asked to run
+    at (its ``segment-NNN.yml``, which stays where its folder was set
+    aside), so the piece that carries it on writes its checkpoints as
+    often; None where none was asked or the config does not read."""
+    import re
+
+    import yaml
+
+    newest = None
+    for path in root.glob("segment-*.yml"):
+        found = re.fullmatch(r"segment-(\d+)\.yml", path.name)
+        if found and (newest is None or int(found.group(1)) > newest[0]):
+            newest = (int(found.group(1)), path)
+    if newest is None:
+        return None
+    try:
+        config = yaml.safe_load(newest[1].read_text(encoding="utf-8"))
+        value = config["simulation"]["checkpoint_interval_steps"]
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
 def _owed_by_the_last_piece(root: Path) -> float | None:
     """What the study's last extension was asked to run and did not, where
     it stopped past a checkpoint; None for the study's own piece, a piece
@@ -1827,9 +1866,11 @@ def _resume_study(study: str | Path, *,
             asked = owed
             plan = extension_of(root, more_ns=asked)
     if plan.possible:
-        answer = extend_study(root, more_ns=asked, device_index=device_index)
+        answer = extend_study(root, more_ns=asked, device_index=device_index,
+                              checkpoint_interval_steps=_checkpoint_interval_asked(root))
         return {**base, **answer, "did": RESUMED_PRODUCTION,
-                "production_done_ns": plan.production_done_ns,
+                **_production_now(root, answer),
+                "production_done_before_ns": plan.production_done_ns,
                 "production_planned_ns": plan.production_planned_ns}
 
     done = plan.production_done_ns
@@ -1848,7 +1889,8 @@ def _resume_study(study: str | Path, *,
                         "stage": "joining", **refusal, "refusal": said.as_dict()}
             answer = _join_and_analyse(root, config, segment=None,
                                        keep_frames=keep_frames or None)
-            return {**base, **answer, "did": RESUMED_ANALYSIS}
+            return {**base, **answer, "did": RESUMED_ANALYSIS,
+                    **_production_now(root, answer)}
         whole = dict(config)
         whole["output"] = str(root)
         whole["include_phase"] = ["analysis", "report"]
@@ -1911,6 +1953,27 @@ def _resume_study(study: str | Path, *,
     return {**base, "ok": True, "did": RESUMED_FROM_START,
             "detail": "Production had not begun, or not as far as its first "
                       "checkpoint; the study was run from its start."}
+
+
+def _production_now(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
+    """The study's production once carried on, as its records give it
+    (`lengths.recorded_stage_lengths`, the methods' reading: a variable-step
+    run's by its clock), and from what; nothing where the carrying on did
+    not end well. A resume said what was done before it ran, 0.004 ns for a
+    study that then held 2,000 + 6,000 steps."""
+    if not answer.get("ok"):
+        return {}
+    from fastmdxplora.simulation.lengths import recorded_stage_lengths
+
+    try:
+        said = recorded_stage_lengths(root)
+    except (OSError, ValueError):
+        return {"production_done_ns": None, "production_done_source": "not read"}
+    found = {"production_done_ns": said.get("production_ran_ns"),
+             "production_done_source": said.get("production_ran_source")}
+    if said.get("production_ran_ns") is None and said["production"].get("said"):
+        found["production_done_said"] = said["production"]["said"]
+    return found
 
 
 #: What `resume_batch` did, as a program reads it.

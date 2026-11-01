@@ -1184,7 +1184,8 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
     where = checkpoint.parent.parent
     if stop.on_frame and step > 0:
         _write_checkpoint_pair(simulation, checkpoint)
-        write_checkpoint_sidecar(checkpoint, step=step, finished=False, **sidecar)
+        write_checkpoint_sidecar(checkpoint, step=step, finished=False,
+                                 time_ps=_time_ps(simulation), **sidecar)
         said = (f"A checkpoint was written on frame {frame}, so `fastmdx resume "
                 f"{where}` carries it on from there, and the joined trajectory "
                 "keeps its spacing.")
@@ -1260,7 +1261,8 @@ def _attach_checkpoint_reporter(
                     # between the two leaves no seal and is still refused.
                     seal_checkpoint(chk_path)
                     write_checkpoint_sidecar(
-                        chk_path, step=int(sim.currentStep), finished=False, **sidecar)
+                        chk_path, step=int(sim.currentStep), finished=False,
+                        time_ps=_time_ps(sim), **sidecar)
                 except Exception:  # noqa: BLE001 - the checkpoint itself was written
                     logger.debug("Could not write the checkpoint sidecar.")
 
@@ -1894,7 +1896,8 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
                              timestep_fs: float, study: str | Path | None = None,
                              system_digest: str | None = None,
                              finished: bool | None = None,
-                             trajectory_interval_steps: int | None = None) -> Path:
+                             trajectory_interval_steps: int | None = None,
+                             time_ps: float | None = None) -> Path:
     """What a checkpoint is, beside it: the stage that wrote it, the step,
     the ensemble and temperature, the timestep, and the study.
 
@@ -1915,6 +1918,11 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
     set. A killed run never reaches the record written at the end of the
     phase, and without the interval the frames that precede a checkpoint
     cannot be counted, nor the time a frame represents.
+
+    ``time_ps`` is the state's time at the checkpoint, the production's own
+    clock (reset to zero as production begins). A variable-step integrator
+    chooses its own step, so a stopped piece's length in time is this, and
+    nothing else gives it where the energy log wrote no row at that step.
     """
     import json
 
@@ -1928,9 +1936,22 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
         **({} if finished is None else {"finished": bool(finished)}),
         **({} if trajectory_interval_steps is None
            else {"trajectory_interval_steps": int(trajectory_interval_steps)}),
+        **({} if time_ps is None else {"time_ps": float(time_ps)}),
         "written_at": datetime.now(timezone.utc).isoformat(),
     }, indent=1), encoding="utf-8")
     return sidecar
+
+
+def _time_ps(simulation: Any) -> float | None:
+    """The simulation's time in ps, None where it does not say."""
+    try:
+        from openmm import unit
+
+        time = simulation.context.getTime().value_in_unit(unit.picosecond)
+        time = float(time)
+    except Exception:  # noqa: BLE001 - a record of a checkpoint, never its failure
+        return None
+    return time if time == time and time >= 0 else None
 
 
 def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
@@ -3408,7 +3429,8 @@ def run_simulation(
                 checkpoint_path, stage="production", step=int(simulation.currentStep),
                 ensemble="npt" if wants_npt_production else "nvt", temperature_K=float(temperature_K),
                 timestep_fs=float(timestep_fs), study=str(output_dir.parent), finished=True,
-                trajectory_interval_steps=int(trajectory_interval_steps))
+                trajectory_interval_steps=int(trajectory_interval_steps),
+                time_ps=_time_ps(simulation))
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.warning(
                 "Could not write a sealed checkpoint to %s; this run is "

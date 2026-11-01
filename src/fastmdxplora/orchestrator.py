@@ -876,7 +876,9 @@ class FastMDXplora:
                          if plan.possible else str(plan.refusal)))
             self.results = [result]
             return self.results
-        answer = extend_study(root, total_ns=total, more_ns=more)
+        answer = extend_study(root, total_ns=total, more_ns=more,
+                              checkpoint_interval_steps=simulation.get(
+                                  "checkpoint_interval_steps"))
         if not answer.get("ok"):
             result = RunResult(run_id="s1", system=system, status="error",
                                output_dir=root, message=str(answer.get("error")),

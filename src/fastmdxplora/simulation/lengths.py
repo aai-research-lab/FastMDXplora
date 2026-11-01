@@ -214,7 +214,10 @@ def _refused(path: object) -> bool:
 def _piece_clock(folder: object) -> tuple[float | None, str]:
     """One piece's production by its own clock (ps), and from what.
 
-    A piece that finished: its final state's time. A piece that stopped:
+    The state's time its checkpoint's record gives (``time_ps``), where it
+    gives one: at its end for a piece that finished, at its last checkpoint
+    for one that stopped. Otherwise, a piece that finished: its final
+    state's time. A piece that stopped:
     its time at its last checkpoint, which is where the piece after it
     continued from (the sidecar's ``step``, read in its energy log or its
     state). Its energy log runs on to wherever it was stopped, and those
@@ -240,6 +243,14 @@ def _piece_clock(folder: object) -> tuple[float | None, str]:
         finished = state is not None
     step = (_count(side.get("step"))
             if str(side.get("stage") or "").lower() == "production" else None)
+    # The state's time as the checkpoint was written, read first: where the
+    # piece after it continued from, whether or not the energy log wrote a
+    # row at its step (checkpoints sit on frames, the log's rows every
+    # 1,000 steps), and a finished piece's end.
+    said_time = _number(side.get("time_ps"))
+    if step is not None and said_time is not None and said_time >= 0:
+        where = "its end" if finished else "its last checkpoint"
+        return said_time, f"its checkpoint record at step {step:,}, {where}"
     if finished and state is not None:
         return state[0], "its final state"
     if step is None:

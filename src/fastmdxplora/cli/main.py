@@ -1980,7 +1980,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
         answer = extend_study(resume_from,
                               total_ns=simulation.get("duration_ns"),
-                              more_ns=simulation.get("extra_ns"))
+                              more_ns=simulation.get("extra_ns"),
+                              checkpoint_interval_steps=simulation.get(
+                                  "checkpoint_interval_steps"))
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -3288,6 +3290,22 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                     "study's comparison across them rebuilt.",
         }
         print(said.get(answer.get("did"), "Done."))
+        if "production_done_ns" in answer:
+            from fastmdxplora.simulation.lengths import FROM_CLOCK
+            from fastmdxplora.simulation.sampling_ask import length_said
+
+            ns = answer.get("production_done_ns")
+            if ns is not None and answer.get("production_done_source") == FROM_CLOCK:
+                from fastmdxplora.report.methods import _ps_said
+
+                # As the methods say a clock.
+                print(f"The study's production is now {_ps_said(ns * 1000.0)} "
+                      "by the integrator's own clock.")
+            elif ns is not None:
+                print(f"The study's production is now {length_said(ns)}.")
+            else:
+                print("The study's production is "
+                      + str(answer.get("production_done_source") or "not recorded") + ".")
     else:
         print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
         from fastmdxplora.batch.explorer import _what_would_fix_it

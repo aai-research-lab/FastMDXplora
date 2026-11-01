@@ -222,7 +222,8 @@ class TestARealRunStoppedMidProduction(unittest.TestCase):
         answer = resume_study(study)
         self.assertTrue(answer["ok"], answer.get("error"))
         self.assertEqual(answer["did"], "continued")
-        self.assertAlmostEqual(answer["production_done_ns"], 150 * 2e-6)
+        self.assertAlmostEqual(answer["production_done_before_ns"], 150 * 2e-6)
+        self.assertAlmostEqual(answer["production_done_ns"], 300 * 2e-6)
         joined = mdtraj.load(str(study / "joined" / "production.dcd"),
                              top=str(study / "simulation" / "trajectory_topology.pdb"))
         self.assertEqual(joined.n_frames, 6)
