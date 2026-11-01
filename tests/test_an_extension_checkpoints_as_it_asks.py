@@ -120,3 +120,25 @@ def test_a_resume_s_json_is_the_one_line_on_stdout(tmp_path, monkeypatch, capsys
     out = capsys.readouterr().out
     assert json.loads(out)["production_done_ns"] == 0.013080697
     assert "Phase" not in out
+
+
+def test_what_the_c_libraries_write_is_not_on_stdout_either(tmp_path, monkeypatch,
+                                                            capfd) -> None:
+    """MDTraj's DCD plugin writes to the descriptor, below Python's
+    `sys.stdout`: a real resume's JSON followed six of its lines there."""
+    import json
+    import os
+
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation import resume
+
+    def carried_on(study, **_):
+        os.write(1, b"dcdplugin) detected standard 32-bit DCD file of native endianness\n")
+        print("Exploring 1 molecular system")
+        return {"study": str(study), "ok": True, "did": "analysed"}
+
+    monkeypatch.setattr(resume, "resume_study", carried_on)
+    assert main(["resume", str(tmp_path), "--json"]) == 0
+    captured = capfd.readouterr()
+    assert json.loads(captured.out)["did"] == "analysed"
+    assert "dcdplugin" not in captured.out and "dcdplugin" in captured.err

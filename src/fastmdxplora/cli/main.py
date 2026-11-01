@@ -3262,11 +3262,47 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     return 0
 
 
+def _stdout_on_stderr():
+    """A context in which whatever is written to stdout goes to stderr:
+    Python's prints, the console log's lines (its handler holds the stream
+    it was given), and what the C libraries write to the descriptor
+    (MDTraj's DCD plugin). Sending ``sys.stdout`` alone left these on
+    stdout before a resume's JSON."""
+    import contextlib
+
+    from fastmdxplora.utils.native_output import _flush_all
+
+    @contextlib.contextmanager
+    def redirected():
+        _flush_all()
+        try:
+            saved = os.dup(1)
+        except OSError:
+            saved = None
+        if saved is not None:
+            try:
+                os.dup2(2, 1)
+            except OSError:
+                os.close(saved)
+                saved = None
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                yield
+        finally:
+            # Flushed while still sent on, then stdout put back.
+            _flush_all()
+            if saved is not None:
+                try:
+                    os.dup2(saved, 1)
+                finally:
+                    os.close(saved)
+
+    return redirected()
+
+
 def _cmd_resume(args: argparse.Namespace) -> int:
     """`fastmdx resume STUDY`: carry a stopped study on to its end."""
     import json
-
-    import contextlib
 
     from fastmdxplora.simulation.resume import resume_study
 
@@ -3274,7 +3310,7 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         # What the runs print goes to stderr, so the answer on stdout is the
         # one line of JSON a program reads; it followed every phase's
         # progress there, and no JSON reader read it.
-        with contextlib.redirect_stdout(sys.stderr):
+        with _stdout_on_stderr():
             answer = resume_study(args.study)
     else:
         answer = resume_study(args.study)
