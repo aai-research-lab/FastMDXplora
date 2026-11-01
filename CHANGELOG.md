@@ -9,25 +9,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
-- The line said of a run that starts from velocities drawn at another
+- The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
 - Comparing one study across environments treats `setup.random_seed` as
-  environmental where setup drew it in every run (`random_seed.drawn` in
+  environmental where setup chose the seed itself in every run (`random_seed.drawn` in
   its record), and as the study where the study gave it. The key it
   named before, `seed_source`, was written by nothing.
-
 - A pose taken from the structure says the two files list the ligand's
   atoms in different orders only where they do, element by element and
   bond by bond. A phenyl turned over by its symmetry, from files that list
   the atoms alike, was said to be another order.
 - A run with `minimize: false` whose prepared system's velocities were
-  drawn at another temperature (a `setup_from` run at 330 K from a system
+  assigned at another temperature (a `setup_from` run at 330 K from a system
   prepared at 300 K) keeps them, as a run without minimization keeps its
   own setup's, and its log says so, with both temperatures.
 - `setup.temperature_K` left unset is the run's `simulation.temperature_K`,
   so a study at 310 K, from its own block, a folder's defaults, a system
-  entry or a sweep value, draws its starting velocities at 310 K and not at
+  entry or a sweep value, assigns its starting velocities at 310 K and not at
   300 K. The run's `resolved_config.yml` records the value and where it
   came from; a value the study sets is kept. Setup called directly through
   Python without either falls back to 300 K and says so.
