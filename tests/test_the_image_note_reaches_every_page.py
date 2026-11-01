@@ -382,7 +382,7 @@ class TestTheRunsOfAStudy:
 
         (cite,) = cited_findings("The RMSD settled.", two_runs / "runs" / "t310")
         assert cite["noted"] == said_short(_NOTE)
-        assert cite["value"].endswith("nm; " + said_short(_NOTE))
+        assert cite["value"].endswith(" nm") and said_short(_NOTE) not in cite["value"]
         (plain,) = cited_findings("The RMSD settled.", two_runs / "runs" / "t300")
         assert plain["noted"] == "" and plain["value"].endswith(" nm")
 
@@ -426,11 +426,14 @@ class TestTheRunsOfAStudy:
 #: frame; and beside means all determined, for such a run.
 LONGER = ("A longer run may determine the means; it would not lift the bias of the solute's "
           "own image, in contact with it in every frame: a longer run in the same box, like "
-          "replicas in it, samples the same contact, and a larger box, in a new study, is what "
-          "lifts it.")
+          "replicas in it, samples the same contact, and a larger box "
+          "(`setup.solvent_padding_nm`), in a new study, one that keeps the solute farther from "
+          "its image than the run's 1 nm cutoff, is what lifts it.")
 DETERMINED = ("Its means may still be biased by the solute's own image, in contact with it in "
               "every frame: a longer run in the same box, like replicas in it, samples the "
-              "same contact, and a larger box, in a new study, is what lifts it.")
+              "same contact, and a larger box (`setup.solvent_padding_nm`), in a new study, one "
+              "that keeps the solute farther from its image than the run's 1 nm cutoff, is what "
+              "lifts it.")
 
 
 def _in_contact(where: Path, rmsd: dict, rg: dict) -> Path:
@@ -473,8 +476,8 @@ class TestALongerRunAlone:
 
         said = overview_payload(in_contact)["lead"]["said"]
         assert said.startswith("1 of 2 means is not determined: about 2.5 ns more production")
-        assert said.endswith(" " + self._said())
-        assert "a larger box, in a new study, is what lifts it" in self._said()
+        assert said.endswith(" " + self._said().replace("`", ""))
+        assert "a larger box (`setup.solvent_padding_nm`), in a new study" in self._said()
         # Not where it was in contact in some frames only.
         path = in_contact / "analysis" / "image_check" / "options.json"
         record = json.loads(path.read_text())
@@ -553,12 +556,12 @@ class TestADeterminedRunInContact:
 
         root = _in_contact(tmp_path / "all", _recorded(0.15), _recorded(1.2))
         assert overview_payload(root)["lead"]["said"] == (
-            "All 2 means are determined. " + DETERMINED)
+            "All 2 means are determined. " + DETERMINED.replace("`", ""))
         unsaid = _in_contact(tmp_path / "unsaid", _withheld(None), _recorded(1.2))
         said = overview_payload(unsaid)["lead"]["said"]
         assert said.startswith("1 of 2 means is not determined. How much longer would "
                                "determine it is not in the records")
-        assert said.endswith(" " + LONGER)
+        assert said.endswith(" " + LONGER.replace("`", ""))
 
     def test_the_agent_s_answers_say_it(self, tmp_path, monkeypatch):
         from tests.test_a_study_of_runs_is_shown_as_one import _recorded
@@ -568,7 +571,9 @@ class TestADeterminedRunInContact:
         root = _in_contact(tmp_path, _recorded(0.15), _recorded(1.2))
         monkeypatch.setattr(records_answer, "_supports", lambda base: self.ALL)
         enough = records_answer.answer_from_the_records(root, "long_enough")
-        assert f"By its records, yes. {self.ALL}\n\n{DETERMINED}\n\n" in enough
+        assert (f"By its records, long enough to determine its means, though they may be biased "
+                f"by the solute's own image, which no length of run lifts. {self.ALL}\n\n"
+                f"{DETERMINED}\n\n") in enough
         strengthen = records_answer.answer_from_the_records(root, "strengthen")
         assert ("Its means are determined, so a longer run of this one adds precision but "
                 f"not a check.\n\n{DETERMINED}\n\nThen replicas in a larger box. ") in strengthen
