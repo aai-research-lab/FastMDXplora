@@ -679,7 +679,12 @@ several systems, an umbrella study's windows) is carried on run by run, and
 what it says across them is rebuilt. It exits 0 when the study is finished,
 whether or not it ran anything, and 1 when it could not carry the study on,
 with the reason and what would fix it, its command and its price here
-(`remedies` in the JSON). See
+(`remedies` in the JSON). Where it carried production on or joined the
+pieces, it says the study's production now, as the methods give it (a
+variable-step run's by its clock): `production_done_ns` and
+`production_done_source` in the JSON, `production_done_before_ns` what the
+checkpoints held before it ran. With `--json` the answer is the one line on
+stdout; what the runs print goes to stderr. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
 

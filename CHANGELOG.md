@@ -89,6 +89,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   `simulation.setup_from` was recorded as set up again, at the time of the
   report. The study's timeline places the last round before the reports
   written again after it, for a study of replicas as for one of one run.
+- `fastmdx resume` says the study's production once carried on, as the
+  methods give it (a variable-step run's by its clock): `production_done_ns`
+  in its JSON is that, with `production_done_source`, and
+  `production_done_before_ns` what the checkpoints held before it ran. It
+  said 0.004 ns of a study that then held 2,000 + 6,000 steps. With
+  `--json` the answer is the one line on stdout, the runs' progress on
+  stderr.
+- An extension's `checkpoint_interval_steps`, set beside `extra_ns`, is the
+  interval its piece writes checkpoints at, from the command line and from
+  Python; `fastmdx resume` carries a stopped piece on at the interval it
+  asked for. The study's own was used (`segment-001.yml` recorded 10000), so
+  a piece of 6,000 steps wrote none and a stop lost all of it.
+- The methods name the study a run started from by the folder of the
+  checkpoint it read, and the study the checkpoint's record says wrote it
+  only where that path is no study's (a study copied from `csG` to `csKc`
+  and continued from the copy was said to start from `csG`); a Windows path
+  and `~user` are read on any machine. They say "no minimisation or
+  equilibration was run" only where both stages are known to be 0, not
+  where their lengths are not recorded. Where no live status gives the first
+  piece's platform, the study's `fastmdxplora.log` does; where its live
+  status or log is linked out, its platform is "not read", not "not
+  recorded"; two pieces are "segment-001 and segment-002".
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -446,6 +468,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   names what does not lift the bias ("A longer run does not lift ...", or
   "Neither a longer run nor replicas lift ..." where the reason names both);
   "Neither lifts ..." followed reasons naming one remedy.
+- `fastmdx resume` carries on an extended study stopped while its joined
+  pieces were analysed. The analysis ran from the last piece's config and
+  wrote it over the study's `resolved_config.yml`, with the first piece's
+  step count from the study's record beside the piece's own length, and the
+  resume was refused: "simulation gives 'production_steps' (2,000 steps)
+  and 'duration_ns' (0.006 ns, 3,000 steps at 2 fs)". The analysis now runs
+  from the study's own config at its whole length, which is in place before
+  it starts and after it ends, each write whole; a copy beside the joined
+  trajectory puts it back where the analysis is stopped. A resolved config
+  no longer writes a recorded step count beside a length it disagrees with.
+- A variable-step piece stopped at a checkpoint between its energy log's
+  rows is read by its clock: each checkpoint's record carries the state's
+  time (`time_ps`), read first. Its production was "not recorded", and its
+  methods said so.
+- A piece's `resolved_config.yml` that does not read as a config (a YAML
+  list, a `timestep_fs` given as "2 fs", not UTF-8) leaves the study's
+  summed production "not recorded", naming the file and why;
+  `recorded_stage_lengths`, and the methods and study pages that read it,
+  raised.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
   of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
   drawn and recorded where none is given), so it now says to give the seed or

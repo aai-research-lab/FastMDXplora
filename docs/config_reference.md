@@ -233,7 +233,11 @@ mismatch. Metadynamics and steered runs cannot be split at all — see
 
 Every checkpoint FastMDXplora writes has a sidecar beside it,
 `checkpoint.chk.json`: the stage that wrote it, the step, the ensemble, the
-temperature, the timestep, the study. A run resuming from a production
+temperature, the timestep, the study, and the state's time at the step
+(`time_ps`, production's own clock). A study extended in place writes its
+next piece's checkpoints every `checkpoint_interval_steps` where the
+extension's config sets it beside `extra_ns`, else at the study's interval;
+`fastmdx resume` carries a stopped piece on at the interval it asked for. A run resuming from a production
 checkpoint must continue it — `minimize: false`, `nvt_steps: 0`,
 `npt_steps: 0`, the same timestep. A plan that would minimise or
 equilibrate the checkpoint again is refused, with the reason: it throws the

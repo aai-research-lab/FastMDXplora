@@ -243,11 +243,19 @@ its clock too, `duration_ns` "from the run's clock"; its
 `duration_ns_actual` is steps times the timestep, not its length.
 
 A piece stopped before its end is read at its last checkpoint, the step in
-`checkpoint.chk.json` that the next piece continued from, by its energy
-log's row at that step: the log runs on past it, and those steps were run
-again. Where no row falls on that step, production is "not recorded",
-naming the piece; where the piece is linked out of the study, "not read". A
-last piece that stopped is said as its production to its last checkpoint.
+`checkpoint.chk.json` that the next piece continued from, by the state's
+time the checkpoint's record gives (`time_ps`), else its energy log's row at
+that step: the log runs on past it, and those steps were run again. Where
+neither gives it (a record from before `time_ps`, and no row on that step),
+production is "not recorded", naming the piece; where the piece is linked
+out of the study, "not read". A last piece that stopped is said as its
+production to its last checkpoint. Where a piece's `resolved_config.yml` does
+not read as a config (not UTF-8, not a mapping, a length that is not a
+number), the summed production is "not recorded", `production_ran_said`
+naming the file and why. Where no live status gives the first piece's
+platform, the study's `fastmdxplora.log` does ("Selected OpenMM platform"),
+`read_from` then naming it; where the live status or log is linked out of
+the study, the methods say the first piece's platform is not read.
 
 A study carried on in pieces whose first piece was stopped before writing
 its simulation record is read from:
