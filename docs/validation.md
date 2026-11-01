@@ -110,7 +110,7 @@ where or when a run happened rather than what it was are reported separately
 and are not a difference in the study, wherever in the file they sit: output
 paths, run id, start and finish times, host, platform, device index,
 precision, threads, versions, Python and duration, and `setup.random_seed`
-where setup drew it in every run (recorded as `random_seed.drawn` in
+where setup chose the seed itself in every run (`random_seed.drawn: true` in
 `setup/setup_parameters.json`); a seed the study gave is the study. Comparing
 runs from two
 **versions** is a real comparison, not a false alarm: if a default moved

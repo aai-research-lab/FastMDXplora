@@ -60,8 +60,7 @@ class SetupSettings(TypedDict, total=False):
     constraints: str
     rigid_water: bool
     hydrogen_mass_amu: float
-    #: None: the run's `simulation.temperature_K`.
-    temperature_K: float | None
+    temperature_K: float
 
 
 class SimulateSettings(TypedDict, total=False):

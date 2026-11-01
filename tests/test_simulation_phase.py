@@ -779,19 +779,19 @@ class TestVelocitiesFromAnotherTemperature:
     """A run that does not minimize starts from the prepared velocities.
 
     A `setup_from` run at 330 K from a system prepared at 300 K started from
-    velocities drawn at 300 K and nothing said so. They are kept, as a run
+    velocities assigned at 300 K and nothing said so. They are kept, as a run
     without minimization keeps its own setup's, and the log says it.
     """
 
     @staticmethod
-    def _run(tmp_path: Path, drawn_at: float, temperature_K: float) -> str:
+    def _run(tmp_path: Path, assigned_at: float, temperature_K: float) -> str:
         prepared = tmp_path / "prepared" / "setup"
         prepared.mkdir(parents=True)
         for name in ("system.xml", "state.xml"):
             (prepared / name).write_text("<x />")
         (prepared / "topology.pdb").write_text("ATOM\nEND\n")
         (prepared / "setup_parameters.json").write_text(
-            json.dumps({"parameters": {"temperature_K": drawn_at}}))
+            json.dumps({"parameters": {"temperature_K": assigned_at}}))
         with patch.object(_runner, "_import_openmm", return_value=_build_fake_omm()):
             result = _runner.run_simulation(
                 system_xml=prepared / "system.xml", state_xml=prepared / "state.xml",
@@ -801,12 +801,12 @@ class TestVelocitiesFromAnotherTemperature:
         return result.log_file.read_text(encoding="utf-8")
 
     def test_a_run_at_another_temperature_says_so(self, tmp_path: Path):
-        log = self._run(tmp_path, drawn_at=300.0, temperature_K=330.0)
-        assert "drawn at 300.0 K, for a run at 330.0 K" in log
+        log = self._run(tmp_path, assigned_at=300.0, temperature_K=330.0)
+        assert "assigned at 300.0 K, for a run at 330.0 K" in log
 
     def test_a_run_at_the_same_temperature_says_nothing(self, tmp_path: Path):
-        log = self._run(tmp_path, drawn_at=330.0, temperature_K=330.0)
-        assert "drawn at" not in log
+        log = self._run(tmp_path, assigned_at=330.0, temperature_K=330.0)
+        assert "assigned at" not in log
 
     def test_it_reaches_the_record_once_and_as_a_warning(self, tmp_path: Path):
         """The run's notes carry it to the manifest; the live events hold it
@@ -826,12 +826,12 @@ class TestVelocitiesFromAnotherTemperature:
                 topology_pdb=prepared / "topology.pdb", output_dir=tmp_path / "out",
                 temperature_K=330.0, live_telemetry=True, on_progress=progress.append,
                 nvt_steps=0, npt_steps=0, production_steps=0, minimize=False)
-        assert not any("drawn at 300.0 K" in line for line in progress)
+        assert not any("assigned at 300.0 K" in line for line in progress)
         events = [line.split("\t")[1] for line in
                   (tmp_path / "out" / "live_events.log").read_text().splitlines()
-                  if "drawn at 300.0 K" in line]
+                  if "assigned at 300.0 K" in line]
         assert events == ["warning"]
-        assert any("drawn at 300.0 K" in note for note in result.notes)
+        assert any("assigned at 300.0 K" in note for note in result.notes)
 
     def test_the_pipeline_writes_the_run_s_notes_to_its_manifest(
             self, stub_orchestrator):
@@ -840,7 +840,7 @@ class TestVelocitiesFromAnotherTemperature:
 
         out = stub_orchestrator.output_dir / "simulation"
         out.mkdir()
-        said = "Starting from the prepared system's velocities, drawn at 300.0 K"
+        said = "Starting from the prepared system's velocities, assigned at 300.0 K"
         fake_result = _runner.SimulationResult(
             trajectory=out / "production.dcd", topology=out / "topology.pdb",
             final_state=out / "state_final.xml", energy_csv=out / "energy.csv",

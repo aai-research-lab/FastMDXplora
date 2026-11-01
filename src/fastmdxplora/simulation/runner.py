@@ -1336,8 +1336,8 @@ def _detach_all_reporters(simulation: Any) -> None:
 # ---------------------------------------------------------------------------
 # Stage runners
 # ---------------------------------------------------------------------------
-def _velocities_drawn_at(state_xml: Path) -> float | None:
-    """The temperature setup drew a prepared system's velocities at.
+def _velocities_assigned_at(state_xml: Path) -> float | None:
+    """The temperature setup assigned a prepared system's velocities at.
 
     Read from the setup record beside its `state.xml`; None where there is
     no record, or it does not say.
@@ -2848,12 +2848,12 @@ def run_simulation(
             _attach_the_bias(resolved_name="plumed_equilibration.dat")
 
         if not minimize and resume_from is None:
-            drawn = _velocities_drawn_at(state_xml_path)
-            if drawn is not None and abs(drawn - float(temperature_K)) > 1e-6:
-                said = (f"Starting from the prepared system's velocities, drawn "
-                        f"at {drawn:.1f} K, for a run at {float(temperature_K):.1f} K: "
+            assigned = _velocities_assigned_at(state_xml_path)
+            if assigned is not None and abs(assigned - float(temperature_K)) > 1e-6:
+                said = (f"Starting from the prepared system's velocities, assigned "
+                        f"at {assigned:.1f} K, for a run at {float(temperature_K):.1f} K: "
                         "minimization is off, so they are not reassigned. With "
-                        "`minimize: true` they are drawn at the run's own.")
+                        "`minimize: true` they are assigned at the run's own.")
                 # Printed once, by the logger; the log file, the live
                 # events (as a warning) and the run's record carry it too.
                 logger.warning(said)
