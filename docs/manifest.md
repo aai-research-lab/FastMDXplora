@@ -252,7 +252,8 @@ out of the study, "not read". A last piece that stopped is said as its
 production to its last checkpoint. Where a piece's `resolved_config.yml` does
 not read as a config (not UTF-8, not a mapping, a length that is not a
 number), the summed production is "not recorded", `production_ran_said`
-naming the file and why. Where no live status gives the first piece's
+naming the file and why; a variable-step study's is still read by its
+pieces' clocks, which no config gives. Where no live status gives the first piece's
 platform, the study's `fastmdxplora.log` does ("Selected OpenMM platform"),
 `read_from` then naming it; where the live status or log is linked out of
 the study, the methods say the first piece's platform is not read.

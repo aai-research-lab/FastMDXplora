@@ -95,7 +95,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   `production_done_before_ns` what the checkpoints held before it ran. It
   said 0.004 ns of a study that then held 2,000 + 6,000 steps. With
   `--json` the answer is the one line on stdout, the runs' progress on
-  stderr.
+  stderr, the console log's lines and what MDTraj's DCD plugin writes to the
+  descriptor included.
 - An extension's `checkpoint_interval_steps`, set beside `extra_ns`, is the
   interval its piece writes checkpoints at, from the command line and from
   Python; `fastmdx resume` carries a stopped piece on at the interval it
@@ -484,7 +485,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   methods said so.
 - A piece's `resolved_config.yml` that does not read as a config (a YAML
   list, a `timestep_fs` given as "2 fs", not UTF-8) leaves the study's
-  summed production "not recorded", naming the file and why;
+  summed production "not recorded", naming the file and why (a
+  variable-step study's, read by its pieces' clocks, is still given);
   `recorded_stage_lengths`, and the methods and study pages that read it,
   raised.
 - Docs: "Across environments" in `docs/validation.md` said two preparations

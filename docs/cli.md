@@ -684,7 +684,7 @@ pieces, it says the study's production now, as the methods give it (a
 variable-step run's by its clock): `production_done_ns` and
 `production_done_source` in the JSON, `production_done_before_ns` what the
 checkpoints held before it ran. With `--json` the answer is the one line on
-stdout; what the runs print goes to stderr. See
+stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
 

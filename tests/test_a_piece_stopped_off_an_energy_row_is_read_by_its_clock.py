@@ -9,7 +9,7 @@ methods said "its length in time is not recorded". The checkpoint's record
 now carries the state's time as it was written (`time_ps`), and that is
 read first.
 
-The fixture keeps the records a tri-alanine study left (variable-step
+The fixture holds the records a tri-alanine study left (variable-step
 Langevin, 2 fs asked, on the CPU): 2,000 steps, extended by 0.012 ns and
 stopped at its checkpoint at step 2,500, then carried on with `fastmdx
 resume` for 3,500 steps.
