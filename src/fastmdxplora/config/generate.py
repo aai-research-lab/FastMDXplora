@@ -306,6 +306,34 @@ def _recorded_resolutions(run_dir: Path) -> dict[str, dict[str, Any]]:
     return found
 
 
+def _drop_counts_of_another_length(block: dict[str, Any], found: dict[str, Any]) -> None:
+    """Leave out of ``found`` a recorded step count that is not the length
+    its stage is given as in ``block``.
+
+    The record is the folder's own simulation, which is not always the run
+    the block describes: an extended study's analyses run again over its
+    joined pieces with the study's whole production as `duration_ns`, and
+    its record holds the first piece's steps. Written beside each other,
+    the two disagree, and the loader refuses the file (a carried-on study
+    was refused by `fastmdx resume` for it).
+    """
+    from fastmdxplora.simulation.lengths import DEFAULT_TIMESTEP_FS, steps_in
+
+    timestep = block.get("timestep_fs") or DEFAULT_TIMESTEP_FS
+    for steps_key, ns_key in (("production_steps", "duration_ns"),
+                              ("nvt_steps", "nvt_duration_ns"),
+                              ("npt_steps", "npt_duration_ns")):
+        ns = block.get(ns_key)
+        if ns is None or found.get(steps_key) is None:
+            continue
+        try:
+            same = int(found[steps_key]) == steps_in(ns, timestep)
+        except (TypeError, ValueError, ZeroDivisionError):
+            same = False
+        if not same:
+            found.pop(steps_key)
+
+
 def write_resolved_config(
     merged: dict[str, Any],
     output_dir: str | Path,
@@ -431,6 +459,8 @@ def write_resolved_config(
                 # loader refuses beside it, so every later run of the study
                 # from its record stopped. The plan is in the manifest.
                 found.pop("include", None)
+            if phase == "simulation":
+                _drop_counts_of_another_length(block, found)
             block.update(found)
             doc[phase] = block
     else:

@@ -980,36 +980,87 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
         return {"ok": True, "segment": segment_text, "joined": record,
                 "analysed": False}
 
-    # The study's analyses and report, over the whole trajectory.
-    whole = dict(config)
+    # The study's analyses and report, over the whole trajectory, run from
+    # the study's own config at its whole length, which is in its place
+    # before they start and after they end. Run from the last piece's, the
+    # analysis wrote the piece's over the study's `resolved_config.yml`
+    # until it ended: a study stopped then was read as its last piece (no
+    # minimisation, no equilibration, its own length), and with the first
+    # piece's step count beside that length it was refused by `fastmdx
+    # resume`. A copy beside the joined trajectory says, to a resume, what
+    # the study's config was where the analysis was stopped before it was
+    # put back. The segments themselves are never touched; the study's own
+    # analysis and report are replaced, since they described a shorter
+    # trajectory than the study now has.
+    resolved = root / "resolved_config.yml"
+    kept = _the_study_s_config_text(root)
+    whole_text = _keep_the_study_s_config(root, kept)
+    if whole_text is not None:
+        _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
+    import yaml
+
+    try:
+        own = yaml.safe_load(whole_text) if whole_text is not None else None
+    except yaml.YAMLError:
+        own = None
+    whole = dict(own if isinstance(own, dict) else config)
     whole["output"] = str(root)
     whole["include_phase"] = ["analysis", "report"]
+    whole.pop("exclude_phase", None)
     analysis = dict(whole.get("analysis") or {})
     analysis["trajectory"] = str(joined_dir / "production.dcd")
     topology = root / "simulation" / "trajectory_topology.pdb"
     if topology.is_file():
         analysis["topology"] = str(topology)
+    else:
+        analysis.pop("topology", None)
     whole["analysis"] = analysis
-    # The study's own analysis and report are replaced on purpose: they
-    # described a shorter trajectory than the study now has, and leaving
-    # them would leave a report whose numbers are for a run that is no
-    # longer the whole of it. The segments themselves are never touched.
-    resolved = root / "resolved_config.yml"
-    try:
-        kept = resolved.read_text(encoding="utf-8")
-    except OSError:
-        kept = None
     FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    if whole_text is not None:
+        try:
+            _write_atomically(resolved, whole_text)
+            (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
+        except OSError:
+            from fastmdxplora.utils.logging import get_logger
+
+            get_logger(__name__).warning(
+                "The study's resolved config could not be written back.")
     _production_carried_on(root, record)
-    _keep_the_study_s_config(root, kept)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
 
 
-def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
-    """The study's resolved config as the study, not as its last piece.
+#: The study's config at its whole length, beside the joined trajectory
+#: while its analyses run again: where they are stopped before it is put
+#: back in `resolved_config.yml`, the next join reads it from here.
+STUDY_CONFIG_COPY = "study_resolved_config.yml"
 
-    Analysing the joined trajectory runs the study's analysis and report
+
+def _the_study_s_config_text(root: Path) -> str | None:
+    """The study's own `resolved_config.yml` as text: the copy a join left
+    beside the joined trajectory where its analysis was stopped before the
+    study's was put back, else the file; None where neither reads."""
+    for path in (root / "joined" / STUDY_CONFIG_COPY, root / "resolved_config.yml"):
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """``text`` into ``path`` through a file beside it, so a reader finds
+    the old or the new, never half of one."""
+    partial = path.with_name(path.name + ".new")
+    partial.write_text(text, encoding="utf-8")
+    partial.replace(path)
+
+
+def _keep_the_study_s_config(root: Path, kept: str | None) -> str | None:
+    """The study's resolved config as the study, not as its last piece,
+    put in its place; the text written, None where it is not a config.
+
+    Analysing the joined trajectory ran the study's analysis and report
     from the last piece's config, and that run wrote it over the study's
     `resolved_config.yml`: its `resume_from`, its own length, no
     minimisation or equilibration, and the joined trajectory's path. The
@@ -1017,12 +1068,13 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
     extension. Put back as the study wrote it, with `duration_ns` the
     production of every piece, it runs the study to its whole length; an
     extended study analysed again in place finds its joined trajectory
-    itself (`analysis.analyze.study_trajectory`).
+    itself (`analysis.analyze.study_trajectory`). Each write is whole, so a
+    reader never finds half a file.
     """
     import yaml
 
     if not kept:
-        return
+        return None
     resolved = root / "resolved_config.yml"
     header = "".join(line for line in kept.splitlines(keepends=True)
                      if line.startswith("#"))
@@ -1033,21 +1085,23 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
     try:
         # Put back first: what the pieces add up to is counted against the
         # study's own plan, its equilibration included.
-        resolved.write_text(kept, encoding="utf-8")
+        _write_atomically(resolved, kept)
         if not isinstance(config, dict):
-            return
-        simulation = dict(config.get("simulation") or {})
+            return None
+        simulation = config.get("simulation")
+        simulation = dict(simulation) if isinstance(simulation, dict) else {}
         simulation.pop("production_steps", None)
         simulation["duration_ns"] = round(production_done_ns(root), 9)
         config["simulation"] = simulation
-        resolved.write_text(header + yaml.safe_dump(config, sort_keys=False,
-                                                    default_flow_style=False),
-                            encoding="utf-8")
+        text = header + yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
+        _write_atomically(resolved, text)
+        return text
     except OSError:
         from fastmdxplora.utils.logging import get_logger
 
         get_logger(__name__).warning(
             "The study's resolved config could not be written back.")
+        return None
 
 
 def _production_carried_on(root: Path, joined: dict[str, Any]) -> None:
@@ -1687,6 +1741,13 @@ def _resume_study(study: str | Path, *,
                                    if piece.is_dir()):
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": _STILL_GOING}
+    # Stopped while its pieces' analyses ran again: the study's own config,
+    # at its whole length, is put back before anything reads it.
+    copy = root / "joined" / STUDY_CONFIG_COPY
+    try:
+        _write_atomically(resolved, copy.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
     try:
         config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
