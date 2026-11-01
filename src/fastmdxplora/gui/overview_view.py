@@ -159,13 +159,13 @@ def _tiles(root: Path) -> dict[str, Any]:
     try:
         overview = overview_of(root)
     except Exception:  # noqa: BLE001 - a panel must never break the page
-        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "not_read": 0,
-                "analyses": 0, "judged_earlier": []}
+        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "noted": 0,
+                "not_read": 0, "analyses": 0, "judged_earlier": []}
     rows = overview.get("rows") or []
     tiles: list[dict[str, Any]] = []
     # A mean whose record was not read is neither determined nor not: it
     # is counted apart, as not read.
-    means = determined = not_read = 0
+    means = determined = noted = not_read = 0
     for row in rows:
         name = row.get("analysis")
         if name == "rmsf":
@@ -195,6 +195,7 @@ def _tiles(root: Path) -> dict[str, Any]:
                 continue
             means += 1
             determined += bool(quantity.get("determined"))
+            noted += bool(quantity.get("noted"))
             series = name if (quantity.get("key") == "mean" and name in _SERIES_OF) else None
             tiles.append({
                 "kind": "mean",
@@ -219,11 +220,13 @@ def _tiles(root: Path) -> dict[str, Any]:
     # The means not shown, as the heading counts means: the RMSF tile is
     # not one, and "11 more not shown" was said of ten.
     more = sum(1 for tile in tiles[MOST_TILES:] if tile.get("kind") == "mean")
+    # How many of the means carry an image note: the lead and the Agent's
+    # answers say it once, beside "determined".
     return {"tiles": shown, "more": more, "means": means,
-            "determined": determined, "not_read": not_read, "analyses": len(rows),
-            "biased": bool(overview.get("biased")),
+            "determined": determined, "noted": noted, "not_read": not_read,
+            "analyses": len(rows), "biased": bool(overview.get("biased")),
             "judged_earlier": list(overview.get("judged_earlier") or []),
-            "lead": _lead(root, means, determined, not_read)}
+            "lead": _lead(root, means, determined, not_read, noted)}
 
 
 def _in_a_line(why: str) -> str:
@@ -245,7 +248,8 @@ def _in_a_line(why: str) -> str:
     return line[:-1] + "." if line.endswith((";", ":")) else line
 
 
-def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[str, Any] | None:
+def _lead(root: Path, means: int, determined: int, not_read: int = 0,
+          noted: int = 0) -> dict[str, Any] | None:
     """The sentence the Overview of one run leads with: how many of its
     means are determined and, where they are not, how much longer the run
     would have to be and what that costs here, as the analyses asked for it
@@ -254,7 +258,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     for the rest, at this run's own speed). Where the records do not say
     how much longer, that is said, never guessed; a result whose record
     was not read is counted apart, and a record the ask was not read from
-    named (`record_access`)."""
+    named (`record_access`). Where any mean carries an image note, how many,
+    and what lifts it (:func:`fastmdxplora.image_note.noted_said`)."""
     unread = ("" if not not_read else
               f" {not_read} result{' was' if not_read == 1 else 's were'} not read: "
               f"{'it says' if not_read == 1 else 'each says'} why below.")
@@ -263,15 +268,20 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
             return None
         return {"said": unread.strip(), "undetermined": 0, "means": 0, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
-    from fastmdxplora.image_note import determined_said, longer_run_said, recorded_finding
+    from fastmdxplora.image_note import (determined_said, longer_run_said, noted_said,
+                                         recorded_finding)
 
+    # Said as plain text on the page: the code marks are left out.
+    finding = recorded_finding(root)
+    image_noted = noted_said(finding, noted, means).replace("`", "")
+    image_noted = f" {image_noted}" if image_noted else ""
     if determined >= means:
         said = ("Its mean is determined." if means == 1
                 else f"All {means} means are determined.")
         # Determined, and still biased where the solute met its own image
         # in every frame: never said determined alone.
-        image = determined_said(recorded_finding(root), means)
-        said += f" {image}" if image else ""
+        image = determined_said(finding, means).replace("`", "")
+        said += (f" {image}" if image else "") + image_noted
         return {"said": said + unread, "undetermined": 0, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
     from fastmdxplora import record_access
@@ -299,8 +309,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     if ask is None:
         why = (f"is not said: {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} "
                f"not read." if refused else "is not in the records: each says why below.")
-        lifted = longer_run_said(recorded_finding(root))
-        why += f" {lifted}" if lifted else ""
+        lifted = longer_run_said(finding).replace("`", "")
+        why += (f" {lifted}" if lifted else "") + image_noted
         return {"said": f"{counted}. How much longer would determine {them} {why}" + unread,
                 "undetermined": undetermined, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
@@ -321,8 +331,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
                  f"so what {'it says' if len(refused) == 1 else 'they say'} is not counted "
                  f"here.")
     # Not a longer run alone, where the solute met its image in every frame.
-    lifted = longer_run_said(recorded_finding(root))
-    said += (f" {lifted}" if lifted else "") + unread
+    lifted = longer_run_said(finding).replace("`", "")
+    said += (f" {lifted}" if lifted else "") + image_noted + unread
     return {"said": said, "undetermined": undetermined, "means": means,
             "more_ns": ask.more_ns, "seconds": ask.seconds, "platform": ask.platform,
             "lower_bound": ask.lower_bound}

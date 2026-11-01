@@ -19,8 +19,9 @@ paragraph, one click or one look away), :func:`replicas_said` (beside the
 replicas' mean of their means), :func:`finding_said` (the image check's own
 finding, in a sentence, for its row and its card), :func:`longer_run_said`
 (beside the advice of a longer run, for a run in contact with its image in
-every frame) and :func:`determined_said` (beside means all determined, for
-such a run).
+every frame), :func:`determined_said` (beside means all determined, for
+such a run) and :func:`noted_said` (how many of a run's means are noted,
+where the solute met its image in some frames, not all).
 
 Light on purpose: no analysis code is imported, so a page reads it without
 loading the trajectory tools.
@@ -124,10 +125,24 @@ def paragraph_of(findings: Any) -> str:
     return str(image.get("said") or "").replace("`", "")
 
 
-#: What lifts the bias of a solute in contact with its image in every frame,
-#: and what does not: said beside any advice of a longer run or replicas.
-_WHAT_LIFTS_IT = ("a longer run in the same box, like replicas in it, samples the same "
-                  "contact, and a larger box, in a new study, is what lifts it.")
+def _a_larger_box(finding: Any) -> str:
+    """What lifts the bias of the solute's own image: a larger box, named by
+    the setting that sizes it, and how large is enough (the solute kept
+    farther from its image than the run's cutoff, its value where the image
+    check recorded it). Said wherever a mean is noted."""
+    cutoff = finding.get("cutoff_nm") if isinstance(finding, dict) else None
+    cutoff = (f"{float(cutoff):g} nm cutoff" if isinstance(cutoff, (int, float))
+              and not isinstance(cutoff, bool) and cutoff > 0 else "cutoff")
+    return ("a larger box (`setup.solvent_padding_nm`), in a new study, one that keeps "
+            f"the solute farther from its image than the run's {cutoff}")
+
+
+def _what_lifts_it(finding: Any) -> str:
+    """What lifts the bias of a solute in contact with its image in every
+    frame, and what does not: said beside any advice of a longer run or
+    replicas."""
+    return ("a longer run in the same box, like replicas in it, samples the same "
+            f"contact, and {_a_larger_box(finding)}, is what lifts it.")
 
 
 def _in_contact_throughout(finding: Any) -> bool:
@@ -148,7 +163,7 @@ def longer_run_said(finding: Any) -> str:
     if not _in_contact_throughout(finding):
         return ""
     return ("A longer run may determine the means; it would not lift the bias of the "
-            "solute's own image, in contact with it in every frame: " + _WHAT_LIFTS_IT)
+            "solute's own image, in contact with it in every frame: " + _what_lifts_it(finding))
 
 
 def determined_said(finding: Any, means: int | None = None) -> str:
@@ -162,7 +177,31 @@ def determined_said(finding: Any, means: int | None = None) -> str:
         return ""
     subject = "Its mean" if means == 1 else "Its means"
     return (f"{subject} may still be biased by the solute's own image, in contact with it "
-            "in every frame: " + _WHAT_LIFTS_IT)
+            "in every frame: " + _what_lifts_it(finding))
+
+
+def noted_said(finding: Any, noted: int, means: int) -> str:
+    """Where ``noted`` of a run's ``means`` carry an image note, and the
+    solute was not in contact with its image in every frame (where it was,
+    :func:`determined_said` and :func:`longer_run_said` say it), how many
+    may be biased and what lifts it, in a sentence; an empty string where
+    none is noted. Beside "By its records, yes", "Then replicas" and the
+    Overview's lead, which said nothing of a note on means all determined."""
+    if _in_contact_throughout(finding) or not noted or not means:
+        return ""
+    noted = min(noted, means)
+    subject = ("Its mean may be" if means == 1
+               else f"Each of its {means} means may be" if noted == means
+               else f"{noted} of its {means} means may be")
+    return (f"{subject} biased by the solute's own image, as said beside "
+            f"{'it' if noted == 1 else 'each'}; {_a_larger_box(finding)}, lifts it.")
+
+
+def in_a_larger_box(finding: Any, noted: int) -> bool:
+    """Whether replicas advised for a run should be run in a larger box:
+    where any of its means is noted, or the solute was in contact with its
+    image in every frame. Replicas in the same box sample the same image."""
+    return bool(noted) or _in_contact_throughout(finding)
 
 
 def recorded_finding(root: Any) -> dict[str, Any] | None:

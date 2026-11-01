@@ -278,6 +278,7 @@ def _long_enough(base: Path) -> str:
         return "\n\n".join([_not_analysed(base), TRAPPED])
     supports = _supports(base)
     asked = _ask(base)
+    image = _image(base)
     if asked is not None:
         text, command = asked
         parts.append(" ".join(piece for piece in ("Not for all of its means.", supports)
@@ -288,18 +289,62 @@ def _long_enough(base: Path) -> str:
         if command:
             parts.append(f"To run it, extending the study in place:\n\n`{command}`")
         parts.extend(_not_a_longer_run_alone(base))
+        parts.extend(image.noted)
     elif _determined(supports):
-        parts.append("By its records, yes. " + supports)
-        parts.extend(_the_image_beside(base, determined=True))
+        beside = _the_image_beside(image) + image.noted
+        # Never an unqualified yes before a paragraph saying the means may
+        # be biased: the length answered, and the bias no length lifts.
+        them = ("its mean, though it may be" if image.means == 1
+                else "its means, though they may be")
+        yes = (f"By its records, long enough to determine {them} biased by the "
+               "solute's own image, which no length of run lifts. "
+               if beside else "By its records, yes. ")
+        parts.append(yes + supports)
+        parts.extend(beside)
     elif supports:
         parts.append("Not by its records. " + supports)
         parts.append(_no_figure(base))
         parts.extend(_not_a_longer_run_alone(base))
+        parts.extend(image.noted)
     else:
         parts.append("Its records do not say yet: no analysis has judged whether its "
                      "series equilibrated.")
-    parts.append(TRAPPED)
+    # The seed sweep TRAPPED advises is in the same box, which samples the
+    # same image: replicas are advised in a larger one first.
+    parts.append(("Then replicas in a larger box. " if image.larger else "") + TRAPPED)
     return "\n\n".join(parts)
+
+
+class _Image:
+    """What the image check and the means' notes say of a run, read once
+    for an answer: the check's finding, how many of the means the Overview
+    counts carry a note (``noted`` of ``means``), the sentence saying so
+    (:func:`fastmdxplora.image_note.noted_said`, in a list, empty where
+    there is none) and whether replicas belong in a larger box."""
+
+    def __init__(self, finding: Any, noted: int, means: int) -> None:
+        from fastmdxplora.image_note import in_a_larger_box, noted_said
+
+        self.finding, self.means = finding, means
+        said = noted_said(finding, noted, means)
+        self.noted = [said] if said else []
+        self.larger = in_a_larger_box(finding, noted)
+
+
+def _image(base: Path) -> _Image:
+    """The run's :class:`_Image`, its counts the Overview's (its lead says
+    "All 3 means are determined" of the same means)."""
+    from fastmdxplora.gui.overview_view import overview_payload
+    from fastmdxplora.image_note import recorded_finding
+
+    try:
+        payload = overview_payload(base)
+    except Exception:  # noqa: BLE001 - the counts are said as none
+        payload = {}
+    counts = [payload.get(key) for key in ("noted", "means")]
+    noted, means = (value if isinstance(value, int) and not isinstance(value, bool) else 0
+                    for value in counts)
+    return _Image(recorded_finding(base), noted, means)
 
 
 def _not_a_longer_run_alone(base: Path) -> list[str]:
@@ -312,13 +357,14 @@ def _not_a_longer_run_alone(base: Path) -> list[str]:
     return [lifted] if lifted else []
 
 
-def _the_image_beside(base: Path, *, determined: bool) -> list[str]:
+def _the_image_beside(image: _Image) -> list[str]:
     """Beside means all determined, where the solute met its own image in
     every frame, that they may still be biased by it, and what lifts it
-    (:func:`fastmdxplora.image_note.determined_said`): never "yes" alone."""
-    from fastmdxplora.image_note import determined_said, recorded_finding
+    (:func:`fastmdxplora.image_note.determined_said`, with how many means
+    there are, so one is "its mean"): never "yes" alone."""
+    from fastmdxplora.image_note import determined_said
 
-    said = determined_said(recorded_finding(base)) if determined else ""
+    said = determined_said(image.finding, image.means or None)
     return [said] if said else []
 
 
@@ -328,6 +374,7 @@ def _strengthen(base: Path) -> str:
     parts: list[str] = []
     supports = _supports(base)
     asked = _ask(base)
+    image = _image(base)
     if asked is not None:
         text, command = asked
         parts.append("A longer run first: the means it withheld have to be given before "
@@ -336,25 +383,25 @@ def _strengthen(base: Path) -> str:
         if command:
             parts.append(f"`{command}`")
         parts.extend(_not_a_longer_run_alone(base))
+        parts.extend(image.noted)
     elif _determined(supports):
         parts.append("Its means are determined, so a longer run of this one adds "
                      "precision but not a check.")
-        parts.extend(_the_image_beside(base, determined=True))
+        parts.extend(_the_image_beside(image) + image.noted)
     elif supports:
         parts.append("A longer run first. " + supports)
         parts.append(_no_figure(base))
         parts.extend(_not_a_longer_run_alone(base))
+        parts.extend(image.noted)
     of = study_a_run_belongs_to(base)
     if of:
         parts.append(f"This run is one of the study {of.get('study')}. Its Report page "
                      "sets the runs' spread against each run's own error, which is the "
                      "check a single run cannot make.")
     else:
-        # In contact with its image in every frame: replicas in the same
-        # box sample the same contact, as said above.
-        from fastmdxplora.image_note import longer_run_said, recorded_finding
-
-        larger = " in a larger box" if longer_run_said(recorded_finding(base)) else ""
+        # A mean noted, or the solute in contact with its image in every
+        # frame: replicas in the same box sample the same image.
+        larger = " in a larger box" if image.larger else ""
         parts.append(f"Then replicas{larger}. " + TRAPPED)
     return "\n\n".join(parts)
 
