@@ -15,6 +15,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Overview, the Analysis page's table, its card and the convergence panel
   alike (`analysis_overview.too_few_by_these_rules`). The card said "too
   few to determine the mean" beside the Overview's "Determined".
+- Whether and why a mean is withheld is read by one reader
+  (`statistics.withheld_reason`) everywhere a verdict or an error is shown:
+  the Agent's citation chip and the records text it reads, the report's
+  findings, Convergence table and Methods, the Analysis page's figure (no
+  band and no error), Compare of two studies and of a study's runs, the
+  runs backing a spread, and the written comparison. A mean an earlier
+  version called determined on fewer than 10 independent samples was given
+  with its error in each.
 - The Agent's citations (`cites`) give `value` alone and the image note in
   `noted`; the chip says the value, its verdict, then the note on a line of
   its own, left-aligned where it wraps. "Not determined" followed the note,
@@ -348,6 +356,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - The line said of a study's record written with both `include` and
   `exclude` is said in the study's own log (`utils.logging.log_in_the_study_s_log`):
   it was logged as the record was read, before that log was attached.
+- A record's line about its `include` and `exclude` is written in the log
+  of the study it is about, in the folder the study is in now, or in each
+  of its runs' logs for a study of runs, and in no other study's log; on
+  the console alone where the study is not known. It went into whichever
+  study's log was attached then or next, and a copied study's line, held
+  for its old folder, into none. A held line is dropped once another
+  study's log is attached.
+- The Agent's answers count a run's means as the Overview does
+  (`overview_view.means_counted`), the production's thermodynamic means
+  counted apart: they said "All 4 observables assessed had equilibrated,
+  and each mean is determined" of a run whose Overview counted one mean,
+  then asked for more production for its total energy. The yes counts the
+  means noted ("though 1 of them may be biased"), a run of one mean is
+  "Its mean is determined", and they say a note is beside each mean on the
+  Overview, not "as said beside it", where none is beside them.
+- The records text the Agent reads puts a mean's image note after its
+  verdict, as the chip under an answer does.
+- The report's Methods give an extended study's production under 1 ns in
+  ps ("to 300 ps of production in all"), not "0.3 ns".
 - The Agent's looks validation reasons the 1AKE box width's tolerance from
   the 2.0 nm default padding: 5% of 7.9 nm is 0.39 nm, and a width at the
   1.0 nm padding before it (6.9 nm) is told apart.
