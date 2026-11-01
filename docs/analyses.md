@@ -249,6 +249,15 @@ t-SNE and UMAP make none, and asked for beside a refused MDS they still run
 and their projections are saved, the refusal recorded (`findings.mds_refused`)
 and said in the report.
 
+`rmsd`, `cluster` and `dimred` superpose the frames on their selection, which
+needs three atoms. On one (alanine dipeptide's one alpha carbon, the
+default selection) every frame fits every other exactly and each RMSD would
+read 0, and on two only their separation is compared: the plan leaves them
+out, and named in `include` or given such a selection they are refused
+(`analysis.selection.arity`) with the selection that works here, the first
+of `backbone`, `protein and not element H` and `not water and not element
+H` that matches three atoms or more.
+
 `dimred`, with PCA, writes the free-energy landscape on the first two
 components: G = -kT ln P, with P the histogram over `landscape_bins` bins
 each way normalised over the bin area, bins no frame visited left empty, and

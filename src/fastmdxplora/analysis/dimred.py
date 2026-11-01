@@ -55,6 +55,7 @@ from fastmdxplora.analysis.base import Analysis, AnalysisResult, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
     close_figures_opened_since, figures_open, match_colorbar_font, new_figure, save_figure)
+from fastmdxplora.analysis.rmsd import refuse_too_few_to_align
 from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
@@ -181,6 +182,10 @@ class DimRed(Analysis):
             Maps method name → (n_frames, n_components) embedding array.
         """
         atom_idx = self.select_atoms(traj)
+        # A superposition needs three atoms (on one, every frame aligns
+        # onto the first exactly): said with the selection that works, not
+        # as "nothing to decompose".
+        refuse_too_few_to_align(self, traj, atom_idx)
         first, record = first_frame(traj, atom_idx, self.start)
         self.findings["frames"] = record
         self._first_frame = first

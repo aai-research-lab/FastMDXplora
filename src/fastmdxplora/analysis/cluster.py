@@ -82,6 +82,7 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
     category_style, close_figures_opened_since, figures_open, match_colorbar_font,
     new_figure, save_figure)
+from fastmdxplora.analysis.rmsd import refuse_too_few_to_align
 from fastmdxplora.analysis.starting_frame import first_frame, start_as_given
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
@@ -579,6 +580,7 @@ class Cluster(Analysis):
             DBSCAN's ``-1`` label indicates "noise" (unclustered frames).
         """
         atom_idx = self.select_atoms(traj)
+        refuse_too_few_to_align(self, traj, atom_idx)
         first, record = first_frame(traj, atom_idx, self.start)
         if self.stride > 1:
             clustered = -(-(traj.n_frames - first) // self.stride)
