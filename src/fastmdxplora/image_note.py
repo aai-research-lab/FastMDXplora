@@ -180,21 +180,28 @@ def determined_said(finding: Any, means: int | None = None) -> str:
             "in every frame: " + _what_lifts_it(finding))
 
 
-def noted_said(finding: Any, noted: int, means: int) -> str:
+def noted_said(finding: Any, noted: int, means: int, *, beside: bool = True) -> str:
     """Where ``noted`` of a run's ``means`` carry an image note, and the
     solute was not in contact with its image in every frame (where it was,
     :func:`determined_said` and :func:`longer_run_said` say it), how many
     may be biased and what lifts it, in a sentence; an empty string where
     none is noted. Beside "By its records, yes", "Then replicas" and the
-    Overview's lead, which said nothing of a note on means all determined."""
+    Overview's lead, which said nothing of a note on means all determined.
+
+    ``beside`` is whether each noted mean's own note is beside the
+    sentence, as its tile is beside the Overview's lead; where it is not
+    (the Agent's answers), the sentence says where it is: "as said beside
+    it" was said where nothing was."""
     if _in_contact_throughout(finding) or not noted or not means:
         return ""
     noted = min(noted, means)
     subject = ("Its mean may be" if means == 1
                else f"Each of its {means} means may be" if noted == means
                else f"{noted} of its {means} means may be")
-    return (f"{subject} biased by the solute's own image, as said beside "
-            f"{'it' if noted == 1 else 'each'}; {_a_larger_box(finding)}, lifts it.")
+    which = "it" if noted == 1 else "each"
+    where = f"as said beside {which}" if beside else f"as the Overview says beside {which}"
+    return (f"{subject} biased by the solute's own image, {where}; "
+            f"{_a_larger_box(finding)}, lifts it.")
 
 
 def in_a_larger_box(finding: Any, noted: int) -> bool:

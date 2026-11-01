@@ -229,6 +229,22 @@ def _tiles(root: Path) -> dict[str, Any]:
             "lead": _lead(root, means, determined, not_read, noted)}
 
 
+def means_counted(means: int, determined: int) -> str:
+    """How many of a run's ``means`` are determined, as the Overview's lead
+    counts them (no full stop): "Its mean is determined", "2 of 3 means are
+    not determined". The Agent's answers count them so (`records_answer`):
+    they said "4 observables ... each mean is determined" of a run whose
+    lead counted one."""
+    undetermined = means - determined
+    if determined >= means:
+        return "Its mean is determined" if means == 1 else f"All {means} means are determined"
+    return ("Its mean is not determined" if means == 1
+            else "Neither mean is determined" if means == 2 and not determined
+            else f"None of its {means} means is determined" if not determined
+            else f"{undetermined} of {means} means "
+                 f"{'is' if undetermined == 1 else 'are'} not determined")
+
+
 def _in_a_line(why: str) -> str:
     """Why a mean was not determined, in a line for its tile; the whole is
     there on hover. The two reasons a run too short gives are said by what
@@ -276,8 +292,7 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
     image_noted = noted_said(finding, noted, means).replace("`", "")
     image_noted = f" {image_noted}" if image_noted else ""
     if determined >= means:
-        said = ("Its mean is determined." if means == 1
-                else f"All {means} means are determined.")
+        said = means_counted(means, determined) + "."
         # Determined, and still biased where the solute met its own image
         # in every frame: never said determined alone.
         image = determined_said(finding, means).replace("`", "")
@@ -289,11 +304,7 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
                                                       sampling_asked_for)
 
     undetermined = means - determined
-    counted = ("Its mean is not determined" if means == 1
-               else "Neither mean is determined" if means == 2 and not determined
-               else f"None of its {means} means is determined" if not determined
-               else f"{undetermined} of {means} means "
-                    f"{'is' if undetermined == 1 else 'are'} not determined")
+    counted = means_counted(means, determined)
     before = record_access.refused()
     try:
         ask = sampling_asked_for(root)

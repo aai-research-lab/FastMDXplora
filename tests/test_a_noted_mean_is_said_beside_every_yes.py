@@ -24,6 +24,9 @@ NOTED = ("Each of its 3 means may be biased by the solute's own image, as said b
          "each; a larger box (`setup.solvent_padding_nm`), in a new study, one that keeps "
          "the solute farther from its image than the run's 1 nm cutoff, lifts it.")
 
+#: As the Agent says it: no mean's note is beside its answer.
+NOTED_IN_AN_ANSWER = NOTED.replace("as said beside each", "as the Overview says beside each")
+
 #: The report's line for means all determined.
 ALL = "All 2 of 2 observables assessed, 2 had equilibrated, their means determined."
 
@@ -55,22 +58,22 @@ class TestTheAgent:
         assert "By its records, yes." not in said
         assert ("By its records, long enough to determine its means, though they may be "
                 "biased by the solute's own image, which no length of run lifts. " + ALL) in said
-        assert f"\n\n{NOTED}\n\n" in said
+        assert f"\n\n{NOTED_IN_AN_ANSWER}\n\n" in said
         # The seed sweep it advises is in the same box: replicas in a larger.
         assert "\n\nThen replicas in a larger box. A single run's error" in said
 
     def test_strengthen_says_it_and_a_larger_box(self, study, answers):  # noqa: F811
         said = answers(study, "strengthen")
         assert ("Its means are determined, so a longer run of this one adds precision but "
-                f"not a check.\n\n{NOTED}\n\nThen replicas in a larger box. ") in said
+                f"not a check.\n\n{NOTED_IN_AN_ANSWER}\n\nThen replicas in a larger box. ") in said
 
     def test_one_of_three_noted_is_counted_and_none_is_a_plain_yes(self, study,  # noqa: F811
                                                                    answers):
         _unnoted(study, ("sasa",))
         for question in ("long_enough", "strengthen"):
             said = answers(study, question)
-            assert ("\n\n1 of its 3 means may be biased by the solute's own image, as said "
-                    "beside it; a larger box") in said, question
+            assert ("\n\n1 of its 3 means may be biased by the solute's own image, as the "
+                    "Overview says beside it; a larger box") in said, question
             assert "Then replicas in a larger box. " in said, question
         _unnoted(study)
         enough, strengthen = (answers(study, q) for q in ("long_enough", "strengthen"))

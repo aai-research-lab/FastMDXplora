@@ -54,8 +54,13 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
 
 
 def _supports(base: Path) -> str:
-    """The report's line on how much of the run can be interpreted, with its
-    link to a section of the report said as the section."""
+    """How many of the run's means are determined, counted as the Overview
+    counts them (:func:`_counted`); where it counts none, the report's line
+    on how much of the run can be interpreted, with its link to a section
+    of the report said as the section."""
+    counted = _counted(base)
+    if counted:
+        return counted
     from fastmdxplora.report.document import _what_the_run_supports
 
     try:
@@ -64,6 +69,60 @@ def _supports(base: Path) -> str:
         return ""
     return re.sub(r"\[Convergence\]\(#convergence\)",
                   "the report's Convergence section", line)
+
+
+def _thermodynamic_counted(base: Path, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """The production's thermodynamic means the Overview gives in a panel
+    of their own, for a study with no thermodynamics analysis (whose means
+    the Overview counts with the rest, :func:`_means`)."""
+    if (base / "analysis" / "thermodynamics").is_dir():
+        return []
+    found = ((payload.get("thermodynamics") or {}).get("means") or {}) \
+        if isinstance(payload.get("thermodynamics"), dict) else {}
+    return [m for m in found.values() if isinstance(m, dict) and m.get("mean") is not None]
+
+
+def _counted(base: Path) -> str:
+    """How many of the run's means are determined, in a sentence, counted
+    once, as the Overview counts them: the analyses' means as its lead
+    counts them (:func:`fastmdxplora.gui.overview_view.means_counted`), then
+    the production's thermodynamic means its panel gives, and any result not
+    read. An empty string where the Overview counts none. The answers said
+    "All 4 observables assessed had equilibrated, and each mean is
+    determined" (the report's count) of a run whose lead counted one mean,
+    then asked for more production for the total energy, not one of the
+    four."""
+    from fastmdxplora.gui.overview_view import means_counted, overview_payload
+
+    try:
+        payload = overview_payload(base)
+    except Exception:  # noqa: BLE001 - the report's line is said instead
+        return ""
+
+    def count(key: str) -> int:
+        value = payload.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    means, determined, not_read = count("means"), count("determined"), count("not_read")
+    thermodynamic = _thermodynamic_counted(base, payload)
+    if not means and not thermodynamic:
+        return ""
+    parts = [means_counted(means, determined)] if means else []
+    if thermodynamic:
+        total = len(thermodynamic)
+        undetermined = sum(1 for m in thermodynamic if not m.get("determined"))
+        of = ("the production's thermodynamic mean" if total == 1
+              else f"the production's {total} thermodynamic means")
+        parts.append(f"{of} is {'not ' if undetermined else ''}determined" if total == 1
+                     else f"{of} are determined" if not undetermined
+                     else f"none of {of} is determined" if undetermined == total
+                     else f"{undetermined} of {of} "
+                          f"{'is' if undetermined == 1 else 'are'} not determined")
+    said = "; ".join(parts)
+    said = said[:1].upper() + said[1:] + "."
+    if not_read:
+        said += f" {not_read} result{' was' if not_read == 1 else 's were'} not read."
+    return said
 
 
 def _means(base: Path) -> list[str]:
@@ -244,9 +303,11 @@ def _no_figure(base: Path) -> str:
 
 
 def _determined(supports: str) -> bool:
-    """Whether the report's line says every observable equilibrated and holds
-    enough independent samples to average."""
-    return supports.startswith("All ") and "too few" not in supports
+    """Whether the count (:func:`_supports`) says every mean is determined:
+    the Overview's count, or the report's line that every observable
+    equilibrated and holds enough independent samples to average."""
+    return (supports.startswith(("All ", "Its mean is determined", "The production's"))
+            and not any(said in supports for said in ("too few", "not determined", "not read")))
 
 
 def _not_analysed(base: Path) -> str:
@@ -294,8 +355,12 @@ def _long_enough(base: Path) -> str:
         beside = _the_image_beside(image) + image.noted
         # Never an unqualified yes before a paragraph saying the means may
         # be biased: the length answered, and the bias no length lifts.
+        # Counted as the sentence below it counts them: "its means, though
+        # they may be" was said where 1 of 3 was noted.
         them = ("its mean, though it may be" if image.means == 1
-                else "its means, though they may be")
+                else "its means, though they may be"
+                if _the_image_beside(image) or image.count >= image.means
+                else f"its means, though {image.count} of them may be")
         yes = (f"By its records, long enough to determine {them} biased by the "
                "solute's own image, which no length of run lifts. "
                if beside else "By its records, yes. ")
@@ -322,11 +387,15 @@ class _Image:
     (:func:`fastmdxplora.image_note.noted_said`, in a list, empty where
     there is none) and whether replicas belong in a larger box."""
 
-    def __init__(self, finding: Any, noted: int, means: int) -> None:
+    def __init__(self, finding: Any, noted: int, means: int, counted: int | None = None) -> None:
         from fastmdxplora.image_note import in_a_larger_box, noted_said
 
-        self.finding, self.means = finding, means
-        said = noted_said(finding, noted, means)
+        self.finding, self.means, self.count = finding, means, noted
+        # Every mean the answer counts (:func:`_counted`), the production's
+        # thermodynamic means with the analyses'.
+        self.counted = means if counted is None else counted
+        # No mean's note is beside an answer: it says where each is.
+        said = noted_said(finding, noted, means, beside=False)
         self.noted = [said] if said else []
         self.larger = in_a_larger_box(finding, noted)
 
@@ -344,7 +413,8 @@ def _image(base: Path) -> _Image:
     counts = [payload.get(key) for key in ("noted", "means")]
     noted, means = (value if isinstance(value, int) and not isinstance(value, bool) else 0
                     for value in counts)
-    return _Image(recorded_finding(base), noted, means)
+    return _Image(recorded_finding(base), noted, means,
+                  means + len(_thermodynamic_counted(base, payload)))
 
 
 def _not_a_longer_run_alone(base: Path) -> list[str]:
@@ -385,8 +455,11 @@ def _strengthen(base: Path) -> str:
         parts.extend(_not_a_longer_run_alone(base))
         parts.extend(image.noted)
     elif _determined(supports):
-        parts.append("Its means are determined, so a longer run of this one adds "
-                     "precision but not a check.")
+        # "Its means are determined" beside "Its mean may be biased" of a
+        # run with one.
+        parts.append(("Its mean is determined" if image.counted == 1 else
+                      "Its means are determined")
+                     + ", so a longer run of this one adds precision but not a check.")
         parts.extend(_the_image_beside(image) + image.noted)
     elif supports:
         parts.append("A longer run first. " + supports)

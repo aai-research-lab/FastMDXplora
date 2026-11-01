@@ -48,7 +48,8 @@ def test_the_methods_give_the_whole_production():
     assert "run for 100 ps" not in text
     # The list of settings says whose they are.
     assert "These are the first piece's. 2 more pieces extended the study" in text
-    assert "to 0.3 ns of production in all" in text
+    # Under 1 ns in ps, as the sentence above it gives it ("0.0006 ns" was said).
+    assert "to 300 ps of production in all" in text
 
 
 def test_the_methods_of_a_study_in_one_piece_are_unchanged(tmp_path):

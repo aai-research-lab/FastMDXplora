@@ -494,11 +494,14 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
             # The list is the first piece's record; the study is its pieces.
             lines.append("")
             more = extended[1] - 1
+            # Under 1 ns in ps, as every page gives a length: "0.0006 ns".
+            from fastmdxplora.simulation.sampling_ask import length_said
+
             lines.append(
                 f"These are the first piece's. {more} more piece"
                 + ("s" if more != 1 else "")
                 + f" extended the study, each from the checkpoint of the one "
-                f"before, to {extended[0]:.3g} ns of production in all; each "
+                f"before, to {length_said(extended[0])} of production in all; each "
                 "piece's own record is in its `segment-NNN/simulation` folder.")
         lines.append("")
         lines.extend(_settings_listed(_resolve_derived(dict(sim_params), record=sim),
