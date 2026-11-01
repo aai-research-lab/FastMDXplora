@@ -91,8 +91,8 @@ def test_a_withheld_error_says_the_exemption():
     (0.42, ", from fewer than one independent sample"),
     (0.999, ", from fewer than one independent sample"),
     (1.0, ", from 1 independent sample"),
-    (1.4, ", from 1 independent sample"),
-    (30.2, ", from 30 independent samples"),
+    (1.4, ", from 1.4 independent samples"),
+    (30.2, ", from 30.2 independent samples"),
 ])
 def test_a_count_under_one_is_not_rounded_to_none(effective, said):
     from fastmdxplora.report.document import _findings_notes

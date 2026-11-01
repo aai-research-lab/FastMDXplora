@@ -62,7 +62,7 @@
         if (note) {
           // Its image note beside the verdict, which it does not change.
           note.textContent = (mean.determined
-            ? `production mean, ${Math.round(mean.samples)} independent samples`
+            ? `production mean, ${window.FastMDXOverview.samplesSaid(mean.samples)}`
             : "production mean, not determined") + (mean.noted ? `; ${mean.noted}` : "");
           note.title = [mean.determined ? "" : (mean.why || ""), mean.noted ? (mean.noted_why || "") : ""]
             .filter(Boolean).join("\n\n");

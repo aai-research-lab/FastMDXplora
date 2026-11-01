@@ -96,20 +96,19 @@ UNCORRELATED_INEFFICIENCY = 2.0
 def independent_samples_said(count: float, *, about: bool = False) -> str:
     """A count of independent samples in words, the same on every page: a
     count under one is "fewer than one independent sample", never rounded
-    to 0; any other is a whole number, and one is a sample, not samples. A
-    count under :data:`MINIMUM_EFFECTIVE_SAMPLES` is never rounded up to
-    it: 9.6 is said as 9, beside a rule that withholds an error under 10.
+    to 0; any other is rounded down to one decimal, with no trailing .0.
+    This never crosses an integer threshold: 9.99 reads as 9.9, and a
+    count just below :data:`RESOLVED_SAMPLES` reads as 24.9.
     ``about`` hedges it, as an estimate is."""
     count = float(count)
     if not np.isfinite(count):
         return "a number of independent samples that could not be counted"
     if count < 1:
         return "fewer than one independent sample"
-    whole = int(round(count))
-    if count < MINIMUM_EFFECTIVE_SAMPLES <= whole:
-        whole = int(np.floor(count))
-    return (("about " if about else "") + f"{whole} independent "
-            + ("sample" if whole == 1 else "samples"))
+    rounded = math.floor(count * 10) / 10
+    said = f"{rounded:.1f}".removesuffix(".0")
+    return (("about " if about else "") + f"{said} independent "
+            + ("sample" if rounded == 1 else "samples"))
 
 
 #: Equilibration is detected as the latest start that keeps at least this
@@ -650,7 +649,7 @@ def _summary(
     if not resolved:
         return equilibrated, Withholding(
             f"This run is not long against its own correlation time: "
-            f"{kept.size} frames hold {effective:.1f} independent samples by "
+            f"{kept.size} frames hold {independent_samples_said(effective)} by "
             f"their own estimate, and a correlated run shorter than "
             f"{RESOLVED_SAMPLES:g} of them reads its correlation time low (only frames "
             "whose statistical inefficiency, before the correction for the sample "
@@ -710,7 +709,7 @@ def _summary(
 
     if effective < minimum_effective_samples:
         return equilibrated, Withholding(
-            f"{effective:.1f} independent samples in {kept.size} frames "
+            f"{independent_samples_said(effective)} in {kept.size} frames "
             f"(one every {equilibrated.inefficiency:.0f}). Below "
             f"{minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
@@ -780,21 +779,21 @@ class Shortfall:
 
     def __str__(self) -> str:
         if self.met:
-            return (f"{self.have:.1f} independent samples, which meets the "
+            return (f"{independent_samples_said(self.have)}, which meets the "
                     f"{self.target:g} asked for.")
         duration = ("" if self.more_ns is None
                     else f", about {self.more_ns:.3g} ns more")
         if not self.resolved:
             return (
                 f"The run is too short to resolve its own correlation time, so "
-                f"its {self.have:.1f} independent samples are an upper bound. "
+                f"its estimate of {independent_samples_said(self.have)} is an upper bound. "
                 f"At least {self.more_frames} further frames{duration} (as "
                 f"long again, or to {self.target:g} samples at one every "
                 f"{self.inefficiency:.0f} frames if that is longer), then "
                 "estimate again."
             )
         return (
-            f"{self.have:.1f} independent samples of the {self.target:g} "
+            f"{independent_samples_said(self.have)} of the {self.target:g} "
             f"needed. At one every {self.inefficiency:.0f} frames, that is "
             f"{self.more_frames} further frames{duration}."
         )
@@ -1204,8 +1203,8 @@ def summarise_segments(
             f"{len(unresolved)} of {len(pieces)} segments of this joined run "
             f"are not long against their own correlation time (numbered "
             f"{', '.join(str(i) for i in unresolved)} from zero; the least "
-            f"resolved holds {worst.effective_samples:.1f} independent "
-            f"samples by its own estimate, against the "
+            f"resolved holds {independent_samples_said(worst.effective_samples)} "
+            f"by its own estimate, against the "
             f"{RESOLVED_SAMPLES:g} that resolve it). "
             "Their independent-sample counts are upper bounds, so a pooled "
             "error built on them would be too small, and the test for drift "
@@ -1223,7 +1222,7 @@ def summarise_segments(
 
     if total < minimum_effective_samples:
         return None, Withholding(
-            f"{total:.1f} independent samples across {len(pieces)} "
+            f"{independent_samples_said(total)} across {len(pieces)} "
             f"segment(s), against the {minimum_effective_samples:g} a mean "
             "needs. The segments are disjoint in time so their independent "
             "samples add, and they still do not reach it. The remedy is "

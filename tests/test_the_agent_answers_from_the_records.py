@@ -53,7 +53,7 @@ def test_each_mean_is_said_with_its_error_or_why_it_has_none(tmp_path):
     lines = records_answer._means(_study(tmp_path / "study"))
     # As the Analysis page gives them, in its order.
     assert lines == [
-        "RMSD: 0.1123 ± 0.0021 nm, 21 independent samples, after the first 62 of 100 frames.",
+        "RMSD: 0.1123 ± 0.0021 nm, 21.2 independent samples, after the first 62 of 100 frames.",
         "Radius of gyration: 0.3281 nm, not determined; this run is not long against its "
         "own correlation time."]
 

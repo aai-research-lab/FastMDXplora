@@ -77,6 +77,7 @@ def _means(base: Path) -> list[str]:
     import math
 
     from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.statistics import independent_samples_said
 
     try:
         rows = overview_of(base).get("rows") or []
@@ -110,7 +111,7 @@ def _means(base: Path) -> list[str]:
             samples = quantity.get("samples")
             discard, frames = quantity.get("from_frame"), quantity.get("of_frames")
             if isinstance(samples, (int, float)) and math.isfinite(samples):
-                said += f", {samples:.0f} independent samples"
+                said += f", {independent_samples_said(samples)}"
             if isinstance(discard, int) and isinstance(frames, int) and discard > 0:
                 said += f", after the first {discard} of {frames} frames"
             if quantity.get("judged_earlier"):
@@ -129,6 +130,7 @@ def _thermodynamic_means(base: Path) -> list[str]:
     a study with no thermodynamics analysis: the summary named none while
     the Overview and the report gave each."""
     from fastmdxplora.gui.overview_view import THERMODYNAMICS, overview_payload
+    from fastmdxplora.statistics import independent_samples_said
 
     try:
         means = (overview_payload(base).get("thermodynamics") or {}).get("means") or {}
@@ -142,7 +144,8 @@ def _thermodynamic_means(base: Path) -> list[str]:
         noted = f"; {said['noted']}" if said.get("noted") else ""
         if said.get("determined"):
             samples = said.get("samples")
-            more = f", {samples:.0f} independent samples" if isinstance(samples, (int, float)) else ""
+            more = (f", {independent_samples_said(samples)}"
+                    if isinstance(samples, (int, float)) else "")
             lines.append(f"{label}: {said['said']}{more}{noted}.")
         else:
             why = _first_clause(said.get("why"))

@@ -302,6 +302,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     from fastmdxplora.statistics import (
         RESOLVED_SAMPLES,
         four_figures,
+        independent_samples_said,
         judged_by_earlier_rules,
         with_its_error,
     )
@@ -322,7 +323,8 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         why = "No mean was recorded."
     elif error is None and why is None:
         if samples is not None and samples < RESOLVED_SAMPLES:
-            why = (f"About {int(round(samples))} independent samples, fewer than the "
+            count_said = independent_samples_said(samples, about=True)
+            why = (f"{count_said.capitalize()}, fewer than the "
                    f"{RESOLVED_SAMPLES:g} an error bar needs.")
         else:
             why = "No error bar was recorded."
@@ -356,7 +358,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     return {
         "value": value, "error": error, "unit": unit, "said": said,
         "determined": determined, "why": why,
-        "samples": int(round(samples)) if samples is not None else None,
+        "samples": samples,
         "from_frame": discard, "of_frames": n, "from_ns": from_ns,
         "reweighted": False, "constant": constant,
         # Determined by the rules of the version that analysed it, which
@@ -397,7 +399,7 @@ def _reweighted(name: str, item: dict[str, Any], found: dict[str, Any] | None) -
     return {
         "value": value, "error": error, "unit": unit, "said": said,
         "determined": determined, "why": why,
-        "samples": int(round(samples)) if samples is not None else None,
+        "samples": samples,
         "from_frame": None, "of_frames": None, "from_ns": None, "reweighted": True,
         "constant": False, "judged_earlier": False,
         # Over every frame, as the reweighting weighs them: its own note.

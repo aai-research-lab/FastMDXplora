@@ -18,12 +18,16 @@
 (function () {
   "use strict";
 
-  /* Independent samples as a count: under one is said so, where rounding
-   * gave "0 independent samples" beside a mean. */
-  function samplesSaid(n) {
-    if (n < 0.5) return "under 1 independent sample";
-    var whole = Math.round(n);
-    return whole + " independent sample" + (whole === 1 ? "" : "s");
+  /* Keep a count below the next integer from rounding up to it. Near the
+   * minimum, 9.99 must not read "10.0" beside a rule that withholds under 10. */
+  function samplesSaid(n, about, belowOne) {
+    n = Number(n);
+    if (!Number.isFinite(n)) return "";
+    if (n < 1) return (belowOne || "fewer than one") + " independent sample";
+    var rounded = Math.floor(n * 10) / 10;
+    var count = rounded.toFixed(1).replace(/\.0$/, "");
+    return (about ? "about " : "") + count + " independent sample" +
+      (Number(count) === 1 ? "" : "s");
   }
 
   var SVG = "http://www.w3.org/2000/svg";
@@ -691,6 +695,7 @@
     load: load,
     get data() { return data; },
     ended: ended,
+    samplesSaid: samplesSaid,
     sayTime: sayTime,
     unreadSaid: unreadSaid,
     unreadNode: unreadNode,
