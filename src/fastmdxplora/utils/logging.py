@@ -398,7 +398,51 @@ def attach_file_logger(
     _mark_owned(handler, _FILE_KIND)
     base.addHandler(handler)
     _file_handler = handler
+    _say_what_was_held(Path(path))
     return base
+
+
+#: Lines about a study said before its log was attached, held until it is:
+#: (the study's folder, or None for the next study's log, the logger's
+#: name, the line). A few at most.
+_HELD_FOR_A_STUDY: list[tuple[str | None, str, str]] = []
+
+
+def log_in_the_study_s_log(name: str, message: str, study: str | Path | None = None) -> None:
+    """Log ``message`` (at INFO, on the logger ``name``) where it reaches the
+    log of the study it is about: now, where that study's log is attached
+    (any study's, where ``study`` is None); else held, and said once the
+    study's log is attached (the next study log attached, where ``study``
+    is None).
+
+    A line said while the study's settings were read, before its log was
+    attached, reached the console and no file: the study's own log, where
+    it is looked for afterwards, did not have it."""
+    attached = file_logger_path()
+    if attached is not None and (study is None or _same_folder(attached.parent, study)):
+        get_logger(name).info(message)
+        return
+    held = (str(Path(study).expanduser()) if study else None, name, message)
+    if held not in _HELD_FOR_A_STUDY:
+        _HELD_FOR_A_STUDY.append(held)
+        del _HELD_FOR_A_STUDY[:-16]
+
+
+def _same_folder(one: str | Path, other: str | Path) -> bool:
+    try:
+        return Path(one).expanduser().resolve() == Path(other).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def _say_what_was_held(path: Path) -> None:
+    """Say, in the log just attached at ``path``, each line held for its
+    study (:func:`log_in_the_study_s_log`)."""
+    for held in list(_HELD_FOR_A_STUDY):
+        study, name, message = held
+        if study is None or _same_folder(path.parent, study):
+            _HELD_FOR_A_STUDY.remove(held)
+            get_logger(name).info(message)
 
 
 def file_logger_path() -> Path | None:

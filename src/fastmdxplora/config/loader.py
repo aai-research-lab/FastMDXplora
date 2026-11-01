@@ -743,17 +743,20 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
         # A study's record written with both: the analyses left out by name
         # and, beside them, the plan they resolved to. That plan is what ran,
         # so it is read as the record's and the study is not refused; said
-        # in the log, since a run it starts runs the plan, which the image
-        # check joins, its exclusion not kept.
+        # in the study's log, since a run it starts runs the plan, which the
+        # image check joins, its exclusion not kept. The record is read
+        # before the study's log is attached, so the line is held for it.
         left = analysis.pop("exclude")
         named = [str(name) for name in left] if isinstance(left, list) else [str(left)]
-        from fastmdxplora.utils.logging import get_logger
+        from fastmdxplora.utils.logging import log_in_the_study_s_log
 
-        get_logger("config").info(
-            "The study's record lists the analyses that ran and those left out (%s); "
-            "it is read as the analyses that ran%s.", ", ".join(named),
-            ", which the image check joins, its exclusion not kept"
-            if "image_check" in named else "")
+        log_in_the_study_s_log(
+            "config",
+            "The study's record lists the analyses that ran and those left out "
+            f"({', '.join(named)}); it is read as the analyses that ran"
+            + (", which the image check joins, its exclusion not kept"
+               if "image_check" in named else "") + ".",
+            data.get("output") if isinstance(data.get("output"), str) else None)
     if isinstance(analysis, dict) and analysis.get("include") and analysis.get("exclude"):
         raise ConfigError(
             "The 'analysis' block sets both 'include' and 'exclude'; "
