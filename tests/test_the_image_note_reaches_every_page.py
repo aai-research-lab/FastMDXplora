@@ -513,7 +513,8 @@ class TestTheReportAndItsCaptions:
                                              "not_a_measurement": self.REASON,
                                              "solute_image": note}})
 
-        assert (self.REASON + " Neither lifts the bias of the solute's own image, in contact "
+        assert (self.REASON + " Neither a longer run nor replicas lift the bias of the "
+                "solute's own image, in contact "
                 "with it in every frame this mean uses: a larger box, in a new study, "
                 "does.") in notes(dict(_NOTE_09))
         assert self.REASON in notes({**_NOTE_09, "frames_under_close": 99})

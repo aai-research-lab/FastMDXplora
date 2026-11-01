@@ -1021,7 +1021,17 @@ def _convergence_section(project_root: Path) -> str:
     from fastmdxplora.report.convergence import said_as
     from fastmdxplora.statistics import four_figures, with_its_error
 
+    # Read from the analyses' records, as written, where they hold it: the
+    # table worked each mean out again, and gave SASA's recorded 4.7592 as
+    # 4.7591. What no record holds is worked out here, and said so.
+    worked_out: dict[str, list[str]] = {}
     for record in assessed["observables"].values():
+        recorded = set(record.get("recorded") or ())
+        missing = worked_out.setdefault(said_as(record["observable"]), [])
+        missing += [said for field, said in (("n_frames", "frame count"), ("mean", "mean"),
+                                             ("discard", "frames discarded"),
+                                             ("effective_samples", "independent samples"))
+                    if field not in recorded]
         error = record["standard_error"]
         determined = record.get("determined", error is not None) and error is not None
         # The mean to the place its error allows, as every page gives it,
@@ -1030,6 +1040,8 @@ def _convergence_section(project_root: Path) -> str:
         mean, _, uncertainty = said.partition(" \u00b1 ")
         if not determined:
             mean, uncertainty = four_figures(record["mean"]), "not determined"
+        elif "standard_error" not in recorded:
+            missing.append("error")
         lines.append(
             f"| {said_as(record['observable'])} | {record['frames']:,} | "
             f"{record.get('discard', 0):,} | "
@@ -1040,6 +1052,8 @@ def _convergence_section(project_root: Path) -> str:
                 record.get("equilibrated", record.get("settled"))]
             + " |"
         )
+    lines.append("")
+    lines.append(_what_was_worked_out(worked_out))
     lines.append("")
 
     checks = assessed.get("checks") or []
@@ -1100,6 +1114,26 @@ def _convergence_section(project_root: Path) -> str:
         )
         lines.append("")
     return "\n".join(lines)
+
+
+def _what_was_worked_out(worked_out: dict[str, list[str]]) -> str:
+    """What the Convergence table read from the analyses' records and what
+    it worked out here from the series, where no record holds it (each
+    observable's fields not recorded, by its name)."""
+    said = ("The frame counts, the frames discarded, the independent samples, the means and "
+            "their errors are the analyses' records, as written. Whether each observable "
+            "equilibrated is judged here, over the frames its mean is taken over, unless "
+            "its record withheld the mean as still drifting.")
+    alike: dict[tuple[str, ...], list[str]] = {}
+    for name, missing in worked_out.items():
+        if missing:
+            alike.setdefault(tuple(missing), []).append(name)
+    if not alike:
+        return said
+    parts = [f"the {_and(list(missing))} of {_and(sorted(names))}"
+             for missing, names in alike.items()]
+    return (said + " No record holds " + "; nor ".join(parts)
+            + ": the table works these out here from the series, by the same rules.")
 
 
 def _image_finding(project_root: Path) -> dict[str, Any] | None:
@@ -1193,6 +1227,8 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     of transitions -- kept in ``options.json`` for anyone who wants them. What
     belongs in a document is what they amount to.
     """
+    from fastmdxplora.image_note import note_of
+
     notes: list[str] = []
 
     # What the analysis found. Recorded for every per-frame analysis and
@@ -1204,6 +1240,11 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
 
         error = measured.get("standard_error")
         error = error if isinstance(error, (int, float)) and error > 0 else None
+        if measured.get("not_a_measurement"):
+            # Its record says the mean is not a measurement: no error beside
+            # it, as every page says it (an error was given with "from 9
+            # independent samples" beside a mean withheld for them).
+            error = None
         value = with_its_error(measured["mean"], error)
         if measured.get("unit"):
             value += f" {measured['unit']}"
@@ -1220,15 +1261,15 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
         notes.append(said + ".")
     if isinstance(measured, dict) and measured.get("not_a_measurement"):
         reason = str(measured["not_a_measurement"])
-        # "The remedy is a longer run, or better, replicas": neither lifts
-        # the bias of a solute in contact with its image in every frame the
-        # mean uses, as the Convergence part says of the run.
-        from fastmdxplora.image_note import note_of
-
+        # "The remedy is a longer run" (", or better, replicas" in some):
+        # neither lifts the bias of a solute in contact with its image in
+        # every frame the mean uses, as the Convergence part says of the run.
         note = note_of(measured)
         if ("remedy is a longer run" in reason and note is not None
                 and note.get("frames_under_close") == note.get("frames_used")):
-            reason += (" Neither lifts the bias of the solute's own image, in contact with "
+            remedies = ("Neither a longer run nor replicas lift" if "replicas" in reason
+                        else "A longer run does not lift")
+            reason += (f" {remedies} the bias of the solute's own image, in contact with "
                        "it in every frame this mean uses: a larger box, in a new study, does.")
         notes.append(reason)
     if findings.get("made_whole"):
@@ -1237,6 +1278,10 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     # paragraph, said once, in its section; on each other analysis whose
     # frames it met its image in, a line pointing there.
     image = findings.get("solute_image")
+    if image is None and note_of(measured) is not None:
+        # A record whose note is on its mean alone (`mean.solute_image`)
+        # gets the line from that note.
+        image = measured["solute_image"]
     pointer = image_note_said(image)
     # Once: the end-to-end distance's reason holds the note's own sentence.
     said = image.get("said") if isinstance(image, dict) and "frames_used" in image else None
