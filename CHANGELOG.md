@@ -9,6 +9,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A mean an earlier version recorded as determined on fewer independent
+  samples than this version determines a mean on reads "not determined",
+  with why and that analysing again records this version's verdict, on the
+  Overview, the Analysis page's table, its card and the convergence panel
+  alike (`analysis_overview.too_few_by_these_rules`). The card said "too
+  few to determine the mean" beside the Overview's "Determined".
+- The Agent's citations (`cites`) give `value` alone and the image note in
+  `noted`; the chip says the value, its verdict, then the note on a line of
+  its own, left-aligned where it wraps. "Not determined" followed the note,
+  as if said of the image.
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -303,6 +313,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A run whose means are determined and carry the image note, the solute
+  within the cutoff of its image in some frames but not in contact in every
+  one, was told "By its records, yes." and "Then replicas." in the Agent's
+  answers, and its Overview led "All 3 means are determined.", with no word
+  of the note. How many of its means may be biased is said once, with what
+  lifts it (`image_note.noted_said`), replicas are advised in a larger box,
+  and "yes" is not said alone before a note.
+- The advice of a larger box names its setting (`setup.solvent_padding_nm`)
+  and how large is enough: the solute kept farther from its image than the
+  run's cutoff, with its value.
+- A run of one mean in contact with its image in every frame is said "Its
+  mean", not "Its means", in the Agent's answers.
+- Compare, for two studies differing in several settings, says a resolved
+  difference beside a noted mean may be that bias "and not the settings
+  that differ", not "the setting".
+- The line said of a study's record written with both `include` and
+  `exclude` is said in the study's own log (`utils.logging.log_in_the_study_s_log`):
+  it was logged as the record was read, before that log was attached.
+- The Agent's looks validation reasons the 1AKE box width's tolerance from
+  the 2.0 nm default padding: 5% of 7.9 nm is 0.39 nm, and a width at the
+  1.0 nm padding before it (6.9 nm) is told apart.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
   of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
   drawn and recorded where none is given), so it now says to give the seed or
