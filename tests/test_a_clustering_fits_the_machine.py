@@ -526,6 +526,77 @@ class TestThePeakIsMeasuredAsResidentMemory:
                                                              estimate / n**2)
 
 
+_CHAIN_SCRIPT = r"""
+import json, os, sys
+import numpy as np
+import mdtraj as md
+sys.path.insert(0, sys.argv[1])
+import fastmdxplora.analysis  # noqa: F401
+from fastmdxplora.analysis import cluster as clustering
+
+def status(name):
+    for line in open("/proc/self/status"):
+        if line.startswith(name + ":"):
+            return int(line.split()[1]) * 1024
+    raise SystemExit("no " + name)
+
+def chain(n):
+    rng = np.random.default_rng(0)
+    top = md.Topology()
+    c = top.add_chain()
+    for i in range(4):
+        top.add_atom("CA", md.element.carbon, top.add_residue("ALA", c, resSeq=i + 1))
+    xyz = rng.normal(0.0, 0.4, (4, 3))[None] + np.cumsum(rng.normal(0.0, 0.01, (n, 4, 3)), axis=0)
+    traj = md.Trajectory(xyz.astype(np.float32), top)
+    traj.time = np.arange(n) * 10.0
+    return traj
+"""
+
+_SYMMETRIC_SCRIPT = _CHAIN_SCRIPT + r"""
+n, step = int(sys.argv[2]), int(sys.argv[3])
+clustering.ROWS_BYTES = 8 * n * step
+traj = chain(n)
+atoms = np.arange(4)
+clustering._pairwise_rmsd(traj[:50], atoms)
+# A large array freed, as reading a trajectory does: glibc's threshold for
+# mapping a block of its own rises past it, and blocks under it come from
+# the heap.
+large = np.ones(30 * 2**20 // 8)
+del large
+with open("/proc/self/clear_refs", "w") as refs:
+    refs.write("5")
+before = status("VmRSS")
+matrix = clustering._pairwise_rmsd(traj, atoms)
+print(json.dumps({"matrix": matrix.nbytes, "block": 8 * step * step,
+                  "peak": status("VmHWM") - before, "after": status("VmRSS") - before}))
+"""
+
+
+class TestNoBlockIsLeftResident:
+    """Past about 2,900 frames the matrix is made symmetric a block at a
+    time, and each pass's block came from glibc's heap: freed, the last one
+    stayed resident beside the matrix after it was made."""
+
+    @pytest.mark.parametrize("step", [700, 1200], ids=["three-passes", "two-passes"])
+    def test_each_pass_holds_one_block_and_none_is_left(self, tmp_path, step):
+        import subprocess
+        from pathlib import Path
+
+        if not Path("/proc/self/clear_refs").exists():
+            pytest.skip("the peak resident memory is read from Linux's /proc")
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        done = subprocess.run([sys.executable, "-c", _SYMMETRIC_SCRIPT, src, "2000",
+                               str(step)], capture_output=True, text=True, timeout=600,
+                              cwd=tmp_path)
+        assert done.returncode == 0, done.stderr[-2000:]
+        found = json.loads(done.stdout.strip().splitlines()[-1])
+        slack = 2 * 2**20
+        # The peak of any pass: the matrix and one block.
+        assert found["peak"] <= found["matrix"] + found["block"] + slack, found
+        # After: the matrix alone.
+        assert found["after"] <= found["matrix"] + slack, found
+
+
 class TestAnOlderStudysWholeMatrixIsReadInBlocks:
     """An older study kept the whole matrix in `cluster_rmsd_matrix.npz`; the
     GUI's read of it peaked at three times its size (a weights array for
