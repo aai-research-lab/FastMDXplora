@@ -967,9 +967,17 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     thermo = ((_load_json_safely(project_root / "analysis" / "thermodynamics" / "options.json")
                or {}).get("findings") or {}).get("thermodynamics")
     if isinstance(thermo, dict):
+        # Its quantities' frame count is the thermodynamics' own
+        # (`samples`, the rows of the energy log it read), not the
+        # trajectory's: the two coincide only where the state and the
+        # trajectory are written at one interval.
+        samples = thermo.get("samples")
+        counted = (isinstance(samples, int) and not isinstance(samples, bool)
+                   and samples > 0)
         for name in ("potential_energy", "temperature", "density"):
             if isinstance(thermo.get(name), dict):
-                records[name] = thermo[name]
+                records[name] = ({"n_frames": samples, **thermo[name]} if counted
+                                 else thermo[name])
 
     setup = _setup_record(project_root)
     sim = _load_json_safely(
@@ -1053,7 +1061,8 @@ def _convergence_section(project_root: Path) -> str:
             + " |"
         )
     lines.append("")
-    lines.append(_what_was_worked_out(worked_out))
+    lines.append(_what_was_worked_out(worked_out, any(
+        record.get("recorded") for record in assessed["observables"].values())))
     lines.append("")
 
     checks = assessed.get("checks") or []
@@ -1116,24 +1125,34 @@ def _convergence_section(project_root: Path) -> str:
     return "\n".join(lines)
 
 
-def _what_was_worked_out(worked_out: dict[str, list[str]]) -> str:
+def _what_was_worked_out(worked_out: dict[str, list[str]], any_recorded: bool) -> str:
     """What the Convergence table read from the analyses' records and what
     it worked out here from the series, where no record holds it (each
-    observable's fields not recorded, by its name)."""
-    said = ("The frame counts, the frames discarded, the independent samples, the means and "
-            "their errors are the analyses' records, as written. Whether each observable "
-            "equilibrated is judged here, over the frames its mean is taken over, unless "
-            "its record withheld the mean as still drifting.")
+    observable's fields not recorded, by its name). The records are named
+    only where some observable has one: with none, the sentence said them
+    the analyses' records and then that no record held them."""
+    said = []
+    if any_recorded:
+        said.append("Where an analysis recorded them, the frame counts, the frames "
+                    "discarded, the independent samples, the means and their errors are its "
+                    "record, as written.")
+    said.append("Whether each observable equilibrated is judged here, over the frames its "
+                "mean is taken over, unless its record withheld the mean as still drifting.")
+    counted = sorted(name for name, missing in worked_out.items() if "frame count" in missing)
+    if counted:
+        said.append(f"No record holds the frame count of {_and(counted)}: the table counts "
+                    + ("it" if len(counted) == 1 else "them") + " from the series.")
     alike: dict[tuple[str, ...], list[str]] = {}
     for name, missing in worked_out.items():
-        if missing:
-            alike.setdefault(tuple(missing), []).append(name)
-    if not alike:
-        return said
-    parts = [f"the {_and(list(missing))} of {_and(sorted(names))}"
-             for missing, names in alike.items()]
-    return (said + " No record holds " + "; nor ".join(parts)
-            + ": the table works these out here from the series, by the same rules.")
+        rest = tuple(field for field in missing if field != "frame count")
+        if rest:
+            alike.setdefault(rest, []).append(name)
+    if alike:
+        parts = [f"the {_and(list(missing))} of {_and(sorted(names))}"
+                 for missing, names in alike.items()]
+        said.append("No record holds " + "; nor ".join(parts)
+                    + ": the table works these out here from the series, by the same rules.")
+    return " ".join(said)
 
 
 def _image_finding(project_root: Path) -> dict[str, Any] | None:

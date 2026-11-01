@@ -183,8 +183,9 @@ def test_a_withheld_mean_keeps_its_record_s_verdict_and_what_no_record_holds_is_
     _analysed(tmp_path, "rg", 0.33 + 0.004 * rng.standard_normal(100), None)
     section = _convergence_section(tmp_path)
     assert _row(section, "SASA")[4:6] == ["4.759", "not determined"]
-    assert ("No record holds the frame count, mean, frames discarded, independent samples "
-            "and error of Rg: the table works these out here from the series") in section
+    assert "No record holds the frame count of Rg: the table counts it from the series." in section
+    assert ("No record holds the mean, frames discarded, independent samples and error of Rg: "
+            "the table works these out here from the series") in section
 
 
 # ---------------------------------------------------------------------------
@@ -307,3 +308,38 @@ def test_a_mean_temperature_no_record_holds_is_said_so(thermostatted):
         "potential_energy": THERMO["potential_energy"]}}}), encoding="utf-8")
     assert ("K (worked out here; no record holds it) against a target of 300.0 K"
             in _convergence_section(thermostatted))
+
+
+def test_the_convergence_sentence_names_no_record_where_none_is(tmp_path):
+    """With no record at all it said the frame counts, means and errors
+    were the analyses' records, then that no record held them."""
+    from fastmdxplora.report.document import _convergence_section
+
+    _analysed(tmp_path, "rg", 0.33 + 0.004 * np.random.default_rng(6).standard_normal(100),
+              None)
+    section = _convergence_section(tmp_path)
+    assert "record, as written" not in section and "analyses' records" not in section
+    assert "No record holds the frame count of Rg" in section
+
+
+def test_the_thermodynamic_frame_count_is_its_record_s_and_traced_there(thermostatted):
+    """The thermodynamics records how many rows it read (`samples`): the
+    table said no record held the frame count, and the Report page traced
+    it to the trajectory's frame count in `analysis_manifest.json`."""
+    from fastmdxplora.report.document import _convergence_section
+
+    options = thermostatted / "analysis" / "thermodynamics" / "options.json"
+    options.write_text(json.dumps({"findings": {"thermodynamics": {**THERMO, "samples": 100}}}),
+                       encoding="utf-8")
+    (thermostatted / "analysis" / "analysis_manifest.json").write_text(
+        json.dumps({"n_frames": 100}), encoding="utf-8")
+    section = _convergence_section(thermostatted)
+    assert "No record holds the frame count" not in section
+    assert _row(section, "temperature")[1] == "100"
+    (thermostatted / "report" / "report.md").write_text("# Report\n\n" + section,
+                                                       encoding="utf-8")
+    found = _traced(thermostatted, "100")
+    assert found and {(n["record"]["file"], n["record"]["key"]) for n in found
+                      if n.get("record")} == {("analysis/thermodynamics/options.json",
+                                               "findings.thermodynamics.samples")}, found
+    assert all(n["traced"] for n in found), found
