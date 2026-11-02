@@ -156,7 +156,8 @@ DRIFT_FRAMES = 6
 #: 4 also checks recorded joins for a resolved trend between segments.
 #: 5 calls three or four segments drifting only where the trend also stands
 #: against the segment means' own scatter about the line, each mean placed
-#: at its centre frame in time.
+#: at its centre frame in time (and that scatter alone where a line does
+#: not fit the segments' errors).
 MEAN_RULES = 5
 
 #: A series whose averaged frames trend by this many times the trend's own
@@ -1129,8 +1130,9 @@ class Pooled:
     #: errors predict. One means they agree.
     heterogeneity: float = 1.0
     #: The drift test's p-value: for three or four segments the larger of a
-    #: slope against their errors (with a line-fit check) and a slope against
-    #: their own scatter; an order-permutation test for five or more.
+    #: slope against their errors and a slope against their own scatter (the
+    #: latter alone where a line does not fit the errors); an
+    #: order-permutation test for five or more.
     drift_p: float = 1.0
     #: What is true of this mean that would not be true of one from a run
     #: that stayed put. Empty where nothing is.
@@ -1277,8 +1279,18 @@ def summarise_segments(
     # exist. Asked first, of the segments whose errors can be read, because
     # a run still moving is the more useful thing to say: longer segments
     # would not cure it.
+    # Which segments the test leaves out, and why, for its refusal to say.
+    out = [(index, "too short for a mean of its own") for index, _why in withheld]
+    out += [(index, "still drifting within itself"
+             if _code_of(why) == "analysis.sampling.still_drifting"
+             else "its correlation not resolved")
+            for index, ok, why in zip(kept_at, resolved, reasons) if not ok]
+    left_out = (f"{len(out)} left out, numbered from zero: "
+                + "; ".join(f"{index}, {said}" for index, said in sorted(out))
+                if out else "")
     scatter, drifting, refusal = _drift_test(
-        means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved])
+        means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved],
+        left_out=left_out)
     if refusal is not None:
         return None, refusal
 
@@ -1376,11 +1388,21 @@ def summarise_segments(
                 "stationarity: unordered offsets or nonlinear movement can "
                 "also disagree this way. Treat the error on this mean as a "
                 "lower bound.")
+        elif len(pieces) == 2:
+            # Two means have no order to test: "that is not drift" was said
+            # of a temperature climbing from 177.8 to 185.5 K.
+            qualification = (
+                "The two segment means disagree beyond their own standard "
+                f"errors (they scatter {scatter:.1f} times more than those "
+                "predict), and two segments cannot tell a drift from offsets "
+                "between them. Treat the error on this mean as a lower bound.")
         else:
+            # Five or more: the order test, which can reach 2/120 at five,
+            # did not call drift.
             qualification = (
                 f"The segment means scatter {scatter:.1f} times more than their "
-                "own standard errors predict, in no particular order. That is "
-                "not drift -- it says the per-segment errors are too small, "
+                "own standard errors predict, in no order the test for drift "
+                "calls. That says the per-segment errors are too small, "
                 "usually because the statistical inefficiency did not fully "
                 "capture the correlation. Treat the error on this mean as a "
                 "lower bound.")
@@ -1412,12 +1434,13 @@ def _beyond_chance(scatter: float, count: int) -> bool:
 
 
 def _drift_test(means: np.ndarray, precisions: np.ndarray,
-                positions: "np.ndarray | None" = None,
+                positions: "np.ndarray | None" = None, *, left_out: str = "",
                 ) -> "tuple[float, float, Withholding | None]":
     """The heterogeneity, the drift p-value, and the refusal for segment
     means that move in order (None where they do not). ``positions`` is
     where each mean sits in time (its centre frame); segment order where
-    not given.
+    not given. ``left_out`` says which segments were not tested and why,
+    for the refusal to say beside how many were.
 
     Both a trend (``drift_across_segments`` at most 0.05) and a
     disagreement (``heterogeneity_ratio`` above one) are needed, because
@@ -1445,24 +1468,34 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray,
     # called on means that step back once, and saying they move one way
     # would describe means the reader can see do not.
     one_way = bool(np.all(steps > 0.0) or np.all(steps < 0.0))
+    # How many were tested, and any left out and why: "first to last" on
+    # six pieces read as all six where one was not among them.
+    tested = (f"the means of the {means.size} segments tested"
+              + (f" ({left_out})" if left_out else ""))
     if method == "slope_against_errors_and_scatter":
         change = (_weighted_slope(means, precisions, positions)
                   * float(positions[-1] - positions[0]))
         movement = (
-            f"A straight line through the segment means changes by {change:+.4g} "
+            f"A straight line through {tested} changes by {change:+.4g} "
             f"across the run (first to last mean {span:+.4g}"
             + ("" if one_way else ", though they do not move one way at every step")
             + ")")
+        readable = bool(np.all(np.isfinite(precisions)) and np.all(precisions > 0.0))
+        fits = readable and _short_segment_halves(means, precisions, positions)[0] is not None
         evidence = (
             "its slope stands both against the segments' own standard errors, "
             "with the line consistent with those errors, and against the "
-            f"means' own scatter about it: the larger p-value is {chance}")
+            f"means' own scatter about it: the larger p-value is {chance}"
+            if fits else
+            f"its slope stands against the means' own scatter about it (p {chance}), "
+            "though they stray from a straight line by more than their own "
+            "standard errors allow")
     else:
         movement = (
-            f"The segment means move in order across the run, by {span:+.4g} "
-            "from first to last" if one_way else
-            f"The segment means trend across the run, by {span:+.4g} from first "
-            "to last, though not one way at every step")
+            f"{tested[:1].upper()}{tested[1:]} move in order across the run, by "
+            f"{span:+.4g} from first to last" if one_way else
+            f"{tested[:1].upper()}{tested[1:]} trend across the run, by "
+            f"{span:+.4g} from first to last, though not one way at every step")
         evidence = f"an ordering this clean arises by chance {chance} of the time"
     # The verdict first, with its p and remedy: a page that shows the first
     # sentence alone (the Overview's card) showed the line's arithmetic and
@@ -1549,37 +1582,12 @@ def _own_scatter_slope_p(means: np.ndarray, positions: np.ndarray) -> float:
     return max(p, math.nextafter(0.0, 1.0))
 
 
-def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,
-                           positions: np.ndarray) -> float:
-    """A slope test against the segments' errors and against their own
-    scatter, only where a line fits those errors; the larger p-value.
-
-    For independent Gaussian mean errors, Var(slope) = 1 / Sxx, with
-    inverse-variance weights. Its two-sided normal tail uses the supplied
-    errors, not a variance estimated from the line's residuals. The latter
-    would give a perfect line zero error however uncertain its means were.
-
-    A jump or unordered offsets can have a significant fitted slope too.
-    Require their weighted residual sum to be compatible with chi-square
-    on k - 2 degrees of freedom at 0.05. For k = 3 or 4 those survival
-    functions are erfc(sqrt(Q/2)) and exp(-Q/2). Returning 1 on lack of fit
-    makes the combined p-value conservative; it does not establish that
-    the series is stationary. The disagreement still qualifies its error.
-
-    That alone trusts the errors, and one residual degree of freedom (two at
-    k = 4) cannot tell errors that hold from errors too small for offsets
-    between segments: on unordered offsets about three times the errors it
-    called 12% to 40% of runs drifting (``docs/short-segment-drift.md``).
-    So the slope must also stand against the means' own scatter
-    (:func:`_own_scatter_slope_p`), which holds about 5% whatever the size
-    of such offsets. The price is power at three segments,
-    where the scatter has one degree of freedom: a line must be close to
-    straight to be called drift.
-
-    Both halves fit the means against ``positions``, where each sits in
-    time, so a drift steady in time is a straight line however unequal
-    the segments.
-    """
+def _short_segment_halves(means: np.ndarray, precisions: np.ndarray,
+                          positions: np.ndarray) -> "tuple[float | None, float]":
+    """The two halves of the three- and four-segment test: the slope's
+    p-value against the segments' errors (None where a line does not fit
+    those errors) and against the means' own scatter about the line."""
+    own = _own_scatter_slope_p(means, positions)
     scale = float(precisions.max())
     weights = precisions / scale
     total = float(weights.sum())
@@ -1590,20 +1598,57 @@ def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,
     y = relative - float(weights @ relative / total)
     spread = float(weights @ (x * x))
     if spread <= 0 or not np.all(np.isfinite(y)):
-        return 1.0
+        return None, 1.0
     slope = float(weights @ (x * y) / spread)
     residual = y - slope * x
     q = float(weights @ (residual * residual)) * scale
     if not math.isfinite(q):
-        return 1.0
+        return None, own
     fit_p = (math.erfc(math.sqrt(q / 2.0)) if means.size == 3
              else math.exp(-q / 2.0))
     if fit_p < DRIFT_SIGNIFICANT_BELOW:
-        return 1.0
+        return None, own
     z = abs(slope) * math.sqrt(scale) * math.sqrt(spread)
     # An extreme normal tail can underflow, rather than be exactly zero.
-    against_errors = max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0))
-    return max(against_errors, _own_scatter_slope_p(means, positions))
+    return max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0)), own
+
+
+def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,
+                           positions: np.ndarray) -> float:
+    """A slope test against the segments' errors and against their own
+    scatter where a line fits those errors (the larger p-value), and
+    against their own scatter alone where it does not.
+
+    For independent Gaussian mean errors, Var(slope) = 1 / Sxx, with
+    inverse-variance weights. Its two-sided normal tail uses the supplied
+    errors, not a variance estimated from the line's residuals. The latter
+    would give a perfect line zero error however uncertain its means were.
+
+    A jump or unordered offsets can have a significant fitted slope too.
+    So the errors' half is read only where the weighted residual sum is
+    compatible with chi-square on k - 2 degrees of freedom at 0.05 (for
+    k = 3 or 4 the survival functions are erfc(sqrt(Q/2)) and exp(-Q/2)).
+
+    That alone trusts the errors, and one residual degree of freedom (two at
+    k = 4) cannot tell errors that hold from errors too small for offsets
+    between segments: on unordered offsets about three times the errors it
+    called 12% to 40% of runs drifting (``docs/short-segment-drift.md``).
+    So the slope must also stand against the means' own scatter
+    (:func:`_own_scatter_slope_p`), which holds about 5% whatever the size
+    of such offsets. Where the line does not fit the errors, that half
+    alone decides: returning 1 there pooled a large monotone drift off a
+    straight line (four temperatures rising 177.8, 185.4, 186.6, 192.6 K
+    over errors of 0.5 to 0.7 K), and the larger the drift against the
+    errors, the surer it failed the fit. The price is power at three
+    segments, where the scatter has one degree of freedom: a line must be
+    close to straight to be called drift.
+
+    Both halves fit the means against ``positions``, where each sits in
+    time, so a drift steady in time is a straight line however unequal
+    the segments.
+    """
+    against_errors, own = _short_segment_halves(means, precisions, positions)
+    return own if against_errors is None else max(against_errors, own)
 
 
 def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
@@ -1623,13 +1668,12 @@ def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
     With three or four means and finite positive inverse-variance weights,
     use a two-sided Gaussian slope test (:func:`_short_segment_drift_p`).
     It assumes approximately independent, Gaussian segment-mean errors,
-    whose supplied standard errors approximate their absolute scale. A
-    line must fit those errors at 0.05; otherwise return 1, leaving the
-    disagreement to qualify the pooled error, not establish stationarity.
-    The slope must also stand against the means' own scatter about the
-    line (Student's t on k - 2 degrees of freedom), and the larger of the
-    two p-values is returned, so offsets between segments larger than their
-    errors are not read as a trend. Both fit the means against
+    whose supplied standard errors approximate their absolute scale. The
+    slope must also stand against the means' own scatter about the line
+    (Student's t on k - 2 degrees of freedom), and the larger of the two
+    p-values is returned, so offsets between segments larger than their
+    errors are not read as a trend. Where a line does not fit those errors
+    at 0.05, the scatter's p-value alone is returned. Both fit the means against
     ``positions``, where each sits in time (the centre frame of the frames
     it is taken over); segment order where not given.
 

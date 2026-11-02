@@ -297,9 +297,10 @@ pooling.
 With **three or four contributing segments**, the test fits a weighted
 straight-line trend against where each segment mean sits in time (the centre
 frame of the frames it averages), using each segment mean's own standard
-error. The slope must be significant at 0.05 and the line's residuals
-must be consistent with those errors. A jump or unordered offsets can have a
-large fitted slope too, so the residual check is necessary. The slope must also
+error. The slope must be significant at 0.05 against those errors where the
+line's residuals are consistent with them; a jump or unordered offsets can have
+a large fitted slope too, so where the residuals are not, the errors do not
+judge the slope. The slope must also
 be significant against the means' own scatter about an unweighted line
 (Student's t on k - 2 degrees of freedom): with one or two residual degrees of
 freedom the errors cannot be checked, and offsets between segments larger than
@@ -312,9 +313,10 @@ refusal identify the method in `drift_test`, and a withheld mean's record
 saves its refusal's code (`withheld_code`), by which the report and the
 Overview tell a mean still drifting from one withheld for other reasons.
 
-The short-run test returns `drift_p = 1` when a line fails its fit check; that
-does not establish stationarity. Substantial unexplained scatter still qualifies
-the error as a lower bound. See the [method, assumptions and fixed synthetic
+Where a line fails its fit check, the short-run test's `drift_p` is the
+scatter's alone. A mean of three or four segments not called drifting has not
+been shown stationary. Substantial unexplained scatter still qualifies the
+error as a lower bound. See the [method, assumptions and fixed synthetic
 checks](short-segment-drift.md) for the formulas and validation counts.
 
 ```

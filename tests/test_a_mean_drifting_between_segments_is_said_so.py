@@ -201,3 +201,14 @@ def test_the_stronger_qualification_is_said_only_beyond_chance(scatter, count, p
     assert why is None and pooled is not None
     assert pooled.qualification.startswith(f"The segment means scatter {scatter:.1f} times")
     assert ("This does not establish stationarity" in pooled.qualification) is not plain
+
+
+def test_two_segments_that_disagree_are_not_said_to_be_free_of_drift() -> None:
+    # Two means have no order to test: 177.8 then 185.5 K was said "That is
+    # not drift".
+    rng = np.random.default_rng(7)
+    values = np.concatenate([_ar1(2000, 0.5, rng), _ar1(2000, 0.5, rng) + 1.5])
+    pooled, why = summarise_segments(values, [2000])
+    assert why is None and pooled is not None and pooled.qualification
+    assert "not drift" not in pooled.qualification
+    assert "two segments cannot tell a drift from offsets between them" in pooled.qualification

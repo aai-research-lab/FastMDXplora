@@ -4,7 +4,7 @@ Run from an installed checkout:
     python tests/_short_segment_drift_check.py --output /tmp/p1.json
 To count another checkout, put its src directory first on PYTHONPATH. The
 seeds and cases are fixed here; the thresholds live in statistics.py. The
-trajectory cases take about half an hour on one core.
+trajectory cases take about ten minutes on one core.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import scipy
 from scipy.signal import lfilter
 
 from fastmdxplora.refusals import refusal_of
-from fastmdxplora.statistics import _drift_test, summarise_segments
+from fastmdxplora.statistics import _drift_test, mean_record, summarise_segments
 
 
 def known_errors() -> list[dict]:
@@ -67,7 +67,7 @@ def ar1(rng, n, phi, r):
 
 
 def series(rng, r, lengths, phi=0.8, offsets=None, slow=0.0, slow_phi=0.999,
-           ramp=0.0):
+           ramp=0.0, curve=0.0):
     n = int(sum(lengths))
     x = ar1(rng, n, phi, r)
     if slow:
@@ -76,6 +76,8 @@ def series(rng, r, lengths, phi=0.8, offsets=None, slow=0.0, slow_phi=0.999,
         x += np.repeat(np.asarray(offsets, float), lengths)[None, :]
     if ramp:
         x += ramp * np.linspace(0.0, 1.0, n)[None, :]
+    if curve:
+        x += curve * (1.0 - np.exp(-np.linspace(0.0, 1.0, n) / 0.3))[None, :]
     joins = list(np.cumsum(lengths)[:-1].astype(int))
     return x, joins
 
@@ -139,7 +141,26 @@ CASES = {
     "stat_uneq_4": dict(lengths=[500, 500, 500, 4000]),
     "ramp_time_uneq_3": dict(lengths=[500, 500, 4000], ramp=2.4),
     "ramp_time_uneq_4": dict(lengths=[500, 500, 500, 4000], ramp=2.4),
+    # levelling off in time, 1.2 (1 - exp(-t / 0.3)) over the run: a long
+    # last piece, a long first one, and equal pieces
+    "level_time_long_last_4": dict(lengths=[1000, 1000, 1000, 5000], curve=1.2),
+    "level_time_long_last_3": dict(lengths=[1000, 1000, 6000], curve=1.2),
+    "level_time_long_first_3": dict(lengths=[6000, 1000, 1000], curve=1.2),
+    "level_time_equal_3": dict(lengths=[2000, 2000, 2000], curve=1.2),
 }
+
+
+def by_index() -> None:
+    """Count with each mean placed at its segment's index rather than its
+    centre in time (as first built), for the trade between the two."""
+    import fastmdxplora.statistics as statistics
+
+    test = statistics._drift_test
+
+    def at_index(means, precisions, positions=None, **kwargs):
+        return test(means, precisions, None, **kwargs)
+
+    statistics._drift_test = at_index
 
 
 def trajectories(realisations: int = 1000, only: "list[str] | None" = None) -> list[dict]:
@@ -147,7 +168,8 @@ def trajectories(realisations: int = 1000, only: "list[str] | None" = None) -> l
     ``offsets`` per segment, ``rand_offsets`` the SD of random offsets per
     segment in no order, ``slow`` the size of a second AR(1) mode with phi
     0.999 (a correlation time of 1000 frames the segments' errors miss),
-    ``ramp`` a rise linear in time over the run. ``only`` names the cases
+    ``ramp`` a rise linear in time over the run, ``curve`` one levelling
+    off, ``curve (1 - exp(-t / 0.3))`` for t from 0 to 1. ``only`` names the cases
     to count (each keeps its own seed)."""
     rows = []
     for index, (name, spec) in enumerate(CASES.items()):
@@ -169,9 +191,23 @@ def trajectories(realisations: int = 1000, only: "list[str] | None" = None) -> l
     return rows
 
 
+def ramp_means_determined(realisations: int = 1000) -> dict:
+    """The 3-segment ramp of 0.4 a segment (``ramp_eq_3``, its seed and
+    series) through ``mean_record`` with its joins, as an analysis records
+    it: how many means are determined, and why the rest are not."""
+    index = list(CASES).index("ramp_eq_3")
+    rng = np.random.default_rng(610000 + 1000 * index)
+    x, joins = series(rng, realisations, **CASES["ramp_eq_3"])
+    counts = Counter("determined" if not record.get("not_a_measurement")
+                     else record.get("withheld_code", "unclassified")
+                     for record in (mean_record(row, joins=joins) for row in x))
+    return dict(case="ramp_eq_3", realisations=realisations, counts=dict(sorted(counts.items())))
+
+
 def check(only: "list[str] | None" = None) -> dict:
     return dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
                 known_errors=[] if only else known_errors(),
+                mean_record=None if only else ramp_means_determined(),
                 contiguous_ar1=trajectories(only=only))
 
 
@@ -179,6 +215,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cases", nargs="*", help="count only these trajectory cases")
+    parser.add_argument("--by-index", action="store_true",
+                        help="place each mean at its segment's index, not its centre in time")
     args = parser.parse_args()
+    if args.by_index:
+        by_index()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(check(args.cases), indent=2) + "\n", encoding="utf-8")
+    counted = {**check(args.cases), "positions": "index" if args.by_index else "time"}
+    args.output.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")

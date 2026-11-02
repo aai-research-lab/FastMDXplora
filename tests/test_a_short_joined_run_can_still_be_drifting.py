@@ -18,7 +18,8 @@ import pytest
 from scipy.stats import chi2, linregress, norm
 
 from fastmdxplora.refusals import refusal_of
-from fastmdxplora.statistics import _drift_test, drift_across_segments, summarise_segments
+from fastmdxplora.statistics import (
+    _drift_test, _own_scatter_slope_p, drift_across_segments, summarise_segments)
 
 
 def test_means_that_step_back_are_not_said_to_move_in_order():
@@ -234,8 +235,53 @@ def test_the_line_fit_uses_k_minus_two_degrees_of_freedom(count):
     # design, so it changes the lack of fit without changing the slope.
     residual = np.array([1.0, -2.0, 1.0] if count == 3 else [1.0, -1.0, -1.0, 1.0])
     residual /= np.linalg.norm(residual)
+    x = np.arange(count, dtype=float)
     for fits in (True, False):
         q = chi2.isf(0.05, count - 2) * (0.999 if fits else 1.001)
-        # Steep enough that the scatter about the line does not decide.
-        means = 100 * np.arange(count) + np.sqrt(q) * residual
-        assert (_drift_test(means, np.ones(count))[2] is not None) == fits
+        # Steep enough that both halves call it: the fit decides only which
+        # are read. Where the line does not fit the errors, the scatter's
+        # p-value alone is returned (it was 1, and the drift pooled).
+        means = 100 * x + np.sqrt(q) * residual
+        p = drift_across_segments(means, np.ones(count))
+        own = _own_scatter_slope_p(means, x)
+        assert p == pytest.approx(own if not fits else max(own, norm.sf(100 * np.sqrt(
+            np.sum((x - x.mean()) ** 2))) * 2))
+        assert _drift_test(means, np.ones(count))[2] is not None
+
+
+def test_a_large_drift_off_a_straight_line_is_called_on_its_own_scatter():
+    # A real joined run's temperature after four pieces of 20 ps, climbing
+    # toward its thermostat's 300 K: rising at every step, 14.8 K over errors
+    # of 0.5 to 0.7 K, and off a straight line by far more than those errors
+    # allow (Q 310 on 3 degrees of freedom). The line failing the errors'
+    # chi-square returned p 1, and the mean was pooled.
+    means = np.array([177.7929, 185.4486, 186.6115, 192.5817])
+    errors = np.array([0.6704, 0.6769, 0.5985, 0.5167])
+    centres = np.array([82.5, 179.5, 258.5, 367.0])
+    _, p, why = _drift_test(means, 1 / errors**2, centres)
+    assert p == pytest.approx(_own_scatter_slope_p(means, centres)) and p < 0.05
+    assert why is not None
+    assert refusal_of(why).code == "analysis.sampling.drifting"
+    assert "stray from a straight line by more than their own standard errors" in str(why)
+
+
+def test_a_drift_refusal_says_how_many_segments_were_tested_and_which_were_left_out():
+    # Five pieces climbing, a fourth (numbered 3) too correlated to resolve
+    # and a last of two frames: "move in order ... from first to last" was
+    # said as though of all seven.
+    from scipy.signal import lfilter
+
+    rng = np.random.default_rng(5)
+
+    def ar(n, phi):
+        return lfilter([1.0], [1.0, -phi], rng.normal(0.0, np.sqrt(1 - phi * phi), n))
+
+    pieces = [ar(1000, 0.8) + 0.4 * i for i in range(5)]
+    pieces = pieces[:3] + [ar(60, 0.995) + 1.0] + pieces[3:] + [np.array([5.0, 5.0])]
+    values = np.concatenate(pieces)
+    joins = list(np.cumsum([piece.size for piece in pieces])[:-1])
+    pooled, why = summarise_segments(values, joins)
+    assert pooled is None and refusal_of(why).code == "analysis.sampling.drifting"
+    assert ("The means of the 5 segments tested (2 left out, numbered from zero: "
+            "3, its correlation not resolved; 6, too short for a mean of its own) "
+            "move in order across the run") in str(why)

@@ -39,6 +39,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   "yes" and passed the check, reading only the words "still drifting"),
   with a finding giving the refusal and its remedy; the Overview's card
   leads with the verdict, its p and the remedy, and its lead names the mean.
+- Where three or four segment means stray from a straight line by more than
+  their errors allow, the drift test is decided by the means' own scatter
+  about the line; it returned p 1 there and pooled a large monotone drift
+  (a real run's temperature, 177.8, 185.4, 186.6 and 192.6 K over errors of
+  0.5 to 0.7 K, is now called, p 0.024). Only four-segment counts move
+  (`docs/short-segment-drift.md`). Fitting the means against their centres
+  in time is a trade: a steady drift over unequal segments is called more
+  often (206 against 0 runs of 1,000 by index for 500, 500 and 4,000 frames),
+  a drift levelling off with a long last piece less often (336 against 710
+  for 1,000, 1,000, 1,000 and 5,000 frames, where 519 means are pooled as a
+  lower bound against 149).
+- A drift refusal says how many segments it tested and which it left out
+  and why; two segments that disagree are said not to tell a drift from
+  offsets (they were said "not drift").
 - A mean an earlier version recorded as determined on fewer independent
   samples than this version determines a mean on reads "not determined",
   with why and that analysing again records this version's verdict, on the

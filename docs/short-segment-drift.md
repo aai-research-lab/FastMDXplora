@@ -39,8 +39,14 @@ the case where the errors do not hold, and then they are not the right
 weights either: weighted by them, an imprecise segment between two precise
 ones leaves almost no residual.
 
-If the line fails its fit check, the combined `drift_p` is 1. Otherwise it is
-the larger of the two slope probabilities. The refusal says how much the
+If the line passes its fit check, the combined `drift_p` is the larger of the
+two slope probabilities. If it fails, the errors cannot judge the slope (the
+means stray from a line by more than they allow) and `drift_p` is the scatter's
+probability alone. Returning 1 there (as first built) pooled a large monotone
+drift off a straight line, and the larger the drift against the errors, the
+surer it failed the fit: a real run's temperature, 177.79, 185.45, 186.61 and
+192.58 K over errors of 0.5 to 0.7 K (Q 310 on 3 degrees of freedom), was
+pooled; its scatter's p is 0.024, and it is now called. The refusal says how much the
 line changes by: its slope times the span from the first centre to the last.
 As before, a drift refusal also
 requires the segment means to disagree beyond their own errors
@@ -85,8 +91,20 @@ columns below are the delivery stack before P1 (`3c0cd4e6`, no test at three
 or four), mean rules version 4 (the errors alone, `956957d6`) and version 5
 (this page). The second table also gives version 5 as first built
 (`b366867e`), which fitted the means against segment index rather than time;
-`--cases` counts only the trajectory rows named.
+`--cases` counts only the trajectory rows named, and `--by-index` places each
+mean at its segment's index rather than its centre in time.
 Counts used Python 3.11.17, NumPy 2.4.6 and SciPy 1.17.1.
+
+Reading the scatter alone where the line fails the errors' fit (`de2b5dc9`
+returned 1 there) moved only four-segment counts. In the first table: linear
+9,298 to 9,535, offsets with equal errors 459 to 472, a short restart 411 to
+413; every three-segment row and every other four-segment row is unchanged.
+In the second: slow mode 73 to 78 (equal) and 47 to 53 (short restart),
+offsets SD 0.3 53 to 56 (equal) and 44 to 45 (short restart), the ramps 890
+to 919, 724 to 725 and 901 to 939 (a 2-frame fifth segment), levelling off
+166 to 173, the zigzag 0 to 1, and the ramp in time 451 to 475. Every
+three-segment row, every stationary row, and every run at five or six
+segments is as it was.
 
 The first check generates 10,000 sets of means per row with known Gaussian errors.
 Rows one to four use errors evenly spaced from 0.2 to 0.8: linear offsets of
@@ -106,11 +124,11 @@ segment) and a precise middle (0.2 for the second, 0.56 for the rest).
 | 3 | Offsets, short restart | 0 | 3,983 | 352 |
 | 3 | Offsets, precise middle | 0 | 1,242 | 236 |
 | 4 | Stationary | 0 | 476 | 110 |
-| 4 | Linear | 0 | 9,490 | 9,298 |
+| 4 | Linear | 0 | 9,490 | 9,535 |
 | 4 | Jump | 0 | 0 | 0 |
 | 4 | Unordered | 0 | 0 | 0 |
-| 4 | Offsets, equal errors | 0 | 1,405 | 459 |
-| 4 | Offsets, short restart | 0 | 2,137 | 411 |
+| 4 | Offsets, equal errors | 0 | 1,405 | 472 |
+| 4 | Offsets, short restart | 0 | 2,137 | 413 |
 | 4 | Offsets, precise middle | 0 | 1,341 | 365 |
 
 The second check runs the complete `summarise_segments` path on contiguous
@@ -127,7 +145,8 @@ whole run. Counts are drift refusals (`analysis.sampling.drifting`) of 1,000.
 Placing each mean at its centre in time leaves the false rates where they
 were (within the counts' noise; segments of equal length differ only by
 their discards) and, on unequal segments, calls a ramp in time in 206 and
-451 runs of 1,000 that index called in 0 and 31. Most of the rest of those
+475 runs of 1,000 that index called in 0 and 31 (0 and 38 by index with
+this page's rule). Most of the rest of those
 ramps are withheld anyway, for the 4,000-frame segment's own trend
 (`still_drifting`, 497 and 455 of 1,000).
 
@@ -142,36 +161,37 @@ ramps are withheld anyway, for the 4,000-frame segment's own trend
 | 3 | Stationary, a 2-frame fourth segment | 0 | 45 | 4 | 3 |
 | 3 | Stationary, a 2-frame second segment | 0 | 47 | 11 | 11 |
 | 3 | Slow mode, equal | 0 | 214 | 43 | 48 |
-| 4 | Slow mode, equal | 0 | 221 | 62 | 73 |
+| 4 | Slow mode, equal | 0 | 221 | 62 | 78 |
 | 3 | Slow mode, short restart | 0 | 191 | 31 | 30 |
-| 4 | Slow mode, short restart | 0 | 192 | 45 | 47 |
+| 4 | Slow mode, short restart | 0 | 192 | 45 | 53 |
 | 3 | Offsets SD 0.3, equal | 0 | 244 | 41 | 38 |
-| 4 | Offsets SD 0.3, equal | 0 | 154 | 50 | 53 |
+| 4 | Offsets SD 0.3, equal | 0 | 154 | 50 | 56 |
 | 3 | Offsets SD 0.3, short restart | 0 | 348 | 48 | 47 |
-| 4 | Offsets SD 0.3, short restart | 0 | 157 | 39 | 44 |
+| 4 | Offsets SD 0.3, short restart | 0 | 157 | 39 | 45 |
 | 3 | Offsets SD 0.15, equal | 0 | 171 | 22 | 25 |
 | 4 | Offsets SD 0.15, equal | 0 | 148 | 28 | 27 |
 | 3 | Ramp 0, 0.4, 0.8 | 0 | 889 | 301 | 303 |
-| 4 | Ramp 0, 0.4, 0.8, 1.2 | 0 | 935 | 896 | 890 |
+| 4 | Ramp 0, 0.4, 0.8, 1.2 | 0 | 935 | 896 | 919 |
 | 3 | Ramp 0, 0.25, 0.5 | 0 | 857 | 198 | 191 |
-| 4 | Ramp 0, 0.25, 0.5, 0.75 | 0 | 932 | 731 | 724 |
+| 4 | Ramp 0, 0.25, 0.5, 0.75 | 0 | 932 | 731 | 725 |
 | 3 | Ramp 0, 0.4, 0.8, short restart | 0 | 834 | 250 | 250 |
 | 3 | Ramp 0, 0.4, 0.8, precise middle | 0 | 733 | 273 | 240 |
 | 3 | Ramp, a 2-frame fourth segment | 0 | 892 | 322 | 315 |
 | 3 | Ramp, a 2-frame second segment | 0 | 917 | 320 | 315 |
-| 4 | Ramp, a 2-frame fifth segment | 0 | 928 | 891 | 901 |
+| 4 | Ramp, a 2-frame fifth segment | 0 | 928 | 891 | 939 |
 | 3 | Levelling off 0, 0.6, 0.75 | 0 | 558 | 66 | 69 |
-| 4 | Levelling off 0, 0.6, 0.8, 0.85 | 0 | 324 | 157 | 166 |
-| 4 | Zigzag 0, 1.0, 0.5, 1.5 | 0 | 14 | 4 | 0 |
+| 4 | Levelling off 0, 0.6, 0.8, 0.85 | 0 | 324 | 157 | 173 |
+| 4 | Zigzag 0, 1.0, 0.5, 1.5 | 0 | 14 | 4 | 1 |
 | 3 | Stationary, 500, 500, 4,000 | 0 | 48 | 5 | 3 |
 | 4 | Stationary, 500, 500, 500, 4,000 | 0 | 47 | 6 | 1 |
 | 3 | Ramp in time 2.4, 500, 500, 4,000 | 0 | 8 | 0 | 206 |
-| 4 | Ramp in time 2.4, 500, 500, 500, 4,000 | 0 | 178 | 31 | 451 |
+| 4 | Ramp in time 2.4, 500, 500, 500, 4,000 | 0 | 178 | 31 | 475 |
 
 A drift refusal is not the only way such a mean is withheld: in the
 production path (`mean_record` with the joins) the whole run's own trend
 check withholds more of the ramps. For the 3-segment ramp of 0.4 a segment,
-version 5 left 490 of 1,000 means determined (489 as first built, by index;
+version 5 left 490 of 1,000 means determined (the helper's `mean_record`
+count) (489 as first built, by index;
 version 4: 79; before P1, with no joins read: 670).
 
 With five or more segments every run of the same 1,000 (stationary, a ramp of
@@ -192,13 +212,25 @@ errors and uses estimated standard errors as their absolute scale. Correlated
 segments, unresolved slow modes, uncertain error estimates or heavy-tailed
 means can invalidate that approximation; the scatter half is what keeps such
 errors from being read as a trend. A slow mode that neighbouring segments
-share still moves their means together, and is called drift in 31 to 62 of
+share still moves their means together, and is called drift in 30 to 78 of
 1,000 runs above. Each segment must still resolve its own correlation time
 before the pooled error is accepted.
 
 The trend is against each mean's centre in time, so unequal segment
-durations do not bend a steady drift; nonlinear movement can still fail the
-straight-line check. Returning 1 for that case does not prove stationarity:
+durations do not bend a steady drift. That is a trade, not a cure: a drift
+levelling off, the usual shape of an equilibration still under way, sits
+further from a straight line in time than in index when the last piece is
+long. Counted by the helper (1.2 (1 - exp(-t/0.3)) over the run, 1,000 runs a
+row, `--by-index` for the index column), a steady ramp in time over 500, 500
+and 4,000 frames is called in 206 runs against 0 (475 against 38 at four
+segments), while a drift levelling off over 1,000, 1,000, 1,000 and 5,000
+frames is called in 336 against 710, and over 1,000, 1,000 and 6,000 in 126
+against 200; a long first piece (6,000, 1,000, 1,000) is called in 35 either
+way, and equal pieces (2,000 each) in 80 against 96. In the 4-piece row the
+fit in time pools 519 means where index pooled 149, every one qualified as a
+lower bound. Neither placing is right for a curved drift, and with one or two
+residual degrees of freedom no straight-line rule can be. Where the line fails
+the errors' fit, the scatter decides; that does not prove stationarity either:
 substantial unexplained scatter continues to qualify the pooled error as a
 lower bound. That qualification is said where the means scatter more than
 twice what their errors predict, which happens by chance in about 1 of 7
@@ -221,7 +253,10 @@ and 49 rows), the means lie closer to a line and the rule calls it
 0.001 by time). The limit stands for means that are not close to a line in
 time: three segments give the scatter one degree of freedom, so a real drift
 that steps unevenly is not called, and a run of three pieces not called
-drifting has not been shown stationary. A fourth piece is the test.
+drifting has not been shown stationary (a real run's temperature at three pieces, 177.8, 185.4 and
+186.6 K over errors of 0.6 to 0.7 K, with its thermostat at 300 K, is pooled:
+its scatter's p is 0.22). A fourth piece is the stronger test, and more are
+better.
 
 A column whose joined summary is withheld because one segment drifts within
 itself (`analysis.sampling.still_drifting` across the joins) keeps its own
