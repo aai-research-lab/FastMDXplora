@@ -66,7 +66,7 @@ def test_a_study_whose_join_s_analysis_is_owed_is_not_completed(tmp_path: Path) 
     assert status["stage"] == "analysis"
     assert state == "interrupted"
     assert health["headline"] == "Its analysis is owed"
-    assert f"fastmdx resume {root} runs them" in health["message"]
+    assert f"fastmdx resume, given this study ({root.name}), runs them" in health["message"]
     # What would fix it says why, not a day's silence, and runs here.
     from fastmdxplora.remedies import _interrupted
 

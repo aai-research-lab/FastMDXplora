@@ -1100,10 +1100,13 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
         if isinstance(phase, dict) and phase.get("status") == "error":
             code = str((phase.get("refusal") or {}).get("code") or "")
             return "stopped" if code == "simulation.run.stopped" else "failed"
-    from fastmdxplora.simulation.resume import analysis_owed
+    from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 
-    # Its pieces' analyses owed, with no live record to say so.
-    return "interrupted" if analysis_owed(base) else "completed"
+    # Its pieces' analyses owed, with no live record to say so; going while
+    # a resume runs them.
+    if not analysis_owed(base):
+        return "completed"
+    return "running" if being_carried_on(base) else "interrupted"
 
 
 def _runs_count(batch: dict[str, Any]) -> int:

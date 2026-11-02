@@ -455,10 +455,15 @@ def _interrupted(root: Path) -> Remedy | None:
     from fastmdxplora.gui.telemetry import ANALYSIS_OWED
 
     if ended == ANALYSIS_OWED:
-        # Its simulation ended and was joined; what is owed runs here.
-        why = ("The study stopped after its pieces were joined, before their analyses "
-               "and report had run.")
-        return _resume(INTERRUPTED_CODE, why, "the study", [root], root)
+        # Its simulation ended and was joined; what is owed runs here, and
+        # nothing is carried on from a checkpoint. The card names its
+        # subject ("The study:") before the reason.
+        why = "Stopped after its pieces were joined, before their analyses and report had run."
+        remedy = _resume(INTERRUPTED_CODE, why, "the study", [root], root)
+        unpriced = remedy.fix[remedy.fix.find(" The price is not given"):] if (
+            " The price is not given" in remedy.fix) else ""
+        return replace(remedy, fix="Run its analyses and report over the joined pieces."
+                                   + unpriced)
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")

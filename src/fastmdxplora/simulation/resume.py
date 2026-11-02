@@ -1022,6 +1022,19 @@ def _frames_to_keep(root: Path, *, last_too: bool = True
                  "the middle of the trajectory."}
 
 
+def _save_what_is_replaced(root: Path) -> list[str]:
+    """Save the study's analysis and report in `previous/` before the
+    join's own run over them, as `--rerun` does: the analysis there may be
+    one the person chose (`fastmdx analyze --rerun --trajectory`), and the
+    join's replaced it with nothing left of it. The phases saved."""
+    from fastmdxplora.replaced import make_way, outputs_of
+    from fastmdxplora.utils.logging import get_logger
+
+    if not outputs_of(root, "analysis"):
+        return []
+    return make_way(root, ["analysis"], keep=True, say=get_logger(__name__).info)
+
+
 def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | None,
                       keep_frames: dict[int, int] | None,
                       analyse: bool = True) -> dict[str, Any]:
@@ -1139,10 +1152,14 @@ def analysis_owed(root: str | Path) -> bool:
     Owed where a join of its pieces was begun and they have not run since
     (:data:`ANALYSIS_OWED`), and where a study stopped after its join by a
     version that wrote no such marker left an analysis that is not of the
-    join: its `analysis/analysis_manifest.json` names another trajectory
-    than `joined/production.dcd`, or, read whole (no stride, first or last
-    frame), a count of frames other than `joined/joined.json`'s. A study
-    with no join, or no analysis recorded, owes none by this reading."""
+    join: its `analysis/analysis_manifest.json` names a first piece's
+    trajectory (`simulation/production.dcd`), or the join read whole (no
+    stride, first or last frame) at a count of frames other than
+    `joined/joined.json`'s. An analysis the person chose is not owed
+    (`_chosen_by_the_person`). A study with no join, or no analysis
+    recorded, owes none by this reading.
+
+    Owed is not going: the GUI asks `being_carried_on` before it says so."""
     root = Path(root)
     try:
         if _records.is_file(root / "joined" / ANALYSIS_OWED):
@@ -1166,11 +1183,15 @@ def _analysis_not_of_the_join(root: Path) -> bool:
         return False
     try:
         key = (str(root), *((s.st_mtime_ns, s.st_size) for s in
-                            (_records.stat(joined), _records.stat(manifest))))
+                            (_records.stat(joined), _records.stat(manifest))),
+               _config_stamp(root))
     except OSError:
         return False
-    if key in _NOT_OF_THE_JOIN:
-        return _NOT_OF_THE_JOIN[key]
+    # Read once: a clear by another of the GUI's threads between a test of
+    # the key and its read raised KeyError in the status route.
+    cached = _NOT_OF_THE_JOIN.get(key)
+    if cached is not None:
+        return cached
     owed = False
     try:
         frames = json.loads(_records.read_text(joined, encoding="utf-8")).get("frames")
@@ -1179,18 +1200,72 @@ def _analysis_not_of_the_join(root: Path) -> bool:
         record = None
     if isinstance(record, dict):
         given = record.get("trajectory_input")
-        if isinstance(given, str) and given:
-            owed = Path(given).parts[-2:] != ("joined", "production.dcd")
+        parts = Path(given).parts if isinstance(given, str) and given else ()
+        # A first piece's frames, the study's own or, in a copy made by an
+        # older version, the original's; a piece carried on is never
+        # analysed alone by a study.
+        first = (parts[-2:] == ("simulation", "production.dcd")
+                 and not (len(parts) > 2 and parts[-3].startswith("segment-")))
         loaded = record.get("load_kwargs") if isinstance(record.get("load_kwargs"), dict) else {}
         whole = all(loaded.get(key) is None for key in ("stride", "first", "last"))
         counted = record.get("n_frames")
-        if (not owed and whole and isinstance(frames, int) and not isinstance(frames, bool)
-                and isinstance(counted, int) and not isinstance(counted, bool)):
-            owed = counted != frames
+        short = (parts[-2:] == ("joined", "production.dcd") and whole
+                 and isinstance(frames, int) and not isinstance(frames, bool)
+                 and isinstance(counted, int) and not isinstance(counted, bool)
+                 and counted != frames)
+        owed = (first or short) and not _chosen_by_the_person(root, given, manifest, joined)
     if len(_NOT_OF_THE_JOIN) > 512:
         _NOT_OF_THE_JOIN.clear()
     _NOT_OF_THE_JOIN[key] = owed
     return owed
+
+
+def _config_stamp(root: Path) -> tuple[int, int] | None:
+    """The study's resolved config's time and size, which name the
+    trajectory a person chose: None where it is not there."""
+    try:
+        stat = _records.stat(root / "resolved_config.yml")
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _chosen_by_the_person(root: Path, given: Any, manifest: Path, joined: Path) -> bool:
+    """Whether the analysis on record is of a trajectory the person named
+    (`fastmdx analyze --rerun --trajectory`), not one a join owes: the
+    study's resolved config names it as `analysis.trajectory`, and it was
+    written after the join (`joined/joined.json`).
+
+    A study's own first run names its first piece there too, and a version
+    that wrote no marker left it so when stopped after its join; that
+    analysis was written before the join, and is owed. The join's own
+    analysis names the join, and the study's config is put back without
+    it, so a config that names no trajectory, or the join, chose none."""
+    import os
+
+    import yaml
+
+    if not isinstance(given, str) or not given:
+        return False
+    try:
+        config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                                   encoding="utf-8"))
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    analysis = config.get("analysis") if isinstance(config, dict) else None
+    named = analysis.get("trajectory") if isinstance(analysis, dict) else None
+    if not isinstance(named, str) or not named:
+        return False
+
+    def where(path: str) -> str:
+        return os.path.normpath(os.path.join(str(root), os.path.expanduser(path)))
+
+    if where(named) != where(given) or where(named) == where(str(root / "joined" / "production.dcd")):
+        return False
+    try:
+        return _records.stat(manifest).st_mtime_ns > _records.stat(joined).st_mtime_ns
+    except OSError:
+        return False
 
 
 #: The study's config at its whole length, beside the joined trajectory
@@ -1870,6 +1945,72 @@ def _carrying_on(root: Path) -> Iterator[None]:
                 _unlock(handle)
 
 
+def being_carried_on(root: str | Path) -> bool:
+    """Whether a run of the study is going now: a resume or an extension
+    holds its lock (:data:`CARRYING_ON_FILE`) in this process or another,
+    joining its pieces, analysing them or writing their report, or its run
+    record names a process that is alive (`_still_running`). Asked by the
+    GUI before it says a study owes its analysis: the analysis a resume is
+    running is not owed, and `fastmdx resume` would be refused.
+
+    The lock is tried only where the process it names is alive on this
+    machine: a resume starting as it is tried would find it taken."""
+    import json
+
+    from fastmdxplora.orchestrator import record_is_from_elsewhere
+
+    root = Path(root).expanduser()
+    try:
+        root = root.resolve()
+    except OSError:
+        pass
+    with _CARRYING:
+        if _carried_here.get(root):
+            return True
+    path = root / CARRYING_ON_FILE
+    try:
+        record = json.loads(path.read_text(encoding="utf-8") or "null")
+    except (OSError, ValueError):
+        record = None
+    pid = record.get("pid") if isinstance(record, dict) else None
+    if (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+            and not record_is_from_elsewhere(record) and _lock_held(path, pid)):
+        return True
+    try:
+        return _still_running(root)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return False
+
+
+def _lock_held(path: Path, pid: int) -> bool:
+    """Whether the process ``pid``, alive, holds the lock on ``path``."""
+    import os
+
+    from fastmdxplora.gui.exploration import _process_alive
+
+    if pid == os.getpid() or not _process_alive(pid):
+        return False
+    if os.name == "nt":
+        # A lock there cannot be tried without taking it: the process the
+        # record names, alive, is the answer.
+        return True
+    import fcntl
+
+    try:
+        handle = os.open(path, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(handle)
+    return False
+
+
 _STILL_GOING = "A run of this study is still going. Resume it once it has stopped."
 _STILL_GOING_TO_EXTEND = "A run of this study is still going. Extend it once it has stopped."
 
@@ -2070,9 +2211,11 @@ def _resume_study(study: str | Path, *,
                     refusal["error"], code="simulation.resume.unsealed", path=str(root)))
                 return {**base, "ok": False, "did": RESUMED_ANALYSIS,
                         "stage": "joining", **refusal, "refusal": said.as_dict()}
+            saved = _save_what_is_replaced(root)
             answer = _join_and_analyse(root, config, segment=None,
                                        keep_frames=keep_frames or None)
             return {**base, **answer, "did": RESUMED_ANALYSIS,
+                    **({"saved_in_previous": saved} if saved else {}),
                     **_production_now(root, answer)}
         whole = dict(config)
         whole["output"] = str(root)

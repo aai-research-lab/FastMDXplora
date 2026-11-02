@@ -3335,6 +3335,8 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                     "study's comparison across them rebuilt.",
         }
         print(said.get(answer.get("did"), "Done."))
+        if answer.get("saved_in_previous"):
+            print("The analyses and report it had before are saved in previous/.")
         if "production_done_ns" in answer:
             from fastmdxplora.simulation.lengths import FROM_CLOCK
             from fastmdxplora.simulation.sampling_ask import length_said

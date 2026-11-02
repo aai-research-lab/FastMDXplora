@@ -73,8 +73,8 @@ INTERRUPTED_EXPLANATION = (
 ANALYSIS_OWED_EXPLANATION = (
     "A study carried on in pieces joins them, then runs its analyses and "
     "report again over the join. It was stopped between the two (a wall time "
-    "lands where it lands), so its analyses and report are those of before "
-    "the join. fastmdx resume runs them over the join, and nothing else."
+    "lands where it lands), so any analyses and report it has are those of "
+    "before the join. fastmdx resume runs them over the join, and nothing else."
 )
 
 STOPPED_EXPLANATION = (
@@ -714,7 +714,16 @@ def _stopped_as_one_run(root: Path, whole: dict[str, Any]) -> str | None:
                  f"({say_length(produced * timestep / 1e6)} of "
                  f"{say_length(total * timestep / 1e6)})")
     return (f"Production was stopped{where}, as asked, while the study was carried on. "
-            f"`fastmdx resume {root}` carries it on from its last checkpoint.")
+            f"{_resume_said(root)} carries it on from its last checkpoint.")
+
+
+def _resume_said(root: str | Path | None) -> str:
+    """`fastmdx resume` for a study, in a record `/api/status` answers
+    beyond loopback: the study named by its folder, never by where it is
+    on this computer. The fix card gives the whole command."""
+    if root is None:
+        return "fastmdx resume"
+    return f"fastmdx resume, given this study ({Path(root).name}),"
 
 
 def _as_far_as_it_wrote(root: Path, status: dict[str, Any]) -> dict[str, Any]:
@@ -976,10 +985,18 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
     its production, and `fastmdx resume` runs them."""
     if not status or str(status.get("status") or "").lower() not in _FINISHED_STATUSES:
         return status
-    from fastmdxplora.simulation.resume import analysis_owed
+    from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 
     if not analysis_owed(project_root):
         return status
+    if being_carried_on(project_root):
+        # A resume or an extension is joining its pieces, analysing them or
+        # writing their report: going, as the sidebar says, never owed
+        # beside a `fastmdx resume` that would be refused.
+        return {**status, "status": "running", "stage": "analysis", "piece": None,
+                "current_step": None, "total_planned_steps": None,
+                "carrying_on": True,
+                "recorded_status": status.get("recorded_status") or status.get("status")}
     # Stopped in the study's analysis, not in a piece's production, nor at
     # its last step ("in piece 1's analysis, at step 4,400 of 4,400").
     return {**status, "status": "interrupted", "stage": "analysis", "piece": None,
@@ -1575,15 +1592,22 @@ def analyze_health(
     waiting = status.get("between_rounds")
     if isinstance(waiting, dict):
         return _said_between_rounds(waiting)
+    if status.get("carrying_on"):
+        return {
+            "state": "ok",
+            "headline": "Joining and analysing its pieces",
+            "message": ("Its pieces are being joined, then analysed and reported over the "
+                        "whole: any analyses and report shown until then are of less than "
+                        "its whole production."),
+            "explanation": "A resume or an extension of the study is running.",
+        }
     if status.get("ended_by") == ANALYSIS_OWED:
         return {
             "state": "interrupted",
             "headline": "Its analysis is owed",
             "message": ("The study stopped after its pieces were joined, before their "
-                        "analyses and report had run, so those shown may be of less than its "
-                        "whole production. fastmdx resume "
-                        + (f"{root} " if root is not None else "")
-                        + "runs them."),
+                        "analyses and report had run: any shown are of less than its whole "
+                        "production. " + _resume_said(root) + " runs them."),
             "explanation": ANALYSIS_OWED_EXPLANATION,
         }
     if str(status.get("status", "")).lower() in _GOING_STATUSES and stage in _PHASES_AFTER:

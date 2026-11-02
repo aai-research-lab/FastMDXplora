@@ -399,6 +399,64 @@ def test_its_join_analysed_again_by_hand_owes_nothing(extended, monkeypatch, cap
     assert resume_study(study)["did"] == "nothing"
 
 
+def _the_person_s_analysis(study: Path) -> None:
+    """The person's own analysis: the first piece alone, every 2nd frame."""
+    from fastmdxplora.cli.main import main
+
+    first = study / "simulation" / "production.dcd"
+    assert main(["analyze", "--output", str(study), "--rerun", "--trajectory", str(first),
+                 "--stride", "2"]) == 0
+
+
+def _saved(study: Path) -> dict:
+    return json.loads((study / "previous" / "analysis" / "analysis_manifest.json").read_text())
+
+
+@needs_backends
+def test_an_analysis_the_person_chose_is_neither_owed_nor_lost(extended, capfd) -> None:
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+    from fastmdxplora.simulation.resume import analysis_owed, resume_study
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    assert _join_the_extension(study)["ok"] is True
+    assert not (study / "joined" / "analysis_owed.json").exists()
+    _the_person_s_analysis(study)
+    # Chosen, not owed: it was said interrupted, "Its analysis is owed".
+    assert not analysis_owed(study)
+    assert status_as_it_stands(study)["status"] == "completed"
+    # Its report moved aside, a resume writes it again over the join; the
+    # person's analysis is saved, not replaced with nothing left of it.
+    answer = resume_study(study)
+    assert answer["ok"] is True, answer
+    assert _saved(study)["load_kwargs"]["stride"] == 2
+    assert Path(_saved(study)["trajectory_input"]) == study / "simulation" / "production.dcd"
+
+
+@needs_backends
+def test_an_analysis_chosen_while_owed_is_saved_by_the_resume(extended, capfd) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.simulation.resume import analysis_owed, resume_study
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    _the_person_s_analysis(study)
+    # The join's analysis has not run: owed by its marker.
+    assert analysis_owed(study)
+    answer = resume_study(study)
+    assert (answer["ok"], answer["did"]) == (True, "analysed"), answer
+    analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
+    assert Path(analysed["trajectory_input"]) == study / "joined" / "production.dcd"
+    assert _saved(study)["load_kwargs"]["stride"] == 2
+    assert "analysis" in answer["saved_in_previous"]
+
+
 def test_a_continued_answer_plans_its_extension(tmp_path, monkeypatch) -> None:
     from fastmdxplora.simulation import resume
 
