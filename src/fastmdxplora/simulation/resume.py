@@ -1036,6 +1036,12 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     # Every finished segment, in one trajectory, in the study's own folder.
     joined_dir = root / "joined"
     joined_dir.mkdir(parents=True, exist_ok=True)
+    owed = joined_dir / ANALYSIS_OWED
+    if analyse:
+        # Said before the join is written, taken away only once the study's
+        # analyses and report of it have run: a study stopped anywhere
+        # between read as finished, its report of the first piece alone.
+        _write_atomically(owed, json_dumps({"segment": segment_text}))
     # The trajectory's own topology, not the system's. A run that saved a
     # selection -- "not water", almost always -- writes frames of those
     # atoms and a matching trajectory_topology.pdb beside them; joining
@@ -1073,15 +1079,21 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     resolved = root / "resolved_config.yml"
     kept = _the_study_s_config_text(root)
     whole_text = _keep_the_study_s_config(root, kept)
-    if whole_text is not None:
-        _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
     import yaml
 
     try:
         own = yaml.safe_load(whole_text) if whole_text is not None else None
     except yaml.YAMLError:
         own = None
-    whole = dict(own if isinstance(own, dict) else config)
+    if not isinstance(own, dict):
+        # Run from the last piece's config instead, the analysis wrote it
+        # over the study's, and nothing put the study's back. Said, and the
+        # analysis left owed.
+        return {"ok": False, "stage": "analysis", "segment": segment_text, "joined": record,
+                "error": "The study's resolved_config.yml does not read as a config, so "
+                         "the joined trajectory is not analysed: correct it and resume."}
+    _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
+    whole = dict(own)
     whole["output"] = str(root)
     whole["include_phase"] = ["analysis", "report"]
     whole.pop("exclude_phase", None)
@@ -1093,19 +1105,40 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     else:
         analysis.pop("topology", None)
     whole["analysis"] = analysis
-    FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
-    if whole_text is not None:
-        try:
-            _write_atomically(resolved, whole_text)
-            (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
-        except OSError:
-            from fastmdxplora.utils.logging import get_logger
+    ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    try:
+        _write_atomically(resolved, whole_text)
+        (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
+    except OSError:
+        from fastmdxplora.utils.logging import get_logger
 
-            get_logger(__name__).warning(
-                "The study's resolved config could not be written back.")
+        get_logger(__name__).warning(
+            "The study's resolved config could not be written back.")
+    failed = [result for result in ran if result.status != "ok"]
+    if failed:
+        # Its answer is in the study's Manifest; the analysis stays owed.
+        return {"ok": False, "stage": "analysis", "segment": segment_text, "joined": record,
+                "error": failed[0].message or "The analyses of the joined trajectory "
+                                              "did not finish."}
     _production_carried_on(root, record)
+    owed.unlink(missing_ok=True)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
+
+
+#: Beside the joined trajectory from before the pieces are joined until the
+#: study's analyses and report of the join have run: a study stopped between
+#: is owed them, and `fastmdx resume` runs them (``did: analysed``).
+ANALYSIS_OWED = "analysis_owed.json"
+
+
+def analysis_owed(root: Path) -> bool:
+    """Whether a join of the study's pieces was begun and its analyses and
+    report have not run since (:data:`ANALYSIS_OWED`)."""
+    try:
+        return _records.is_file(root / "joined" / ANALYSIS_OWED)
+    except OSError:
+        return False
 
 
 #: The study's config at its whole length, beside the joined trajectory
@@ -1120,7 +1153,7 @@ def _the_study_s_config_text(root: Path) -> str | None:
     study's was put back, else the file; None where neither reads."""
     for path in (root / "joined" / STUDY_CONFIG_COPY, root / "resolved_config.yml"):
         try:
-            return path.read_text(encoding="utf-8")
+            return _records.read_text(path, encoding="utf-8")
         except (OSError, ValueError):
             continue
     return None
@@ -1476,14 +1509,14 @@ def _checkpoint_interval_asked(root: Path) -> int | None:
     import yaml
 
     newest = None
-    for path in root.glob("segment-*.yml"):
+    for path in _records.glob(root, "segment-*.yml"):
         found = re.fullmatch(r"segment-(\d+)\.yml", path.name)
         if found and (newest is None or int(found.group(1)) > newest[0]):
             newest = (int(found.group(1)), path)
     if newest is None:
         return None
     try:
-        config = yaml.safe_load(newest[1].read_text(encoding="utf-8"))
+        config = yaml.safe_load(_records.read_text(newest[1], encoding="utf-8"))
         value = config["simulation"]["checkpoint_interval_steps"]
     except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
         return None
@@ -1717,8 +1750,8 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     # Carried on in pieces after the run that began production was stopped:
     # that run never wrote its record, and the pieces wrote theirs in their
     # own folders, so the study's record holds only the analyses the join
-    # ran. A joined trajectory newer than the first piece's is the setup and
-    # the production done and put together. The study's config, put back
+    # ran. A joined trajectory (`study_trajectory`) is the setup and the
+    # production done and put together. The study's config, put back
     # after the join, plans every phase, so they are read here and not from
     # a config that named only the analyses.
     if any(states.get(p) not in ("ok", "skipped") for p in ("setup", "simulation")):
@@ -1847,9 +1880,12 @@ def _resume_study(study: str | Path, *,
                 "error": _STILL_GOING}
     # Stopped while its pieces' analyses ran again: the study's own config,
     # at its whole length, is put back before anything reads it.
+    # Put back once: left there, every later resume wrote it over an edit
+    # made to the study's config since.
     copy = root / "joined" / STUDY_CONFIG_COPY
     try:
-        _write_atomically(resolved, copy.read_text(encoding="utf-8"))
+        _write_atomically(resolved, _records.read_text(copy, encoding="utf-8"))
+        copy.unlink()
     except (OSError, ValueError):
         pass
     try:
@@ -1862,7 +1898,9 @@ def _resume_study(study: str | Path, *,
         # Pieces that cannot be told apart (two folders for one number) are
         # said here, as an answer, before anything reads them.
         survey_segments(root)
-        extended = finished and _extended_since_it_finished(root)
+        # Stopped after its pieces were joined and before their analyses
+        # and report had run: not finished, whatever its Manifest says.
+        extended = finished and (_extended_since_it_finished(root) or analysis_owed(root))
         # A piece carried on that stopped with an answer of its own gives
         # the same one when run again: said, not set aside and run again,
         # whether the study had finished or not.
@@ -1903,6 +1941,7 @@ def _resume_study(study: str | Path, *,
                          f"({stopped}). Running it again would give the same one."}
     if finished:
         return {**base, "ok": True, "did": RESUMED_NOTHING,
+                **_production_now(root, {"ok": True}),
                 "detail": "The study finished; there is nothing to carry on."}
 
     # An extension stopped before its first checkpoint left nothing to go
@@ -1931,12 +1970,27 @@ def _resume_study(study: str | Path, *,
             asked = owed
             plan = extension_of(root, more_ns=asked)
     if plan.possible:
+        # Before and after by one reading, so what the resume ran is their
+        # difference (by the clock for a variable-step run, where steps
+        # times the timestep was given before it and its clock after).
+        from fastmdxplora.simulation.lengths import _variable_step
+
+        simulation = config.get("simulation") if isinstance(config, dict) else None
+        if _variable_step(simulation if isinstance(simulation, dict) else {}):
+            before = _production_now(root, {"ok": True})
+        else:
+            # A fixed step's is its steps times the timestep, as the
+            # checkpoints count them, the pieces' records after it: the same
+            # length, given also where the first piece, stopped, wrote none.
+            before = {"production_done_ns": round(plan.production_done_ns, 9),
+                      "production_done_source": FROM_CHECKPOINT_STEPS}
         answer = extend_study(root, more_ns=asked, device_index=device_index,
                               checkpoint_interval_steps=_checkpoint_interval_asked(root))
         return {**base, **answer, "did": RESUMED_PRODUCTION,
                 **_production_now(root, answer),
-                "production_done_before_ns": plan.production_done_ns,
-                "production_planned_ns": plan.production_planned_ns}
+                **{key.replace("production_done", "production_done_before"): value
+                   for key, value in before.items()},
+                "production_planned_ns": round(plan.production_planned_ns, 9)}
 
     done = plan.production_done_ns
     planned = plan.production_planned_ns
@@ -1975,7 +2029,7 @@ def _resume_study(study: str | Path, *,
         whole["analysis"] = analysis
         FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
         return {**base, "ok": True, "did": RESUMED_ANALYSIS,
-                "production_done_ns": done, "production_planned_ns": planned}
+                **_production_now(root, {"ok": True}), "production_planned_ns": planned}
 
     if done > 0:
         # Production began and cannot be carried on from what is there: a
@@ -2016,6 +2070,7 @@ def _resume_study(study: str | Path, *,
                 "error": failed[0].message or "Run again from its start, it did "
                                               "not finish."}
     return {**base, "ok": True, "did": RESUMED_FROM_START,
+            **_production_now(root, {"ok": True}),
             "detail": "Production had not begun, or not as far as its first "
                       "checkpoint; the study was run from its start."}
 
@@ -2024,8 +2079,9 @@ def _production_now(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
     """The study's production once carried on, as its records give it
     (`lengths.recorded_stage_lengths`, the methods' reading: a variable-step
     run's by its clock), and from what; nothing where the carrying on did
-    not end well. A resume said what was done before it ran, 0.004 ns for a
-    study that then held 2,000 + 6,000 steps."""
+    not end well. In every answer that ends well, and before a production
+    is carried on by the same reading. A resume said what was done before
+    it ran, 0.004 ns for a study that then held 2,000 + 6,000 steps."""
     if not answer.get("ok"):
         return {}
     from fastmdxplora.simulation.lengths import recorded_stage_lengths
@@ -2039,6 +2095,11 @@ def _production_now(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
     if said.get("production_ran_ns") is None and said["production"].get("said"):
         found["production_done_said"] = said["production"]["said"]
     return found
+
+
+#: Where a fixed-step study's production before a resume carried it on is
+#: read from (``production_done_before_source``).
+FROM_CHECKPOINT_STEPS = "steps times the timestep, from the checkpoints"
 
 
 #: What `resume_batch` did, as a program reads it.
