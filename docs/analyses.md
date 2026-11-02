@@ -238,29 +238,41 @@ one, and planned on beside it alone (`findings.memory.bytes_map`: about 144
 bytes a cell and 8 MiB, some 150 MB for a map 1,000 cells across, as
 measured): the peak planned on is the larger of the matrix's part
 (`bytes_matrix`) and the map's. Under an address-space or data limit
-(`ulimit -v`), what runs out is address space, not resident memory, and
-clustering maps about 150 MiB more than that peak (the libraries it loads,
-OpenBLAS's buffer, glibc's heap and each figure's canvas at 300 dpi, as
-measured from `VmPeak` in a new process): that room is planned on apart, with
-that need (`findings.memory.bytes_address_space`, `bytes_address_needed`),
-and read once as the analysis starts, as the analyses before it take some of
-it. `dimred` plans the same way (130 MiB beside MDS's matrix), and where the
-limit leaves less than its projections map it is refused before any runs,
-its record written. A figure the memory runs out plotting all the same is
-left out and said (`findings.figures_not_plotted`, with what to set), the
-other figures and files saved; MDS running out is refused as past its check
-is, the other projections saved. BLAS and OpenMP are held to one thread while
-`cluster` and `dimred` run under the limit (`findings.memory.threads`):
-k-means calls BLAS from its threads, and an OpenBLAS thread whose buffer
-could not be mapped under the limit retried for ever. Several workers
+(`ulimit -v`), what runs out is address space, not resident memory. The
+libraries a run maps (SciPy's linkage and eigensolver, its OpenBLAS buffer,
+and Matplotlib's fonts and canvas, a figure plotted as the analyses plot
+theirs) are mapped before that room is read, so they are in what the process
+holds, and clustering plans on all of the room for that peak and 18 MiB
+past it, 50 MiB at the least (glibc's heap and each figure's canvas at 300
+dpi), as measured from the check in `fastmdx analyze`'s own process: that
+room is planned on apart, with that need (`findings.memory.bytes_address_space`,
+`bytes_address_needed`), and read once as the analysis starts, as the
+analyses before it take some of it. A new process, whose heap no analysis has
+grown, maps about 17 MiB more. `dimred` plans each method on its own
+(`findings.memory.methods`): 8 MiB and the larger of what the method makes
+(MDS's matrix; t-SNE's neighbours, about 80 bytes for each of 3 x perplexity
++ 1 a frame) and the figures plotted after (10 MiB a scatter, 14 the
+landscape). A method that does not fit is refused before any runs
+(`findings.methods_refused`, MDS's also as `mds_refused`), the others run and
+saved; the last left refused is the analysis's refusal, its record written.
+A figure the memory runs out plotting all the same is left out and said
+(`findings.figures_not_plotted`, with what to set, and on the Analysis page
+in its section), and so is the map's data running out as it is saved
+(`findings.not_saved`), the other figures and files saved; a projection
+running out is refused as past its check is, the other projections saved.
+BLAS and OpenMP are held to one thread while `cluster` and `dimred` run
+under the limit (`findings.memory.threads`): k-means calls BLAS from its
+threads, and an OpenBLAS thread whose buffer could not be mapped under the
+limit retried for ever. Several workers
 clustering at once each read the same memory, and one's matrix is not seen
 by another until it is written: that is not planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
 with the stride that fits, then the frames, the bytes needed, the room and
-the three quarters of it planned on (in one unit, MB under 1 GB, to as many
-decimals as tell them apart, the share computed from the room as said), and
-last where the memory was read, and said in the log and on the Analysis
-page, in the analysis's own section;
+the three quarters of it planned on (all of it under `ulimit -v`, with how
+much larger the limit would have to be), in one unit, MB under 1 GB, to as
+many decimals as tell them apart and read in their order, the share computed
+from the room as said, and last where the memory was read, and said in the
+log and on the Analysis page, in the analysis's own section;
 `stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
 the other analyses still read every frame. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same

@@ -600,21 +600,40 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   frames under a container's limit of about 100 MB, a clustering the check
   allowed, and the stride its refusal gave, were killed plotting it.
 - A refusal for memory, clustering's or MDS's, says the need, the room and
-  the three quarters of it planned on as numbers that read apart, in one
-  unit (MB under 1 GB), the share computed from the room as said; it said
-  0.4 GB needed and 0.4 GB available, and "0.1 GB, of which ... 75%, 87.0
-  MB". Sizes under 1 GB are said in MB wherever clustering says one.
+  the three quarters of it planned on as numbers that read apart and in
+  their order, in one unit (MB under 1 GB), the share computed from the room
+  as said; it said 0.4 GB needed and 0.4 GB available, "0.1 GB, of which ...
+  75%, 87.0 MB", and a need of 1.6 GB refused against a share of 1.7 GB.
+  Sizes under 1 GB are said in MB wherever clustering says one.
 - Under an address-space limit (`ulimit -v`), clustering and `dimred` plan
-  on the address space they map (`findings.memory.bytes_address_needed`,
-  about 150 and 130 MiB beside the matrix, measured as `VmPeak` growth), read
-  once as each analysis starts and said so: a clustering the check allowed,
-  and the stride its refusal gave, failed plotting its figures with
-  `std::bad_alloc`, MDS failed to map its matrix and took PCA and t-SNE with
-  it, and a very tight limit ended the process in OpenBLAS with no record.
+  on the address space they map past what the process holds once the
+  libraries are mapped, which is before the room is read
+  (`findings.memory.bytes_address_needed`, measured from the check in
+  `fastmdx analyze`'s own process), on all of that room, read once as each
+  analysis starts and said so, a refusal saying how much larger the limit
+  would have to be and the part of the need past the libraries as part of
+  it: a clustering the check allowed, and the stride its refusal gave,
+  failed plotting its figures with `std::bad_alloc`, MDS failed to map its
+  matrix and took PCA and t-SNE with it, and a very tight limit ended the
+  process in OpenBLAS with no record.
+- `dimred` plans PCA, MDS and t-SNE each on its own (t-SNE's neighbours
+  grow with the frames) and refuses only those that do not fit, the others
+  run and saved (`findings.methods_refused`); a constant planned for any
+  methods refused PCA where it fitted and allowed t-SNE at 24,000 frames
+  where its neighbours did not, PCA lost with it.
 - A figure the memory runs out plotting, in `cluster` or `dimred`, is left
-  out and said with what to set (`findings.figures_not_plotted`), the other
-  figures and files saved; MDS or the clustering matrix running out is
-  refused as past the check, the projections beside MDS saved.
+  out and said with what to set (`findings.figures_not_plotted`), and so is
+  the map's data running out as it is saved (`findings.not_saved`), the
+  other figures and files saved; the clustering matrix, or any projection,
+  running out is refused as past the check, the other projections saved.
+- The Analysis page says a figure not plotted for memory in its section,
+  counted beside its figures and with what to set; a refused analysis's
+  card says what to set once, and "was refused before it ran" where it
+  did not start.
+- A clustering refused at any stride, and an analysis refused for fewer
+  than three atoms to superpose on, end the command line as failures with
+  their lines where the study named them; their words read as a run too
+  short for the analysis, and it ended with exit 0.
 - DBSCAN's freed lists of neighbours are given back before the map is
   plotted (`malloc_trim` where glibc is the allocator).
 - The any-stride clustering refusal's first sentence stands alone; a results
