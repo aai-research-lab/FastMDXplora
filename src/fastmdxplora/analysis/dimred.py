@@ -230,128 +230,145 @@ class DimRed(Analysis):
                 "trajectory that samples."
             , code="analysis.sampling.no_variance")
 
-        # The memory read once, before any method runs: the projections
-        # refused where what they map does not fit under an address-space
-        # limit (OpenBLAS ended the process there); MDS's matrix checked:
-        # refused, the other methods asked for still run and are saved, the
-        # refusal recorded; a refusal of MDS alone refuses the analysis.
-        reading = _refuse_past_address_space(self, traj.n_frames)
-        methods = list(self.methods)
-        if "mds" in methods:
-            try:
-                _refuse_mds_past_memory(self, traj.n_frames, reading)
-            except StudyError as refused:
-                self._mds_refused(methods, refused)
+        # The memory read once, before any method runs: each method planned
+        # on its own (`_methods_that_fit`), and one that does not fit
+        # refused, the others run and saved, the refusal recorded; the
+        # last left refused is the analysis's refusal.
+        methods = _methods_that_fit(self, traj.n_frames)
         self._methods_run = methods
 
         results: dict[str, np.ndarray] = {}
-        for method in list(methods):  # MDS may leave it as it runs
-            if method == "pca":
-                model = PCA(n_components=self.n_components)
-                embedding = model.fit_transform(coords)
-                # Stash variance ratios for the plot annotation
-                self._explained_variance = getattr(model, "explained_variance_ratio_", None)
-                # The motions themselves, kept beside the projections: the
-                # projections alone say when the study moved, not how.
-                self._modes = {
-                    "mean": aligned.xyz[:, atom_idx, :].mean(axis=0).astype(np.float64),
-                    "vectors": np.asarray(model.components_, dtype=np.float64).reshape(
-                        len(model.components_), len(atom_idx), 3),
-                    "variance": np.asarray(model.explained_variance_, dtype=np.float64),
-                    "ratio": np.asarray(model.explained_variance_ratio_, dtype=np.float64),
-                    "atoms": np.asarray(atom_idx, dtype=np.int64),
-                    "frames": np.int64(traj.n_frames),
-                }
-            elif method == "mds":
-                # Classical MDS on the pairwise RMSD between frames, which is
-                # what version 1 offered and what a reader comparing against
-                # it needs. It answers a different question from PCA: PCA
-                # finds the directions of largest variance in the
-                # coordinates, while this finds an arrangement in which the
-                # distances between frames are preserved as closely as
-                # possible -- and the distance between two frames is their
-                # RMSD, which is what a structural biologist means by how
-                # different two conformations are.
-                # Its memory checked above, before any method ran; where it
-                # runs out all the same, MDS is refused and the rest saved.
-                try:
-                    distances = _pairwise_rmsd(traj, self.select_atoms(traj))
-                    embedding = _classical_mds(distances, self.n_components)
-                    del distances
-                except (MemoryError, OSError) as error:
-                    from fastmdxplora.analysis.cluster import ran_out
+        for method in list(methods):  # a method may leave it as it runs
+            # Where the memory runs out all the same, the method is refused
+            # with what to set and the rest saved: t-SNE's neighbours at
+            # 24,000 frames ended the analysis, and PCA's projection, computed
+            # first, was lost with it.
+            try:
+                embedding = self._projection(method, traj, coords, aligned, atom_idx)
+            except (MemoryError, OSError) as error:
+                from fastmdxplora.analysis.cluster import ran_out
 
-                    if not ran_out(error):
-                        raise
-                    distances = None
-                    self._mds_refused(methods, StudyError(
-                        f"MDS of {traj.n_frames:,} frames ran out of memory ({error}), "
-                        "where the check planned it would fit: the memory left fell "
-                        "as the analysis ran. PCA, t-SNE and UMAP make no such matrix "
-                        "(`methods: [pca]`); or load every second frame for the "
-                        "analyses (`analysis: {stride: 2}`, which every analysis then "
-                        "reads).", code="analysis.memory.matrix_too_large",
-                        frames=traj.n_frames, stride=2), ran=True)
-                    continue
-                # PCA's variance shares stay where PCA put them: MDS has
-                # none of its own, and clearing the one attribute both
-                # shared took "(98.5%)" off the PCA axes whenever MDS ran
-                # after it.
-            elif method == "tsne":
-                p = _tsne_perplexity(self.perplexity, traj.n_frames)
-                self.findings.setdefault("tsne", {})["perplexity_used"] = float(p)
-                model = TSNE(
-                    n_components=self.n_components,
-                    perplexity=p,
-                    random_state=self.random_state,
-                    init="pca",
-                    learning_rate="auto",
-                )
-                embedding = model.fit_transform(coords)
-            elif method == "umap":
-                try:
-                    import umap  # type: ignore[import-not-found]
-                except ImportError as exc:
-                    raise BackendUnavailable(
-                        "UMAP requested but the umap-learn package is not "
-                        "installed. Install it with: pip install umap-learn"
-                    , code="environment.backend.missing") from exc
-                model = umap.UMAP(
-                    n_components=self.n_components,
-                    n_neighbors=min(self.n_neighbors, traj.n_frames - 1),
-                    min_dist=self.min_dist,
-                    random_state=self.random_state,
-                )
-                embedding = model.fit_transform(coords)
+                if not ran_out(error):
+                    raise
+                self._refused(methods, method, StudyError(
+                    f"{NAMED[method]} of {traj.n_frames:,} frames ran out of memory "
+                    f"({error}), where the check planned it would fit: the memory left "
+                    f"fell as the analysis ran. {_INSTEAD[method]}"
+                    f"{'or l' if _INSTEAD[method] else 'L'}oad every second "
+                    "frame for the analyses (`analysis: {stride: 2}`, which every "
+                    "analysis then reads).", code="analysis.memory.matrix_too_large",
+                    frames=traj.n_frames, stride=2), ran=True)
+                continue
             results[method] = np.asarray(embedding, dtype=np.float64)
+        # What each refusal says was run beside it, as it ended.
+        for refused in self.findings.get("methods_refused", {}).values():
+            refused["kept"] = list(results)
+        if "mds_refused" in self.findings:
+            self.findings["mds_refused"]["kept"] = list(results)
 
         return results
 
+    def _projection(self, method: str, traj: md.Trajectory, coords: np.ndarray,
+                    aligned: md.Trajectory, atom_idx: np.ndarray) -> np.ndarray:
+        """One method's projection of the frames."""
+        if method == "pca":
+            model = PCA(n_components=self.n_components)
+            embedding = model.fit_transform(coords)
+            # Stash variance ratios for the plot annotation
+            self._explained_variance = getattr(model, "explained_variance_ratio_", None)
+            # The motions themselves, kept beside the projections: the
+            # projections alone say when the study moved, not how.
+            self._modes = {
+                "mean": aligned.xyz[:, atom_idx, :].mean(axis=0).astype(np.float64),
+                "vectors": np.asarray(model.components_, dtype=np.float64).reshape(
+                    len(model.components_), len(atom_idx), 3),
+                "variance": np.asarray(model.explained_variance_, dtype=np.float64),
+                "ratio": np.asarray(model.explained_variance_ratio_, dtype=np.float64),
+                "atoms": np.asarray(atom_idx, dtype=np.int64),
+                "frames": np.int64(traj.n_frames),
+            }
+            return embedding
+        if method == "mds":
+            # Classical MDS on the pairwise RMSD between frames, which is
+            # what version 1 offered and what a reader comparing against
+            # it needs. It answers a different question from PCA: PCA
+            # finds the directions of largest variance in the
+            # coordinates, while this finds an arrangement in which the
+            # distances between frames are preserved as closely as
+            # possible -- and the distance between two frames is their
+            # RMSD, which is what a structural biologist means by how
+            # different two conformations are. PCA's variance shares stay
+            # where PCA put them: MDS has none of its own, and clearing the
+            # one attribute both shared took "(98.5%)" off the PCA axes
+            # whenever MDS ran after it.
+            distances = _pairwise_rmsd(traj, self.select_atoms(traj))
+            try:
+                return _classical_mds(distances, self.n_components)
+            finally:
+                del distances
+        if method == "tsne":
+            p = _tsne_perplexity(self.perplexity, traj.n_frames)
+            self.findings.setdefault("tsne", {})["perplexity_used"] = float(p)
+            model = TSNE(
+                n_components=self.n_components,
+                perplexity=p,
+                random_state=self.random_state,
+                init="pca",
+                learning_rate="auto",
+            )
+            return model.fit_transform(coords)
+        try:
+            import umap  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise BackendUnavailable(
+                "UMAP requested but the umap-learn package is not "
+                "installed. Install it with: pip install umap-learn"
+            , code="environment.backend.missing") from exc
+        model = umap.UMAP(
+            n_components=self.n_components,
+            n_neighbors=min(self.n_neighbors, traj.n_frames - 1),
+            min_dist=self.min_dist,
+            random_state=self.random_state,
+        )
+        return model.fit_transform(coords)
+
     def _mds_note(self) -> str:
-        """MDS refused, said on the other projections' figures, with the
-        stride that fits where one does."""
+        """The methods refused, said on the other projections' figures, with
+        the stride that fits where one does."""
         from fastmdxplora.analysis.cluster import _ordinal
 
-        stride = self.findings.get("memory", {}).get("stride_that_fits")
-        return ("MDS was not run: its frame-by-frame RMSD matrix did not fit in the "
-                "memory this process can take" + (
-                    f"; every {_ordinal(stride)} frame (analysis: {{stride: {stride}}}) "
-                    "fits it." if stride else "."))
+        notes = []
+        for method, refused in self.findings.get("methods_refused", {}).items():
+            stride = refused.get("stride_that_fits")
+            notes.append(f"{NAMED[method]} was not run: {_WHAT[method]} did not fit in "
+                         "the memory this process can take" + (
+                             f"; every {_ordinal(stride)} frame (analysis: {{stride: "
+                             f"{stride}}}) fits it." if stride else "."))
+        return " ".join(notes)
 
-    def _mds_refused(self, methods: list[str], refused: StudyError,
-                     ran: bool = False) -> None:
-        """MDS taken out of ``methods``, its refusal recorded and logged, the
-        other methods' projections saved; MDS alone asked for, the refusal is the
-        analysis's. ``ran``: refused as it ran out, not before."""
-        if methods == ["mds"]:
+    def _refused(self, methods: list[str], method: str, refused: StudyError,
+                 ran: bool = False, stride: int | None = None) -> None:
+        """``method`` taken out of ``methods``, its refusal recorded and logged,
+        the other methods' projections saved; the last method left, the
+        refusal is the analysis's. ``ran``: refused as it ran out, not
+        before. MDS's is recorded as ``mds_refused`` as well, as the report
+        reads it."""
+        if methods == [method]:
+            self._refused_before_it_ran = not ran
             raise refused
-        methods.remove("mds")
-        kept = [method for method in methods if method != "mds"]
-        self.findings["mds_refused"] = {
-            "code": "analysis.memory.matrix_too_large", "said": str(refused),
-            "kept": kept}
+        methods.remove(method)
+        kept = list(methods)
+        record = {"code": "analysis.memory.matrix_too_large", "said": str(refused),
+                  "kept": kept, "before_it_ran": not ran, "stride_that_fits": stride}
+        self.findings.setdefault("methods_refused", {})[method] = record
+        if method == "mds":
+            self.findings["mds_refused"] = {key: record[key]
+                                            for key in ("code", "said", "kept")}
         logger.warning("%s The other methods asked for (%s) %s.", refused,
-                       ", ".join(kept), "are saved" if ran else "still run")
+                       ", ".join(NAMED[each] for each in kept),
+                       "are saved" if ran else "still run")
+
+    _refused_before_it_ran = False
 
     # --------------------------------------------------------------
     # Override run() so each method gets its own output pair.
@@ -394,7 +411,7 @@ class DimRed(Analysis):
                     _plot_dimred_scatter(
                         ax, embedding, method,
                         self._explained_variance if method == "pca" else None)
-                    if "mds_refused" in self.findings:
+                    if self.findings.get("methods_refused"):
                         # Said on the figure too, below it: one looked at
                         # alone, or opened from the card, said nothing of it.
                         fig.text(0.5, -0.02, self._mds_note(), ha="center", va="top",
@@ -427,8 +444,10 @@ class DimRed(Analysis):
                 options_path=options_path,
                 artifacts=artifacts,
                 message=f"{self.name}: ok ({', '.join(self.result)})" + (
-                    "; MDS refused for memory, the rest run and saved"
-                    if "mds_refused" in self.findings else "") + (
+                    "; " + " and ".join(NAMED[method] for method in
+                                        self.findings["methods_refused"])
+                    + " refused for memory, the rest run and saved"
+                    if self.findings.get("methods_refused") else "") + (
                     "; not plotted, the memory ran out: "
                     + ", ".join(self.findings["figures_not_plotted"])
                     if self.findings.get("figures_not_plotted") else ""),
@@ -441,8 +460,10 @@ class DimRed(Analysis):
             code = getattr(exc, "code", None)
             if code and self.findings:
                 # The memory it checked, and the refusal's numbers with it,
-                # as clustering keeps them.
-                self.findings["refused"] = {"code": code, "said": str(exc)}
+                # as clustering keeps them, and whether it was refused before
+                # it ran.
+                self.findings["refused"] = {"code": code, "said": str(exc),
+                                            "before_it_ran": self._refused_before_it_ran}
                 try:
                     options_path = self._write_options_manifest()
                 except Exception:  # noqa: BLE001 -- the refusal matters more
@@ -531,9 +552,8 @@ class DimRed(Analysis):
             for leftover in (path, path.with_suffix(".svg")):
                 leftover.unlink(missing_ok=True)
             said = (f"{path.name} was not plotted: the memory ran out plotting it "
-                    f"({error}). Its data is saved. Give the process more memory (a "
-                    "larger `ulimit -v`), or load fewer frames for the analyses "
-                    "(`analysis: {stride: 2}`).")
+                    f"({error}). Its data is saved. Set `analysis: {{stride: 2}}` to load "
+                    "every second frame for the analyses and plot half as many.")
             self.findings.setdefault("figures_not_plotted", {})[path.name] = said
             logger.warning(said)
             return []
@@ -673,6 +693,49 @@ def _plot_dimred_scatter(
 register_analysis(DimRed.name, DimRed)
 
 
+#: The methods as the docs name them.
+NAMED = {"pca": "PCA", "mds": "MDS", "tsne": "t-SNE", "umap": "UMAP"}
+#: What each method makes that grows with the frames, as its refusal says it.
+_WHAT = {"pca": "its copy of the coordinates",
+         "mds": "its frame-by-frame RMSD matrix",
+         "tsne": "its lists of each frame's nearest neighbours and their affinities",
+         "umap": "its lists of each frame's nearest neighbours"}
+#: What a refusal of each method offers in its place.
+_INSTEAD = {"pca": "",
+            "mds": "PCA, t-SNE and UMAP make no such matrix (`methods: [pca]`); ",
+            "tsne": "PCA keeps no neighbours (`methods: [pca]`); ",
+            "umap": "PCA keeps no neighbours (`methods: [pca]`); "}
+
+#: The address space the projections map past what the process holds once
+#: the libraries are mapped (:func:`fastmdxplora.analysis.cluster.libraries_mapped`),
+#: in bytes: once, for each scatter and for PCA's landscape (each figure at
+#: 300 dpi, PNG and SVG). The figures are plotted once every method has run
+#: and freed what it made, so the larger of the figures and the method
+#: running is planned on (:func:`address_space_needed`). Measured from the
+#: check in ``fastmdx analyze``'s own process, as the least room under which
+#: the analysis ends with every figure plotted (``RLIMIT_AS`` set at the
+#: check, BLAS on one thread), on tri-alanine's 500 frames: t-SNE alone 11
+#: MiB, PCA alone 22, PCA, MDS and t-SNE 42 after the RMSD and 50 run alone.
+#: A new process, whose heap the analyses before have not grown, maps more:
+#: 21, 43 and 62 MiB; a figure that runs out there is said with what to
+#: set, and the rest saved. Planned on as a constant (130 MiB) measured in
+#: a new process, the libraries' share was counted twice in the command
+#: line's, and the projections were refused where they ran.
+ADDRESS_BYTES = 8 * 2**20
+SCATTER_BYTES = 10 * 2**20
+LANDSCAPE_BYTES = 14 * 2**20
+
+#: What t-SNE makes for each frame's each neighbour, in bytes: scikit-learn
+#: keeps 3 x perplexity + 1 neighbours of every frame, their distances and
+#: indices, and the joint probabilities it makes of them in sparse matrices,
+#: symmetrised. Measured as the growth of ``VmPeak`` from the check in a new
+#: process, t-SNE alone at perplexity 30 (91 neighbours): 34 MiB at 5,000
+#: frames, 67 at 10,000, 99 at 15,000, about 75 bytes a neighbour; at 24,000
+#: frames, under a room planned as a constant, its neighbours' indices
+#: failed to allocate.
+TSNE_BYTES_PER_NEIGHBOUR = 80
+
+
 def mds_memory_needed(n: int) -> int:
     """The peak bytes, of order n squared, MDS of ``n`` frames makes: the
     pairwise RMSD matrix in float64 (8 n^2) and its doubly centred square,
@@ -681,113 +744,126 @@ def mds_memory_needed(n: int) -> int:
     return int(16 * float(n) * float(n))
 
 
-#: The address space the projections map besides MDS's matrix, in bytes:
-#: scikit-learn's PCA and t-SNE, OpenBLAS's buffer, glibc's heap and each
-#: figure's canvas at 300 dpi. Measured as the growth of ``VmPeak`` over the
-#: whole analysis in a new process, BLAS on one thread: 101 MiB for PCA and
-#: t-SNE at 250 frames, 119 at 2,000; with MDS, 120 at 250 and 69 at 2,000
-#: past :func:`mds_memory_needed`, 34 for MDS alone at 3,000.
-ADDRESS_BYTES = 130 * 2**20
+def method_memory_needed(method: str, n: int, perplexity: float = 30.0) -> int:
+    """The peak bytes ``method`` makes of ``n`` frames past the coordinates
+    every method reads: MDS's matrix (:func:`mds_memory_needed`); t-SNE's
+    neighbours (:data:`TSNE_BYTES_PER_NEIGHBOUR` for each of its
+    3 x perplexity + 1 a frame); none for PCA, whose copy of the coordinates
+    is no more than the two made before the check and freed (the heap they
+    left holds it), or for UMAP, which is not measured here."""
+    if method == "mds":
+        return mds_memory_needed(n)
+    if method == "tsne":
+        neighbours = min(max(int(n) - 1, 0),
+                         int(3 * _tsne_perplexity(perplexity, n) + 1))
+        return int(TSNE_BYTES_PER_NEIGHBOUR * neighbours * int(n))
+    return 0
 
 
-def _refuse_past_address_space(self: "DimRed", n: int) -> tuple[int | None, str]:
-    """The memory this process can take, read once for the analysis
-    (:func:`fastmdxplora.analysis.cluster.memory_available`) and returned for
-    MDS's check; the analysis refused before any method runs where an
-    address-space limit (``ulimit -v``) leaves less than the projections map
-    (:data:`ADDRESS_BYTES`): there OpenBLAS could not map its buffer and
-    ended the process, with no record."""
+def figures_needed(methods: Sequence[str]) -> int:
+    """The address space the projections' figures map, in bytes: a scatter
+    of each method and PCA's landscape."""
+    return SCATTER_BYTES * len(methods) + (LANDSCAPE_BYTES if "pca" in methods else 0)
+
+
+def address_space_needed(method: str, methods: Sequence[str], n: int,
+                         perplexity: float = 30.0) -> int:
+    """The address space ``method`` of ``n`` frames maps at its peak, run
+    beside ``methods``: :data:`ADDRESS_BYTES`, and the larger of what it
+    makes (:func:`method_memory_needed`) and the figures plotted after
+    every method has run (:func:`figures_needed`)."""
+    return ADDRESS_BYTES + max(method_memory_needed(method, n, perplexity),
+                               figures_needed(methods))
+
+
+def _methods_that_fit(self: "DimRed", n: int) -> list[str]:
+    """The methods asked for that fit in the memory this process can take,
+    read once for the analysis
+    (:func:`fastmdxplora.analysis.cluster.memory_available`): each planned on
+    its own, the memory it makes (:func:`method_memory_needed`) in the
+    resident memory's share and its address space
+    (:func:`address_space_needed`) in what an address-space limit
+    (``ulimit -v``) leaves. One that does not fit is refused with the stride
+    that fits where one does, and the others still run (:meth:`DimRed._refused`);
+    the last left refused, the analysis is. A constant planned for every
+    method refused PCA where it fitted, and allowed t-SNE where its
+    neighbours did not fit. Recorded either way (``findings.memory``)."""
     from fastmdxplora.analysis.cluster import (
-        MEMORY_SHARE, address_room, memory_available, room_said, sizes_said)
-
-    available, read_from = memory_available()
-    address, address_from = address_room(available, read_from)
-    if address is None:
-        return available, read_from
-    self.findings.setdefault("memory", {}).update({
-        "frames": n, "bytes_available": available, "available_read_from": read_from,
-        "share_usable": MEMORY_SHARE, "bytes_address_space": address,
-        "bytes_address_needed": ADDRESS_BYTES})
-    if ADDRESS_BYTES <= MEMORY_SHARE * address:
-        return available, read_from
-    need_said, room, planned_said = sizes_said(ADDRESS_BYTES, address)
-    raise StudyError(
-        f"The projections do not fit in the address space this process may use. "
-        f"They need about {need_said} of it for the libraries and figures they map "
-        f"at any number of frames, and {room_said(address, address_from, room)}, of "
-        f"which an analysis plans on {MEMORY_SHARE:.0%}, {planned_said}. Run it where "
-        f"`ulimit -v` allows more, or leave `dimred` out of the analyses. "
-        f"Read as {address_from}.",
-        code="analysis.memory.matrix_too_large", frames=n,
-        bytes_needed=ADDRESS_BYTES, bytes_available=address, stride=None)
-
-
-def _refuse_mds_past_memory(self: "DimRed", n: int,
-                            reading: tuple[int | None, str] | None = None) -> None:
-    """Refuse MDS of ``n`` frames where its matrix would not fit in the
-    memory this process can take (``reading``, the analysis's one reading,
-    else :func:`fastmdxplora.analysis.cluster.memory_available`), with the
-    stride that fits; record the check either way. Under an address-space
-    limit, MDS's matrix and what the projections map besides
-    (:data:`ADDRESS_BYTES`) are planned on in its room."""
-    from fastmdxplora.analysis.cluster import (
+        ADDRESS_SHARE,
         MEMORY_SHARE,
         _ordinal,
         address_room,
         memory_available,
-        room_said,
-        sizes_said,
+        more_said,
+        need_and_room_said,
+        resident_room,
     )
 
-    needed = mds_memory_needed(n)
-    available, read_from = reading or memory_available()
+    available, read_from = memory_available()
     address, address_from = address_room(available, read_from)
-    check: dict[str, Any] = {"frames": n, "bytes_needed": needed,
-                             "bytes_available": available, "available_read_from": read_from,
-                             "share_usable": MEMORY_SHARE, "method": "mds",
-                             "bytes_address_space": address,
-                             "bytes_address_needed": (needed + ADDRESS_BYTES
-                                                      if address is not None else None)}
-    # Beside what holding the threads said (`threads_held_to_one`).
-    self.findings.setdefault("memory", {}).update(check)
+    available, read_from = resident_room(available, read_from)
+    methods = list(self.methods)
+    memory = self.findings.setdefault("memory", {})
+    memory.update({"frames": n, "bytes_available": available,
+                   "available_read_from": read_from, "share_usable": MEMORY_SHARE,
+                   "bytes_address_space": address, "address_share_usable": ADDRESS_SHARE,
+                   "methods": {}})
 
-    def short(m: int) -> list[tuple[int, int, str, bool]]:
+    def short(method: str, kept: Sequence[str], m: int) -> list[tuple[int, int, str, bool]]:
         found = []
-        if available is not None and mds_memory_needed(m) > MEMORY_SHARE * available:
-            found.append((mds_memory_needed(m), available, read_from, False))
-        if address is not None and (
-                mds_memory_needed(m) + ADDRESS_BYTES > MEMORY_SHARE * address):
-            found.append((mds_memory_needed(m) + ADDRESS_BYTES, address, address_from,
-                          True))
-        return sorted(found, key=lambda each: each[0] / max(each[1], 1))
+        made = method_memory_needed(method, m, self.perplexity)
+        if available is not None and made > MEMORY_SHARE * available:
+            found.append((made, available, read_from, False))
+        mapped = address_space_needed(method, kept, m, self.perplexity)
+        if address is not None and mapped > ADDRESS_SHARE * address:
+            found.append((mapped, address, address_from, True))
+        return sorted(found, key=lambda each: each[0] / max(each[1], 1)
+                      / (ADDRESS_SHARE if each[3] else MEMORY_SHARE))
 
-    over = short(n)
-    if not over:
-        return
-    need, room, room_from, mapped = over[-1]
-    stride = 2
-    while stride < n and short(-(-n // stride)):
-        stride += 1
-    if short(-(-n // stride)):
-        fewer = "no stride fits it"
-    else:
-        self.findings["memory"]["stride_that_fits"] = stride
-        fewer = (f"or load every {_ordinal(stride)} frame for the analyses "
-                 f"(`analysis: {{stride: {stride}}}`, which every analysis then reads), "
-                 f"{-(-n // stride):,} frames, which fits")
-    # Every size in one unit, the share computed from the room as said.
-    need_said, room_shown, planned_said = sizes_said(need, room)
-    raise StudyError(
-        f"MDS of {n:,} frames needs about {need_said} "
-        f"{'of address space ' if mapped else ''}for their "
-        f"frame-by-frame RMSD matrix and its centred square"
-        f"{', and what the projections map besides' if mapped else ''}, and "
-        f"{room_said(room, room_from, room_shown)}, of which an analysis "
-        f"plans on {MEMORY_SHARE:.0%}, {planned_said}. PCA, t-SNE and UMAP make no such "
-        f"matrix (`methods: [pca]`); {fewer}. Read as {room_from}.",
-        code="analysis.memory.matrix_too_large", frames=n,
-        bytes_needed=need, bytes_available=room,
-        stride=self.findings["memory"].get("stride_that_fits"))
+    while True:
+        for method in methods:
+            memory["methods"][method] = {
+                "bytes_needed": method_memory_needed(method, n, self.perplexity),
+                "bytes_address_needed": (address_space_needed(method, methods, n,
+                                                              self.perplexity)
+                                         if address is not None else None)}
+        over = [method for method in methods if short(method, methods, n)]
+        if not over:
+            return methods
+        # One at a time, the one that makes the most first (PCA last): with
+        # it refused, the figures left may let the others fit.
+        method = max(over, key=lambda each: (
+            method_memory_needed(each, n, self.perplexity), each != "pca"))
+        need, room, room_from, mapped = short(method, methods, n)[-1]
+        stride = 2
+        while stride < n and short(method, methods, -(-n // stride)):
+            stride += 1
+        fits = not short(method, methods, -(-n // stride))
+        if fits:
+            memory["stride_that_fits"] = stride
+            fewer = (f"or load every {_ordinal(stride)} frame for the analyses "
+                     f"(`analysis: {{stride: {stride}}}`, which every analysis then "
+                     f"reads), {-(-n // stride):,} frames, which fits")
+        else:
+            fewer = (f"no stride fits it. Run it {more_said(need, room, mapped, room_from)}, "
+                     f"or leave `{'dimred' if methods == [method] else method}` out "
+                     f"of {'the analyses' if methods == [method] else '`methods`'}")
+        made = f"for {_WHAT[method]}" if method != "pca" else ""
+        if mapped:
+            figures = len(methods) + (1 if "pca" in methods else 0)
+            made = ("for its figures" if not made else
+                    f"{made}, or for the {figures} figures plotted once it is freed")
+        # Every size in one unit, the share computed from the room as said.
+        self._refused(methods, method, StudyError(
+            f"{NAMED[method]} of {n:,} frames takes about "
+            + need_and_room_said(need, room, room_from, mapped, "an analysis",
+                                 made=made)
+            + f". {(_INSTEAD[method] + fewer)[:1].upper()}"
+            f"{(_INSTEAD[method] + fewer)[1:]}. Read as {room_from}.",
+            code="analysis.memory.matrix_too_large", frames=n,
+            bytes_needed=need, bytes_available=room,
+            stride=stride if fits else None),
+            stride=stride if fits else None)
 
 
 def _pairwise_rmsd(traj: Any, atom_indices: Any = None) -> np.ndarray:

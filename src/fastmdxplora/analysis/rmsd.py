@@ -82,11 +82,16 @@ def refuse_too_few_to_align(analysis: Analysis, traj: md.Trajectory,
               if works else
               f"No selection of {needed} or more atoms of a molecule was found here, so "
               f"{analysis.name} does not apply to this system.")
+    # Worded so that the command line's rule for a run too short for an
+    # analysis (`_TOO_FEW_FRAMES` in `cli/main.py`: a frame and "needs",
+    # "only" or "at least") does not read it as one: it read "superposes the
+    # frames ... needs 3" so, and a study that named the analysis ended with
+    # exit 0 and no failure said.
     raise StudyError(
-        f"{remedy} {analysis.description or analysis.name} superposes the frames on "
-        f"`{selection}`, which matches {atoms} here, and a superposition needs "
-        f"{needed}: on one atom every frame fits every other exactly, each RMSD 0 and "
-        f"the frames one structure, and on two only their separation is compared.",
+        f"{remedy} {analysis.description or analysis.name} superposes each structure "
+        f"on `{selection}`, which matches {atoms} here, and a superposition is defined "
+        f"on {needed} or more: on one atom each structure fits every other exactly, "
+        f"each RMSD 0, and on two their separation alone is compared.",
         code="analysis.selection.arity", expression=selection, expected=needed,
         found=found, option="selection", selection_that_works=works[0] if works else None)
 

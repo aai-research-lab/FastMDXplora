@@ -244,28 +244,57 @@ def map_needed(n: int) -> int:
     return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
 
-#: The address space a clustering maps besides what :func:`memory_needed`
-#: counts, in bytes: the libraries it loads (scikit-learn's and SciPy's
-#: clustering), OpenBLAS's buffer, glibc's heap that grows and is not given
-#: back, and each figure's canvas at 300 dpi, PNG and SVG, five or more
-#: figures. Address space, not resident memory: under ``ulimit -v`` it is
-#: what runs out. Measured as the growth of ``VmPeak`` over the whole run in
-#: a new process, BLAS on one thread, less :func:`memory_needed`: 139 MiB at
-#: 100 frames, 137 at 250, 130 at 500, 119 at 1,000, 124 at 1,500, 122 at
-#: 2,000, 65 at 3,000 and 4,000 (k-means and average linkage), 97 for Ward
-#: and 78 for single linkage at 2,000; DBSCAN's is within its count
-#: (``tests/test_a_clustering_fits_the_machine.py``).
-ADDRESS_BYTES = 150 * 2**20
+#: The address space a clustering maps past what :func:`memory_needed`
+#: counts, in bytes, and the least it maps at any number of frames: glibc's
+#: heap, which grows and is not given back, and each figure's canvas at 300
+#: dpi, PNG and SVG. The libraries, and a figure plotted as the analyses
+#: plot theirs, are mapped before the room is read (:func:`libraries_mapped`),
+#: so they are in what the process holds and not here. Address space, not
+#: resident memory: under ``ulimit -v`` it is what runs out. Measured from
+#: the check in ``fastmdx analyze``'s own process, where ``ulimit -v`` is
+#: set, as the least room under which the clustering ends with every figure
+#: plotted (``RLIMIT_AS`` set at the check, BLAS on one thread), k-means and
+#: average linkage on tri-alanine: 36 MiB at 500 frames and at 50 (every
+#: 10th) after the RMSD, 53 and 48 run alone, against 42 and 8 MiB of
+#: :func:`memory_needed`. A new process, whose heap no analysis before has
+#: grown, maps more: 62, 83 and 186 MiB at 50, 500 and 2,000 frames, about
+#: 17 MiB past this plan; a figure that runs out there is said with what to
+#: set, and the rest saved (:meth:`Cluster._plotted`). Measured there, the
+#: allowance (150 MiB) counted the libraries a second time in the command
+#: line's process, and tri-alanine's 500 frames were refused at any stride
+#: under ``ulimit -v`` 600000, where they ran with room to spare.
+ADDRESS_BYTES = 18 * 2**20
+ADDRESS_LEAST = 50 * 2**20
+
+#: The share of the address space an address-space limit leaves that a
+#: clustering or a projection plans on: all of it. The room is the limit
+#: less what this process holds once the libraries are mapped, the
+#: trajectory loaded among it, and what a run maps past that is planned on
+#: as measured (:data:`ADDRESS_BYTES`), with the margin of what was
+#: measured; the resident memory's share (:data:`MEMORY_SHARE`) is for
+#: other processes taking memory as it runs. Planned on at 75% as well,
+#: tri-alanine's 500 frames were refused at ``ulimit -v`` 600000, where
+#: they ran with 18 MiB to spare.
+ADDRESS_SHARE = 1.0
 
 
 def address_space_needed(n: int, methods: Sequence[str], features: str,
                          linkage: str) -> int:
-    """The address space clustering ``n`` frames maps at its peak, matrix,
-    methods, figures and map with it: :func:`memory_needed` and
-    :data:`ADDRESS_BYTES`. Planned on where an address-space limit
-    (``ulimit -v``) leaves less than the memory does: under it, a clustering
-    the check planned as resident memory failed plotting its figures."""
-    return memory_needed(n, methods, features, linkage) + ADDRESS_BYTES
+    """The address space clustering ``n`` frames maps at its peak, past what
+    the process holds once the libraries are mapped: :func:`memory_needed`
+    and :data:`ADDRESS_BYTES`, and :data:`ADDRESS_LEAST` at the least.
+    Planned on where an address-space limit (``ulimit -v``) leaves less than
+    the memory does: under it, a clustering the check planned as resident
+    memory failed plotting its figures."""
+    return max(memory_needed(n, methods, features, linkage) + ADDRESS_BYTES,
+               ADDRESS_LEAST)
+
+
+def address_besides(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
+    """What a clustering of ``n`` frames maps past :func:`memory_needed`,
+    in bytes, as part of :func:`address_space_needed`."""
+    return (address_space_needed(n, methods, features, linkage)
+            - memory_needed(n, methods, features, linkage))
 
 
 def address_room(available: int | None, read_from: str) -> tuple[int | None, str]:
@@ -276,6 +305,22 @@ def address_room(available: int | None, read_from: str) -> tuple[int | None, str
     if read_from.startswith("RLIMIT"):
         return available, read_from
     return _rlimit_room()
+
+
+def resident_room(available: int | None, read_from: str) -> tuple[int | None, str]:
+    """The resident memory a run can take, apart from the address space:
+    the reading the memory was planned on, else, where an address-space or
+    data limit was the least of them, the least of the machine's and the
+    control group's (:func:`_machine_available`, :func:`_cgroup_room`).
+    Planned on as the address space's room as well, a run whose address
+    space fitted was refused at 75% of it."""
+    if not read_from.startswith("RLIMIT"):
+        return available, read_from
+    found = [reading for reading in (_machine_available(), _cgroup_room())
+             if reading[0] is not None]
+    if not found:
+        return None, "not read: no machine or control group reading"
+    return min(found, key=lambda reading: reading[0])
 
 
 def ran_out(error: BaseException) -> bool:
@@ -413,16 +458,71 @@ def _cgroup_room(proc: Path = Path("/proc/self/cgroup"),
     return best
 
 
+_LIBRARIES_MAPPED = False
+
+
+def libraries_mapped() -> None:
+    """Map, once, what clustering and the projections map the first time
+    they run: SciPy's linkage, distances and eigensolver, OpenBLAS's buffer
+    (one product) and Matplotlib's canvas, fonts and writers (a figure as the
+    analyses plot theirs, rendered to PNG at 300 dpi and to SVG, in memory).
+    Called before the room under an address-space limit is read, so what
+    the libraries map is in what the process holds, and the plan
+    (:data:`ADDRESS_BYTES`) counts only what a run maps past them. Planned on as an allowance measured in a new
+    process, the libraries were counted twice in the command line's own,
+    where the analyses before had mapped them: tri-alanine's 500 frames were
+    refused at any stride under ``ulimit -v`` 600000, where all of them ran.
+    Where the memory runs out doing it, the room read after says so."""
+    global _LIBRARIES_MAPPED
+    if _LIBRARIES_MAPPED:
+        return
+    _LIBRARIES_MAPPED = True
+    import io
+
+    try:
+        import scipy.cluster.hierarchy  # noqa: F401
+        import scipy.linalg
+        import scipy.spatial.distance  # noqa: F401
+        from threadpoolctl import threadpool_limits
+
+        square = np.ones((64, 64))
+        # On one thread, as the run is (:func:`threads_held_to_one`): each
+        # further OpenBLAS thread started here held its stack and buffer.
+        with threadpool_limits(limits=1):
+            scipy.linalg.eigh(square @ square, subset_by_index=[62, 63])
+        opened = figures_open()
+        try:
+            # A figure as the analyses plot theirs, at their size and the
+            # house style: a line, a scatter with its colour bar, a mesh, a
+            # title, labels and a legend, saved as save_figure saves.
+            fig, ax = new_figure(title="Frames (k-means)", xlabel="Time (ns)",
+                                 ylabel="RMSD (nm)")
+            steps = np.linspace(0.0, 1.0, 64)
+            ax.plot(steps, steps, label="RMSD")
+            dots = ax.scatter(steps, steps[::-1], c=steps, s=10)
+            fig.colorbar(dots, ax=ax, label="Frame")
+            ax.pcolormesh(np.outer(steps[:16], steps[:16]), alpha=0.2)
+            ax.legend()
+            fig.tight_layout()
+            for kind in ("png", "svg"):
+                fig.savefig(io.BytesIO(), format=kind, dpi=300, bbox_inches="tight")
+        finally:
+            close_figures_opened_since(opened)
+    except (MemoryError, OSError) as error:
+        if not ran_out(error):
+            raise
+
+
 def _rlimit_room() -> tuple[int | None, str]:
     """What ``ulimit -v`` (``RLIMIT_AS``) or ``RLIMIT_DATA`` still lets this
     process take: the limit less what it holds (``VmSize``, ``VmData`` in
-    ``/proc/self/status``). None where neither is set."""
+    ``/proc/self/status``), read once the libraries a run maps are mapped
+    (:func:`libraries_mapped`). None where neither is set."""
     try:
         import resource
     except ImportError:  # not on Windows
         return None, ""
-    held = _process_status()
-    best: tuple[int | None, str] = (None, "")
+    limits = []
     for name, field in (("RLIMIT_AS", "VmSize"), ("RLIMIT_DATA", "VmData")):
         which = getattr(resource, name, None)
         if which is None:
@@ -433,7 +533,14 @@ def _rlimit_room() -> tuple[int | None, str]:
             continue
         if soft in (resource.RLIM_INFINITY, -1) or soft <= 0:
             continue
-        room = max(int(soft) - held.get(field, 0), 0)
+        limits.append((name, field, int(soft)))
+    if not limits:
+        return None, ""
+    libraries_mapped()
+    held = _process_status()
+    best: tuple[int | None, str] = (None, "")
+    for name, field, soft in limits:
+        room = max(soft - held.get(field, 0), 0)
         if best[0] is None or room < best[0]:
             best = (room, f"{name} less what this process holds ({field})")
     return best
@@ -538,23 +645,68 @@ def sizes_said(needed: float, available: float, share: float = MEMORY_SHARE,
                also: Sequence[float] = ()) -> tuple[str, ...]:
     """The need, the room and the share of it planned on, said in one unit
     (MB where each is under 1 GB, else GB) to one decimal, or to as many
-    more (up to three) as it takes for sizes that differ to read
-    differently; the share is computed from the room as said, so the two
-    shown agree. A refusal said a need of 0.4 GB against a room of 0.4 GB,
-    and "0.1 GB, of which ... 75%, 87.0 MB". Sizes in ``also`` are said
-    after them, in the same unit and places."""
+    more (up to six) as it takes for the three to read in the order they
+    are in, sizes that differ differently; the share is computed from the
+    room as said, so the two shown agree. A refusal said a need of 0.4 GB
+    against a room of 0.4 GB, and "0.1 GB, of which ... 75%, 87.0 MB"; and
+    a need of 1.6 GB refused against a share of 1.7 GB, of a room of 2.2 GB
+    (its share of 2.165 GB is 1.624 GB). Sizes in ``also`` are said after
+    them, in the same unit and places."""
     unit, scale = ("GB", 1e9) if max(needed, available, *also) >= 1e9 else ("MB", 1e6)
     exact = (float(needed), float(available), share * float(available))
-    for places in (1, 2, 3):
+
+    def order(a: float, b: float) -> int:
+        return (a > b) - (a < b)
+
+    for places in range(1, 7):
         need = round(exact[0] / scale, places)
         room = round(exact[1] / scale, places)
         planned = round(share * room, places)
         shown = (need, room, planned)
-        if all((shown[i] == shown[j]) == (exact[i] == exact[j])
+        if all(order(shown[i], shown[j]) == order(exact[i], exact[j])
                for i in range(3) for j in range(i + 1, 3)):
             break
     return tuple(f"{value:,.{places}f} {unit}"
                  for value in (*shown, *(round(size / scale, places) for size in also)))
+
+
+def need_and_room_said(need: float, room: float, room_from: str, mapped: bool,
+                       who: str, besides: float | None = None, made: str = "") -> str:
+    """A refusal's need, what it is for (``made``), and the room it was
+    refused against, in one unit (:func:`sizes_said`). Under an
+    address-space limit the need is of address space, ``besides`` of it
+    what a run maps past the libraries, said as part of it, and all of the
+    room is planned on (:data:`ADDRESS_SHARE`); else ``who`` plans on its
+    share of the memory (:data:`MEMORY_SHARE`), said as a number. "157.3 MB
+    the libraries and figures map besides" read as more than the need, of
+    which it was part."""
+    share = ADDRESS_SHARE if mapped else MEMORY_SHARE
+    said = sizes_said(need, room, share, also=(besides,) if besides is not None else ())
+    need_said, room_shown, planned_said = said[:3]
+    text = need_said + (" of address space" if mapped else "") + (f" {made}" if made else "")
+    if mapped and besides is not None:
+        text += (f" ({said[3]} of it what the run maps past the libraries: its figures "
+                 "and the heap)")
+    text += f", and {room_said(int(room), room_from, room_shown)}"
+    if share < 1:
+        text += f", of which {who} plans on {share:.0%}, {planned_said}"
+    return text
+
+
+def more_said(need: float, room: float, mapped: bool, room_from: str = "") -> str:
+    """Where a refused run would fit: a ``ulimit -v`` or a container
+    allowing so many MB more, or so much more memory free, rounded up as
+    said. "A larger `ulimit -v`" said no size."""
+    import math
+
+    more = max(need / (ADDRESS_SHARE if mapped else MEMORY_SHARE) - room, 0.0)
+    scale = 1e8 if more >= 1e9 else 1e5
+    amount = _gigabytes(math.ceil(more / scale) * scale)
+    if mapped:
+        return f"where `ulimit -v` allows {amount} more"
+    if room_from.startswith("the cgroup"):
+        return f"where the container allows {amount} more"
+    return f"where {amount} more memory is free"
 
 
 def room_said(available: int, read_from: str, said: str | None = None) -> str:
@@ -860,6 +1012,7 @@ class Cluster(Analysis):
         needed = memory_needed(n, methods, features, linkage)
         available, read_from = memory_available()
         address, address_from = address_room(available, read_from)
+        available, read_from = resident_room(available, read_from)
         check: dict[str, Any] = {
             "frames": n, "bytes_needed": needed,
             "bytes_matrix": matrix_needed(n, methods, features, linkage),
@@ -868,7 +1021,7 @@ class Cluster(Analysis):
             "share_usable": MEMORY_SHARE,
             # The address space a limit leaves, apart from the resident
             # memory, and what clustering maps there.
-            "bytes_address_space": address,
+            "bytes_address_space": address, "address_share_usable": ADDRESS_SHARE,
             "bytes_address_needed": (address_space_needed(n, methods, features, linkage)
                                      if address is not None else None),
         }
@@ -883,14 +1036,17 @@ class Cluster(Analysis):
                 found.append((memory_needed(m, methods, features, linkage),
                               available, read_from, False))
             if address is not None and address_space_needed(
-                    m, methods, features, linkage) > MEMORY_SHARE * address:
+                    m, methods, features, linkage) > ADDRESS_SHARE * address:
                 found.append((address_space_needed(m, methods, features, linkage),
                               address, address_from, True))
-            return sorted(found, key=lambda each: each[0] / max(each[1], 1))
+            return sorted(found, key=lambda each: each[0] / max(each[1], 1)
+                          / (ADDRESS_SHARE if each[3] else MEMORY_SHARE))
 
         over = short(n)
         if not over:
             return
+        # Refused before anything of it ran, as its card says.
+        self._refused_before_it_ran = True
         need, room, room_from, mapped = over[-1]
         given = int(record["n_frames_analysed"])
         stride = self.stride
@@ -899,31 +1055,25 @@ class Cluster(Analysis):
         fits = -(-given // stride)
         starting = (f" from frame {first}" if first else "")
         if short(fits):
-            # Even a frame or two: the map's figure, or what the libraries
-            # and figures map, alone is more than the room planned on.
+            # Even a frame or two: the map's figure, or what the figures
+            # map, alone is more than the room planned on.
             least = min(given, max(2, self.n_clusters))
             least_need, room, room_from, mapped = short(least)[-1]
-            least_said, room_shown, planned_said = sizes_said(least_need, room)
             raise StudyError(
                 f"Clustering does not fit in the memory at any stride. Clustering "
-                f"{n:,} frames{starting}, or as few as there are clusters, needs at "
-                f"least {least_said}{' of address space' if mapped else ''}, and "
-                f"{room_said(room, room_from, room_shown)}, of which clustering plans "
-                f"on {MEMORY_SHARE:.0%}, {planned_said}. Run it where more memory "
-                f"is given{' (a larger `ulimit -v`)' if mapped else ''}, or leave "
-                f"`cluster` out of the analyses. Read as {room_from}.",
+                f"{n:,} frames{starting}, or as few as there are clusters, takes about "
+                + need_and_room_said(least_need, room, room_from, mapped, "clustering",
+                                     besides=(address_besides(least, methods, features, linkage)
+                                              if mapped else None))
+                + f". Run it {more_said(least_need, room, mapped, room_from)}, or leave `cluster` "
+                f"out of the analyses. Read as {room_from}.",
                 code="analysis.memory.matrix_too_large", frames=n,
                 bytes_needed=least_need, bytes_available=room, stride=None)
         check["stride_that_fits"] = stride
-        need_said, room_shown, planned_said, besides = sizes_said(
-            need, room, also=(ADDRESS_BYTES,))
         made = (f"for their frame-by-frame RMSD matrix and the copies "
                 f"{', '.join(methods)} make of it"
                 if check["bytes_matrix"] >= check["bytes_map"] else
                 "to plot the map of their RMSD matrix, once the matrix is freed")
-        if mapped:
-            made = (f"of address space: {made}, with {besides} the libraries and "
-                    "figures map besides")
         # What to do first, in a sentence a row gives alone; where the memory
         # was read last, as the record keeps it (`available_read_from`).
         raise StudyError(
@@ -931,11 +1081,16 @@ class Cluster(Analysis):
             f"memory, where clustering {n:,} frames{starting} does not. "
             f"Set `stride: {stride}` under the analysis's `options: {{cluster: ...}}` "
             "for it; the other analyses keep every frame. "
-            f"The {n:,} frames need about {need_said} {made}, and "
-            f"{room_said(room, room_from, room_shown)}, of which clustering plans on "
-            f"{MEMORY_SHARE:.0%}, {planned_said}. Read as {room_from}.",
+            f"The {n:,} frames need about "
+            + need_and_room_said(need, room, room_from, mapped, "clustering",
+                                 besides=(address_besides(n, methods, features, linkage)
+                                          if mapped else None),
+                                 made=made)
+            + f". Read as {room_from}.",
             code="analysis.memory.matrix_too_large", frames=n,
             bytes_needed=need, bytes_available=room, stride=stride)
+
+    _refused_before_it_ran = False
 
     # --------------------------------------------------------------
     # Override run() to handle multi-output (one file pair per method)
@@ -1060,10 +1215,11 @@ class Cluster(Analysis):
                 data_path=self.output_dir / f"cluster_{primary_method}.dat",
                 options_path=options_path,
                 artifacts=[options_path, *artifacts],
-                message=f"{self.name}: ok ({', '.join(self.methods)})" + (
-                    "; not plotted, the memory ran out: "
-                    + ", ".join(self.findings["figures_not_plotted"])
-                    if self.findings.get("figures_not_plotted") else ""),
+                message=f"{self.name}: ok ({', '.join(self.methods)})" + "".join(
+                    f"; {said}, the memory ran out: " + ", ".join(self.findings[key])
+                    for key, said in (("figures_not_plotted", "not plotted"),
+                                      ("not_saved", "not saved"))
+                    if self.findings.get(key)),
                 started_at=started,
                 finished_at=finished,
             )
@@ -1078,7 +1234,10 @@ class Cluster(Analysis):
                 # the refusal's numbers with it.
                 code = getattr(exc, "code", None)
                 if code:
-                    self.findings["refused"] = {"code": code, "said": str(exc)}
+                    # Whether it was refused before it ran, or stopped part-way.
+                    self.findings["refused"] = {
+                        "code": code, "said": str(exc),
+                        "before_it_ran": self._refused_before_it_ran}
                 try:
                     options_path = self._write_options_manifest()
                 except Exception:  # noqa: BLE001 -- the failure matters more
@@ -1174,13 +1333,22 @@ class Cluster(Analysis):
                      if block > 1 else "The map shows every pair of clustered frames."),
         }
         data_path = self.output_dir / "cluster_rmsd_matrix.npz"
-        np.savez_compressed(
-            data_path, rmsd_nm=averaged.astype(np.float32),
-            block=np.int64(block),
-            frames=frames.astype(np.int64),
-            time_ns=(times if times is not None else np.full(n, np.nan)),
-            distance=np.array(self._distance_name()))
-        written = [data_path]
+        written = []
+        try:
+            np.savez_compressed(
+                data_path, rmsd_nm=averaged.astype(np.float32),
+                block=np.int64(block),
+                frames=frames.astype(np.int64),
+                time_ns=(times if times is not None else np.full(n, np.nan)),
+                distance=np.array(self._distance_name()))
+            written.append(data_path)
+        except (MemoryError, OSError) as error:
+            # Its zip's buffer: the CLI ended on "Unable to allocate output
+            # buffer." with no setting. Said, and the map still plotted.
+            if not ran_out(error):
+                raise
+            data_path.unlink(missing_ok=True)
+            self._not_plotted(data_path, error, saving=True)
         if self.save_full_matrix:
             written.append(self._write_full_matrix(n))
         # Nothing reads the whole matrix past here. Freed, and given back
@@ -1223,13 +1391,22 @@ class Cluster(Analysis):
         return [path] + ([path.with_suffix(".svg")]
                          if path.with_suffix(".svg").is_file() else [])
 
-    def _not_plotted(self, path: Path, error: BaseException) -> str:
-        """What a figure the memory ran out plotting says, recorded and
-        logged: its data saved, and what to set."""
+    def _not_plotted(self, path: Path, error: BaseException, saving: bool = False) -> str:
+        """What a figure the memory ran out plotting says, or the map's data
+        it ran out saving (``saving``), recorded and logged: the rest saved,
+        and what to set."""
+        if saving:
+            said = (f"{path.name} was not saved: the memory ran out saving it "
+                    f"({error}). The labels and the other figures are saved. Set "
+                    f"`stride: {2 * self.stride}` under the analysis's "
+                    "`options: {cluster: ...}` to save the map of half as many frames.")
+            self.findings.setdefault("not_saved", {})[path.name] = said
+            logger.warning(said)
+            return said
         said = (f"{path.name} was not plotted: the memory ran out plotting it "
                 f"({error}). Its data is saved. Set `stride: {2 * self.stride}` under "
                 "the analysis's `options: {cluster: ...}` to plot half as many "
-                "frames, or give the process more memory (a larger `ulimit -v`).")
+                "frames.")
         self.findings.setdefault("figures_not_plotted", {})[path.name] = said
         logger.warning(said)
         return said
