@@ -41,13 +41,21 @@ def __getattr__(name: str):
 
 def study_trajectory(project_root: Path) -> tuple[Path | None, Path | None]:
     """An extended study's joined trajectory and its topology, where it has
-    one newer than its own first piece; otherwise ``(None, None)``.
+    one; otherwise ``(None, None)``.
 
     Analysed again in place, an extended study is its pieces, not its first
     one. The join used to say so by writing the joined trajectory's path
     into the study's resolved config, which then carried it to any study run
     from that file: a new study would simulate and analyse the old one's
     trajectory. The study's own folder says it instead.
+
+    Its files' times say nothing: a study simulated again in place has its
+    join and its pieces moved aside first (`replaced.outputs_of`), and a
+    copy (cp, rsync, scp from a cluster) gives each file the time it was
+    copied, so a first piece newer than its join was a copy of a study,
+    analysed as its first piece alone (1,000 of 10,000 frames). A topology
+    the join names in the study's old folder, where it was moved or copied
+    from, is read in the study's own.
 
     In a read held to the study (`record_access`), a record of the join, the
     first piece's trajectory or the topology the join names that the read
@@ -71,20 +79,23 @@ def study_trajectory(project_root: Path) -> tuple[Path | None, Path | None]:
         if not (_records.is_file(joined) and _records.is_file(record)
                 and _records.stat(joined).st_size > 0):
             return None, None
-        # A study simulated again in place after it was joined has a first
-        # piece newer than the join, and the join is not its trajectory.
         _refuse(own)
-        if (_records.is_file(own)
-                and _records.stat(own).st_mtime > _records.stat(joined).st_mtime):
-            return None, None
-        named = json.loads(_records.read_text(record, encoding="utf-8")).get("topology")
+        said = json.loads(_records.read_text(record, encoding="utf-8"))
+        named, was = said.get("topology"), said.get("trajectory")
     except OutsideWorkspace:
         raise
     except (OSError, ValueError, AttributeError):
         return None, None
+    topology = Path(str(named)) if named else None
+    if topology is not None and was:
+        # Named in the study's folder as it was when joined (its joined
+        # trajectory's): read in the study's own.
+        try:
+            topology = root / topology.relative_to(Path(str(was)).parent.parent)
+        except ValueError:
+            pass
     # The topology the join names is looked at only where a held read may
     # look (`pipeline._may_look`).
-    topology = Path(str(named)) if named else None
     if topology is not None:
         _refuse(topology)
     return joined, (topology if topology is not None and _may_look(topology)
