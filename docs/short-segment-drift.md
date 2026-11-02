@@ -230,10 +230,13 @@ X is the smallest steady drift, in whole pooled errors from the first
 segment's mean to the last's, that the rule calls in at least 8,000 of 10,000
 sets of means with known Gaussian errors: drift linear in time, each mean at
 the centre of its segment, each segment's error as one over the root of its
-length, the same random numbers at every size (`unseen` in the helper's output). The
-note gives the value for equal segments, and where the record's segments
-differ in length by more than a tenth of the longest it adds that a larger one
-could go unseen with segments as unequal as these:
+length or as given, the same random numbers at every size (`unseen` in the
+helper's output). The note gives the value for equal errors, and where the
+tested segments' errors differ by more than a tenth of the largest it adds
+that a larger one could go unseen with segment errors as unequal as these.
+Errors, not lengths, are what X is counted on: pieces of equal length differ
+in error with their correlation times (a real stationary run's three tested
+pieces of 100 rows have errors of 2.44, 0.98 and 1.59 K).
 
 | Segments | Lengths | X (pooled errors) |
 |---|---|---:|
@@ -248,22 +251,40 @@ could go unseen with segments as unequal as these:
 | 4 | 500, 500, 500, 4,000 | 24 |
 | 4 | 1,000, 1,000, 1,000, 5,000 | 21 |
 
+| Segments | Errors, equal lengths | X (pooled errors) |
+|---|---|---:|
+| 3 | 1, 1.1, 1 | 42 |
+| 3 | 1, 1.25, 1 | 45 |
+| 3 | 1, 1.5, 1 | 50 |
+| 3 | 1, 2, 1 | 61 |
+| 3 | 2, 1, 1 | 43 |
+| 3 | 1, 1, 2 | 43 |
+| 4 | 1, 1.25, 1, 1 | 16 |
+| 4 | 1, 1.5, 1, 1 | 17 |
+| 4 | 1, 2, 1, 1 | 20 |
+| 4 | 2, 1, 1, 1 | 17 |
+
 Three segments give the scatter one degree of freedom, so a drift is called
 four times in five only at about 41 pooled errors (24 errors of one of three
 equal segments); a fourth segment brings that to 16. Unequal segments need
-more, at three by up to three quarters. A mean of two segments is not tested
-(its pooled qualification, where the two disagree beyond their errors, says
-two segments cannot tell a drift from offsets), and at five or more the order
-test needs no such note.
+more, at three by up to three quarters, most where the imprecise one is in
+the middle. A mean of two segments is not tested (its pooled qualification,
+where the two disagree beyond their errors, says two segments cannot tell a
+drift from offsets), and at five or more the order test needs no such note.
 
 The count assumes the segment errors hold. Where the means scatter about the
 line more than their errors allow, the rule is decided by that scatter, whose
 power goes with the scatter itself, so a drift of X pooled errors is missed
-more often. The figure is then scaled by the square root of the line's
-chi-square per degree of freedom (`scatter_about_line` in the record), and the
-note says by how much. Counted by the helper (`inflated` in its output,
-10,000 sets a row, equal segments whose means scatter h times the variance
-their errors say):
+more often. The figure is then scaled by the square root of that scatter over
+what the errors allow (`scatter_about_line` in the record): the larger of the
+weighted line's chi-square per degree of freedom and the unweighted line's
+residual variance over the means' mean error variance, the scatter the rule's
+own-scatter half judges the slope against (weighted alone, an imprecise middle
+mean carried little weight and the scatter read smaller than the rule's). The
+note says the scale where it reads above 1.0, and that it was estimated from
+only that many means. Counted by the helper (`inflated` in its output, 10,000
+sets a row, equal segments whose means scatter h times the variance their
+errors say):
 
 | Segments | h | Called at X | Called at X times the root of h | Record's figure at least that |
 |---|---:|---:|---:|---:|
@@ -281,14 +302,42 @@ their errors say):
 Scaled by the root of the true ratio, the rule calls at least 80% at every h
 (the scatter half is unchanged by a common scale, and against inflated
 scatter the errors half no longer decides). The record has only its own
-estimate of the ratio, the line's chi-square on one degree of freedom at three
-segments and two at four, so where the means do scatter beyond their errors
-the figure it says is at least the true one in about a third of runs (3,164
-and 3,695 of 10,000): it is a central estimate, and a drift larger than it can
-still go unseen. A real run's temperature at three pieces of 20 ps (177.79,
-185.45 and 186.61 K over errors of 0.67, 0.68 and 0.60 K) scatters 3.4 times
-its errors about the line; its note says about 53 K (41 times 0.37 K, times
-3.4), where the errors alone said 15 K.
+estimate of the ratio, from one degree of freedom at three segments and two
+at four, so its figure is below that true point in about two runs of three.
+That is not the question a reader asks of it, though: whether a drift as
+large as the figure beside this mean would have been called. A small scatter
+both lowers the figure and sharpens the scatter half's test, so counted per
+record (`per_record` in the helper's output, 10,000 sets a row: a drift as
+large as each set's own figure put into it; and, for a fixed drift of 0.25 to
+3 times the layout's true 80% point, the most runs over those sizes in which
+it went unseen while the figure said a drift that large would have been seen):
+
+| Errors | h | Called at its own figure | Unseen though said seen |
+|---|---:|---:|---:|
+| 1, 1, 1 | 1 | 10,000 | 0 |
+| 1, 1, 1 | 2 | 9,997 | 0 |
+| 1, 1, 1 | 4 | 9,976 | 6 |
+| 1, 1, 1 | 10 | 9,881 | 6 |
+| 1, 1, 1 | 54 | 9,570 | 51 |
+| 1, 1, 1, 1 | 1 | 9,887 | 39 |
+| 1, 1, 1, 1 | 2 | 9,612 | 39 |
+| 1, 1, 1, 1 | 4 | 9,283 | 188 |
+| 1, 1, 1, 1 | 10 | 8,984 | 184 |
+| 1, 1, 1, 1 | 54 | 8,872 | 183 |
+| 1, 2, 1 | 1 | 9,887 | 2 |
+| 1, 2, 1 | 4 | 9,433 | 20 |
+| 1, 2, 1, 1 | 1 | 9,511 | 55 |
+| 1, 2, 1, 1 | 4 | 8,722 | 170 |
+
+A drift as large as a record's figure is called in 87% to 100% of runs, and a
+drift the figure says would be seen goes unseen in at most 0.5% of runs at
+three segments and 1.9% at four. (The figure for errors 1, 2, 1 is still
+41 times the pooled error, scaled; the note adds that a larger drift could go
+unseen with errors as unequal as these.) A real run's temperature at three
+pieces of 20 ps (177.79, 185.45 and 186.61 K over errors of 0.67, 0.68 and
+0.60 K) scatters 3.5 times its errors about the line; its note says about
+54 K (41 times 0.37 K, times 3.5, a scale estimated from only 3 means), where
+the errors alone said 15 K.
 
 ## Limits and records
 

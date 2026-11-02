@@ -318,8 +318,8 @@ scatter's alone. A mean of three or four segments not called drifting has not
 been shown stationary: its record saves `drift_unseen`, and every page says
 beside the mean how large a steady drift the segments tested could miss, in
 its own units (about 41 times the error of their pooled mean at three, 16 at
-four, first segment to last; more where they differ in length or scatter about
-the line beyond their errors), or, where fewer than three of its segments
+four, first segment to last; more where their errors differ or they scatter
+about the line beyond their errors), or, where fewer than three of its segments
 could be tested, that drift between them was not tested. Substantial unexplained scatter still qualifies the
 error as a lower bound. See the [method, assumptions and fixed synthetic
 checks](short-segment-drift.md) for the formulas and validation counts.

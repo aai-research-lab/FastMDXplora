@@ -51,16 +51,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   for 1,000, 1,000, 1,000 and 5,000 frames, where 519 means are pooled as a
   lower bound against 149).
 - A drift refusal says how many segments it tested and which it left out
-  and why; two segments that disagree are said not to tell a drift from
+  and why, those left out for one reason together; two segments that disagree are said not to tell a drift from
   offsets (they were said "not drift").
 - A mean of a joined run whose test for drift between segments ran on
   three or four segments without calling drift says beside its verdict, as a
   sentence, how large a steady drift that few could miss, in its own units
   first segment to last, and what that is reckoned from: about 41 times the
   error of the tested segments' pooled mean at three and 16 at four (more
-  where the segments differ in length), scaled by the root of the line's
-  chi-square per degree of freedom where the means scatter about the line
-  beyond their errors (counted power of the rule; its record saves
+  where their errors differ by more than a tenth), scaled where the means
+  scatter about a straight line beyond their errors by the root of that
+  scatter as the rule judges it, the scale said with how few means it was
+  estimated from (counted power of the rule, and per record: a drift as large
+  as the figure is called in 87% to 100% of runs; its record saves
   `drift_unseen`). Said also where the joined summary was withheld for a
   segment whose correlation is not resolved and the mean stands, with the
   segments tested and those left out; where fewer than three could be tested,

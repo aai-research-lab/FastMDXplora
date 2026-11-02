@@ -1017,7 +1017,7 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
 #: unequal length need more: ``docs/short-segment-drift.md``).
 DRIFT_UNSEEN_IN_POOLED_ERRORS = {3: 41, 4: 16}
 
-#: Segments whose lengths differ by at most this fraction of the longest are
+#: Segments whose errors differ by at most this fraction of the largest are
 #: said to be equal, for the drift that could go unseen.
 EQUAL_SEGMENTS_WITHIN = 0.1
 
@@ -1030,10 +1030,11 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
     that drift between them was not tested; None otherwise (drift called,
     five or more tested, or a run of fewer than three segments).
 
-    The figure is counted where the segment errors hold. Where the means
-    scatter about the line more than those errors allow, the rule is
-    decided by that scatter, and the figure is scaled by its square root
-    (the line's chi-square per degree of freedom), as counted in
+    The figure is counted where the segment errors hold, for errors equal
+    to a tenth (``equal_segments``; a larger one is said for errors as
+    unequal as these). Where the means scatter about the line more than
+    those errors allow, the rule is decided by that scatter, and the figure
+    is scaled by its square root (:func:`_line_scatter`), as counted in
     ``docs/short-segment-drift.md``."""
     if not tested or tested.get("called"):
         return None
@@ -1049,13 +1050,15 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
     scatter = float(tested.get("line_scatter", float("nan")))
     scale = math.sqrt(scatter) if math.isfinite(scatter) and scatter > 1.0 else 1.0
     counted = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
-    lengths = list(tested.get("lengths") or [])
+    # Equal by their errors, which X is counted on, not by their lengths:
+    # equal pieces with an imprecise middle one need half as much again.
+    errors = [float(e) for e in tested.get("errors") or []]
     return {**said, "counted_in_pooled_errors": counted,
             "scatter_about_line": scatter if math.isfinite(scatter) else None,
             "in_pooled_errors": float(counted * scale),
             "pooled_error": error, "change": float(counted * scale * error),
-            "equal_segments": bool(lengths) and
-            (max(lengths) - min(lengths)) <= EQUAL_SEGMENTS_WITHIN * max(lengths)}
+            "equal_segments": bool(errors) and
+            (max(errors) - min(errors)) <= EQUAL_SEGMENTS_WITHIN * max(errors)}
 
 
 def _two_figures(value: float) -> str:
@@ -1110,13 +1113,14 @@ def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
     which = (f"With {count} segments" if count == total
              else f"With {count} of its {total} segments tested{out}")
     unequal = ("" if unseen.get("equal_segments", True)
-               else ", and a larger one with segments as unequal as these")
+               else ", and a larger one with segment errors as unequal as these")
     scale = change / (counted * error)
     basis = (f"{counted:g} times the error of their pooled mean, "
              f"{_two_figures(error)}{units}")
-    if scale > 1.0 + 1e-9:
+    # Said only where it reads above 1.0: "times 1.0" was said.
+    if f"{scale:.1f}" != "1.0" and scale > 1.0:
         basis += (f", times {scale:.1f} for their scatter about a straight line "
-                  "beyond that error")
+                  f"beyond that error, a scale estimated from only {count} means")
     return (f"{which}, a steady drift smaller than about {_two_figures(change)}{units} "
             f"from the first segment's mean to the last's could go unseen{unequal} "
             f"({basis})")
@@ -1287,6 +1291,32 @@ class Pooled:
         }
 
 
+#: Why a segment is left out of the test for drift between segments, said of
+#: one and of several.
+_LEFT_OUT = {"short": ("too short for a mean of its own", "too short for means of their own"),
+             "moving": ("still drifting within itself", "still drifting within themselves"),
+             "unresolved": ("its correlation not resolved", "their correlation not resolved")}
+
+
+def _left_out_said(out: "list[tuple[int, str]]") -> str:
+    """The segments left out of the test, grouped by why, in order: "3 left
+    out, numbered from zero: 0, 1 and 4, their correlation not resolved; 6,
+    too short for a mean of its own". Empty for none."""
+    if not out:
+        return ""
+    groups: dict[str, list[int]] = {}
+    for index, why in sorted(out):
+        groups.setdefault(why, []).append(index)
+
+    def listed(indices: "list[int]") -> str:
+        named = [str(i) for i in indices]
+        return named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
+
+    return (f"{len(out)} left out, numbered from zero: "
+            + "; ".join(f"{listed(indices)}, {_LEFT_OUT[why][len(indices) > 1]}"
+                        for why, indices in groups.items()))
+
+
 def _code_of(reason: Any) -> str:
     """The refusal code a withholding carries, or an empty string."""
     return str(getattr(getattr(reason, "refusal", None), "code", "") or "")
@@ -1382,9 +1412,8 @@ def summarise_segments(
     if not pieces:
         if tested_into is not None:
             tested_into.update(segments=len(edges) - 1, tested=0, called=False,
-                               left_out=(f"{len(withheld)} left out, numbered from zero: "
-                                         + "; ".join(f"{index}, too short for a mean of "
-                                                     "its own" for index, _ in withheld)))
+                               left_out=_left_out_said([(index, "short")
+                                                        for index, _ in withheld]))
         return None, Withholding(
             "No segment of this joined run supports a mean. Pooling does "
             "not rescue a run that was too short: segments that each say "
@@ -1419,14 +1448,11 @@ def summarise_segments(
     # a run still moving is the more useful thing to say: longer segments
     # would not cure it.
     # Which segments the test leaves out, and why, for its refusal to say.
-    out = [(index, "too short for a mean of its own") for index, _why in withheld]
-    out += [(index, "still drifting within itself"
-             if _code_of(why) == "analysis.sampling.still_drifting"
-             else "its correlation not resolved")
+    out = [(index, "short") for index, _why in withheld]
+    out += [(index, "moving" if _code_of(why) == "analysis.sampling.still_drifting"
+             else "unresolved")
             for index, ok, why in zip(kept_at, resolved, reasons) if not ok]
-    left_out = (f"{len(out)} left out, numbered from zero: "
-                + "; ".join(f"{index}, {said}" for index, said in sorted(out))
-                if out else "")
+    left_out = _left_out_said(out)
     scatter, drifting, refusal = _drift_test(
         means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved],
         left_out=left_out)
@@ -1440,7 +1466,8 @@ def summarise_segments(
             line_scatter=(_line_scatter(means[resolved], precisions, centres[resolved])
                           if 3 <= count <= 4 else float("nan")),
             lengths=[int(edges[index + 1] - edges[index])
-                     for index, ok in zip(kept_at, resolved) if ok])
+                     for index, ok in zip(kept_at, resolved) if ok],
+            errors=[float(e) for e in errors[resolved]])
     if refusal is not None:
         return None, refusal
 
@@ -1765,18 +1792,29 @@ def _short_segment_halves(means: np.ndarray, precisions: np.ndarray,
 
 def _line_scatter(means: np.ndarray, precisions: np.ndarray,
                   positions: np.ndarray) -> float:
-    """The means' scatter about their inverse-variance weighted line over
-    what their errors allow: the line's chi-square, Q, over its k - 2
-    degrees of freedom. About one where the errors hold."""
+    """The means' scatter about a straight line over what their errors
+    allow, about one where the errors hold: the larger of the weighted
+    line's chi-square over its k - 2 degrees of freedom, and the scatter
+    the rule's own-scatter half judges the slope against (the unweighted
+    line's residual variance) over the means' mean error variance. The
+    weighted one alone gave an imprecise middle segment little weight and
+    read the scatter the rule decides on as smaller than it is."""
+    if means.size < 3:
+        return float("nan")
     total = float(precisions.sum())
     x = positions - float(precisions @ positions / total)
     relative = means - means[0]
     y = relative - float(precisions @ relative / total)
     spread = float(precisions @ (x * x))
-    if spread <= 0 or means.size < 3:
+    if spread <= 0:
         return float("nan")
     residual = y - float(precisions @ (x * y) / spread) * x
-    return float(precisions @ (residual * residual)) / (means.size - 2)
+    weighted = float(precisions @ (residual * residual)) / (means.size - 2)
+    u = positions - float(positions.mean())
+    v = relative - float(relative.mean())
+    plain = v - float(u @ v) / float(u @ u) * u
+    unweighted = (float(plain @ plain) / (means.size - 2)) / float(np.mean(1.0 / precisions))
+    return max(weighted, unweighted)
 
 
 def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,

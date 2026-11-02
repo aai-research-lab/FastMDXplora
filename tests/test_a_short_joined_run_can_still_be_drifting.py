@@ -285,3 +285,23 @@ def test_a_drift_refusal_says_how_many_segments_were_tested_and_which_were_left_
     assert ("The means of the 5 segments tested (2 left out, numbered from zero: "
             "3, its correlation not resolved; 6, too short for a mean of its own) "
             "move in order across the run") in str(why)
+
+
+def test_segments_left_out_for_one_reason_are_said_together():
+    # Six pieces with every one left out read "0, its correlation not
+    # resolved; 1, its correlation not resolved; ..." over nine lines of a card.
+    from scipy.signal import lfilter
+
+    rng = np.random.default_rng(5)
+
+    def ar(n, phi):
+        return lfilter([1.0], [1.0, -phi], rng.normal(0.0, np.sqrt(1 - phi * phi), n))
+
+    pieces = [ar(1000, 0.8) + 0.4 * i for i in range(5)]
+    pieces = (pieces[:1] + [ar(60, 0.995) + 0.2] + pieces[1:3] + [ar(60, 0.995) + 1.0]
+              + pieces[3:])
+    values = np.concatenate(pieces)
+    joins = list(np.cumsum([piece.size for piece in pieces])[:-1])
+    _, why = summarise_segments(values, joins)
+    assert ("The means of the 5 segments tested (2 left out, numbered from zero: 1 and 4, "
+            "their correlation not resolved) move in order") in str(why), why
