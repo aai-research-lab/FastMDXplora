@@ -286,16 +286,34 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
             said = f"Stopped without finishing in its first piece{runs}"
         said += (f"; {ended['how']}" if ended["how"] else "") + "."
     production = _finite(rounds[-1].get("production_ns")) if rounds else 0.0
+    production_said = _said(production)
     ceiling = _finite(record.get("max_duration_ns"))
     # Said running only where its process is known to be (`_known_live`):
     # otherwise as the record stood when it was written.
     live = ended is None and _known_live(record, where)
+    from fastmdxplora.simulation.stopping import round_ended
+
+    label = None
+    cut = None if live else round_ended(where)
+    if cut is not None:
+        # Its rule's round failed, was stopped or was cut: said as the
+        # study's status, All studies and the report say it, with what
+        # `fastmdx resume` would run (`stopping.round_ended`).
+        shown = "stopped" if cut.state in ("failed", "stopped") else "interrupted"
+        label, said, ended = cut.label, cut.as_text(), None
+        reached = [ns for _name, ns in cut.productions if ns is not None]
+        if reached:
+            production = max(reached)
+            production_said = (_said(min(reached)) + " to " + _said(max(reached))
+                               if max(reached) - min(reached) > 1e-6
+                               else _said(production))
     return {
         "ok": True,
         "outcome": shown,
         "recorded_outcome": outcome,
         "live": live,
-        "outcome_label": ("Stopped without finishing" if ended is not None
+        "outcome_label": (label if label is not None
+                          else "Stopped without finishing" if ended is not None
                           else "Running" if live
                           else _OUTCOME.get(outcome, outcome.replace("_", " "))),
         "said": said,
@@ -304,7 +322,8 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         "independent_starts": str(record.get("independent_starts") or "required"),
         "runs": [str(r) for r in record.get("runs") or []],
         "production_ns": production,
-        "production_said": _said(production),
+        "production_said": production_said,
+        "carry_on": " ".join(cut.argv) if cut is not None else "",
         "measures": _measures(record),
         "rounds": [{"round": n, "production_ns": _finite(r.get("production_ns")),
                     "production_said": _said(_finite(r.get("production_ns"))),
@@ -313,7 +332,7 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
                     # As the report and the Timeline say it.
                     "decided": round_decided(r, last=n == len(rounds), record=record)["said"]}
                    for n, r in enumerate(rounds, start=1)],
-        "next": _next_piece(record, where) if ended is None else None,
+        "next": _next_piece(record, where) if ended is None and cut is None else None,
         # Changes whenever the record does, so the page redraws only then.
         "version": f"{len(rounds)}:{shown}:{live}:{_stamp(where)}",
     }

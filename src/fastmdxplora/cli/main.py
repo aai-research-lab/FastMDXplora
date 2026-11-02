@@ -2115,7 +2115,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     # (or was stopped), as its batch manifest and every page say it.
     ended = round_ended(fmdx.output_dir)
     if ended is not None:
-        rc = rc or 1
+        # Stopped when asked, as a study stopped at the terminal is: the
+        # shell is told it was interrupted.
+        rc = rc or (130 if ended.state == "stopped" else 1)
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and
@@ -2140,6 +2142,11 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         print()
         print(f"Project output: {fmdx.output_dir}")
         print(f"Manifest:       {fmdx.output_dir / 'manifest.json'}")
+        if ended is not None:
+            # Last, as a study of several says it in its summary: the run
+            # ended well and its rule's round did not.
+            print(ended.said)
+            print(ended.carry_on)
     _finish_dashboard_for_command(session, args)
     return rc
 

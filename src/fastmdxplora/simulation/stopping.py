@@ -36,8 +36,8 @@ from typing import Any
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.statistics import with_its_error
 
-__all__ = ["RoundEnded", "StopTarget", "check_stopping", "judge", "round_ended", "rule_said",
-           "run_until_known", "stopping_section", "targets_of"]
+__all__ = ["RoundEnded", "StopTarget", "brought_up", "check_stopping", "judge", "round_ended",
+           "round_length", "rule_said", "run_until_known", "stopping_section", "targets_of"]
 
 #: Where a study's rounds are recorded.
 RECORD = "stopping.json"
@@ -617,6 +617,19 @@ def extend_one_after_another(runs: list[Path], more_ns: float) -> list[dict[str,
     return answers
 
 
+def extend_each_to(runs: list[Path], total_ns: float) -> list[dict[str, Any]]:
+    """Each run extended in turn to ``total_ns`` of production, stopping at
+    the first that fails."""
+    from fastmdxplora.simulation.resume import extend_study
+
+    answers = []
+    for run in runs:
+        answers.append(extend_study(run, total_ns=total_ns))
+        if not answers[-1].get("ok"):
+            break
+    return answers
+
+
 def planned_record(targets: list[StopTarget], stop_when: dict[str, Any],
                    runs: list[str]) -> dict[str, Any]:
     """The record before the first piece is judged, so a study running
@@ -632,7 +645,7 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
                     *, record_in: Path, extend_all: Any = None,
                     say: Any = print, at_once: int = 1,
                     earlier_rounds: list[dict[str, Any]] | None = None,
-                    production_of: Any = None) -> dict[str, Any]:
+                    production_of: Any = None, extend_to: Any = None) -> dict[str, Any]:
     """Judge the runs, extend every one of them by what is needed, and judge
     again, until each target is met or the ceiling is reached. The rounds
     are written to ``record_in / stopping.json`` as they happen.
@@ -645,11 +658,18 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     kept so its record reads as one history. ``production_of(run)`` says how
     much production a run has done; it is read from the run's checkpoints
     unless given, which the rule's calibration does with series it makes
-    itself (`validation/stopping_calibration.py`)."""
+    itself (`validation/stopping_calibration.py`).
+
+    A resumed study whose runs are not at one length (its last round was
+    cut while it extended them) first brings the shorter ones up to the
+    round's length (`brought_up`), with ``extend_to(runs, total_ns)``, and
+    judges them there: judged at the shortest and extended by one length
+    from there, the runs the round had extended went past the ceiling."""
     from fastmdxplora.simulation.resume import production_done_ns
     from fastmdxplora.simulation.sampling_ask import length_said
 
     extend_all = extend_all or extend_one_after_another
+    extend_to = extend_to or extend_each_to
     production_of = production_of or production_done_ns
     ceiling = float(stop_when["max_duration_ns"])
     independent = str(stop_when.get("independent_starts") or "required")
@@ -661,6 +681,62 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
 
     def write() -> None:
         (record_in / RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    def ended_by(entry: dict[str, Any], tried: list[Path],
+                 answers: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """The round stopped where an extension of ``tried`` failed or was
+        stopped when asked; None where each finished."""
+        failed = [(run, answer) for run, answer in zip(tried, answers) if not answer.get("ok")]
+        if not failed and len(answers) >= len(tried):
+            return None
+        run, answer = failed[0] if failed else (tried[len(answers)], {})
+        entry["decision"] = "stopped"
+        # The runs whose extension finished: side by side, the others
+        # can, and the runs are then not at one length.
+        entry["extended"] = [r.name for r, a in zip(tried, answers) if a.get("ok")]
+        entry["stopped_by"] = "asked" if answer.get("stopped") else "error"
+        record["outcome"] = "stopped"
+        if answer.get("stopped"):
+            record["said"] = (f"Stopped when asked, while extending {run.name}. "
+                              "Resuming the study judges the runs again and carries "
+                              "on from there.")
+        else:
+            record["said"] = (f"Stopped: extending {run.name} failed at "
+                              f"{answer.get('stage') or 'a step'}: "
+                              f"{answer.get('error') or 'no reason recorded'}")
+        # The round's own sentence, saved with it: the record's is
+        # written over when the study is resumed.
+        entry["said"] = record["said"]
+        write()
+        say(record["said"])
+        return record
+
+    if record["rounds"]:
+        productions = {run.name: production_of(run) for run in runs}
+        target, short = brought_up(record["rounds"], productions, ceiling)
+        if short and target is not None:
+            lowest = min(productions[name] for name in short)
+            longer = [run.name for run in runs if run.name not in short]
+            say(f"Extending {_and(short)} to {length_said(target)}"
+                + (f", the length of {_and(longer)}" if longer else "")
+                + ", before the runs are judged again.")
+            # Said as a round of its own, extending the shorter runs from
+            # the shortest, so a failure here reads as any round's.
+            entry = {"production_ns": round(lowest, 9), "verdicts": [],
+                     "decision": "extend", "more_ns": round(target - lowest, 9),
+                     "brought_up": list(short)}
+            record["rounds"].append(entry)
+            record["said"] = entry["said"] = (
+                f"Extending {_and(short)} to {length_said(target)}, the length the "
+                "other runs reached, before the runs are judged again.")
+            write()
+            tried = [run for run in runs if run.name in short]
+            stopped = ended_by(entry, tried, list(extend_to(tried, target)))
+            if stopped is not None:
+                # The runs already at that length count as extended to it.
+                entry["extended"] = longer + entry["extended"]
+                write()
+                return stopped
 
     for _ in range(MOST_ROUNDS):
         production = min(production_of(run) for run in runs)
@@ -719,30 +795,9 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         say(f"Not yet determined: {'; '.join(v.said for v in verdicts if not v.met)}. "
             f"Extending {'every run' if len(runs) > 1 else 'the run'} by {length_said(more)} "
             f"(to {length_said(production + more)} of the {length_said(ceiling)} allowed).")
-        answers = list(extend_all(runs, more))
-        failed = [(run, answer) for run, answer in zip(runs, answers) if not answer.get("ok")]
-        if failed or len(answers) < len(runs):
-            run, answer = failed[0] if failed else (runs[len(answers)], {})
-            entry["decision"] = "stopped"
-            # The runs whose extension finished: side by side, the others
-            # can, and the runs are then not at one length.
-            entry["extended"] = [r.name for r, a in zip(runs, answers) if a.get("ok")]
-            entry["stopped_by"] = "asked" if answer.get("stopped") else "error"
-            record["outcome"] = "stopped"
-            if answer.get("stopped"):
-                record["said"] = (f"Stopped when asked, while extending {run.name}. "
-                                  "Resuming the study judges the runs again and carries "
-                                  "on from there.")
-            else:
-                record["said"] = (f"Stopped: extending {run.name} failed at "
-                                  f"{answer.get('stage') or 'a step'}: "
-                                  f"{answer.get('error') or 'no reason recorded'}")
-            # The round's own sentence, kept with it: the record's is
-            # written over when the study is resumed.
-            entry["said"] = record["said"]
-            write()
-            say(record["said"])
-            return record
+        stopped = ended_by(entry, runs, list(extend_all(runs, more)))
+        if stopped is not None:
+            return stopped
     record["outcome"] = "rounds"
     record["said"] = record["rounds"][-1]["said"] = (
         f"Stopped after {MOST_ROUNDS} rounds with what was asked not determined to the "
@@ -845,21 +900,64 @@ def study_said(record: dict[str, Any]) -> str:
     return record_said(str(record.get("said") or ""))
 
 
+#: Two runs within this of each other are at one length (a femtosecond).
+_ONE_LENGTH_NS = 1e-6
+
+
+def round_length(rounds: list[dict[str, Any]]) -> float | None:
+    """The length the last round was extending the runs to: its production
+    and what it added. None where it extended nothing (it decided, or a
+    mean was not recorded) or the record does not say."""
+    last = rounds[-1] if rounds and isinstance(rounds[-1], dict) else {}
+    if str(last.get("decision") or "") not in ("extend", "stopped"):
+        return None
+    production, more = last.get("production_ns"), last.get("more_ns")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in (production, more)):
+        return None
+    return round(float(production) + float(more), 9)
+
+
+def brought_up(rounds: list[dict[str, Any]], productions: dict[str, float | None],
+               ceiling_ns: float | None) -> tuple[float | None, list[str]]:
+    """What a resumed study runs before it judges its runs again, read by
+    `run_until_known` and said by `round_ended`: where its runs are not at
+    one length (a round cut while it extended them), the length to bring
+    them to, the round's, never past the ceiling, and the runs below it.
+    Judged at the shortest and extended from there, the runs the round had
+    extended went past the ceiling (a run at 8 ps extended with one at 2 ps
+    ended at 36 ps of 30 ps). ``(None, [])`` where they are at one length."""
+    known = {name: ns for name, ns in productions.items() if ns is not None}
+    if len(known) < 2 or max(known.values()) - min(known.values()) <= _ONE_LENGTH_NS:
+        return None, []
+    top = max(known.values())
+    target = round_length(rounds)
+    if target is None or target < top - _ONE_LENGTH_NS:
+        target = top
+    if isinstance(ceiling_ns, (int, float)) and not isinstance(ceiling_ns, bool):
+        target = min(target, float(ceiling_ns))
+    return target, [name for name, ns in known.items() if ns < target - _ONE_LENGTH_NS]
+
+
 @dataclass(frozen=True)
 class RoundEnded:
     """A study whose stopping rule's round ended before it was judged
-    again: an extension that failed (an error, a worker killed) or one
-    stopped when asked. Its runs each ended well, so read from them alone
-    the study read completed while its record said the round failed."""
+    again: an extension that failed (an error, a worker killed), one
+    stopped when asked, or one whose process ended with the round going.
+    Its runs each ended well, so read from them alone the study read
+    completed while its record said the round failed."""
 
-    #: "failed" (an extension's error) or "stopped" (asked to stop).
+    #: "failed" (an extension's error), "stopped" (asked to stop) or
+    #: "interrupted" (its process ended while it extended the runs).
     state: str
-    #: What ended it, as the record says it, and which runs it had extended.
+    #: What ended it, as the record says it, and how far each run got.
     said: str
     #: What `fastmdx resume` would run for it.
     carry_on: str
     #: The command that carries it on.
     argv: tuple[str, ...]
+    #: Each run's production now, in the record's order (None: not read).
+    productions: tuple[tuple[str, float | None], ...] = ()
 
     def as_record(self) -> dict[str, Any]:
         return {"state": self.state, "said": self.said, "carry_on": self.carry_on,
@@ -868,14 +966,67 @@ class RoundEnded:
     def as_text(self) -> str:
         return f"{self.said} {self.carry_on}"
 
+    @property
+    def label(self) -> str:
+        """The word a page's chip says for it."""
+        return {"failed": "Failed", "stopped": "Stopped"}.get(self.state, "Interrupted")
+
+
+def _production_of_each(study: Path, names: list[str]) -> dict[str, float | None]:
+    """Each run's production as its checkpoints say it (`production_done_ns`):
+    a run of several in ``runs/<name>``, a study of one run in its folder."""
+    from fastmdxplora.simulation.resume import production_done_ns
+
+    from fastmdxplora import record_access
+
+    found: dict[str, float | None] = {}
+    for name in names:
+        folder = study / "runs" / name
+        try:
+            if not record_access.is_dir(folder):
+                folder = study
+            found[name] = production_done_ns(folder)
+        except Exception:  # noqa: BLE001 - not read, and said so by its absence
+            found[name] = None
+    return found
+
+
+def _its_process_is_gone(study: Path) -> bool:
+    """Whether the process that ran the study's rounds has ended, by the
+    record it keeps while it runs: no process has its number here. Never
+    where that record was written on another machine (not asked here),
+    names this process or one above it (the study judging its own rounds),
+    or is not there; nor where a process other than its run has its number
+    now, which the card says as not finished when written."""
+    from fastmdxplora.gui.exploration import _process_alive
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
+    from fastmdxplora.simulation.resume import _this_process_and_its_parents
+
+    from fastmdxplora import record_access
+
+    try:
+        process = json.loads(record_access.read_text(study / RUN_PROCESS_FILE, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    pid = process.get("pid") if isinstance(process, dict) else None
+    if not isinstance(pid, int) or pid <= 0 or record_is_from_elsewhere(process):
+        return False
+    if pid in _this_process_and_its_parents():
+        return False
+    try:
+        return not _process_alive(pid)
+    except Exception:  # noqa: BLE001 - not known gone
+        return False
+
 
 def round_ended(study: str | Path) -> RoundEnded | None:
-    """The one derivation of a study whose rule's last round failed or was
-    stopped while it extended the runs, read by the CLI's last line and
-    exit code, `batch_manifest.json`, every GUI page's state, the Agent and
-    the report. None for a study with no rule, one still running, and one
-    whose rounds ended as the rule decides (determined, the ceiling, the
-    rounds allowed, a mean not recorded)."""
+    """The one derivation of a study whose rule's last round failed, was
+    stopped, or was cut by its process ending while it extended the runs,
+    read by the CLI's last line and exit code, `batch_manifest.json`, every
+    GUI page's state, the Overview's card, the Agent and the report. None
+    for a study with no rule, one still running, and one whose rounds ended
+    as the rule decides (determined, the ceiling, the rounds allowed, a mean
+    not recorded)."""
     from fastmdxplora.simulation.sampling_ask import length_said
 
     from fastmdxplora import record_access
@@ -887,37 +1038,53 @@ def round_ended(study: str | Path) -> RoundEnded | None:
         record = json.loads(record_access.read_text(study / RECORD, encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(record, dict) or str(record.get("outcome") or "") != "stopped":
+    if not isinstance(record, dict):
         return None
+    outcome = str(record.get("outcome") or "")
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
-    if not rounds or study_ended(record):
-        return None
-    decided = round_decided(rounds[-1], last=True, record=record)
-    if decided["stopped_by"] not in ("error", "asked"):
+    if not rounds or outcome not in ("stopped", "running"):
         return None
     number = len(rounds)
-    sentence = study_said(record)
-    if decided["stopped_by"] == "error":
-        body = sentence.removeprefix("Stopped: ").rstrip(".") or "no reason recorded"
-        said = f"Its stopping rule's round {number} failed: {body}."
-    else:
-        # Its own "Resuming the study ..." is said below, with the command.
-        first = sentence.split(". ")[0].rstrip(".")
-        said = (f"Its stopping rule's round {number} was stopped when asked"
-                f"{first.removeprefix(_STOPPED_WHEN_ASKED)}."
-                if first.startswith(_STOPPED_WHEN_ASKED)
-                else f"Its stopping rule's round {number} was stopped: {first}.")
-    names = [str(name) for name in record.get("runs") or []]
-    extended = rounds[-1].get("extended")
     more = rounds[-1].get("more_ns")
-    if isinstance(extended, list) and names:
-        done = [name for name in names if name in extended]
-        left = [name for name in names if name not in extended]
-        if done and left and isinstance(more, (int, float)) and not isinstance(more, bool):
-            said += (f" {_and(done)} {'was' if len(done) == 1 else 'were'} extended by "
-                     f"{length_said(float(more))} and {_and(left)} "
-                     f"{'was' if len(left) == 1 else 'were'} not, so the runs are not "
-                     "at one length.")
+    more = (float(more) if isinstance(more, (int, float)) and not isinstance(more, bool)
+            else None)
+    if outcome == "running":
+        # Its record says a round goes on, and the process that ran it is
+        # gone (killed hard, out of memory): read completed from its runs.
+        if (str(rounds[-1].get("decision") or "") != "extend"
+                or not _its_process_is_gone(study)):
+            return None
+        state = "interrupted"
+        said = (f"Its stopping rule's round {number} did not finish: the study's process "
+                "ended while it extended the runs"
+                + (f" by {length_said(more)}" if more is not None else "")
+                + ", with no record of how the round ended.")
+    else:
+        if study_ended(record):
+            return None
+        decided = round_decided(rounds[-1], last=True, record=record)
+        if decided["stopped_by"] not in ("error", "asked"):
+            return None
+        state = "failed" if decided["stopped_by"] == "error" else "stopped"
+        sentence = study_said(record)
+        if state == "failed":
+            body = sentence.removeprefix("Stopped: ").rstrip(".") or "no reason recorded"
+            said = f"Its stopping rule's round {number} failed: {body}."
+        else:
+            # Its own "Resuming the study ..." is said below, with the command.
+            first = sentence.split(". ")[0].rstrip(".")
+            said = (f"Its stopping rule's round {number} was stopped when asked"
+                    f"{first.removeprefix(_STOPPED_WHEN_ASKED)}."
+                    if first.startswith(_STOPPED_WHEN_ASKED)
+                    else f"Its stopping rule's round {number} was stopped: {first}.")
+    names = [str(name) for name in record.get("runs") or []]
+    productions = _production_of_each(study, names) if names else {}
+    ceiling = record.get("max_duration_ns")
+    ceiling = (float(ceiling) if isinstance(ceiling, (int, float))
+               and not isinstance(ceiling, bool) else None)
+    target, short = brought_up(rounds, productions, ceiling)
+    said += _how_far_each_got(names, rounds[-1].get("extended"), productions,
+                              round_length(rounds))
     units = {v.get("analysis"): v.get("unit") or ""
              for entry in rounds for v in entry.get("verdicts") or [] if isinstance(v, dict)}
     try:
@@ -925,21 +1092,65 @@ def round_ended(study: str | Path) -> RoundEnded | None:
     except TypeError:
         targets = []
     asked = "; ".join(t.said(units.get(t.analysis, "")) for t in targets)
-    ceiling = record.get("max_duration_ns")
     each = " in each run" if len(names) > 1 else ""
     argv = ("fastmdx", "resume", str(study))
-    carry_on = (f"`{' '.join(argv)}` judges "
+    first = ""
+    if short and target is not None:
+        longer = [name for name in names if name not in short]
+        first = (f"first extends {_and(short)} to {length_said(target)}"
+                 + (f", the length of {_and(longer)}," if longer else ",")
+                 + " then ")
+    carry_on = (f"`{' '.join(argv)}` {first}judges "
                 + (f"its {len(names)} runs" if len(names) > 1 else "the run")
                 + " again and extends "
                 + ("them" if len(names) > 1 else "it")
                 + " until what it asks is determined"
                 + (f" ({asked})" if asked else "")
-                + (f", with at most {length_said(float(ceiling))} of production{each}"
-                   if isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool)
-                   else "")
+                + (f", with at most {length_said(ceiling)} of production{each}"
+                   if ceiling is not None else "")
                 + ".")
-    return RoundEnded(state="failed" if decided["stopped_by"] == "error" else "stopped",
-                      said=said, carry_on=carry_on, argv=argv)
+    return RoundEnded(state=state, said=said, carry_on=carry_on, argv=argv,
+                      productions=tuple((name, productions.get(name)) for name in names))
+
+
+def _how_far_each_got(names: list[str], extended: Any, productions: dict[str, float | None],
+                      length: float | None) -> str:
+    """Which runs the round extended and how far the others got, from the
+    record's runs whose extension finished and each run's production: a
+    run whose extension did not finish may have run part of it (a worker
+    killed after its checkpoints), so it is said by its production, never
+    said not extended."""
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    known = {name: ns for name, ns in productions.items() if ns is not None}
+    differ = (len(known) > 1
+              and max(known.values()) - min(known.values()) > _ONE_LENGTH_NS)
+    if len(names) < 2:
+        ns = known.get(names[0]) if names else None
+        if length is not None and ns is not None and ns < length - _ONE_LENGTH_NS:
+            return (f" Its extension did not finish: the run has {length_said(ns)} of "
+                    "production.")
+        return ""
+    if isinstance(extended, list):
+        done = [name for name in names if name in extended]
+    elif length is not None:
+        done = [name for name in names if (known.get(name) or 0.0) >= length - _ONE_LENGTH_NS]
+    else:
+        done = []
+    left = [name for name in names if name not in done]
+    if not left:
+        return ""
+    where = [known.get(name) for name in left]
+    at = ""
+    if all(ns is not None for ns in where):
+        at = (f" ({left[0]} has {length_said(where[0])} of production)" if len(left) == 1
+              else f" (they have {_and([length_said(ns) for ns in where])} of production)")
+    tail = ", so the runs are not at one length." if differ else "."
+    if not done:
+        return f" The extension of {_and(left)} did not finish{at}{tail}" if differ else ""
+    to = f" to {length_said(length)}" if length is not None else ""
+    return (f" {_and(done)} {'was' if len(done) == 1 else 'were'} extended{to}; the extension "
+            f"of {_and(left)} did not finish{at}{tail}")
 
 
 def _and(names: list[str]) -> str:
@@ -1000,7 +1211,23 @@ def round_decided(entry: dict[str, Any], *, last: bool, record: dict[str, Any]) 
     whom = "each run" if several else "the run"
     were = "the runs were" if several else "the run was"
     stopped_by, going, theirs = "", False, False
-    if decision == "extend" and more is not None:
+    # A resumed study's runs brought to one length before they are judged
+    # (`brought_up`): only those runs, to the length of the others.
+    shorter = [str(n) for n in entry.get("brought_up") or []] \
+        if isinstance(entry.get("brought_up"), list) else []
+    production = entry.get("production_ns")
+    to = (length_said(round(float(production) + more, 9))
+          if shorter and more is not None and isinstance(production, (int, float))
+          and not isinstance(production, bool) else "")
+    if shorter and to:
+        whom, were = _and(shorter), f"{_and(shorter)} {'was' if len(shorter) == 1 else 'were'}"
+    if decision == "extend" and shorter and to:
+        if last and (outcome == "running" or ended):
+            going, theirs = outcome == "running", outcome == "running"
+            said = f"extending {whom} to {to}; the record does not say it finished"
+        else:
+            said = f"{whom} extended to {to}, the length of the other runs"
+    elif decision == "extend" and more is not None:
         if last and (outcome == "running" or ended):
             going, theirs = outcome == "running", outcome == "running"
             said = (f"extending {whom} by {length_said(more)}; the record does not say "
@@ -1035,10 +1262,11 @@ def round_decided(entry: dict[str, Any], *, last: bool, record: dict[str, Any]) 
             "sentence": record_said(sentence) if theirs else ""}
 
 
-def stopping_section(root: str | Path) -> list[str]:
+def stopping_section(root: str | Path, *, ended_said_above: bool = False) -> list[str]:
     """The report's account of a study run until it knew: the rule, each
     round's numbers and what was decided on them. Empty where the study
-    ran to a fixed length."""
+    ran to a fixed length. ``ended_said_above``: the report leads with how
+    its last round ended (`round_ended`), so it is not said twice."""
     try:
         record = json.loads((Path(root) / RECORD).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1067,6 +1295,10 @@ def stopping_section(root: str | Path) -> list[str]:
         cells = []
         for name in names:
             v = verdicts.get(name) or {}
+            if entry.get("brought_up") and not verdicts:
+                # Runs brought to one length before they were judged.
+                cells.append("not judged")
+                continue
             if v.get("value") is None or v.get("error") is None:
                 cells.append("not yet determined")
                 continue
@@ -1089,9 +1321,11 @@ def stopping_section(root: str | Path) -> list[str]:
         lines += [f"**{_OUTCOME['running']}.** The record does not say the last round "
                   f"finished; it last says: {said}", ""]
     elif (ended := round_ended(root)) is not None:
-        # As every page says it (`round_ended`), with what carries it on.
-        lines += [f"**{'Failed' if ended.state == 'failed' else 'Stopped'}.** "
-                  f"{ended.as_text()}", ""]
+        # As every page says it (`round_ended`), with what carries it on:
+        # once, at the top, in a report that leads with it.
+        lines += [f"**{ended.label}.** "
+                  + ("How, and what carries it on, is said at the top of this report."
+                     if ended_said_above else ended.as_text()), ""]
     elif said:
         lines += [f"**{_OUTCOME.get(record.get('outcome'), 'Outcome')}.** {said}", ""]
     if record.get("outcome") == "met":

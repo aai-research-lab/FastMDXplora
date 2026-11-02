@@ -282,12 +282,15 @@ def _within_the_rounds():
         _extending_in_rounds = was
 
 
-def _extend_one(run: str, more_ns: float, device: str | None) -> dict[str, Any]:
-    """One run extended, in a worker of its own."""
+def _extend_one(run: str, more_ns: float | None, device: str | None,
+                total_ns: float | None = None) -> dict[str, Any]:
+    """One run extended, by ``more_ns`` or to ``total_ns``, in a worker of
+    its own."""
     from fastmdxplora.simulation.resume import extend_study
 
     with _within_the_rounds():
-        return extend_study(run, more_ns=more_ns, device_index=device)
+        return extend_study(run, more_ns=more_ns, device_index=device,
+                            **({"total_ns": total_ns} if total_ns is not None else {}))
 
 
 def _was_stopped(result: Any) -> bool:
@@ -1671,8 +1674,9 @@ class BatchExplorer:
             # The plan, before any run starts: the manifest's `runs` are
             # results and fill in as runs finish, so until then nothing said
             # which runs the study would make. The dashboard reads this to
-            # list them, with their status, while they run.
-            self._write_batch_manifest()
+            # list them, with their status, while they run. A study whose
+            # rule is applied says how its last round ended once judged.
+            self._write_batch_manifest(round_said=stopping is None)
             logger.info(
                 "Exploring %d molecular systems in %s (mode=%s)", n, self.output_dir, self.mode
             )
@@ -1688,9 +1692,10 @@ class BatchExplorer:
                 # The runs that finished, before the rounds: each run's
                 # extension builds the comparison across them again from
                 # this record, and found none while it listed only the plan.
-                self._write_batch_manifest()
+                # A resumed study's record says the round before until its
+                # rounds are judged again, so not read here.
+                self._write_batch_manifest(round_said=False)
             self._run_until_known(stopping)
-            self._rounds_judged = True
 
         # One run of a study of several analysed again: the study's
         # comparison of its runs read this run's analyses before.
@@ -1801,13 +1806,17 @@ class BatchExplorer:
         side_by_side = self.mode == "parallel" and len(runs) > 1
         run_until_known(runs, targets, stop_when, record_in=self.output_dir,
                         extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
+                        extend_to=lambda some, total: self._extend_runs(some, None,
+                                                                        total_ns=total),
                         at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
         if self.is_single:
             self._report_again(runs[0])
 
-    def _extend_runs(self, runs: list[Path], more_ns: float) -> list[dict[str, Any]]:
-        """Every run extended by ``more_ns``: side by side in a parallel
-        study, as its runs were, and one after another otherwise."""
+    def _extend_runs(self, runs: list[Path], more_ns: float | None, *,
+                     total_ns: float | None = None) -> list[dict[str, Any]]:
+        """Every run extended by ``more_ns`` (or to ``total_ns``): side by
+        side in a parallel study, as its runs were, and one after another
+        otherwise."""
         if self.mode != "parallel" or len(runs) < 2:
             from fastmdxplora.simulation.resume import extend_study
 
@@ -1815,7 +1824,11 @@ class BatchExplorer:
             answers = []
             with _within_the_rounds():
                 for run in runs:
-                    answers.append(extend_study(run, more_ns=more_ns, device_index=device))
+                    # To a length only when asked: an extension by one is
+                    # called as it always was.
+                    answers.append(extend_study(
+                        run, more_ns=more_ns, device_index=device,
+                        **({"total_ns": total_ns} if total_ns is not None else {})))
                     if not answers[-1].get("ok"):
                         break
             return answers
@@ -1828,7 +1841,7 @@ class BatchExplorer:
         try:
             stop.__enter__()
             futures = [pool.submit(_extend_one, str(run), more_ns,
-                                   self._device_for_worker(index))
+                                   self._device_for_worker(index), total_ns)
                        for index, run in enumerate(runs)]
             answers = []
             for future in futures:
@@ -3089,7 +3102,10 @@ class BatchExplorer:
             study["include_phase"], study["exclude_phase"] = kept
         write_resolved_config(study, self.output_dir)
 
-    def _write_batch_manifest(self) -> None:
+    def _write_batch_manifest(self, *, round_said: bool = True) -> None:
+        """The study's record of its runs. ``round_said`` False leaves out
+        how its rule's last round ended (`round_ended`), for the record
+        written before the rounds: a resumed study's says the round before."""
         from fastmdxplora import __citation__, __doi__, __version__
 
         manifest = {
@@ -3114,7 +3130,7 @@ class BatchExplorer:
             "planned": [spec.to_dict() for spec in self.run_specs],
             "runs": [self._with_relative_dir(r.to_dict()) for r in self.results],
         }
-        ended = self._round_ended()
+        ended = self._round_ended() if round_said else None
         if ended is not None:
             manifest["round_ended"] = ended.as_record()
         path = self.output_dir / "batch_manifest.json"
@@ -3136,11 +3152,10 @@ class BatchExplorer:
         return run
 
     def _round_ended(self) -> Any:
-        """The study's rule's last round, failed or stopped, as every page
-        reads it (`stopping.round_ended`), once this process judged its
-        rounds: a resumed study's record says the round before until then."""
-        if not getattr(self, "_rounds_judged", False):
-            return None
+        """The study's rule's last round, failed, stopped or cut, as every
+        page reads it (`stopping.round_ended`): read whether or not this
+        process applied the rule, so a failed study analysed again is said
+        failed, as its report and pages say it."""
         from fastmdxplora.simulation.stopping import round_ended
 
         return round_ended(self.output_dir)
@@ -3155,10 +3170,22 @@ class BatchExplorer:
         headline = ("Batch failed" if ended is not None and ended.state == "failed"
                     else "Batch stopped" if stopped or ended is not None
                     else "Batch complete")
+        cut = ""
+        if ended is not None:
+            from fastmdxplora.gui.exploration import runs_of_a_study
+
+            # Each run as it stands after the rounds, counted as the GUI and
+            # the Agent count it: a run whose extension was stopped is not ok.
+            states = [run.get("state") for run in runs_of_a_study(self.output_dir) or []]
+            if len(states) == len(self.results):
+                ok = states.count("completed")
+                err = states.count("failed")
+                left = len(states) - ok - err - skipped
+                cut = f", {left} stopped in the rounds" if left > 0 else ""
         print(f"\n{'=' * 40}")
         print(
             f"{headline}: {ok} ok, "
-            f"{err} error(s), {skipped} skipped, {len(self.results)} total"
+            f"{err} error(s){cut}, {skipped} skipped, {len(self.results)} total"
         )
         fixes = _what_would_fix_it(self.output_dir)
         if fixes:

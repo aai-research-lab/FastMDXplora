@@ -1056,6 +1056,13 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
     # each ended well: said completed while its record said it failed.
     ended = round_ended(base)
     if ended is not None:
+        if ended.state != "failed" and isinstance(batch, dict):
+            from fastmdxplora.gui.exploration import runs_of_a_study
+
+            # A run that failed is said first: the rule judged the others,
+            # and its round's stop does not say over that run's error.
+            if any(run.get("state") == "failed" for run in runs_of_a_study(base) or []):
+                return "failed"
         return ended.state
     if not isinstance(batch, dict):
         # The live record, before the manifest: the manifest is written when

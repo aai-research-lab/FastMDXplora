@@ -2335,6 +2335,13 @@ def _resume_study(study: str | Path, *,
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": f"The study stopped with an answer, not an interruption "
                          f"({stopped}). Running it again would give the same one."}
+    if finished and root not in _JUDGED_AGAIN_HERE:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        if round_ended(root) is not None:
+            # Its run finished and its rule's round did not: the rule is
+            # applied again, as the sentence every page says names it.
+            return _judge_the_run_again(root, base)
     if finished:
         return {**base, "ok": True, "did": RESUMED_NOTHING,
                 **_production_now(root, {"ok": True}),
@@ -2543,6 +2550,50 @@ def _found_from(root: Path, given: Any) -> Any:
         if (base / path).is_file():
             return str((base / path).resolve())
     return given
+
+
+#: Studies of one run whose rule this process is applying again.
+_JUDGED_AGAIN_HERE: set[Path] = set()
+
+
+def _judge_the_run_again(root: Path, base: dict[str, Any]) -> dict[str, Any]:
+    """A study of one run whose rule's round failed, was stopped or was cut
+    (`stopping.round_ended`): its rule applied again over its rounds so far,
+    as its record states it (the run's own config holds none), extending
+    the run until what it asks is determined, and its report written again
+    with the record. Said finished, with nothing run, before."""
+    import json
+
+    from fastmdxplora.batch.explorer import BatchExplorer, _within_the_rounds
+    from fastmdxplora.simulation.stopping import RECORD, round_ended, run_until_known, targets_of
+
+    try:
+        record = json.loads(_records.read_text(root / RECORD, encoding="utf-8"))
+        measures = [{key: value for key, value in target.items() if value is not None}
+                    for target in record["targets"]]
+        stop_when = {"measures": measures,
+                     "max_duration_ns": float(record["max_duration_ns"]),
+                     "independent_starts": str(record.get("independent_starts")
+                                               or "not_required")}
+        targets = targets_of(stop_when)
+    except (OSError, ValueError, KeyError, TypeError, StudyError) as exc:
+        return {**base, "ok": False, "did": RESUMED_NOTHING,
+                "error": f"The study's record of its rounds could not be read: {exc}"}
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    _JUDGED_AGAIN_HERE.add(root)
+    try:
+        with _within_the_rounds():
+            run_until_known([root], targets, stop_when, record_in=root, earlier_rounds=rounds)
+        BatchExplorer._report_again(root)
+    finally:
+        _JUDGED_AGAIN_HERE.discard(root)
+    ended = round_ended(root)
+    answer = {**base, "ok": ended is None, "did": RESUMED_PRODUCTION,
+              **_production_now(root, {"ok": True})}
+    if ended is not None:
+        answer["error"] = ended.as_text()
+        answer["round_ended"] = ended.as_record()
+    return answer
 
 
 def resume_batch(root: str | Path) -> dict[str, Any]:

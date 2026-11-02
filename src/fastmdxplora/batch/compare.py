@@ -475,8 +475,7 @@ def _write_markdown(
         # before the runs are compared as if the study had completed.
         ended = round_ended(root)
         if ended is not None:
-            lines += [f"**{'Failed' if ended.state == 'failed' else 'Stopped'}.** "
-                      f"{ended.as_text()}", ""]
+            lines += [f"**{ended.label}.** {ended.as_text()}", ""]
 
     # An umbrella study is one experiment sampled in pieces, not several
     # experiments. Its windows differ because each is held at a different
@@ -600,7 +599,7 @@ def _write_markdown(
         lines.extend(_across_the_replicas(root))
         from fastmdxplora.simulation.stopping import stopping_section
 
-        lines.extend(stopping_section(root))
+        lines.extend(stopping_section(root, ended_said_above=True))
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

@@ -50,6 +50,13 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
         return _several_runs(base)
     said = {"found": _found, "long_enough": _long_enough,
             "strengthen": _strengthen}[question](base)
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(base)
+    if ended is not None:
+        # A run that completed whose rule's round did not: said first, as
+        # its status and All studies say it (`stopping.round_ended`).
+        said = ended.as_text() + "\n\n" + said
     return MARK + "\n\n" + said
 
 

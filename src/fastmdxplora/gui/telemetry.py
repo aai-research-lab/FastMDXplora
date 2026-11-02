@@ -1767,6 +1767,18 @@ def analyze_health(
             "explanation": SILENT_EXPLANATION if silent else INTERRUPTED_EXPLANATION,
         }
 
+    ended = _its_round_ended(root) if root is not None else None
+    if ended is not None and str(status.get("status", "")).lower() in _FINISHED_STATUSES:
+        # A study of one run that completed, whose rule's round did not
+        # (`stopping.round_ended`): said as All studies and the sidebar say
+        # it, with the command that carries it on.
+        return {
+            "state": ended.state,
+            "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
+            "message": ended.said,
+            "explanation": ended.carry_on,
+            "carry_on": " ".join(ended.argv),
+        }
     if str(status.get("status", "")).lower() in _FINISHED_STATUSES:
         # A run that has stopped is not progressing. Every check above still
         # applies -- they read the last sample it wrote -- but the verdict is
@@ -1796,6 +1808,18 @@ def analyze_health(
             "the page cannot fill. A new run records it without being asked."
         ),
     }
+
+
+def _its_round_ended(root: str | Path) -> Any:
+    """How the rule's last round of the study at ``root`` ended, where it
+    failed, was stopped or was cut (`stopping.round_ended`); None otherwise
+    and where it cannot be read."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    try:
+        return round_ended(root)
+    except Exception:  # noqa: BLE001 - said from the run's own record
+        return None
 
 
 def not_read_health(said: str) -> dict[str, str]:
@@ -1862,7 +1886,7 @@ def _a_study_of_runs(root: str | Path) -> dict[str, str] | None:
     # derivation `study_state` read): said by what ended it, and carried
     # on by the command, where "A run of this study ended with an error"
     # named no run that had.
-    ended = round_ended(root) if state in ("failed", "stopped") else None
+    ended = round_ended(root) if state in ("failed", "stopped", "interrupted") else None
     if ended is not None and ended.state == state:
         return {
             "state": state,

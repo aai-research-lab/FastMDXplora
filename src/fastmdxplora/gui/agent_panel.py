@@ -1233,16 +1233,17 @@ def _stopping_summary(root: Any) -> str:
         lines.append(f"  round {number}, at {entry.get('production_ns')} ns: {said}"
                      f" -> {entry.get('decision')}"
                      + (f" by {entry['more_ns']} ns" if entry.get("more_ns") else ""))
-    if record.get("said"):
-        lines.append(f"  outcome: {record['said']}")
     from fastmdxplora.simulation.stopping import round_ended
 
     ended = round_ended(where)
     if ended is not None:
-        # The study's state, as every page says it: its runs each
-        # completed, and the study did not.
-        lines.append(f"  the study {'failed' if ended.state == 'failed' else 'was stopped'} "
-                     f"(not completed): {ended.as_text()}")
+        # The study's state, as every page says it, in place of the
+        # record's sentence, which it holds: its runs each completed, and
+        # the study did not.
+        was = {"failed": "failed", "stopped": "was stopped"}.get(ended.state, "was interrupted")
+        lines.append(f"  outcome: the study {was} (not completed): {ended.as_text()}")
+    elif record.get("said"):
+        lines.append(f"  outcome: {record['said']}")
     return "\n".join(lines)
 
 
