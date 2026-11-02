@@ -3334,9 +3334,16 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             "runs": "Every run of the study was carried on or run, and the "
                     "study's comparison across them rebuilt.",
         }
-        print(said.get(answer.get("did"), "Done."))
-        if answer.get("saved_in_previous"):
-            print("The analyses and report it had before are saved in previous/.")
+        if answer.get("reported_only"):
+            print(answer.get("detail") or "Done.")
+        else:
+            print(said.get(answer.get("did"), "Done."))
+        saved = [str(phase) for phase in answer.get("saved_in_previous") or []]
+        if saved:
+            # What was saved, by name: the report too only where it was there.
+            print(f"Its {' and '.join(saved)} from before "
+                  f"{'are' if len(saved) > 1 else 'is'} saved in "
+                  f"{' and '.join(f'previous/{phase}' for phase in saved)}.")
         if "production_done_ns" in answer:
             from fastmdxplora.simulation.lengths import FROM_CLOCK
             from fastmdxplora.simulation.sampling_ask import length_said

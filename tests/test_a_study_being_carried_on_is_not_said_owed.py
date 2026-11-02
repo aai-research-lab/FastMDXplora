@@ -20,6 +20,7 @@ after its join (`/tmp/K3h/Z` and `/tmp/K3h/Tp` in the review).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -111,12 +112,24 @@ def test_a_piece_stopped_is_said_by_the_study_s_name(tmp_path: Path) -> None:
 
 def _chosen(root: Path, trajectory: Path, *, after_the_join: bool = True) -> None:
     """The study's config names ``trajectory`` as its analysis's, and its
-    analysis was written after (or before) its join."""
+    analysis was begun after (or before) its join, by the times its records
+    hold; the files' own times say the other way, as a copy leaves them."""
     config = root / "resolved_config.yml"
     config.write_text(config.read_text(encoding="utf-8")
                       + f"analysis:\n  trajectory: {trajectory}\n", encoding="utf-8")
     joined, manifest = root / "joined" / "joined.json", root / "analysis" / "analysis_manifest.json"
-    later, earlier = (manifest, joined) if after_the_join else (joined, manifest)
+    study = root / "manifest.json"
+    began, at = ("2026-11-01T10:05:00+00:00", "2026-11-01T10:00:00+00:00")
+    if not after_the_join:
+        began, at = at, began
+    record = json.loads(study.read_text(encoding="utf-8"))
+    for phase in record["phases"]:
+        if phase["name"] == "analysis":
+            phase["started_at"] = began
+    study.write_text(json.dumps(record), encoding="utf-8")
+    record = json.loads(joined.read_text(encoding="utf-8"))
+    joined.write_text(json.dumps({**record, "joined_at": at}), encoding="utf-8")
+    later, earlier = (joined, manifest) if after_the_join else (manifest, joined)
     now = time.time()
     os.utime(earlier, (now - 60, now - 60))
     os.utime(later, (now, now))
@@ -188,3 +201,103 @@ def test_a_fixed_step_is_known_without_reading_the_pieces_clocks(
             f"simulation:\n  integrator: {integrator}\n", encoding="utf-8")
         simulated_times(root, {"status": "stopped", "stage": "production"})
         assert len(calls) == read, integrator
+
+
+_HOLD_AS = """
+import fcntl, json, os, sys
+from fastmdxplora.orchestrator import this_machine
+path = sys.argv[1]
+handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+record = {"pid": os.getpid(), **this_machine()}
+if sys.argv[2] != "here":
+    record = {"pid": 4242, "host": sys.argv[2], "boot": "another boot"}
+os.write(handle, json.dumps(record).encode())
+print("held", flush=True)
+sys.stdin.read()
+"""
+
+
+@contextlib.contextmanager
+def _held_as(path: Path, host: str):
+    """``path`` locked by another process, as a resume holds the study's
+    lock, its record naming ``host`` ("here": this machine)."""
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(
+        [str(Path(__file__).resolve().parents[1] / "src"), os.environ.get("PYTHONPATH", "")])}
+    process = subprocess.Popen([sys.executable, "-c", _HOLD_AS, str(path), host], env=env,
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    try:
+        assert process.stdout.readline().strip() == "held"
+        yield process
+    finally:
+        process.stdin.close()
+        process.wait(timeout=60)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a lock is tried by flock")
+def test_a_resume_on_another_machine_of_a_shared_file_system_is_seen(tmp_path: Path) -> None:
+    from fastmdxplora.remedies import _interrupted
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, being_carried_on
+
+    # A compute node carries the study on; the GUI reads it from another
+    # machine over the same file system. Its process cannot be asked, its
+    # lock can.
+    root = _study(tmp_path, marker=True)
+    with _held_as(root / CARRYING_ON_FILE, "compute-node-7"):
+        assert being_carried_on(root)
+        status, health, state = _said(root)
+        assert (status["status"], state) == ("running", "running"), (status, state)
+        assert "owed" not in health["headline"]
+        assert _interrupted(root) is None
+    # Let go, or a record from another machine with no lock held: owed.
+    assert not being_carried_on(root)
+    assert _said(root)[0]["status"] == "interrupted"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a lock is tried by flock")
+def test_a_resume_starting_as_the_gui_tries_the_lock_is_not_refused(tmp_path: Path) -> None:
+    import fcntl
+    import threading
+
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, _carrying_on
+
+    root = _study(tmp_path, marker=True)
+    lock = root / CARRYING_ON_FILE
+    lock.write_text("{}", encoding="utf-8")
+    taken, done = threading.Event(), threading.Event()
+
+    def probe() -> None:
+        # As `_lock_held` does: the lock taken shared for an instant.
+        handle = os.open(lock, os.O_RDONLY)
+        try:
+            fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            taken.set()
+            time.sleep(0.02)
+        finally:
+            os.close(handle)
+            done.set()
+
+    thread = threading.Thread(target=probe)
+    thread.start()
+    try:
+        assert taken.wait(10)
+        # Refused, "A run of this study is still going", in that instant.
+        with _carrying_on(root):
+            assert done.is_set()
+    finally:
+        thread.join()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a lock is tried by flock")
+def test_a_lock_file_linked_out_of_the_study_is_not_read(tmp_path: Path) -> None:
+    from fastmdxplora.record_access import confined_records
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, being_carried_on
+
+    root = _study(tmp_path, marker=True)
+    outside = tmp_path / "elsewhere.lock"
+    (root / CARRYING_ON_FILE).symlink_to(outside)
+    with _held_as(outside, "here"):
+        # Read as the GUI reads a study's records: a link out of it is not.
+        with confined_records(root, lambda path: True) as scope:
+            assert not being_carried_on(root)
+        assert CARRYING_ON_FILE in scope.denied

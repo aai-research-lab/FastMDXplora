@@ -1026,11 +1026,28 @@ def _save_what_is_replaced(root: Path) -> list[str]:
     """Save the study's analysis and report in `previous/` before the
     join's own run over them, as `--rerun` does: the analysis there may be
     one the person chose (`fastmdx analyze --rerun --trajectory`), and the
-    join's replaced it with nothing left of it. The phases saved."""
-    from fastmdxplora.replaced import make_way, outputs_of
+    join's replaced it with nothing left of it. The phases saved.
+
+    Only an analysis that finished (its manifest written) is saved, and an
+    analysis of the join is never saved over one saved before: a resume
+    stopped in its own analyses left an unfinished one, or one of the join
+    without its report, and the next resume saved it in place of the
+    person's. What is not saved is replaced by the join's analyses."""
+    from fastmdxplora.replaced import PREVIOUS, make_way, outputs_of
     from fastmdxplora.utils.logging import get_logger
 
     if not outputs_of(root, "analysis"):
+        return []
+    import json
+
+    try:
+        record = json.loads(_records.read_text(root / "analysis" / "analysis_manifest.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    given = record.get("trajectory_input") if isinstance(record, dict) else None
+    of_the_join = (isinstance(given, str) and Path(given).parts[-2:] == ("joined", "production.dcd"))
+    if of_the_join and _records.exists(root / PREVIOUS / "analysis"):
         return []
     return make_way(root, ["analysis"], keep=True, say=get_logger(__name__).info)
 
@@ -1070,6 +1087,11 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
 
         return {"ok": False, "stage": "joining", "segment": segment_text,
                 "error": str(exc), "refusal": refusal_of(exc).as_dict()}
+    # When, in the record: a copy that does not carry the files' times
+    # carries this (an analysis chosen after the join is told by it).
+    from datetime import datetime, timezone
+
+    record = {**record, "joined_at": datetime.now(timezone.utc).isoformat()}
     (joined_dir / "joined.json").write_text(
         json_dumps(record), encoding="utf-8")
 
@@ -1184,7 +1206,7 @@ def _analysis_not_of_the_join(root: Path) -> bool:
     try:
         key = (str(root), *((s.st_mtime_ns, s.st_size) for s in
                             (_records.stat(joined), _records.stat(manifest))),
-               _config_stamp(root))
+               _config_stamp(root), _config_stamp(root, "manifest.json"))
     except OSError:
         return False
     # Read once: a clear by another of the GUI's threads between a test of
@@ -1213,28 +1235,29 @@ def _analysis_not_of_the_join(root: Path) -> bool:
                  and isinstance(frames, int) and not isinstance(frames, bool)
                  and isinstance(counted, int) and not isinstance(counted, bool)
                  and counted != frames)
-        owed = (first or short) and not _chosen_by_the_person(root, given, manifest, joined)
+        owed = (first or short) and not _chosen_by_the_person(root, given, joined)
     if len(_NOT_OF_THE_JOIN) > 512:
         _NOT_OF_THE_JOIN.clear()
     _NOT_OF_THE_JOIN[key] = owed
     return owed
 
 
-def _config_stamp(root: Path) -> tuple[int, int] | None:
+def _config_stamp(root: Path, name: str = "resolved_config.yml") -> tuple[int, int] | None:
     """The study's resolved config's time and size, which name the
-    trajectory a person chose: None where it is not there."""
+    trajectory a person chose (or its Manifest's, which says when its
+    analysis began): None where it is not there."""
     try:
-        stat = _records.stat(root / "resolved_config.yml")
+        stat = _records.stat(root / name)
     except OSError:
         return None
     return (stat.st_mtime_ns, stat.st_size)
 
 
-def _chosen_by_the_person(root: Path, given: Any, manifest: Path, joined: Path) -> bool:
+def _chosen_by_the_person(root: Path, given: Any, joined: Path) -> bool:
     """Whether the analysis on record is of a trajectory the person named
     (`fastmdx analyze --rerun --trajectory`), not one a join owes: the
     study's resolved config names it as `analysis.trajectory`, and it was
-    written after the join (`joined/joined.json`).
+    begun after the join (`_analysed_after_the_join`).
 
     A study's own first run names its first piece there too, and a version
     that wrote no marker left it so when stopped after its join; that
@@ -1262,10 +1285,112 @@ def _chosen_by_the_person(root: Path, given: Any, manifest: Path, joined: Path) 
 
     if where(named) != where(given) or where(named) == where(str(root / "joined" / "production.dcd")):
         return False
+    return _analysed_after_the_join(root, joined)
+
+
+def _recorded_time(path: Path, phase: str, key: str) -> float | None:
+    """``key`` (`started_at`, `finished_at`) of ``phase`` in the Manifest
+    at ``path``, as a time; None where it is not recorded."""
+    import json
+
     try:
-        return _records.stat(manifest).st_mtime_ns > _records.stat(joined).st_mtime_ns
-    except OSError:
+        record = json.loads(_records.read_text(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    phases = record.get("phases") if isinstance(record, dict) else None
+    for entry in phases if isinstance(phases, list) else []:
+        if isinstance(entry, dict) and (entry.get("name") or entry.get("phase")) == phase:
+            return _a_time(entry.get(key))
+    return None
+
+
+def _a_time(value: Any) -> float | None:
+    from datetime import datetime, timezone
+
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.timestamp()
+
+
+def _analysed_after_the_join(root: Path, joined: Path) -> bool:
+    """Whether the study's analysis on record was begun after its pieces
+    were joined, by the times the records hold, which a copy carries: its
+    Manifest's analysis `started_at` against the join's `joined_at`, or,
+    from a version that wrote none, the last piece's simulation
+    `finished_at`. The files' own times are not read: `cp -r`, `scp -r`
+    or a download without them writes the files in their copy order.
+    Not after where either time is not recorded."""
+    import json
+
+    started = _recorded_time(root / "manifest.json", "analysis", "started_at")
+    if started is None:
         return False
+    try:
+        record = json.loads(_records.read_text(joined, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    joined_at = _a_time(record.get("joined_at"))
+    if joined_at is None:
+        pieces = [index for index in record.get("segments") or []
+                  if isinstance(index, int) and not isinstance(index, bool) and index > 0]
+        if not pieces:
+            return False
+        joined_at = _recorded_time(root / f"segment-{max(pieces):03d}" / "manifest.json",
+                                   "simulation", "finished_at")
+    return joined_at is not None and started > joined_at
+
+
+def _the_analysis_chosen(root: Path) -> bool:
+    """Whether the analysis on record is one the person chose after the
+    join, and no join's analyses are owed by its marker: the reading
+    `analysis_owed` takes, so resume and the GUI agree."""
+    import json
+
+    if _records.is_file(root / "joined" / ANALYSIS_OWED):
+        return False
+    joined = root / "joined" / "joined.json"
+    try:
+        record = json.loads(_records.read_text(root / "analysis" / "analysis_manifest.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    given = record.get("trajectory_input") if isinstance(record, dict) else None
+    return _records.is_file(joined) and _chosen_by_the_person(root, given, joined)
+
+
+def _report_of_the_chosen(root: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """The study's report written over the analysis the person chose, as
+    `fastmdx report --output` writes it; the study's config as it was."""
+    from fastmdxplora import FastMDXplora
+
+    resolved = root / "resolved_config.yml"
+    own = _the_study_s_config_text(root)
+    whole = dict(config)
+    whole["output"] = str(root)
+    whole["include_phase"] = ["report"]
+    whole.pop("exclude_phase", None)
+    ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    if own is not None:
+        try:
+            _write_atomically(resolved, own)
+        except OSError:
+            pass
+    failed = [result for result in ran if result.status != "ok"]
+    if failed:
+        return {"ok": False, "stage": "report",
+                "error": failed[0].message or "The report did not finish."}
+    return {"ok": True, "reported_only": True,
+            "detail": "Production was complete and its analysis is the one chosen "
+                      "after the join (fastmdx analyze --trajectory); its report was "
+                      "written over it."}
 
 
 #: The study's config at its whole length, beside the joined trajectory
@@ -1910,6 +2035,12 @@ _CARRYING = threading.RLock()
 _carried_here: dict[Path, int] = {}
 
 
+#: How often, and how far apart, a resume tries the study's lock before it
+#: says a run is still going: a probe holds it for far less than this.
+_LOCK_TRIES = 10
+_LOCK_WAIT_S = 0.01
+
+
 class _CarriedOnElsewhere(CodedError, Exception):
     """Another process holds the study's lock: a run of it is still going."""
 
@@ -1929,10 +2060,19 @@ def _carrying_on(root: Path) -> Iterator[None]:
         # Only a study is locked: a folder that is not one is said to be
         # so, with nothing left in it.
         if not _carried_here.get(root) and (root / "resolved_config.yml").is_file():
-            try:
-                handle = _lock(root / CARRYING_ON_FILE)
-            except StartRefused:
-                raise _CarriedOnElsewhere() from None
+            # The GUI asks whether it is held by taking it shared for an
+            # instant (`_lock_held`): a resume starting in that instant was
+            # refused as still going. Tried again over some 100 ms.
+            import time
+
+            for attempt in range(_LOCK_TRIES):
+                try:
+                    handle = _lock(root / CARRYING_ON_FILE)
+                    break
+                except StartRefused:
+                    if attempt == _LOCK_TRIES - 1:
+                        raise _CarriedOnElsewhere() from None
+                    time.sleep(_LOCK_WAIT_S)
         _carried_here[root] = _carried_here.get(root, 0) + 1
     try:
         yield
@@ -1953,10 +2093,15 @@ def being_carried_on(root: str | Path) -> bool:
     GUI before it says a study owes its analysis: the analysis a resume is
     running is not owed, and `fastmdx resume` would be refused.
 
-    The lock is tried only where the process it names is alive on this
-    machine: a resume starting as it is tried would find it taken."""
+    The lock is tried where the process it names is alive on this machine,
+    and whatever machine it names otherwise: on a file system shared by
+    several (a cluster's nodes, the GUI on another), a lock held anywhere
+    is held, and the process there cannot be asked. Where the file system
+    does not carry locks between machines it is not seen. A resume
+    starting as it is tried tries again (`_carrying_on`)."""
     import json
 
+    from fastmdxplora import record_access
     from fastmdxplora.orchestrator import record_is_from_elsewhere
 
     root = Path(root).expanduser()
@@ -1969,13 +2114,14 @@ def being_carried_on(root: str | Path) -> bool:
             return True
     path = root / CARRYING_ON_FILE
     try:
-        record = json.loads(path.read_text(encoding="utf-8") or "null")
+        record = json.loads(record_access.read_text(path, encoding="utf-8") or "null")
     except (OSError, ValueError):
         record = None
     pid = record.get("pid") if isinstance(record, dict) else None
-    if (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
-            and not record_is_from_elsewhere(record) and _lock_held(path, pid)):
-        return True
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        if (_lock_taken(path) if record_is_from_elsewhere(record)
+                else _lock_held(path, pid)):
+            return True
     try:
         return _still_running(root)
     except Exception:  # noqa: BLE001 - a record, not a verdict
@@ -1994,6 +2140,17 @@ def _lock_held(path: Path, pid: int) -> bool:
         # A lock there cannot be tried without taking it: the process the
         # record names, alive, is the answer.
         return True
+    return _lock_taken(path)
+
+
+def _lock_taken(path: Path) -> bool:
+    """Whether a process, here or on another machine sharing the file
+    system, holds the lock on ``path``: taken shared for an instant. Not
+    on Windows, where it cannot be tried without taking it."""
+    import os
+
+    if os.name == "nt":
+        return False
     import fcntl
 
     try:
@@ -2211,6 +2368,14 @@ def _resume_study(study: str | Path, *,
                     refusal["error"], code="simulation.resume.unsealed", path=str(root)))
                 return {**base, "ok": False, "did": RESUMED_ANALYSIS,
                         "stage": "joining", **refusal, "refusal": said.as_dict()}
+            if _the_analysis_chosen(root):
+                # The person's analysis, chosen after the join (`fastmdx
+                # analyze --rerun --trajectory`), its report moved aside by
+                # that rerun: the GUI says the study completed, and what is
+                # owed is the report of it, not the join's analyses over it.
+                answer = _report_of_the_chosen(root, config)
+                return {**base, **answer, "did": RESUMED_ANALYSIS,
+                        **_production_now(root, answer)}
             saved = _save_what_is_replaced(root)
             answer = _join_and_analyse(root, config, segment=None,
                                        keep_frames=keep_frames or None)

@@ -414,7 +414,9 @@ def _saved(study: Path) -> dict:
 
 @needs_backends
 def test_an_analysis_the_person_chose_is_neither_owed_nor_lost(extended, capfd) -> None:
+    from fastmdxplora.cli.main import main
     from fastmdxplora.gui.telemetry import status_as_it_stands
+    from fastmdxplora.remedies import _interrupted
     from fastmdxplora.simulation.resume import analysis_owed, resume_study
 
     study, pristine = extended
@@ -425,12 +427,26 @@ def test_an_analysis_the_person_chose_is_neither_owed_nor_lost(extended, capfd) 
     # Chosen, not owed: it was said interrupted, "Its analysis is owed".
     assert not analysis_owed(study)
     assert status_as_it_stands(study)["status"] == "completed"
-    # Its report moved aside, a resume writes it again over the join; the
-    # person's analysis is saved, not replaced with nothing left of it.
-    answer = resume_study(study)
-    assert answer["ok"] is True, answer
-    assert _saved(study)["load_kwargs"]["stride"] == 2
-    assert Path(_saved(study)["trajectory_input"]) == study / "simulation" / "production.dcd"
+    assert not (study / "report").exists()
+    # Its report moved aside by the rerun, a resume writes the report of the
+    # person's analysis, as the GUI's Completed says: the join's analyses
+    # were run over it.
+    capfd.readouterr()
+    assert main(["resume", str(study)]) == 0
+    printed = capfd.readouterr().out
+    assert "its report was written over it" in printed, printed
+    assert "saved in previous" not in printed
+    analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
+    assert analysed["load_kwargs"]["stride"] == 2
+    assert Path(analysed["trajectory_input"]) == study / "simulation" / "production.dcd"
+    assert (study / "report" / "report.md").is_file()
+    # The join's, saved by the person's rerun, is where it was.
+    assert Path(_saved(study)["trajectory_input"]) == study / "joined" / "production.dcd"
+    assert _config(study)["analysis"]["trajectory"] == str(study / "simulation" / "production.dcd")
+    # The GUI and resume agree: completed, nothing to fix, nothing to do.
+    assert status_as_it_stands(study)["status"] == "completed"
+    assert _interrupted(study) is None
+    assert resume_study(study)["did"] == "nothing"
 
 
 @needs_backends
@@ -454,7 +470,186 @@ def test_an_analysis_chosen_while_owed_is_saved_by_the_resume(extended, capfd) -
     analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
     assert Path(analysed["trajectory_input"]) == study / "joined" / "production.dcd"
     assert _saved(study)["load_kwargs"]["stride"] == 2
-    assert "analysis" in answer["saved_in_previous"]
+    assert answer["saved_in_previous"] == ["analysis"]
+
+
+@needs_backends
+def test_resume_says_which_of_its_phases_it_saved(extended, capfd) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.cli.main import main
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    # The person's rerun moved the report aside: only the analysis is saved.
+    _the_person_s_analysis(study)
+    assert not (study / "report").exists()
+    capfd.readouterr()
+    assert main(["resume", str(study)]) == 0
+    printed = capfd.readouterr().out
+    assert "Its analysis from before is saved in previous/analysis." in printed, printed
+    assert "report it had before" not in printed
+
+
+def _stopped_in_its_analyses(study: Path) -> str:
+    """`fastmdx resume` of ``study`` in a process of its own, killed once its
+    analyses have written their folders and before their manifest, as a
+    wall time lands; what it printed."""
+    import os
+    import signal
+    import subprocess
+    import sys
+
+    script = (
+        "import sys, time\n"
+        "from fastmdxplora.analysis.orchestrator import AnalysisOrchestrator\n"
+        "def stopped(self):\n"
+        "    print('analyses written', flush=True)\n"
+        "    time.sleep(600)\n"
+        "AnalysisOrchestrator._write_manifest = stopped\n"
+        "from fastmdxplora.cli.main import main\n"
+        "sys.exit(main(['resume', sys.argv[1]]))\n")
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(
+        [str(Path(__file__).resolve().parents[1] / "src"), os.environ.get("PYTHONPATH", "")])}
+    process = subprocess.Popen([sys.executable, "-c", script, str(study)], env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = []
+    try:
+        for line in process.stdout:
+            lines.append(line)
+            if line.strip() == "analyses written":
+                break
+    finally:
+        if process.poll() is None:
+            process.send_signal(signal.SIGKILL)
+        process.wait(timeout=60)
+    printed = "".join(lines)
+    assert printed.rstrip().endswith("analyses written"), printed
+    return printed
+
+
+@needs_backends
+def test_a_resume_stopped_in_its_analyses_and_run_again_leaves_the_person_s_saved(
+        extended, capfd) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.cli.main import main
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    _the_person_s_analysis(study)
+
+    # The first resume saves the person's analysis, and is killed in its own.
+    printed = _stopped_in_its_analyses(study)
+    assert "saved in previous/analysis" in printed, printed
+    assert (study / "analysis" / "rmsd").is_dir()
+    assert not (study / "analysis" / "analysis_manifest.json").exists()
+    assert _saved(study)["load_kwargs"]["stride"] == 2
+
+    # Run again, it finishes; the unfinished analysis is not saved over the
+    # person's, and the answer says nothing was saved this time.
+    capfd.readouterr()
+    assert main(["resume", str(study)]) == 0
+    printed = capfd.readouterr().out
+    assert (study / "previous" / "analysis" / "analysis_manifest.json").is_file()
+    assert _saved(study)["load_kwargs"]["stride"] == 2
+    assert Path(_saved(study)["trajectory_input"]) == study / "simulation" / "production.dcd"
+    assert "saved in previous" not in printed, printed
+    analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
+    assert Path(analysed["trajectory_input"]) == study / "joined" / "production.dcd"
+
+
+def _copied_child_by_child(study: Path, to: Path, first: list[str]) -> Path:
+    """``study`` copied by `cp -r`, child by child, ``first`` first: the
+    files' times are of the copy, in its order, as `scp -r` or a download
+    without them leaves them."""
+    import os
+    import subprocess
+    import time
+
+    to.mkdir()
+    rest = sorted(name for name in os.listdir(study) if name not in first)
+    for name in [*first, *rest]:
+        subprocess.run(["cp", "-r", str(study / name), str(to / name)], check=True)
+        time.sleep(0.02)
+    return to
+
+
+def _written_later(later: Path, earlier: Path) -> bool:
+    return later.stat().st_mtime_ns > earlier.stat().st_mtime_ns
+
+
+@needs_backends
+def test_a_copy_of_an_analysis_chosen_after_the_join_is_not_owed(extended) -> None:
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+    from fastmdxplora.simulation.resume import analysis_owed
+
+    study, pristine = extended
+    copies = Path(tempfile.mkdtemp())
+    try:
+        # The person's analysis of the first piece, chosen after the join;
+        # copied analysis first, so its file is older than the join's.
+        _put_back(study, pristine)
+        assert _join_the_extension(study)["ok"] is True
+        _the_person_s_analysis(study)
+        assert not analysis_owed(study)
+        chosen = _copied_child_by_child(study, copies / "chosen", ["analysis", "joined"])
+        assert _written_later(chosen / "joined" / "joined.json",
+                              chosen / "analysis" / "analysis_manifest.json")
+        assert not analysis_owed(chosen)
+        assert status_as_it_stands(chosen)["status"] == "completed"
+    finally:
+        shutil.rmtree(copies, ignore_errors=True)
+
+
+@needs_backends
+def test_a_copy_of_an_analysis_from_before_the_join_is_owed(extended) -> None:
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+    from fastmdxplora.simulation.resume import analysis_owed
+
+    study, pristine = extended
+    copies = Path(tempfile.mkdtemp())
+    try:
+        # Stopped after its join by a version that wrote no marker and no
+        # time in the join's record, its config naming its first piece as
+        # that version's first run wrote it: the analysis of the first piece
+        # is owed. Copied join first, so its analysis's file is the newer.
+        _put_back(study, pristine)
+        patches = _points()["joined.json"]()
+        try:
+            for patch in patches:
+                patch.start()
+            with pytest.raises(_Killed):
+                _join_the_extension(study)
+        finally:
+            for patch in patches:
+                patch.stop()
+        (study / "joined" / "analysis_owed.json").unlink()
+        joined = study / "joined" / "joined.json"
+        record = json.loads(joined.read_text())
+        joined.write_text(json.dumps({k: v for k, v in record.items() if k != "joined_at"}))
+        config = _config(study)
+        config["analysis"] = {**(config.get("analysis") or {}),
+                              "trajectory": str(study / "simulation" / "production.dcd")}
+        (study / "resolved_config.yml").write_text(yaml.safe_dump(config), encoding="utf-8")
+        assert analysis_owed(study)
+        older = _copied_child_by_child(study, copies / "older", ["joined", "analysis"])
+        assert _written_later(older / "analysis" / "analysis_manifest.json",
+                              older / "joined" / "joined.json")
+        assert analysis_owed(older)
+        assert status_as_it_stands(older)["status"] == "interrupted"
+    finally:
+        shutil.rmtree(copies, ignore_errors=True)
 
 
 def test_a_continued_answer_plans_its_extension(tmp_path, monkeypatch) -> None:
