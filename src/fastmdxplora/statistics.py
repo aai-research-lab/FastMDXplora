@@ -152,7 +152,9 @@ DRIFT_FRAMES = 6
 #: the key was written by an earlier version, most of which did not
 #: withhold such a mean, so it may call one determined.
 #: 4 also checks recorded joins for a resolved trend between segments.
-MEAN_RULES = 4
+#: 5 calls three or four segments drifting only where the trend also stands
+#: against the segment means' own scatter about the line.
+MEAN_RULES = 5
 
 #: A series whose averaged frames trend by this many times the trend's own
 #: error is still drifting, however small the trend is against the frames'
@@ -1090,8 +1092,9 @@ class Pooled:
     #: Observed scatter of the segment means over what their own standard
     #: errors predict. One means they agree.
     heterogeneity: float = 1.0
-    #: The drift test's p-value: a weighted slope with a line-fit check for
-    #: three or four segments, an order-permutation test for five or more.
+    #: The drift test's p-value: for three or four segments the larger of a
+    #: slope against their errors (with a line-fit check) and a slope against
+    #: their own scatter; an order-permutation test for five or more.
     drift_p: float = 1.0
     #: What is true of this mean that would not be true of one from a run
     #: that stayed put. Empty where nothing is.
@@ -1317,8 +1320,9 @@ def summarise_segments(
         if 3 <= len(pieces) <= 4:
             qualification = (
                 f"The segment means scatter {scatter:.1f} times more than their "
-                "own standard errors predict, without a resolved straight-line "
-                "trend consistent with those errors. This does not establish "
+                "own standard errors predict, without a straight-line trend "
+                "that stands against both those errors and their own scatter "
+                "about the line. This does not establish "
                 "stationarity: unordered offsets or nonlinear movement can "
                 "also disagree this way. Treat the error on this mean as a "
                 "lower bound.")
@@ -1366,15 +1370,30 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
     chance = (f"about {drifting:.1%}" if drifting >= 0.001
               else "less than 0.1%")
     method = _segment_drift_method(means.size)
-    evidence = (
-        "a weighted straight-line trend has a two-sided slope p-value of "
-        f"{chance}, using the segments' own standard errors, with residuals "
-        "consistent with those errors" if method == "weighted_slope" else
-        f"an ordering this clean arises by chance {chance} of the time")
-    movement = (
-        f"The first and last segment means differ by {span:+.4g} across the run"
-        if method == "weighted_slope" else
-        f"The segment means move in order across the run, by {span:+.4g} from first to last")
+    steps = np.diff(means)
+    # "In order" only where every step goes the same way: a trend can be
+    # called on means that step back once, and saying they move one way
+    # would describe means the reader can see do not.
+    one_way = bool(np.all(steps > 0.0) or np.all(steps < 0.0))
+    if method == "slope_against_errors_and_scatter":
+        positions = np.arange(means.size, dtype=float)
+        change = _weighted_slope(means, precisions, positions) * (means.size - 1)
+        movement = (
+            f"A straight line through the segment means changes by {change:+.4g} "
+            f"across the run (first to last mean {span:+.4g}"
+            + ("" if one_way else ", though they do not move one way at every step")
+            + ")")
+        evidence = (
+            "its slope stands both against the segments' own standard errors, "
+            "with the line consistent with those errors, and against the "
+            f"means' own scatter about it: the larger p-value is {chance}")
+    else:
+        movement = (
+            f"The segment means move in order across the run, by {span:+.4g} "
+            "from first to last" if one_way else
+            f"The segment means trend across the run, by {span:+.4g} from first "
+            "to last, though not one way at every step")
+        evidence = f"an ordering this clean arises by chance {chance} of the time"
     said = (
         f"{movement}, and {evidence}. The system had not "
         "equilibrated at the scale of the whole run, so a pooled mean "
@@ -1421,11 +1440,43 @@ def _weighted_slope(means: np.ndarray, weights: np.ndarray,
 def _segment_drift_method(count: int) -> str:
     if count < 3:
         return "not_tested"
-    return "weighted_slope" if count < 5 else "permutation"
+    return "slope_against_errors_and_scatter" if count < 5 else "permutation"
+
+
+def _own_scatter_slope_p(means: np.ndarray) -> float:
+    """The slope's two-sided p-value against the means' own scatter about
+    the line: an unweighted fit, Student's t on k - 2 degrees of freedom.
+
+    Unweighted, because this half of the test is for the case where the
+    segments' errors do not hold (offsets between segments beyond them), and
+    then the errors are not the right weights either: weighted by them, an
+    imprecise segment between two precise ones leaves almost no residual to
+    judge the slope against. For k = 3 and 4 the t tails are
+    1 - (2/pi) atan|t| and 1 - |t| / sqrt(2 + t^2).
+    """
+    count = means.size
+    x = np.arange(count, dtype=float) - (count - 1) / 2.0
+    y = means - means[0]
+    y = y - float(y.mean())
+    spread = float(x @ x)
+    slope = float(x @ y) / spread
+    residual = y - slope * x
+    variance = float(residual @ residual) / (count - 2)
+    if slope == 0.0:
+        return 1.0
+    if variance <= 0.0:
+        return math.nextafter(0.0, 1.0)
+    t = abs(slope) * math.sqrt(spread / variance)
+    if not math.isfinite(t):
+        return math.nextafter(0.0, 1.0) if math.isinf(t) else 1.0
+    p = (1.0 - 2.0 / math.pi * math.atan(t) if count == 3
+         else 1.0 - t / math.sqrt(2.0 + t * t))
+    return max(p, math.nextafter(0.0, 1.0))
 
 
 def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
-    """An absolute-error slope test, only where a line fits those errors.
+    """A slope test against the segments' errors and against their own
+    scatter, only where a line fits those errors; the larger p-value.
 
     For independent Gaussian mean errors, Var(slope) = 1 / Sxx, with
     inverse-variance weights. Its two-sided normal tail uses the supplied
@@ -1438,6 +1489,16 @@ def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
     functions are erfc(sqrt(Q/2)) and exp(-Q/2). Returning 1 on lack of fit
     makes the combined p-value conservative; it does not establish that
     the series is stationary. The disagreement still qualifies its error.
+
+    That alone trusts the errors, and one residual degree of freedom (two at
+    k = 4) cannot tell errors that hold from errors too small for offsets
+    between segments: on unordered offsets about three times the errors it
+    called 12% to 40% of runs drifting (``docs/short-segment-drift.md``).
+    So the slope must also stand against the means' own scatter
+    (:func:`_own_scatter_slope_p`), which holds about 5% whatever the size
+    of such offsets. The price is power at three segments,
+    where the scatter has one degree of freedom: a line must be close to
+    straight to be called drift.
     """
     scale = float(precisions.max())
     weights = precisions / scale
@@ -1462,7 +1523,8 @@ def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
         return 1.0
     z = abs(slope) * math.sqrt(scale) * math.sqrt(spread)
     # An extreme normal tail can underflow, rather than be exactly zero.
-    return max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0))
+    against_errors = max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0))
+    return max(against_errors, _own_scatter_slope_p(means))
 
 
 def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
@@ -1484,6 +1546,10 @@ def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
     whose supplied standard errors approximate their absolute scale. A
     line must fit those errors at 0.05; otherwise return 1, leaving the
     disagreement to qualify the pooled error, not establish stationarity.
+    The slope must also stand against the means' own scatter about the
+    line (Student's t on k - 2 degrees of freedom), and the larger of the
+    two p-values is returned, so offsets between segments larger than their
+    errors are not read as a trend.
 
     With five or more segments, permute their order as before, without a
     distributional assumption. The statistic is the weighted least-squares

@@ -9,6 +9,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A joined run of three or four segments can now be called drifting
+  (`analysis.sampling.drifting`, `drift_test:
+  slope_against_errors_and_scatter`): the segment means' slope must stand
+  against their own errors, with a line consistent with them, and against
+  their own scatter about the line (Student's t on k - 2 degrees of
+  freedom); the permutation test could not reach 0.05 below five segments.
+  Analyses read the joins a loaded trajectory records, so a mean whose
+  segments drift is withheld (mean rules version 5). Offsets between
+  segments larger than their errors, in no order, are not read as a trend
+  (judged against the errors alone they were in 12% to 40% of runs); at
+  three segments a real trend is called less often than at four (counts in
+  `docs/short-segment-drift.md`). With five or more segments every verdict
+  is as before; a drift refusal of means that step back says "trend ... not
+  one way at every step", not "move in order".
 - A mean an earlier version recorded as determined on fewer independent
   samples than this version determines a mean on reads "not determined",
   with why and that analysing again records this version's verdict, on the

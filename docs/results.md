@@ -298,8 +298,13 @@ With **three or four contributing segments**, the test fits a weighted
 straight-line trend against segment order, using each segment mean's own
 standard error. The slope must be significant at 0.05 and the line's residuals
 must be consistent with those errors. A jump or unordered offsets can have a
-large fitted slope too, so the residual check is necessary. The assumptions are
-approximately independent, Gaussian segment-mean errors with a resolved scale.
+large fitted slope too, so the residual check is necessary. The slope must also
+be significant against the means' own scatter about an unweighted line
+(Student's t on k - 2 degrees of freedom): with one or two residual degrees of
+freedom the errors cannot be checked, and offsets between segments larger than
+their errors, in no order, were otherwise called a trend in 12% to 40% of runs.
+At three segments this asks for a nearly straight line, so a real trend is
+called less often than at four (see the counts).
 With **five or more segments**, the existing order-permutation test is used.
 Fewer than three segments give no drift test. The pooled record and a drift
 refusal identify the method in `drift_test`.

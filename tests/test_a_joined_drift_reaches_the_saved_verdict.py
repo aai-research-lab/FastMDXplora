@@ -65,7 +65,7 @@ def test_loading_analysis_manifest_and_report_share_the_drift_refusal(tmp_path, 
     assert refusal_of(record["not_a_measurement"]).code == "analysis.sampling.drifting"
     assert np.isnan(record["standard_error"])
     assert record["segment_joins"] == joins
-    assert record["drift_test"] == "weighted_slope"
+    assert record["drift_test"] == "slope_against_errors_and_scatter"
     saved = json.loads(result.options_path.read_text())["findings"]["mean"]
     assert saved["segment_joins"] == joins and saved["not_a_measurement"]
     section = _convergence_section(tmp_path)
@@ -185,7 +185,7 @@ def test_sharing_a_start_does_not_erase_a_joined_drift_refusal(tmp_path, monkeyp
         record = json.loads((run / "analysis/rmsd/options.json").read_text())["findings"]["mean"]
         assert record["segment_joins"] == [4000, 8000]
         assert record["not_a_measurement"] and np.isnan(record["standard_error"])
-        assert record["drift_test"] == "weighted_slope"
+        assert record["drift_test"] == "slope_against_errors_and_scatter"
 
 
 @pytest.mark.parametrize("name", ["sasa", "ss", "moments_of_inertia"])

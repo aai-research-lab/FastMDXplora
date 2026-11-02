@@ -24,20 +24,45 @@ probability on `k - 2` degrees of freedom must be at least 0.05. For one degree
 of freedom the survival function is `erfc(sqrt(Q_line/2))`; for two it is
 `exp(-Q_line/2)`.
 
-If the line fails that check, the combined `drift_p` is 1. Otherwise it is the
-slope probability. Under the stated Gaussian-error model this gate makes the
-test conservative: it can only remove rejections from the slope test. As
-before, a drift refusal also requires the segment means to disagree beyond
-their own errors (`heterogeneity > 1`). A refusal carries
-`analysis.sampling.drifting` and `drift_test: weighted_slope`.
-An extreme normal tail that underflows is floored at the smallest positive
-floating-point value, rather than reported as exactly zero.
+The slope must also be significant against the means' own scatter about the
+line. Fit `y_i = a + b x_i` without weights and take Student's t on `k - 2`
+degrees of freedom: `t = |b| sqrt(S / s²)`, with `S = sum((x_i - x_mean)²)`
+and `s² = sum(r_i²) / (k - 2)` over the residuals `r_i`, whose
+two-sided tails are `1 - (2/pi) atan|t|` for one degree of freedom and
+`1 - |t| / sqrt(2 + t²)` for two. Without weights, because this half is for
+the case where the errors do not hold, and then they are not the right
+weights either: weighted by them, an imprecise segment between two precise
+ones leaves almost no residual.
+
+If the line fails its fit check, the combined `drift_p` is 1. Otherwise it is
+the larger of the two slope probabilities. As before, a drift refusal also
+requires the segment means to disagree beyond their own errors
+(`heterogeneity > 1`). A refusal carries `analysis.sampling.drifting` and
+`drift_test: slope_against_errors_and_scatter`. An extreme tail that
+underflows is floored at the smallest positive floating-point value, rather
+than reported as exactly zero.
+
+Why both. With one residual degree of freedom (two at four segments) the
+fit check cannot tell errors that hold from errors too small for offsets
+between segments. Trusting the errors alone (mean rules version 4) called
+unordered offsets three times the smallest error a trend in 12% to 40% of
+runs; the permutation test holds 5% on such offsets at five segments, whatever
+their size. The scatter half holds that too. The price is power at three
+segments: the scatter has one degree of freedom, so the three means must lie
+close to a line, and a real trend of about four errors a segment is called
+in about a third of runs rather than nine in ten. Four segments lose little.
+No test on three means can do both: as the offsets grow, any test that keeps
+5% on them must reject only where the means lie close to a line, which is
+this one.
 
 With five or more means the order-permutation test and its settings are
 unchanged; the record says `drift_test: permutation`. With fewer than three,
 it says `not_tested`. Invalid precision weights fall back to the existing
 equal-weight permutation test, including its limit at three or four means;
-an unknown absolute error is not replaced by an assumed unit error.
+an unknown absolute error is not replaced by an assumed unit error. The test
+counts the segments that contributed a mean with a resolved error: one
+withheld for too few frames is absent, so three good segments and a 2-frame
+one are tested as three.
 
 ## Fixed synthetic checks
 
@@ -48,58 +73,103 @@ stopping-rule calibration. The helper fixes every seed and case:
 python tests/_short_segment_drift_check.py --output /tmp/p1-check.json
 ```
 
-To count the baseline, use the same helper with the `src` directory of
-`main` at `5fb9ae6b` first on `PYTHONPATH`. Counts below used Python 3.12.14,
-NumPy 2.3.5 and SciPy 1.17.0.
+To count another version, put its `src` directory first on `PYTHONPATH`. The
+columns below are the delivery stack before P1 (`3c0cd4e6`, no test at three
+or four), mean rules version 4 (the errors alone) and version 5 (this page).
+Counts used Python 3.11.17, NumPy 2.4.6 and SciPy 1.17.1.
 
-The first check generates 10,000 independent sets of means per row with known
-Gaussian errors, evenly spaced from 0.2 to 0.8. Linear offsets are twice the
-segment index. The jump changes only the last mean by 10; unordered offsets
-are `[0, 4, 0]` or `[0, 4, -4, 0]`. Seeds are `740001 + 100*k + case_index`,
-with cases in the table's order for each segment count.
+The first check generates 10,000 sets of means per row with known Gaussian errors.
+Rows one to four use errors evenly spaced from 0.2 to 0.8: linear offsets of
+twice the segment index, a jump of 10 in the last mean only, and fixed
+unordered offsets `[0, 4, 0]` or `[0, 4, -4, 0]`. The last three rows add a
+random offset to each segment, SD 0.6, in no order, three times the
+smallest error: errors equal (0.2), a short restart (0.5 for the second
+segment) and a precise middle (0.2 for the second, 0.56 for the rest).
 
-| Segments | Case | Baseline drift refusals | P1 drift refusals |
-|---|---|---:|---:|
-| 3 | Stationary | 0/10,000 | 461/10,000 (4.61%) |
-| 3 | Linear | 0/10,000 | 9,478/10,000 (94.78%) |
-| 3 | Jump | 0/10,000 | 0/10,000 |
-| 3 | Unordered | 0/10,000 | 1/10,000 |
-| 4 | Stationary | 0/10,000 | 476/10,000 (4.76%) |
-| 4 | Linear | 0/10,000 | 9,490/10,000 (94.90%) |
-| 4 | Jump | 0/10,000 | 0/10,000 |
-| 4 | Unordered | 0/10,000 | 0/10,000 |
+| Segments | Case | Before | Version 4 | Version 5 |
+|---|---|---:|---:|---:|
+| 3 | Stationary | 0 | 461 | 66 |
+| 3 | Linear | 0 | 9,478 | 3,279 |
+| 3 | Jump | 0 | 0 | 0 |
+| 3 | Unordered | 0 | 1 | 0 |
+| 3 | Offsets, equal errors | 0 | 2,457 | 387 |
+| 3 | Offsets, short restart | 0 | 3,983 | 352 |
+| 3 | Offsets, precise middle | 0 | 1,242 | 236 |
+| 4 | Stationary | 0 | 476 | 110 |
+| 4 | Linear | 0 | 9,490 | 9,298 |
+| 4 | Jump | 0 | 0 | 0 |
+| 4 | Unordered | 0 | 0 | 0 |
+| 4 | Offsets, equal errors | 0 | 1,405 | 459 |
+| 4 | Offsets, short restart | 0 | 2,137 | 411 |
+| 4 | Offsets, precise middle | 0 | 1,341 | 365 |
 
-The baseline's zero rate on both stationary and drifting cases follows from
-its combinatorial floor. The stationary P1 rates are consistent with the
-nominal 5% level. They apply to the stated model, rather than proving a rate
-for arbitrary molecular-dynamics trajectories.
+The second check runs the complete `summarise_segments` path on contiguous
+AR(1) runs (phi 0.8, a statistical inefficiency of 9), estimating every error
+from the frames: 1,000 runs per row. A segment of 1,000 frames has a mean
+error of about 0.095 frame SDs. "Short restart" is 3,000, 500 and 3,000 frames
+(a fourth of 3,000 at four segments); "precise middle" is 500, 4,000 and 500
+(500 again at four). "Slow mode" adds a second AR(1) of SD 0.5 with a
+correlation time of 1,000 frames that the segments' errors miss; "offsets"
+add to each segment a random offset of SD 0.3 (about three errors) or
+0.15, in no order. Ramps add the offsets given to each segment. Counts are
+drift refusals (`analysis.sampling.drifting`) of 1,000.
 
-The second check runs the complete `summarise_segments` path, estimating the
-errors from contiguous AR(1) trajectories with `phi = 0.9` and 4,000 frames
-per segment. Each case uses 40 seeds, starting at `860001 + 100*k`.
-The linear case adds one unit per segment to the same stationary process.
+| Segments | Case | Before | Version 4 | Version 5 |
+|---|---|---:|---:|---:|
+| 3 | Stationary, equal | 0 | 42 | 5 |
+| 4 | Stationary, equal | 0 | 51 | 19 |
+| 3 | Stationary, short restart | 0 | 29 | 2 |
+| 4 | Stationary, short restart | 0 | 64 | 4 |
+| 3 | Stationary, precise middle | 0 | 47 | 13 |
+| 4 | Stationary, precise middle | 0 | 56 | 12 |
+| 3 | Stationary, a 2-frame fourth segment | 0 | 45 | 4 |
+| 3 | Stationary, a 2-frame second segment | 0 | 47 | 11 |
+| 3 | Slow mode, equal | 0 | 214 | 43 |
+| 4 | Slow mode, equal | 0 | 221 | 62 |
+| 3 | Slow mode, short restart | 0 | 191 | 31 |
+| 4 | Slow mode, short restart | 0 | 192 | 45 |
+| 3 | Offsets SD 0.3, equal | 0 | 244 | 41 |
+| 4 | Offsets SD 0.3, equal | 0 | 154 | 50 |
+| 3 | Offsets SD 0.3, short restart | 0 | 348 | 48 |
+| 4 | Offsets SD 0.3, short restart | 0 | 157 | 39 |
+| 3 | Offsets SD 0.15, equal | 0 | 171 | 22 |
+| 4 | Offsets SD 0.15, equal | 0 | 148 | 28 |
+| 3 | Ramp 0, 0.4, 0.8 | 0 | 889 | 301 |
+| 4 | Ramp 0, 0.4, 0.8, 1.2 | 0 | 935 | 896 |
+| 3 | Ramp 0, 0.25, 0.5 | 0 | 857 | 198 |
+| 4 | Ramp 0, 0.25, 0.5, 0.75 | 0 | 932 | 731 |
+| 3 | Ramp 0, 0.4, 0.8, short restart | 0 | 834 | 250 |
+| 3 | Ramp 0, 0.4, 0.8, precise middle | 0 | 733 | 273 |
+| 3 | Ramp, a 2-frame fourth segment | 0 | 892 | 322 |
+| 3 | Ramp, a 2-frame second segment | 0 | 917 | 320 |
+| 4 | Ramp, a 2-frame fifth segment | 0 | 928 | 891 |
+| 3 | Levelling off 0, 0.6, 0.75 | 0 | 558 | 66 |
+| 4 | Levelling off 0, 0.6, 0.8, 0.85 | 0 | 324 | 157 |
+| 4 | Zigzag 0, 1.0, 0.5, 1.5 | 0 | 14 | 4 |
 
-| Segments | Case | Baseline drift refusals | P1 drift refusals | Other P1 outcomes |
-|---|---|---:|---:|---|
-| 3 | Stationary | 0/40 | 2/40 | 33 clean, 5 qualified |
-| 3 | Linear | 0/40 | 36/40 | 4 qualified |
-| 4 | Stationary | 0/40 | 2/40 | 35 clean, 3 qualified |
-| 4 | Linear | 0/40 | 37/40 | 3 qualified |
+A drift refusal is not the only way such a mean is withheld: in the
+production path (`mean_record` with the joins) the whole run's own trend
+check withholds more of the ramps. For the 3-segment ramp of 0.4 a segment,
+version 5 left 489 of 1,000 means determined (version 4: 79; before P1, with
+no joins read: 670).
 
-The baseline qualified all 40 linear cases at each count. These smaller
-trajectory checks exercise estimated errors, equilibration detection and the
-pooling path; 40 cases do not establish broad calibration. Regression tests
-also check the probability against an independent matrix least-squares fit,
-both significance boundaries, unequal errors, reversal, unit changes, invalid
-weights, the report's withholding and method metadata.
+With five or more segments every run of the same 1,000 (stationary, a ramp of
+0.2 a segment and offsets SD 0.3 at five; stationary and a ramp of 0.1 a
+segment at six) was withheld or pooled exactly as before P1. A label changed
+only where a segment whose error is not resolved, or one drifting within
+itself, left three or four segments to test: those runs were withheld before
+and now say `drifting` (47 of the ramps at five segments).
 
 ## Limits and records
 
 The small-segment test assumes approximately independent, Gaussian mean
 errors and uses estimated standard errors as their absolute scale. Correlated
 segments, unresolved slow modes, uncertain error estimates or heavy-tailed
-means can invalidate that approximation. Each segment must still resolve its
-own correlation time before the pooled error is accepted.
+means can invalidate that approximation; the scatter half is what keeps such
+errors from being read as a trend. A slow mode that neighbouring segments
+share still moves their means together, and is called drift in 31 to 62 of
+1,000 runs above. Each segment must still resolve its own correlation time
+before the pooled error is accepted.
 
 The trend is against segment order. Unequal segment durations and nonlinear
 movement can fail the straight-line check. Returning 1 for that case does not
@@ -112,8 +182,9 @@ these boundaries. `mean_record(..., joins=...)` uses the segment check as an
 additional refusal guard; it does not replace the existing single-series
 estimate with a pooled one. Thermodynamic analyses count boundaries after
 trimming in each energy column's own samples, independently of trajectory
-sampling. Reports retain the analyses' saved verdicts. Existing saved verdicts
-are not changed; rerun analysis to apply the check (mean rules version 4).
+sampling. Reports read the analyses' saved verdicts. Existing saved verdicts
+are not changed; analyse again to apply the check (mean rules version 5;
+version 4 judged three or four segments against their errors alone).
 New pooled records and drift refusals identify the method through `drift_test`;
 guarded mean records retain `segment_joins`.
 
