@@ -154,7 +154,8 @@ class TestTheCalibrationComparison:
         an error of their own" and then among "None of the 3 replicas
         determined its own mean with an error of its own". The members'
         reason opened "the spread of their means is its error" above every
-        quantity's "is not yet an error"."""
+        quantity's "is not yet an error". A withheld mean's error is no error
+        of its own: it entered the prediction (review of `verdict-one`, round 2)."""
         seeds = {"simulation.random_seed": []}
         quiet = [_member(tmp_path / "quiet", f"r{i}", m, se,
                          sweep={"simulation.random_seed": i})
@@ -168,13 +169,14 @@ class TestTheCalibrationComparison:
             "the spread of their means is its error once each run has determined its own mean")
         mixed = [_member(tmp_path / "mixed", f"r{i}", m, se, sweep={"simulation.random_seed": i},
                          qualified=why)
-                 for i, (m, se, why) in enumerate([(0.10, 0.0005, "Too short."),
-                                                   (0.12, None, None), (0.14, None, None)])]
-        said = aggregate_members(_campaign(tmp_path / "mixed", mixed, seeds))["analyses"]["rmsd"][
-            "calibration"]
+                 for i, (m, se, why) in enumerate([(0.10, 0.0004, "Too short."),
+                                                   (0.12, 0.0005, None), (0.14, None, None)])]
+        entry = aggregate_members(_campaign(tmp_path / "mixed", mixed, seeds))["analyses"]["rmsd"]
+        said = entry["calibration"]
+        assert entry["predicted_standard_error"] == 0.0005
         assert "(from the 1 of 3 runs that gave an error of their own)" in said
-        assert ("None of the 3 replicas determined its own mean: 1 said its mean is not "
-                "determined, and 2 gave no error of their own, so their spread is not yet "
+        assert ("2 of the 3 replicas did not determine their own mean: 1 said its mean is not "
+                "determined, and 1 gave no error of its own, so their spread is not yet "
                 "an error") in said
         assert "said as much themselves" in said
 

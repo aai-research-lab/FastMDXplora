@@ -977,22 +977,26 @@ def judged_by_earlier_rules(record: Any) -> bool:
     return not isinstance(rules, int) or isinstance(rules, bool) or rules < MEAN_RULES
 
 
-def too_few_by_these_rules(record: Any) -> str | None:
+def too_few_by_these_rules(record: Any, *, counted: bool = True) -> str | None:
     """Why a mean an earlier version's rules called determined is not one by
     this version's: it rests on fewer independent samples than this version
     determines a mean on (:data:`MINIMUM_EFFECTIVE_SAMPLES`), which its
-    record says. None for any other record."""
+    record says. None for any other record. ``counted`` False leaves out
+    its count, for a line that has just given it."""
     if not judged_by_earlier_rules(record):
         return None
     samples = record.get("effective_samples")
     if (isinstance(samples, bool) or not isinstance(samples, (int, float))
             or not math.isfinite(float(samples)) or samples >= MINIMUM_EFFECTIVE_SAMPLES):
         return None
+    earlier = ("Its record, from an earlier version, called it determined; Analyze again "
+               "to record this version's verdict.")
+    if not counted:
+        return (f"Fewer than the {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples this "
+                f"version determines a mean on. {earlier}")
     count = independent_samples_said(samples)
     return (f"{count[:1].upper()}{count[1:]}, fewer than the "
-            f"{MINIMUM_EFFECTIVE_SAMPLES:g} this version determines a mean on. Its record, "
-            "from an earlier version, called it determined; Analyze again to record this "
-            "version's verdict.")
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} this version determines a mean on. {earlier}")
 
 
 def withheld_reason(record: Any) -> str | None:

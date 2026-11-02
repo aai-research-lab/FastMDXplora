@@ -1296,7 +1296,13 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
                 "frame" if discarded == 1 else "frames")
         notes.append(said + ".")
     if withheld:
-        reason = withheld
+        from fastmdxplora.statistics import too_few_by_these_rules
+
+        # A mean this version withholds that its run called determined: "not
+        # determined" in words, its count said once (the line above gives it).
+        this_version = too_few_by_these_rules(measured, counted=False)
+        reason = (f"Not determined: {this_version[:1].lower()}{this_version[1:]}"
+                  if this_version else withheld)
         # "The remedy is a longer run" (", or better, replicas" in some):
         # neither lifts the bias of a solute in contact with its image in
         # every frame the mean uses, as the Convergence part says of the run.

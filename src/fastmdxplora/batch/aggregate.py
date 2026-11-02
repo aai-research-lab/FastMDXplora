@@ -268,23 +268,39 @@ def _members_are_replicas(manifest: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0, *,
-                         one_structure: bool = True) -> str:
+                         withheld: int = 0, one_structure: bool = True) -> str:
     """Why replicas' spread is not yet their error: ``unbacked`` of the
     ``runs`` did not determine their own mean, ``said_so`` of them by saying
     their mean is not a measurement (an error of their own given or not),
-    the rest by giving no error of their own."""
+    ``withheld`` by a mean this version withholds that the run called
+    determined on too few independent samples
+    (`statistics.too_few_by_these_rules`), the rest by giving no error of
+    their own. "It said its mean is not determined" was said of a run that
+    called its mean determined."""
+    from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
     which = (f"None of the {runs} replicas determined its own mean" if unbacked == runs
              else f"{unbacked} of the {runs} replicas did not determine "
                   f"{'its' if unbacked == 1 else 'their'} own mean")
-    plain = unbacked - said_so
-    if not said_so:
+    plain = unbacked - said_so - withheld
+    if not said_so and not withheld:
         how = " with an error of its own"
-    elif not plain:
-        how = (": it said its mean is not determined" if unbacked == 1
-               else ": each said its mean is not determined")
     else:
-        how = (f": {said_so} said {'its' if said_so == 1 else 'their'} mean is not "
-               f"determined, and {plain} gave no error of {'its' if plain == 1 else 'their'} own")
+        parts = []
+        if said_so:
+            parts.append("it said its mean is not determined" if unbacked == 1
+                         else "each said its mean is not determined" if said_so == unbacked
+                         else f"{said_so} said {'its' if said_so == 1 else 'their'} mean is "
+                              "not determined")
+        if withheld:
+            who = ("the mean it" if unbacked == 1 else "the mean each" if withheld == unbacked
+                   else f"the {'mean' if withheld == 1 else 'means'} {withheld}")
+            parts.append(f"this version withholds {who} called determined on fewer than "
+                         f"{MINIMUM_EFFECTIVE_SAMPLES:g} independent samples")
+        if plain:
+            parts.append(f"{plain} gave no error of {'its' if plain == 1 else 'their'} own")
+        how = ": " + (parts[0] if len(parts) == 1
+                      else ", ".join(parts[:-1]) + ", and " + parts[-1])
     begun = "begun from one structure, " if one_structure else ""
     return (f"{which}{how}, so their spread is not yet an "
             f"error: {begun}runs too short to resolve their "
@@ -333,7 +349,7 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
     """
     from fastmdxplora import record_access
     from fastmdxplora.image_note import note_of
-    from fastmdxplora.statistics import withheld_reason
+    from fastmdxplora.statistics import too_few_by_these_rules, withheld_reason
 
     root = Path(batch_dir)
     manifest_path = root / "batch_manifest.json"
@@ -355,19 +371,27 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
         _share_the_start(root, runs)
 
     per_analysis: dict[str, list[dict[str, Any]]] = {}
+    # The (analysis, member) means withheld by this version, not their runs.
+    by_this_version: set[tuple[str, Any]] = set()
     for run in runs:
         findings = read_member_findings(member_directory(root, run))
         for analysis, record in findings.items():
             mean = record.get("mean") or {}
             if "mean" not in mean:
                 continue
+            withheld = withheld_reason(mean)
+            if withheld and too_few_by_these_rules(mean):
+                by_this_version.add((analysis, run.get("run_id")))
             per_analysis.setdefault(analysis, []).append({
                 "member": run.get("run_id"),
                 "sweep_values": run.get("sweep_values") or {},
                 "mean": float(mean["mean"]),
                 # NaN where the run could not estimate one: None, as for a
                 # run that recorded none (NaN is not JSON a page can read).
-                "standard_error": _finite_or_none(mean.get("standard_error")),
+                # None too where the mean is withheld: an earlier version's
+                # error given beside it entered the replicas' prediction.
+                "standard_error": None if withheld
+                else _finite_or_none(mean.get("standard_error")),
                 "effective_samples": mean.get("effective_samples"),
                 # Carried through rather than summarised away: a member that
                 # said its own number was not a measurement must not be
@@ -375,7 +399,7 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
                 # Withheld as every page reads it (`statistics.withheld_reason`):
                 # a mean an earlier version called determined on too few
                 # independent samples was counted as backing the spread.
-                "not_a_measurement": withheld_reason(mean),
+                "not_a_measurement": withheld,
                 # Its image note (`image_note`), for the mean of the means
                 # to say how many of the replicas' means carry one.
                 "solute_image": note_of(mean),
@@ -388,7 +412,9 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
         means = np.array([r["mean"] for r in rows], dtype=float)
         if replicas:
             for r in rows:
-                r["error_as_a_replica"] = replica_error(means, r["standard_error"])
+                # No error for a mean withheld, as its own (`standard_error`).
+                r["error_as_a_replica"] = (None if r["not_a_measurement"]
+                                           else replica_error(means, r["standard_error"]))
         entry: dict[str, Any] = {
             "members": rows,
             "mean_of_means": float(np.mean(means)),
@@ -408,12 +434,14 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
         # its mean is not a measurement, or gave no error of its own.
         unbacked = [r["member"] for r in rows if r["not_a_measurement"]
                     or r["standard_error"] is None or r["standard_error"] <= 0]
-        # Those of them that said so themselves.
-        said_so = [r["member"] for r in rows if r["not_a_measurement"]]
+        # Those of them that said so themselves, and those this version withholds.
+        withheld = [r["member"] for r in rows if (analysis, r["member"]) in by_this_version]
+        said_so = [r["member"] for r in rows if r["not_a_measurement"]
+                   and r["member"] not in withheld]
         if replicas and unbacked:
             entry["qualified_by_their_own_runs"] = unbacked
             entry["spread_not_an_error"] = _spread_not_an_error(
-                len(unbacked), len(rows), len(said_so),
+                len(unbacked), len(rows), len(said_so), withheld=len(withheld),
                 one_structure="setup.model" not in (manifest.get("sweep") or {}))
         if replicas and not errors:
             observed = float(np.std(means, ddof=1))

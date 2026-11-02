@@ -702,6 +702,9 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
         return None
     record = _findings(root, "thermodynamics").get("thermodynamics")
     record = record if isinstance(record, dict) else {}
+    # Withheld as every page reads it: an earlier version's verdict too.
+    from fastmdxplora.statistics import withheld_reason
+
     bars = []
     for row in _table(path):
         key = str(row.get("observable") or "")
@@ -710,7 +713,7 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
             continue
         samples = _number(row.get("effective_samples"))
         entry = record.get(key) if isinstance(record.get(key), dict) else {}
-        if entry.get("not_a_measurement") or not math.isfinite(error):
+        if withheld_reason(entry) or not math.isfinite(error):
             # Not determined, as the table above it says: no error to plot.
             # The card plotted one for every mean the table called not
             # determined, its note saying otherwise.
@@ -731,7 +734,7 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
     apart = [f"{_OBSERVABLES.get(k, k)}: held constant by the run, not sampled"
              if "value" in v else f"{_OBSERVABLES.get(k, k)}: not determined"
              for k, v in record.items()
-             if isinstance(v, dict) and v.get("not_a_measurement")
+             if isinstance(v, dict) and withheld_reason(v)
              and _OBSERVABLES.get(k, k) not in [b["label"] for b in bars]]
     if not bars and not apart:
         return None
