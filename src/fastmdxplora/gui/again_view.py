@@ -12,6 +12,36 @@ from pathlib import Path
 from typing import Any
 
 
+def _automatic_analyses(study: Path) -> list[str]:
+    from fastmdxplora.again import _first_run
+    from fastmdxplora.analysis import AnalysisOrchestrator
+    from fastmdxplora.analysis.analyze import (
+        _detect_ligand_resname,
+        analysis_paths,
+    )
+    from fastmdxplora.config.recorded import RECORDED, phase_settings
+
+    study = _first_run(study)
+    settings = phase_settings(study / RECORDED, "analysis", study=study)
+    trajectory, topology = analysis_paths(
+        study, trajectory=settings.get("trajectory"), topology=settings.get("topology"))
+
+    planner = AnalysisOrchestrator(
+        trajectory=str(trajectory),
+        topology=str(topology),
+        output_dir=study / "analysis",
+        selection=settings.get("selection"),
+        scope=settings.get("scope", "solute"),
+        ligand_resname=(settings.get("ligand_resname")
+                        or _detect_ligand_resname(study)),
+        first_frame_only=True,
+        figure_colours=settings.get("figure_colours"),
+        figure_width=settings.get("figure_width"),
+    )
+    return list(planner.planned_analyses(
+        exclude=settings.get("exclude"), options=settings.get("options")))
+
+
 def again_payload(root: Any) -> dict[str, Any]:
     from fastmdxplora import again
     from fastmdxplora.gui.browse import is_study

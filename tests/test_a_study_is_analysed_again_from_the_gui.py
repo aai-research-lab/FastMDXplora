@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_a_phase_command_is_explore_with_one_phase import _analysed, _made  # noqa: E402
+from test_a_phase_command_is_explore_with_one_phase import _analysed, _campaign, _made  # noqa: E402
 
 from fastmdxplora.gui.exploration import DashboardRuntime  # noqa: E402
 
@@ -28,6 +28,24 @@ def _runtime(root: Path) -> DashboardRuntime:
     runtime = DashboardRuntime(workspace_root=root.parent, exploration_root=root.parent)
     runtime.active_root = root
     return runtime
+
+
+_TINY_PROTEIN_DEFAULTS = [
+    "rmsd", "rmsf", "rg", "hbonds", "ss", "sasa", "dihedrals",
+    "end_to_end", "moments_of_inertia", "cluster", "dimred",
+]
+
+
+def _forget_analysis_selection(root: Path) -> None:
+    record = root / "resolved_config.yml"
+    if record.is_file():
+        import yaml
+
+        config = yaml.safe_load(record.read_text(encoding="utf-8")) or {}
+        if isinstance(config.get("analysis"), dict):
+            config["analysis"].pop("include", None)
+        record.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    (root / "analysis" / "analysis_manifest.json").unlink(missing_ok=True)
 
 
 def test_the_analyses_chosen_are_run_again_in_the_study_open(tmp_path):
@@ -53,21 +71,251 @@ def test_a_refusal_is_said_at_once_and_nothing_starts(tmp_path):
     assert in_place["code"] == "config.option.not_permitted"
 
 
-def test_the_page_is_told_what_can_be_run_again(tmp_path):
+@pytest.mark.parametrize("query", ["", "?defaults=1"])
+def test_the_page_is_told_what_can_be_run_again(tmp_path, query):
     from fastmdxplora.gui.server import start_dashboard_session
 
     root = _analysed(tmp_path / "study", analyses=("rmsd", "rg"))
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
     try:
         offered = json.loads(urllib.request.urlopen(
-            session.url.rstrip("/") + "/api/again", timeout=30).read())
+            session.url.rstrip("/") + "/api/again" + query, timeout=30).read())
     finally:
         session.server.shutdown()
     assert offered["available"] and offered["analysis"]["can"]
     assert offered["recorded"] == ["rmsd", "rg"]
+    assert "defaults" not in offered["analysis"]
     titles = {item["name"]: item["title"] for item in offered["catalogue"]}
     assert titles["rmsd"] == "Root-mean-square deviation" and "sasa" in titles
     assert offered["previous"] == "previous"
+
+
+@pytest.mark.parametrize("query", ["", "?defaults=0"])
+def test_a_request_without_defaults_does_not_plan_automatic_choices(tmp_path, query):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("defaults were not requested")) as plan:
+            offered = json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again" + query, timeout=30).read())
+            assert offered["analysis"]["can"] and offered["recorded"] == []
+            assert "defaults" not in offered["analysis"]
+            assert "defaults_why" not in offered["analysis"]
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
+
+
+def test_the_page_offers_automatic_analyses_without_recorded_selection(tmp_path):
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        offered = json.loads(urllib.request.urlopen(
+            session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
+    finally:
+        session.server.shutdown()
+
+    assert offered["recorded"] == []
+    assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+
+
+@pytest.mark.parametrize("top_config", [False, True])
+def test_a_study_of_several_runs_offers_the_same_defaults_as_its_first_run(tmp_path, top_config):
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _campaign(tmp_path)
+    for run in (root / "runs").iterdir():
+        _forget_analysis_selection(run)
+    if not top_config:
+        (root / "resolved_config.yml").unlink()
+
+    answers = []
+    for study in (root / "runs" / "a", root):
+        session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+        try:
+            answers.append(json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read()))
+        finally:
+            session.server.shutdown()
+
+    for offered in answers:
+        assert offered["recorded"] == []
+        assert offered["analysis"]["can"]
+        assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+        assert not offered["analysis"].get("defaults_why")
+
+
+def test_automatic_choices_read_only_one_frame_and_match_the_full_plan(tmp_path, monkeypatch):
+    from fastmdxplora.analysis import AnalysisOrchestrator, loading, orchestrator
+    from fastmdxplora.gui.again_view import _automatic_analyses
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False,
+                     stride=2, first=3, last=9)
+    _forget_analysis_selection(root)
+    full = AnalysisOrchestrator(
+        trajectory=root / "simulation" / "production.dcd",
+        topology=root / "simulation" / "topology.pdb", output_dir=root / "analysis",
+        stride=2, first=3, last=9)
+    assert full.traj.n_frames == 6
+    expected = list(full.planned_analyses())
+    load = orchestrator.load_trajectory
+    frames_read = []
+
+    def read(*args, **kwargs):
+        trajectory = load(*args, **kwargs)
+        frames_read.append(trajectory.n_frames)
+        return trajectory
+
+    monkeypatch.setattr(orchestrator, "load_trajectory", read)
+    with mock.patch.object(loading.md, "load", side_effect=AssertionError("full trajectory read")):
+        assert _automatic_analyses(root) == expected
+    assert frames_read == [1]
+
+
+def test_an_unplannable_trajectory_has_no_automatic_fallback(tmp_path):
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    (root / "simulation" / "production.dcd").write_bytes(b"not a trajectory")
+
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        offered = json.loads(urllib.request.urlopen(
+            session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
+    finally:
+        session.server.shutdown()
+
+    assert offered["recorded"] == []
+    assert offered["analysis"]["can"]
+    assert offered["analysis"]["defaults"] is None
+    assert offered["analysis"]["defaults_why"]
+
+
+@pytest.mark.parametrize("route,method,body", [
+    ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
+    ("/api/report/write", "write_the_report_again", {}),
+])
+def test_starting_again_does_not_plan_the_pages_automatic_choices(tmp_path, route, method, body):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    base = session.url.rstrip("/")
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("only the page needs defaults")) as plan, \
+                mock.patch.object(DashboardRuntime, method, return_value={"ok": True}) as run:
+            request = urllib.request.Request(
+                base + route, data=json.dumps(body).encode(), method="POST",
+                headers={"Content-Type": "application/json", "Origin": base})
+            answer = json.loads(urllib.request.urlopen(request, timeout=30).read())
+            assert answer["ok"]
+            run.assert_called_once()
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
+
+
+@pytest.mark.parametrize("relative", ["simulation/production.dcd", "simulation/topology.pdb"])
+def test_a_page_refused_for_a_link_out_does_not_plan_automatic_choices(tmp_path, relative):
+    from fastmdxplora.gui import again_view
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_the_study_pages_read_only_the_study import _link
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    outside = tmp_path / Path(relative).name
+    (root / relative).rename(outside)
+    _link(root / relative, outside)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with mock.patch.object(again_view, "_automatic_analyses",
+                               side_effect=AssertionError("the study has a link out")) as plan:
+            offered = json.loads(urllib.request.urlopen(
+                session.url.rstrip("/") + "/api/again?defaults=1", timeout=30).read())
+            assert offered["refused"] and relative in offered["links_out"]
+            assert not offered["analysis"]["can"]
+            plan.assert_not_called()
+    finally:
+        session.server.shutdown()
+
+
+def test_the_dialog_starts_with_automatic_choices_and_keeps_manual_additions(
+    tmp_path,
+) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    submissions: list[dict[str, object]] = []
+    errors: list[str] = []
+
+    def submit(route):
+        if route.request.method == "POST":
+            submissions.append(json.loads(route.request.post_data or "{}"))
+            route.abort()
+        else:
+            route.continue_()
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again", submit)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+
+            ticked = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert ticked == _TINY_PROTEIN_DEFAULTS
+
+            page.check("#analysis-again-ask input[value='pmf']")
+            added = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert set(added) == {*_TINY_PROTEIN_DEFAULTS, "pmf"}
+
+            checked = page.locator("#analysis-again-ask input:checked")
+            while checked.count():
+                checked.first.uncheck()
+            confirm = page.locator("#analysis-again-ask .fix-confirm")
+            assert confirm.is_disabled()
+            assert submissions == []
+
+            page.check("#analysis-again-ask input[value='pmf']")
+            assert confirm.is_enabled()
+            selected = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            assert selected == ["pmf"]
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector(
+                "#analysis-again-ask:has-text('Could not reach the server to start it.')")
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+    assert submissions == [{"phases": ["analysis"], "analyses": ["pmf"]}]
+    assert not (root / "analysis" / "analysis_manifest.json").exists()
+    assert errors == []
 
 
 def test_the_analysis_page_analyses_again_after_asking(tmp_path) -> None:
