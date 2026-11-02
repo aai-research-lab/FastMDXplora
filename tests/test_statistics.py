@@ -80,6 +80,39 @@ class TestCountingIndependentSamples:
 
 
 class TestFindingWhereARunSettled:
+    def test_leading_nan_frames_do_not_change_a_withheld_shortfall(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        values = _correlated(0.995, n=400, seed=0)
+        finite = mean_record(values)
+        missing = mean_record(np.concatenate([np.full(300, np.nan), values]))
+        assert finite.get("not_a_measurement")
+        assert finite["shortfall"] == missing["shortfall"]
+
+    def test_a_recorded_discard_keeps_the_same_finite_frames(self) -> None:
+        from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import mean_record
+
+        values = _correlated(0.9, n=1500, seed=0)
+        missing = np.concatenate([np.full(500, np.nan), values])
+        finite = assess_series("rmsd", values, record=mean_record(values))
+        holed = assess_series("rmsd", missing, record=mean_record(missing))
+        assert holed.discard == finite.discard
+        assert holed.correlation_frames == pytest.approx(finite.correlation_frames)
+        assert holed.drift_in_noise == pytest.approx(finite.drift_in_noise)
+
+    def test_discard_is_on_the_original_frame_axis_after_nan_frames(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        rng = np.random.default_rng(7)
+        values = (1.0 + 3.0 * np.exp(-np.arange(2000) / 120.0)
+                  + rng.normal(0, 0.2, 2000))
+        values[:500] = np.nan
+        record = mean_record(values)
+        finite = mean_record(values[np.isfinite(values)])
+        original_frames = np.flatnonzero(np.isfinite(values))
+        assert record["discard"] == int(original_frames[finite["discard"]])
+
     def test_a_relaxation_is_discarded(self) -> None:
         """Several relaxation times of it, which is what leaves the average
         describing the equilibrium rather than the approach to it. The start
@@ -585,6 +618,17 @@ class TestASegmentStillMovingIsSaidToBe:
 
 
 class TestTheReportKeepsTheJoinsOnTheirFrames:
+    def test_a_withheld_joined_mean_has_no_error(self) -> None:
+        from fastmdxplora.report.convergence import assess_series
+
+        values = np.random.default_rng(11).normal(10, 1, 8000)
+        assessment = assess_series("rmsd", values, joins=[2000, 4000, 6000],
+                                   record={"mean": 10, "discard": 0,
+                                           "not_a_measurement": "Withheld by the analysis."})
+        assert assessment.withheld
+        assert np.isnan(assessment.standard_error)
+        assert assessment.as_record()["standard_error"] is None
+
     def test_a_stretch_of_missing_values_does_not_move_them(self) -> None:
         # The report stripped the missing values before handing over the
         # joins, so every segment after them began late.
@@ -597,3 +641,16 @@ class TestTheReportKeepsTheJoinsOnTheirFrames:
         pooled, _why = summarise_segments(holed, joins)
         assessment = assess_series("rmsd", holed, joins=joins)
         assert assessment.mean == pytest.approx(pooled.mean)
+
+    def test_the_join_aware_error_is_the_pooled_error(self) -> None:
+        from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import summarise_segments
+
+        rng = np.random.default_rng(11)
+        segments = [rng.normal(10, scale, 2000) for scale in (0.03, 3.0, 0.03, 3.0)]
+        values = np.concatenate(segments)
+        joins = [2000, 4000, 6000]
+        pooled, why = summarise_segments(values, joins)
+        assert pooled is not None, why
+        assert assess_series("rmsd", values, joins=joins).standard_error == pytest.approx(
+            pooled.standard_error)

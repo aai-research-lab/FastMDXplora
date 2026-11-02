@@ -240,8 +240,11 @@
     var x0 = view ? view[0] * clock.factor : Math.min.apply(null, xs);
     var x1 = view ? view[1] * clock.factor : Math.max.apply(null, xs);
     // The values in view set the height.
-    var seen = ys.filter(function (y, k) { return xs[k] >= x0 && xs[k] <= x1; });
-    if (!seen.length) seen = ys;
+    var seen = ys.filter(function (y, k) {
+      return y != null && isFinite(y) && xs[k] >= x0 && xs[k] <= x1;
+    });
+    if (!seen.length) seen = ys.filter(function (y) { return y != null && isFinite(y); });
+    if (!seen.length) return;
     var y0 = Math.min.apply(null, seen), y1 = Math.max.apply(null, seen);
     if (y0 >= 0 && y0 < 0.5 * y1) y0 = 0;
     if (!(y1 > y0)) { y1 = y0 + 1; }
@@ -304,10 +307,15 @@
     layer.setAttribute("clip-path", "url(#" + clipId + ")");
     svg.appendChild(layer);
     drawn.forEach(function (d) {
-      var path = document.createElementNS(SVG, "polyline");
-      path.setAttribute("points", d.series.x.map(function (x, k) {
-        return px(x * clock.factor).toFixed(1) + "," + py(d.series.y[k]).toFixed(1);
-      }).join(" "));
+      var path = document.createElementNS(SVG, "path");
+      var joined = false;
+      path.setAttribute("d", d.series.x.map(function (x, k) {
+        var y = d.series.y[k];
+        if (y == null || !isFinite(y)) { joined = false; return ""; }
+        var point = (joined ? "L" : "M") + px(x * clock.factor).toFixed(1) + " " + py(y).toFixed(1);
+        joined = true;
+        return point;
+      }).join(""));
       path.setAttribute("class", "runs-overlay-line");
       path.setAttribute("data-run", d.r.run.run_id);
       path.setAttribute("stroke", colourOf(d.r.index));

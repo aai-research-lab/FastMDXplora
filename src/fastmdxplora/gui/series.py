@@ -234,7 +234,7 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
     return {
         "ok": True, "analysis": analysis, "label": label, "unit": unit, "kind": "time",
         "x_label": x_label,
-        "x": [x[i] for i in keep], "y": [values[i] for i in keep],
+        "x": [x[i] for i in keep], "y": [_finite(values[i]) for i in keep],
         "frames": [frames[i] for i in keep],
         "thinned": every if every > 1 else None,
         "linked": _of_the_played_trajectory(root, manifest),

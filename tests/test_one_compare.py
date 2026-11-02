@@ -91,7 +91,7 @@ PAGE = """() => {
         means: [...document.querySelectorAll('.compare-means-table tr[data-analysis]')]
             .map((r) => r.dataset.analysis),
         lines: [...document.querySelectorAll('.compare-series-chart')]
-            .map((c) => c.querySelectorAll('polyline').length),
+            .map((c) => c.querySelectorAll('.runs-overlay-line').length),
     };
 }"""
 
@@ -128,7 +128,7 @@ def test_two_runs_chosen_on_the_overview_open_compare_and_back_returns(variants)
         page.click("#overview-runs-compare")
         page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
         page.wait_for_function(
-            "() => document.querySelectorAll('.compare-series-chart polyline').length === 4")
+            "() => document.querySelectorAll('.compare-series-chart .runs-overlay-line').length === 4")
         compared = page.evaluate(PAGE)
         address = page.evaluate("() => location.hash")
         page.reload(wait_until="domcontentloaded")
