@@ -689,7 +689,9 @@ one), so their difference is what it ran, and `production_planned_ns`, the
 plan with any extension it carried on. A study of several runs gives each
 run's production in its entry under `runs`. A study stopped after its pieces were joined and
 before their analyses and report had run (`joined/analysis_owed.json` is
-there, or its analysis is not of the join) is analysed, not read as finished. With `--json` the answer is the one line on
+there, or its analysis is of a first piece the person did not choose) is
+analysed, not read as finished; the analysis it had is saved in
+`previous/analysis` first, and the answer says so (`saved_in_previous`). With `--json` the answer is the one line on
 stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).

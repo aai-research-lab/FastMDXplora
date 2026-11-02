@@ -513,6 +513,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - `fastmdx analyze --rerun` that analyses an extended study's joined
   trajectory whole takes `joined/analysis_owed.json` away; every later
   `fastmdx resume` joined and analysed the study again.
+- A study a resume or an extension is carrying on (its lock held by another
+  process, or its run's process alive) is said running, never owed: while a
+  resume joined its pieces and ran their analyses and report, the GUI said
+  it stopped, "Its analysis is owed", and offered `fastmdx resume`, which
+  was refused as still going.
+- An analysis the person chose (`fastmdx analyze --rerun --trajectory`) is
+  not taken for an owed one: a study with no `joined/analysis_owed.json` is
+  owed only where its analysis is of a first piece, or of the join read
+  short, and its config does not name that trajectory as chosen after the
+  join. Such a study was said interrupted, and `fastmdx resume` replaced
+  the person's analysis with nothing left of it; a resume that runs a
+  join's analyses now saves the analysis there in `previous/` first
+  (`saved_in_previous`).
+- The health of a study owing its analysis, and of a piece stopped while
+  carried on, names the study by its folder, not its path on this
+  computer, since `/api/status` is answered beyond loopback. The fix for an
+  owed analysis says what it does ("Run its analyses and report over the
+  joined pieces"), not "carry it on from its last checkpoint", and names
+  its subject once.
+- The GUI decides a variable step from the first piece's record or the
+  study's config before it reads the pieces' clocks; a fixed-step study's
+  were read at every poll.
 - A `continued` answer of `fastmdx resume` gives `production_planned_ns` with
   the extension it carried on (0.006 beside 0.008 done), and a `runs` answer
   each run's `production_done_ns`.

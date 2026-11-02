@@ -671,8 +671,15 @@ owed them: `fastmdx resume` runs them over the join, and the GUI says the
 study stopped before its analysis, never Completed, and names `fastmdx resume`.
 A study stopped there by a version that wrote no such file is owed them too
 where its analysis is not of the join: its `analysis/analysis_manifest.json`
-names another trajectory than `joined/production.dcd`, or, read whole, a count
-of frames other than `joined/joined.json`'s.
+names a first piece's trajectory (`simulation/production.dcd`), or, read
+whole, the join at a count of frames other than `joined/joined.json`'s. An
+analysis the person chose is not owed: the study's `resolved_config.yml`
+names its trajectory (`analysis.trajectory`, as `fastmdx analyze --rerun
+--trajectory` writes it), and it was written after the join. Before running
+the join's analyses, `fastmdx resume` saves the analysis there in
+`previous/analysis`. While a resume or an extension carries the study on (its
+`.fastmdxplora-carrying-on` lock held), the GUI says it is running, joining
+and analysing its pieces, not owed.
 
 **By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase
