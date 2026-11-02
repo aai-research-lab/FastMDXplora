@@ -64,7 +64,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   `drift_unseen`). Said also where the joined summary was withheld for a
   segment whose correlation is not resolved and the mean stands, with the
   segments tested and those left out; where fewer than three could be tested,
-  that drift between them was not tested.
+  that drift between them was not tested. On the Overview's card (a line of
+  its own, whole), the Analysis page, the report, Compare, the Agent's
+  citation chips, its answers and its own context.
 - The Agent's and the GUI's answers to whether a study ran long enough and
   what would strengthen it name a mean drifting between a joined run's
   segments and its remedy, a longer run of no length a record gives, by the

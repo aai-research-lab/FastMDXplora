@@ -171,10 +171,15 @@ def _value(name: str, mean: dict[str, Any] | None) -> str:
 
 
 def _noted(mean: dict[str, Any] | None) -> str:
-    """The mean's image note in a line (:func:`fastmdxplora.image_note.said_short`)."""
+    """The mean's image note in a line (:func:`fastmdxplora.image_note.said_short`),
+    and what its joined run's drift test could miss
+    (:func:`fastmdxplora.statistics.drift_unseen_said`), as every page says
+    them."""
     from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.statistics import drift_unseen_said
 
-    return said_short(note_of(mean))
+    short, unseen = said_short(note_of(mean)), drift_unseen_said(mean)
+    return f"{short}. {unseen}" if short and unseen else short or unseen
 
 
 def _withheld(mean: dict[str, Any] | None) -> str:

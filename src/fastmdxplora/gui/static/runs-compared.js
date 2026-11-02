@@ -136,6 +136,13 @@
           noted.title = cell.noted.charAt(0).toUpperCase() + cell.noted.slice(1) + ".";
           td.appendChild(noted);
         }
+        if (cell.mean !== null && cell.mean !== undefined && cell.unseen) {
+          // What its joined run's drift test could miss, said in full under
+          // the table (runs_compared.py).
+          var unseen = el("span", "runs-compared-mark", "\u2021");
+          unseen.title = cell.unseen + ".";
+          td.appendChild(unseen);
+        }
         row.appendChild(td);
       });
       body.appendChild(row);
@@ -156,6 +163,13 @@
         if (!c.noted || c.mean === null || c.mean === undefined) return;
         said.appendChild(el("p", "muted small runs-compared-noted", "\u2020 " +
           (labels[c.run_id] || c.run_id) + ", " + m.label + ": " + c.noted + "."));
+      });
+    });
+    data.measures.forEach(function (m) {
+      m.cells.forEach(function (c) {
+        if (!c.unseen || c.mean === null || c.mean === undefined) return;
+        said.appendChild(el("p", "muted small runs-compared-unseen", "\u2021 " +
+          (labels[c.run_id] || c.run_id) + ", " + m.label + ": " + c.unseen + "."));
       });
     });
     if (data.measures.some(function (m) { return m.cells.some(function (c) { return c.withheld; }); })) {

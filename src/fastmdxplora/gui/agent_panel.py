@@ -1441,7 +1441,7 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     # before a reason, how the reason is joined on, and the reason (or None).
     from fastmdxplora import record_access
     from fastmdxplora.image_note import note_of, paragraph_of, said_short
-    from fastmdxplora.statistics import withheld_reason
+    from fastmdxplora.statistics import drift_unseen_said, withheld_reason
 
     rows: list[tuple[str, str, list[tuple[str, str, str | None, str]]]] = []
     # Each analysis's image note in full, said once for the analysis where
@@ -1514,8 +1514,12 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             noted = said_short(note_of(f))
             if noted:
                 paragraphs.setdefault(options.parent.name, paragraph_of(findings))
+            # And what its joined run's drift test could miss, as every page
+            # says it (`statistics.drift_unseen_said`).
+            unseen = drift_unseen_said(f, unit or None)
             parts.append((piece, " -- not determined: ", withheld,
-                          f" -- {noted}" if noted else ""))
+                          (f" -- {noted}" if noted else "")
+                          + (f" -- {unseen}" if unseen else "")))
         if parts:
             rows.append((options.parent.name, name, parts))
     # An analysis asked about that recorded no mean and no reason is said

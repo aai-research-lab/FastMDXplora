@@ -473,3 +473,35 @@ def test_the_card_says_the_drift_note_whole_beside_an_image_note(tmp_path) -> No
         assert found["whole"] and "could go unseen (41 times the error of their pooled " \
             "mean" in found["note"] and found["note"].endswith(")."), (width, scheme, found)
         assert found["image"].startswith("may be biased"), (width, scheme, found)
+
+
+def _rmsd_study(tmp_path: Path, record: dict) -> Path:
+    root = tmp_path / "study"
+    (root / "analysis" / "rmsd").mkdir(parents=True)
+    (root / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+        {"analysis": "rmsd", "findings": {"mean": {**record, "unit": "nm"}}}), encoding="utf-8")
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps(
+        {"results": {"rmsd": {"status": "ok"}}}), encoding="utf-8")
+    return root
+
+
+def test_the_agent_s_context_its_chips_and_compare_carry_the_note(tmp_path) -> None:
+    # The Agent's own context for the AI model, its citation chips and
+    # Compare gave a mean of three segments as determined with the image
+    # note alone.
+    from fastmdxplora.gui.agent_panel import _results_summary
+    from fastmdxplora.gui.citations import cited_findings
+    from fastmdxplora.gui.runs_compared import _measure
+
+    values, joins = _climbing(3, step=0.0)
+    values = 0.2 + (values + 22300.0) / 2000.0
+    record = {**_saved(mean_record(values, joins=joins)), "unit": "nm"}
+    said = _unseen_of(record, "nm")
+    assert "could go unseen" in said
+    root = _rmsd_study(tmp_path, record)
+    assert said in _results_summary(root)
+    chips = cited_findings("The RMSD is near 0.2 nm.", root)
+    assert chips and said in chips[0]["noted"], chips
+    measure = _measure("rmsd", [{"run_id": "a"}], {"a": {"rmsd": {"mean": record}}},
+                       False, {"a": "a"})
+    assert measure["cells"][0].get("unseen") == said, measure["cells"][0]
