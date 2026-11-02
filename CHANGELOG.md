@@ -23,6 +23,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   runs backing a spread, and the written comparison. A mean an earlier
   version called determined on fewer than 10 independent samples was given
   with its error in each.
+- Where that reader withholds a mean, no error is given with it either: the
+  written comparison's cell, its CSV (`<analysis>_standard_error`) and trend,
+  and the replicas' rows (`standard_error`, `error_as_a_replica`), so the
+  replicas' predicted error, and Compare of a study's runs, are from the runs
+  that gave an error of their own. A mean an earlier version called
+  determined read "0.0090 ± 0.0012 \*" beside "\* Not determined", and its
+  error entered the prediction.
+- The thermodynamics figure on the Analysis page plots no error for a mean
+  that reader withholds, and its note says it is not determined, as the
+  table beside it does.
+- The Agent's records answers decide whether every mean is determined from
+  the Overview's counts, not from the words of the sentence counting them:
+  "By its records, yes" was said beside "none of the production's 4
+  thermodynamic means is determined".
+- A mean this version withholds that its run called determined is said so:
+  the written comparison's footnote and the replicas' sentence say this
+  version withholds it (they said the run found it not determined), and the
+  report's findings line says "Not determined", giving the sample count
+  once.
 - The Agent's citations (`cites`) give `value` alone and the image note in
   `noted`; the chip says the value, its verdict, then the note on a line of
   its own, left-aligned where it wraps. "Not determined" followed the note,
