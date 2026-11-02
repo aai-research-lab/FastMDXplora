@@ -1385,6 +1385,8 @@
         if (data.figure_note) {
           var note = document.createElement("p");
           note.className = "muted small figure-note";
+          // One line for each method refused.
+          note.style.whiteSpace = "pre-line";
           note.textContent = data.figure_note;
           box.parentNode.insertBefore(note, box.nextSibling);
         }

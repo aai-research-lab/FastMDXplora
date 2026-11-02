@@ -5314,8 +5314,15 @@ def _analysis_records(
         findings = (_load_json(root / "analysis" / str(name) / "options.json").get("findings")
                     if root is not None else None)
         findings = findings if isinstance(findings, dict) else {}
+        # Each named by the title its card would have had (the line named
+        # files, "cluster_hierarchical_dendrogram.png", beside cards titled
+        # "Hierarchical dendrogram").
+        from fastmdxplora.gui.report_dashboard import _figure_title_from_path
+
         not_plotted = [
-            {"file": str(file), "said": str(said)}
+            {"file": str(file), "said": str(said),
+             "title": (_figure_title_from_path(Path("analysis") / str(name) / str(file))
+                       if key == "figures_not_plotted" else str(file))}
             for key in ("figures_not_plotted", "not_saved")
             if isinstance(findings.get(key), dict)
             for file, said in findings[key].items()

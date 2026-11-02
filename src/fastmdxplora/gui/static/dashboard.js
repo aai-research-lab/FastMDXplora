@@ -2081,11 +2081,15 @@
       // those not plotted said nowhere.
       const missing = section.notPlotted || [];
       const figures = missing.filter((each) => /\.(png|svg)$/i.test(each.file)).length;
-      const count = panels.length || !(section.unfinished || []).length
-        ? `${panels.length} figure${panels.length === 1 ? "" : "s"}` : "not finished";
+      // "refused" where every analysis of it without a figure was refused
+      // before it ran, as its card says, not "not finished".
+      const notRun = section.unfinished || [];
+      const count = panels.length || !notRun.length
+        ? `${panels.length} figure${panels.length === 1 ? "" : "s"}`
+        : notRun.every((analysis) => analysis.refused_before_it_ran) ? "refused" : "not finished";
       const note = missing.length
         ? `<p class="analysis-section-count" data-not-plotted>Not ${figures ? "plotted" : "saved"} for memory: ${
-            escapeHTML(missing.map((each) => each.file).join(", "))}. ${
+            escapeHTML(missing.map((each) => each.title || each.file).join(", "))}. ${
             escapeHTML(whatToSet(missing[0].said).replace(/`/g, ""))}</p>`
         : "";
       return `
@@ -2403,7 +2407,10 @@
    * starts "Set `...`", else its first sentence. */
   function whatToSet(message) {
     const said = String(message || "").replace(/^[a-z_]+: /, "");
-    return (/Set `[^`]+`.*?\.(?=\s|$)/.exec(said) || /^.*?\.(?=\s|$)/.exec(said) || [said])[0];
+    // Or, for a figure whose canvas no stride makes smaller, the room to add.
+    return (/Set `[^`]+`.*?\.(?=\s|$)/.exec(said)
+      || /Its canvas is the same at any stride.*?\.(?=\s|$)/.exec(said)
+      || /^.*?\.(?=\s|$)/.exec(said) || [said])[0];
   }
 
   /* The sections with a card for each analysis that failed or was refused,

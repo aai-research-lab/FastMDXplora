@@ -602,9 +602,14 @@ def _projection(root: Path, method: str) -> dict[str, Any] | None:
 
 
 def _mds_refused(root: Path) -> str:
-    """MDS refused for memory, as the report says it (its findings' note),
-    and any other method refused, under each projection that was run beside
-    it: the card said nothing of it while the record and the report did."""
+    """The methods refused for memory beside a projection that ran, one
+    short line each (:func:`fastmdxplora.analysis.dimred.refused_notes`):
+    the card carried each refusal's whole text, the cgroup's path in it, a
+    paragraph under the figure. The whole text is in the record and the
+    report. A record of MDS refused alone (``mds_refused``, before each
+    method was recorded) is said as MDS's matrix."""
+    from fastmdxplora.analysis.dimred import refused_notes
+
     try:
         record = json.loads(_records.read_text(root / "analysis" / "dimred" / "options.json",
                                                encoding="utf-8"))
@@ -613,22 +618,11 @@ def _mds_refused(root: Path) -> str:
     findings = record.get("findings") if isinstance(record, dict) else None
     if not isinstance(findings, dict):
         return ""
-    notes = []
-    if isinstance(findings.get("mds_refused"), dict):
-        from fastmdxplora.report.document import _findings_notes
-
-        notes.append(next((note for note in _findings_notes(
-            {"mds_refused": findings["mds_refused"]}) if note.startswith("MDS was not run")),
-            ""))
-    # The other methods refused for memory (t-SNE's neighbours at many
-    # frames), said as MDS's is, by the names the docs give them.
-    named = {"pca": "PCA", "tsne": "t-SNE", "umap": "UMAP"}
     refused = findings.get("methods_refused")
-    for method, said in (refused.items() if isinstance(refused, dict) else ()):
-        if method != "mds" and isinstance(said, dict) and said.get("said"):
-            notes.append(f"{named.get(method, method)} was not run: {said['said']}")
-    # Plain text on the page: the settings without the report's backticks.
-    return " ".join(note for note in notes if note).replace("`", "")
+    refused = dict(refused) if isinstance(refused, dict) else {}
+    if isinstance(findings.get("mds_refused"), dict) and "mds" not in refused:
+        refused = {"mds": {}, **refused}
+    return "\n".join(refused_notes(refused))
 
 
 def _landscape(root: Path, method: str) -> dict[str, Any] | None:

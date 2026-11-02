@@ -66,18 +66,15 @@ def _dimred_study(root: Path) -> Path:
 
 
 class TestMDSRefusedIsSaidOnTheCard:
-    def test_the_projection_carries_the_report_s_note(self, tmp_path):
-        from fastmdxplora.report.document import _findings_notes
-
+    def test_the_projection_carries_a_short_note(self, tmp_path):
+        """A record of MDS refused alone, written before each method was
+        recorded: one short line, its settings plain on the page."""
         root = _dimred_study(tmp_path / "study")
         payload = figure_payload(root, "analysis/dimred/dimred_pca.png")
         assert payload["ok"], payload
-        # As the report says it: one sentence, from one place, its settings
-        # plain on the page (the report's backticks were shown raw).
-        said = [note for note in _findings_notes({"mds_refused": MDS_REFUSED})
-                if note.startswith("MDS was not run")]
-        assert (payload.get("figure_note") or "") == said[0].replace("`", "")
-        assert "(methods: [pca])" in payload["figure_note"]
+        assert payload.get("figure_note") == (
+            "MDS was not run: its frame-by-frame RMSD matrix did not fit in the memory "
+            "this process can take."), payload.get("figure_note")
 
     def test_the_card_shows_it(self, tmp_path):
         pytest.importorskip("playwright.sync_api")
@@ -110,7 +107,7 @@ class TestMDSRefusedIsSaidOnTheCard:
         finally:
             session.server.shutdown()
         assert not errors, errors
-        assert any(note.startswith("MDS was not run: MDS of 40,000 frames") for note in notes), notes
+        assert any(note.startswith("MDS was not run: its frame-by-frame") for note in notes), notes
         assert figure_shown and shown, (figure_shown, shown)
 
     def test_the_figure_says_it(self, tmp_path, monkeypatch):
@@ -135,6 +132,91 @@ class TestMDSRefusedIsSaidOnTheCard:
         said = " ".join(texts["dimred_pca.png"])
         assert said.startswith("MDS was not run"), texts
         assert "analysis: {stride: 2}" in said and "`" not in said, said
+
+
+#: Each refusal's whole text, as the record keeps it: the room, where it
+#: was read and the control group's path.
+_READ_AS = (" Read as RLIMIT_AS less what this process holds (VmSize), the least of that "
+            "and MemAvailable in /proc/meminfo and the cgroup v1 limit in /sys/fs/cgroup/"
+            "memory/process_api/x/memory.limit_in_bytes less its usage, its reclaimable "
+            "page cache, 626.2 MB of inactive_file in memory.stat, not counted as used.")
+
+
+class TestTheProjectionsNoteIsShort:
+    """The card's note under PCA was each refusal's whole text, 1,650
+    characters with the cgroup's path twice, 1,021 px tall at 390; a t-SNE
+    that ran out as it ran was said "t-SNE was not run"; and MDS's need was
+    said as its matrix's where the figures planned beside it set it."""
+
+    @staticmethod
+    def _study(root: Path) -> Path:
+        root = _dimred_study(root)
+        options = root / "analysis" / "dimred" / "options.json"
+        record = json.loads(options.read_text())
+        record["findings"] = {
+            "methods_refused": {
+                "mds": {"said": "MDS of 500 frames takes about 52.4 MB of address space "
+                                "for the 4 figures plotted once every method has run."
+                                + _READ_AS,
+                        "before_it_ran": True, "stride_that_fits": None,
+                        "need_from": "figures", "kept": ["pca"]},
+                "tsne": {"said": "t-SNE of 10,000 frames ran out of memory as it ran "
+                                 "(std::bad_alloc)." + _READ_AS,
+                         "before_it_ran": False, "stride_that_fits": None, "kept": ["pca"]}},
+            "mds_refused": {"said": "MDS of 500 frames takes about 52.4 MB." + _READ_AS,
+                            "kept": ["pca"]}}
+        options.write_text(json.dumps(record), encoding="utf-8")
+        return root
+
+    def test_one_short_line_for_each_method_refused(self, tmp_path):
+        root = self._study(tmp_path / "study")
+        note = figure_payload(root, "analysis/dimred/dimred_pca.png").get("figure_note") or ""
+        lines = note.split("\n")
+        assert len(lines) == 2, note
+        assert "/sys/fs/cgroup" not in note and "Read as" not in note, note
+        assert all(len(line) < 120 for line in lines), lines
+
+    def test_mds_s_need_is_said_as_the_figures_where_they_set_it(self, tmp_path):
+        root = self._study(tmp_path / "study")
+        note = figure_payload(root, "analysis/dimred/dimred_pca.png").get("figure_note") or ""
+        assert note.split("\n")[0].startswith(
+            "MDS was not run: the figures planned beside it did not fit"), note
+
+    def test_a_t_sne_that_ran_out_is_said_to_have_run(self, tmp_path):
+        root = self._study(tmp_path / "study")
+        note = figure_payload(root, "analysis/dimred/dimred_pca.png").get("figure_note") or ""
+        assert "t-SNE ran out of memory as it ran" in note, note
+        assert "t-SNE was not run" not in note, note
+
+    def test_the_refusal_names_the_figures_alone_where_they_set_the_need(self, monkeypatch):
+        """"MDS of 500 frames takes about 54.5 MB ... for its frame-by-frame
+        RMSD matrix, or for the 4 figures": the matrix was 4 MB of it."""
+        from fastmdxplora.analysis import cluster as clustering
+        from fastmdxplora.analysis import dimred as module
+        from tests.test_a_clustering_fits_the_machine import _chain
+
+        room = module.address_space_needed("pca", ["pca"], 120)
+        monkeypatch.setattr(clustering, "memory_available", lambda: (
+            room, "RLIMIT_AS less what this process holds (VmSize)"))
+        analysis = module.DimRed(methods=["pca", "mds"])
+        analysis._projected(_chain(120))
+        said = analysis.findings["methods_refused"]["mds"]["said"]
+        assert "for the 3 figures plotted once every method has run" in said, said
+        assert "RMSD matrix" not in said.split(".")[0], said
+
+    def test_a_projection_that_ran_out_is_not_blamed_on_the_memory_falling(
+            self, tmp_path, monkeypatch):
+        from fastmdxplora.analysis import dimred as module
+        from tests.test_a_clustering_fits_the_machine import _chain
+
+        def out(*args, **kwargs):
+            raise MemoryError("std::bad_alloc")
+
+        monkeypatch.setattr(module, "_classical_mds", out)
+        result = module.DimRed(output_dir=tmp_path, methods=["pca", "mds"]).run(_chain(120))
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = found["methods_refused"]["mds"]["said"]
+        assert "ran out of memory as it ran" in said and "fell" not in said, said
 
 
 def test_the_dendrogram_s_csv_names_its_unit(tmp_path):
@@ -409,8 +491,86 @@ def test_a_figure_not_plotted_for_memory_is_said_in_its_section(tmp_path, width)
     finally:
         session.server.shutdown()
     assert not errors, errors
-    assert "cluster_rmsd_matrix.png" in said, said
+    # Named by its card's title, not its file.
+    assert "Cluster RMSD Matrix" in said and "cluster_rmsd_matrix.png" not in said, said
     assert ("Set stride: 2 under the analysis's options: {cluster: ...} to plot half "
             "as many frames.") in said and "`" not in said, said
     assert count.endswith("1 not plotted"), count
     assert not sideways
+
+
+def test_the_figures_not_plotted_are_named_by_their_cards_titles(tmp_path):
+    """"Not plotted for memory: cluster_hierarchical_dendrogram.png,
+    cluster_dbscan.png", where the cards are titled "Hierarchical
+    dendrogram" and "DBSCAN trajectory scatter"."""
+    from fastmdxplora.gui.server import _results_payload
+
+    root = _clustering_short_of_figures(tmp_path / "study")
+    options = root / "analysis" / "cluster" / "options.json"
+    record = json.loads(options.read_text())
+    record["findings"]["figures_not_plotted"] = {
+        name: f"{name} was not plotted." for name in (
+            "cluster_hierarchical_dendrogram.png", "cluster_dbscan.png")}
+    options.write_text(json.dumps(record), encoding="utf-8")
+    entry = next(each for each in _results_payload(root)["analyses"]
+                 if each["name"] == "cluster")
+    assert [each.get("title") for each in entry["not_plotted"]] == [
+        "Hierarchical dendrogram", "DBSCAN trajectory scatter"], entry["not_plotted"]
+
+
+def test_the_line_says_the_room_a_figure_needs():
+    """The line under the heading said the stride its record gave; for a
+    figure whose canvas no stride makes smaller it says the room."""
+    said = ("cluster_hierarchical_dendrogram.png was not plotted: the memory ran out "
+            "plotting it (std::bad_alloc). Its data is saved. Its canvas is the same at "
+            "any stride, so a stride does not help: run it where `ulimit -v` allows "
+            "about 40.0 MB more.")
+    picked = _node(_function("dashboard.js", "whatToSet") + "\n"
+                   f"console.log(JSON.stringify(whatToSet({json.dumps(said)})));")
+    assert picked == ("Its canvas is the same at any stride, so a stride does not help: "
+                      "run it where `ulimit -v` allows about 40.0 MB more."), picked
+
+
+def test_a_section_whose_analysis_was_refused_before_it_ran_counts_it_so(tmp_path):
+    """The card said "the analysis was refused before it ran" and the count
+    beside the section's heading "not finished"."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _figure
+
+    root = tmp_path / "study"
+    (root / "analysis" / "rmsd").mkdir(parents=True)
+    (root / "analysis" / "cluster").mkdir(parents=True)
+    _figure(root / "analysis" / "rmsd" / "rmsd.png")
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+        "load_kwargs": {"stride": 1, "first": None, "saving_interval_ps": 10.0},
+        "results": {"rmsd": {"status": "ok", "message": "rmsd: ok"},
+                    "cluster": {"status": "error", "message": CLUSTER_REFUSED}}}),
+        encoding="utf-8")
+    (root / "analysis" / "cluster" / "options.json").write_text(json.dumps({
+        "options": {}, "findings": {"refused": {
+            "code": "analysis.memory.matrix_too_large", "said": CLUSTER_REFUSED,
+            "before_it_ran": True}}}), encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#analysis/cluster", wait_until="domcontentloaded")
+            card = '#analysis-sections .analysis-card[data-analysis="cluster"]'
+            page.wait_for_selector(card, state="visible")
+            said = page.inner_text(card)
+            count = page.eval_on_selector(
+                card, "(c) => c.closest('.analysis-section')"
+                      ".querySelector('.analysis-section-count').innerText")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert not errors, errors
+    assert "refused before it ran" in said, said
+    assert count == "refused", count
