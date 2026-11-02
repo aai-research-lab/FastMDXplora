@@ -2051,6 +2051,18 @@ def _render_settings(version: str) -> str:
 </div>"""
 
 
+#: The theme of a ligand's analyses, which only a study with one has.
+LIGAND_THEME = "The ligand"
+
+
+def analysis_subtitle(themes: Any) -> str:
+    """The line under the Analysis page's title. Protein-ligand interactions
+    are named only where the study has a ligand's analyses: a protein alone
+    was said to have them."""
+    return ("Trajectory analyses and protein-ligand interactions"
+            if LIGAND_THEME in set(themes) else "Trajectory analyses")
+
+
 def _page_header(title: str, subtitle: str, actions: str = "") -> str:
     return (
         '<div class="page-header"><div>'
@@ -2153,7 +2165,7 @@ def _render_analysis_page(sections: list[DashboardSection], series: dict[str, An
         '<div class="empty-detail muted">The analysis phase writes them; '
         "this page was written without any.</div></div>")
     return ('<section class="page" data-page="analysis" hidden>'
-            + _page_header("Analysis", "Trajectory analyses and protein-ligand interactions", meta)
+            + _page_header("Analysis", analysis_subtitle(s.theme for s in sections), meta)
             + f'<div id="analysis-sections">{body}</div></section>')
 
 
