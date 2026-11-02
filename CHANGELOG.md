@@ -587,6 +587,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - The GUI reads a study's lock (`.fastmdxplora-carrying-on`) in its held
   reads: refused, a study a resume held read as not held, and the Overview of
   every study a resume had carried on said "Not read" of it.
+- `fastmdx simulate --rerun` and `fastmdx setup --rerun` save the simulation
+  (and setup) they replace in `previous/` whatever the analysis did; where
+  the analysis had not finished and `previous/` held an older one, they
+  removed it. The report of an unfinished analysis is removed with it, never
+  saved in `previous/report` beside an analysis that is not its own.
+- The GUI's Analyze again says what is saved in `previous/` and that an
+  analysis that did not finish is removed instead, in the words `fastmdx mcp`
+  and the Agent are given (`again.saved_said`); it said the unfinished
+  analysis would go there in place of the one saved.
+- A study stopped from the GUI while a resume analysed its joined pieces
+  says so in its health, and that part of their analyses had run; it said a
+  wall time had stopped it before they ran.
 - The docs' new lines on resume are in shorter paragraphs; asked "what does
   ligand pose do", the docs search found the setting's row no longer.
 - A `continued` answer of `fastmdx resume` gives `production_planned_ns` with

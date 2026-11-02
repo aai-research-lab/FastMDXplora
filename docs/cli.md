@@ -154,8 +154,9 @@ them; `--rerun` keeps them in `previous/<phase>` (`previous/analysis`,
 before, with the phase's record from the Manifest beside it.
 
 An analysis is saved there only where it finished (its
-`analysis_manifest.json` written): one stopped part-way is removed, and what
-`previous/` holds is left as it is, its report too. `previous/` is
+`analysis_manifest.json` written): one stopped part-way is removed with its
+report, and what `previous/` holds of them is left as it is. A setup or
+simulation run again is saved there whatever its analysis did. `previous/` is
 left out of the report's bundle. A study of several runs is run again run
 by run, and the comparison of its runs built again; so is that comparison
 when one run of it is analysed again on its own (`--output study/runs/a`).
