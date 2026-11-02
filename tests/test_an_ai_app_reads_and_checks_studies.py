@@ -340,8 +340,8 @@ class TestNumbers:
         (-123456.7, 12.0, "-123,457 ± 12"),
         (0.0001234, 0.12, "0.00 ± 0.12"),
         (5432.1, 0.0004, "5,432.10000 ± 0.00040"),
-        (1.5, None, "1.5"),
-        (2.0, 0.0, "2 ± 0"),
+        (1.5, None, "1.500"),
+        (2.0, 0.0, "2.000 ± 0"),
     ])
     def test_a_value_is_given_to_the_place_its_error_allows(self, value, error, said):
         from fastmdxplora.mcp.tools import with_error
@@ -363,7 +363,7 @@ class TestNumbers:
         options.write_text(json.dumps(record))
         said = text_of(wire.request("tools/call", {"name": "compare_studies", "arguments": {
             "first": "ubq_10ns", "second": "no_error"}}))
-        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.13 nm; the difference is not assessed: "
+        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.1300 nm; the difference is not assessed: "
                 "the second recorded no standard error") in said
 
 
@@ -468,7 +468,7 @@ class TestWhatIsSaidBack:
                started="2026-09-08T10:00:00+00:00")
         compared = text_of(wire.request("tools/call", {"name": "compare_studies", "arguments": {
             "first": "ubq_10ns", "second": "flat"}}))
-        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.13 ± 0 nm; second minus first +0.0066 ± "
+        assert ("  RMSD: 0.1234 ± 0.0056 nm | 0.1300 ± 0 nm; second minus first +0.0066 ± "
                 "0.0056 nm, not resolved") in compared
 
     def test_why_a_difference_was_not_assessed_names_the_side(self):

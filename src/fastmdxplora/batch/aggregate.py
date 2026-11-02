@@ -27,6 +27,7 @@ only there.
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -60,11 +61,34 @@ SEED_AXES = frozenset({
     "setup.model",
 })
 
-#: How far the single-run error estimate may sit from the spread of the
-#: replicas' means before the estimate is called optimistic. A factor of
-#: two: the estimate is a variance, so agreeing to better than a factor of
-#: two on ten replicas is already at the limit of what ten can resolve.
-CALIBRATION_FACTOR = 2.0
+#: The confidence at which the replicas' spread is set against the error
+#: the runs predicted (`calibration_factor`).
+CALIBRATION_CONFIDENCE = 0.95
+
+
+def calibration_factor(replicas: int) -> float:
+    """How far past the predicted error the sample standard deviation of
+    ``replicas`` means passes by chance in 2.5% of studies: the upper end
+    of its 95% interval, as a multiple of the true one, rounded up to two
+    figures.
+
+    For n values sampled from a normal distribution of standard deviation
+    sigma, (n - 1) s^2 / sigma^2 follows a chi-squared distribution with
+    n - 1 degrees of freedom (Cochran's theorem; the usual interval for a
+    standard deviation, e.g. NIST/SEMATECH e-Handbook of Statistical
+    Methods, section 7.2.3), so s / sigma passes
+    sqrt(chi2_0.975(n - 1) / (n - 1)) in 2.5% of studies: 2.3 for 2
+    replicas, 2.0 for 3, 1.7 for 5, 1.5 for 10. The prediction is taken as
+    sigma; it is itself an estimate, so a spread past the factor is the
+    most this rule can say. Rounded up, so the words and the verdict use
+    one number and a false alarm stays at 2.5% or less."""
+    from scipy.stats import chi2
+
+    dof = max(int(replicas) - 1, 1)
+    upper = (1.0 + CALIBRATION_CONFIDENCE) / 2.0
+    exact = (chi2.ppf(upper, dof) / dof) ** 0.5
+    places = 1 - math.floor(math.log10(exact))
+    return math.ceil(exact * 10 ** places - 1e-9) / 10 ** places
 
 
 def member_directory(batch_dir: str | Path, run: dict[str, Any]) -> Path:
@@ -172,8 +196,9 @@ def spread_against_own(means: Any, errors: Any) -> dict[str, Any] | None:
     themselves, the one check a single run's error gets: ``observed``, the
     spread of their means (sample standard deviation); ``predicted``, the
     mean of the errors given (each above zero); their ``ratio``; and
-    ``too_tight``, the spread past ``CALIBRATION_FACTOR`` times the
-    prediction, so the errors the runs printed are too tight. Of two
+    ``too_tight``, the spread past ``factor`` times the prediction
+    (`calibration_factor` of the number of means), so the errors the runs
+    printed are too tight. Of two
     replicas whose own errors are all there is to set them against (the
     Compare page) as of all of a study's (`aggregate_members`). None where
     there are fewer than two means or no error of their own."""
@@ -183,9 +208,10 @@ def spread_against_own(means: Any, errors: Any) -> dict[str, Any] | None:
         return None
     observed = float(np.std(values, ddof=1))
     predicted = float(np.mean(given))
+    factor = calibration_factor(values.size)
     return {"observed": observed, "predicted": predicted, "ratio": float(observed / predicted),
-            "too_tight": observed > CALIBRATION_FACTOR * predicted,
-            "factor": CALIBRATION_FACTOR}
+            "too_tight": observed > factor * predicted,
+            "factor": factor, "replicas": int(values.size)}
 
 
 def how_replicas_differ(axes: Any, *, models: Any = None,
@@ -407,11 +433,14 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
             some = ("" if len(errors) == len(rows) else
                     f" (from the {len(errors)} of {len(rows)} runs that "
                     "gave an error of their own)")
+            # How far the spread of this many means passes by chance.
+            reach = (f"the factor of {check['factor']:#.2g} that the spread of "
+                     f"{check['replicas']} replicas passes by chance in 2.5% "
+                     "of studies")
             if check["too_tight"]:
                 entry["calibration"] = (
                     f"The replicas spread {observed:.3g} where a single run "
-                    f"predicted {predicted:.3g}{some}, more than the factor of "
-                    f"{CALIBRATION_FACTOR:g} that ten replicas can resolve. "
+                    f"predicted {predicted:.3g}{some}, more than {reach}. "
                     "The single-run estimate reads the correlation time off "
                     "a trajectory too short to contain it, so the error bars "
                     "printed for this observable are too tight"
@@ -423,9 +452,7 @@ def aggregate_members(batch_dir: str | Path, *, share: bool = True) -> dict[str,
             else:
                 entry["calibration"] = (
                     f"The replicas spread {observed:.3g} against a predicted "
-                    f"{predicted:.3g}{some}, within the factor of "
-                    f"{CALIBRATION_FACTOR:g} that this many replicas can "
-                    "resolve"
+                    f"{predicted:.3g}{some}, within {reach}"
                     + (". " + entry["spread_not_an_error"] if qualified else
                        ": the error this observable reports for itself "
                        "is supported by repeating it.")

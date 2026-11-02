@@ -169,7 +169,7 @@ class TestNotTheSameMolecule:
         for required in (False, True):
             with pytest.raises(LigandError, match="do not match") as refused:
                 pose_from_structure(molecule, structure, "LIG", required=required)
-            assert refused.value.code == "setup.ligand.pose_unavailable"
+            assert refused.value.code == "setup.ligand.atoms_unmatched"
 
     def test_a_broken_deposited_geometry_is_not_taken(self, tmp_path: Path) -> None:
         molecule = _Supplied(PARACETAMOL)
@@ -196,3 +196,23 @@ class TestTheMatch:
     def test_different_elements_never_match(self) -> None:
         graph = [{1}, {0}]
         assert _heavy_atom_match([6, 8], graph, [6, 7], graph) is None
+
+
+def test_a_ring_flipped_by_its_symmetry_is_not_another_order(tmp_path: Path) -> None:
+    """The structure lists the atoms in the file's own order, with the
+    ring's two sides on each other's places: the match that fits takes the
+    ring over by its symmetry, and the files' orders are still one."""
+    molecule = _Supplied(PARACETAMOL)
+    ring = {5: 10, 10: 5, 6: 9, 9: 6}  # the ortho and the meta pairs
+    for a, b in ring.items():
+        assert molecule.rdkit.GetAtomWithIdx(a).GetIsAromatic()
+        assert molecule.rdkit.GetAtomWithIdx(b).GetIsAromatic()
+    angstrom = _turned(molecule.conformers[0].m_as("nanometer")) * 10.0
+    moved = {a: angstrom[b] - angstrom[a] for a, b in ring.items()}
+    structure = _deposit(tmp_path, molecule, molecule.heavy, moved=moved)
+    placed, said = pose_from_structure(molecule, structure, "LIG", required=True)
+    after = placed.conformers[0].m_as("nanometer")
+    before = molecule.conformers[0].m_as("nanometer")
+    assert np.allclose(_bond_lengths(molecule, after),
+                       _bond_lengths(molecule, before), atol=2e-3)
+    assert "different orders" not in said

@@ -61,6 +61,25 @@ _RECORDER: ContextVar[Any] = ContextVar("preparation_recorder", default=None)
 DEFAULTS: dict[str, Any] = SETUP.defaults()
 
 
+def _starting_temperature(params: dict[str, Any], orchestrator: Any) -> float:
+    """`setup.temperature_K`, or the run's simulation temperature when unset.
+
+    A study fills it before setup runs; setup called directly through Python
+    may not have, and is told what it gets.
+    """
+    if params.get("temperature_K") is not None:
+        return float(params["temperature_K"])
+    options = getattr(orchestrator, "options", None) or {}
+    given = (options.get("simulation") or {}).get("temperature_K")
+    if given is not None:
+        logger.info("Starting velocities at %s K, the simulation temperature: "
+                    "setup.temperature_K is not set.", float(given))
+        return float(given)
+    logger.info("Starting velocities at 300 K: neither setup.temperature_K "
+                "nor simulation.temperature_K is set.")
+    return 300.0
+
+
 def _the_list_is_the_name(name: Any, xmls: Any) -> bool:
     """Whether a raw force-field list is exactly what a named one resolves to."""
     from fastmdxplora.setup.forcefields import resolve_forcefield
@@ -1758,7 +1777,7 @@ def _run(
             constraints=str(params["constraints"]),
             rigid_water=bool(params["rigid_water"]),
             hydrogen_mass_amu=params["hydrogen_mass_amu"],
-            temperature_K=float(params["temperature_K"]),
+            temperature_K=_starting_temperature(params, orchestrator),
         )
 
         # Only the files. What preparation returns now includes the system
@@ -1846,7 +1865,8 @@ def _run(
                     box=(produced or {}).get("box"),
                     resolved=(produced or {}).get("resolved"),
                     membrane=_with_opm_s_thickness(
-                        (produced or {}).get("membrane"), opm))
+                        (produced or {}).get("membrane"), opm),
+                    ligand_poses=(produced or {}).get("ligand_poses"))
     artifacts.append("setup_parameters.json")
 
     if presenter:
@@ -1916,6 +1936,7 @@ def _write_manifest(
     box: dict[str, Any] | None = None,
     resolved: dict[str, Any] | None = None,
     membrane: dict[str, Any] | None = None,
+    ligand_poses: list[dict[str, Any]] | None = None,
 ) -> None:
     """Write ``setup_parameters.json`` with the full provenance record.
 
@@ -2038,6 +2059,13 @@ def _write_manifest(
         # or re-added with its own chemistry. Empty where no decision was
         # taken per component (the `drop` and `keep` policies).
         "heterogen_decisions": list(params.get("_heterogen_decisions") or []),
+        # Each ligand as placed: its file by path and SHA-256, where its pose
+        # came from, and from a structure the residue, which of the file's
+        # heavy atoms went on which of the structure's, and the
+        # stereochemistry checked ("stereochemistry not stated in the file"
+        # where there was none). `validation.ligand_mapping` checks a study
+        # against it. Absent without ligands.
+        **({"ligand_poses": list(ligand_poses)} if ligand_poses else {}),
         # Settings this phase decided, under their config names, for
         # `resolved_config.yml` to carry. The force field resolution above
         # answers the same question in its own shape and stays where it is;

@@ -25,9 +25,9 @@ RECORD = {"mean": -123456.7, "standard_error": 12.0, "unit": "kJ/mol",
     (-123456.7, 12.0, "-123,457 ± 12"),
     (0.0001234, 0.12, "0.00 ± 0.12"),
     (5432.1, 0.0004, "5,432.10000 ± 0.00040"),
-    (1.5, None, "1.5"),
-    (1.5, float("nan"), "1.5"),
-    (2.0, 0.0, "2 ± 0"),
+    (1.5, None, "1.500"),
+    (1.5, float("nan"), "1.500"),
+    (2.0, 0.0, "2.000 ± 0"),
 ])
 def test_the_error_to_two_figures_and_the_mean_to_its_place(value, error, said):
     assert with_its_error(value, error) == said

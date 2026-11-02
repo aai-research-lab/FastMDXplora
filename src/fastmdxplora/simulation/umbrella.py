@@ -2096,6 +2096,14 @@ WHAM_TOLERANCE_KJMOL = 1e-6
 WHAM_MAX_ITERATIONS = 100_000
 
 
+#: Said in the record beside a PMF's band and beside a barrier read off it.
+#: The figure is from `validation.pmf_coverage` on known profiles (a median
+#: over the bins between the window centres); see docs/validation.md.
+THE_CURVE_SITS_HIGH = (
+    "The curve is zeroed at its lowest bin, which noise puts low, so the "
+    "curve and a barrier read off it sit about 0.8 of their error high.")
+
+
 def _split_off_the_derived(
     record: dict[str, Any],
 ) -> "tuple[dict[str, Any], dict[str, Any]]":
@@ -2422,6 +2430,9 @@ def compute_pmf(
             "energy to report. Check that the windows ran and that the "
             "coordinate they biased is the one being histogrammed."
         , code="simulation.windows.no_sampling")
+    # The bin the curve reads 0 at, which each bootstrap resample is set to
+    # zero at too (below).
+    anchor = int(np.nanargmin(pmf))
     pmf -= np.nanmin(pmf)
 
     # Along a distance between two centres the curve above is the free
@@ -2499,6 +2510,10 @@ def compute_pmf(
     uncertainty = None
     derived = None
     if bootstrap_resamples:
+        # Resamples with nothing in the curve's lowest bin, counted for the
+        # record.
+        unzeroed = [0]
+
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
                 drawn, plan, temperature_K=temperature_K, bins=bins,
@@ -2507,12 +2522,24 @@ def compute_pmf(
             values = np.array(
                 [np.nan if v is None else v
                  for v in inner["pmf"]["free_energy_kjmol"]], dtype=float)
+            # Each resample comes back zeroed at its own lowest bin, and noise
+            # puts that bin low, so every resample sat above the curve and the
+            # band's middle a further half an error above it (on known
+            # profiles, `validation.pmf_coverage`). Set to zero at the
+            # curve's own lowest bin instead, the band is of the curve as it
+            # is reported. A resample with nothing in that bin cannot be put
+            # on the curve's zero and is left out of the band (NaN).
+            if np.isnan(values[anchor]):
+                unzeroed[0] += 1
+            values = values - values[anchor]
             if also is None:
                 return values
             # Carried as one more element of the same array, because
             # `block_bootstrap` treats an array element-wise and this costs
             # nothing beyond the WHAM solve already done for the curve. Split
-            # off again below.
+            # off again below. It reads the resample as it came, since what
+            # it reads (a binding free energy, a barrier) is a difference
+            # along the curve and does not move with the zero.
             try:
                 extra = also(inner["pmf"]["coordinate"],
                              inner["pmf"]["free_energy_kjmol"])
@@ -2529,6 +2556,20 @@ def compute_pmf(
             uncertainty, derived = _split_off_the_derived(uncertainty)
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
+        # Where the band is zero wide, and what the curve's own zero does.
+        # The offset is said, not corrected.
+        uncertainty["zeroed_at"] = float(centres[anchor])
+        uncertainty["resamples_left_out"] = int(unzeroed[0])
+        uncertainty["zero"] = THE_CURVE_SITS_HIGH
+
+    summary = describe_pmf(
+        centres, free_energy if mean_force is None else mean_force,
+        covered, periodic=periodic,
+        errors=None if uncertainty is None else uncertainty.get("standard_error"),
+        closed=periodic and turn_is_tiled(covered[0], covered[1], len(ordered),
+                                          [w.centre for w in ordered]))
+    if uncertainty is not None and summary.get("barrier_kjmol") is not None:
+        summary["barrier_zero"] = THE_CURVE_SITS_HIGH
 
     return {
         "pmf": {"coordinate": centres.tolist(), "free_energy_kjmol": free_energy,
@@ -2546,12 +2587,7 @@ def compute_pmf(
         "covered": [float(covered[0]), float(covered[1])],
         # Read off W(r) where there is one, so a depth or barrier does not
         # carry the shell's entropy.
-        "summary": describe_pmf(
-            centres, free_energy if mean_force is None else mean_force,
-            covered, periodic=periodic,
-            errors=None if uncertainty is None else uncertainty.get("standard_error"),
-            closed=periodic and turn_is_tiled(covered[0], covered[1], len(ordered),
-                                              [w.centre for w in ordered])),
+        "summary": summary,
         "unsampled_bins": unsampled,
         "overlaps": overlaps,
         # Both carried whether or not they refused anything. A reader asking

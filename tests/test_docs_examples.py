@@ -286,6 +286,9 @@ def test_every_fastmdx_flag_the_docs_name_exists() -> None:
     from fastmdxplora.validation.agent_eval import build_parser as evaluation_parser
 
     collect(evaluation_parser())
+    from fastmdxplora.validation.pmf_coverage import build_parser as coverage_parser
+
+    collect(coverage_parser())
 
     repo = Path(__file__).resolve().parents[1]
     pages = [repo / "README.md"] + sorted((repo / "docs").glob("*.md"))

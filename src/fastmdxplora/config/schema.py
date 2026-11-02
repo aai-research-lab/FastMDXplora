@@ -585,9 +585,10 @@ SETUP = PhaseSchema(
               "bonded to, which a larger one leaves negative. Default: off.",
               example=4.0,
               minimum=1.008, exclusive_minimum=True, maximum=4.032),
-        Field("temperature_K", (int, float), 300.0,
-              "Temperature in K for initial velocity assignment.",
-                    minimum=0.0),
+        Field("temperature_K", (int, float), None,
+              "Temperature in K for initial velocity assignment. Default: "
+              "the run's `simulation.temperature_K`.",
+              example=310.0, minimum=0.0),
     ),
 )
 

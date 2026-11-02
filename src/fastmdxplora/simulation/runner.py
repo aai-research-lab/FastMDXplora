@@ -223,6 +223,8 @@ class SimulationResult:
     #: and repeating what it managed to do before it was interrupted
     #: reproduces the interruption.
     resolved: dict[str, Any] = field(default_factory=dict)
+    #: What this run said of how it went, for the manifest's notes.
+    notes: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -1334,6 +1336,20 @@ def _detach_all_reporters(simulation: Any) -> None:
 # ---------------------------------------------------------------------------
 # Stage runners
 # ---------------------------------------------------------------------------
+def _velocities_assigned_at(state_xml: Path) -> float | None:
+    """The temperature setup assigned a prepared system's velocities at.
+
+    Read from the setup record beside its `state.xml`; None where there is
+    no record, or it does not say.
+    """
+    record = Path(state_xml).parent / "setup_parameters.json"
+    try:
+        value = json.loads(record.read_text(encoding="utf-8"))["parameters"]["temperature_K"]
+        return None if value is None else float(value)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def _run_minimize(
     omm: dict,
     simulation: Any,
@@ -2671,6 +2687,8 @@ def run_simulation(
     # Open the log file once and route the per-stage progress notes
     # through it in addition to whatever on_progress does.
     log_fh = log_path.open("w", encoding="utf-8")
+    #: What the run's record should say of how it went, for its manifest.
+    run_notes: list[str] = []
     telemetry = None
     if live_telemetry:
         from fastmdxplora.gui.telemetry import TelemetryWriter
@@ -2828,6 +2846,22 @@ def run_simulation(
         # moves atoms and there is no reason for it to run free.
         if plumed and plumed.get("hold_from_the_start"):
             _attach_the_bias(resolved_name="plumed_equilibration.dat")
+
+        if not minimize and resume_from is None:
+            assigned = _velocities_assigned_at(state_xml_path)
+            if assigned is not None and abs(assigned - float(temperature_K)) > 1e-6:
+                said = (f"Starting from the prepared system's velocities, assigned "
+                        f"at {assigned:.1f} K, for a run at {float(temperature_K):.1f} K: "
+                        "minimization is off, so they are not reassigned. With "
+                        "`minimize: true` they are assigned at the run's own.")
+                # Printed once, by the logger; the log file, the live
+                # events (as a warning) and the run's record carry it too.
+                logger.warning(said)
+                log_fh.write(said + "\n")
+                log_fh.flush()
+                if telemetry is not None:
+                    telemetry.event(said, level="warning")
+                run_notes.append(said)
 
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:
@@ -3464,6 +3498,7 @@ def run_simulation(
     duration_ns_actual = produced_steps * timestep_fs / 1_000_000.0
 
     return SimulationResult(
+        notes=list(run_notes),
         trajectory=traj_path,
         topology=topo_out,
         final_state=final_state_path,

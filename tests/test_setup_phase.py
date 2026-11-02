@@ -488,8 +488,9 @@ class TestDefaults:
     def test_hbond_constraints_for_2fs_timestep(self):
         assert DEFAULTS["constraints"] == "HBonds"
 
-    def test_room_temperature(self):
-        assert DEFAULTS["temperature_K"] == 300.0
+    def test_the_run_s_own_temperature(self):
+        # Unset: the run's simulation.temperature_K, filled per run.
+        assert DEFAULTS["temperature_K"] is None
 
 
 # ===========================================================================

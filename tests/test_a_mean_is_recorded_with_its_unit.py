@@ -144,7 +144,7 @@ class TestTheAgentIsTold:
             "area_per_lipid": {"mean": 0.62, "effective_samples": 30.0, "unit": "nm²"},
             "hbonds": {"mean": 3.2, "standard_error": 0.1, "effective_samples": 30.0, "unit": ""}}))
         assert "rmsd: mean 0.0212 ± 0.0014 nm (s.e.)" in text
-        assert "area_per_lipid: mean 0.62 nm²," in text
+        assert "area_per_lipid: mean 0.6200 nm²," in text
         assert "hbonds: mean 3.20 ± 0.10 (s.e.)" in text
 
     def test_a_mean_is_given_to_the_place_its_error_allows(self, tmp_path):
@@ -172,4 +172,4 @@ class TestTheAgentIsTold:
             "mean": 0.328, "standard_error": float("nan"), "effective_samples": 14.1,
             "not_a_measurement": "too short against its correlation time", "unit": "nm"}}))
         assert "nan" not in text.lower()
-        assert "rg: mean 0.328 nm, 14.1 effective samples" in text
+        assert "rg: mean 0.3280 nm, 14.1 effective samples" in text

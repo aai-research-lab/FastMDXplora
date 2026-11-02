@@ -442,7 +442,7 @@ def test_two_replicas_whose_spread_is_of_those_two_alone_are_not_said_to_differ(
     said to differ. Their spread is set against their own errors as
     `batch/aggregate.py` sets replicas', and said as it says it; and "only
     these two runs' means were read" was said of a study of two runs."""
-    from fastmdxplora.batch.aggregate import CALIBRATION_FACTOR, spread_against_own
+    from fastmdxplora.batch.aggregate import calibration_factor, spread_against_own
     from fastmdxplora.gui.compare_view import compared
     from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
 
@@ -455,9 +455,10 @@ def test_two_replicas_whose_spread_is_of_those_two_alone_are_not_said_to_differ(
     assert rg["error"] == pytest.approx((2 * 0.001 ** 2) ** 0.5)
     assert rg["error_of"] == "alone" and rg["resolved"] is None and "errors" not in rg
     check = rg["spread_against_own"]
-    assert check == spread_against_own([1.20, 1.25], [0.001, 0.001])
+    assert check == {**spread_against_own([1.20, 1.25], [0.001, 0.001]), "factor_said": "2.3",
+                     "ratio_said": "35"}
     assert check["ratio"] == pytest.approx(0.05 / 2 ** 0.5 / 0.001)
-    assert check["too_tight"] is True and check["factor"] == CALIBRATION_FACTOR
+    assert check["too_tight"] is True and check["factor"] == calibration_factor(2) == 2.3
     assert said["replicas"]["runs"] == 2 and said["replicas"]["of"] == 2
 
     def look(page, url):
@@ -487,12 +488,13 @@ def test_two_replicas_whose_spread_is_of_those_two_alone_are_not_said_to_differ(
     assert "only these two runs' means were read" not in shown["note"], shown["note"]
     assert ("the study has these two runs alone, and the spread of two means is their "
             "difference over the square root of 2") in shown["note"], shown["note"]
-    assert "past 2 times those, the errors are too tight" in shown["note"], shown["note"]
+    assert "past 2.3 times those, the errors are too tight" in shown["note"], shown["note"]
 
 
 def test_only_two_runs_means_read_is_said_where_the_study_has_more(tmp_path):
     """Of three replicas, only two recorded Rg: "only these two runs' means
-    were read", and the two, within twice their own errors, are said so."""
+    were read", and the two, within the factor two replicas reach by chance
+    (2.3 times their own errors), are said so."""
     from fastmdxplora.gui.compare_view import compared
     from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
 
@@ -521,7 +523,7 @@ def test_only_two_runs_means_read_is_said_where_the_study_has_more(tmp_path):
     assert "Radius of gyration: only these two runs' means were read" in shown["note"], \
         shown["note"]
     assert shown["rg"][3].endswith(", their spread 1.1 times their own errors, within the "
-                                   "factor of 2"), shown["rg"]
+                                   "factor of 2.3"), shown["rg"]
 
 
 def test_a_study_s_runs_are_counted_by_its_plan_not_those_written_so_far(tmp_path):
@@ -888,6 +890,9 @@ def test_the_page_on_a_phone_breaks_no_word_and_says_the_replicas_error(tmp_path
     # The first's thermodynamics ran and gave no mean, and said why.
     for run, potential in ((first, -1000.0), (second, -1100.0)):
         _energies(run, potential)
+    # An error below a millionth, as the page prints it.
+    _mean_of(first, "rg", 1.5e-6, 2.5e-7)
+    _mean_of(second, "rg", 1.6e-6, 2.5e-7)
     record = first / "analysis" / "thermodynamics" / "options.json"
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(json.dumps({"analysis": "thermodynamics", "findings": {"thermodynamics": {
@@ -927,8 +932,8 @@ def test_the_page_on_a_phone_breaks_no_word_and_says_the_replicas_error(tmp_path
                 noMean: (document.querySelector('.compare-no-mean') || {}).textContent || '',
                 errorOf: document.querySelector(
                     '.compare-means-table tr[data-analysis="rmsd"] td:last-child').dataset.errorOf,
-                small: window.FastMDXCompare.withError
-                    ? window.FastMDXCompare.withError(1.5e-6, 2.5e-7, 'nm') : null,
+                small: [...document.querySelectorAll(
+                    '.compare-means-table tr[data-analysis="rg"] td')].map((n) => n.textContent),
             };
         }""")
 
@@ -941,8 +946,13 @@ def test_the_page_on_a_phone_breaks_no_word_and_says_the_replicas_error(tmp_path
                               "2 usable frame(s): there is nothing to average.")
     assert said["errorOf"] == "replicas"
     assert said["note"].startswith("These are two of 3 runs that differ only by random seed")
-    # An error below a millionth said in its powers of ten, never 0.000000.
-    assert said["small"] == "(15.0 \u00b1 2.5)e-7 nm"
+    # An error below a millionth to its own two figures, never 0.000000,
+    # as the page prints the route's string (`with_its_error`).
+    from fastmdxplora.gui.compare_view import compared
+    rg = next(m for m in compared(first, second)["measures"] if m["analysis"] == "rg")
+    assert said["small"][1] == rg["first"]["said"] + " nm", said["small"]
+    assert said["small"][2] == rg["second"]["said"] + " nm", said["small"]
+    assert "0.000000 " not in " ".join(said["small"]) and "e-" not in " ".join(said["small"])
 
 
 def test_ticking_the_second_run_does_not_move_the_table(variants):
@@ -1164,3 +1174,99 @@ def test_two_replicas_from_two_models_read_alone_are_not_said_to_differ(tmp_path
     rg = next(m for m in compared(first, second)["measures"] if m["analysis"] == "rg")["versus"]
     assert rg["error_of"] == "alone" and rg["resolved"] is None
     assert rg["spread_against_own"]["too_tight"] is True
+
+
+def test_a_mean_with_no_error_keeps_its_four_figures(tmp_path):
+    """A mean with no error of its own reads to four figures with its trailing
+    zeros, as `statistics.four_figures` gives it: 1.2 reads "1.200", where
+    it read "1.2", beside "1.2030 ± 0.0020" on the pages that give it."""
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2])
+    first, second = _runs(study)
+    _mean_of(first, "rg", 1.2, None)
+    _mean_of(second, "rg", 1.25, None)
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => [...document.querySelectorAll(
+            '.compare-means-table tr[data-analysis="rg"] td')].map((n) => n.textContent)""")
+
+    shown = _browse(study, look)
+    assert shown[1].startswith("1.200 nm") and shown[2].startswith("1.250 nm"), shown
+
+
+@pytest.mark.parametrize("value", [1.0025, 1.2345, 1000500.0, 9.9995e-05])
+def test_the_route_sends_each_mean_as_four_figures_prints_it(tmp_path, value):
+    """The page prints the string the route sends, from `four_figures`: its
+    own printer differed on ties and near the switch to an exponent."""
+    from fastmdxplora.gui.compare_view import compared
+    from fastmdxplora.statistics import four_figures
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2])
+    first, second = _runs(study)
+    _mean_of(first, "rg", value, 0.001 * value)
+    _mean_of(second, "rg", 2 * value, 0.5 * value)
+    rg = next(m for m in compared(first, second)["measures"] if m["analysis"] == "rg")
+    assert rg["first"]["mean_said"] == four_figures(value)
+    assert rg["second"]["mean_said"] == four_figures(2 * value)
+    assert rg["second"]["error_said"] == four_figures(0.5 * value)
+    assert rg["versus"]["difference_said"] == four_figures(value)
+
+
+def test_a_mean_with_its_error_reads_as_every_page_prints_it(tmp_path):
+    """The page printed a mean with its error with JavaScript's `toFixed`:
+    1,234.5 \u00b1 1.2 read "1234.5 \u00b1 1.2", and the tie 1.0625 \u00b1 0.012
+    read "1.063" where `with_its_error` reads "1.062". It prints the
+    route's string now, from `with_its_error`."""
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2])
+    first, second = _runs(study)
+    _mean_of(first, "rg", 1234.5, 1.2)
+    _mean_of(second, "rg", 1.0625, 0.012)
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => [...document.querySelectorAll(
+            '.compare-means-table tr[data-analysis="rg"] td')].map((n) => n.textContent)""")
+
+    shown = _browse(study, look)
+    assert shown[1].startswith("1,234.5 \u00b1 1.2 nm"), shown
+    assert shown[2].startswith("1.062 \u00b1 0.012 nm"), shown
+    # The difference too, from the route: four figures, grouped, with no
+    # error where the cell calls the errors too tight.
+    assert shown[3].startswith("-1,233 nm, their spread 1,400 times"), shown
+
+
+def test_a_cell_s_own_error_in_its_title_keeps_its_two_figures(tmp_path):
+    """Three replicas whose spread, about 0.001, is each cell's error, each
+    with its own error of 1e-7: the title gave the own error to the cell's
+    places, "Its own error: 0.0000 nm", an error printed as zero. It keeps
+    its own two figures where those are finer."""
+    from tests.test_the_overview_of_a_study_of_runs import _a_study_of_runs
+
+    study = _a_study_of_runs(tmp_path, "simulation.random_seed", [1, 2, 3])
+    runs = _runs(study)
+    for run, mean in zip(runs, (1.000, 1.001, 1.002)):
+        _mean_of(run, "rg", mean, 1e-7)
+    first, second = runs[0], runs[1]
+
+    def look(page, url):
+        place = (urllib.parse.quote(str(first), safe="") + "|"
+                 + urllib.parse.quote(str(second), safe=""))
+        page.goto(url + "#compare/" + place, wait_until="domcontentloaded")
+        page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+        return page.evaluate("""() => [...document.querySelectorAll(
+            '.compare-means-table tr[data-analysis="rg"] td')].map((n) => n.title)""")
+
+    titles = _browse(study, look)
+    assert titles[1] == "Its own error: 0.00000010 nm", titles
+    assert titles[2] == "Its own error: 0.00000010 nm", titles

@@ -22,8 +22,12 @@ def _run(root: Path, name: str, *, config: dict, digest: str | None = "abc123",
     payload["output_dir"] = output_dir or f"/scratch/{name}/run"
     (run / "resolved_config.yml").write_text(
         yaml.safe_dump(payload), encoding="utf-8")
-    manifest = {"input_sha256": digest} if digest else {}
-    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (run / "manifest.json").write_text("{}", encoding="utf-8")
+    if digest:
+        (run / "setup").mkdir(exist_ok=True)
+        record = {"input": {"structure": {"sha256": digest}}}
+        (run / "setup" / "setup_parameters.json").write_text(
+            json.dumps(record), encoding="utf-8")
     return run
 
 
@@ -99,7 +103,7 @@ class TestWhatMustNotBeReportedAsADifference:
         assert result["study_differences"] == {}
 
     def test_results_are_declared_out_of_scope_with_the_reason(self, tmp_path):
-        """Solvation is not reproducible from the dynamics seed.
+        """The preparation is seeded; the dynamics diverge across platforms.
 
         Calling that a failure would make an honest limitation look like a
         defect, and leaving it unsaid would let a real difference hide
@@ -111,7 +115,10 @@ class TestWhatMustNotBeReportedAsADifference:
         })
         note = result["what_is_not_compared"]
 
-        assert "the dynamics seed does not fix" in note
+        assert "the dynamics seed does not fix" not in note
+        assert "seeded by setup.random_seed" in note
+        assert "prepare the same atoms again" in note
+        assert "simulation.random_seed" in note
         assert "within the spread between replicas" in note
 
 
@@ -139,7 +146,77 @@ class TestWhatItRefuses:
 
 
 class TestTheDigestItself:
+    def test_it_is_read_from_the_record_setup_writes(self, tmp_path):
+        """Setup's own record, written by setup's own writer, is checked.
+
+        The digest sits in ``setup/setup_parameters.json``; the run's
+        ``manifest.json`` does not carry it, so a comparison reading only
+        the manifest never checked this row.
+        """
+        from types import SimpleNamespace
+
+        from fastmdxplora.provenance import structure_provenance
+        from fastmdxplora.setup.pipeline import _write_manifest
+
+        runs = {}
+        for name, body in (("a", b"ATOM 1\n"), ("b", b"ATOM 2\n")):
+            run = tmp_path / name
+            (run / "setup").mkdir(parents=True)
+            pdb = run / "in.pdb"
+            pdb.write_bytes(body)
+            orchestrator = SimpleNamespace(
+                system=str(pdb),
+                _structure_provenance=structure_provenance(
+                    str(pdb), "file", pdb))
+            _write_manifest(run / "setup", orchestrator, "file", {}, [], [])
+            (run / "resolved_config.yml").write_text(
+                yaml.safe_dump(STUDY), encoding="utf-8")
+            (run / "manifest.json").write_text("{}", encoding="utf-8")
+            runs[name] = run
+
+        result = compare_environments(runs)
+        digests = result["input_digest"]["digests"]
+
+        assert digests["a"] == hashlib.sha256(b"ATOM 1\n").hexdigest()
+        assert digests["b"] == hashlib.sha256(b"ATOM 2\n").hexdigest()
+        assert result["input_digest"]["not_recorded_for"] == []
+        assert result["input_digest"]["agree"] is False
+        assert result["agreed"] is False
+
     def test_it_reads_the_file_not_its_name(self, tmp_path):
         path = tmp_path / "structure.pdb"
         path.write_bytes(b"ATOM\n")
         assert digest_of(path) == hashlib.sha256(b"ATOM\n").hexdigest()
+
+
+class TestADrawnSeed:
+    """Setup draws a seed where the study gave none and records it as
+    `random_seed.drawn`; two places draw two seeds, which is not a
+    difference in the study. The key the comparison named, `seed_source`,
+    is written by nothing."""
+
+    @staticmethod
+    def _seeded(root: Path, name: str, seed: int, drawn: bool) -> Path:
+        config = {**STUDY, "setup": {**STUDY["setup"], "random_seed": seed}}
+        run = _run(root, name, config=config)
+        record = {"input": {"structure": {"sha256": "abc123"}},
+                  "random_seed": {"seed": seed, "drawn": drawn}}
+        (run / "setup" / "setup_parameters.json").write_text(
+            json.dumps(record), encoding="utf-8")
+        return run
+
+    def test_seeds_drawn_in_each_place_are_environmental(self, tmp_path):
+        result = compare_environments({
+            "a": self._seeded(tmp_path, "a", 11, drawn=True),
+            "b": self._seeded(tmp_path, "b", 22, drawn=True),
+        })
+        assert result["agreed"] is True
+        assert "setup.random_seed" in result["environmental_differences"]
+
+    def test_seeds_the_study_gave_are_the_study(self, tmp_path):
+        result = compare_environments({
+            "a": self._seeded(tmp_path, "a", 11, drawn=False),
+            "b": self._seeded(tmp_path, "b", 22, drawn=True),
+        })
+        assert result["agreed"] is False
+        assert "setup.random_seed" in result["study_differences"]

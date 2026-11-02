@@ -695,6 +695,7 @@ def prepare_system(
 
         force_field = membrane_forcefield_files(list(force_field), str(membrane).upper())
         lipid_parameters = lipid_parameter_file(force_field, str(membrane).upper())
+    ligand_placements: list[dict[str, Any]] = []
     if ligands:
         # Protein-ligand: load the ligand as an OpenFF Molecule, build a
         # SystemGenerator that combines the protein/water force field with
@@ -715,6 +716,13 @@ def prepare_system(
         placed = _Counter()
         for path, name, charge in zip(ligands, names, charges):
             molecule = load_ligand(path, name=name, net_charge=charge)
+            # What the setup record keeps of each ligand's placement: the
+            # file by path and content, and from the structure the mapping of
+            # its atoms and the stereochemistry checked, so a study can be
+            # checked later against the file it was prepared from.
+            placement: dict[str, Any] = {
+                "name": name, "copy": placed[name] + 1,
+                **_kept_in_the_study(path, output_dir)}
             # The chemistry comes from the supplied file and the pose from
             # the structure, where the structure has this residue. An ideal
             # SDF carries bond orders and an arbitrary geometry; using its
@@ -729,9 +737,11 @@ def prepare_system(
                 # input.pdb does not turn a deliberate pose into silence.
                 molecule, said = pose_by_policy(
                     molecule, original, name, policy=ligand_pose,
-                    copy=placed[name])
+                    copy=placed[name], record=placement)
             else:
                 molecule, said = molecule, None
+                placement.update({"pose": "file", "why": "no structure"})
+            ligand_placements.append(placement)
             placed[name] += 1
             if said:
                 logger.info("%s", said)
@@ -1111,6 +1121,9 @@ def prepare_system(
         # around it: the lipid, how many, per leaflet, and the fitted
         # thickness the placement found. None for a box of water.
         "membrane": membrane_record,
+        # Where each ligand's pose came from and, from the structure, which
+        # of its atoms went where: None without ligands.
+        "ligand_poses": ligand_placements if ligands else None,
         # Settings this phase decided for itself, under their config names,
         # for `resolved_config.yml` to carry. Named values rather than a
         # filtered copy of the parameters, so nothing private leaks in.
@@ -1579,6 +1592,48 @@ def _build_ligand_forcefield(force_field, small_molecule_ff, ligand_mols):
         molecules=list(ligand_mols),
     )
     return system_generator.forcefield, system_generator
+
+
+def _kept_in_the_study(path: str | Path, setup_dir: str | Path) -> dict[str, Any]:
+    """The ligand file as the study keeps it: copied into ``ligands/`` of
+    the setup folder (once, where setup did not write it there itself), so
+    the study holds the chemistry it was prepared from wherever the file
+    it was given goes. Recorded by its place in the setup folder and its
+    SHA-256, with where it came from."""
+    import shutil
+
+    source = Path(path).expanduser()
+    folder = Path(setup_dir) / "ligands"
+    digest = _sha256_of(source)
+    try:
+        if source.resolve().parent == folder.resolve():
+            kept = source
+        else:
+            folder.mkdir(parents=True, exist_ok=True)
+            kept = folder / source.name
+            number = 1
+            # A file of that name already kept, and not this one: another.
+            while kept.exists() and _sha256_of(kept) != digest:
+                number += 1
+                kept = folder / f"{source.stem}-{number}{source.suffix}"
+            if not kept.exists():
+                shutil.copyfile(source, kept)
+    except OSError:
+        return {"file": str(source), "source": str(source), "sha256": digest}
+    here, home = kept.resolve(), Path(setup_dir).resolve()
+    return {"file": here.relative_to(home).as_posix() if here.is_relative_to(home)
+            else str(kept),
+            "source": str(source), "sha256": _sha256_of(kept)}
+
+
+def _sha256_of(path: str | Path) -> str | None:
+    """A file's SHA-256, or None where it cannot be read."""
+    import hashlib
+
+    try:
+        return hashlib.sha256(Path(path).expanduser().read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def _add_ligand_to_modeller(omm, modeller, ligand_mol, ligand_name="LIG") -> None:

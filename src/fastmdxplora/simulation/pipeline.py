@@ -906,6 +906,7 @@ def run(
                 "record was written. Keys present: %s",
                 sorted(k for k in params if params.get(k) is not None)[:40])
 
+        notes.extend(getattr(result, "notes", None) or [])
         _write_manifest(
             output_dir, params, artifacts, notes,
             platform_used=result.platform_used,
