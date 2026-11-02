@@ -59,7 +59,9 @@ def extended():
     from fastmdxplora.simulation import resume
     from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE
 
-    root = Path(tempfile.mkdtemp())
+    # Resolved: on macOS the temporary folder is /var, a link to /private/var,
+    # and a study records its folder resolved.
+    root = Path(tempfile.mkdtemp()).resolve()
     pdb = root / "tri-ala.pdb"
     pdb.write_text(TRI_ALANINE)
     study = root / "study"
