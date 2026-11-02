@@ -600,15 +600,36 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   frames under a container's limit of about 100 MB, a clustering the check
   allowed, and the stride its refusal gave, were killed plotting it.
 - A refusal for memory, clustering's or MDS's, says the need, the room and
-  the three quarters of it planned on as numbers that read apart; it said
-  0.4 GB needed and 0.4 GB available.
+  the three quarters of it planned on as numbers that read apart, in one
+  unit (MB under 1 GB), the share computed from the room as said; it said
+  0.4 GB needed and 0.4 GB available, and "0.1 GB, of which ... 75%, 87.0
+  MB". Sizes under 1 GB are said in MB wherever clustering says one.
+- Under an address-space limit (`ulimit -v`), clustering and `dimred` plan
+  on the address space they map (`findings.memory.bytes_address_needed`,
+  about 150 and 130 MiB beside the matrix, measured as `VmPeak` growth), read
+  once as each analysis starts and said so: a clustering the check allowed,
+  and the stride its refusal gave, failed plotting its figures with
+  `std::bad_alloc`, MDS failed to map its matrix and took PCA and t-SNE with
+  it, and a very tight limit ended the process in OpenBLAS with no record.
+- A figure the memory runs out plotting, in `cluster` or `dimred`, is left
+  out and said with what to set (`findings.figures_not_plotted`), the other
+  figures and files saved; MDS or the clustering matrix running out is
+  refused as past the check, the projections beside MDS saved.
+- DBSCAN's freed lists of neighbours are given back before the map is
+  plotted (`malloc_trim` where glibc is the allocator).
+- The any-stride clustering refusal's first sentence stands alone; a results
+  table showed only "... at any stride:".
 - Making the clustering matrix symmetric past about 2,900 frames leaves no
   block resident after it: each pass's block came from glibc's heap and the
   last one freed stayed.
-- The GUI says MDS was refused for memory under each projection that ran
-  beside it, as the record and the report do.
-- The card of an analysis that was refused or failed says what to set, from
-  its refusal, where it said to re-run it.
+- The GUI says MDS was refused for memory below each projection that ran
+  beside it, still shown when the card shows the figure, its settings without
+  backticks, and the projection's PNG and SVG say it too, as the record and
+  the report do.
+- An analysis that was refused or failed has a card in its section of the
+  Analysis page saying what to set, from its refusal, which the results
+  table's link goes to; its card was in the grid hidden beside the sections,
+  and said to re-run it.
 - The dendrogram's heights carry their unit (nm) on its axis and in the
   GUI's CSV of it.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
