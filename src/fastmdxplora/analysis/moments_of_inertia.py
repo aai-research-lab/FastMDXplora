@@ -216,7 +216,7 @@ class MomentsOfInertia(Analysis):
             for column, (key, _name, unit) in enumerate(SHAPE_DESCRIPTORS):
                 record = mean_record(shape[:, column],
                                      frame_interval_ns=_frame_interval_ns(traj),
-                                     joins=getattr(traj, SEGMENT_JOINS, ()))
+                                     joins=getattr(traj, SEGMENT_JOINS, ()), unit=unit)
                 record["unit"] = unit
                 self.findings[key] = record
                 if reason:

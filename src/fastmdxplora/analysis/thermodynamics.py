@@ -452,7 +452,7 @@ class Thermodynamics(Analysis):
 
             entry: dict[str, Any] = {
                 **mean_record(values, frame_interval_ns=interval_ns,
-                              joins=found_joins.get(key, [])),
+                              joins=found_joins.get(key, []), unit=units),
                 "units": units,
             }
             if "mean" in entry:

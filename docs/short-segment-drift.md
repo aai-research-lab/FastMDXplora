@@ -453,7 +453,9 @@ Convergence table, whose finding gives the refusal and its remedy. Existing save
 are not changed; analyse again to apply the check (mean rules version 5;
 version 4 judged three or four segments against their errors alone).
 New pooled records and drift refusals identify the method through `drift_test`;
-guarded mean records retain `segment_joins`. The note's figure (`drift_unseen`) is worked out once, when
+guarded mean records retain `segment_joins`. A drift refusal gives its amounts
+in the quantity's unit to two figures, as the note beside a mean not called
+drifting does. The note's figure (`drift_unseen`) is worked out once, when
 the record is written (and again with the rest of the record where replicas
 share a start), and every page reads the record's; it does not change a
 verdict, so the mean rules stay at version 5.

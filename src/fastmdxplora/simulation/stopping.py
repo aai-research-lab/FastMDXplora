@@ -456,6 +456,7 @@ def share_the_start(runs: list[Path], analysis: str, production_ns: float | None
             continue
         again = mean_record(series, start_at_least=at,
                             joins=record.get("segment_joins") or (),
+                            unit=record.get("unit") or record.get("units") or None,
                             frame_interval_ns=(production_ns / series.size
                                                if production_ns else None))
         kept = {k: v for k, v in record.items() if k not in _RECOMPUTED}

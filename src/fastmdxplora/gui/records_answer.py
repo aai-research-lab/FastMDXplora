@@ -152,6 +152,7 @@ def _means(base: Path) -> list[str]:
     import math
 
     from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.statistics import noted_beside
 
     try:
         rows = overview_of(base).get("rows") or []
@@ -177,7 +178,7 @@ def _means(base: Path) -> list[str]:
                     lines.append(f"{label}: no mean; {why}.")
                 continue
             # Its image note beside its verdict, which it does not change.
-            noted = f"; {quantity['noted']}" if quantity.get("noted") else ""
+            noted = noted_beside(quantity.get("noted"))
             if not quantity.get("determined"):
                 lines.append(f"{label}: {said}, not determined" + (f"; {why}" if why else "")
                              + noted + ".")
@@ -204,6 +205,7 @@ def _thermodynamic_means(base: Path) -> list[str]:
     a study with no thermodynamics analysis: the summary named none while
     the Overview and the report gave each."""
     from fastmdxplora.gui.overview_view import THERMODYNAMICS, overview_payload
+    from fastmdxplora.statistics import noted_beside
 
     try:
         means = (overview_payload(base).get("thermodynamics") or {}).get("means") or {}
@@ -214,7 +216,7 @@ def _thermodynamic_means(base: Path) -> list[str]:
         said = means.get(key)
         if not isinstance(said, dict) or not said.get("said"):
             continue
-        noted = f"; {said['noted']}" if said.get("noted") else ""
+        noted = noted_beside(said.get("noted"))
         if said.get("determined"):
             samples = said.get("samples")
             more = f", {samples:.0f} independent samples" if isinstance(samples, (int, float)) else ""

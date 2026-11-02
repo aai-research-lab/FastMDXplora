@@ -544,9 +544,9 @@ class Analysis(ABC):
 
         from fastmdxplora.analysis.loading import SEGMENT_JOINS
 
-        record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj),
-                             joins=getattr(traj, SEGMENT_JOINS, ()))
         unit = self._recorded_unit()
+        record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj),
+                             joins=getattr(traj, SEGMENT_JOINS, ()), unit=unit)
         if unit is not None:
             record["unit"] = unit
         self.findings["mean"] = record

@@ -480,7 +480,7 @@ class SASA(Analysis):
         interval = _frame_interval_ns(traj)
         for k, name in enumerate(("hydrophobic_sasa", "polar_sasa")):
             record = mean_record(split[:, k], frame_interval_ns=interval,
-                                 joins=getattr(self, "_segment_joins", ()))
+                                 joins=getattr(self, "_segment_joins", ()), unit="nm²")
             record["unit"] = "nm²"
             self.findings[name] = record
         self.findings["surface_classes"] = (

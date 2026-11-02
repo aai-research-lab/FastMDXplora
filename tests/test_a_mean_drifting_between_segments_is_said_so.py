@@ -713,3 +713,82 @@ def test_the_chart_caption_says_the_drift_note_as_a_sentence(tmp_path) -> None:
         session.server.shutdown()
     assert "independent samples. With 3 segments, a steady drift" in caption, caption
     assert caption.endswith(").") and "; With" not in caption, caption
+
+
+def test_the_records_answer_and_compare_join_the_drift_note_as_a_sentence(tmp_path) -> None:
+    # "...after the first 102 of 1200 frames; With 3 segments, ...": a
+    # capital after a semicolon, fixed on the chart caption alone.
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.workspace_studies import mean_said
+
+    values, joins = _climbing(3, step=0.0)
+    said = answer_from_the_records(_study(tmp_path, values, joins), "found")
+    assert ". With 3 segments, a steady drift" in said, said
+    assert "; With" not in said, said
+    note = "With 3 segments, a steady drift smaller than about 51 kJ/mol"
+    assert mean_said({"mean": 1.0, "error": 0.1, "unit": "nm", "noted": note}) == \
+        f"1.00 ± 0.10 nm. {note}"
+    clause = "may be biased by the solute's image"
+    assert mean_said({"mean": 1.0, "error": 0.1, "unit": "nm", "noted": clause}) == \
+        f"1.00 ± 0.10 nm; {clause}"
+
+
+@pytest.mark.parametrize("count", [3, 4])
+def test_a_drift_refusal_gives_its_amounts_in_the_quantity_s_unit_to_two_figures(
+        tmp_path, monkeypatch, count) -> None:
+    # "changes by +13.92 across the run (first to last mean +14.79)", beside
+    # a note giving "about 410 kJ/mol".
+    from fastmdxplora.analysis import thermodynamics as module
+    from tests.test_statistics import _segments
+
+    stationary, _ = _segments([0.0], frames=4000, seed=18)
+    pieces = []
+    for i in range(count):
+        folder = tmp_path / f"piece-{i}" / "simulation"
+        folder.mkdir(parents=True)
+        path = folder / "energy.csv"
+        values = 300 + stationary + 2 * i
+        path.write_text('#"Step","Time (ps)","Temperature (K)"\n' +
+                        "".join(f"{j},{j},{value}\n" for j, value in enumerate(values)))
+        pieces.append({"path": path, "last_step": None,
+                       "steps_before": 4000 * i, "ps_before": 4000 * i})
+    monkeypatch.setattr(module, "state_record_pieces", lambda _: pieces)
+    analysis = module.Thermodynamics()
+    monkeypatch.setattr(analysis, "_state_path", lambda: pieces[0]["path"])
+    analysis.compute(None)
+    said = analysis.findings["thermodynamics"]["temperature"]["not_a_measurement"]
+    change = said.split("changes by ")[1].split(" across")[0]
+    span = said.split("first to last mean ")[1].split(")")[0].split(",")[0]
+    for amount in (change, span):
+        assert amount.endswith(" K") and amount.startswith("+"), said
+        number = amount[:-len(" K")]
+        assert len(number.lstrip("+").replace(".", "").lstrip("0")) <= 2, said
+
+
+def test_the_recorded_mean_s_note_is_joined_as_a_sentence_where_it_is_one():
+    """The panel said "Recorded mean ... kJ/mol; With 3 segments, ...": a
+    capital after a semicolon, fixed on the chart caption alone."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "analysis-page.js").read_text(encoding="utf-8")
+    start = script.index("    // As the table above says it")
+    end = script.index("    if (recorded.start_shared_with_replicas)", start)
+    said = []
+    for noted in ("With 3 segments, a steady drift smaller than about 51 kJ/mol",
+                  "may be biased by the solute's image"):
+        probe = ("var parts = []; var unit = ''; var eq = {};"
+                 "function format(v) { return String(v); }"
+                 "function firstSentence(v) { return v; }"
+                 f"var recorded = {{mean: -22300, standard_error: 1.1, "
+                 f"said: '-22,300 ± 1.1 kJ/mol', noted: {json.dumps(noted)}}};"
+                 + script[start:end] + "\nconsole.log(parts[0]);")
+        said.append(subprocess.run([node, "-e", probe], capture_output=True, text=True,
+                                   check=True).stdout.strip())
+    assert said == ["Recorded mean -22,300 ± 1.1 kJ/mol. With 3 segments, a steady drift "
+                    "smaller than about 51 kJ/mol.",
+                    "Recorded mean -22,300 ± 1.1 kJ/mol; may be biased by the solute's image."]

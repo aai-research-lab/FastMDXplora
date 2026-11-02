@@ -51,7 +51,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   for 1,000, 1,000, 1,000 and 5,000 frames, where 519 means are pooled as a
   lower bound against 149).
 - A drift refusal says how many segments it tested and which it left out
-  and why, those left out for one reason together; two segments that disagree are said not to tell a drift from
+  and why, those left out for one reason together, and gives its amounts in
+  the quantity's unit to two figures, as the note beside a mean does (it
+  said "+13.92" beside "about 410 kJ/mol"); two segments that disagree are said not to tell a drift from
   offsets (they were said "not drift").
 - A mean of a joined run whose test for drift between segments ran on
   three or four segments without calling drift says beside its verdict, as a
@@ -71,7 +73,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   segments tested and those left out; where fewer than three could be tested,
   that drift between them was not tested. On the Overview's card (a line of
   its own, whole), the Analysis page, the report, Compare, the Agent's
-  citation chips, its answers and its own context.
+  citation chips, its answers and its own context, after a full stop as a
+  sentence (the Agent's records answer, the Analysis page's convergence
+  panel and Compare of two studies said "; With 3 segments").
 - The Agent's and the GUI's answers to whether a study ran long enough and
   what would strengthen it name a mean drifting between a joined run's
   segments and its remedy, a longer run of no length a record gives, by the

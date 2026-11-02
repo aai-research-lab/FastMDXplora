@@ -61,6 +61,7 @@ __all__ = [
     "withheld_reason",
     "withheld_code",
     "drift_unseen_said",
+    "noted_beside",
     "DRIFTING_CODES",
     "statistical_inefficiency",
     "correlation_is_resolved",
@@ -937,7 +938,8 @@ def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", t
 
 
 def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
-                start_at_least: int = 0, joins: list[int] | tuple[int, ...] = ()) -> dict[str, Any]:
+                start_at_least: int = 0, joins: list[int] | tuple[int, ...] = (),
+                unit: "str | None" = None) -> dict[str, Any]:
     """What an analysis records of a per-frame series: its mean and error
     after equilibration, or why there is none and how much longer would give
     one. One function for every analysis and for whatever reads the records
@@ -946,14 +948,16 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     with replicas (:func:`shared_start`); the record says where it came from.
     Known ``joins`` additionally guard against drift between segments. This
     guard does not change the existing single-series estimate into a pooled
-    estimate: it withholds its error when the joined run is still moving."""
+    estimate: it withholds its error when the joined run is still moving.
+    ``unit`` is the series', for the amounts a drift refusal gives."""
     values = np.asarray(series, dtype=float)
     equilibrated, reason = summarise(values, start_at_least=start_at_least)
     boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
     unseen: dict[str, Any] | None = None
     if boundaries:
         tested: dict[str, Any] = {}
-        _, joined_reason = summarise_segments(values, boundaries, tested_into=tested)
+        _, joined_reason = summarise_segments(values, boundaries, tested_into=tested,
+                                              unit=unit)
         if _code_of(joined_reason) == "analysis.sampling.drifting":
             reason = joined_reason
         else:
@@ -1179,6 +1183,16 @@ def _two_figures(value: float) -> str:
     return f"{rounded:,.{places}f}"
 
 
+def _signed(value: float, unit: "str | None" = None) -> str:
+    """An amount of change with its sign, to two significant figures, and
+    its unit where it has one: "+14 K", where "+13.92" was said beside a
+    note giving "about 410 kJ/mol"."""
+    units = f" {unit}" if unit else ""
+    if not math.isfinite(value) or value == 0.0:
+        return f"{value:g}{units}"
+    return f"{'+' if value > 0 else '-'}{_two_figures(abs(value))}{units}"
+
+
 def _number(value: Any) -> "float | None":
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -1235,6 +1249,18 @@ def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
                   f"beyond that error, a scale estimated from only {count} means")
     return (f"{which}, a steady drift smaller than about {_two_figures(change)}{units} "
             f"from the first segment's mean to the last's could go unseen ({basis})")
+
+
+def noted_beside(noted: Any) -> str:
+    """A mean's note joined to what is said before it: after a full stop
+    where the note is a sentence (the drift note, "With 3 segments, ..."),
+    after a semicolon where it is a clause (the image note), as the chart
+    caption joins it; an empty string where there is none. "; With 3
+    segments" was said."""
+    if not noted:
+        return ""
+    noted = str(noted)
+    return f". {noted}" if noted[:1].isupper() else f"; {noted}"
 
 
 def withheld_code(record: Any) -> str:
@@ -1439,6 +1465,7 @@ def summarise_segments(
     *,
     minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
     tested_into: "dict[str, Any] | None" = None,
+    unit: "str | None" = None,
 ) -> "tuple[Pooled | None, Withholding | None]":
     """Summarise a joined series, analysing each segment on its own.
 
@@ -1465,6 +1492,8 @@ def summarise_segments(
         variance, :func:`_line_scatter`), and the tested segments' lengths
         (``lengths``), errors (``errors``) and centres in time, in frames
         (``centres``). Left empty for a run in one piece.
+    unit
+        The series' unit, for the amounts a drift refusal gives.
 
     Returns
     -------
@@ -1569,7 +1598,7 @@ def summarise_segments(
     left_out = _left_out_said(out)
     scatter, drifting, refusal = _drift_test(
         means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved],
-        left_out=left_out)
+        left_out=left_out, unit=unit)
     if tested_into is not None:
         precisions = 1.0 / errors[resolved] ** 2
         count = int(resolved.sum())
@@ -1727,12 +1756,14 @@ def _beyond_chance(scatter: float, count: int) -> bool:
 
 def _drift_test(means: np.ndarray, precisions: np.ndarray,
                 positions: "np.ndarray | None" = None, *, left_out: str = "",
-                ) -> "tuple[float, float, Withholding | None]":
+                unit: "str | None" = None) -> "tuple[float, float, Withholding | None]":
     """The heterogeneity, the drift p-value, and the refusal for segment
     means that move in order (None where they do not). ``positions`` is
     where each mean sits in time (its centre frame); segment order where
     not given. ``left_out`` says which segments were not tested and why,
-    for the refusal to say beside how many were.
+    for the refusal to say beside how many were; ``unit`` is the means',
+    for the amounts it gives, to two figures as the note beside a mean
+    not called drifting gives its own.
 
     Both a trend (``drift_across_segments`` at most 0.05) and a
     disagreement (``heterogeneity_ratio`` above one) are needed, because
@@ -1768,8 +1799,8 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray,
         change = (_weighted_slope(means, precisions, positions)
                   * float(positions[-1] - positions[0]))
         movement = (
-            f"A straight line through {tested} changes by {change:+.4g} "
-            f"across the run (first to last mean {span:+.4g}"
+            f"A straight line through {tested} changes by {_signed(change, unit)} "
+            f"across the run (first to last mean {_signed(span, unit)}"
             + ("" if one_way else ", though they do not move one way at every step")
             + ")")
         readable = bool(np.all(np.isfinite(precisions)) and np.all(precisions > 0.0))
@@ -1785,9 +1816,9 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray,
     else:
         movement = (
             f"{tested[:1].upper()}{tested[1:]} move in order across the run, by "
-            f"{span:+.4g} from first to last" if one_way else
+            f"{_signed(span, unit)} from first to last" if one_way else
             f"{tested[:1].upper()}{tested[1:]} trend across the run, by "
-            f"{span:+.4g} from first to last, though not one way at every step")
+            f"{_signed(span, unit)} from first to last, though not one way at every step")
         evidence = f"an ordering this clean arises by chance {chance} of the time"
     # The verdict first, with its p and remedy: a page that shows the first
     # sentence alone (the Overview's card) showed the line's arithmetic and

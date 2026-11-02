@@ -571,16 +571,22 @@
             (Math.round(eq.effective_samples) === 1 ? "." : "s.")));
     }
     // As the table above says it (`recorded.said`, the server's): an error
-    // only where the record stands behind it.
+    // only where the record stands behind it. Its note joined after a full
+    // stop where it is a sentence (the drift note), after a semicolon where
+    // it is a clause (the image note), as the chart caption joins it:
+    // "; With 3 segments" was said.
+    var beside = function (noted) {
+      return !noted ? "" : (/^[A-Z]/.test(noted) ? ". " : "; ") + noted;
+    };
     if (recorded.mean != null && recorded.standard_error != null) {
       parts.push("Recorded mean " + (recorded.said ||
         format(recorded.mean) + " \u00b1 " + format(recorded.standard_error) + unit) +
-        (recorded.noted ? "; " + recorded.noted : "") + ".");
+        beside(recorded.noted) + ".");
     } else if (recorded.mean != null) {
       var why = recorded.not_a_measurement || eq.withheld;
       parts.push("Recorded mean " + (recorded.said || format(recorded.mean) + unit) +
         ", not determined" + (why ? ": " + firstSentence(why) : "") +
-        (recorded.noted ? "; " + recorded.noted : "") + ".");
+        beside(recorded.noted) + ".");
     }
     if (recorded.start_shared_with_replicas) {
       parts.push("The recorded mean starts where the study's replicas equilibrate together, at frame " +

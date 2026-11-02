@@ -314,7 +314,9 @@ def assess_series(name: str, values: Any,
         # The series as given: the joins are its frame numbers, and
         # summarise_segments moves them past values that are not finite.
         pooled, withheld = summarise_segments(
-            np.asarray(values, dtype=np.float64).ravel(), joins)
+            np.asarray(values, dtype=np.float64).ravel(), joins,
+            unit=(record.get("unit") or record.get("units") or None)
+            if isinstance(record, dict) else None)
         if pooled is None:
             # The joined run supports no mean -- drifting segments, or too
             # few independent samples once the joins are accounted for.
