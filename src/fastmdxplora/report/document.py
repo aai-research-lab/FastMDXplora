@@ -207,20 +207,20 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
     except Exception:  # noqa: BLE001 - the first piece's record stands
         extended = None
     pieces = ""
+    # Recorded under `parameters`, with the top level read as a fallback
+    # for manifests written before that nesting.
+    temperature = sim.get("temperature_K")
+    at = f" at {temperature:g} K" if isinstance(temperature, (int, float)) else ""
     if outside:
         duration = None
         said.append(("and was simulated" if said else "The system was simulated")
-                    + " in pieces, one of them outside the study's folder, so how long "
-                    "is not said here")
+                    + f"{at} in pieces, one of them outside the study's folder, so how "
+                    "long is not said here")
     if extended is not None and extended[0] > 0:
         duration, pieces = extended[0], f" in {extended[1]} pieces"
     if isinstance(duration, (int, float)) and duration > 0:
         length = (f"{duration * 1000:.0f} ps" if duration < 1
                   else f"{duration:.3g} ns") + pieces
-        # Recorded under `parameters`, with the top level kept as a fallback
-        # for manifests written before that nesting.
-        temperature = sim.get("temperature_K")
-        at = f" at {temperature:g} K" if isinstance(temperature, (int, float)) else ""
         said.append(("and was simulated" if said else "The system was simulated")
                     + f" for {length}{at}")
 

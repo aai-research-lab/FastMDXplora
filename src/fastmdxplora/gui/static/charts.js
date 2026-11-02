@@ -61,9 +61,14 @@
         target.textContent = mean.number;
         if (note) {
           // Its image note beside the verdict, which it does not change.
+          // A note that is a sentence (what the drift test could miss)
+          // follows a full stop and ends with one; the image note is a clause.
+          const sentence = !!mean.noted && /^[A-Z]/.test(mean.noted);
+          const ends = sentence || (!!mean.noted && /\. [A-Z]/.test(mean.noted));
           note.textContent = (mean.determined
             ? `production mean, ${Math.round(mean.samples)} independent samples`
-            : "production mean, not determined") + (mean.noted ? `; ${mean.noted}` : "");
+            : "production mean, not determined")
+            + (mean.noted ? (sentence ? ". " : "; ") + mean.noted + (ends ? "." : "") : "");
           note.title = [mean.determined ? "" : (mean.why || ""), mean.noted ? (mean.noted_why || "") : ""]
             .filter(Boolean).join("\n\n");
         }

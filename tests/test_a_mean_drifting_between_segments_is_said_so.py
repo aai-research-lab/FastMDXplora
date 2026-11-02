@@ -589,3 +589,62 @@ def test_a_scale_that_reads_1_point_0_is_not_said_and_one_said_says_its_means() 
     scaled = drift_unseen_said(_a_record(41 * 2.0 * 0.01, 0.01, [1, 1, 1], 4.0), "nm")
     assert scaled.endswith("times 2.0 for their scatter about a straight line beyond that "
                            "error, a scale estimated from only 3 means)"), scaled
+
+
+def test_a_chip_s_note_has_the_unit_its_value_has(tmp_path) -> None:
+    # An analysis that recorded no unit: the chip gave its value in nm and
+    # the note bare.
+    from fastmdxplora.gui.citations import cited_findings
+
+    record = _a_record(41 * 0.01, 0.01, [1, 1, 1], 1.0)
+    record.pop("unit")
+    root = tmp_path / "study"
+    (root / "analysis" / "rmsd").mkdir(parents=True)
+    (root / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+        {"analysis": "rmsd", "findings": {"mean": record}}), encoding="utf-8")
+    chips = cited_findings("The RMSD is near 1 nm.", root)
+    assert chips and "about 0.41 nm from the first segment's mean" in chips[0]["noted"], chips
+
+
+def test_the_first_paragraph_keeps_the_temperature_where_a_piece_is_linked_out(
+        monkeypatch) -> None:
+    from fastmdxplora.refusals import OutsideWorkspace
+    from fastmdxplora.report.document import _study_in_one_paragraph
+    from fastmdxplora.simulation import resume
+    from tests.test_an_extended_study_is_said_at_its_length import _extended
+
+    def outside(_study):
+        raise OutsideWorkspace("A piece of this study is outside the workspace.")
+
+    monkeypatch.setattr(resume, "extended_production", outside)
+    said = _study_in_one_paragraph(_extended())
+    assert "simulated at 300 K in pieces, one of them outside the study's folder" in said, said
+
+
+def test_the_chart_caption_says_the_drift_note_as_a_sentence(tmp_path) -> None:
+    # "production mean, 72 independent samples; With 3 of its 4 segments
+    # tested ..." with no full stop.
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    values, joins = _climbing(3, step=0.0)
+    root = _study(tmp_path, values, joins)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#overview", wait_until="domcontentloaded")
+            page.wait_for_function("() => { const n = document.querySelector("
+                                   "'[data-chart-note=\"potential_energy\"]');"
+                                   " return n && n.textContent.includes('production mean'); }")
+            caption = page.evaluate("() => document.querySelector("
+                                    "'[data-chart-note=\"potential_energy\"]').textContent")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert "independent samples. With 3 segments, a steady drift" in caption, caption
+    assert caption.endswith(").") and "; With" not in caption, caption

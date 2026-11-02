@@ -77,7 +77,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - The report's "What would support it" names the means drifting between a
   joined run's segments with their remedy, and its first paragraph gives an
   extended study's joined length and pieces, or, where a piece is outside
-  the study's folder, that its length is not said there.
+  the study's folder, its temperature and that its length is not said there.
 - A mean an earlier version recorded as determined on fewer independent
   samples than this version determines a mean on reads "not determined",
   with why and that analysing again records this version's verdict, on the
