@@ -1988,7 +1988,6 @@
     // Categorised panels, matching the generated report.
     // When the report phase has produced its curated charts these panels use
     // them; otherwise they fall back to each analysis's own figure.
-
     const sections = withUnfinished(
       Array.isArray(payload.analysis_sections) ? payload.analysis_sections : [],
       Array.isArray(payload.analyses) ? payload.analyses : []);
