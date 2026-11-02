@@ -42,6 +42,32 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   version withholds it (they said the run found it not determined), and the
   report's findings line says "Not determined", giving the sample count
   once.
+- The Analysis page's results table, and its Download, give no error beside
+  a mean not determined (`analysis_overview`, `error`): the CSV gave
+  0.0010 nm beside "Determined: no" for a mean this version withholds.
+- The Analysis table's independent samples are said by the one rule every
+  page says them by (`statistics.independent_samples_whole`): 9.5 read 10
+  beside a reason saying fewer than 10.
+- A figure an earlier version plotted with the error of a mean this version
+  withholds (an analysis's own figure, the thermodynamics' bars, the summary
+  figure's panels) is said so under it in the report, in its caption in
+  `dashboard.html` and on its slide, with "Analyze again to plot it again"
+  (`analysis_overview.plotted_since`). The report written by this version
+  embedded `rmsd.png` with "0.0078 ± 0.0010 nm" and its band beside its own
+  "not determined". The slides' findings say a mean not determined so; it
+  was given bare.
+- The Report page showing a report an earlier version wrote says above it
+  how many of its means this version withholds, and to write it again
+  (`withheld_since`). The report saves the rules it judged its means by
+  (`mean_rules` in `records_read.json`).
+- The Overview's lead and the Agent's "What they need, every mean withheld
+  counted" count the means this version withholds that an earlier version
+  called determined, and say to analyse again for them.
+- The replicas' sentence no longer says a run "did not determine its own
+  mean" of one its run called determined ("1 of the 3 replicas' means,
+  which its run called determined, this version withholds ..."), and the
+  written comparison marks a mean this version withholds with its own mark
+  (‡) and footnote, apart from one its run withheld (\*).
 - The Agent's citations (`cites`) give `value` alone and the image note in
   `noted`; the chip says the value, its verdict, then the note on a line of
   its own, left-aligned where it wraps. "Not determined" followed the note,
