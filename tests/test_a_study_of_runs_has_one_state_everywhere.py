@@ -120,12 +120,38 @@ def test_a_record_of_runs_linked_out_is_not_read_not_a_folder_of_runs(sweep, tmp
     assert health["message"].startswith("batch_manifest.json was not read")
 
 
+def _project_status(root: Path, *, held: bool = True) -> str:
+    from fastmdxplora.gui.server import _confined, _results_payload
+
+    payload = _confined(root, _results_payload) if held else _results_payload(root)
+    return {row["label"]: row["value"] for row in payload["summary"]}["Project status"]
+
+
 def test_its_results_summary_says_the_same_state(sweep):
     """The Overview's "Project status" read only the study's own manifest,
     which a study of runs has none of: thirty-six completed windows were said
     "not run"."""
-    from fastmdxplora.gui.server import _results_payload
     from fastmdxplora.gui.workspace import study_state
 
-    said = {row["label"]: row["value"] for row in _results_payload(sweep)["summary"]}
-    assert said["Project status"] == study_state(sweep) == "completed"
+    assert _project_status(sweep, held=False) == study_state(sweep) == "completed"
+    assert _project_status(sweep) == "completed"
+
+
+@pytest.mark.parametrize("linked", ["a run's live record", "the batch manifest"])
+def test_a_record_linked_out_is_not_read_in_its_summary(sweep, tmp_path, linked):
+    """Under the page's held read, a run's live record linked out of the study
+    made its status "running", and its batch manifest linked out made it
+    "not started", beside a health line saying "not read"."""
+    from fastmdxplora.gui.server import _confined
+    from tests.test_a_study_running_until_it_knows_is_drawn import _linked_out
+
+    if linked == "a run's live record":
+        run = sorted((sweep / "runs").iterdir())[1]
+        _linked_out(sweep, str((run / "simulation" / "live_status.json").relative_to(sweep)),
+                    tmp_path / "elsewhere" / "live_status.json",
+                    lambda record: record.update(status="running", stage="Production"))
+    else:
+        _linked_out(sweep, "batch_manifest.json", tmp_path / "elsewhere" / "batch.json",
+                    lambda record: None)
+    assert _confined(sweep, _health)["state"] == "not read"
+    assert _project_status(sweep) == "not read"

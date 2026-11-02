@@ -303,12 +303,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
-- A study of several runs has the Overview's "Project status" its runs give
-  (`workspace.study_state`, as All studies says it): it read only the
-  study's own `manifest.json`, which such a study has none of, and an
-  umbrella study of 36 completed windows was said "not run".
+- A study of several runs has the Overview's "Project status" its runs give,
+  by the health line's derivation (`telemetry._a_study_of_runs`), "not read"
+  where a record of its runs is linked out of it: it read only the study's
+  own `manifest.json`, which such a study has none of, and an umbrella
+  study of 36 completed windows was said "not run".
 - An umbrella study's free energy (`free_energy/pmf/`) is a figure on its
-  Analysis page, and counts as an analysis: the page said its windows were
+  Analysis page, first and among the key figures, its SVG in "Download all
+  SVG figures", and counts as an analysis: the page said its windows were
   "compared below" and showed nothing. A study whose `pmf.json` refused the
   profile shows none, whatever an earlier run left there.
 - A folder of Python source (one with an `__init__.py`) is not a study: a
@@ -316,7 +318,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   packages are a study's markers, was listed among the studies as one not
   started.
 - The Viewer stops asking for the newest frame once its run has ended and
-  the last frame is read, and asks again when the run writes: a finished
+  the last frame is shown (one that failed to load is asked for again), and
+  asks again when the run writes: a finished
   study was polled every few seconds for as long as it was open.
 - The Analysis page names protein-ligand interactions in its subtitle only
   where the study has a ligand's analyses.

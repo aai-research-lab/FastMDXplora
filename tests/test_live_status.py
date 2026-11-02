@@ -1488,7 +1488,17 @@ class TestTheSolventTogglesShowSolvent:
         live_frame = js.split("async function pollLiveFrame(", 1)[1].split(
             "\n  function ", 1
         )[0]
-        assert "STATE.liveSettled = Boolean(STATE.runStatus) && !runIsWriting();" in live_frame
+        assert "ended = Boolean(STATE.runStatus) && !runIsWriting();" in live_frame
+        # Settled only where what the run left is shown, never before the
+        # frame is fetched: a frame that failed to load is asked for again.
+        settles = live_frame.split("STATE.liveSettled = ended;")
+        assert len(settles) == 5
+        assert all("sayLive(" in before[-300:] for before in settles[:-1])
+        assert "STATE.liveSettled" not in live_frame.split("/structure/live-frame.pdb", 1)[0].split(
+            "sayLive(", 1)[0]
+        catch = live_frame.split("} catch (error) {", 1)[1]
+        assert "if (ended) STATE.liveFrameIndex = null;" in catch
+        assert "liveSettled" not in catch
         status = js.split("function onStatusUpdated(", 1)[1].split("\n  function ", 1)[0]
         assert "if (writing) STATE.liveSettled = false;" in status
         changed = js.split("function onRunChanged(", 1)[1].split("\n  function ", 1)[0]

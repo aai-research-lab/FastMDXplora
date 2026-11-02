@@ -1081,7 +1081,8 @@ PLOT_CATEGORY_BY_TITLE = {
     "Ramachandran plot": "Additional Analysis",
 }
 
-KEY_PLOT_TITLES = {"RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds", "PCA", "SASA"}
+KEY_PLOT_TITLES = {FREE_ENERGY_TITLE, "RMSD", "RMSF", "Radius of gyration", "Hydrogen bonds",
+                   "PCA", "SASA"}
 
 DASHBOARD_TEMPLATE_PATH = Path(__file__).with_name("templates") / "dashboard.html"
 #: The most rows of the live record the charts are sent: the whole run,
@@ -4435,7 +4436,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
     manifest = _load_json(root / "manifest.json")
     analysis_manifest = _load_json(root / "analysis" / "analysis_manifest.json")
     sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
-    if _load_json(root / "pmf.json").get("refused"):
+    if _free_energy_refused(root):
         # A study that refused its free energy (windows too far apart to
         # overlap) can keep the previous run's figure; it is not this one's.
         artifacts = [record for record in artifacts
@@ -4804,7 +4805,7 @@ def _summary_records(
     extended: tuple[float, int] | None = None,
     production_not_read: str | None = None,
 ) -> list[dict[str, str]]:
-    from fastmdxplora.gui.telemetry import live_records_refused
+    from fastmdxplora.gui.telemetry import _a_study_of_runs, live_records_refused
     from fastmdxplora.simulation.pipeline import _refused
 
     phase_statuses = [
@@ -4812,6 +4813,9 @@ def _summary_records(
         for item in manifest.get("phases", [])
         if isinstance(item, dict)
     ]
+    # The health line's derivation (`telemetry._a_study_of_runs`), so the two
+    # lines say one state; None for a study of one run.
+    of_runs = None if manifest else _a_study_of_runs(root)
     if not manifest and _refused(root / "manifest.json"):
         # The run's manifest not read is not a run that wrote none.
         status = "not read"
@@ -4826,13 +4830,12 @@ def _summary_records(
         status = "stopped" if stopped else "failed"
     elif phase_statuses:
         status = "in progress"
-    elif os.path.isfile(root / "batch_manifest.json"):
+    elif of_runs is not None:
         # A study of several runs has no manifest of its own: its runs' states
-        # say it, as on All studies. Thirty-six completed windows were said
-        # "not run".
-        from fastmdxplora.gui.workspace import study_state
-
-        status = study_state(root)
+        # say it, as on All studies, and "not read" where the health line
+        # says so (a record of its runs refused). Thirty-six completed
+        # windows were said "not run". Its words are a run's here.
+        status = {"running": "in progress"}.get(of_runs["state"], of_runs["state"])
     elif read_status(root):
         # No manifest yet, but telemetry says a run is going. The manifest is
         # written when the run ends, so its absence is not a fact about the
@@ -5477,8 +5480,16 @@ def _plot_category(path: str) -> str:
 
 
 def _category_order(category: str) -> int:
-    order = {"Core Metrics": 0, "Additional Analysis": 1, "Clustering": 2, "Other": 3}
+    # An umbrella study's free energy is its result: first, not after Other.
+    order = {"Free energy": 0, "Core Metrics": 1, "Additional Analysis": 2, "Clustering": 3,
+             "Other": 4}
     return order.get(category, 99)
+
+
+def _free_energy_refused(root: Path) -> bool:
+    """Whether an umbrella study's `pmf.json` refused its profile: a figure
+    left in `free_energy/` is then an earlier run's, not this one's."""
+    return bool(_load_json(root / "pmf.json").get("refused"))
 
 
 def _svg_figure_paths(root: Path) -> list[Path]:
@@ -5489,7 +5500,10 @@ def _svg_figure_paths(root: Path) -> list[Path]:
     from fastmdxplora.gui.report_dashboard import files_under
 
     paths: list[Path] = []
-    for base in (root / "analysis", root / "report" / "dashboard_assets", root / "report"):
+    bases = [root / "analysis", root / "report" / "dashboard_assets", root / "report"]
+    if not _free_energy_refused(root):
+        bases.append(root / FREE_ENERGY_DIR)
+    for base in bases:
         if not record_access.is_dir(base):
             continue
         for path in files_under(base):

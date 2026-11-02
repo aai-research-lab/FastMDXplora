@@ -622,15 +622,19 @@
   async function pollLiveFrame() {
     const generation = STATE.viewerGeneration;
     if (!STATE.liveUpdates || document.body.classList.contains("state-loading")) return;
+    let ended = false;
     try {
       const response = await fetch("/api/live-frame-index", {cache: "no-store"});
       if (!isViewerGenerationCurrent(generation)) return;
       if (!response.ok) return;
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
-      STATE.liveSettled = Boolean(STATE.runStatus) && !runIsWriting();
+      // Settled only once what the ended run left is shown: a frame that
+      // failed to load is asked for again.
+      ended = Boolean(STATE.runStatus) && !runIsWriting();
       if (!index.live_frame_available) {
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
+        STATE.liveSettled = ended;
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
@@ -640,6 +644,7 @@
           step: index.live_frame_index,
           simtime: index.simulation_time_ns,
         });
+        STATE.liveSettled = ended;
         return;
       }
       const version = encodeURIComponent(index.live_frame_mtime || Date.now());
@@ -666,6 +671,7 @@
         STATE.liveFrameIndex = index.live_frame_index;
         if (await moveTheLiveAtoms(coordinates)) {
           sayLive(true, overlay);
+          STATE.liveSettled = ended;
           return;
         }
       }
@@ -693,8 +699,12 @@
       const preview = document.getElementById("mini-preview-canvas");
       if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
       sayLive(true, overlay);
+      STATE.liveSettled = ended;
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
+      // Its index was kept before it was drawn: forgotten, the ended run's
+      // last frame is loaded again rather than taken as shown.
+      if (ended) STATE.liveFrameIndex = null;
     }
   }
 
