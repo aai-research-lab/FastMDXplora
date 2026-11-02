@@ -305,9 +305,14 @@ stopped) by one reading of `stopping.json`, the same in the CLI's summary
 ("Batch failed", with the round's sentence and the `fastmdx resume` command
 that carries it on as its last lines) and exit code (1),
 `batch_manifest.json` (`round_ended`), the GUI's status, sidebar, All studies
-and Overview, the Agent and the comparison report. The sentence names the
-runs the round had extended and those it had not, which are then not at one
-length. A resume whose round fails again is not done (exit 1).
+and Overview, the Agent and the comparison report, for a study of one run or
+several, and when it is analysed again. A round stopped when asked exits 130.
+The sentence names the runs the round extended and says the others by their
+production, since an extension that did not finish may have run part of the
+way. A study whose process was killed while it extended its runs, its record
+left "running", is said interrupted. `fastmdx resume` first extends the runs
+short of the round's length to it, never past the ceiling, then judges them
+again; a resume whose round fails again is not done (exit 1).
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.

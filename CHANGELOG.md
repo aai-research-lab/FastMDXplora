@@ -531,11 +531,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   says it failed (or stopped, where asked) in the CLI's summary ("Batch
   failed", the round's sentence and the `fastmdx resume` command with what it
   would run, last) and exit code, `batch_manifest.json` (`round_ended`), the
-  GUI's status, sidebar, All studies and Overview, the Agent's records
-  answers and context, and the comparison report, which leads with it; the
-  runs the round had extended and those it had not are named. A resume whose
-  round fails again is not done. A study whose rounds ended well is said as
-  before.
+  GUI's status, sidebar, All studies and Overview (its card too, with the
+  runs' range of production), the Agent's records answers and context, and
+  the comparison report, which leads with it and says it once; the runs the
+  round extended are named, and the others said by their production, their
+  extension not finished (never "not extended": a killed worker may have run
+  part of it). A round stopped when asked exits 130; a failed run is said
+  before it. The same for a study of one run (its status, records answer and
+  report page) and for one analysed again with `--rerun`, which said "Batch
+  complete" and dropped `round_ended`; a study whose process was killed hard
+  mid round, its record left "running", is said interrupted, not completed.
+  A resume whose round fails again is not done, and a study of one run is
+  judged again by `fastmdx resume`, which said it had nothing to carry on. A
+  study whose rounds ended well is said as before.
+- `fastmdx resume` after a partial round (one run extended, another not)
+  extended every run from the shortest, so the runs extended went past the
+  ceiling (36 ps of 30 ps). The runs not at the round's length are now
+  brought up to it first, as the round's sentence says, and then judged.
 - While a study's rule extended its runs, its `batch_manifest.json` listed
   only the plan, so each extension built the comparison across its runs from
   none ("Comparison report needs ≥2 successful runs (found 0)"): the runs
