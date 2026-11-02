@@ -469,6 +469,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   names what does not lift the bias ("A longer run does not lift ...", or
   "Neither a longer run nor replicas lift ..." where the reason names both);
   "Neither lifts ..." followed reasons naming one remedy.
+- An extended study stopped after its pieces were joined and before their
+  analyses and report had run is analysed when `fastmdx resume` carries it
+  on (`did: analysed`). It was read as finished, its report of the first
+  piece alone (0.4 ps of 0.6). The join writes `joined/analysis_owed.json`
+  before the joined trajectory, taken away once the analyses and report have
+  run. A study config that does not read is said, and left as it is, not
+  replaced by the last piece's; the copy of the study's config a stopped
+  analysis left is put back once and removed, not written over every later
+  edit.
+- `fastmdx resume` gives `production_done_before_ns` by the same length as
+  `production_done_ns` (a variable-step study's by its clock), with
+  `production_done_before_source`, so their difference is what it ran, and
+  gives `production_done_ns` in every answer that ends well. Before was
+  steps times the timestep: 1.2 ps beside 1.29 ps by the clock after a run
+  of 0.33 ps.
+- The Overview gives a variable-step study carried on in pieces its
+  production by its clock, as the methods and `fastmdx resume` do: it said
+  1.6 ps (steps times the timestep) beside their 1.29 ps.
+- `fastmdx analyze --rerun` of an extended study copied without its files'
+  times (cp, rsync, scp) analyses its joined trajectory, read with its own
+  topology where the study is now. A first piece newer than its join was read
+  as a study simulated again in place, and the first piece alone was analysed
+  (4 of 12 frames), its result over the whole study's with no warning.
+- A run given `setup_from` that writes only its analysis or report again
+  records no setup skipped in its Manifest.
 - `fastmdx resume` carries on an extended study stopped while its joined
   pieces were analysed. The analysis ran from the last piece's config and
   wrote it over the study's `resolved_config.yml`, with the first piece's

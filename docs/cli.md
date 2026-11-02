@@ -679,11 +679,15 @@ several systems, an umbrella study's windows) is carried on run by run, and
 what it says across them is rebuilt. It exits 0 when the study is finished,
 whether or not it ran anything, and 1 when it could not carry the study on,
 with the reason and what would fix it, its command and its price here
-(`remedies` in the JSON). Where it carried production on or joined the
-pieces, it says the study's production now, as the methods give it (a
-variable-step run's by its clock): `production_done_ns` and
-`production_done_source` in the JSON, `production_done_before_ns` what the
-checkpoints held before it ran. With `--json` the answer is the one line on
+(`remedies` in the JSON). Where it ends well it says the study's
+production now, as the methods give it (a variable-step run's by its clock):
+`production_done_ns` and `production_done_source` in the JSON; where it
+carried production on, `production_done_before_ns` and
+`production_done_before_source`, by the same length before it ran (its
+clock for a variable-step study, its steps times the timestep for a fixed
+one), so their difference is what it ran. A study stopped after its pieces were joined and
+before their analyses and report had run (`joined/analysis_owed.json` is
+there) is analysed, not read as finished. With `--json` the answer is the one line on
 stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).

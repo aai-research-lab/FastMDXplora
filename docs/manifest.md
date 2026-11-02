@@ -93,6 +93,14 @@ worth retrying. See [FastMDXplora refusals](refusals.md).
 
 `artifacts` are paths relative to that phase's directory.
 
+A run given `setup_from` records its `setup` as `skipped`, with `taken_from`
+naming the prepared system it simulated; a run that simulates nothing (an
+analysis or a report written again) records no setup. A study of several runs
+writes each run's report again once its rounds end: that `report` record carries
+`"written_again": true`, the run's other phases keep their records from before,
+and the study's timeline places that report after its last round, not as a step
+before it.
+
 ---
 
 ## Why `environment` is there
