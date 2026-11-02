@@ -626,6 +626,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the map's data running out as it is saved (`findings.not_saved`), the
   other figures and files saved; the clustering matrix, or any projection,
   running out is refused as past the check, the other projections saved.
+- Under an address-space limit too tight for what the libraries map the
+  first time they run, clustering and `dimred` call no BLAS and plot nothing
+  before their check, and are refused with their records, the libraries'
+  share in the need (`findings.memory.bytes_libraries_not_mapped`): under
+  `ulimit -v` 485000 to 520000 OpenBLAS retried its buffer for ever and
+  `fastmdx analyze` hung with no record.
+- A figure not plotted for memory whose canvas is the same at any stride
+  (every figure but the map of at most 1,000 frames) is said with the room
+  to add, not a stride: "Set `stride: 4`" was said for the dendrogram and,
+  followed, it was not plotted again.
+- `dimred` plans 6 MiB, 10 a scatter and 10 the landscape past the libraries
+  (8, 10 and 14 before), as measured with the libraries warmed up only where
+  they fit: PCA was refused after the clustering under `ulimit -v` 590000,
+  where it ran. A refusal under `ulimit -v` says the margin the plan keeps.
+- The note under a projection says each method refused in one short line,
+  its whole refusal in the record (it was each refusal's text, the cgroup's
+  path in it); a projection that ran out is said as having run out, not as
+  "not run" nor as the memory left falling, and MDS's need by what sets it,
+  its figures or its matrix. The Analysis page counts a section whose
+  analysis was refused before it ran as "refused", and names the figures
+  not plotted by their cards' titles.
 - The Analysis page says a figure not plotted for memory in its section,
   counted beside its figures and with what to set; a refused analysis's
   card says what to set once, and "was refused before it ran" where it

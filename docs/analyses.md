@@ -242,22 +242,35 @@ measured): the peak planned on is the larger of the matrix's part
 libraries a run maps (SciPy's linkage and eigensolver, its OpenBLAS buffer,
 and Matplotlib's fonts and canvas, a figure plotted as the analyses plot
 theirs) are mapped before that room is read, so they are in what the process
-holds, and clustering plans on all of the room for that peak and 18 MiB
+holds; where the room before them is under what they map (56 MiB, or 40 MiB
+left before each BLAS call), nothing is mapped and no BLAS called, as
+OpenBLAS retried a buffer it could not map for ever and the run hung, and
+what they would map is planned on as part of the need
+(`findings.memory.bytes_libraries_not_mapped`), so the run is refused with
+its record. Clustering plans on all of the room for that peak and 18 MiB
 past it, 50 MiB at the least (glibc's heap and each figure's canvas at 300
 dpi), as measured from the check in `fastmdx analyze`'s own process: that
 room is planned on apart, with that need (`findings.memory.bytes_address_space`,
 `bytes_address_needed`), and read once as the analysis starts, as the
-analyses before it take some of it. A new process, whose heap no analysis has
-grown, maps about 17 MiB more. `dimred` plans each method on its own
-(`findings.memory.methods`): 8 MiB and the larger of what the method makes
+analyses before it take some of it. That is the need of a process that ran
+nothing before, which maps about 18 MiB more than one where the RMSD ran
+first: the plan keeps that as a margin, and a refusal under `ulimit -v` says
+so. `dimred` plans each method on its own
+(`findings.memory.methods`): 6 MiB and the larger of what the method makes
 (MDS's matrix; t-SNE's neighbours, about 80 bytes for each of 3 x perplexity
-+ 1 a frame) and the figures plotted after (10 MiB a scatter, 14 the
-landscape). A method that does not fit is refused before any runs
++ 1 a frame) and the figures plotted after (10 MiB a scatter, 10 the
+landscape), the most measured in a process that ran nothing before, which
+maps up to 26 MiB more than one where the RMSD and the clustering ran first,
+said as the plan's margin with a refusal. The room after clustering varies
+from run to run by tens of MB, so the size a refusal says to add can fall
+short by that. A method that does not fit is refused before any runs
 (`findings.methods_refused`, MDS's also as `mds_refused`), the others run and
 saved; the last left refused is the analysis's refusal, its record written.
 A figure the memory runs out plotting all the same is left out and said
-(`findings.figures_not_plotted`, with what to set, and on the Analysis page
-in its section), and so is the map's data running out as it is saved
+(`findings.figures_not_plotted`, and on the Analysis page in its section by
+its title), with what helps: for the map of at most 1,000 frames the stride
+that halves them; for any other figure, whose canvas is the same at any
+stride, the room to add (a `ulimit -v` about 40 MB larger, as measured), and so is the map's data running out as it is saved
 (`findings.not_saved`), the other figures and files saved; a projection
 running out is refused as past its check is, the other projections saved.
 BLAS and OpenMP are held to one thread while `cluster` and `dimred` run
