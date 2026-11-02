@@ -505,3 +505,27 @@ def test_the_agent_s_context_its_chips_and_compare_carry_the_note(tmp_path) -> N
     measure = _measure("rmsd", [{"run_id": "a"}], {"a": {"rmsd": {"mean": record}}},
                        False, {"a": "a"})
     assert measure["cells"][0].get("unseen") == said, measure["cells"][0]
+
+
+def test_the_first_paragraph_does_not_give_the_first_piece_s_length_for_a_piece_linked_out(
+        monkeypatch) -> None:
+    # A piece outside the study's folder is not read; the paragraph gave the
+    # first piece's length as the study's.
+    from fastmdxplora.refusals import OutsideWorkspace
+    from fastmdxplora.report.document import _study_in_one_paragraph
+    from fastmdxplora.simulation import resume
+    from tests.test_an_extended_study_is_said_at_its_length import _extended
+
+    root = _extended()
+    record = root / "simulation" / "simulation_parameters.json"
+    sim = json.loads(record.read_text(encoding="utf-8"))
+    sim["parameters"]["duration_ns"] = 0.1
+    record.write_text(json.dumps(sim), encoding="utf-8")
+
+    def outside(_study):
+        raise OutsideWorkspace("A piece of this study is outside the workspace.")
+
+    monkeypatch.setattr(resume, "extended_production", outside)
+    said = _study_in_one_paragraph(root)
+    assert "for 100 ps" not in said, said
+    assert "one of them outside the study's folder, so how long is not said here" in said

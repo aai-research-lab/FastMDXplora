@@ -155,6 +155,7 @@ def test_the_slides_say_so_and_give_the_mean_as_not_determined(root):
 
 def test_the_report_page_says_how_many_of_an_earlier_report_s_means_are_withheld(root):
     from fastmdxplora.gui.report_page import report_payload
+    from fastmdxplora.statistics import MEAN_RULES
 
     said = report_payload(root, trace=False).get("withheld_since", "")
     assert said == ("Written by an earlier version, which called 1 of its means determined "
@@ -162,7 +163,7 @@ def test_the_report_page_says_how_many_of_an_earlier_report_s_means_are_withheld
                     "it determines a mean on). Write it again to give this version's verdict.")
     # Written again by this version, which says so of each mean itself.
     (root / "report" / "records_read.json").write_text(json.dumps(
-        {"start_shared_with_replicas": {}, "mean_rules": 3}), encoding="utf-8")
+        {"start_shared_with_replicas": {}, "mean_rules": MEAN_RULES}), encoding="utf-8")
     assert report_payload(root, trace=False).get("withheld_since", "") == ""
 
 

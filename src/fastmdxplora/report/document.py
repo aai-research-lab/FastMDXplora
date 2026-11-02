@@ -193,13 +193,25 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
     duration = (sim or {}).get("duration_ns_actual") or (sim or {}).get("duration_ns")
     # A study carried on in pieces ran for all of them, as the protocol
     # paragraph says: the first piece's record alone said "20 ps" of 120.
+    from fastmdxplora.refusals import OutsideWorkspace
+
+    outside = False
     try:
         from fastmdxplora.simulation.resume import extended_production
 
         extended = extended_production(project_root)
+    except OutsideWorkspace:
+        # A piece linked out of the study is not read: how long the study
+        # ran is not known here, and the first piece's length is not it.
+        extended, outside = None, True
     except Exception:  # noqa: BLE001 - the first piece's record stands
         extended = None
     pieces = ""
+    if outside:
+        duration = None
+        said.append(("and was simulated" if said else "The system was simulated")
+                    + " in pieces, one of them outside the study's folder, so how long "
+                    "is not said here")
     if extended is not None and extended[0] > 0:
         duration, pieces = extended[0], f" in {extended[1]} pieces"
     if isinstance(duration, (int, float)) and duration > 0:
