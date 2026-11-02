@@ -56,13 +56,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A mean of a joined run whose test for drift between segments ran on
   three or four segments without calling drift says beside its verdict, as a
   sentence, how large a steady drift that few could miss, in its own units
-  first segment to last, and what that is reckoned from: about 41 times the
-  error of the tested segments' pooled mean at three and 16 at four (more
-  where their errors differ by more than a tenth), scaled where the means
-  scatter about a straight line beyond their errors by the root of that
-  scatter as the rule judges it, the scale said with how few means it was
-  estimated from (counted power of the rule, and per record: a drift as large
-  as the figure is called in 87% to 100% of runs; its record saves
+  first segment to last, and what that is reckoned from: X times the error
+  of the tested segments' pooled mean, X worked out when the record is
+  written for their own errors and centres in time (the smallest drift the
+  rule calls in 80% of 10,000 simulated sets, a fixed seed: 41 for three
+  equal pieces, 16 for four, 69 for pieces of 500, 500 and 4,000 frames),
+  multiplied where the means scatter about a straight line beyond their
+  errors by the root of that scatter as the rule judges it, to the one
+  decimal the note says, with how few means it was estimated from (per
+  record, on every layout in `docs/short-segment-drift.md`: a drift as large
+  as the figure is called in 89% to 100% of runs; its record saves
   `drift_unseen`). Said also where the joined summary was withheld for a
   segment whose correlation is not resolved and the mean stands, with the
   segments tested and those left out; where fewer than three could be tested,

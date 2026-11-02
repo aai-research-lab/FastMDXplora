@@ -102,9 +102,10 @@ def inflated(trials: int = 10000, seed: int = 760005) -> list[dict]:
     say (offsets the errors miss), h from 1 to 54: how often the rule calls
     a steady drift of the counted X pooled errors, and of X sqrt(h), first
     segment to last; and how often the figure a record says, X times the
-    square root of the line's chi-square per degree of freedom where above
-    one, is at least X sqrt(h)."""
-    from fastmdxplora.statistics import DRIFT_UNSEEN_IN_POOLED_ERRORS, _line_scatter
+    square root of its scatter about the line as the note says it
+    (``statistics._scale_as_said``), is at least X sqrt(h)."""
+    from fastmdxplora.statistics import (DRIFT_UNSEEN_IN_POOLED_ERRORS, _line_scatter,
+                                         _scale_as_said)
 
     rows = []
     for count in (3, 4):
@@ -119,7 +120,7 @@ def inflated(trials: int = 10000, seed: int = 760005) -> list[dict]:
             for name, size in (("at_x", counted), ("at_x_sqrt_h", counted * np.sqrt(h))):
                 called[name] = sum(_drift_test(row, precisions, centres)[2] is not None
                                    for row in noise + size * pooled * shape)
-            said = [counted * np.sqrt(max(1.0, _line_scatter(row, precisions, centres)))
+            said = [counted * _scale_as_said(_line_scatter(row, precisions, centres))
                     for row in noise]
             rows.append(dict(segments=count, variance_ratio=h, trials=trials, seed=seed,
                              called_at_x=called["at_x"], called_at_x_sqrt_h=called["at_x_sqrt_h"],
@@ -128,9 +129,9 @@ def inflated(trials: int = 10000, seed: int = 760005) -> list[dict]:
     return rows
 
 
-#: Equal pieces whose errors differ (their correlation times do): the note
-#: says a larger drift could go unseen where they differ by more than a tenth.
-UNSEEN_ERRORS = {3: ([1, 1.1, 1], [1, 1.25, 1], [1, 1.5, 1], [1, 2, 1], [2, 1, 1], [1, 1, 2]),
+#: Equal pieces whose errors differ (their correlation times do).
+UNSEEN_ERRORS = {3: ([1, 1.1, 1], [1, 1.25, 1], [1, 1.5, 1], [1, 2, 1], [1, 2.45, 1], [1, 3, 1],
+                     [2, 1, 1], [1, 1, 2]),
                  4: ([1, 1.25, 1, 1], [1, 1.5, 1, 1], [1, 2, 1, 1], [2, 1, 1, 1])}
 
 
@@ -141,36 +142,53 @@ def unseen() -> list[dict]:
                for count in (3, 4) for errors in UNSEEN_ERRORS[count]])
 
 
-#: Per record: error layouts, the variance ratios h their means scatter at,
-#: and the 80% point X of each layout (``unseen``).
-PER_RECORD = (([1, 1, 1], (1, 2, 4, 10, 54), 41), ([1, 1, 1, 1], (1, 2, 4, 10, 54), 16),
-              ([1, 2, 1], (1, 4), 61), ([1, 2, 1, 1], (1, 4), 20))
+#: Per record: layouts, as segment lengths (each error one over the root of
+#: its length) or as errors of equal pieces, and the variance ratios h their
+#: means scatter at.
+PER_RECORD = (
+    (dict(errors=[1, 1, 1]), (1, 2, 4, 10, 54)),
+    (dict(errors=[1, 1, 1, 1]), (1, 2, 4, 10, 54)),
+    (dict(errors=[1, 2, 1]), (1, 4, 54)),
+    (dict(errors=[1, 2.45, 1]), (1, 4, 54)),
+    (dict(errors=[1, 3, 1]), (1, 4, 54)),
+    (dict(errors=[1, 2, 1, 1]), (1, 4, 54)),
+    (dict(lengths=[500, 500, 4000]), (1, 4, 54)),
+    (dict(lengths=[4000, 500, 500]), (1, 4, 54)),
+    (dict(lengths=[3000, 500, 3000]), (1, 4, 54)),
+    (dict(lengths=[500, 4000, 500]), (1, 4, 54)),
+    (dict(lengths=[500, 500, 500, 4000]), (1, 4, 54)),
+    (dict(lengths=[1000, 1000, 1000, 5000]), (1, 4, 54)),
+)
 
 
 def per_record(trials: int = 10000, seed: int = 760007) -> list[dict]:
-    """What a record's own figure (``statistics._drift_unseen``, from each
-    set's own scatter) claims, counted the way a reader uses it: a steady
-    drift as large as the figure beside the mean, put into that set, is it
-    called (``called_at_own_figure``); and, for a fixed drift of 0.25 to 3
-    times the layout's true 80% point (X times the root of h), how often it
+    """What a record's own figure (``statistics._drift_unseen``, its
+    layout's 80% point from its errors and centres, scaled by each set's own
+    scatter) claims, counted the way a reader uses it: a steady drift as
+    large as the figure beside the mean, put into that set, is it called
+    (``called_at_own_figure``); and, for a fixed drift of 0.25 to 3 times
+    the layout's true 80% point (its X times the root of h), how often it
     goes unseen while the figure says a drift that large would have been
-    seen (``unseen_though_said_seen``, the largest over those sizes). Equal
-    spacing, the means' scatter h times what their errors say."""
+    seen (``unseen_though_said_seen``, the largest over those sizes). The
+    means' scatter h times what their errors say."""
     from fastmdxplora.statistics import _drift_unseen, _line_scatter
 
     rows = []
-    for errors, ratios, counted in PER_RECORD:
-        sigma = np.asarray(errors, dtype=float)
+    for layout, ratios in PER_RECORD:
+        lengths = np.asarray(layout.get("lengths") or [1] * len(layout["errors"]), dtype=float)
+        sigma = (np.asarray(layout["errors"], dtype=float) if "errors" in layout
+                 else np.sqrt(lengths.min() / lengths))
         precisions = 1.0 / sigma**2
         pooled = 1.0 / np.sqrt(precisions.sum())
-        centres = np.arange(sigma.size) + 0.5
+        centres = np.cumsum(lengths) - lengths / 2.0
         shape = (centres - centres[0]) / (centres[-1] - centres[0])
+        tested = dict(segments=sigma.size, tested=sigma.size, left_out="", called=False,
+                      pooled_error=pooled, errors=sigma.tolist(), centres=centres.tolist())
+        counted = _drift_unseen({**tested, "line_scatter": 1.0})["counted_in_pooled_errors"]
         for h in ratios:
             noise = np.random.default_rng(seed).normal(size=(trials, sigma.size)) * sigma * np.sqrt(h)
-            figures = np.array([_drift_unseen(dict(
-                segments=sigma.size, tested=sigma.size, left_out="", called=False,
-                pooled_error=pooled, line_scatter=_line_scatter(row, precisions, centres),
-                errors=sigma.tolist()))["change"] for row in noise])
+            figures = np.array([_drift_unseen({**tested, "line_scatter": _line_scatter(
+                row, precisions, centres)})["change"] for row in noise])
             own = sum(_drift_test(row + figure * shape, precisions, centres)[2] is not None
                       for row, figure in zip(noise, figures))
             worst = 0
@@ -180,8 +198,9 @@ def per_record(trials: int = 10000, seed: int = 760007) -> list[dict]:
                     _drift_test(row + drift * shape, precisions, centres)[2] is None
                     and figure <= drift for row, figure in zip(noise, figures))
                 worst = max(worst, unseen_said_seen)
-            rows.append(dict(errors=errors, variance_ratio=h, trials=trials, seed=seed,
-                             called_at_own_figure=int(own), unseen_though_said_seen=int(worst)))
+            rows.append(dict(**layout, in_pooled_errors=counted, variance_ratio=h,
+                             trials=trials, seed=seed, called_at_own_figure=int(own),
+                             unseen_though_said_seen=int(worst)))
     return rows
 
 

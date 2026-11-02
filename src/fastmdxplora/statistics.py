@@ -37,6 +37,7 @@ the average, discard too much and there is nothing left to average.
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -1013,13 +1014,123 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
 #: The smallest steady drift, in pooled errors from the first segment's mean
 #: to the last's, that the three- and four-segment rule calls in at least
 #: 80% of runs of equal segments whose errors hold (counted by
-#: ``tests/_short_segment_drift_check.py``, 10,000 sets each; segments of
-#: unequal length need more: ``docs/short-segment-drift.md``).
+#: ``tests/_short_segment_drift_check.py``, 10,000 sets each). A record's
+#: own figure is worked out for its own segments
+#: (:func:`drift_unseen_in_pooled_errors`); these are what it gives for
+#: equal ones.
 DRIFT_UNSEEN_IN_POOLED_ERRORS = {3: 41, 4: 16}
 
-#: Segments whose errors differ by at most this fraction of the largest are
-#: said to be equal, for the drift that could go unseen.
-EQUAL_SEGMENTS_WITHIN = 0.1
+#: Sets of means simulated for a record's figure, their seed, and the share
+#: of them a drift of that figure is called in.
+DRIFT_UNSEEN_SETS = 10_000
+DRIFT_UNSEEN_SEED = 760003
+DRIFT_UNSEEN_CALLED = 0.8
+
+
+def _drift_called(means: np.ndarray, precisions: np.ndarray,
+                  positions: np.ndarray) -> np.ndarray:
+    """:func:`_drift_test`'s verdict for many sets of three or four means
+    at once (one set a row), sharing their errors and their places in
+    time: whether each is called drifting. The same arithmetic, in arrays,
+    so a record's figure can be counted from the rule when it is written."""
+    from scipy.special import erfc
+
+    count = means.shape[1]
+    tiny = math.nextafter(0.0, 1.0)
+    weights = precisions / precisions.sum()
+    pooled = means @ weights
+    heterogeneity = ((means - pooled[:, None]) ** 2 @ precisions) / (count - 1)
+    relative = means - means[:, :1]
+    # The means' own scatter about an unweighted line (_own_scatter_slope_p).
+    u = positions - positions.mean()
+    v = relative - relative.mean(axis=1, keepdims=True)
+    slope = v @ u / float(u @ u)
+    residual = v - slope[:, None] * u
+    variance = (residual * residual).sum(axis=1) / (count - 2)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.abs(slope) * np.sqrt(float(u @ u) / variance)
+    own = (1.0 - 2.0 / math.pi * np.arctan(t) if count == 3
+           else 1.0 - t / np.sqrt(2.0 + t * t))
+    own = np.where(np.isinf(t), tiny, own)
+    own = np.where(variance <= 0.0, tiny, own)
+    own = np.where(slope == 0.0, 1.0, np.maximum(own, tiny))
+    # Against the segments' errors, where a line fits them (_short_segment_halves).
+    scale = float(precisions.max())
+    w = precisions / scale
+    x = positions - float(w @ positions / w.sum())
+    y = relative - (relative @ w / w.sum())[:, None]
+    spread = float(w @ (x * x))
+    weighted = (y * w) @ x / spread
+    left = y - weighted[:, None] * x
+    q = (left * left) @ w * scale
+    fit = erfc(np.sqrt(q / 2.0)) if count == 3 else np.exp(-q / 2.0)
+    against = np.maximum(erfc(np.abs(weighted) * math.sqrt(scale * spread) / math.sqrt(2.0)), tiny)
+    p = np.where(fit < DRIFT_SIGNIFICANT_BELOW, own, np.maximum(against, own))
+    agree = np.isfinite(heterogeneity) & (heterogeneity <= 1.0)
+    return (p <= DRIFT_SIGNIFICANT_BELOW) & ~agree
+
+
+def drift_unseen_in_pooled_errors(errors: "list[float] | tuple[float, ...]",
+                                  centres: "list[float] | tuple[float, ...]") -> "int | None":
+    """The smallest steady drift, in whole errors of the pooled mean from
+    the first segment's mean to the last's, that the three- and
+    four-segment rule calls in at least :data:`DRIFT_UNSEEN_CALLED` of
+    :data:`DRIFT_UNSEEN_SETS` sets of means simulated with these ``errors``,
+    each at its ``centres`` in time, the drift linear in time: the same
+    random numbers (:data:`DRIFT_UNSEEN_SEED`) at every size, as the
+    helper counts it (``unseen_in_pooled_errors``). None where the errors
+    or centres cannot be read. Deterministic, and well under a second."""
+    sigma = np.asarray(errors, dtype=float)
+    at = np.asarray(centres, dtype=float)
+    if (sigma.ndim != 1 or sigma.size not in (3, 4) or at.shape != sigma.shape
+            or not np.all(np.isfinite(sigma)) or not np.all(sigma > 0.0)
+            or not np.all(np.isfinite(at)) or not at[-1] > at[0]):
+        return None
+    # The rule asks only their ratios and the centres' spacing: rounded, so
+    # records of one layout share the count.
+    sigma = tuple(round(float(s), 9) for s in sigma / sigma.min())
+    shape = tuple(round(float(c), 9) for c in (at - at[0]) / (at[-1] - at[0]))
+    return _unseen_for_layout(sigma, shape)
+
+
+@functools.lru_cache(maxsize=256)
+def _unseen_for_layout(sigma: "tuple[float, ...]", shape: "tuple[float, ...]") -> "int | None":
+    errors = np.asarray(sigma)
+    precisions = 1.0 / errors ** 2
+    pooled = 1.0 / math.sqrt(float(precisions.sum()))
+    positions = np.asarray(shape)
+    noise = np.random.default_rng(DRIFT_UNSEEN_SEED).normal(
+        size=(DRIFT_UNSEEN_SETS, errors.size)) * errors
+    wanted = DRIFT_UNSEEN_CALLED * DRIFT_UNSEEN_SETS
+
+    def called(size: int) -> bool:
+        return int(_drift_called(noise + size * pooled * positions, precisions,
+                                 positions).sum()) >= wanted
+
+    # One size at a time, as the helper counts, as far as the most unequal
+    # layout counted in the docs needs; beyond it, by halving.
+    for size in range(1, 129):
+        if called(size):
+            return size
+    low, high = 128, 256
+    while not called(high):
+        low, high = high, high * 2
+        if high > 1 << 20:
+            return None
+    while high - low > 1:
+        middle = (low + high) // 2
+        low, high = (low, middle) if called(middle) else (middle, high)
+    return high
+
+
+def _scale_as_said(scatter: float) -> float:
+    """The scale a figure is multiplied by, as the note says it: the root of
+    the scatter about the line over what the errors allow, to one decimal,
+    where it reads above 1.0; 1.0 where it does not, and then not said."""
+    if not (math.isfinite(scatter) and scatter > 1.0):
+        return 1.0
+    said = float(f"{math.sqrt(scatter):.1f}")
+    return said if said > 1.0 else 1.0
 
 
 def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
@@ -1030,11 +1141,12 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
     that drift between them was not tested; None otherwise (drift called,
     five or more tested, or a run of fewer than three segments).
 
-    The figure is counted where the segment errors hold, for errors equal
-    to a tenth (``equal_segments``; a larger one is said for errors as
-    unequal as these). Where the means scatter about the line more than
-    those errors allow, the rule is decided by that scatter, and the figure
-    is scaled by its square root (:func:`_line_scatter`), as counted in
+    The figure is counted for the tested segments' own errors and centres
+    in time, as the rule sees them, where those errors hold
+    (:func:`drift_unseen_in_pooled_errors`). Where the means scatter about
+    the line more than those errors allow, the rule is decided by that
+    scatter, and the figure is multiplied by its square root as the note
+    says it (:func:`_line_scatter`, :func:`_scale_as_said`), as counted in
     ``docs/short-segment-drift.md``."""
     if not tested or tested.get("called"):
         return None
@@ -1047,18 +1159,16 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
     error = float(tested.get("pooled_error", float("nan")))
     if not (math.isfinite(error) and error > 0):
         return None
+    counted = drift_unseen_in_pooled_errors(tested.get("errors") or [],
+                                            tested.get("centres") or [])
+    if counted is None:
+        return None
     scatter = float(tested.get("line_scatter", float("nan")))
-    scale = math.sqrt(scatter) if math.isfinite(scatter) and scatter > 1.0 else 1.0
-    counted = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
-    # Equal by their errors, which X is counted on, not by their lengths:
-    # equal pieces with an imprecise middle one need half as much again.
-    errors = [float(e) for e in tested.get("errors") or []]
+    scale = _scale_as_said(scatter)
     return {**said, "counted_in_pooled_errors": counted,
             "scatter_about_line": scatter if math.isfinite(scatter) else None,
             "in_pooled_errors": float(counted * scale),
-            "pooled_error": error, "change": float(counted * scale * error),
-            "equal_segments": bool(errors) and
-            (max(errors) - min(errors)) <= EQUAL_SEGMENTS_WITHIN * max(errors)}
+            "pooled_error": error, "change": float(counted * scale * error)}
 
 
 def _two_figures(value: float) -> str:
@@ -1112,18 +1222,19 @@ def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
     units = f" {unit}" if unit else ""
     which = (f"With {count} segments" if count == total
              else f"With {count} of its {total} segments tested{out}")
-    unequal = ("" if unseen.get("equal_segments", True)
-               else ", and a larger one with segment errors as unequal as these")
-    scale = change / (counted * error)
+    # The figure is the count times the scale as said, so it multiplies out
+    # from its basis: a scale of 1.04 left unsaid gave 0.43 nm beside
+    # "41 times ... 0.010 nm".
+    scale = _scale_as_said((change / (counted * error)) ** 2)
+    change = counted * scale * error
     basis = (f"{counted:g} times the error of their pooled mean, "
              f"{_two_figures(error)}{units}")
     # Said only where it reads above 1.0: "times 1.0" was said.
-    if f"{scale:.1f}" != "1.0" and scale > 1.0:
+    if scale > 1.0:
         basis += (f", times {scale:.1f} for their scatter about a straight line "
                   f"beyond that error, a scale estimated from only {count} means")
     return (f"{which}, a steady drift smaller than about {_two_figures(change)}{units} "
-            f"from the first segment's mean to the last's could go unseen{unequal} "
-            f"({basis})")
+            f"from the first segment's mean to the last's could go unseen ({basis})")
 
 
 def withheld_code(record: Any) -> str:
@@ -1347,10 +1458,13 @@ def summarise_segments(
         were tested (``tested``, those whose errors can be read), which were
         left out and why (``left_out``), whether drift was called
         (``called``), the error of the tested means' inverse-variance pooled
-        mean (``pooled_error``), their scatter about the weighted line over
-        what their errors allow (``line_scatter``, the line's chi-square per
-        degree of freedom, at three or four), and their lengths
-        (``lengths``). Left empty for a run in one piece.
+        mean (``pooled_error``), their scatter about a straight line over
+        what their errors allow (``line_scatter``, at three or four: the
+        larger of the weighted line's chi-square per degree of freedom and
+        the unweighted line's residual variance over the means' mean error
+        variance, :func:`_line_scatter`), and the tested segments' lengths
+        (``lengths``), errors (``errors``) and centres in time, in frames
+        (``centres``). Left empty for a run in one piece.
 
     Returns
     -------
@@ -1467,7 +1581,8 @@ def summarise_segments(
                           if 3 <= count <= 4 else float("nan")),
             lengths=[int(edges[index + 1] - edges[index])
                      for index, ok in zip(kept_at, resolved) if ok],
-            errors=[float(e) for e in errors[resolved]])
+            errors=[float(e) for e in errors[resolved]],
+            centres=[float(c) for c in centres[resolved]])
     if refusal is not None:
         return None, refusal
 

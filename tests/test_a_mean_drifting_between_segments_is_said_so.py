@@ -221,10 +221,11 @@ UNSEEN = {3: 41, 4: 16}
 
 
 def _unseen_said(values, joins, pieces):
-    """The note's sentence for a run of equal segments all tested, its
-    amount the counted X times the error of the segments' inverse-variance
-    pooled mean, scaled by their scatter about the line where it exceeds
-    what their errors allow."""
+    """The note's sentence for a run of segments all tested, its amount the
+    X counted for their own errors and centres times the error of the
+    segments' inverse-variance pooled mean, times their scatter about the
+    line as the note says it, where that reads above 1.0."""
+    from fastmdxplora import statistics
     from fastmdxplora.statistics import summarise
 
     edges = [0, *joins, len(values)]
@@ -241,21 +242,23 @@ def _unseen_said(values, joins, pieces):
     ratio = max(float(w @ (means - np.polyval(fit, x)) ** 2),
                 float(plain @ plain) / float(np.mean(1 / w))) / (pieces - 2)
     error = 1 / np.sqrt(w.sum())
-    amount = UNSEEN[pieces] * error * np.sqrt(max(1.0, ratio))
-    errors = 1 / np.sqrt(w)
-    unequal = ("" if errors.max() - errors.min() <= 0.1 * errors.max()
-               else ", and a larger one with segment errors as unequal as these")
+    # Found by name, so a version without it says the equal pieces' figure
+    # and fails on the text rather than at import.
+    layout = getattr(statistics, "drift_unseen_in_pooled_errors", lambda *_: UNSEEN[pieces])
+    counted = layout(list(1 / np.sqrt(w)), list(x))
+    scale = float(f"{np.sqrt(ratio):.1f}") if ratio > 1 else 1.0
+    amount = counted * error * scale
 
     def two(v):
         r = float(f"{v:.2g}")
         return f"{r:,.{max(0, 1 - int(np.floor(np.log10(r))))}f}"
 
-    basis = f"{UNSEEN[pieces]} times the error of their pooled mean, {two(error)} kJ/mol"
-    if ratio > 1 and f"{np.sqrt(ratio):.1f}" != "1.0":
-        basis += (f", times {np.sqrt(ratio):.1f} for their scatter about a straight line "
+    basis = f"{counted} times the error of their pooled mean, {two(error)} kJ/mol"
+    if scale > 1.0:
+        basis += (f", times {scale:.1f} for their scatter about a straight line "
                   f"beyond that error, a scale estimated from only {pieces} means")
     return (f"With {pieces} segments, a steady drift smaller than about {two(amount)} kJ/mol "
-            f"from the first segment's mean to the last's could go unseen{unequal} ({basis})")
+            f"from the first segment's mean to the last's could go unseen ({basis})")
 
 
 @pytest.mark.parametrize("pieces", [3, 4])
@@ -300,7 +303,8 @@ def test_no_unseen_drift_is_said_at_five_where_drift_is_called_or_at_two(
 
 
 def test_the_unseen_drift_is_the_counted_one() -> None:
-    # One derivation: the constant the note says is the helper's count.
+    # One derivation: the figure a record works out for equal pieces is the
+    # helper's count, which the docs give.
     from fastmdxplora import statistics
     from tests._short_segment_drift_check import unseen_in_pooled_errors
 
@@ -308,6 +312,52 @@ def test_the_unseen_drift_is_the_counted_one() -> None:
         counted = unseen_in_pooled_errors([1] * pieces)["in_pooled_errors"]
         assert counted == UNSEEN[pieces]
         assert getattr(statistics, "DRIFT_UNSEEN_IN_POOLED_ERRORS", {}).get(pieces) == counted
+        assert _layout_figure([1.0] * pieces, list(np.arange(pieces) + 0.5)) == counted
+
+
+def _layout_figure(errors, centres):
+    """The figure a record of these tested errors and centres says, in
+    pooled errors, its scatter within its errors."""
+    from fastmdxplora.statistics import _drift_unseen
+
+    unseen = _drift_unseen({"segments": len(errors), "tested": len(errors), "left_out": "",
+                            "called": False, "pooled_error": 1.0, "line_scatter": 0.5,
+                            "lengths": [1] * len(errors), "errors": errors,
+                            "centres": centres})
+    return unseen["counted_in_pooled_errors"]
+
+
+@pytest.mark.parametrize("lengths, counted", [
+    ([1, 1, 1], 41), ([1, 1, 1, 1], 16), ([500, 500, 4000], 69), ([4000, 500, 500], 69),
+    ([3000, 500, 3000], 71), ([500, 4000, 500], 48), ([500, 500, 500, 4000], 24),
+    ([1000, 1000, 1000, 5000], 21)])
+def test_the_figure_is_the_record_s_own_layout_s(lengths, counted) -> None:
+    # The note gave 41 or 16 pooled errors whatever the layout: over pieces
+    # of 500, 500 and 4,000 frames the rule calls four in five drifts only
+    # of 69 (the docs' table, counted by the helper), so a drift as large as
+    # the figure was called in about half the runs. Each error as one over
+    # the root of its length, each mean at its centre in time.
+    lengths = np.asarray(lengths, dtype=float)
+    errors = list(np.sqrt(lengths.min() / lengths))
+    assert _layout_figure(errors, list(np.cumsum(lengths) - lengths / 2)) == counted
+
+
+def test_a_record_of_unequal_pieces_says_its_layout_s_figure_and_the_same_text_twice() -> None:
+    # A stationary run in pieces of 500, 500 and 4,000 frames: its figure is
+    # worked out for its own tested errors and centres in time when the
+    # record is written, near the 69 counted for that layout, not 41.
+    from fastmdxplora.statistics import drift_unseen_said
+
+    rng = np.random.default_rng(7)
+    values = 10.0 + _ar1(5000, 0.5, rng)
+    first = _saved(mean_record(values, joins=[500, 1000]))
+    unseen = first["drift_unseen"]
+    assert 60 <= unseen["counted_in_pooled_errors"] <= 80, unseen
+    said = drift_unseen_said(first, "nm")
+    assert f"({unseen['counted_in_pooled_errors']} times the error of their pooled mean" in said
+    assert "as unequal as these" not in said
+    again = _saved(mean_record(values, joins=[500, 1000]))
+    assert again == first and drift_unseen_said(again, "nm") == said
 
 
 @pytest.mark.parametrize("question", ["long_enough", "strengthen"])
@@ -379,9 +429,8 @@ def test_a_determined_mean_whose_joined_summary_was_withheld_says_what_was_teste
     said = _unseen_of(record, "K")
     assert said.startswith(
         "With 3 of its 4 segments tested (1 left out, numbered from zero: 0, its correlation "
-        "not resolved), a steady drift smaller than about 32 K from the first segment's mean "
-        "to the last's could go unseen, and a larger one with segment errors as unequal as "
-        "these (41 times the error of their pooled mean, 0.79 K)"), said
+        "not resolved), a steady drift smaller than about 35 K from the first segment's mean "
+        "to the last's could go unseen (44 times the error of their pooled mean, 0.79 K)"), said
 
 
 def test_a_determined_mean_with_too_few_segments_tested_says_drift_was_not_tested(
@@ -413,16 +462,15 @@ def test_the_figure_is_scaled_where_the_means_scatter_beyond_their_errors() -> N
     # 3.4 times their errors (Q 11.9 on 1 degree of freedom), and there the
     # rule is decided by that scatter. Said "15 K" from errors that do not
     # hold; the rule calls four in five drifts only of about 54 K, and the
-    # scale rests on 3 means. Errors of 0.60 to 0.68 K differ by more than a
-    # tenth.
+    # scale rests on 3 means. Its own errors and centres in time give 42
+    # pooled errors.
     values, joins = _real("drifting_3_pieces_temperature_K")
     record = _saved(mean_record(values, joins=joins))
     said = _unseen_of(record, "K")
-    assert said == ("With 3 segments, a steady drift smaller than about 54 K from the first "
-                    "segment's mean to the last's could go unseen, and a larger one with segment "
-                    "errors as unequal as these (41 times the error of their pooled mean, 0.37 K, "
-                    "times 3.5 for their scatter about a straight line beyond that error, a "
-                    "scale estimated from only 3 means)"), said
+    assert said == ("With 3 segments, a steady drift smaller than about 55 K from the first "
+                    "segment's mean to the last's could go unseen (42 times the error of their "
+                    "pooled mean, 0.37 K, times 3.5 for their scatter about a straight line "
+                    "beyond that error, a scale estimated from only 3 means)"), said
 
 
 def _unseen_of(record, unit):
@@ -482,7 +530,7 @@ def test_the_card_says_the_drift_note_whole_beside_an_image_note(tmp_path) -> No
         session.server.shutdown()
     for width, scheme, found in seen:
         assert found["whole"] and "could go unseen" in found["note"] and \
-            "(41 times the error of their pooled mean" in found["note"] and \
+            " times the error of their pooled mean" in found["note"] and \
             found["note"].endswith(")."), (width, scheme, found)
         assert found["image"].startswith("may be biased"), (width, scheme, found)
 
@@ -551,11 +599,10 @@ def _a_record(change: float, error: float, errors: list, scatter: float) -> dict
             "drift_unseen": {"segments": 3, "tested": 3, "left_out": "",
                              "counted_in_pooled_errors": 41, "scatter_about_line": scatter,
                              "in_pooled_errors": change / error, "pooled_error": error,
-                             "change": change, "equal_segments": max(errors) - min(errors)
-                             <= 0.1 * max(errors)}}
+                             "change": change}}
 
 
-def test_equal_pieces_whose_errors_differ_say_a_larger_drift_could_go_unseen() -> None:
+def test_equal_pieces_whose_errors_differ_say_their_own_figure() -> None:
     # Three pieces of equal length, the middle one's error twice the others'
     # (its correlation time longer): the rule's 80% point is 61 pooled
     # errors, not 41, and the record judged them equal by their lengths. And
@@ -576,8 +623,9 @@ def test_equal_pieces_whose_errors_differ_say_a_larger_drift_could_go_unseen() -
     assert scatter > float(weighted @ (weighted / errors**2))
     unseen = _drift_unseen({"segments": 3, "tested": 3, "left_out": "", "called": False,
                             "pooled_error": 0.5, "line_scatter": scatter,
-                            "lengths": [100, 100, 100], "errors": errors.tolist()})
-    assert unseen["equal_segments"] is False
+                            "lengths": [100, 100, 100], "errors": errors.tolist(),
+                            "centres": centres.tolist()})
+    assert unseen["counted_in_pooled_errors"] == 61
 
 
 def test_a_scale_that_reads_1_point_0_is_not_said_and_one_said_says_its_means() -> None:
@@ -589,6 +637,23 @@ def test_a_scale_that_reads_1_point_0_is_not_said_and_one_said_says_its_means() 
     scaled = drift_unseen_said(_a_record(41 * 2.0 * 0.01, 0.01, [1, 1, 1], 4.0), "nm")
     assert scaled.endswith("times 2.0 for their scatter about a straight line beyond that "
                            "error, a scale estimated from only 3 means)"), scaled
+
+
+def test_the_figure_multiplies_out_from_the_basis_it_gives() -> None:
+    # Where the scale is not said (1.04 reads 1.0) it is not applied: "about
+    # 0.43 nm (41 times the error of their pooled mean, 0.010 nm)" was said.
+    # Where it is said, the figure is the count times the scale as said.
+    from fastmdxplora.statistics import _drift_unseen, drift_unseen_said
+
+    plain = drift_unseen_said(_a_record(41 * 1.04 * 0.01, 0.01, [1, 1, 1], 1.08), "nm")
+    assert "about 0.41 nm" in plain, plain
+    scaled = drift_unseen_said(_a_record(41 * 2.34 * 0.01, 0.01, [1, 1, 1], 2.34 ** 2), "nm")
+    assert "about 0.94 nm" in scaled and "times 2.3 for" in scaled, scaled
+    unseen = _drift_unseen({"segments": 3, "tested": 3, "left_out": "", "called": False,
+                            "pooled_error": 0.01, "line_scatter": 1.04 ** 2,
+                            "lengths": [1, 1, 1], "errors": [1.0, 1.0, 1.0],
+                            "centres": [0.5, 1.5, 2.5]})
+    assert unseen["change"] == pytest.approx(0.41), unseen
 
 
 def test_a_chip_s_note_has_the_unit_its_value_has(tmp_path) -> None:
