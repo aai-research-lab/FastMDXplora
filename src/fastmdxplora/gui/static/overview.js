@@ -172,6 +172,11 @@
       // badge is the record's, Determined or not.
       link.appendChild(make("div", "tile-noted", tile.noted));
     }
+    if (!perResidue && !unread && tile.unseen) {
+      // What its joined run's drift test could miss: a line of its own,
+      // never cut (the image note's two lines hid it), as a sentence.
+      link.appendChild(make("div", "tile-note tile-unseen", tile.unseen + "."));
+    }
     if (perResidue) {
       link.appendChild(bars(tile.values));
     } else if (tile.series) {

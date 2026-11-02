@@ -225,8 +225,11 @@ def _tiles(root: Path) -> dict[str, Any]:
                 "series": series,
                 # Its image note beside the verdict, which it does not change,
                 # and the analysis's paragraph of it on hover.
-                "noted": quantity.get("noted") or "",
+                "noted": quantity.get("image_said") or "",
                 "noted_why": quantity.get("noted_why") or "",
+                # What its joined run's drift test could miss, a sentence
+                # of its own, said whole on the card.
+                "unseen": quantity.get("unseen") or "",
             })
     shown = tiles[:MOST_TILES]
     # The means not shown, as the heading counts means: the RMSF tile is

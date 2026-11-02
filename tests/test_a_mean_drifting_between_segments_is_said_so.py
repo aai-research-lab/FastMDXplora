@@ -270,7 +270,7 @@ def test_three_or_four_segments_not_called_drifting_say_how_large_a_drift_could_
     tile = next(t for t in overview_payload(root)["tiles"] if t["label"] == "Potential energy")
     row = next(q for r in overview_of(root)["rows"] for q in r["quantities"]
                if q.get("label") == "Potential energy")
-    assert tile["determined"] and tile["noted"] == said, (tile, said)
+    assert tile["determined"] and tile["unseen"] == said, (tile, said)
     # The same text on the Overview's card and the Analysis page.
     assert row["unseen"] == said and row["noted"] == said
     assert f"Potential energy: {said}." in _convergence_section(root)
@@ -421,3 +421,55 @@ def _unseen_of(record, unit):
 
     reader = getattr(statistics, "drift_unseen_said", None)
     return reader(record, unit) if reader else ""
+
+
+def _with_an_image_note(record: dict) -> dict:
+    return {**record, "solute_image": {"frames_used": 1200, "frames_under_cutoff": 300,
+                                       "cutoff_nm": 1.0, "counted_over": "frames"}}
+
+
+def test_the_card_says_the_drift_note_whole_beside_an_image_note(tmp_path) -> None:
+    # The card's note took two lines and cut the drift note before "could go
+    # unseen", and an image note beside it would have hidden it whole.
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    values, joins = _climbing(3, step=0.0)
+    root = _study(tmp_path, values, joins)
+    options = root / "analysis" / "thermodynamics" / "options.json"
+    document = json.loads(options.read_text(encoding="utf-8"))
+    energy = document["findings"]["thermodynamics"]["potential_energy"]
+    document["findings"]["thermodynamics"]["potential_energy"] = _with_an_image_note(energy)
+    options.write_text(json.dumps(document), encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    seen = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            for width in (1440, 390):
+                for scheme in ("light", "dark"):
+                    page = browser.new_page(viewport={"width": width, "height": 900},
+                                            color_scheme=scheme)
+                    page.set_default_timeout(60000)
+                    page.goto(session.url + "#overview", wait_until="domcontentloaded")
+                    page.wait_for_selector("#overview-tiles .overview-tile")
+                    seen.append((width, scheme, page.evaluate("""() => {
+                      const tile = [...document.querySelectorAll('#overview-tiles .overview-tile')]
+                        .find((t) => t.textContent.includes('Potential energy'));
+                      const note = tile && tile.querySelector('.tile-unseen');
+                      const image = tile && tile.querySelector('.tile-noted');
+                      const whole = (el) => !!el && el.offsetParent !== null
+                        && el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+                      return {note: note ? note.innerText : '', whole: whole(note),
+                              image: image ? image.innerText : ''};
+                    }""")))
+                    page.close()
+            browser.close()
+    finally:
+        session.server.shutdown()
+    for width, scheme, found in seen:
+        assert found["whole"] and "could go unseen (41 times the error of their pooled " \
+            "mean" in found["note"] and found["note"].endswith(")."), (width, scheme, found)
+        assert found["image"].startswith("may be biased"), (width, scheme, found)
