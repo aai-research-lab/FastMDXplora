@@ -59,6 +59,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   about 41 times its pooled error at three and 16 at four, first segment to
   last, in its own units too, and more where the segments differ in length
   (counted power of the rule; its record saves `drift_unseen`).
+- The Agent's and the GUI's answers to whether a study ran long enough and
+  what would strengthen it name a mean drifting between a joined run's
+  segments and its remedy, a longer run of no length a record gives, by the
+  record's code; they said no figure was recorded and that analysing again
+  records it.
+- The report's "What would support it" names the means drifting between a
+  joined run's segments with their remedy, and its first paragraph gives an
+  extended study's joined length and pieces.
 - A mean an earlier version recorded as determined on fewer independent
   samples than this version determines a mean on reads "not determined",
   with why and that analysing again records this version's verdict, on the

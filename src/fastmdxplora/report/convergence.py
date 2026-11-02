@@ -235,6 +235,7 @@ class Assessment:
             "settled": self.has_equilibrated,
             "drift_measurable": self.drift_is_measurable,
             "drift_in_noise": round(self.drift_in_noise, 2),
+            "drifting_between_segments": self.drifts_between_segments,
         }
 
 

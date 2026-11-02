@@ -278,3 +278,48 @@ def test_the_unseen_drift_is_the_counted_one() -> None:
         counted = unseen_in_pooled_errors([1] * pieces)["in_pooled_errors"]
         assert counted == UNSEEN[pieces]
         assert getattr(statistics, "DRIFT_UNSEEN_IN_POOLED_ERRORS", {}).get(pieces) == counted
+
+
+@pytest.mark.parametrize("question", ["long_enough", "strengthen"])
+def test_the_records_answer_names_a_mean_drifting_between_segments(tmp_path, question) -> None:
+    # Told apart by its record's code, not its words: the answer said no
+    # figure was recorded and that analysing again records it, which it
+    # does not for a drift between segments.
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+
+    values, joins = _climbing(4)
+    said = answer_from_the_records(_study(tmp_path, values, joins), question)
+    assert ("Potential energy is drifting between the joined run's segments, so the "
+            "remedy is a longer run; no record says how much longer.") in said, said
+    assert "Analysing it again with this release records it" not in said
+
+
+def test_what_would_support_it_names_a_mean_drifting_between_segments(tmp_path) -> None:
+    # It named only the means withheld for want of sampling; a drifting one
+    # had its remedy only in its finding line above.
+    from fastmdxplora.report.document import _convergence_section
+
+    values, joins = _climbing(4)
+    said = _convergence_section(_study(tmp_path, values, joins))
+    support = next((line for line in said.splitlines()
+                    if line.startswith("**What would support it.**")
+                    or line.startswith("Potential energy is drifting")), "")
+    assert ("Potential energy is drifting between the joined run's segments, so the "
+            "remedy is a longer run; no record says how much longer.") in support, said
+
+
+def test_the_report_s_first_paragraph_gives_an_extended_study_s_joined_length() -> None:
+    # It read the first piece's record alone: "simulated for 100 ps" of 300.
+    import json
+
+    from fastmdxplora.report.document import _study_in_one_paragraph
+    from tests.test_an_extended_study_is_said_at_its_length import _extended
+
+    root = _extended()
+    record = root / "simulation" / "simulation_parameters.json"
+    sim = json.loads(record.read_text(encoding="utf-8"))
+    sim["parameters"]["duration_ns"] = 0.1
+    record.write_text(json.dumps(sim), encoding="utf-8")
+    said = _study_in_one_paragraph(root)
+    assert "simulated for 300 ps in 3 pieces at 300 K" in said, said
+    assert "for 100 ps" not in said

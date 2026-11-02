@@ -305,17 +305,56 @@ STILL_DRIFTING = ("A mean still drifting over the frames it averages has no figu
 
 
 def _no_figure(base: Path) -> str:
-    """Why no figure says how much more production the means need."""
+    """Why no figure says how much more production the means need: for the
+    means withheld as drifting between a joined run's segments, by name, as
+    the Overview's lead says them (:func:`overview_view.drifting_said`);
+    for one still drifting over the frames it averages, that no figure says
+    how much longer; for any other withheld, that no figure was recorded.
+    Told apart by each record's code, not its words: one drifting between
+    segments was told to analyse again, which records no figure for it."""
     from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.gui.overview_view import drifting_said
+    from fastmdxplora.statistics import DRIFTING_CODES
 
     try:
         rows = overview_of(base).get("rows") or []
     except Exception:  # noqa: BLE001 - the plainer answer stands
         return NO_FIGURE
-    drifting = any(str(q.get("why") or "").startswith("Still drifting")
-                   for row in rows for q in (row.get("quantities") or [])
-                   if isinstance(q, dict))
-    return STILL_DRIFTING if drifting else NO_FIGURE
+    between: list[str] = []
+    within = other = False
+    for row in rows:
+        for q in row.get("quantities") or []:
+            if not isinstance(q, dict) or q.get("determined") or q.get("value") is None:
+                continue
+            if q.get("drifting"):
+                between.append(str(q.get("label") or row.get("title") or row.get("analysis")))
+            elif q.get("withheld_code") in DRIFTING_CODES:
+                within = True
+            else:
+                other = True
+    said = [drifting_said(between)] if between else []
+    if within:
+        said.append(STILL_DRIFTING)
+    if other or not said:
+        said.append(NO_FIGURE)
+    return " ".join(said)
+
+
+def _drifting_between(base: Path) -> str:
+    """The means withheld as drifting between a joined run's segments, by
+    name, with their remedy, as the Overview's lead says them; empty for
+    none. Beside what the means withheld for want of sampling need, which
+    is not what these need."""
+    from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.gui.overview_view import drifting_said
+
+    try:
+        rows = overview_of(base).get("rows") or []
+    except Exception:  # noqa: BLE001 - the rest of the answer stands
+        return ""
+    return drifting_said([str(q.get("label") or row.get("title") or row.get("analysis"))
+                          for row in rows for q in row.get("quantities") or []
+                          if isinstance(q, dict) and q.get("drifting")])
 
 
 def _withheld_since(base: Path) -> str:
@@ -384,8 +423,9 @@ def _long_enough(base: Path) -> str:
         # Every mean withheld, the quantities beside the report's
         # observables among them: the line above counts the observables.
         since = _withheld_since(base)
+        drifting = _drifting_between(base)
         parts.append("What they need, every mean withheld counted: " + text
-                     + (f" {since}" if since else ""))
+                     + (f" {since}" if since else "") + (f" {drifting}" if drifting else ""))
         if command:
             parts.append(f"To run it, extending the study in place:\n\n`{command}`")
         parts.extend(_not_a_longer_run_alone(base))
@@ -491,7 +531,8 @@ def _strengthen(base: Path) -> str:
         text, command = asked
         parts.append("A longer run first: the means it withheld have to be given before "
                      "replicas can be compared on them.")
-        parts.append("What they need: " + text)
+        drifting = _drifting_between(base)
+        parts.append("What they need: " + text + (f" {drifting}" if drifting else ""))
         if command:
             parts.append(f"`{command}`")
         parts.extend(_not_a_longer_run_alone(base))

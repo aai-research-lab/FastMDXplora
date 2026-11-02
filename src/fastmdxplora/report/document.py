@@ -191,9 +191,20 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
         said.append(f"The prepared system contained {atoms:,} atoms")
 
     duration = (sim or {}).get("duration_ns_actual") or (sim or {}).get("duration_ns")
+    # A study carried on in pieces ran for all of them, as the protocol
+    # paragraph says: the first piece's record alone said "20 ps" of 120.
+    try:
+        from fastmdxplora.simulation.resume import extended_production
+
+        extended = extended_production(project_root)
+    except Exception:  # noqa: BLE001 - the first piece's record stands
+        extended = None
+    pieces = ""
+    if extended is not None and extended[0] > 0:
+        duration, pieces = extended[0], f" in {extended[1]} pieces"
     if isinstance(duration, (int, float)) and duration > 0:
         length = (f"{duration * 1000:.0f} ps" if duration < 1
-                  else f"{duration:.3g} ns")
+                  else f"{duration:.3g} ns") + pieces
         # Recorded under `parameters`, with the top level kept as a fallback
         # for manifests written before that nesting.
         temperature = sim.get("temperature_K")
@@ -1141,6 +1152,20 @@ def _convergence_section(project_root: Path) -> str:
                 "the same box samples the same contact. A larger box, in a new study "
                 "(a box cannot grow mid-run), is what would support one.")
     asked = _what_more_sampling_needs(project_root)
+    # The means drifting between a joined run's segments, by name, with their
+    # remedy: the paragraph named only those withheld for want of sampling.
+    drifting = [said_as(record["observable"]) for record in
+                sorted(assessed["observables"].values(), key=lambda r: said_as(r["observable"]))
+                if record.get("drifting_between_segments")]
+    if drifting:
+        listed = (drifting[0] if len(drifting) == 1
+                  else ", ".join(drifting[:-1]) + " and " + drifting[-1])
+        between = (f"{listed[:1].upper()}{listed[1:]} "
+                   f"{'is' if len(drifting) == 1 else 'are'} drifting between the joined "
+                   "run's segments, so the remedy is a longer run; no record says how "
+                   "much longer.")
+        asked = (asked + "\n\n" + between if asked
+                 else f"**What would support it.** {between}")
     if asked and image:
         from fastmdxplora.image_note import longer_run_said, recorded_finding
 

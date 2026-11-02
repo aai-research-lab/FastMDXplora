@@ -460,6 +460,10 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         # record's code: the Overview's lead names it with its remedy.
         "drifting": (not determined and not constant and not (biased and timed)
                      and withheld_code(found) == "analysis.sampling.drifting"),
+        # The code it is withheld under, for a reader to branch on, not its
+        # words.
+        "withheld_code": ("" if determined or constant or (biased and timed)
+                          else withheld_code(found)),
         **_noted(found, findings, why=why, unit=unit),
     }
 
