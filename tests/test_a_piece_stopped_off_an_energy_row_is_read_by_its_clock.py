@@ -1,5 +1,5 @@
 """A variable-step piece stopped at a checkpoint off its energy log's rows
-is read by its own clock.
+is read by its own clock, by the methods and the Overview alike.
 
 Checkpoints sit on frames (every 500 steps here) and the energy log writes
 a row every 1,000 steps, so a piece is often stopped with its last
@@ -101,6 +101,18 @@ def test_the_methods_give_the_same_length(tmp_path: Path) -> None:
     assert ("Production dynamics were run for 13.08 ps (the length by the "
             "integrator's own clock, summed over 3 pieces)") in text
     assert "not recorded" not in text
+
+
+def test_the_overview_gives_the_same_length(tmp_path: Path) -> None:
+    from fastmdxplora.gui.simulated_time import simulated_times
+
+    root = _varyc(tmp_path)
+    times = simulated_times(root, {})
+    # Its pieces' steps times the timestep was said (1.6 ps for a real study
+    # of 1.29 ps by the clock), not the methods' length.
+    assert times["production_ns"] == recorded_stage_lengths(root)["production_ran_ns"]
+    assert times["production_ns"] == 0.013080697
+    assert times["pieces"] == 3
 
 
 def test_a_record_without_its_time_and_no_row_there_is_still_not_recorded(
