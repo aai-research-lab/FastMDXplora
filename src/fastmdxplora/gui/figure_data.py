@@ -597,7 +597,7 @@ def _projection(root: Path, method: str) -> dict[str, Any] | None:
         "x": x, "y": y, "t": t, "t_label": t_label, "frames": frames,
         "axes": _axes_of(root, method), "unit": unit, "linked": _linked(root),
         "thinned": len(rows) if len(keep) < len(rows) else None,
-        "note": _mds_refused(root),
+        "figure_note": _mds_refused(root),
     }
 
 
@@ -615,8 +615,10 @@ def _mds_refused(root: Path) -> str:
         return ""
     from fastmdxplora.report.document import _findings_notes
 
-    return next((note for note in _findings_notes({"mds_refused": findings["mds_refused"]})
+    note = next((note for note in _findings_notes({"mds_refused": findings["mds_refused"]})
                  if note.startswith("MDS was not run")), "")
+    # Plain text on the page: the settings without the report's backticks.
+    return note.replace("`", "")
 
 
 def _landscape(root: Path, method: str) -> dict[str, Any] | None:

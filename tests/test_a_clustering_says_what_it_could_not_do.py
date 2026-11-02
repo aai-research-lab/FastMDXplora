@@ -26,7 +26,8 @@ STATIC = Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
 MDS_REFUSED = {
     "code": "analysis.memory.matrix_too_large",
     "said": ("MDS of 40,000 frames needs about 25.6 GB for their frame-by-frame RMSD "
-             "matrix and its centred square, and this machine has 16.0 GB available."),
+             "matrix and its centred square, and this machine has 16.0 GB available. "
+             "PCA, t-SNE and UMAP make no such matrix (`methods: [pca]`)."),
     "kept": ["pca"],
 }
 
@@ -71,10 +72,12 @@ class TestMDSRefusedIsSaidOnTheCard:
         root = _dimred_study(tmp_path / "study")
         payload = figure_payload(root, "analysis/dimred/dimred_pca.png")
         assert payload["ok"], payload
-        # As the report says it: one sentence, from one place.
+        # As the report says it: one sentence, from one place, its settings
+        # plain on the page (the report's backticks were shown raw).
         said = [note for note in _findings_notes({"mds_refused": MDS_REFUSED})
                 if note.startswith("MDS was not run")]
-        assert (payload.get("note") or "") == said[0]
+        assert (payload.get("figure_note") or "") == said[0].replace("`", "")
+        assert "(methods: [pca])" in payload["figure_note"]
 
     def test_the_card_shows_it(self, tmp_path):
         pytest.importorskip("playwright.sync_api")
@@ -98,11 +101,40 @@ class TestMDSRefusedIsSaidOnTheCard:
                 page.wait_for_selector(f"{card} .figure-chart svg")
                 notes = page.eval_on_selector_all(
                     f"{card} .figure-note", "(all) => all.map((n) => n.textContent)")
+                # Kept when the card shows the figure in place of the plot:
+                # it was inside the plot and left with it.
+                page.click(f"{card} [data-figure-toggle]")
+                shown = page.is_visible(f"{card} .figure-note")
+                figure_shown = page.is_visible(f"{card} img")
                 browser.close()
         finally:
             session.server.shutdown()
         assert not errors, errors
         assert any(note.startswith("MDS was not run: MDS of 40,000 frames") for note in notes), notes
+        assert figure_shown and shown, (figure_shown, shown)
+
+    def test_the_figure_says_it(self, tmp_path, monkeypatch):
+        """The PNG and SVG of the projection run beside it said nothing of
+        it: one opened from the card, or alone, gave no word."""
+        from fastmdxplora.analysis import cluster as clustering
+        from fastmdxplora.analysis import dimred as module
+        from tests.test_a_clustering_fits_the_machine import _chain
+
+        texts: dict[str, list[str]] = {}
+        real = module.save_figure
+
+        def save(fig, path, *args, **kwargs):
+            texts[Path(path).name] = [text.get_text() for text in fig.texts]
+            return real(fig, path, *args, **kwargs)
+
+        monkeypatch.setattr(module, "save_figure", save)
+        monkeypatch.setattr(clustering, "memory_available",
+                            lambda: (module.mds_memory_needed(300) // 3, "mocked"))
+        result = module.DimRed(output_dir=tmp_path, methods=["pca", "mds"]).run(_chain(300))
+        assert result.status == "ok", result.message
+        said = " ".join(texts["dimred_pca.png"])
+        assert said.startswith("MDS was not run"), texts
+        assert "analysis: {stride: 2}" in said and "`" not in said, said
 
 
 def test_the_dendrogram_s_csv_names_its_unit(tmp_path):
@@ -137,8 +169,72 @@ def test_a_refused_clustering_s_card_says_what_to_set():
         "function escapeAttr(v) { return String(v); }\n"
         "function escapeHTML(v) { return String(v); }\n"
         "function humanise(v) { return String(v); }\n"
+        + _function("dashboard.js", "whatToSet") + "\n"
         + _function("dashboard.js", "analysisCardHtml") + "\n"
         f"console.log(JSON.stringify(analysisCardHtml({card}, null)));")
     assert "Re-run" not in html, html
     assert ("Set stride: 3 under the analysis's options: {cluster: ...} for it; the other "
             "analyses keep every frame.") in html, html
+
+
+#: A clustering refused for memory, as the analysis manifest keeps it.
+CLUSTER_REFUSED = (
+    "cluster: Clustering every 3rd frame, 667 frames, fits in the memory, where "
+    "clustering 2,000 frames does not. Set `stride: 3` under the analysis's "
+    "`options: {cluster: ...}` for it; the other analyses keep every frame. The "
+    "2,000 frames need about 152.4 MB to plot the map of their RMSD matrix, once the "
+    "matrix is freed, and the container allows 116.0 MB, of which clustering plans "
+    "on 75%, 87.0 MB.")
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_a_refused_clustering_is_said_in_its_section_on_the_page(tmp_path, width):
+    """A study's page shows sections, and the grid that held the refused
+    clustering's card is hidden beside them: what to set showed nowhere a
+    person sees, and the results table's "Clustering" link went to no card."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _figure
+
+    root = tmp_path / "study"
+    (root / "analysis" / "rmsd").mkdir(parents=True)
+    _figure(root / "analysis" / "rmsd" / "rmsd.png")
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+        "load_kwargs": {"stride": 1, "first": None, "saving_interval_ps": 10.0},
+        "results": {"rmsd": {"status": "ok", "message": "rmsd: ok"},
+                    "cluster": {"status": "error", "message": CLUSTER_REFUSED}}}),
+        encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            # As the results table's link opens it.
+            page.goto(session.url + "#analysis/cluster", wait_until="domcontentloaded")
+            card = '#analysis-sections .analysis-card[data-analysis="cluster"]'
+            page.wait_for_selector(card, state="visible")
+            grid_hidden = page.eval_on_selector("#analysis-grid", "(grid) => grid.hidden")
+            said = page.inner_text(card)
+            theme = page.eval_on_selector(
+                card, "(c) => c.closest('.analysis-theme').dataset.theme")
+            page.wait_for_function(
+                "() => document.querySelector('.page[data-page=\"analysis\"]')"
+                ".dataset.cited === 'cluster'")
+            sideways = page.evaluate(
+                "() => document.documentElement.scrollWidth > "
+                "document.documentElement.clientWidth")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert not errors, errors
+    assert grid_hidden, "the page has sections, so the grid is hidden"
+    assert theme == "Conformations", theme
+    assert ("Set stride: 3 under the analysis's options: {cluster: ...} for it; the other "
+            "analyses keep every frame.") in said, said
+    assert "152.4 MB" in said and "`" not in said and "Re-run" not in said, said
+    assert not sideways

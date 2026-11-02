@@ -1020,13 +1020,6 @@
       var i = pointAt(event);
       if (i >= 0) openFrame(data, data.frames[i]);
     });
-    // MDS refused for memory beside it, as the record and the report say.
-    if (data.note) {
-      var note = document.createElement("p");
-      note.className = "muted small figure-note";
-      note.textContent = data.note;
-      host.appendChild(note);
-    }
     return f;
   }
 
@@ -1386,6 +1379,15 @@
           });
         }
         mode(true);
+        // A note on the figure (MDS refused for memory beside a
+        // projection, as the record and the report say), below the plot
+        // and the figure both: still shown when the card shows the figure.
+        if (data.figure_note) {
+          var note = document.createElement("p");
+          note.className = "muted small figure-note";
+          note.textContent = data.figure_note;
+          box.parentNode.insertBefore(note, box.nextSibling);
+        }
         box.setAttribute("data-figure-ready", "plotted");
         if (window.ResizeObserver) {
           var width = chart.clientWidth;

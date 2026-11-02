@@ -346,12 +346,13 @@ class TestThePage:
 
     def test_the_index_groups_by_theme_and_the_filter_finds_by_name(self, page) -> None:
         index = page.locator("#analysis-index")
+        # The order parameters failed: their card, in their section, says why.
         assert index.locator(".analysis-index-theme-name").all_text_contents() == [
-            "Structure and stability"]
+            "Structure and stability", "Flexibility"]
         page.fill("#analysis-filter", "gyration")
         assert page.locator("#analysis-section-rmsd").is_hidden()
         assert page.locator("#analysis-section-radius-of-gyration").is_visible()
-        assert page.locator("#analysis-index-count").text_content() == "1 of 2 analyses match"
+        assert page.locator("#analysis-index-count").text_content() == "1 of 3 analyses match"
         page.fill("#analysis-filter", "nothing like it")
         assert page.locator("#analysis-filter-none").is_visible()
         page.fill("#analysis-filter", "")

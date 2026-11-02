@@ -5284,10 +5284,17 @@ def _analysis_records(
             ]
         return []
 
+    from fastmdxplora.gui.report_dashboard import (
+        ANALYSIS_SECTION_BY_FOLDER, SECTION_ANCHORS, SECTION_THEME)
+
     records: list[dict[str, Any]] = []
     for name, raw in results.items():
         data = raw if isinstance(raw, dict) else {}
         prefix = f"analysis/{name}/"
+        # The Analysis page's section it belongs in, so one that did not
+        # finish has a card there saying what to set: with no figure it had
+        # none, and the grid that showed it is hidden beside the sections.
+        section = ANALYSIS_SECTION_BY_FOLDER.get(str(name), "")
         related = [record for record in artifacts if record["path"].startswith(prefix)]
         plot = next(
             (
@@ -5308,6 +5315,9 @@ def _analysis_records(
                 "finished_at": data.get("finished_at"),
                 "artifacts": related,
                 "plot": plot,
+                "section": section,
+                "section_anchor": SECTION_ANCHORS.get(section, ""),
+                "theme": SECTION_THEME.get(section, ""),
             }
         )
     return records
