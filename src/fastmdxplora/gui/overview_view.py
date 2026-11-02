@@ -160,12 +160,15 @@ def _tiles(root: Path) -> dict[str, Any]:
         overview = overview_of(root)
     except Exception:  # noqa: BLE001 - a panel must never break the page
         return {"tiles": [], "more": 0, "means": 0, "determined": 0, "noted": 0,
-                "not_read": 0, "analyses": 0, "judged_earlier": []}
+                "not_read": 0, "analyses": 0, "judged_earlier": [], "withheld_since": []}
     rows = overview.get("rows") or []
     tiles: list[dict[str, Any]] = []
     # A mean whose record was not read is neither determined nor not: it
     # is counted apart, as not read.
     means = determined = noted = not_read = 0
+    # The means this version withholds that an earlier version called
+    # determined, by name: analysing again records this version's verdict.
+    since: list[str] = []
     for row in rows:
         name = row.get("analysis")
         if name == "rmsf":
@@ -196,6 +199,8 @@ def _tiles(root: Path) -> dict[str, Any]:
             means += 1
             determined += bool(quantity.get("determined"))
             noted += bool(quantity.get("noted"))
+            if quantity.get("withheld_since"):
+                since.append(str(quantity.get("label") or row.get("title") or name))
             series = name if (quantity.get("key") == "mean" and name in _SERIES_OF) else None
             tiles.append({
                 "kind": "mean",
@@ -226,7 +231,8 @@ def _tiles(root: Path) -> dict[str, Any]:
             "determined": determined, "noted": noted, "not_read": not_read,
             "analyses": len(rows), "biased": bool(overview.get("biased")),
             "judged_earlier": list(overview.get("judged_earlier") or []),
-            "lead": _lead(root, means, determined, not_read, noted)}
+            "withheld_since": since,
+            "lead": _lead(root, means, determined, not_read, noted, len(since))}
 
 
 def means_counted(means: int, determined: int) -> str:
@@ -264,8 +270,22 @@ def _in_a_line(why: str) -> str:
     return line[:-1] + "." if line.endswith((";", ":")) else line
 
 
+def withheld_since_said(count: int, undetermined: int) -> str:
+    """How many of the ``undetermined`` means this version withholds that an
+    earlier version called determined, and what records this version's
+    verdict on them; empty for none. Said by the Overview's lead and the
+    Agent's answers, which counted only those withheld for want of
+    sampling."""
+    if not count:
+        return ""
+    which = (("it" if count == 1 else "them") if count >= undetermined
+             else f"{count} of the {undetermined}")
+    return (f"This version withholds {which}, which an earlier version called "
+            "determined: Analyze again to record this version's verdict.")
+
+
 def _lead(root: Path, means: int, determined: int, not_read: int = 0,
-          noted: int = 0) -> dict[str, Any] | None:
+          noted: int = 0, since: int = 0) -> dict[str, Any] | None:
     """The sentence the Overview of one run leads with: how many of its
     means are determined and, where they are not, how much longer the run
     would have to be and what that costs here, as the analyses asked for it
@@ -275,7 +295,9 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
     how much longer, that is said, never guessed; a result whose record
     was not read is counted apart, and a record the ask was not read from
     named (`record_access`). Where any mean carries an image note, how many,
-    and what lifts it (:func:`fastmdxplora.image_note.noted_said`)."""
+    and what lifts it (:func:`fastmdxplora.image_note.noted_said`). ``since``
+    of the means this version withholds that an earlier version called
+    determined (:func:`withheld_since_said`)."""
     unread = ("" if not not_read else
               f" {not_read} result{' was' if not_read == 1 else 's were'} not read: "
               f"{'it says' if not_read == 1 else 'each says'} why below.")
@@ -305,6 +327,13 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
 
     undetermined = means - determined
     counted = means_counted(means, determined)
+    analyse = withheld_since_said(since, undetermined)
+    if analyse and since >= undetermined:
+        # None of them asks for a longer run.
+        return {"said": f"{counted}. {analyse}{image_noted}{unread}",
+                "undetermined": undetermined, "means": means, "more_ns": None,
+                "seconds": None, "platform": "", "lower_bound": False}
+    analyse = f" {analyse}" if analyse else ""
     before = record_access.refused()
     try:
         ask = sampling_asked_for(root)
@@ -321,7 +350,7 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
         why = (f"is not said: {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} "
                f"not read." if refused else "is not in the records: each says why below.")
         lifted = longer_run_said(finding).replace("`", "")
-        why += (f" {lifted}" if lifted else "") + image_noted
+        why += analyse + (f" {lifted}" if lifted else "") + image_noted
         return {"said": f"{counted}. How much longer would determine {them} {why}" + unread,
                 "undetermined": undetermined, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
@@ -333,7 +362,7 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
     if ask.seconds is not None:
         on = f" on {ask.platform}" if ask.platform else ""
         said += f", {duration_said(ask.seconds)} at this run's speed{on}"
-    said += "."
+    said += "." + analyse
     if ask.lower_bound:
         said += (" A floor: the run is too short to resolve its own correlation time, "
                  "so run that much and estimate again.")

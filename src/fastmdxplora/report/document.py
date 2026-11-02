@@ -107,6 +107,21 @@ def _caption_of_figure(folder: Path, analysis: str, stem: str) -> str:
     return caption
 
 
+def _plotted_since(project_root: Path) -> dict[str, str]:
+    """The figures an earlier version plotted with the error of a mean this
+    version withholds, with what is said under each
+    (:func:`fastmdxplora.gui.analysis_overview.plotted_since`); none where
+    they cannot be read."""
+    from fastmdxplora.gui.analysis_overview import plotted_since
+
+    try:
+        return plotted_since(project_root)
+    except Exception:  # noqa: BLE001 - the report stands without the notes
+        logger.warning("Could not read which figures an earlier version plotted",
+                       exc_info=True)
+        return {}
+
+
 def _load_json_safely(path: Path) -> dict | None:
     from fastmdxplora import record_access
 
@@ -654,6 +669,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
                                         report_dir=report_dir))
         lines.append("")
 
+    # The figures an earlier version plotted with the error of a mean this
+    # version withholds, said so under each: the report embedded them with
+    # that error in their legend beside its own "not determined".
+    since = _plotted_since(project_root)
     summary_fig = report_dir / "analysis_summary.png"
     summary_manifest = report_dir / "analysis_summary_manifest.json"
     if summary_fig.is_file():
@@ -661,6 +680,9 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         lines.append("")
         lines.append(f"![Analysis summary]({_link_from(report_dir, summary_fig)})")
         lines.append("")
+        if report_dir == project_root / "report" and since.get("report/analysis_summary.png"):
+            lines.append(f"_{_md_text(since['report/analysis_summary.png'])}_")
+            lines.append("")
         if summary_manifest.is_file():
             lines.append(
                 "_Panel inclusion and skipped optional source figures are recorded "
@@ -796,6 +818,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
                 lines.append(f"![{_md_text(_caption_of_figure(figs_dir, analysis, fig.stem))}]"
                              f"({_link_from(report_dir, fig)})")
                 lines.append("")
+                note = since.get(f"analysis/{analysis}/{fig.name}")
+                if note:
+                    lines.append(f"_{_md_text(note)}_")
+                    lines.append("")
         else:
             lines.append("_No figure was produced for this analysis._")
             lines.append("")
@@ -1625,12 +1651,14 @@ def build_document(
 #: the report read was taken from, by analysis (None where its record held
 #: none). A study compares it with each record as it ends
 #: (`batch.explorer.reported_before_the_shared_start`), and writes the
-#: report again where they differ.
+#: report again where they differ. With ``mean_rules``, the rules its means
+#: were judged by (`gui.report_page`).
 RECORDS_READ = "records_read.json"
 
 
 def _save_the_starts_read(project_root: Path, output_dir: Path) -> None:
-    """Save which shared start each mean the report read was taken from."""
+    """Save which shared start each mean the report read was taken from, and
+    the rules it judged them by."""
     from fastmdxplora import record_access
 
     starts: dict[str, Any] = {}
@@ -1640,8 +1668,14 @@ def _save_the_starts_read(project_root: Path, output_dir: Path) -> None:
             mean = found.get("mean") if isinstance(found, dict) else None
             if isinstance(mean, dict):
                 starts[path.parent.name] = mean.get("start_shared_with_replicas")
+        # And the rules its means were judged by (`statistics.MEAN_RULES`):
+        # the Report page says of a report written by an earlier version
+        # which of its means this version withholds.
+        from fastmdxplora.statistics import MEAN_RULES
+
         (output_dir / RECORDS_READ).write_text(json.dumps(
-            {"start_shared_with_replicas": starts}, indent=2), encoding="utf-8")
+            {"start_shared_with_replicas": starts, "mean_rules": MEAN_RULES},
+            indent=2), encoding="utf-8")
     except OSError as exc:
         logger.warning("Could not save which records the report read: %s", exc)
 

@@ -87,12 +87,49 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
     return {
         "ok": True,
         "not_produced": not_produced,
+        "withheld_since": _withheld_since(base, report_dir),
         "downloads": downloads,
         "generated": _generated_line(text),
         "rendered": rendered,
         "figure_provenance": provenance,
         **_traced(html, rendered, base, source, trace=trace),
     }
+
+
+def _withheld_since(base: Path, report_dir: Path) -> str:
+    """Said above a report written by an earlier version: how many of its
+    means this version withholds, which it called determined
+    (``withheld_since``, :func:`fastmdxplora.gui.analysis_overview.overview_of`),
+    and to write it again. Empty for a report written by this version's
+    rules (``mean_rules`` in ``records_read.json``), which says so of each
+    itself. The page showed "0.0078 \u00b1 0.0010 nm" and "yes" from an
+    earlier report beside an Overview saying "not determined"."""
+    from fastmdxplora.report.document import RECORDS_READ
+    from fastmdxplora.statistics import MEAN_RULES, MINIMUM_EFFECTIVE_SAMPLES
+
+    try:
+        read = json.loads(_records.read_text(report_dir / RECORDS_READ, encoding="utf-8"))
+    except (OSError, ValueError):
+        read = {}
+    rules = read.get("mean_rules") if isinstance(read, dict) else None
+    if isinstance(rules, int) and not isinstance(rules, bool) and rules >= MEAN_RULES:
+        return ""
+    from fastmdxplora.gui.analysis_overview import overview_of
+
+    try:
+        rows = overview_of(base, include_time=False, include_data=False).get("rows") or []
+    except Exception:  # noqa: BLE001 - the report stands without the line
+        return ""
+    named = [str(q.get("label") or row.get("title")) for row in rows
+             for q in row.get("quantities") or []
+             if isinstance(q, dict) and q.get("withheld_since")]
+    if not named:
+        return ""
+    count = (f"{len(named)} of its means" if len(named) > 1 else "1 of its means")
+    return (f"Written by an earlier version, which called {count} determined that this "
+            f"version withholds ({', '.join(named)}: fewer than the "
+            f"{MINIMUM_EFFECTIVE_SAMPLES:g} independent samples it determines a mean on). "
+            "Write it again to give this version's verdict.")
 
 
 def methods_payload(root: Path | str, *, may_read: Any = None) -> dict[str, Any]:

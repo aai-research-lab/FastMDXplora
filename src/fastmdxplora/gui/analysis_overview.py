@@ -65,9 +65,10 @@ def overview_of(root: str | Path, *, include_time: bool = True,
     each ``key``, ``label`` and ``value``, ``error``, ``unit``, ``said``
     (the mean to the place its error allows, with its unit),
     ``determined``, ``why`` (where it is not), ``samples`` (independent
-    samples, rounded), ``from_frame``, ``of_frames``, ``from_ns`` and
+    samples, a whole number as every page says them), ``from_frame``, ``of_frames``, ``from_ns`` and
     ``reweighted`` and ``judged_earlier`` (determined by an earlier
-    version's rules), ``noted`` and ``noted_why`` (its image note beside
+    version's rules), ``withheld_since`` (called determined by an earlier
+    version's rules, withheld by this version's), ``noted`` and ``noted_why`` (its image note beside
     the verdict, which it does not change, and the analysis's paragraph of
     it: :mod:`fastmdxplora.image_note`); and ``data``, its data files with
     their addresses. The image check's row gives its ``finding`` in a
@@ -133,6 +134,69 @@ def overview_of(root: str | Path, *, include_time: bool = True,
         if any(q.get("judged_earlier") for q in row["quantities"])))
     return {"ok": True, "rows": rows, "biased": biased is not None, "complete": complete,
             "judged_earlier": earlier}
+
+
+#: Where a report or the slides say a figure an earlier version plotted
+#: with the error of a mean this version withholds, by the figure's path
+#: from the study's root (:func:`plotted_since`).
+SUMMARY_FIGURE = "report/analysis_summary.png"
+
+
+def plotted_since(root: str | Path, overview: dict[str, Any] | None = None) -> dict[str, str]:
+    """The figures an earlier version plotted with the error of a mean this
+    version withholds (``withheld_since``), each with the sentence said
+    under it, by its path from the study's root: an analysis's own figure
+    (``rmsd.png``, its greyscale copy and SVG), which plots its mean with
+    its error band, the thermodynamics' bars of its means' errors, and the
+    summary figure's panels made from them. The report written by this
+    version embedded ``rmsd.png`` with "0.0078 \u00b1 0.0010 nm" and its
+    band in its legend, beside its own "not determined" of that mean.
+    Analysing again plots them again; the report phase does not."""
+    from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
+    root = Path(root)
+    if overview is None:
+        overview = overview_of(root, include_time=False, include_data=False)
+    rule = (f"fewer than the {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples it "
+            "determines a mean on")
+    again = "Analyze again to plot it again."
+    plotted: dict[str, list[str]] = {}
+    for row in overview.get("rows") or []:
+        name = str(row.get("analysis") or "")
+        # The figure plots the analysis's main mean with its error; the
+        # thermodynamics' plots each of its means' errors as a bar.
+        labels = [str(q.get("label") or name) for q in row.get("quantities") or []
+                  if isinstance(q, dict) and q.get("withheld_since")
+                  and (q.get("key") == "mean" or (name == "thermodynamics"
+                                                  and str(q.get("key")).startswith(name)))]
+        if not labels:
+            continue
+        for stem in (name, f"{name}_greyscale"):
+            for suffix in (".png", ".svg"):
+                path = f"analysis/{name}/{stem}{suffix}"
+                if record_access.is_file(root / path):
+                    plotted[path] = labels
+    said = {path: (f"Plotted by an earlier version with {'an error' if len(labels) == 1 else 'errors'} "
+                   f"this version withholds ({_listed(labels)}: {rule}). {again}")
+            for path, labels in plotted.items()}
+    if record_access.is_file(root / SUMMARY_FIGURE):
+        manifest = _json(root / "report" / "analysis_summary_manifest.json")
+        panels = [panel for panel in manifest.get("included") or []
+                  if isinstance(panel, dict) and panel.get("source") in plotted]
+        if panels:
+            letters = _listed([str(panel.get("panel")) for panel in panels])
+            labels = list(dict.fromkeys(label for panel in panels
+                                        for label in plotted[panel["source"]]))
+            said[SUMMARY_FIGURE] = (
+                f"{'Panel' if len(panels) == 1 else 'Panels'} {letters} "
+                f"{'was' if len(panels) == 1 else 'were'} plotted by an earlier version with "
+                f"{'an error' if len(labels) == 1 else 'errors'} this version withholds "
+                f"({_listed(labels)}: {rule}). {again}")
+    return said
+
+
+def _listed(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
@@ -312,7 +376,9 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     from fastmdxplora.statistics import (
         RESOLVED_SAMPLES,
         four_figures,
+        independent_samples_said,
         judged_by_earlier_rules,
+        too_few_by_these_rules,
         with_its_error,
         withheld_reason,
     )
@@ -332,7 +398,9 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         why = "No mean was recorded."
     elif error is None and why is None:
         if samples is not None and samples < RESOLVED_SAMPLES:
-            why = (f"About {int(round(samples))} independent samples, fewer than the "
+            # Counted as every page counts them: 9.5 is "about 9", not 10.
+            count = independent_samples_said(samples, about=True)
+            why = (f"{count[:1].upper()}{count[1:]}, fewer than the "
                    f"{RESOLVED_SAMPLES:g} an error bar needs.")
         else:
             why = "No error bar was recorded."
@@ -364,16 +432,34 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         if label == "Time (ns)" and discard < len(x):
             from_ns = x[discard]
     return {
-        "value": value, "error": error, "unit": unit, "said": said,
-        "determined": determined, "why": why,
-        "samples": int(round(samples)) if samples is not None else None,
+        # No error beside a mean not determined: the table's Download gave
+        # one beside "Determined: no" for a mean this version withholds.
+        "value": value, "error": error if determined else None, "unit": unit,
+        "said": said, "determined": determined, "why": why,
+        "samples": _samples(samples),
         "from_frame": discard, "of_frames": n, "from_ns": from_ns,
         "reweighted": False, "constant": constant,
+        # Withheld by this version from a mean an earlier version's rules
+        # called determined (`statistics.too_few_by_these_rules`), which
+        # analysing again records this version's verdict on, and whose
+        # figure that version plotted with its error.
+        "withheld_since": (not determined and not constant and not (biased and timed)
+                           and too_few_by_these_rules(found) is not None),
         # Determined by the rules of the version that analysed it, which
         # may have called a mean still drifting determined.
         "judged_earlier": determined and judged_by_earlier_rules(found),
         **_noted(found, findings, why=why),
     }
+
+
+def _samples(count: float | None) -> int | None:
+    """Independent samples as the table's column gives them, by the one rule
+    every page says them by (`statistics.independent_samples_said`): 9.5 was
+    shown as 10 beside "not determined: 9.5 independent samples ... Below
+    10", where every other page says 9."""
+    from fastmdxplora.statistics import independent_samples_whole
+
+    return independent_samples_whole(count) if count is not None else None
 
 
 def _not_read(root: Path, path: Path) -> dict[str, Any]:
@@ -383,7 +469,7 @@ def _not_read(root: Path, path: Path) -> dict[str, Any]:
         "determined": False, "why": refused_said(root, path) + ".",
         "samples": None, "from_frame": None, "of_frames": None, "from_ns": None,
         "reweighted": False, "constant": False, "judged_earlier": False,
-        "unavailable": True, "noted": None, "noted_why": None,
+        "withheld_since": False, "unavailable": True, "noted": None, "noted_why": None,
     }
 
 
@@ -407,9 +493,9 @@ def _reweighted(name: str, item: dict[str, Any], found: dict[str, Any] | None) -
     return {
         "value": value, "error": error, "unit": unit, "said": said,
         "determined": determined, "why": why,
-        "samples": int(round(samples)) if samples is not None else None,
+        "samples": _samples(samples),
         "from_frame": None, "of_frames": None, "from_ns": None, "reweighted": True,
-        "constant": False, "judged_earlier": False,
+        "constant": False, "judged_earlier": False, "withheld_since": False,
         # Over every frame, as the reweighting weighs them: its own note.
         **_noted(item, item),
     }

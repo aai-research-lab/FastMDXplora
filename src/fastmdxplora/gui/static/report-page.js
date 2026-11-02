@@ -138,6 +138,9 @@
     // changes with the records, not the text.
     var shown = data.marked || data.html;
     var drawn = shown + JSON.stringify(data.records_changed || []);
+    /* And the line above it on an earlier version's report, which changes
+     * when the study is analysed again (report_page.py). */
+    drawn += data.withheld_since || "";
     if (doc.dataset.rendered === drawn) return;
     doc.dataset.rendered = drawn;
     doc.innerHTML = shown;
@@ -154,6 +157,11 @@
     var rows = (data.not_produced || []).slice();
     /* A record of the study not read (a link out of it): said with them. */
     if (data.not_read) rows.push({ artifact: "", reason: data.not_read, kind: "not read" });
+    /* A report an earlier version wrote: how many of its means this
+     * version withholds, and to write it again (report_page.py). */
+    if (data.withheld_since) {
+      rows.unshift({ artifact: "", reason: data.withheld_since, kind: "earlier version" });
+    }
     notices.hidden = !rows.length;
     rows.forEach(function (row) {
       var block = document.createElement("div");

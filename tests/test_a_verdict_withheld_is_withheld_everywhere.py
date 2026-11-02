@@ -178,13 +178,13 @@ def test_the_written_comparison_gives_it_no_error(tmp_path) -> None:
     build_comparison_report(root)
     text = (root / "comparison" / "comparison_report.md").read_text(encoding="utf-8")
     row = next(x for x in text.splitlines() if x.startswith("| s3 |"))
-    assert "±" not in row and row.rstrip(" |").endswith("\\*")
+    assert "±" not in row and row.rstrip(" |").endswith("\u2021")
     with (root / "comparison" / "comparison_summary.csv").open(encoding="utf-8") as fh:
         rows = {r["run_id"]: r for r in csv.DictReader(fh)}
     assert rows["s3"]["rmsd_standard_error"] == ""
     assert rows["s2"]["rmsd_standard_error"] == "0.0011"
     # Said as this version's verdict, not the run's.
-    footnote = next(x for x in text.splitlines() if x.startswith("\\* Not determined"))
+    footnote = next(x for x in text.splitlines() if x.startswith("\u2021 Not determined"))
     assert "this version withholds it" in footnote
     assert "the run's analysis found" not in footnote
 
@@ -199,9 +199,8 @@ def test_the_replicas_predict_without_it(tmp_path) -> None:
     assert entry["predicted_standard_error"] == pytest.approx(0.00105)
     assert "(from the 2 of 3 runs that gave an error of their own)" in entry["calibration"]
     said = entry["spread_not_an_error"]
-    assert said.startswith("1 of the 3 replicas did not determine its own mean: this version "
-                           "withholds the mean it called determined on fewer than 10 "
-                           "independent samples"), said
+    assert said.startswith("1 of the 3 replicas' means, which its run called determined, this "
+                           "version withholds on fewer than 10 independent samples"), said
     assert "it said its mean" not in said
 
 

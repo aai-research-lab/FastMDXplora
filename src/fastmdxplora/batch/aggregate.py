@@ -283,7 +283,20 @@ def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0, *,
              else f"{unbacked} of the {runs} replicas did not determine "
                   f"{'its' if unbacked == 1 else 'their'} own mean")
     plain = unbacked - said_so - withheld
-    if not said_so and not withheld:
+    rule = f"on fewer than {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples"
+    if withheld:
+        # Its run called it determined: not a replica that did not determine
+        # its mean, which the lead said beside "it called determined".
+        which = (f"None of the {runs} replicas' means is determined" if unbacked == runs
+                 else f"{unbacked} of the {runs} replicas' means "
+                      f"{'is' if unbacked == 1 else 'are'} not determined")
+    if withheld and withheld == unbacked:
+        whose = (f"The {runs} replicas' means" if unbacked == runs
+                 else f"{unbacked} of the {runs} replicas' means")
+        how = (f"{whose}, which {'its run' if unbacked == 1 else 'their runs'} called "
+               f"determined, this version withholds {rule}")
+        which = ""
+    elif not said_so and not withheld:
         how = " with an error of its own"
     else:
         parts = []
@@ -293,10 +306,8 @@ def _spread_not_an_error(unbacked: int, runs: int, said_so: int = 0, *,
                          else f"{said_so} said {'its' if said_so == 1 else 'their'} mean is "
                               "not determined")
         if withheld:
-            who = ("the mean it" if unbacked == 1 else "the mean each" if withheld == unbacked
-                   else f"the {'mean' if withheld == 1 else 'means'} {withheld}")
-            parts.append(f"this version withholds {who} called determined on fewer than "
-                         f"{MINIMUM_EFFECTIVE_SAMPLES:g} independent samples")
+            parts.append(f"this version withholds the {'mean' if withheld == 1 else 'means'} "
+                         f"{withheld} of them called determined {rule}")
         if plain:
             parts.append(f"{plain} gave no error of {'its' if plain == 1 else 'their'} own")
         how = ": " + (parts[0] if len(parts) == 1

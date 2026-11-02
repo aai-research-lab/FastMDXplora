@@ -318,6 +318,24 @@ def _no_figure(base: Path) -> str:
     return STILL_DRIFTING if drifting else NO_FIGURE
 
 
+def _withheld_since(base: Path) -> str:
+    """The means this version withholds that an earlier version called
+    determined, by name, as the Overview counts them (``withheld_since``),
+    and what records this version's verdict on them; empty for none. "Every
+    mean withheld counted" left them out, and never said to analyse again."""
+    from fastmdxplora.gui.overview_view import overview_payload
+
+    try:
+        named = list(overview_payload(base).get("withheld_since") or [])
+    except Exception:  # noqa: BLE001 - the rest of the answer stands
+        return ""
+    if not named:
+        return ""
+    listed = named[0] if len(named) == 1 else ", ".join(named[:-1]) + " and " + named[-1]
+    return (f"{listed}: called determined by an earlier version and withheld by this one; "
+            "Analyze again to record this version's verdict.")
+
+
 def _determined(supports: str) -> bool:
     """Whether the count (:func:`_supports`) says every mean is determined:
     the Overview's counts (:class:`_Counted`), or else the report's line
@@ -365,7 +383,9 @@ def _long_enough(base: Path) -> str:
                               if piece))
         # Every mean withheld, the quantities beside the report's
         # observables among them: the line above counts the observables.
-        parts.append("What they need, every mean withheld counted: " + text)
+        since = _withheld_since(base)
+        parts.append("What they need, every mean withheld counted: " + text
+                     + (f" {since}" if since else ""))
         if command:
             parts.append(f"To run it, extending the study in place:\n\n`{command}`")
         parts.extend(_not_a_longer_run_alone(base))
@@ -387,6 +407,9 @@ def _long_enough(base: Path) -> str:
         parts.extend(beside)
     elif supports:
         parts.append("Not by its records. " + supports)
+        since = _withheld_since(base)
+        if since:
+            parts.append(since)
         parts.append(_no_figure(base))
         parts.extend(_not_a_longer_run_alone(base))
         parts.extend(image.noted)

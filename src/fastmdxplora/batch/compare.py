@@ -553,8 +553,11 @@ def _write_markdown(
                 cell += " (all frames)"
                 whole = True
             if mean["qualified"]:
-                cell += " \\*"
-                qualified.add(bool(mean.get("by_this_version")))
+                # One mark for a mean its run withheld, another for one this
+                # version withholds: one footnote served both.
+                since = bool(mean.get("by_this_version"))
+                cell += " \u2021" if since else " \\*"
+                qualified.add(since)
             if mean.get("noted"):
                 cell += " \u2020"
                 noted.append(f"{rid}, {_OVERLAY_ANALYSES[a][0]}: {mean['noted']}.")
@@ -570,14 +573,15 @@ def _write_markdown(
 
         # Said of a mean its run called determined as this version's verdict:
         # "the run's analysis found the series too short" was said of it.
-        why = (["the run's analysis found the series too short, or with too few independent "
-                "samples, for its mean to be determined"] if False in qualified else [])
+        if False in qualified:
+            lines += ["", "\\* Not determined: the run's analysis found the series too "
+                          "short, or with too few independent samples, for its mean to be "
+                          "determined."]
         if True in qualified:
-            why.append(f"its run called it determined on fewer than the "
-                       f"{MINIMUM_EFFECTIVE_SAMPLES:g} independent samples this version "
-                       "determines a mean on, and this version withholds it (Analyze again "
-                       "to record this version's verdict)")
-        lines += ["", "\\* Not determined: " + "; or ".join(why) + "."]
+            lines += ["", f"\u2021 Not determined: its run called it determined on fewer "
+                          f"than the {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples this "
+                          "version determines a mean on, and this version withholds it "
+                          "(Analyze again to record this version's verdict)."]
     for line in noted:
         lines += ["", f"\u2020 {line}"]
     lines.append("")

@@ -1159,6 +1159,14 @@ def _analysis_sections(
 ) -> list[DashboardSection]:
     grouped: dict[str, list[DashboardPanel]] = {section: [] for section in SECTION_ORDER}
     seen_sources: set[str] = set()
+    # A figure an earlier version plotted with the error of a mean this
+    # version withholds is said so in its caption, as under it in the report.
+    from fastmdxplora.gui.analysis_overview import plotted_since
+
+    try:
+        since = plotted_since(project_root)
+    except Exception:  # noqa: BLE001 - the page stands without the notes
+        since = {}
 
     for source in _discover_analysis_images(project_root):
         rel = source.relative_to(project_root).as_posix()
@@ -1184,6 +1192,8 @@ def _analysis_sections(
             # its row on the Analysis page says it.
             noted = _analysis_noted(project_root / "analysis" / folder / source.name).removeprefix("; ")
             summary = noted[:1].upper() + noted[1:] + "." if noted else ""
+        if since.get(rel):
+            summary = f"{summary} {since[rel]}".strip()
         grouped[section].append(
             DashboardPanel(
                 title=title,
@@ -1218,7 +1228,7 @@ def _analysis_sections(
                 original_source=rel,
                 original_href=_href(source, output_dir),
                 mode="artifact fallback",
-                summary="",
+                summary=since.get(rel, ""),
                 category=section,
             )
         )

@@ -107,11 +107,22 @@ def independent_samples_said(count: float, *, about: bool = False) -> str:
         return "a number of independent samples that could not be counted"
     if count < 1:
         return "fewer than one independent sample"
+    whole = independent_samples_whole(count)
+    return (("about " if about else "") + f"{whole} independent "
+            + ("sample" if whole == 1 else "samples"))
+
+
+def independent_samples_whole(count: float) -> int:
+    """A count of independent samples as the whole number
+    :func:`independent_samples_said` says, for a table's column: 0 under
+    one, 9 for 9.5 (never rounded up to :data:`MINIMUM_EFFECTIVE_SAMPLES`)."""
+    count = float(count)
+    if count < 1:
+        return 0
     whole = int(round(count))
     if count < MINIMUM_EFFECTIVE_SAMPLES <= whole:
         whole = int(np.floor(count))
-    return (("about " if about else "") + f"{whole} independent "
-            + ("sample" if whole == 1 else "samples"))
+    return whole
 
 
 #: Equilibration is detected as the latest start that keeps at least this
