@@ -114,15 +114,21 @@ def simulated_times(root: str | Path, status: dict[str, Any], *,
             not_read = refused_said(root, Path(refusal.filename or root))
         if extended:
             production_ns, pieces = extended
-            from fastmdxplora.simulation.lengths import _variable_step, production_clock_ps
+        if extended or (not record and not not_read):
+            # A variable step's by the run's own clock, summed over its
+            # pieces, as the methods and a resume's answer give it: its
+            # steps times the timestep said 8 ps beside their 6.49. Decided
+            # by what they read, not the first piece's record, which a first
+            # piece stopped never wrote (6 ps beside their 4.85). None where
+            # a piece's clock is not recorded.
+            from fastmdxplora.simulation.lengths import recorded_stage_lengths
 
-            if _variable_step(parameters):
-                # By the run's own clock, summed over its pieces, as the
-                # methods and a resume's answer give it: its steps times the
-                # timestep said 8 ps beside their 6.49. None where a piece's
-                # clock is not recorded.
-                clock = production_clock_ps(root)
-                production_ns = None if clock is None else round(clock[0] / 1000.0, 9)
+            try:
+                lengths = recorded_stage_lengths(root)
+            except (OSError, ValueError):
+                lengths = {}
+            if lengths.get("variable_step"):
+                production_ns = lengths.get("production_ran_ns")
     equilibrating = running and stage in EQUILIBRATING and not production_ns
     # Ended before its production began: its equilibration was not all done,
     # and saying "0 ps production after 10 ps of equilibration" said it was.

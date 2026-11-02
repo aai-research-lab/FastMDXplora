@@ -774,9 +774,14 @@ def recorded_stage_lengths(study: object) -> dict:
       with ``steps`` None and the plan beside it as ``first_piece_steps``
       (the whole study's, read from its config, as ``planned_steps``), or
       "not recorded", with why, where a piece's clock at that step is not
-      there, "not read" where a piece is linked out of the study; a fixed
+      there, "not read" where a piece is linked out of the study (a study
+      of one piece stopped in its production, which wrote no record, is
+      read so too, by its checkpoint record's time); a fixed
       step's summed production whose last piece stopped says so in
       ``production_ran_said``;
+    - ``variable_step``: whether the run's integrator chose its own step,
+      as what is read here says, so a reader decides it as these lengths
+      were decided;
     - ``frames_kept``: for every mean an analysis recorded (its own, and
       those held one level down, as `analysis.base` collects them), the
       frames it analysed, those discarded as equilibration, and those left
@@ -828,9 +833,16 @@ def _recorded(root: object) -> dict:
             record, read_from = unwritten_record(root)
         except OutsideWorkspace:
             record = {}
+    variable = _variable_step(record.get("parameters") or {})
+    if state == NOT_RECORDED and not record:
+        # A study of one piece stopped in its production wrote no record:
+        # its own config says whether its integrator chose its step, and
+        # its checkpoint's record its time there.
+        variable = _a_stopped_piece_s_own_step(root)
     said = stage_lengths(record)
     said["record"] = state
     said["read_from"] = read_from
+    said["variable_step"] = variable
     unwritten = state == NOT_RECORDED and bool(record)
     if state == NOT_READ:
         for stage, _, _ in STAGES:
@@ -922,7 +934,7 @@ def _recorded(root: object) -> dict:
             source = "not recorded: the pieces were not joined"
         said["frames_saved"], said["frames_saved_source"] = frames, source
 
-    if _variable_step(record.get("parameters") or {}):
+    if variable:
         # Its own clock, as the methods give it: steps times the timestep is
         # not a variable step's length.
         clock = production_clock(root)
@@ -966,6 +978,30 @@ def _recorded(root: object) -> dict:
 
     said["frames_kept"] = _frames_kept(root)
     return said
+
+
+def _a_stopped_piece_s_own_step(root: object) -> bool:
+    """Whether a study of one piece, stopped in its production before it
+    wrote its record, ran an integrator that chose its own step: its
+    checkpoint's record says production, and its own config (not a piece's:
+    it has none) names such an integrator."""
+    import yaml
+
+    from fastmdxplora import record_access
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    if _segments(root):
+        return False
+    side = read_checkpoint_sidecar(root / "simulation" / "checkpoint.chk") or {}
+    if str(side.get("stage") or "").lower() != "production":
+        return False
+    try:
+        config = yaml.safe_load(record_access.read_text(root / CONFIG_RECORD,
+                                                        encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    return _variable_step(simulation if isinstance(simulation, dict) else {})
 
 
 def _frames_kept(root: object) -> dict:
