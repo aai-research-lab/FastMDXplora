@@ -341,15 +341,15 @@ def _is_a_mean_record(value: Any) -> bool:
 
 def _noted(found: dict[str, Any] | None, findings: dict[str, Any] | None, *,
            why: str | None = None, unit: str | None = None) -> dict[str, Any]:
-    """A mean's notes, beside its verdict, which they do not change: in a
-    line (``noted``) its image note, read from the record by the one reader
-    every page and the Agent use (:mod:`fastmdxplora.image_note`), and, for
-    a joined run of three or four segments not called drifting, how large a
-    drift could go unseen with that few
-    (:func:`fastmdxplora.statistics.drift_unseen_said`); the analysis's
-    paragraph of the image note (``noted_why``); and whether the image note
-    is among them (``image_noted``), for what counts the means it notes.
-    Empty where neither is said."""
+    """A mean's notes, beside its verdict, which they do not change: its
+    image note in a line, read from the record by the one reader every page
+    and the Agent use (:mod:`fastmdxplora.image_note`; ``image_said``), and
+    what its joined run's test for drift between segments could miss
+    (:func:`fastmdxplora.statistics.drift_unseen_said`; ``unseen``, a
+    sentence); both together for a reader that says them in one place
+    (``noted``); the analysis's paragraph of the image note (``noted_why``);
+    and whether the image note is among them (``image_noted``), for what
+    counts the means it notes. Empty where neither is said."""
     from fastmdxplora.image_note import note_of, paragraph_beside, said_short
     from fastmdxplora.statistics import drift_unseen_said
 
@@ -357,14 +357,16 @@ def _noted(found: dict[str, Any] | None, findings: dict[str, Any] | None, *,
     note = note_of(found)
     short = said_short(note)
     if not short:
-        return {"noted": unseen or None, "noted_why": None, "image_noted": False}
+        return {"noted": unseen or None, "noted_why": None, "image_noted": False,
+                "image_said": None, "unseen": unseen or None}
     # Said as the analysis's where it counts other frames than this mean's;
     # not again where the reason the mean was not determined says it.
     paragraph = paragraph_beside(note if found is not findings else None, findings)
     if paragraph and why and paragraph.split(". ")[0] in why:
         paragraph = ""
-    return {"noted": "; ".join(said for said in (short, unseen) if said),
-            "noted_why": paragraph or None, "image_noted": True}
+    return {"noted": f"{short}. {unseen}" if unseen else short,
+            "noted_why": paragraph or None, "image_noted": True,
+            "image_said": short, "unseen": unseen or None}
 
 
 def too_few_by_these_rules(found: Any) -> str | None:

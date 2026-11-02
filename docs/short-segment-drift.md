@@ -208,13 +208,23 @@ drifting.
 ## What three or four segments can miss
 
 The rule holds its 5% false rate at three and four segments, so it calls only
-a drift large against the means' own scatter. Where it does not call a mean of
-three or four segments drifting (pooled, determined or qualified), its record
-carries `drift_unseen`, and every page that shows the mean's verdict (the
-Overview's card, the Analysis page, the report and the Agent's answers) says
-beside it: with that many segments, a steady drift smaller than about X times
-the pooled error (X times this mean's pooled error, in the quantity's own
-units, from the first segment's mean to the last's) could go unseen.
+a drift large against the means' own scatter. Where a mean stands determined
+and the test ran on three or four segments without calling drift, whether the
+joined summary was pooled or withheld for another reason (a segment whose
+correlation is not resolved is left out of the test, and the whole series'
+mean can still stand), its record carries `drift_unseen`. Every page that
+shows the mean's verdict (the Overview's card, the Analysis page, the report,
+Compare, the Agent's citation chips, its answers and its own context) says
+beside it, as a sentence: with that many segments tested (and which were left
+out, and why), a steady drift smaller than about this much, in the quantity's
+own units from the first segment's mean to the last's, could go unseen; and
+what that is reckoned from: X times the error of the tested segments' pooled
+mean (inverse-variance weighted, the error X is counted in; it is not the
+error shown beside the mean, which is the whole series'), scaled where their
+scatter about the line exceeds that error. Where three or more segments were
+joined but fewer than three could be tested, it says drift between them was
+not tested, which were left out and why, and that longer segments would let
+it be.
 
 X is the smallest steady drift, in whole pooled errors from the first
 segment's mean to the last's, that the rule calls in at least 8,000 of 10,000
@@ -245,6 +255,40 @@ more, at three by up to three quarters. A mean of two segments is not tested
 (its pooled qualification, where the two disagree beyond their errors, says
 two segments cannot tell a drift from offsets), and at five or more the order
 test needs no such note.
+
+The count assumes the segment errors hold. Where the means scatter about the
+line more than their errors allow, the rule is decided by that scatter, whose
+power goes with the scatter itself, so a drift of X pooled errors is missed
+more often. The figure is then scaled by the square root of the line's
+chi-square per degree of freedom (`scatter_about_line` in the record), and the
+note says by how much. Counted by the helper (`inflated` in its output,
+10,000 sets a row, equal segments whose means scatter h times the variance
+their errors say):
+
+| Segments | h | Called at X | Called at X times the root of h | Record's figure at least that |
+|---|---:|---:|---:|---:|
+| 3 | 1 | 8,052 | 8,052 | 10,000 |
+| 3 | 2 | 6,485 | 8,052 | 3,164 |
+| 3 | 4 | 4,866 | 8,052 | 3,164 |
+| 3 | 10 | 3,197 | 8,052 | 3,164 |
+| 3 | 54 | 1,422 | 8,052 | 3,164 |
+| 4 | 1 | 8,280 | 8,280 | 10,000 |
+| 4 | 2 | 5,984 | 8,280 | 3,695 |
+| 4 | 4 | 3,833 | 8,280 | 3,695 |
+| 4 | 10 | 1,987 | 8,280 | 3,695 |
+| 4 | 54 | 813 | 8,280 | 3,695 |
+
+Scaled by the root of the true ratio, the rule calls at least 80% at every h
+(the scatter half is unchanged by a common scale, and against inflated
+scatter the errors half no longer decides). The record has only its own
+estimate of the ratio, the line's chi-square on one degree of freedom at three
+segments and two at four, so where the means do scatter beyond their errors
+the figure it says is at least the true one in about a third of runs (3,164
+and 3,695 of 10,000): it is a central estimate, and a drift larger than it can
+still go unseen. A real run's temperature at three pieces of 20 ps (177.79,
+185.45 and 186.61 K over errors of 0.67, 0.68 and 0.60 K) scatters 3.4 times
+its errors about the line; its note says about 53 K (41 times 0.37 K, times
+3.4), where the errors alone said 15 K.
 
 ## Limits and records
 

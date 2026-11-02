@@ -221,19 +221,42 @@ UNSEEN = {3: 41, 4: 16}
 
 
 def _unseen_said(values, joins, pieces):
-    pooled, _ = summarise_segments(values, joins)
-    amount = float(f"{UNSEEN[pieces] * pooled.standard_error:.2g}")
-    return (f"with {pieces} segments, a steady drift smaller than about {UNSEEN[pieces]} "
-            f"times the pooled error ({amount:g} kJ/mol from the first segment's mean to "
-            "the last's) could go unseen")
+    """The note's sentence for a run of equal segments all tested, its
+    amount the counted X times the error of the segments' inverse-variance
+    pooled mean, scaled by their scatter about the line where it exceeds
+    what their errors allow."""
+    from fastmdxplora.statistics import summarise
+
+    edges = [0, *joins, len(values)]
+    pieces_ = [summarise(values[a:b], minimum_effective_samples=0.0)[0]
+               for a, b in zip(edges, edges[1:])]
+    means = np.array([p.mean for p in pieces_])
+    w = 1 / np.array([p.standard_error for p in pieces_]) ** 2
+    x = np.array([a + p.discard + (b - a - p.discard - 1) / 2
+                  for (a, b), p in zip(zip(edges, edges[1:]), pieces_)])
+    fit = np.polyfit(x, means, 1, w=np.sqrt(w))
+    ratio = float(w @ (means - np.polyval(fit, x)) ** 2) / (pieces - 2)
+    error = 1 / np.sqrt(w.sum())
+    amount = UNSEEN[pieces] * error * np.sqrt(max(1.0, ratio))
+
+    def two(v):
+        r = float(f"{v:.2g}")
+        return f"{r:,.{max(0, 1 - int(np.floor(np.log10(r))))}f}"
+
+    basis = f"{UNSEEN[pieces]} times the error of their pooled mean, {two(error)} kJ/mol"
+    if ratio > 1:
+        basis += (f", times {np.sqrt(ratio):.1f} for their scatter about a straight line "
+                  "beyond that error")
+    return (f"With {pieces} segments, a steady drift smaller than about {two(amount)} kJ/mol "
+            f"from the first segment's mean to the last's could go unseen ({basis})")
 
 
 @pytest.mark.parametrize("pieces", [3, 4])
 def test_three_or_four_segments_not_called_drifting_say_how_large_a_drift_could_go_unseen(
         tmp_path, pieces) -> None:
     # The rule holds its 5% false rate at three and four segments, so it
-    # calls only a large drift there: a mean it pools is said with how
-    # large a steady drift that few could miss, on every reader of it.
+    # calls only a large drift there: a mean it does not call is said with
+    # how large a steady drift that few could miss, on every reader of it.
     from fastmdxplora.gui.analysis_overview import overview_of
     from fastmdxplora.gui.overview_view import overview_payload
     from fastmdxplora.gui.records_answer import answer_from_the_records
@@ -247,10 +270,10 @@ def test_three_or_four_segments_not_called_drifting_say_how_large_a_drift_could_
     tile = next(t for t in overview_payload(root)["tiles"] if t["label"] == "Potential energy")
     row = next(q for r in overview_of(root)["rows"] for q in r["quantities"]
                if q.get("label") == "Potential energy")
-    assert tile["determined"] and said in tile["noted"], tile
+    assert tile["determined"] and tile["noted"] == said, (tile, said)
     # The same text on the Overview's card and the Analysis page.
-    assert tile["noted"] == row["noted"]
-    assert f"Potential energy: {said[:1].upper()}{said[1:]}." in _convergence_section(root)
+    assert row["unseen"] == said and row["noted"] == said
+    assert f"Potential energy: {said}." in _convergence_section(root)
     assert said in answer_from_the_records(root, "found")
 
 
@@ -323,3 +346,78 @@ def test_the_report_s_first_paragraph_gives_an_extended_study_s_joined_length() 
     said = _study_in_one_paragraph(root)
     assert "simulated for 300 ps in 3 pieces at 300 K" in said, said
     assert "for 100 ps" not in said
+
+
+def _real(name: str):
+    """A real joined run's series and joins (``tests/data/drift_short_real_runs.json``):
+    a stationary tri-alanine study's temperature at 4 pieces of 20 ps, and
+    a drifting one's (its thermostat at 300 K, friction 0.002/ps)
+    temperature and RMSD at 3 pieces."""
+    data = json.loads((Path(__file__).parent / "data" / "drift_short_real_runs.json")
+                      .read_text(encoding="utf-8"))[name]
+    return np.array(data["values"], dtype=float), data["joins"]
+
+
+def test_a_determined_mean_whose_joined_summary_was_withheld_says_what_was_tested() -> None:
+    # A real stationary run at 4 pieces: its first piece holds 15 independent
+    # samples, too few to resolve its correlation, so the joined summary is
+    # withheld; the drift test ran on the other 3 and did not call drift, and
+    # the whole series' mean stands determined, 301.0 +/- 1.4 K. It said
+    # nothing of what the test could miss.
+    from fastmdxplora.statistics import withheld_reason
+
+    values, joins = _real("stationary_4_pieces_temperature_K")
+    record = _saved(mean_record(values, joins=joins))
+    assert withheld_reason(record) is None
+    said = _unseen_of(record, "K")
+    assert said.startswith(
+        "With 3 of its 4 segments tested (1 left out, numbered from zero: 0, its correlation "
+        "not resolved), a steady drift smaller than about 32 K from the first segment's mean "
+        "to the last's could go unseen (41 times the error of their pooled mean, 0.79 K)"), said
+
+
+def test_a_determined_mean_with_too_few_segments_tested_says_drift_was_not_tested(
+        tmp_path) -> None:
+    # A real drifting run at 3 pieces: RMSD 0.0065, 0.0159, 0.0208 nm by
+    # piece, its middle piece unresolved, so 2 could be tested; the mean
+    # stood determined, 0.02087 +/- 0.00068 nm, with no word of drift.
+    from fastmdxplora.gui.analysis_overview import overview_of
+
+    values, joins = _real("drifting_3_pieces_rmsd_nm")
+    record = _saved(mean_record(values, joins=joins))
+    said = _unseen_of(record, "nm")
+    assert said == ("Drift between its 3 segments was not tested: only 2 could be (1 left out, "
+                    "numbered from zero: 1, its correlation not resolved); longer segments "
+                    "would let it be"), said
+    root = tmp_path / "study"
+    (root / "analysis" / "rmsd").mkdir(parents=True)
+    (root / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+        {"analysis": "rmsd", "findings": {"mean": {**record, "unit": "nm"}}}), encoding="utf-8")
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps(
+        {"results": {"rmsd": {"status": "ok"}}}), encoding="utf-8")
+    row = next(q for r in overview_of(root)["rows"] for q in r["quantities"])
+    assert row["determined"] and row["unseen"] == said
+
+
+def test_the_figure_is_scaled_where_the_means_scatter_beyond_their_errors() -> None:
+    # The real drifting run's temperature at 3 pieces, 177.79, 185.45 and
+    # 186.61 K over errors of 0.6 to 0.7 K: their scatter about the line is
+    # 3.4 times their errors (Q 11.9 on 1 degree of freedom), and there the
+    # rule is decided by that scatter. Said "15 K" from errors that do not
+    # hold; the rule calls four in five drifts only of about 53 K.
+    values, joins = _real("drifting_3_pieces_temperature_K")
+    record = _saved(mean_record(values, joins=joins))
+    said = _unseen_of(record, "K")
+    assert said == ("With 3 segments, a steady drift smaller than about 53 K from the first "
+                    "segment's mean to the last's could go unseen (41 times the error of their "
+                    "pooled mean, 0.37 K, times 3.4 for their scatter about a straight line "
+                    "beyond that error)"), said
+
+
+def _unseen_of(record, unit):
+    """The note through the one reader every page uses, found by name so a
+    version without it says nothing rather than failing to import."""
+    from fastmdxplora import statistics
+
+    reader = getattr(statistics, "drift_unseen_said", None)
+    return reader(record, unit) if reader else ""

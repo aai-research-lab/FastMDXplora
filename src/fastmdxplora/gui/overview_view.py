@@ -538,7 +538,8 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
                 # And, for a joined run of three or four segments, how large
                 # a drift could go unseen, as the Analysis page says it.
                 unseen = drift_unseen_said(entry, unit) if means[key].get("determined") else ""
-                means[key]["noted"] = "; ".join(s for s in (short, unseen) if s) or None
+                means[key]["noted"] = (f"{short}. {unseen}" if short and unseen
+                                       else short or unseen or None)
                 # The analysis's paragraph, said as its where it counts the
                 # union of the rows, not this mean's.
                 means[key]["noted_why"] = (paragraph_beside(note_of(entry), {

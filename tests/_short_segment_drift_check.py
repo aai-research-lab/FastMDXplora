@@ -93,6 +93,37 @@ def unseen_in_pooled_errors(lengths, trials: int = 10000, seed: int = 760003,
                         drift_refusals=refused)
 
 
+def inflated(trials: int = 10000, seed: int = 760005) -> list[dict]:
+    """Equal segments whose means scatter h times the variance their errors
+    say (offsets the errors miss), h from 1 to 54: how often the rule calls
+    a steady drift of the counted X pooled errors, and of X sqrt(h), first
+    segment to last; and how often the figure a record says, X times the
+    square root of the line's chi-square per degree of freedom where above
+    one, is at least X sqrt(h)."""
+    from fastmdxplora.statistics import DRIFT_UNSEEN_IN_POOLED_ERRORS, _line_scatter
+
+    rows = []
+    for count in (3, 4):
+        counted = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
+        precisions = np.ones(count)
+        pooled = 1.0 / np.sqrt(count)
+        centres = np.arange(count) + 0.5
+        shape = (centres - centres[0]) / (centres[-1] - centres[0])
+        for h in (1, 2, 4, 10, 54):
+            noise = np.random.default_rng(seed).normal(size=(trials, count)) * np.sqrt(h)
+            called = {}
+            for name, size in (("at_x", counted), ("at_x_sqrt_h", counted * np.sqrt(h))):
+                called[name] = sum(_drift_test(row, precisions, centres)[2] is not None
+                                   for row in noise + size * pooled * shape)
+            said = [counted * np.sqrt(max(1.0, _line_scatter(row, precisions, centres)))
+                    for row in noise]
+            rows.append(dict(segments=count, variance_ratio=h, trials=trials, seed=seed,
+                             called_at_x=called["at_x"], called_at_x_sqrt_h=called["at_x_sqrt_h"],
+                             said_at_least_x_sqrt_h=int(sum(x >= counted * np.sqrt(h) * (1 - 1e-12)
+                                                            for x in said))))
+    return rows
+
+
 def unseen() -> list[dict]:
     return [unseen_in_pooled_errors(layout) for count in (3, 4)
             for layout in UNSEEN_LAYOUTS[count]]
@@ -247,6 +278,7 @@ def check(only: "list[str] | None" = None) -> dict:
     return dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
                 known_errors=[] if only else known_errors(),
                 unseen=[] if only else unseen(),
+                inflated=[] if only else inflated(),
                 mean_record=None if only else ramp_means_determined(),
                 contiguous_ar1=trajectories(only=only))
 

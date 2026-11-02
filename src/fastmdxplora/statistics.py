@@ -951,11 +951,16 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
     unseen: dict[str, Any] | None = None
     if boundaries:
-        pooled, joined_reason = summarise_segments(values, boundaries)
+        tested: dict[str, Any] = {}
+        _, joined_reason = summarise_segments(values, boundaries, tested_into=tested)
         if _code_of(joined_reason) == "analysis.sampling.drifting":
             reason = joined_reason
-        elif pooled is not None:
-            unseen = _drift_unseen(pooled, [0, *boundaries, int(values.size)])
+        else:
+            # Whether or not the joined summary was pooled: the single-series
+            # mean can stand determined where it was withheld for a segment
+            # whose correlation is not resolved, and the drift test ran on
+            # the rest, or on too few to run.
+            unseen = _drift_unseen(tested)
     record: dict[str, Any] = {}
     if equilibrated is not None:
         record.update(equilibrated.as_record())
@@ -1007,7 +1012,7 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
 
 #: The smallest steady drift, in pooled errors from the first segment's mean
 #: to the last's, that the three- and four-segment rule calls in at least
-#: 80% of runs of equal segments (counted by
+#: 80% of runs of equal segments whose errors hold (counted by
 #: ``tests/_short_segment_drift_check.py``, 10,000 sets each; segments of
 #: unequal length need more: ``docs/short-segment-drift.md``).
 DRIFT_UNSEEN_IN_POOLED_ERRORS = {3: 41, 4: 16}
@@ -1017,20 +1022,38 @@ DRIFT_UNSEEN_IN_POOLED_ERRORS = {3: 41, 4: 16}
 EQUAL_SEGMENTS_WITHIN = 0.1
 
 
-def _drift_unseen(pooled: "Pooled", edges: "list[int]") -> "dict[str, Any] | None":
-    """How large a steady drift could go unseen on three or four segments
-    that were tested and not called drifting; None for any other count."""
-    count = pooled.contributing
-    if count not in DRIFT_UNSEEN_IN_POOLED_ERRORS or not (
-            math.isfinite(pooled.standard_error) and pooled.standard_error > 0):
+def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
+    """What a joined run's drift test could miss, from what it tested
+    (:func:`summarise_segments`'s ``tested_into``): on three or four
+    segments tested and not called drifting, how large a steady drift could
+    go unseen; where fewer than three of three or more could be tested,
+    that drift between them was not tested; None otherwise (drift called,
+    five or more tested, or a run of fewer than three segments).
+
+    The figure is counted where the segment errors hold. Where the means
+    scatter about the line more than those errors allow, the rule is
+    decided by that scatter, and the figure is scaled by its square root
+    (the line's chi-square per degree of freedom), as counted in
+    ``docs/short-segment-drift.md``."""
+    if not tested or tested.get("called"):
         return None
-    left_out = {index for index, _why in pooled.withheld}
-    lengths = [stop - start for index, (start, stop) in enumerate(zip(edges, edges[1:]))
-               if index not in left_out]
-    times = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
-    return {"segments": count, "in_pooled_errors": times,
-            "pooled_error": float(pooled.standard_error),
-            "change": float(times * pooled.standard_error),
+    count, total = int(tested.get("tested") or 0), int(tested.get("segments") or 0)
+    said = {"segments": total, "tested": count, "left_out": str(tested.get("left_out") or "")}
+    if count < 3:
+        return {**said, "not_tested": True} if total >= 3 else None
+    if count not in DRIFT_UNSEEN_IN_POOLED_ERRORS:
+        return None
+    error = float(tested.get("pooled_error", float("nan")))
+    if not (math.isfinite(error) and error > 0):
+        return None
+    scatter = float(tested.get("line_scatter", float("nan")))
+    scale = math.sqrt(scatter) if math.isfinite(scatter) and scatter > 1.0 else 1.0
+    counted = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
+    lengths = list(tested.get("lengths") or [])
+    return {**said, "counted_in_pooled_errors": counted,
+            "scatter_about_line": scatter if math.isfinite(scatter) else None,
+            "in_pooled_errors": float(counted * scale),
+            "pooled_error": error, "change": float(counted * scale * error),
             "equal_segments": bool(lengths) and
             (max(lengths) - min(lengths)) <= EQUAL_SEGMENTS_WITHIN * max(lengths)}
 
@@ -1043,31 +1066,60 @@ def _two_figures(value: float) -> str:
     return f"{rounded:,.{places}f}"
 
 
+def _number(value: Any) -> "float | None":
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(float(value)) else None
+
+
 def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
-    """Beside a mean of a joined run of three or four segments, determined
-    and not called drifting between them: how large a steady drift could go
-    unseen with that few (``drift_unseen`` on its record), in the pooled
-    error's units and the quantity's own, first segment to last; an empty
-    string for any other record. One reader for every page, the report and
-    the Agent, as a clause that follows the verdict ("; with 3 segments
-    ..."). ``unit`` is the quantity's, where the record does not say it."""
+    """Beside a mean of a joined run, determined, whose drift test between
+    segments did not call drift (``drift_unseen`` on its record): on three
+    or four segments tested, how large a steady drift could go unseen with
+    that few, in the quantity's own units first segment to last, and the
+    error it is reckoned from; where fewer than three could be tested, that
+    drift between them was not tested, and why. A sentence, without its
+    full stop; an empty string for any other record. One reader for every
+    page, the report, Compare and the Agent. ``unit`` is the quantity's,
+    where the record does not say it."""
     if not isinstance(record, dict) or withheld_reason(record):
         return ""
     unseen = record.get("drift_unseen")
     if not isinstance(unseen, dict):
         return ""
-    count, times, change = (unseen.get(key) for key in ("segments", "in_pooled_errors", "change"))
-    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                for v in (count, times, change))
-            or not (math.isfinite(change) and change > 0 and times > 0)):
+    total, count = _number(unseen.get("segments")), _number(unseen.get("tested"))
+    # A record saved before the count tested was: all of its segments were.
+    count = total if count is None else count
+    left_out = str(unseen.get("left_out") or "")
+    if total is None or count is None:
+        return ""
+    total, count = int(total), int(count)
+    out = f" ({left_out})" if left_out else ""
+    if unseen.get("not_tested"):
+        could = "none could be" if count == 0 else f"only {count} could be"
+        return (f"Drift between its {total} segments was not tested: {could}{out}; "
+                "longer segments would let it be")
+    counted = _number(unseen.get("counted_in_pooled_errors"))
+    counted = _number(unseen.get("in_pooled_errors")) if counted is None else counted
+    error, change = _number(unseen.get("pooled_error")), _number(unseen.get("change"))
+    if counted is None or error is None or change is None or not (
+            change > 0 and error > 0 and counted > 0):
         return ""
     unit = unit if unit is not None else (record.get("unit") or record.get("units"))
-    amount = _two_figures(float(change)) + (f" {unit}" if unit else "")
+    units = f" {unit}" if unit else ""
+    which = (f"With {count} segments" if count == total
+             else f"With {count} of its {total} segments tested{out}")
     unequal = ("" if unseen.get("equal_segments", True)
                else ", and a larger one with segments as unequal as these")
-    return (f"with {int(count)} segments, a steady drift smaller than about "
-            f"{int(times)} times the pooled error ({amount} from the first segment's "
-            f"mean to the last's) could go unseen{unequal}")
+    scale = change / (counted * error)
+    basis = (f"{counted:g} times the error of their pooled mean, "
+             f"{_two_figures(error)}{units}")
+    if scale > 1.0 + 1e-9:
+        basis += (f", times {scale:.1f} for their scatter about a straight line "
+                  "beyond that error")
+    return (f"{which}, a steady drift smaller than about {_two_figures(change)}{units} "
+            f"from the first segment's mean to the last's could go unseen{unequal} "
+            f"({basis})")
 
 
 def withheld_code(record: Any) -> str:
@@ -1245,6 +1297,7 @@ def summarise_segments(
     joins: "list[int] | tuple[int, ...]",
     *,
     minimum_effective_samples: float = MINIMUM_EFFECTIVE_SAMPLES,
+    tested_into: "dict[str, Any] | None" = None,
 ) -> "tuple[Pooled | None, Withholding | None]":
     """Summarise a joined series, analysing each segment on its own.
 
@@ -1258,6 +1311,16 @@ def summarise_segments(
         through in one piece, and this falls through to
         :func:`summarise` -- so a caller need not branch on whether a run
         was segmented.
+    tested_into
+        Where given, filled with what the test for drift between segments
+        tested, whatever is returned: the segments (``segments``), how many
+        were tested (``tested``, those whose errors can be read), which were
+        left out and why (``left_out``), whether drift was called
+        (``called``), the error of the tested means' inverse-variance pooled
+        mean (``pooled_error``), their scatter about the weighted line over
+        what their errors allow (``line_scatter``, the line's chi-square per
+        degree of freedom, at three or four), and their lengths
+        (``lengths``). Left empty for a run in one piece.
 
     Returns
     -------
@@ -1317,6 +1380,11 @@ def summarise_segments(
         reasons.append(why)
 
     if not pieces:
+        if tested_into is not None:
+            tested_into.update(segments=len(edges) - 1, tested=0, called=False,
+                               left_out=(f"{len(withheld)} left out, numbered from zero: "
+                                         + "; ".join(f"{index}, too short for a mean of "
+                                                     "its own" for index, _ in withheld)))
         return None, Withholding(
             "No segment of this joined run supports a mean. Pooling does "
             "not rescue a run that was too short: segments that each say "
@@ -1362,6 +1430,17 @@ def summarise_segments(
     scatter, drifting, refusal = _drift_test(
         means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved],
         left_out=left_out)
+    if tested_into is not None:
+        precisions = 1.0 / errors[resolved] ** 2
+        count = int(resolved.sum())
+        tested_into.update(
+            segments=len(edges) - 1, tested=count, left_out=left_out,
+            called=refusal is not None,
+            pooled_error=(float(1.0 / np.sqrt(precisions.sum())) if count else float("nan")),
+            line_scatter=(_line_scatter(means[resolved], precisions, centres[resolved])
+                          if 3 <= count <= 4 else float("nan")),
+            lengths=[int(edges[index + 1] - edges[index])
+                     for index, ok in zip(kept_at, resolved) if ok])
     if refusal is not None:
         return None, refusal
 
@@ -1682,6 +1761,22 @@ def _short_segment_halves(means: np.ndarray, precisions: np.ndarray,
     z = abs(slope) * math.sqrt(scale) * math.sqrt(spread)
     # An extreme normal tail can underflow, rather than be exactly zero.
     return max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0)), own
+
+
+def _line_scatter(means: np.ndarray, precisions: np.ndarray,
+                  positions: np.ndarray) -> float:
+    """The means' scatter about their inverse-variance weighted line over
+    what their errors allow: the line's chi-square, Q, over its k - 2
+    degrees of freedom. About one where the errors hold."""
+    total = float(precisions.sum())
+    x = positions - float(precisions @ positions / total)
+    relative = means - means[0]
+    y = relative - float(precisions @ relative / total)
+    spread = float(precisions @ (x * x))
+    if spread <= 0 or means.size < 3:
+        return float("nan")
+    residual = y - float(precisions @ (x * y) / spread) * x
+    return float(precisions @ (residual * residual)) / (means.size - 2)
 
 
 def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,
