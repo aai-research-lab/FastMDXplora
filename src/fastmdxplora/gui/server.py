@@ -2937,11 +2937,6 @@ def make_handler(
                     return
                 self._send_json(write_conversation(app_runtime, asked.get("entries")))
                 return
-            if path == "/api/agent/conversation/clear":
-                from fastmdxplora.gui.agent_panel import clear_conversation
-
-                self._send_json(clear_conversation(app_runtime))
-                return
             if path == "/api/agent/conversation/new":
                 from fastmdxplora.gui.agent_panel import new_conversation
 
