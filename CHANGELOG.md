@@ -535,6 +535,29 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - The GUI decides a variable step from the first piece's record or the
   study's config before it reads the pieces' clocks; a fixed-step study's
   were read at every poll.
+- A resume stopped in its own analyses and run again leaves the person's
+  analysis it had saved there: only an analysis that finished (its manifest
+  written) is saved in `previous/analysis`, and never one of the join over
+  one saved before. The second resume put the unfinished folders there in
+  its place. Its answer names each phase saved ("Its analysis from before
+  is saved in previous/analysis."), not "the analyses and report" whatever
+  was saved.
+- A study carried on from another machine of a shared file system is said
+  running: its lock is tried whatever machine its record names. The GUI
+  said it owed its analysis and offered `fastmdx resume`, which was refused
+  as still going.
+- An analysis chosen after the join is told by the times its records hold
+  (the study's analysis `started_at` against the join's new `joined_at`, or
+  the last piece's simulation `finished_at`), not by the files' times, which
+  `cp -r` or `scp -r` without them writes in copy order: a copy read an owed
+  analysis of the first piece as Completed, and a chosen one as owed.
+- `fastmdx resume` of a study whose chosen analysis had its report moved
+  aside writes the report over it (`reported_only`), as the GUI says it
+  completed; it ran the join's analyses over the person's.
+- A resume starting in the instant the GUI tries a study's lock tries it
+  again for some 100 ms, rather than saying a run is still going; the lock's
+  file is read as the study's other records are (`record_access`), so a
+  link out of the study is not read.
 - A `continued` answer of `fastmdx resume` gives `production_planned_ns` with
   the extension it carried on (0.006 beside 0.008 done), and a `runs` answer
   each run's `production_done_ns`.

@@ -675,11 +675,25 @@ names a first piece's trajectory (`simulation/production.dcd`), or, read
 whole, the join at a count of frames other than `joined/joined.json`'s. An
 analysis the person chose is not owed: the study's `resolved_config.yml`
 names its trajectory (`analysis.trajectory`, as `fastmdx analyze --rerun
---trajectory` writes it), and it was written after the join. Before running
-the join's analyses, `fastmdx resume` saves the analysis there in
-`previous/analysis`. While a resume or an extension carries the study on (its
+--trajectory` writes it), and it was begun after the join, by the times the
+records hold, which a copy carries with it: the study's `manifest.json` analysis
+`started_at` later than `joined/joined.json`'s `joined_at` (or, where a version
+before it wrote none, the last piece's simulation `finished_at`). The files'
+own times are not read: `cp -r`, `scp -r` or a download without them writes the
+files in their copy order. Where that analysis's report was moved aside by the
+rerun, `fastmdx resume` writes the report over it, as the GUI says it
+completed; it does not run the join's analyses over it. Before running the
+join's analyses, `fastmdx resume` saves the analysis there in
+`previous/analysis`: only one that finished (its `analysis_manifest.json`
+written), and never an analysis of the join over one saved before, so a
+resume stopped in its own analyses and run again leaves the person's analysis
+saved. While a resume or an extension carries the study on (its
 `.fastmdxplora-carrying-on` lock held), the GUI says it is running, joining
-and analysing its pieces, not owed.
+and analysing its pieces, not owed. The lock is tried whatever machine its
+record names: on a file system several machines share (a cluster's nodes, the
+GUI on another), a lock held anywhere is held. A resume starting in the instant
+the GUI tries the lock tries it again for some 100 ms before saying a run is
+still going.
 
 **By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase
