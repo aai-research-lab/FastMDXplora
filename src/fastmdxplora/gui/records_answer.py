@@ -108,6 +108,7 @@ def _counted(base: Path) -> str:
     if not means and not thermodynamic:
         return ""
     parts = [means_counted(means, determined)] if means else []
+    undetermined = 0
     if thermodynamic:
         total = len(thermodynamic)
         undetermined = sum(1 for m in thermodynamic if not m.get("determined"))
@@ -122,7 +123,22 @@ def _counted(base: Path) -> str:
     said = said[:1].upper() + said[1:] + "."
     if not_read:
         said += f" {not_read} result{' was' if not_read == 1 else 's were'} not read."
-    return said
+    return _Counted(said, determined=determined >= means and not undetermined and not not_read)
+
+
+class _Counted(str):
+    """The sentence :func:`_counted` says, with whether its counts make every
+    mean determined (``determined``), which :func:`_determined` reads rather
+    than the words: "none of the production's 4 thermodynamic means is
+    determined" has none of the words it looked for, and the answer said "By
+    its records, yes" before it."""
+
+    determined: bool
+
+    def __new__(cls, said: str, *, determined: bool) -> "_Counted":
+        counted = super().__new__(cls, said)
+        counted.determined = bool(determined)
+        return counted
 
 
 def _means(base: Path) -> list[str]:
@@ -304,8 +320,11 @@ def _no_figure(base: Path) -> str:
 
 def _determined(supports: str) -> bool:
     """Whether the count (:func:`_supports`) says every mean is determined:
-    the Overview's count, or the report's line that every observable
-    equilibrated and holds enough independent samples to average."""
+    the Overview's counts (:class:`_Counted`), or else the report's line
+    that every observable equilibrated and holds enough independent samples
+    to average."""
+    if isinstance(supports, _Counted):
+        return supports.determined
     return (supports.startswith(("All ", "Its mean is determined", "The production's"))
             and not any(said in supports for said in ("too few", "not determined", "not read")))
 

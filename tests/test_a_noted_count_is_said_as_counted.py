@@ -119,3 +119,31 @@ def test_the_answers_count_the_means_as_the_overview_does(tmp_path, monkeypatch)
     said = records_answer.answer_from_the_records(root, "long_enough")
     assert ("By its records, yes. Its mean is determined; the production's 2 thermodynamic "
             "means are determined.") in said
+
+
+def test_none_of_the_production_s_means_determined_is_no_yes(tmp_path, monkeypatch) -> None:
+    """`clean-rmsd-only`'s records with its RMSD mean determined and none of
+    the production's four thermodynamic means: whether every mean is
+    determined is read from the counts, not the sentence. "By its records,
+    yes. Its mean is determined; none of the production's 4 thermodynamic
+    means is determined." was said where nothing asked for more (a record
+    with no shortfall), as was "Its mean is determined, so a longer run of
+    this one adds precision but not a check" (review of `verdict-one`, round 2)."""
+    from tests.test_a_run_s_overview_leads_with_what_it_needs import _a_run
+    from tests.test_a_study_of_runs_is_shown_as_one import _recorded
+
+    from fastmdxplora.gui import overview_view, records_answer
+
+    root = _a_run(tmp_path, _recorded(0.15), _recorded(1.2))
+    payload = _one_mean_and_the_production_s(root)
+    for mean in payload["thermodynamics"]["means"].values():
+        mean["determined"] = False
+    monkeypatch.setattr(overview_view, "overview_payload", lambda base: payload)
+    monkeypatch.setattr(records_answer, "_ask", lambda base: None)
+    counted = "Its mean is determined; none of the production's 4 thermodynamic means is determined."
+    said = records_answer.answer_from_the_records(root, "long_enough")
+    assert counted in said
+    assert "By its records, yes" not in said and "Not by its records. " + counted in said
+    said = records_answer.answer_from_the_records(root, "strengthen")
+    assert "adds precision but not a check" not in said
+    assert "A longer run first. " + counted in said
