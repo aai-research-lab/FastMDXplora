@@ -703,10 +703,12 @@ class FastMDXplora:
         # Plan goes to file/audit; the presenter shows headers visually.
         logger.debug("Plan: %s", " -> ".join(plan))
 
-        if prepared is not None and not _same_directory(
+        if prepared is not None and "simulation" in plan and not _same_directory(
                 prepared, self.output_dir / "setup"):
             # Recorded as this run's setup, so the manifest names the system
             # that was simulated and readers of the setup record can find it.
+            # Only where this run simulates it: a report or an analysis
+            # written again was recorded as a setup skipped, at its time.
             now = datetime.now(timezone.utc).isoformat()
             self.results.append(PhaseResult(
                 name="setup", status="skipped", output_dir=prepared,
