@@ -9,6 +9,7 @@ made at a terminal, and no prompt nobody can answer.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import json
 import subprocess
@@ -3424,8 +3425,13 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
             os.killpg(started.pid, 0)
         except ProcessLookupError:
             break
+        except PermissionError:
+            # macOS says EPERM, not ESRCH, while all the group has left is
+            # a zombie not yet reaped: the sampler has stopped all the same.
+            break
         if time.monotonic() > deadline:
-            os.killpg(started.pid, signal.SIGKILL)
+            with contextlib.suppress(OSError):
+                os.killpg(started.pid, signal.SIGKILL)
             pytest.fail("the sampler outlived its job")
         time.sleep(0.05)
 
