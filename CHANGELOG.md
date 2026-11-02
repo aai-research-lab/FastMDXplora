@@ -523,6 +523,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   whatever the other pages hold (it fell to fifth when the drift page
   grew).
 
+- A study whose stopping rule's round failed while it extended its runs (a
+  worker killed for memory: `BrokenProcessPool`) printed "Batch complete: 3
+  ok, 0 error(s)" after "Stopped: extending ... failed", exited 0, and was
+  read completed by the GUI and the Agent, from its runs, each of which had
+  ended well. One reading of `stopping.json` (`stopping.round_ended`) now
+  says it failed (or stopped, where asked) in the CLI's summary ("Batch
+  failed", the round's sentence and the `fastmdx resume` command with what it
+  would run, last) and exit code, `batch_manifest.json` (`round_ended`), the
+  GUI's status, sidebar, All studies and Overview, the Agent's records
+  answers and context, and the comparison report, which leads with it; the
+  runs the round had extended and those it had not are named. A resume whose
+  round fails again is not done. A study whose rounds ended well is said as
+  before.
+- While a study's rule extended its runs, its `batch_manifest.json` listed
+  only the plan, so each extension built the comparison across its runs from
+  none ("Comparison report needs ≥2 successful runs (found 0)"): the runs
+  that finished are written before the rounds.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

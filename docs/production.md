@@ -298,6 +298,17 @@ comparison report (for replicas) has a section, *How long it ran, and why*,
 built from it, and the Agent is given it. A budget prices the study at its
 ceiling, since that is what it may spend.
 
+**A round that failed fails the study.** Where an extension fails (a worker
+killed for memory, a refusal as it is planned) or is stopped when asked, each
+run may have ended well and the study has not: it is said failed (or
+stopped) by one reading of `stopping.json`, the same in the CLI's summary
+("Batch failed", with the round's sentence and the `fastmdx resume` command
+that carries it on as its last lines) and exit code (1),
+`batch_manifest.json` (`round_ended`), the GUI's status, sidebar, All studies
+and Overview, the Agent and the comparison report. The sentence names the
+runs the round had extended and those it had not, which are then not at one
+length. A resume whose round fails again is not done (exit 1).
+
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.
 The rule was calibrated on series with a known mean
