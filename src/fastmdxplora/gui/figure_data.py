@@ -603,22 +603,32 @@ def _projection(root: Path, method: str) -> dict[str, Any] | None:
 
 def _mds_refused(root: Path) -> str:
     """MDS refused for memory, as the report says it (its findings' note),
-    under each projection that was run beside it: the card said nothing of
-    it while the record and the report did."""
+    and any other method refused, under each projection that was run beside
+    it: the card said nothing of it while the record and the report did."""
     try:
         record = json.loads(_records.read_text(root / "analysis" / "dimred" / "options.json",
                                                encoding="utf-8"))
     except (OSError, ValueError):
         return ""
     findings = record.get("findings") if isinstance(record, dict) else None
-    if not isinstance(findings, dict) or not isinstance(findings.get("mds_refused"), dict):
+    if not isinstance(findings, dict):
         return ""
-    from fastmdxplora.report.document import _findings_notes
+    notes = []
+    if isinstance(findings.get("mds_refused"), dict):
+        from fastmdxplora.report.document import _findings_notes
 
-    note = next((note for note in _findings_notes({"mds_refused": findings["mds_refused"]})
-                 if note.startswith("MDS was not run")), "")
+        notes.append(next((note for note in _findings_notes(
+            {"mds_refused": findings["mds_refused"]}) if note.startswith("MDS was not run")),
+            ""))
+    # The other methods refused for memory (t-SNE's neighbours at many
+    # frames), said as MDS's is, by the names the docs give them.
+    named = {"pca": "PCA", "tsne": "t-SNE", "umap": "UMAP"}
+    refused = findings.get("methods_refused")
+    for method, said in (refused.items() if isinstance(refused, dict) else ()):
+        if method != "mds" and isinstance(said, dict) and said.get("said"):
+            notes.append(f"{named.get(method, method)} was not run: {said['said']}")
     # Plain text on the page: the settings without the report's backticks.
-    return note.replace("`", "")
+    return " ".join(note for note in notes if note).replace("`", "")
 
 
 def _landscape(root: Path, method: str) -> dict[str, Any] | None:

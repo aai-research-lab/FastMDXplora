@@ -2075,14 +2075,28 @@
       // theme, and its figures' titles and captions.
       const search = [section.title, section.theme,
         ...panels.map((panel) => `${panel.title || ""} ${panel.summary || ""}`)].join(" ");
+      // The figures and files its analyses' records say were not made for
+      // memory, counted beside the figures and said in a line with what to
+      // set: the section said "3 figures" and showed them, the map among
+      // those not plotted said nowhere.
+      const missing = section.notPlotted || [];
+      const figures = missing.filter((each) => /\.(png|svg)$/i.test(each.file)).length;
+      const count = panels.length || !(section.unfinished || []).length
+        ? `${panels.length} figure${panels.length === 1 ? "" : "s"}` : "not finished";
+      const note = missing.length
+        ? `<p class="analysis-section-count" data-not-plotted>Not ${figures ? "plotted" : "saved"} for memory: ${
+            escapeHTML(missing.map((each) => each.file).join(", "))}. ${
+            escapeHTML(whatToSet(missing[0].said).replace(/`/g, ""))}</p>`
+        : "";
       return `
         <section class="analysis-section" id="analysis-section-${escapeAttr(section.anchor || "")}"
                  data-search="${escapeAttr(search)}">
           <div class="analysis-section-heading">
             <h3 class="analysis-section-title">${escapeHTML(section.title || "")}</h3>
-            <span class="analysis-section-count">${panels.length || !(section.unfinished || []).length
-              ? `${panels.length} figure${panels.length === 1 ? "" : "s"}` : "not finished"}</span>
+            <span class="analysis-section-count">${count}${figures
+              ? `, ${figures} not plotted` : ""}</span>
           </div>
+          ${note}
           <div class="analysis-grid">${cards}</div>
         </section>`;
     };
@@ -2400,8 +2414,15 @@
   function withUnfinished(sections, analyses) {
     const failed = analyses.filter((analysis) => analysis.section
       && /^(error|failed)$/i.test(String(analysis.status || "")));
-    if (!failed.length) return sections;
+    // And what a finished one's record says was not plotted for memory.
+    const short = analyses.filter((analysis) => analysis.section
+      && !failed.includes(analysis) && (analysis.not_plotted || []).length);
+    if (!failed.length && !short.length) return sections;
     const merged = sections.map((section) => ({...section}));
+    short.forEach((analysis) => {
+      const section = merged.find((each) => each.title === analysis.section);
+      if (section) section.notPlotted = [...(section.notPlotted || []), ...analysis.not_plotted];
+    });
     failed.forEach((analysis) => {
       let section = merged.find((each) => each.title === analysis.section);
       if (!section) {
@@ -2422,13 +2443,18 @@
     const title = analysis.section || analysis.title || humanise(analysis.name || "Analysis");
     const said = String(analysis.message || "").replace(/^[a-z_]+: /, "");
     const set = whatToSet(said);
-    const rest = said.startsWith(set) ? said.slice(set.length).trim() : said;
+    // The "Set ..." sentence once, wherever it stands in the message: the
+    // card said it in its frame and again in its body.
+    const rest = said.replace(set, "").replace(/\s{2,}/g, " ").trim();
+    // One refused before it ran did not start, so it did not "not finish".
+    const why = analysis.refused_before_it_ran
+      ? "the analysis was refused before it ran" : "the analysis did not finish";
     return `
         <article class="analysis-card" data-state="failed"${answers ? ` data-analysis="${escapeAttr(analysis.name || "")}"` : ""}>
           <div class="ac-header">
             <div class="ac-title">${escapeHTML(title)}</div>
           </div>
-          <div class="ac-frame ac-no-plot"><div class="ac-set">Not plotted: the analysis did not finish. ${escapeHTML(set.replace(/`/g, ""))}</div></div>
+          <div class="ac-frame ac-no-plot"><div class="ac-set">Not plotted: ${why}. ${escapeHTML(set.replace(/`/g, ""))}</div></div>
           <div class="ac-body">${escapeHTML(rest.replace(/`/g, ""))}</div>
         </article>`;
   }
@@ -2454,7 +2480,8 @@
     const image = displayPlot?.href
       ? `<div class="ac-frame"><img src="${escapeAttr(displayPlot.href)}" alt="${escapeAttr(title)}" loading="lazy"></div>`
       : failed
-        ? `<div class="ac-frame ac-no-plot"><div class="muted">Not plotted: the analysis did not finish. ${escapeHTML(setting.replace(/`/g, "") || "What it said is below.")}</div></div>`
+        ? `<div class="ac-frame ac-no-plot"><div class="muted">Not plotted: ${analysis.refused_before_it_ran
+            ? "the analysis was refused before it ran" : "the analysis did not finish"}. ${escapeHTML(setting.replace(/`/g, "") || "What it said is below.")}</div></div>`
         : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
     const links = [];
     if (displayPlot?.href) {

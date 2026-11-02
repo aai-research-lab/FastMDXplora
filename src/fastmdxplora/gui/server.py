@@ -4475,7 +4475,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
                                           extended=extended,
                                           production_not_read=production_not_read),
         "phases": _phase_records(manifest),
-        "analyses": _analysis_records(analysis_manifest, artifacts, plots),
+        "analyses": _analysis_records(analysis_manifest, artifacts, plots, root),
         "dashboard": dashboard,
         "plots": plots,
         "key_plots": [plot for plot in plots if plot["title"] in KEY_PLOT_TITLES][:6],
@@ -5268,6 +5268,7 @@ def _analysis_records(
     analysis_manifest: dict[str, Any],
     artifacts: list[dict[str, str]],
     plots: list[dict[str, str]],
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
     results = analysis_manifest.get("results")
     if not isinstance(results, dict):
@@ -5305,10 +5306,27 @@ def _analysis_records(
             ),
             None,
         )
+        # What its record says it could not do for memory: the figures not
+        # plotted and the files not saved, said on the page with what to
+        # set (the section counted three figures and showed them, and said
+        # nothing of the map not plotted); and whether it was refused before
+        # it ran, not "did not finish".
+        findings = (_load_json(root / "analysis" / str(name) / "options.json").get("findings")
+                    if root is not None else None)
+        findings = findings if isinstance(findings, dict) else {}
+        not_plotted = [
+            {"file": str(file), "said": str(said)}
+            for key in ("figures_not_plotted", "not_saved")
+            if isinstance(findings.get(key), dict)
+            for file, said in findings[key].items()
+        ]
+        refused = findings.get("refused") if isinstance(findings.get("refused"), dict) else {}
         records.append(
             {
                 "name": str(name),
                 "title": PLOT_TITLE_ALIASES.get(str(name).lower(), _humanize_stem(str(name))),
+                "not_plotted": not_plotted,
+                "refused_before_it_ran": bool(refused.get("before_it_ran")),
                 "status": str(data.get("status") or "unknown"),
                 "message": str(data.get("message") or ""),
                 "started_at": data.get("started_at"),

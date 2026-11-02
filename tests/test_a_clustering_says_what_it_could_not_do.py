@@ -238,3 +238,179 @@ def test_a_refused_clustering_is_said_in_its_section_on_the_page(tmp_path, width
             "analyses keep every frame.") in said, said
     assert "152.4 MB" in said and "`" not in said and "Re-run" not in said, said
     assert not sideways
+
+
+def _refusals_of_this_branch(monkeypatch) -> dict[str, str]:
+    """What clustering, the projections and a superposition say when they
+    refuse, made by the code that says it."""
+    import mdtraj as md
+    import numpy as np
+
+    from fastmdxplora.analysis import cluster as clustering
+    from fastmdxplora.analysis.dimred import DimRed
+    from fastmdxplora.refusals import StudyError
+
+    def chain(n, atoms=4):
+        rng = np.random.default_rng(0)
+        top = md.Topology()
+        c = top.add_chain()
+        for i in range(atoms):
+            top.add_atom("CA", md.element.carbon, top.add_residue("ALA", c, resSeq=i + 1))
+        xyz = rng.normal(0, 0.4, (atoms, 3))[None] + np.cumsum(
+            rng.normal(0, 0.01, (n, atoms, 3)), axis=0)
+        return md.Trajectory(xyz.astype(np.float32), top)
+
+    said = {}
+    rlimit = "RLIMIT_AS less what this process holds (VmSize)"
+    cases = [
+        ("cluster at any stride, resident", "cluster", 10 * 10**6, "the cgroup v2 limit, mocked",
+         lambda: clustering.Cluster().compute(chain(500))),
+        ("cluster at any stride, address", "cluster", 30 * 2**20, rlimit,
+         lambda: clustering.Cluster().compute(chain(500))),
+        ("cluster with a stride", "cluster", 150 * 2**20, rlimit,
+         lambda: clustering.Cluster().compute(chain(2000))),
+        ("dimred, PCA the last", "dimred", 20 * 2**20, rlimit,
+         lambda: DimRed(methods=["pca"]).compute(chain(200))),
+        ("dimred, MDS alone", "dimred", 4 * 10**6, "mocked",
+         lambda: DimRed(methods=["mds"]).compute(chain(600))),
+    ]
+    for label, name, room, read_from, run in cases:
+        monkeypatch.setattr(clustering, "memory_available",
+                            lambda room=room, read_from=read_from: (room, read_from))
+        with pytest.raises(StudyError) as raised:
+            run()
+        said[label] = (name, str(raised.value))
+    monkeypatch.undo()
+    one = chain(5, atoms=1)
+    for name in ("cluster", "dimred"):
+        analysis = clustering.Cluster() if name == "cluster" else DimRed()
+        with pytest.raises(StudyError) as raised:
+            analysis.compute(one)
+        said[f"{name} on one atom"] = (name, str(raised.value))
+    return said
+
+
+def test_an_analysis_named_and_refused_is_a_failure_of_the_run(tmp_path, monkeypatch):
+    """The CLI leaves out of its failures an analysis the run was too short
+    for, read by its words (a frame and "needs", "only" or "at least"): the
+    any-stride refusal ("Clustering 500 frames ... needs at least") and the
+    three-atom one ("superposes the frames ... needs 3") read so, and a
+    study that named the analysis ended with exit 0 and no failure said."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.cli.main import _analyses_asked_for_that_failed
+
+    for label, (name, said) in _refusals_of_this_branch(monkeypatch).items():
+        folder = tmp_path / label.replace(" ", "_").replace(",", "")
+        (folder / "analysis").mkdir(parents=True)
+        (folder / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+            "results": {name: {"status": "error", "message": f"{name}: {said}"}}}),
+            encoding="utf-8")
+        failed = _analyses_asked_for_that_failed(
+            {"analysis": {"include": [name]}}, [SimpleNamespace(output_dir=folder)])
+        assert failed == [f"{name} ({said})"], (label, said)
+
+
+def _card(analysis: dict) -> str:
+    return _node(
+        "function escapeAttr(v) { return String(v); }\n"
+        "function escapeHTML(v) { return String(v); }\n"
+        "function humanise(v) { return String(v); }\n"
+        + _function("dashboard.js", "whatToSet") + "\n"
+        + _function("dashboard.js", "unfinishedCardHtml") + "\n"
+        f"console.log(JSON.stringify(unfinishedCardHtml({json.dumps(analysis)}, true)));")
+
+
+def test_the_card_says_what_to_set_once():
+    """The stride refusal's card said "Set stride: 2 ..." in its frame and
+    again in its body: the body held the whole message where the "Set"
+    sentence was not its first."""
+    html = _card({"name": "cluster", "section": "Clustering", "status": "error",
+                  "message": CLUSTER_REFUSED, "refused_before_it_ran": True})
+    assert html.count("Set stride: 3") == 1, html
+    assert "152.4 MB" in html, html
+
+
+def test_the_card_says_whether_it_ran():
+    """"The analysis did not finish" was said of one refused before it
+    started; one that stopped part-way still says so."""
+    for before, said in ((True, "Not plotted: the analysis was refused before it ran."),
+                         (False, "Not plotted: the analysis did not finish.")):
+        html = _card({"name": "cluster", "section": "Clustering", "status": "error",
+                      "message": CLUSTER_REFUSED, "refused_before_it_ran": before})
+        assert said in html, html
+
+
+def _clustering_short_of_figures(root: Path) -> Path:
+    """A study whose clustering ran, its map not plotted for memory."""
+    from tests.test_an_analysis_is_drawn_from_its_numbers import _figure
+
+    folder = root / "analysis" / "cluster"
+    folder.mkdir(parents=True)
+    for name in ("cluster_kmeans.png", "cluster_kmeans_counts.png"):
+        _figure(folder / name)
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps({
+        "load_kwargs": {"stride": 1, "first": None, "saving_interval_ps": 10.0},
+        "results": {"cluster": {
+            "status": "ok",
+            "message": "cluster: ok (kmeans); not plotted, the memory ran out: "
+                       "cluster_rmsd_matrix.png"}}}), encoding="utf-8")
+    (folder / "options.json").write_text(json.dumps({
+        "options": {"methods": ["kmeans"]},
+        "findings": {"figures_not_plotted": {"cluster_rmsd_matrix.png": (
+            "cluster_rmsd_matrix.png was not plotted: the memory ran out plotting it "
+            "(std::bad_alloc). Its data is saved. Set `stride: 2` under the analysis's "
+            "`options: {cluster: ...}` to plot half as many frames.")}}}),
+        encoding="utf-8")
+    return root
+
+
+def test_the_server_gives_each_analysis_what_was_not_plotted(tmp_path):
+    from fastmdxplora.gui.server import _results_payload
+
+    root = _clustering_short_of_figures(tmp_path / "study")
+    record = next(each for each in _results_payload(root)["analyses"]
+                  if each["name"] == "cluster")
+    assert [each.get("file") for each in record.get("not_plotted", [])] == [
+        "cluster_rmsd_matrix.png"], record
+    assert record.get("refused_before_it_ran") is False, record
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_a_figure_not_plotted_for_memory_is_said_in_its_section(tmp_path, width):
+    """The Clustering section said "3 figures" and showed them, and nothing
+    visible on the page said that the map was not plotted, or what to set:
+    the words were in the record and the CLI's warning alone."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _clustering_short_of_figures(tmp_path / "study")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            note = "#analysis-sections [data-not-plotted]"
+            page.wait_for_selector(note, state="visible")
+            said = page.inner_text(note)
+            count = page.eval_on_selector(
+                note, "(n) => n.closest('.analysis-section')"
+                      ".querySelector('.analysis-section-count').innerText")
+            sideways = page.evaluate(
+                "() => document.documentElement.scrollWidth > "
+                "document.documentElement.clientWidth")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert not errors, errors
+    assert "cluster_rmsd_matrix.png" in said, said
+    assert ("Set stride: 2 under the analysis's options: {cluster: ...} to plot half "
+            "as many frames.") in said and "`" not in said, said
+    assert count.endswith("1 not plotted"), count
+    assert not sideways
