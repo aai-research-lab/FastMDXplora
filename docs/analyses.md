@@ -235,11 +235,13 @@ holds, the record saying which was least and the refusal saying it in words
 peak is counted as resident memory measured it, compiled code's copies
 included (17 n^2 bytes beside the matrix for an average or complete
 linkage). The map is plotted from the averaged matrix after the full one is
-freed. Under `ulimit -v` the libraries are mapped first where the room holds
-them, else the run is refused with its record; each `dimred` method is planned
-on its own; a figure the memory runs out plotting is said with what helps
-(`findings.figures_not_plotted`). Several workers clustering at once each read
-the same memory: that is not planned for yet.
+freed, and the figures before it collected; the dendrogram is the
+hierarchical clustering's own tree. Under `ulimit -v` the libraries are
+mapped first where the room holds them, else the run is refused with its
+record; each `dimred` method is planned on its own; a figure the memory
+runs out plotting is said with what helps (`findings.figures_not_plotted`).
+Several workers clustering at once each read the same memory: that is not
+planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
 with the stride that fits, then the frames, the bytes needed, the room and
 the three quarters of it planned on (all of it under `ulimit -v`, with how

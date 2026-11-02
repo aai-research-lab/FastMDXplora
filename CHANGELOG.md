@@ -810,6 +810,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Making the clustering matrix symmetric past about 2,900 frames leaves no
   block resident after it: each pass's block came from glibc's heap and the
   last one freed stayed.
+- Clustering collects the figures it closed before it plots the map, and its
+  plan for the map (155 MiB at 1,000 cells) and under `ulimit -v` is counted
+  from a clean start on Python 3.11 and 3.13: on 3.13 the map ran out under
+  `ulimit -v` 600000 and a run peaked at 164 MiB against 145 planned.
+- The hierarchical clustering's dendrogram and `hierarchical_linkage.npy` are
+  the tree its labels were cut from, not a second linkage made from the
+  distances after it (8 n^2 bytes more).
 - The GUI says MDS was refused for memory below each projection that ran
   beside it, still shown when the card shows the figure, its settings without
   backticks, and the projection's PNG and SVG say it too, as the record and
