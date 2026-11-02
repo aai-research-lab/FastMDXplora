@@ -1235,6 +1235,14 @@ def _stopping_summary(root: Any) -> str:
                      + (f" by {entry['more_ns']} ns" if entry.get("more_ns") else ""))
     if record.get("said"):
         lines.append(f"  outcome: {record['said']}")
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(where)
+    if ended is not None:
+        # The study's state, as every page says it: its runs each
+        # completed, and the study did not.
+        lines.append(f"  the study {'failed' if ended.state == 'failed' else 'was stopped'} "
+                     f"(not completed): {ended.as_text()}")
     return "\n".join(lines)
 
 

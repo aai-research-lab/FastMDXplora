@@ -1684,7 +1684,13 @@ class BatchExplorer:
             self.results = self._run_sequential(include, exclude)
 
         if stopping is not None:
+            if not self.is_single:
+                # The runs that finished, before the rounds: each run's
+                # extension builds the comparison across them again from
+                # this record, and found none while it listed only the plan.
+                self._write_batch_manifest()
             self._run_until_known(stopping)
+            self._rounds_judged = True
 
         # One run of a study of several analysed again: the study's
         # comparison of its runs read this run's analyses before.
@@ -3108,6 +3114,9 @@ class BatchExplorer:
             "planned": [spec.to_dict() for spec in self.run_specs],
             "runs": [self._with_relative_dir(r.to_dict()) for r in self.results],
         }
+        ended = self._round_ended()
+        if ended is not None:
+            manifest["round_ended"] = ended.as_record()
         path = self.output_dir / "batch_manifest.json"
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2, default=str)
@@ -3126,15 +3135,29 @@ class BatchExplorer:
                 pass
         return run
 
+    def _round_ended(self) -> Any:
+        """The study's rule's last round, failed or stopped, as every page
+        reads it (`stopping.round_ended`), once this process judged its
+        rounds: a resumed study's record says the round before until then."""
+        if not getattr(self, "_rounds_judged", False):
+            return None
+        from fastmdxplora.simulation.stopping import round_ended
+
+        return round_ended(self.output_dir)
+
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:
         ok = sum(1 for r in self.results if r.status == "ok")
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")
         stopped = sum(1 for r in self.results if _was_stopped(r))
+        ended = self._round_ended()
+        headline = ("Batch failed" if ended is not None and ended.state == "failed"
+                    else "Batch stopped" if stopped or ended is not None
+                    else "Batch complete")
         print(f"\n{'=' * 40}")
         print(
-            f"{'Batch stopped' if stopped else 'Batch complete'}: {ok} ok, "
+            f"{headline}: {ok} ok, "
             f"{err} error(s), {skipped} skipped, {len(self.results)} total"
         )
         fixes = _what_would_fix_it(self.output_dir)
@@ -3147,6 +3170,11 @@ class BatchExplorer:
                   f"{stopped} run(s) stopped and runs the ones not started.")
         print(f"Batch output:   {self.output_dir}")
         print(f"Manifest:       {self.output_dir / 'batch_manifest.json'}")
+        if ended is not None:
+            # Last, where the eye lands: every run ended well and the study
+            # did not ("Batch complete" followed the round's failure).
+            print(ended.said)
+            print(ended.carry_on)
 
 
 def _a_pull_is_there(directory: Path) -> bool:

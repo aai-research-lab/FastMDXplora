@@ -1050,6 +1050,13 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
             return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Its rule's round failed (or was stopped) while extending runs that
+    # each ended well: said completed while its record said it failed.
+    ended = round_ended(base)
+    if ended is not None:
+        return ended.state
     if not isinstance(batch, dict):
         # The live record, before the manifest: the manifest is written when
         # a run ends, so a run cut short has none, or the one before it. A

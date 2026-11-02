@@ -2109,6 +2109,13 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         # Stopped at the terminal: the study wrote where it stopped and
         # what carries it on, and the shell is told it was interrupted.
         rc = 130
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Every run ended well and the rule's round did not: the study failed
+    # (or was stopped), as its batch manifest and every page say it.
+    ended = round_ended(fmdx.output_dir)
+    if ended is not None:
+        rc = rc or 1
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and

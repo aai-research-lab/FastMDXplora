@@ -2597,8 +2597,16 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
                   if r.output_dir else {})}
               for r in results]
     failed = [r for r in results if r.status != "ok"]
-    answer = {**base, "ok": not failed, "did": RESUMED_RUNS, "runs": listed}
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Every run carried on, and the rule's round failed again: not done.
+    ended = round_ended(root)
+    answer = {**base, "ok": not failed and ended is None, "did": RESUMED_RUNS,
+              "runs": listed}
     if failed:
         answer["error"] = (f"{len(failed)} of {len(results)} runs did not finish: "
                            + "; ".join(f"{r.run_id}: {r.message}" for r in failed[:3]))
+    elif ended is not None:
+        answer["error"] = ended.as_text()
+        answer["round_ended"] = ended.as_record()
     return answer

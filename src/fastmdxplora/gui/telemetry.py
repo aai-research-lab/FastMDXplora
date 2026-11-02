@@ -1856,6 +1856,22 @@ def _a_study_of_runs(root: str | Path) -> dict[str, str] | None:
     headline, message = _STUDY_OF_RUNS_SAID.get(state, (None, None))
     if headline is None:
         return None
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Its rule's round, not a run, ended it (`stopping.round_ended`, the
+    # derivation `study_state` read): said by what ended it, and carried
+    # on by the command, where "A run of this study ended with an error"
+    # named no run that had.
+    ended = round_ended(root) if state in ("failed", "stopped") else None
+    if ended is not None and ended.state == state:
+        return {
+            "state": state,
+            "headline": headline,
+            "message": ended.said,
+            "explanation": ended.carry_on,
+            "of_runs": True,
+            "carry_on": " ".join(ended.argv),
+        }
     return {
         "state": state,
         "headline": headline,

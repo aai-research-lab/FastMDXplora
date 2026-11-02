@@ -575,6 +575,13 @@ def _several_runs(base: Path) -> str:
     parts = [f"This is a study of {len(runs)} runs, {done} completed{rounds}. Each run keeps its "
              "own records: view one from Runs in the sidebar and ask about it, or read the "
              "comparison across them on the Report page."]
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(base)
+    if ended is not None:
+        # Its runs each completed and the study did not: said first, as
+        # every page says it (`stopping.round_ended`).
+        parts.insert(0, ended.as_text())
     energy = _free_energy(base)
     if energy:
         parts.insert(0, energy)
