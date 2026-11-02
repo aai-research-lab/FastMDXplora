@@ -185,8 +185,8 @@ def matrix_needed(n: int, methods: Sequence[str], features: str, linkage: str) -
       n^2/2, and the mask they are found with (13 n^2), and SciPy's own
       working copy of the condensed distances, made in compiled code where
       tracemalloc does not see it (4 n^2): 17 n^2. Single linkage's minimum
-      spanning tree makes no such copy: 13 n^2. The dendrogram's linkage,
-      made again after it, makes 8 n^2 of it.
+      spanning tree makes no such copy: 13 n^2. The dendrogram's linkage
+      is the tree the labels were cut from (:func:`_linkage_of`), made once.
     - Ward's linkage, on points: SciPy's condensed distances, 4 n^2 (after
       the MDS on ``rmsd``).
     - DBSCAN: the neighbours of every frame within ``eps``, int64, n^2 at
@@ -1127,22 +1127,24 @@ class Cluster(Analysis):
                     distances, self.n_clusters, embedding=embedding,
                     random_state=self.random_state, n_init=self.n_init)
             elif method == "hierarchical":
-                results[method] = _cluster_hierarchical(
-                    distances, self.n_clusters, self.linkage,
-                    embedding=embedding,
-                )
-                self._hierarchy_points = None
-                if self.linkage == "ward":
-                    # Kept so the saved hierarchy is built on the points the
-                    # labels came from, and said which they were.
-                    self._hierarchy_points = _ward_points(distances, embedding)
+                points = (_ward_points(distances, embedding) if self.linkage == "ward"
+                          else None)
+                # The hierarchy is saved, and its dendrogram plotted, from the
+                # tree the labels were cut from: it was made again from the
+                # distances after the clustering, a condensed copy and SciPy's
+                # working one (8 n^2) more.
+                results[method], self._hierarchy = _cluster_hierarchical(
+                    distances, self.n_clusters, self.linkage, embedding=points)
+                if points is not None:
+                    # Said which points the labels and the hierarchy came from.
                     self.findings["hierarchical"] = {
                         "ward_points": (
                             "the superposed coordinates, scaled to RMSD"
                             if embedding is not None else
                             "a classical MDS embedding of the pairwise RMSD"),
-                        "ward_dimensions": int(self._hierarchy_points.shape[1]),
+                        "ward_dimensions": int(points.shape[1]),
                     }
+                del points
             elif method == "dbscan":
                 results[method] = _cluster_dbscan(
                     distances, self.eps, self.min_samples, points=embedding,
@@ -1318,16 +1320,12 @@ class Cluster(Analysis):
                 if method == "hierarchical":
                     dendro_path = self.output_dir / "cluster_hierarchical_dendrogram.png"
                     skip_path = self.output_dir / "cluster_hierarchical_dendrogram_skipped.json"
+                    before_the_dendrogram = figures_open()
                     try:
-                        linkage_matrix = _hierarchical_linkage_matrix(
-                            self._distances,
-                            self.linkage,
-                            points=getattr(self, "_hierarchy_points", None),
-                        )
+                        linkage_matrix = self._hierarchy
                         linkage_path = self.output_dir / "hierarchical_linkage.npy"
                         np.save(linkage_path, linkage_matrix)
                         artifacts.append(linkage_path)
-                        before_the_dendrogram = figures_open()
                         fig_den, ax_den = new_figure(
                             title="Hierarchical clustering dendrogram",
                             figsize=(6.5, 3.8),
@@ -1417,6 +1415,7 @@ class Cluster(Analysis):
     _clustered: md.Trajectory | None = None
     _distances: np.ndarray | None = None
     _embedding: np.ndarray | None = None
+    _hierarchy: np.ndarray | None = None
 
     def _times_ns(self) -> np.ndarray | None:
         """The clustered frames' times in ns, or None where there is no clock."""
@@ -1789,8 +1788,10 @@ def _cluster_hierarchical(
     n_clusters: int,
     linkage: str,
     embedding: np.ndarray | None = None,
-) -> np.ndarray:
-    """Agglomerative hierarchical clustering.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Agglomerative hierarchical clustering: each frame's label, and the
+    hierarchy the labels were cut from as SciPy's linkage
+    (:func:`_linkage_of`).
 
     Every linkage but ward works from the distances directly. Ward is defined
     by variance within a cluster, so it needs the frames as points: in the
@@ -1798,15 +1799,36 @@ def _cluster_hierarchical(
     classical MDS embedding stands in for them.
     """
     if linkage == "ward":
-        model = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward")
-        return model.fit_predict(_ward_points(distances, embedding)).astype(int)
+        model = AgglomerativeClustering(n_clusters=n_clusters, linkage="ward",
+                                        compute_distances=True)
+        labels = model.fit_predict(_ward_points(distances, embedding))
+    else:
+        model = AgglomerativeClustering(
+            n_clusters=n_clusters,
+            metric="precomputed",
+            linkage=linkage,
+            compute_distances=True,
+        )
+        labels = model.fit_predict(distances)
+    return labels.astype(int), _linkage_of(model)
 
-    model = AgglomerativeClustering(
-        n_clusters=n_clusters,
-        metric="precomputed",
-        linkage=linkage,
-    )
-    return model.fit_predict(distances).astype(int)
+
+def _linkage_of(model: AgglomerativeClustering) -> np.ndarray:
+    """The tree a fitted clustering cut its labels from, as SciPy's linkage:
+    each merge's two clusters, its height, and how many frames it holds.
+
+    With no connectivity given, scikit-learn builds the whole tree with
+    SciPy's ``linkage`` (``ward`` on points) and keeps its first two columns
+    as ``children_`` and its third as ``distances_``; the fourth is counted
+    here from them, so the array is SciPy's own, made once.
+    """
+    children = np.asarray(model.children_, dtype=np.int64)
+    n = children.shape[0] + 1
+    sizes = np.ones(2 * n - 1, dtype=np.float64)
+    for k, (a, b) in enumerate(children.tolist()):
+        sizes[n + k] = sizes[a] + sizes[b]
+    return np.column_stack([children.astype(np.float64),
+                            np.asarray(model.distances_, dtype=np.float64), sizes[n:]])
 
 
 def _ward_points(distances: np.ndarray, embedding: np.ndarray | None) -> np.ndarray:
@@ -1933,47 +1955,6 @@ def _plot_cluster_counts(ax: plt.Axes, labels: np.ndarray) -> None:
     ax.set_xlabel("Cluster")
     ax.set_ylabel("Frames")
     ax.set_xticks(unique)
-
-
-def _plot_hierarchical_dendrogram(
-    ax: plt.Axes,
-    distances: np.ndarray,
-    linkage_method: str,
-) -> None:
-    z = _hierarchical_linkage_matrix(distances, linkage_method)
-    _plot_hierarchical_dendrogram_from_linkage(ax, z)
-
-
-def _hierarchical_linkage_matrix(
-    distances: np.ndarray,
-    linkage_method: str,
-    points: np.ndarray | None = None,
-) -> np.ndarray:
-    """The hierarchy behind a hierarchical clustering, as SciPy's linkage.
-
-    Ward's linkage is computed on the same points the labels were
-    (:func:`_ward_points`); passing ``points`` uses those exactly. It was
-    computed by average linkage on the distances instead, so the saved
-    dendrogram and ``hierarchical_linkage.npy`` described another clustering:
-    cut at the number of clusters asked for, they agreed with the labels to
-    an adjusted Rand index of 0.64 on a drifting trajectory.
-    """
-    try:
-        from scipy.cluster.hierarchy import linkage
-        from scipy.spatial.distance import squareform
-    except ImportError as exc:  # pragma: no cover - environment dependent
-        raise BackendUnavailable("SciPy is required for dendrogram generation",
-                                 packages=["scipy"], code="environment.backend.missing") from exc
-
-    frames = (distances if distances is not None else points).shape[0]
-    if frames < 2:
-        raise StudyError("at least two frames are required for a dendrogram", code="analysis.sampling.too_few_frames")
-    if linkage_method == "ward":
-        if points is None:
-            points = _ward_points(distances, None)
-        return linkage(np.asarray(points, dtype=np.float64), method="ward")
-    condensed = squareform(distances, checks=False)
-    return linkage(condensed, method=linkage_method)
 
 
 def _plot_hierarchical_dendrogram_from_linkage(

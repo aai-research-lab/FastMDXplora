@@ -467,6 +467,52 @@ class TestTheBudgetIsTheProcesss:
         assert clustering.matrix_needed(n, ["hierarchical"], "rmsd", "single") == 21 * n * n
 
 
+class TestTheHierarchyIsMadeOnce:
+    """The dendrogram's linkage was made again from the distances after the
+    clustering, a condensed copy and SciPy's working one (8 n^2): on Python
+    3.13 it raised the resident memory by 28 to 31 MiB at 2,000 frames,
+    held in glibc's heap until the map. The hierarchy saved and plotted is
+    the tree the labels were cut from, and it is SciPy's linkage of what
+    they were cut from."""
+
+    @pytest.mark.parametrize("linkage", ["average", "complete", "single", "ward"])
+    def test_one_linkage_is_made_and_saved(self, tmp_path, monkeypatch, linkage):
+        from scipy.cluster import hierarchy
+        from scipy.spatial.distance import squareform
+
+        real = hierarchy.linkage
+        made, inside = [], []
+
+        def counted(function, name):
+            """Each linkage made, by its method; one made inside another
+            (``ward`` calling ``linkage``) counted once."""
+            def call(*args, **kwargs):
+                if not inside:
+                    made.append(name or kwargs.get("method", args[1] if len(args) > 1
+                                                   else "single"))
+                inside.append(1)
+                try:
+                    return function(*args, **kwargs)
+                finally:
+                    inside.pop()
+            return call
+
+        monkeypatch.setattr(hierarchy, "linkage", counted(real, None))
+        monkeypatch.setattr(hierarchy, "ward", counted(hierarchy.ward, "ward"))
+        traj = _chain(300)
+        result = Cluster(methods=["hierarchical"], linkage=linkage,
+                         output_dir=tmp_path).run(traj)
+        assert result.status == "ok", result.message
+        assert made == [linkage], made
+        saved = np.load(tmp_path / "cluster" / "hierarchical_linkage.npy")
+        distances = _pairwise_rmsd(traj, np.arange(traj.n_atoms))
+        if linkage == "ward":
+            expected = real(clustering._ward_points(distances, None), method="ward")
+        else:
+            expected = real(squareform(distances, checks=False), method=linkage)
+        np.testing.assert_allclose(saved, expected, rtol=1e-12, atol=0.0)
+
+
 _PEAK_SCRIPT = r"""
 import json, sys
 import numpy as np
