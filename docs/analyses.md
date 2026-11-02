@@ -237,17 +237,30 @@ linkage). The map is plotted after the matrix is freed, from the averaged
 one, and planned on beside it alone (`findings.memory.bytes_map`: about 144
 bytes a cell and 8 MiB, some 150 MB for a map 1,000 cells across, as
 measured): the peak planned on is the larger of the matrix's part
-(`bytes_matrix`) and the map's. Under an address-space or data limit, BLAS
-and OpenMP are held to one thread while `cluster` and `dimred` run
-(`findings.memory.threads`): k-means calls BLAS from its threads, and an
-OpenBLAS thread whose buffer could not be mapped under the limit retried
-for ever. Several workers
+(`bytes_matrix`) and the map's. Under an address-space or data limit
+(`ulimit -v`), what runs out is address space, not resident memory, and
+clustering maps about 150 MiB more than that peak (the libraries it loads,
+OpenBLAS's buffer, glibc's heap and each figure's canvas at 300 dpi, as
+measured from `VmPeak` in a new process): that room is planned on apart, with
+that need (`findings.memory.bytes_address_space`, `bytes_address_needed`),
+and read once as the analysis starts, as the analyses before it take some of
+it. `dimred` plans the same way (130 MiB beside MDS's matrix), and where the
+limit leaves less than its projections map it is refused before any runs,
+its record written. A figure the memory runs out plotting all the same is
+left out and said (`findings.figures_not_plotted`, with what to set), the
+other figures and files saved; MDS running out is refused as past its check
+is, the other projections saved. BLAS and OpenMP are held to one thread while
+`cluster` and `dimred` run under the limit (`findings.memory.threads`):
+k-means calls BLAS from its threads, and an OpenBLAS thread whose buffer
+could not be mapped under the limit retried for ever. Several workers
 clustering at once each read the same memory, and one's matrix is not seen
 by another until it is written: that is not planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
 with the stride that fits, then the frames, the bytes needed, the room and
-the three quarters of it planned on (to as many decimals as tell them
-apart), and last where the memory was read, and said in the log;
+the three quarters of it planned on (in one unit, MB under 1 GB, to as many
+decimals as tell them apart, the share computed from the room as said), and
+last where the memory was read, and said in the log and on the Analysis
+page, in the analysis's own section;
 `stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
 the other analyses still read every frame. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
@@ -256,7 +269,8 @@ square), checked before any of its methods runs and refused past it with the
 stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA,
 t-SNE and UMAP make none, and asked for beside a refused MDS they still run
 and their projections are saved, the refusal recorded (`findings.mds_refused`)
-and said in the report and under each projection's figure in the GUI.
+and said in the report, on each projection's figure (PNG and SVG) and below
+it in the GUI.
 
 `rmsd`, `cluster` and `dimred` superpose the frames on their selection, which
 needs three atoms. On one (alanine dipeptide's one alpha carbon, the

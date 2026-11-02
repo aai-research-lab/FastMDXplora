@@ -807,7 +807,9 @@ CODES: tuple[Code, ...] = (
          detail_keys=("analysis", "needs")),
     Code("analysis.memory.matrix_too_large",
          "The frames' pairwise matrix, and the copies clustering or MDS makes "
-         "of it, would not fit in the memory this process can take.",
+         "of it, or under an address-space limit what the libraries and "
+         "figures map besides, would not fit in the memory this process can "
+         "take.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
          detail_keys=("frames", "bytes_needed", "bytes_available", "stride")),
     Code("analysis.data.not_this_system",
