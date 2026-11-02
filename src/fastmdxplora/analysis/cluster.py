@@ -129,11 +129,21 @@ ROWS_BYTES = 64 * 2**20
 
 #: What plotting the time-against-time map takes, per cell of the map
 #: squared and once, in bytes: Matplotlib's mesh of the cells and its
-#: rendering to PNG and SVG. Measured as the peak resident memory of a
-#: process plotting it (about 132 bytes a cell at 1,000 cells across, 126
-#: MiB; ``tests/test_a_clustering_fits_the_machine.py``), and planned on
-#: beside the map's own numbers once the frames' matrix is freed.
-FIGURE_BYTES_PER_CELL = 136
+#: rendering to PNG and SVG, planned on beside the map's own numbers once
+#: the frames' matrix is freed. Counted from the peak resident memory of
+#: whole clusterings at 1,000 and 2,000 frames (k-means and average
+#: linkage, and DBSCAN), from a start where what was freed before is given
+#: back: at most 155.6 MiB on Python 3.11 and 149.6 on 3.13 (NumPy 2.4.6
+#: and 2.5.4, SciPy 1.17.1 and 1.18.1, scikit-learn 1.9.1, Matplotlib
+#: 3.11.2), the map 1,000 cells across, with 4 MiB of terms in n alone left
+#: to the share not planned on (``tests/test_a_clustering_fits_the_machine.py``).
+#: Plotted alone in a new process the map peaked at 141 to 142 MiB, and
+#: 136 bytes a cell were planned; in a run, glibc's threshold for giving an
+#: array a mapping of its own has risen to the size of the largest array of
+#: up to 32 MiB freed before (at 2,000 frames, one n by n), so the map's
+#: arrays come from the heap, and what they leave there freed stays
+#: resident: 0 to 14 MiB more, from one run to the next.
+FIGURE_BYTES_PER_CELL = 146
 FIGURE_BYTES = 8 * 2**20
 
 
@@ -239,7 +249,7 @@ def map_needed(n: int) -> int:
     is freed: its cells in float64 (8 bytes a cell), and Matplotlib's mesh
     of them and its rendering (:data:`FIGURE_BYTES_PER_CELL` a cell, and
     :data:`FIGURE_BYTES` once). 1,000 frames, and each whole multiple of
-    them, make a map 1,000 cells across, about 145 MiB."""
+    them, make a map 1,000 cells across, about 155 MiB."""
     cells = -(-int(n) // map_block(n)) if n > 0 else 0
     return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
@@ -262,8 +272,16 @@ def map_needed(n: int) -> int:
 #: set, and the rest saved (:meth:`Cluster._plotted`). Measured there, the
 #: allowance (150 MiB) counted the libraries a second time in the command
 #: line's process, and tri-alanine's 500 frames were refused at any stride
-#: under ``ulimit -v`` 600000, where they ran with room to spare.
-ADDRESS_BYTES = 18 * 2**20
+#: under ``ulimit -v`` 600000, where they ran with room to spare. Counted
+#: again with the map's plan (:data:`FIGURE_BYTES_PER_CELL`) and the
+#: figures before it collected (:func:`give_back_freed`), the same way on a
+#: study of four residues, with the libraries :data:`FIGURE_BYTES_PER_CELL`
+#: names: after the RMSD, 46 and 118 MiB at 500 and 2,000 frames on Python
+#: 3.11 and 42 and 121 on 3.13; run alone, 66 and 156 on 3.11 and 51 and
+#: 142 on 3.13; against 45 and 155 MiB of :func:`memory_needed`. Before
+#: the figures were collected, 500 frames after the RMSD took 76 MiB on
+#: Python 3.13, and the map ran out under ``ulimit -v`` 600000.
+ADDRESS_BYTES = 16 * 2**20
 ADDRESS_LEAST = 50 * 2**20
 
 #: How much more a process that ran nothing before maps for a clustering
@@ -380,15 +398,26 @@ def ran_out(error: BaseException) -> bool:
 
 
 def give_back_freed() -> None:
-    """Give the pages glibc holds freed back to the system (``malloc_trim``),
-    where glibc is the allocator; nothing elsewhere. DBSCAN's lists of
+    """Free what is no longer reachable, and give the pages glibc holds freed
+    back to the system (``malloc_trim``), where glibc is the allocator.
+
+    A figure saved and closed is freed, with its canvas's renderer, only
+    when Python's cyclic garbage collector next runs, and when that is
+    differs from one Python to another. Clustering 2,000 frames with
+    k-means and average linkage, the figures plotted before the map were
+    still held when it was plotted: five, 45 MiB, on Python 3.11 and three,
+    27 MiB, on 3.13; and a run before it left five, 51 MiB, on 3.11 and
+    three, 26 MiB, on 3.13, freed during the run and reused by it, so its
+    peak depended on what ran before it. Collected here. DBSCAN's lists of
     neighbours are many small arrays from glibc's heap, about 58 MiB at
     2,000 frames, and a medoid's block of rows of one cluster of every
     frame 30 MiB: still resident when the map was plotted after them."""
     import ctypes
     import ctypes.util
+    import gc
     import sys
 
+    gc.collect()
     if not sys.platform.startswith("linux"):
         return
     try:

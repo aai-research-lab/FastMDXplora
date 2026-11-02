@@ -473,7 +473,7 @@ import numpy as np
 import mdtraj as md
 sys.path.insert(0, sys.argv[1])
 import fastmdxplora.analysis  # noqa: F401
-from fastmdxplora.analysis.cluster import Cluster
+from fastmdxplora.analysis.cluster import Cluster, give_back_freed
 
 def status(name):
     for line in open("/proc/self/status"):
@@ -491,6 +491,11 @@ xyz = rng.normal(0.0, 0.4, (4, 3))[None] + np.cumsum(rng.normal(0.0, 0.01, (n, 4
 traj = md.Trajectory(xyz.astype(np.float32), top)
 analysis = Cluster(**options)
 analysis.compute(traj[:50])  # every library loaded before the baseline
+# From a clean start: what the warm-up left unreachable collected, and
+# glibc's freed pages given back.
+import gc
+gc.collect()
+give_back_freed()
 with open("/proc/self/clear_refs", "w") as refs:  # the peak counted from here
     refs.write("5")
 before = status("VmRSS")
@@ -575,6 +580,13 @@ if room is not None:
     stride = found["findings"]["memory"].get("stride_that_fits")
     if refused.status != "error" or not stride:
         raise SystemExit("not refused: " + refused.message)
+# From a clean start: what the warm-up left unreachable (its figures, closed)
+# collected, and glibc's freed pages given back. Counted from where they
+# were held, the peak was what the run reused of them: within the plan on
+# Python 3.11, where the collector had not yet run, and over it on 3.13.
+import gc
+gc.collect()
+clustering.give_back_freed()
 with open("/proc/self/clear_refs", "w") as refs:  # the peak counted from here
     refs.write("5")
 before = status("VmRSS")
@@ -615,16 +627,19 @@ class TestTheFiguresAreCounted:
                              ids=["default", "dbscan-wide"])
     def test_a_whole_run_s_peak_is_within_the_estimate(self, tmp_path, options):
         """Measured as the resident peak of a process running the clustering
-        whole, its figures and files with it. DBSCAN's lists of neighbours,
+        whole, its figures and files with it, from a start where what ran
+        before is freed and given back. DBSCAN's lists of neighbours,
         freed, stayed resident in glibc's heap when the map was plotted
         after them: 160 to 165 MiB against 145 planned at 2,000 frames with
-        a wide ``eps``."""
+        a wide ``eps``. The figures plotted before the map, closed, were
+        held until Python's garbage collector ran: from a clean start, 186.6
+        MiB on Python 3.11 and 169.8 on 3.13 against 145.3 planned."""
         found = _peak_of_a_run(tmp_path, 2000, options=options)
-        # Within the plan, the map planned with what was before it freed
-        # (151 to 161 MiB with DBSCAN's left, 141 given back), and 4 MiB:
-        # the frames, the labels and the rows read a few at a time, terms in
-        # n alone left to the share not planned on (`MEMORY_SHARE`).
-        # DBSCAN's run peaked at 147.0 and 144.6 MiB against 145.3 planned.
+        # Within the plan, the map planned with what was before it freed,
+        # and 4 MiB: the frames, the labels and the rows read a few at a
+        # time, terms in n alone left to the share not planned on
+        # (`MEMORY_SHARE`). 147.9 to 155.6 MiB on Python 3.11 and 142.1 to
+        # 142.6 on 3.13 against 154.9 planned; DBSCAN's 138.2 to 145.4.
         assert found["peak"] <= found["needed"] + 4 * 2**20, (
             found["peak"] / 2**20, found["needed"] / 2**20)
 
@@ -637,10 +652,10 @@ class TestTheFiguresAreCounted:
     @pytest.mark.parametrize("n", [1000, 2000])
     def test_the_map_is_in_the_plan(self, n):
         """At 1,000 frames, and at 2,000 in blocks of two, the map is 1,000
-        cells across, 126 MiB to plot as measured
+        cells across, 141 MiB to plot alone in a new process as measured
         (``FIGURE_BYTES_PER_CELL``): in the plan of a clustering that makes
         the least of its matrix."""
-        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 126 * 2**20
+        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 141 * 2**20
 
 
 _ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""
@@ -659,6 +674,10 @@ needed = clustering.address_space_needed(n, analysis.methods, analysis.features,
                                          analysis.linkage)
 # Room the check allows: what it plans on is the need, and a little more.
 room = int(needed / clustering.ADDRESS_SHARE) + 6 * 2**20
+# From a clean start, as the resident peak is counted.
+import gc
+gc.collect()
+clustering.give_back_freed()
 held = clustering._process_status()["VmSize"]
 resource.setrlimit(resource.RLIMIT_AS, (held + room, resource.RLIM_INFINITY))
 try:
