@@ -36,7 +36,9 @@ from fastmdxplora.refusals import StudyError
 
 #: Selections offered where the one given matches fewer atoms than a
 #: superposition needs, the first that matches enough named: the backbone
-#: (alanine dipeptide's caps and its one residue give seven), then the
+#: (alanine dipeptide's caps and its one residue give eight in PDBFixer's
+#: alanine-dipeptide.pdb: ACE's C and O, ALA's N, CA, C and O, NME's N and
+#: its methyl carbon, named C there; seven where that is named CH3), then the
 #: protein's heavy atoms, then every heavy atom but water's.
 SELECTIONS_THAT_ALIGN = ("backbone", "protein and not element H",
                          "not water and not element H")
