@@ -134,16 +134,25 @@ CASES = {
     "unord_eq_5": dict(lengths=[L] * 5, rand_offsets=0.3),
     "stat_eq_6": dict(lengths=[L] * 6),
     "ramp_eq_6": dict(lengths=[L] * 6, offsets=[0, .1, .2, .3, .4, .5]),
+    # unequal segments: stationary, and a ramp linear in time of 2.4 over the run
+    "stat_uneq_3": dict(lengths=[500, 500, 4000]),
+    "stat_uneq_4": dict(lengths=[500, 500, 500, 4000]),
+    "ramp_time_uneq_3": dict(lengths=[500, 500, 4000], ramp=2.4),
+    "ramp_time_uneq_4": dict(lengths=[500, 500, 500, 4000], ramp=2.4),
 }
 
 
-def trajectories(realisations: int = 1000) -> list[dict]:
+def trajectories(realisations: int = 1000, only: "list[str] | None" = None) -> list[dict]:
     """Contiguous AR(1) runs (phi 0.8 unless said) through summarise_segments:
     ``offsets`` per segment, ``rand_offsets`` the SD of random offsets per
     segment in no order, ``slow`` the size of a second AR(1) mode with phi
-    0.999 (a correlation time of 1000 frames the segments' errors miss)."""
+    0.999 (a correlation time of 1000 frames the segments' errors miss),
+    ``ramp`` a rise linear in time over the run. ``only`` names the cases
+    to count (each keeps its own seed)."""
     rows = []
     for index, (name, spec) in enumerate(CASES.items()):
+        if only and name not in only:
+            continue
         spec = dict(spec)
         seed = 610000 + 1000 * index
         rand = spec.pop("rand_offsets", 0.0)
@@ -160,14 +169,16 @@ def trajectories(realisations: int = 1000) -> list[dict]:
     return rows
 
 
-def check() -> dict:
+def check(only: "list[str] | None" = None) -> dict:
     return dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
-                known_errors=known_errors(), contiguous_ar1=trajectories())
+                known_errors=[] if only else known_errors(),
+                contiguous_ar1=trajectories(only=only))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--cases", nargs="*", help="count only these trajectory cases")
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(check(), indent=2) + "\n", encoding="utf-8")
+    args.output.write_text(json.dumps(check(args.cases), indent=2) + "\n", encoding="utf-8")

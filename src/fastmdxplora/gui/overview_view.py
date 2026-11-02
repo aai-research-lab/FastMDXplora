@@ -169,6 +169,10 @@ def _tiles(root: Path) -> dict[str, Any]:
     # The means this version withholds that an earlier version called
     # determined, by name: analysing again records this version's verdict.
     since: list[str] = []
+    # The means withheld as drifting between a joined run's segments, by
+    # name: the lead says so, with the remedy, where it counted them and
+    # explained only those withheld for want of sampling.
+    drifting: list[str] = []
     for row in rows:
         name = row.get("analysis")
         if name == "rmsf":
@@ -201,6 +205,8 @@ def _tiles(root: Path) -> dict[str, Any]:
             noted += bool(quantity.get("noted"))
             if quantity.get("withheld_since"):
                 since.append(str(quantity.get("label") or row.get("title") or name))
+            if quantity.get("drifting"):
+                drifting.append(str(quantity.get("label") or row.get("title") or name))
             series = name if (quantity.get("key") == "mean" and name in _SERIES_OF) else None
             tiles.append({
                 "kind": "mean",
@@ -232,7 +238,8 @@ def _tiles(root: Path) -> dict[str, Any]:
             "analyses": len(rows), "biased": bool(overview.get("biased")),
             "judged_earlier": list(overview.get("judged_earlier") or []),
             "withheld_since": since,
-            "lead": _lead(root, means, determined, not_read, noted, len(since))}
+            "lead": _lead(root, means, determined, not_read, noted, len(since),
+                          drifting)}
 
 
 def means_counted(means: int, determined: int) -> str:
@@ -284,8 +291,25 @@ def withheld_since_said(count: int, undetermined: int) -> str:
             "determined: Analyze again to record this version's verdict.")
 
 
+def drifting_said(names: "list[str]") -> str:
+    """The means withheld as drifting between a joined run's segments, by
+    name, and their remedy; empty for none. No record says how much longer
+    such a run must be: the drift, not the count of samples, withholds it."""
+    if not names:
+        return ""
+    # In a list, an ordinary word in lower case; "Rg" and "SASA" as they are.
+    said = [name if index == 0 or len(name.split()[0]) <= 2
+            or not name.split()[0][1:].islower() else name[:1].lower() + name[1:]
+            for index, name in enumerate(names)]
+    listed = said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
+    return (f"{listed} {'is' if len(said) == 1 else 'are'} drifting between the joined "
+            "run's segments, so the remedy is a longer run; no record says how much "
+            "longer.")
+
+
 def _lead(root: Path, means: int, determined: int, not_read: int = 0,
-          noted: int = 0, since: int = 0) -> dict[str, Any] | None:
+          noted: int = 0, since: int = 0,
+          drifting: "list[str] | tuple[str, ...]" = ()) -> dict[str, Any] | None:
     """The sentence the Overview of one run leads with: how many of its
     means are determined and, where they are not, how much longer the run
     would have to be and what that costs here, as the analyses asked for it
@@ -297,7 +321,9 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
     named (`record_access`). Where any mean carries an image note, how many,
     and what lifts it (:func:`fastmdxplora.image_note.noted_said`). ``since``
     of the means this version withholds that an earlier version called
-    determined (:func:`withheld_since_said`)."""
+    determined (:func:`withheld_since_said`). ``drifting`` names the means
+    withheld as drifting between a joined run's segments
+    (:func:`drifting_said`)."""
     unread = ("" if not not_read else
               f" {not_read} result{' was' if not_read == 1 else 's were'} not read: "
               f"{'it says' if not_read == 1 else 'each says'} why below.")
@@ -327,6 +353,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
 
     undetermined = means - determined
     counted = means_counted(means, determined)
+    drift = drifting_said(list(drifting))
+    drift = f" {drift}" if drift else ""
     analyse = withheld_since_said(since, undetermined)
     if analyse and since >= undetermined:
         # None of them asks for a longer run.
@@ -351,7 +379,8 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
                f"not read." if refused else "is not in the records: each says why below.")
         lifted = longer_run_said(finding).replace("`", "")
         why += analyse + (f" {lifted}" if lifted else "") + image_noted
-        return {"said": f"{counted}. How much longer would determine {them} {why}" + unread,
+        return {"said": f"{counted}.{drift} How much longer would determine {them} {why}"
+                + unread,
                 "undetermined": undetermined, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
     asking = len(ask.analyses)
@@ -366,6 +395,7 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0,
     if ask.lower_bound:
         said += (" A floor: the run is too short to resolve its own correlation time, "
                  "so run that much and estimate again.")
+    said += drift
     if refused:
         said += (f" {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} not read, "
                  f"so what {'it says' if len(refused) == 1 else 'they say'} is not counted "

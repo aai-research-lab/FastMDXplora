@@ -58,6 +58,8 @@ __all__ = [
     "judged_by_earlier_rules",
     "too_few_by_these_rules",
     "withheld_reason",
+    "withheld_code",
+    "DRIFTING_CODES",
     "statistical_inefficiency",
     "correlation_is_resolved",
     "detect_equilibration",
@@ -153,7 +155,8 @@ DRIFT_FRAMES = 6
 #: withhold such a mean, so it may call one determined.
 #: 4 also checks recorded joins for a resolved trend between segments.
 #: 5 calls three or four segments drifting only where the trend also stands
-#: against the segment means' own scatter about the line.
+#: against the segment means' own scatter about the line, each mean placed
+#: at its centre frame in time.
 MEAN_RULES = 5
 
 #: A series whose averaged frames trend by this many times the trend's own
@@ -953,6 +956,11 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
         record.update(equilibrated.as_record())
     if reason is not None:
         record["not_a_measurement"] = reason
+        if _code_of(reason) and _code_of(reason) != "unclassified":
+            # Saved beside the text, so a reader branches on the verdict
+            # rather than on its words: the report matched "still drifting"
+            # and called a mean drifting between segments equilibrated.
+            record["withheld_code"] = _code_of(reason)
         if _code_of(reason) == "analysis.sampling.drifting":
             record["standard_error"] = float("nan")
             record["drift_test"] = reason.refusal.details["drift_test"]
@@ -988,6 +996,34 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     if start_at_least:
         record["start_shared_with_replicas"] = int(start_at_least)
     return record
+
+
+def withheld_code(record: Any) -> str:
+    """The refusal code a mean's record withholds it under, or an empty
+    string: the code it carries or saved (``withheld_code``); for a record
+    saved before the code was, ``analysis.sampling.drifting`` where it
+    names its ``drift_test`` (saved with that code alone) and
+    ``analysis.sampling.still_drifting`` where its reason is the
+    single-series one ("Still drifting after its equilibration")."""
+    if not isinstance(record, dict):
+        return ""
+    reason = record.get("not_a_measurement")
+    if not reason:
+        return ""
+    code = _code_of(reason) or record.get("withheld_code")
+    if isinstance(code, str) and code and code != "unclassified":
+        return code
+    if record.get("drift_test"):
+        return "analysis.sampling.drifting"
+    if "still drifting after its equilibration" in str(reason).lower():
+        return "analysis.sampling.still_drifting"
+    return ""
+
+
+#: The codes of a mean withheld because it is still moving: within the
+#: frames it averages, or between the segments of a joined run.
+DRIFTING_CODES = frozenset({"analysis.sampling.still_drifting",
+                            "analysis.sampling.drifting"})
 
 
 def judged_by_earlier_rules(record: Any) -> bool:
@@ -1227,6 +1263,13 @@ def summarise_segments(
     errors = np.array([p.standard_error for p in pieces], dtype=float)
     resolved = np.isfinite(errors) & (errors > 0.0)
     means = np.array([p.mean for p in pieces], dtype=float)
+    # Where each mean sits in time: the centre frame of the frames it is
+    # taken over, after its own segment's discard. Against segment index, a
+    # drift steady in time over segments of 500, 500 and 4,000 frames bent
+    # off a straight line and was missed the more the larger it was.
+    centres = np.array([edges[index] + p.discard
+                        + (edges[index + 1] - edges[index] - p.discard - 1) / 2.0
+                        for index, p in zip(kept_at, pieces)], dtype=float)
 
     # Before anything is pooled: do these segments agree that they are
     # measuring one thing? Pooling assumes they do, and pooling estimates of
@@ -1235,7 +1278,7 @@ def summarise_segments(
     # a run still moving is the more useful thing to say: longer segments
     # would not cure it.
     scatter, drifting, refusal = _drift_test(
-        means[resolved], 1.0 / errors[resolved] ** 2)
+        means[resolved], 1.0 / errors[resolved] ** 2, centres[resolved])
     if refusal is not None:
         return None, refusal
 
@@ -1317,7 +1360,14 @@ def summarise_segments(
 
     qualification = ""
     if scatter > HETEROGENEITY_QUALIFY_ABOVE:
-        if 3 <= len(pieces) <= 4:
+        if 3 <= len(pieces) <= 4 and not _beyond_chance(scatter, len(pieces)):
+            # A ratio above 2 arises by chance in 1 of 7 stationary runs of
+            # three segments: qualified, but not said to be more than that.
+            qualification = (
+                f"The segment means scatter {scatter:.1f} times more than their "
+                "own standard errors predict. Treat the error on this mean as a "
+                "lower bound.")
+        elif 3 <= len(pieces) <= 4:
             qualification = (
                 f"The segment means scatter {scatter:.1f} times more than their "
                 "own standard errors predict, without a straight-line trend "
@@ -1347,10 +1397,27 @@ def summarise_segments(
     ), None
 
 
-def _drift_test(means: np.ndarray, precisions: np.ndarray
+def _beyond_chance(scatter: float, count: int) -> bool:
+    """Whether segment means scatter beyond chance at
+    :data:`DRIFT_SIGNIFICANT_BELOW`: Cochran's Q (``scatter`` times
+    ``count - 1``) against its chi-square on ``count - 1`` degrees of
+    freedom, for three or four means (survival functions exp(-Q/2) and
+    erfc(sqrt(Q/2)) + sqrt(2Q/pi) exp(-Q/2)). Not a number counts as beyond."""
+    q = float(scatter) * (count - 1)
+    if not math.isfinite(q):
+        return True
+    survival = (math.exp(-q / 2.0) if count == 3 else
+                math.erfc(math.sqrt(q / 2.0)) + math.sqrt(2.0 * q / math.pi) * math.exp(-q / 2.0))
+    return survival < DRIFT_SIGNIFICANT_BELOW
+
+
+def _drift_test(means: np.ndarray, precisions: np.ndarray,
+                positions: "np.ndarray | None" = None,
                 ) -> "tuple[float, float, Withholding | None]":
     """The heterogeneity, the drift p-value, and the refusal for segment
-    means that move in order (None where they do not).
+    means that move in order (None where they do not). ``positions`` is
+    where each mean sits in time (its centre frame); segment order where
+    not given.
 
     Both a trend (``drift_across_segments`` at most 0.05) and a
     disagreement (``heterogeneity_ratio`` above one) are needed, because
@@ -1360,7 +1427,10 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
     disagreement rather than agreement, so a NaN cannot switch the test off.
     """
     scatter = heterogeneity_ratio(means, precisions)
-    drifting = drift_across_segments(means, precisions)
+    if positions is None:
+        positions = np.arange(means.size, dtype=float)
+    positions = np.asarray(positions, dtype=float)
+    drifting = drift_across_segments(means, precisions, positions=positions)
     agree = bool(np.isfinite(scatter) and scatter <= 1.0)
     # At the level, not only below it: an exact count of 120 orderings
     # reaches 6/120 = 0.05 itself.
@@ -1376,8 +1446,8 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
     # would describe means the reader can see do not.
     one_way = bool(np.all(steps > 0.0) or np.all(steps < 0.0))
     if method == "slope_against_errors_and_scatter":
-        positions = np.arange(means.size, dtype=float)
-        change = _weighted_slope(means, precisions, positions) * (means.size - 1)
+        change = (_weighted_slope(means, precisions, positions)
+                  * float(positions[-1] - positions[0]))
         movement = (
             f"A straight line through the segment means changes by {change:+.4g} "
             f"across the run (first to last mean {span:+.4g}"
@@ -1394,11 +1464,15 @@ def _drift_test(means: np.ndarray, precisions: np.ndarray
             f"The segment means trend across the run, by {span:+.4g} from first "
             "to last, though not one way at every step")
         evidence = f"an ordering this clean arises by chance {chance} of the time"
+    # The verdict first, with its p and remedy: a page that shows the first
+    # sentence alone (the Overview's card) showed the line's arithmetic and
+    # not that the mean is drifting.
     said = (
-        f"{movement}, and {evidence}. The system had not "
+        f"Drifting between its joined segments (p {chance}), so the remedy is "
+        f"a longer run. {movement}, and {evidence}. The system had not "
         "equilibrated at the scale of the whole run, so a pooled mean "
         "would be the mean of a moving target with a confident error "
-        "bar on it. The remedy is a longer run, not more pooling.")
+        "bar on it, which more pooling does not cure.")
     return scatter, drifting, Withholding(
         said,
         code="analysis.sampling.drifting",
@@ -1426,7 +1500,7 @@ EXACT_ORDERINGS_AT_MOST = 5040
 
 def _weighted_slope(means: np.ndarray, weights: np.ndarray,
                     positions: np.ndarray) -> float:
-    """Weighted least-squares slope of segment mean against segment order."""
+    """Weighted least-squares slope of segment mean against ``positions``."""
     total = weights.sum()
     mean_x = float((weights * positions).sum() / total)
     mean_y = float((weights * means).sum() / total)
@@ -1443,7 +1517,7 @@ def _segment_drift_method(count: int) -> str:
     return "slope_against_errors_and_scatter" if count < 5 else "permutation"
 
 
-def _own_scatter_slope_p(means: np.ndarray) -> float:
+def _own_scatter_slope_p(means: np.ndarray, positions: np.ndarray) -> float:
     """The slope's two-sided p-value against the means' own scatter about
     the line: an unweighted fit, Student's t on k - 2 degrees of freedom.
 
@@ -1452,10 +1526,11 @@ def _own_scatter_slope_p(means: np.ndarray) -> float:
     then the errors are not the right weights either: weighted by them, an
     imprecise segment between two precise ones leaves almost no residual to
     judge the slope against. For k = 3 and 4 the t tails are
-    1 - (2/pi) atan|t| and 1 - |t| / sqrt(2 + t^2).
+    1 - (2/pi) atan|t| and 1 - |t| / sqrt(2 + t^2). ``positions`` is where
+    each mean sits in time.
     """
     count = means.size
-    x = np.arange(count, dtype=float) - (count - 1) / 2.0
+    x = positions - float(positions.mean())
     y = means - means[0]
     y = y - float(y.mean())
     spread = float(x @ x)
@@ -1474,7 +1549,8 @@ def _own_scatter_slope_p(means: np.ndarray) -> float:
     return max(p, math.nextafter(0.0, 1.0))
 
 
-def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
+def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray,
+                           positions: np.ndarray) -> float:
     """A slope test against the segments' errors and against their own
     scatter, only where a line fits those errors; the larger p-value.
 
@@ -1499,11 +1575,14 @@ def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
     of such offsets. The price is power at three segments,
     where the scatter has one degree of freedom: a line must be close to
     straight to be called drift.
+
+    Both halves fit the means against ``positions``, where each sits in
+    time, so a drift steady in time is a straight line however unequal
+    the segments.
     """
     scale = float(precisions.max())
     weights = precisions / scale
     total = float(weights.sum())
-    positions = np.arange(means.size, dtype=float)
     x = positions - float(weights @ positions / total)
     # A common offset is irrelevant to a slope and can otherwise lose
     # precision when large compared with the differences being tested.
@@ -1524,10 +1603,11 @@ def _short_segment_drift_p(means: np.ndarray, precisions: np.ndarray) -> float:
     z = abs(slope) * math.sqrt(scale) * math.sqrt(spread)
     # An extreme normal tail can underflow, rather than be exactly zero.
     against_errors = max(math.erfc(z / math.sqrt(2.0)), math.nextafter(0.0, 1.0))
-    return max(against_errors, _own_scatter_slope_p(means))
+    return max(against_errors, _own_scatter_slope_p(means, positions))
 
 
 def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
+                          positions: "np.ndarray | None" = None,
                           permutations: int = 4999,
                           seed: int = 0) -> float:
     """A p-value for drift across segment means, using their own errors.
@@ -1549,7 +1629,9 @@ def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
     The slope must also stand against the means' own scatter about the
     line (Student's t on k - 2 degrees of freedom), and the larger of the
     two p-values is returned, so offsets between segments larger than their
-    errors are not read as a trend.
+    errors are not read as a trend. Both fit the means against
+    ``positions``, where each sits in time (the centre frame of the frames
+    it is taken over); segment order where not given.
 
     With five or more segments, permute their order as before, without a
     distributional assumption. The statistic is the weighted least-squares
@@ -1575,10 +1657,15 @@ def drift_across_segments(means: np.ndarray, weights: np.ndarray, *,
     if not np.all(np.isfinite(means)):
         return 1.0
 
-    positions = np.arange(means.size, dtype=float)
+    order = np.arange(means.size, dtype=float)
     readable = np.all(np.isfinite(weights)) and np.all(weights > 0.0)
     if means.size < 5 and readable:
-        return _short_segment_drift_p(means, weights)
+        at = order if positions is None else np.asarray(positions, dtype=float)
+        if at.shape != means.shape or not np.all(np.isfinite(at)):
+            at = order
+        return _short_segment_drift_p(means, weights, at)
+    # The order test is rank-free: it asks the order alone, not the times.
+    positions = order
     if not readable:
         # Weights that cannot be read leave the order alone to judge, so a
         # NaN cannot switch the test off.

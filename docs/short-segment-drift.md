@@ -9,8 +9,12 @@ drifting run's error without refusing its pooled mean.
 ## Decision
 
 For three or four segment means with finite, positive standard errors, fit
-`y_i = a + b x_i` against segment index `x_i = 0, ..., k-1`, with inverse-variance
-weights `w_i = 1 / SE_i²`. Center both columns by their weighted averages.
+`y_i = a + b x_i` against where each mean sits in time: `x_i` is the centre
+frame of the frames segment `i`'s mean is taken over, after its own discard.
+Weights are inverse variances, `w_i = 1 / SE_i²`. Center both columns by
+their weighted averages. Against segment index, a drift steady in time over
+segments of unequal length (500, 500 and 4,000 frames) bends off a straight
+line, fails the fit check below and was missed, the more the larger it was.
 
 The slope's variance is `1 / Sxx`, where `Sxx = sum(w_i (x_i - x_bar)²)`.
 The two-sided Gaussian slope probability is `erfc(|b| sqrt(Sxx) / sqrt(2))`.
@@ -25,7 +29,8 @@ of freedom the survival function is `erfc(sqrt(Q_line/2))`; for two it is
 `exp(-Q_line/2)`.
 
 The slope must also be significant against the means' own scatter about the
-line. Fit `y_i = a + b x_i` without weights and take Student's t on `k - 2`
+line. Fit `y_i = a + b x_i` (the same centres) without weights and take
+Student's t on `k - 2`
 degrees of freedom: `t = |b| sqrt(S / s²)`, with `S = sum((x_i - x_mean)²)`
 and `s² = sum(r_i²) / (k - 2)` over the residuals `r_i`, whose
 two-sided tails are `1 - (2/pi) atan|t|` for one degree of freedom and
@@ -35,7 +40,9 @@ weights either: weighted by them, an imprecise segment between two precise
 ones leaves almost no residual.
 
 If the line fails its fit check, the combined `drift_p` is 1. Otherwise it is
-the larger of the two slope probabilities. As before, a drift refusal also
+the larger of the two slope probabilities. The refusal says how much the
+line changes by: its slope times the span from the first centre to the last.
+As before, a drift refusal also
 requires the segment means to disagree beyond their own errors
 (`heterogeneity > 1`). A refusal carries `analysis.sampling.drifting` and
 `drift_test: slope_against_errors_and_scatter`. An extreme tail that
@@ -56,7 +63,7 @@ No test on three means can do both: as the offsets grow, any test that keeps
 this one.
 
 With five or more means the order-permutation test and its settings are
-unchanged; the record says `drift_test: permutation`. With fewer than three,
+unchanged (it asks the order alone, so the centres do not enter it); the record says `drift_test: permutation`. With fewer than three,
 it says `not_tested`. Invalid precision weights fall back to the existing
 equal-weight permutation test, including its limit at three or four means;
 an unknown absolute error is not replaced by an assumed unit error. The test
@@ -75,7 +82,10 @@ python tests/_short_segment_drift_check.py --output /tmp/p1-check.json
 
 To count another version, put its `src` directory first on `PYTHONPATH`. The
 columns below are the delivery stack before P1 (`3c0cd4e6`, no test at three
-or four), mean rules version 4 (the errors alone) and version 5 (this page).
+or four), mean rules version 4 (the errors alone, `956957d6`) and version 5
+(this page). The second table also gives version 5 as first built
+(`b366867e`), which fitted the means against segment index rather than time;
+`--cases` counts only the trajectory rows named.
 Counts used Python 3.11.17, NumPy 2.4.6 and SciPy 1.17.1.
 
 The first check generates 10,000 sets of means per row with known Gaussian errors.
@@ -111,54 +121,69 @@ error of about 0.095 frame SDs. "Short restart" is 3,000, 500 and 3,000 frames
 (500 again at four). "Slow mode" adds a second AR(1) of SD 0.5 with a
 correlation time of 1,000 frames that the segments' errors miss; "offsets"
 add to each segment a random offset of SD 0.3 (about three errors) or
-0.15, in no order. Ramps add the offsets given to each segment. Counts are
-drift refusals (`analysis.sampling.drifting`) of 1,000.
+0.15, in no order. Ramps add the offsets given to each segment, except
+"ramp in time", which adds a rise linear in time of 2.4 frame SDs over the
+whole run. Counts are drift refusals (`analysis.sampling.drifting`) of 1,000.
+Placing each mean at its centre in time leaves the false rates where they
+were (within the counts' noise; segments of equal length differ only by
+their discards) and, on unequal segments, calls a ramp in time in 206 and
+451 runs of 1,000 that index called in 0 and 31. Most of the rest of those
+ramps are withheld anyway, for the 4,000-frame segment's own trend
+(`still_drifting`, 497 and 455 of 1,000).
 
-| Segments | Case | Before | Version 4 | Version 5 |
-|---|---|---:|---:|---:|
-| 3 | Stationary, equal | 0 | 42 | 5 |
-| 4 | Stationary, equal | 0 | 51 | 19 |
-| 3 | Stationary, short restart | 0 | 29 | 2 |
-| 4 | Stationary, short restart | 0 | 64 | 4 |
-| 3 | Stationary, precise middle | 0 | 47 | 13 |
-| 4 | Stationary, precise middle | 0 | 56 | 12 |
-| 3 | Stationary, a 2-frame fourth segment | 0 | 45 | 4 |
-| 3 | Stationary, a 2-frame second segment | 0 | 47 | 11 |
-| 3 | Slow mode, equal | 0 | 214 | 43 |
-| 4 | Slow mode, equal | 0 | 221 | 62 |
-| 3 | Slow mode, short restart | 0 | 191 | 31 |
-| 4 | Slow mode, short restart | 0 | 192 | 45 |
-| 3 | Offsets SD 0.3, equal | 0 | 244 | 41 |
-| 4 | Offsets SD 0.3, equal | 0 | 154 | 50 |
-| 3 | Offsets SD 0.3, short restart | 0 | 348 | 48 |
-| 4 | Offsets SD 0.3, short restart | 0 | 157 | 39 |
-| 3 | Offsets SD 0.15, equal | 0 | 171 | 22 |
-| 4 | Offsets SD 0.15, equal | 0 | 148 | 28 |
-| 3 | Ramp 0, 0.4, 0.8 | 0 | 889 | 301 |
-| 4 | Ramp 0, 0.4, 0.8, 1.2 | 0 | 935 | 896 |
-| 3 | Ramp 0, 0.25, 0.5 | 0 | 857 | 198 |
-| 4 | Ramp 0, 0.25, 0.5, 0.75 | 0 | 932 | 731 |
-| 3 | Ramp 0, 0.4, 0.8, short restart | 0 | 834 | 250 |
-| 3 | Ramp 0, 0.4, 0.8, precise middle | 0 | 733 | 273 |
-| 3 | Ramp, a 2-frame fourth segment | 0 | 892 | 322 |
-| 3 | Ramp, a 2-frame second segment | 0 | 917 | 320 |
-| 4 | Ramp, a 2-frame fifth segment | 0 | 928 | 891 |
-| 3 | Levelling off 0, 0.6, 0.75 | 0 | 558 | 66 |
-| 4 | Levelling off 0, 0.6, 0.8, 0.85 | 0 | 324 | 157 |
-| 4 | Zigzag 0, 1.0, 0.5, 1.5 | 0 | 14 | 4 |
+| Segments | Case | Before | Version 4 | Version 5, by index | Version 5 |
+|---|---|---:|---:|---:|---:|
+| 3 | Stationary, equal | 0 | 42 | 5 | 7 |
+| 4 | Stationary, equal | 0 | 51 | 19 | 18 |
+| 3 | Stationary, short restart | 0 | 29 | 2 | 1 |
+| 4 | Stationary, short restart | 0 | 64 | 4 | 5 |
+| 3 | Stationary, precise middle | 0 | 47 | 13 | 10 |
+| 4 | Stationary, precise middle | 0 | 56 | 12 | 11 |
+| 3 | Stationary, a 2-frame fourth segment | 0 | 45 | 4 | 3 |
+| 3 | Stationary, a 2-frame second segment | 0 | 47 | 11 | 11 |
+| 3 | Slow mode, equal | 0 | 214 | 43 | 48 |
+| 4 | Slow mode, equal | 0 | 221 | 62 | 73 |
+| 3 | Slow mode, short restart | 0 | 191 | 31 | 30 |
+| 4 | Slow mode, short restart | 0 | 192 | 45 | 47 |
+| 3 | Offsets SD 0.3, equal | 0 | 244 | 41 | 38 |
+| 4 | Offsets SD 0.3, equal | 0 | 154 | 50 | 53 |
+| 3 | Offsets SD 0.3, short restart | 0 | 348 | 48 | 47 |
+| 4 | Offsets SD 0.3, short restart | 0 | 157 | 39 | 44 |
+| 3 | Offsets SD 0.15, equal | 0 | 171 | 22 | 25 |
+| 4 | Offsets SD 0.15, equal | 0 | 148 | 28 | 27 |
+| 3 | Ramp 0, 0.4, 0.8 | 0 | 889 | 301 | 303 |
+| 4 | Ramp 0, 0.4, 0.8, 1.2 | 0 | 935 | 896 | 890 |
+| 3 | Ramp 0, 0.25, 0.5 | 0 | 857 | 198 | 191 |
+| 4 | Ramp 0, 0.25, 0.5, 0.75 | 0 | 932 | 731 | 724 |
+| 3 | Ramp 0, 0.4, 0.8, short restart | 0 | 834 | 250 | 250 |
+| 3 | Ramp 0, 0.4, 0.8, precise middle | 0 | 733 | 273 | 240 |
+| 3 | Ramp, a 2-frame fourth segment | 0 | 892 | 322 | 315 |
+| 3 | Ramp, a 2-frame second segment | 0 | 917 | 320 | 315 |
+| 4 | Ramp, a 2-frame fifth segment | 0 | 928 | 891 | 901 |
+| 3 | Levelling off 0, 0.6, 0.75 | 0 | 558 | 66 | 69 |
+| 4 | Levelling off 0, 0.6, 0.8, 0.85 | 0 | 324 | 157 | 166 |
+| 4 | Zigzag 0, 1.0, 0.5, 1.5 | 0 | 14 | 4 | 0 |
+| 3 | Stationary, 500, 500, 4,000 | 0 | 48 | 5 | 3 |
+| 4 | Stationary, 500, 500, 500, 4,000 | 0 | 47 | 6 | 1 |
+| 3 | Ramp in time 2.4, 500, 500, 4,000 | 0 | 8 | 0 | 206 |
+| 4 | Ramp in time 2.4, 500, 500, 500, 4,000 | 0 | 178 | 31 | 451 |
 
 A drift refusal is not the only way such a mean is withheld: in the
 production path (`mean_record` with the joins) the whole run's own trend
 check withholds more of the ramps. For the 3-segment ramp of 0.4 a segment,
-version 5 left 489 of 1,000 means determined (version 4: 79; before P1, with
-no joins read: 670).
+version 5 left 490 of 1,000 means determined (489 as first built, by index;
+version 4: 79; before P1, with no joins read: 670).
 
 With five or more segments every run of the same 1,000 (stationary, a ramp of
 0.2 a segment and offsets SD 0.3 at five; stationary and a ramp of 0.1 a
 segment at six) was withheld or pooled exactly as before P1. A label changed
 only where a segment whose error is not resolved, or one drifting within
 itself, left three or four segments to test: those runs were withheld before
-and now say `drifting` (47 of the ramps at five segments).
+and now say `drifting` (57 of the ramps at five segments and 5 of the
+offsets; 47 and 6 as first built, by index). Analyses now apply the test to
+their saved means too, which before P1 did not read the joins, so a saved
+mean of a joined run of five or more segments can now be withheld as
+drifting.
 
 ## Limits and records
 
@@ -171,10 +196,41 @@ share still moves their means together, and is called drift in 31 to 62 of
 1,000 runs above. Each segment must still resolve its own correlation time
 before the pooled error is accepted.
 
-The trend is against segment order. Unequal segment durations and nonlinear
-movement can fail the straight-line check. Returning 1 for that case does not
-prove stationarity: substantial unexplained scatter continues to qualify the
-pooled error as a lower bound.
+The trend is against each mean's centre in time, so unequal segment
+durations do not bend a steady drift; nonlinear movement can still fail the
+straight-line check. Returning 1 for that case does not prove stationarity:
+substantial unexplained scatter continues to qualify the pooled error as a
+lower bound. That qualification is said where the means scatter more than
+twice what their errors predict, which happens by chance in about 1 of 7
+stationary runs of three segments; the sentence that this does not establish
+stationarity is added only where Cochran's Q stands against its chi-square on
+k - 1 degrees of freedom at 0.05.
+
+**The rule's power at three segments is its known limit.** A real joined run
+shows it: a tri-alanine study in TIP3P under a weak thermostat (friction
+0.002/ps), its temperature climbing from about 175 K toward 300 K, extended
+into pieces of 20 ps (100 state rows each). After three pieces its potential
+energy's segment means were -22,360.1 ± 5.8, -22,320.7 ± 5.8 and
+-22,258.9 ± 9.6 kJ/mol: one way, 101 kJ/mol overall, over ten times the
+largest error. Errors alone (version 4) called that drift (p 1.3e-19). Fitted
+against segment index, the steps of 39 and then 62 kJ/mol bend the line, and
+with one degree of freedom for the scatter the rule did not (p 0.081). Placed
+at their centres in time (frames 64.5, 155 and 274, after discards of 30, 11
+and 49 rows), the means lie closer to a line and the rule calls it
+(p 0.031); the fourth piece calls it either way (p 0.0037 by index, less than
+0.001 by time). The limit stands for means that are not close to a line in
+time: three segments give the scatter one degree of freedom, so a real drift
+that steps unevenly is not called, and a run of three pieces not called
+drifting has not been shown stationary. A fourth piece is the test.
+
+A column whose joined summary is withheld because one segment drifts within
+itself (`analysis.sampling.still_drifting` across the joins) keeps its own
+record: the guard adopts only `analysis.sampling.drifting`, and the
+single-series estimate stands, judged over the frames it averages after its
+own discard. (In that study, as first built, the temperature's record was
+determined from its last 230 frames while its joined summary was withheld for
+its first segment; with the means placed in time, its other three segments
+are called drifting and the record is withheld.)
 
 Loading a trajectory reads its `.join.json` sidecar and maps the recorded
 boundaries through stride and frame selection. The analysis copies preserve
@@ -182,7 +238,10 @@ these boundaries. `mean_record(..., joins=...)` uses the segment check as an
 additional refusal guard; it does not replace the existing single-series
 estimate with a pooled one. Thermodynamic analyses count boundaries after
 trimming in each energy column's own samples, independently of trajectory
-sampling. Reports read the analyses' saved verdicts. Existing saved verdicts
+sampling. Reports read the analyses' saved verdicts, by the refusal's code
+each record saves (`withheld_code`): a mean withheld as drifting, between
+segments or within its frames, has not equilibrated in the report's
+Convergence table, whose finding gives the refusal and its remedy. Existing saved verdicts
 are not changed; analyse again to apply the check (mean rules version 5;
 version 4 judged three or four segments against their errors alone).
 New pooled records and drift refusals identify the method through `drift_test`;

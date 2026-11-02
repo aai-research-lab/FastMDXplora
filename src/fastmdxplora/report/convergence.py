@@ -114,6 +114,9 @@ class Assessment:
     #: "standard_error", "effective_samples", "discard", "n_frames",
     #: "verdict"); the others are worked out here from the series.
     recorded: frozenset[str] = frozenset()
+    #: The refusal code the mean is withheld under (``analysis.sampling.*``),
+    #: from its record or its reason; empty where it carries none.
+    withheld_code: str = ""
 
     @property
     def standard_error(self) -> float:
@@ -163,12 +166,24 @@ class Assessment:
         """
         # Withheld for its trend, a mean has not equilibrated whatever the
         # thirds say: the trend is judged against its own error, which the
-        # thirds' test is not, and the one series has one verdict.
-        if "still drifting" in str(self.withheld or "").lower():
+        # thirds' test is not, and the one series has one verdict. By the
+        # record's code, not its words: one withheld as drifting between a
+        # joined run's segments was said equilibrated, its words not being
+        # "still drifting".
+        from fastmdxplora.statistics import DRIFTING_CODES
+
+        if self.withheld is not None and self.withheld_code in DRIFTING_CODES:
             return False
         if not self.drift_is_measurable:
             return None
         return abs(self.drift_in_noise) < 2.0
+
+    @property
+    def drifts_between_segments(self) -> bool:
+        """Whether the mean is withheld as drifting between the segments of
+        a joined run (``analysis.sampling.drifting``)."""
+        return (self.withheld is not None
+                and self.withheld_code == "analysis.sampling.drifting")
 
     @property
     def has_settled(self) -> bool | None:
@@ -366,7 +381,11 @@ def assess_series(name: str, values: Any,
     if isinstance(record, dict) and _number(record.get("n_frames")) is not None:
         frames = int(record["n_frames"])
         recorded.add("n_frames")
+    from fastmdxplora.statistics import withheld_code
+
     code = str(getattr(getattr(reason, "refusal", None), "code", "") or "")
+    if not code and isinstance(record, dict):
+        code = withheld_code(record)
     if not code and isinstance(reason, str) and reason.startswith(
             "This run is not long against its own correlation time"):
         code = "analysis.sampling.correlation_unresolved"
@@ -396,6 +415,7 @@ def assess_series(name: str, values: Any,
         withheld=str(reason) if reason else None,
         recorded_error=recorded_error,
         recorded=frozenset(recorded),
+        withheld_code=code if reason else "",
     )
 
 
@@ -513,11 +533,23 @@ def assess_run(
                       if a.has_equilibrated is False]
     undecidable = [a.name for a in assessments.values()
                    if a.has_equilibrated is None]
-    if still_drifting:
+    # Drifting between a joined run's segments, said with its record's own
+    # refusal (its p and remedy), one line a mean: their means need not
+    # move one way at every step, so "in one direction" is not said of them.
+    between = sorted((a for a in assessments.values() if a.drifts_between_segments),
+                     key=lambda a: said_as(a.name))
+    within = [name for name in still_drifting
+              if not assessments[name].drifts_between_segments]
+    if within:
         findings.append(
-            "Still moving in one direction: " + _named(still_drifting)
+            "Still moving in one direction: " + _named(within)
             + ". The run has not finished equilibrating, so averages over it "
             "describe the approach rather than the state."
+        )
+    for drifting in between:
+        findings.append(
+            "Not equilibrated at the scale of the whole run: "
+            + said_as(drifting.name) + ". " + str(drifting.withheld).strip()
         )
 
     if undecidable:

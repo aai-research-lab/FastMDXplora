@@ -1175,7 +1175,8 @@ def _what_was_worked_out(worked_out: dict[str, list[str]], any_recorded: bool) -
                     "discarded, the independent samples, the means and their errors are its "
                     "record, as written.")
     said.append("Whether each observable equilibrated is judged here, over the frames its "
-                "mean is taken over, unless its record withheld the mean as still drifting.")
+                "mean is taken over, unless its record withheld the mean as drifting, within "
+                "those frames or between the segments of a joined run.")
     counted = sorted(name for name, missing in worked_out.items() if "frame count" in missing)
     if counted:
         said.append(f"No record holds the frame count of {_and(counted)}: the table counts "

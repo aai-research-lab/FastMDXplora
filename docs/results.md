@@ -295,8 +295,9 @@ the system had not equilibrated at the scale of the whole run — that is a refu
 pooling.
 
 With **three or four contributing segments**, the test fits a weighted
-straight-line trend against segment order, using each segment mean's own
-standard error. The slope must be significant at 0.05 and the line's residuals
+straight-line trend against where each segment mean sits in time (the centre
+frame of the frames it averages), using each segment mean's own standard
+error. The slope must be significant at 0.05 and the line's residuals
 must be consistent with those errors. A jump or unordered offsets can have a
 large fitted slope too, so the residual check is necessary. The slope must also
 be significant against the means' own scatter about an unweighted line
@@ -307,7 +308,9 @@ At three segments this asks for a nearly straight line, so a real trend is
 called less often than at four (see the counts).
 With **five or more segments**, the existing order-permutation test is used.
 Fewer than three segments give no drift test. The pooled record and a drift
-refusal identify the method in `drift_test`.
+refusal identify the method in `drift_test`, and a withheld mean's record
+saves its refusal's code (`withheld_code`), by which the report and the
+Overview tell a mean still drifting from one withheld for other reasons.
 
 The short-run test returns `drift_p = 1` when a line fails its fit check; that
 does not establish stationarity. Substantial unexplained scatter still qualifies

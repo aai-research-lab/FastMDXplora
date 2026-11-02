@@ -380,6 +380,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         judged_by_earlier_rules,
         too_few_by_these_rules,
         with_its_error,
+        withheld_code,
         withheld_reason,
     )
 
@@ -448,6 +449,10 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         # Determined by the rules of the version that analysed it, which
         # may have called a mean still drifting determined.
         "judged_earlier": determined and judged_by_earlier_rules(found),
+        # Withheld as drifting between a joined run's segments, by its
+        # record's code: the Overview's lead names it with its remedy.
+        "drifting": (not determined and not constant and not (biased and timed)
+                     and withheld_code(found) == "analysis.sampling.drifting"),
         **_noted(found, findings, why=why),
     }
 
