@@ -92,6 +92,9 @@ class Again:
         kept = " and ".join(f"{phase}/" for phase in self.phases)
         lines.append(f"The {kept} there now {'are' if len(self.phases) > 1 else 'is'} kept "
                      f"in {PREVIOUS}/, in place of what was kept there before.")
+        if "analysis" in self.phases:
+            lines.append("An analysis/ that did not finish is removed instead, and what "
+                         f"{PREVIOUS}/ holds is left as it is.")
         if self.campaign is not None and "analysis" in self.phases:
             lines.append("The comparison of the runs is built again after.")
         for name, why in self.left_out:

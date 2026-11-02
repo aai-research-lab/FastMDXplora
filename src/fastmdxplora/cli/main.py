@@ -835,7 +835,8 @@ def _overwrite_args(p: argparse.ArgumentParser) -> None:
         help=(
             "As --force-overwrite, keeping what it replaces in the study's "
             "previous/<phase> (in place of what was kept there before) "
-            "rather than removing it."
+            "rather than removing it; an analysis only where it finished, "
+            "one that did not being removed with previous/ left as it is."
         ),
     )
 
@@ -3328,14 +3329,16 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         said = {
             "nothing": "Nothing to do: the study finished.",
             "analysed": "Production was complete; the analyses and report were run.",
+            "reported": "Production was complete; its report was written.",
             "continued": "Production was carried on from its last checkpoint, "
                          "joined, and analysed.",
             "restarted": "Production had not begun, so the study was run from its start.",
             "runs": "Every run of the study was carried on or run, and the "
                     "study's comparison across them rebuilt.",
         }
-        if answer.get("reported_only"):
-            print(answer.get("detail") or "Done.")
+        if answer.get("did") == "reported":
+            # What was reported over, and the command that chose it.
+            print(answer.get("detail") or said["reported"])
         else:
             print(said.get(answer.get("did"), "Done."))
         saved = [str(phase) for phase in answer.get("saved_in_previous") or []]

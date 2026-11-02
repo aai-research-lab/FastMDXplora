@@ -358,6 +358,32 @@ class TelemetryWriter:
 _PHASES_AFTER = ("analysis", "report")
 
 
+def phases_after_ended_well(project_root: str | Path) -> None:
+    """The study's record once its analyses and report have run again to
+    their end where no writer of the GUI's followed them (`fastmdx resume`
+    from the command line): a record stopped, failed or going in them is
+    said as Analyze again leaves it, the run as it had ended before them
+    (`ended_as`), completed where that is not said or was a stop. It read
+    "Stopped here in the analysis" after a resume that ran them whole."""
+    root = _simulation_dir(project_root)
+    status = _own_status(root / STATUS_FILE)
+    stage = str(status.get("stage") or "").lower()
+    state = str(status.get("status") or "").lower()
+    if (stage not in _PHASES_AFTER
+            or state not in {"stopped", "failed", "interrupted", *_GOING_STATUSES}):
+        return
+    ended = status.get("ended_as")
+    before = (dict(ended) if isinstance(ended, dict)
+              and str(ended.get("status") or "").lower() not in
+              {"stopped", "interrupted", *_GOING_STATUSES}
+              and str(ended.get("stage") or "").lower() not in _PHASES_AFTER else
+              {"status": "completed", "latest_error": None, "stage": "report"})
+    writer = TelemetryWriter(root, phases_only=True)
+    writer._last_status = before
+    writer.write_status(status="completed", stage="report",
+                        stage_states={"analysis": "completed", "report": "completed"})
+
+
 def _read_status_path(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(_records.read_text(path, encoding="utf-8"))
@@ -979,11 +1005,18 @@ ANALYSIS_OWED = "analysis_owed"
 
 
 def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
-    """A run said finished whose study owes the analyses and report of its
-    joined pieces (`resume.analysis_owed`), said interrupted in its
+    """A run said finished, or stopped in its analysis or report, whose
+    study owes the analyses and report of its joined pieces
+    (`resume.analysis_owed`), said interrupted in its
     analysis, never completed: its analyses and report are of less than
     its production, and `fastmdx resume` runs them."""
-    if not status or str(status.get("status") or "").lower() not in _FINISHED_STATUSES:
+    said = str((status or {}).get("status") or "").lower()
+    # Or stopped from the GUI in a resume's analyses of the join: owed
+    # them still, and `fastmdx resume`, not Analyze again, runs them (it
+    # read Stopped with no fix offered).
+    stopped_after = (said == "stopped"
+                     and str(status.get("stage") or "").lower() in _PHASES_AFTER)
+    if not status or (said not in _FINISHED_STATUSES and not stopped_after):
         return status
     from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 

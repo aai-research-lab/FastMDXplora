@@ -301,3 +301,17 @@ def test_a_lock_file_linked_out_of_the_study_is_not_read(tmp_path: Path) -> None
         with confined_records(root, lambda path: True) as scope:
             assert not being_carried_on(root)
         assert CARRYING_ON_FILE in scope.denied
+
+
+def test_the_study_s_lock_is_read_by_the_gui_s_own_rule(held) -> None:
+    from fastmdxplora.gui.problems_view import admitted_for_problems
+    from fastmdxplora.record_access import confined_records
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, being_carried_on
+
+    root, _process = held
+    # Read as the GUI's status reads it: the lock was refused, so a study a
+    # resume holds read as not held, and every study a resume had carried on
+    # said "Not read: .fastmdxplora-carrying-on" on its Overview.
+    with confined_records(root.resolve(), admitted_for_problems(root.resolve())) as scope:
+        assert being_carried_on(root)
+    assert CARRYING_ON_FILE not in scope.denied

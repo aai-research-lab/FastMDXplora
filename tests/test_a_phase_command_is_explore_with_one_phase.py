@@ -239,6 +239,8 @@ def test_a_simulation_run_again_takes_its_pieces_with_it(tmp_path):
     for name in ("simulation", "joined", "segment-001", "analysis"):
         (root / name).mkdir(parents=True)
         (root / name / "x").write_text("1")
+    # Finished: only an analysis that did is saved (`analysis_finished`).
+    (root / "analysis" / "analysis_manifest.json").write_text("{}")
     said: list[str] = []
 
     assert make_way(root, ["simulation"], keep=True, say=said.append) == [

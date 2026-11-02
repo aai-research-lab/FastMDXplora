@@ -9,7 +9,9 @@ beside results they contradict. `--force-overwrite` removes them;
 `--rerun` keeps them in the study's `previous/<phase>`, in place of what was
 kept there before, so one copy of each is kept and nothing piles up. Either
 way, a phase left stale is said, with the command that writes it again, and
-its record leaves the study's manifest until it is.
+its record leaves the study's manifest until it is. An analysis is saved in
+`previous/` only where it finished (`analysis_finished`): one stopped
+part-way is never put over a finished one.
 """
 
 from __future__ import annotations
@@ -46,21 +48,57 @@ def _holds_something(path: Path) -> bool:
     return path.is_file()
 
 
+#: What an analysis writes last, once every analysis of it has run.
+ANALYSIS_MANIFEST = "analysis_manifest.json"
+
+
+def analysis_finished(folder: Path) -> dict[str, Any] | None:
+    """The record of the analysis in ``folder`` (a study's `analysis/`, or
+    `previous/analysis`) where it finished, else None: its manifest is
+    written once, after every analysis of it has run, so an analysis
+    stopped part-way has none. The one reading of a finished analysis that
+    `--rerun` and `fastmdx resume` take before saving one in `previous/`."""
+    from fastmdxplora import record_access
+
+    try:
+        record = json.loads(record_access.read_text(Path(folder) / ANALYSIS_MANIFEST,
+                                                    encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def make_way(root: Path, plan: Iterable[str], *, keep: bool,
              say: Callable[[str], Any] = print) -> list[str]:
     """Clear what ``plan`` will write and what it leaves stale; the phases
-    cleared, in order. ``keep`` moves them to ``previous/<phase>``."""
+    cleared, in order. ``keep`` moves them to ``previous/<phase>``, an
+    analysis only where it finished: one stopped part-way is removed, and
+    what `previous/` holds is left as it is (its report too, so the two
+    saved there stay one analysis and its report)."""
     root = Path(root)
     planned = [phase for phase in ORDER if phase in set(plan)]
     if not planned:
         return []
     cleared: list[str] = []
+    unfinished = (keep and "analysis" in ORDER[ORDER.index(planned[0]):]
+                  and bool(outputs_of(root, "analysis"))
+                  and analysis_finished(root / "analysis") is None)
     for phase in ORDER[ORDER.index(planned[0]):]:
         found = outputs_of(root, phase)
         if not found:
             continue
         record = _drop_from_the_manifest(root, phase)
-        if keep:
+        if unfinished and (phase == "analysis" or (root / PREVIOUS / phase).exists()):
+            for path in found:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+            saved = (root / PREVIOUS / phase).exists()
+            done = ("removed, as " + ("it" if phase == "analysis" else "the analysis")
+                    + " did not finish"
+                    + (f"; what {PREVIOUS}/{phase} holds is left as it is" if saved else ""))
+        elif keep:
             where = root / PREVIOUS / phase
             if where.exists():
                 shutil.rmtree(where)

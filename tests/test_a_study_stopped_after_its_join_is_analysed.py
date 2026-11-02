@@ -294,7 +294,7 @@ def test_a_resume_gives_before_and_after_by_the_clock(tmp_path, monkeypatch, cap
 
     monkeypatch.setattr(resume, "extend_study", carried_on)
     assert main(["resume", str(root), "--json"]) == 0
-    answer = json.loads(capfd.readouterr().out)
+    answer = json.loads(capfd.readouterr().out.strip().splitlines()[-1])
     assert answer["did"] == "continued"
     # 3.208 + 4.123 ps before; and 5.749 ps more after.
     assert answer["production_done_before_ns"] == pytest.approx(0.007331545, abs=1e-9)
@@ -496,10 +496,11 @@ def test_resume_says_which_of_its_phases_it_saved(extended, capfd) -> None:
     assert "report it had before" not in printed
 
 
-def _stopped_in_its_analyses(study: Path) -> str:
+def _stopped_in_its_analyses(study: Path, *, watched: bool = False) -> str:
     """`fastmdx resume` of ``study`` in a process of its own, killed once its
     analyses have written their folders and before their manifest, as a
-    wall time lands; what it printed."""
+    wall time lands; what it printed. ``watched``: run as the GUI's Run it
+    runs it, its record of the study written as it goes."""
     import os
     import signal
     import subprocess
@@ -516,6 +517,8 @@ def _stopped_in_its_analyses(study: Path) -> str:
         "sys.exit(main(['resume', sys.argv[1]]))\n")
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(
         [str(Path(__file__).resolve().parents[1] / "src"), os.environ.get("PYTHONPATH", "")])}
+    if watched:
+        env.update(FASTMDX_DASHBOARD_ACTIVE="1", FASTMDX_DASHBOARD_OUTPUT=str(study))
     process = subprocess.Popen([sys.executable, "-c", script, str(study)], env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     lines = []
@@ -567,6 +570,148 @@ def test_a_resume_stopped_in_its_analyses_and_run_again_leaves_the_person_s_save
     assert "saved in previous" not in printed, printed
     analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
     assert Path(analysed["trajectory_input"]) == study / "joined" / "production.dcd"
+
+
+@needs_backends
+def test_analysed_again_after_a_stopped_resume_it_leaves_the_person_s_saved(
+        extended, capfd) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.cli.main import main
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    _the_person_s_analysis(study)
+    _stopped_in_its_analyses(study)
+    assert not (study / "analysis" / "analysis_manifest.json").exists()
+
+    # `fastmdx analyze --rerun`, as the GUI's Analyze again runs it: the
+    # unfinished analysis is not saved over the person's finished one.
+    capfd.readouterr()
+    assert main(["analyze", "--output", str(study), "--rerun"]) == 0
+    printed = capfd.readouterr().out
+    assert (study / "previous" / "analysis" / "analysis_manifest.json").is_file()
+    assert _saved(study)["load_kwargs"]["stride"] == 2
+    assert Path(_saved(study)["trajectory_input"]) == study / "simulation" / "production.dcd"
+    assert (study / "analysis" / "analysis_manifest.json").is_file()
+    assert "removed, as it did not finish" in printed, printed
+
+
+@needs_backends
+def test_a_resume_stopped_from_the_gui_in_its_analyses_offers_resume(extended) -> None:
+    from fastmdxplora.gui.exploration import _the_stop_recorded
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.telemetry import ANALYSIS_OWED, analyze_health, status_as_it_stands
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    # Run it, as the GUI runs it, and Stop the run while it analyses the join.
+    _stopped_in_its_analyses(study, watched=True)
+    assert status_as_it_stands(study)["stage"] == "analysis"
+    _the_stop_recorded(study)
+    status = status_as_it_stands(study)
+    # Owed, with `fastmdx resume` to run: it read Stopped, with no fix.
+    assert (status["status"], status.get("ended_by")) == ("interrupted", ANALYSIS_OWED), status
+    assert analyze_health(status, [], root=study)["headline"] == "Its analysis is owed"
+    fixes = fixes_payload(study)["fixes"]
+    assert [fix["argv"] for fix in fixes] == [["resume", str(study)]], fixes
+    assert fixes[0]["runnable"] is True
+
+
+@needs_backends
+def test_a_resume_stopped_from_the_gui_and_carried_on_reads_completed(extended) -> None:
+    from fastmdxplora.gui.exploration import _the_stop_recorded
+    from fastmdxplora.gui.telemetry import analyze_health, status_as_it_stands
+    from fastmdxplora.simulation.resume import resume_study
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    _stopped_in_its_analyses(study, watched=True)
+    _the_stop_recorded(study)
+    live = study / "simulation" / "live_status.json"
+    assert json.loads(live.read_text(encoding="utf-8"))["status"] == "stopped"
+    # Carried on from the command line, it reads as it ended: completed. It
+    # read "Stopped here in the analysis, as asked" after the analyses ran.
+    assert resume_study(study)["ok"] is True
+    status = status_as_it_stands(study)
+    assert (status["status"], status.get("latest_error")) == ("completed", None), status
+    assert analyze_health(status, [], root=study).get("headline") != "Stopped"
+
+
+def _an_older_analyze_s_lengths(study: Path) -> None:
+    """The step count of the study's first piece beside its whole duration,
+    as `fastmdx analyze --rerun --trajectory` by an earlier version wrote
+    them in the study's config over an extended study."""
+    config = _config(study)
+    assert config["simulation"].get("production_steps") is None
+    config["simulation"]["production_steps"] = 200
+    (study / "resolved_config.yml").write_text(yaml.safe_dump(config, sort_keys=False),
+                                               encoding="utf-8")
+
+
+@needs_backends
+def test_the_report_of_an_analysis_an_older_version_chose_is_written(
+        extended, capfd) -> None:
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation.resume import analysis_owed
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    assert _join_the_extension(study)["ok"] is True
+    _the_person_s_analysis(study)
+    _an_older_analyze_s_lengths(study)
+    capfd.readouterr()
+    # It crashed: a ConfigError's traceback, nothing on stdout under --json.
+    assert main(["resume", "--json", str(study)]) == 0
+    answer = json.loads(capfd.readouterr().out.strip().splitlines()[-1])
+    assert (answer["ok"], answer["did"]) == (True, "reported"), answer
+    assert (study / "report" / "report.md").is_file()
+    assert _config(study)["simulation"].get("production_steps") is None
+    assert _config(study)["analysis"]["trajectory"] == str(study / "simulation" / "production.dcd")
+    analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
+    assert analysed["load_kwargs"]["stride"] == 2
+    assert not analysis_owed(study)
+
+
+@needs_backends
+def test_a_report_the_config_refuses_is_answered_not_raised(extended, capfd) -> None:
+    from fastmdxplora.cli.main import main
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    assert _join_the_extension(study)["ok"] is True
+    _the_person_s_analysis(study)
+    config = _config(study)
+    # Edited by hand since, as the config's check refuses it.
+    config["report"]["pdf"] = "sometimes"
+    (study / "resolved_config.yml").write_text(yaml.safe_dump(config, sort_keys=False),
+                                               encoding="utf-8")
+    capfd.readouterr()
+    assert main(["resume", "--json", str(study)]) == 1
+    answer = json.loads(capfd.readouterr().out.strip().splitlines()[-1])
+    assert (answer["ok"], answer.get("stage")) == (False, "report"), answer
+    assert answer["refusal"]["code"] and "'pdf'" in answer["error"], answer
+
+
+@needs_backends
+def test_the_report_only_answer_says_it_reported(extended, capfd) -> None:
+    from fastmdxplora.cli.main import main
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    assert _join_the_extension(study)["ok"] is True
+    _the_person_s_analysis(study)
+    capfd.readouterr()
+    assert main(["resume", "--json", str(study)]) == 0
+    answer = json.loads(capfd.readouterr().out.strip().splitlines()[-1])
+    # Read "analysed" (the analyses and report run) where only the report was.
+    assert answer["did"] == "reported", answer
+    assert "fastmdx analyze --rerun --trajectory" in answer["detail"], answer
 
 
 def _copied_child_by_child(study: Path, to: Path, first: list[str]) -> Path:

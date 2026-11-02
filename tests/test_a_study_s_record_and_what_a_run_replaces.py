@@ -80,6 +80,8 @@ def test_the_replaced_record_is_kept_beside_what_was_replaced(tmp_path):
     root = tmp_path / "study"
     (root / "analysis").mkdir(parents=True)
     (root / "analysis" / "x.txt").write_text("before")
+    # Finished: only an analysis that did is saved (`analysis_finished`).
+    (root / "analysis" / "analysis_manifest.json").write_text("{}")
     (root / "joined").mkdir()
     (root / "joined" / "production.dcd").write_text("frames")
     (root / "manifest.json").write_text(json.dumps({"phases": [

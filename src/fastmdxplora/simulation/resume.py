@@ -1033,19 +1033,16 @@ def _save_what_is_replaced(root: Path) -> list[str]:
     stopped in its own analyses left an unfinished one, or one of the join
     without its report, and the next resume saved it in place of the
     person's. What is not saved is replaced by the join's analyses."""
-    from fastmdxplora.replaced import PREVIOUS, make_way, outputs_of
+    from fastmdxplora.replaced import PREVIOUS, analysis_finished, make_way, outputs_of
     from fastmdxplora.utils.logging import get_logger
 
     if not outputs_of(root, "analysis"):
         return []
-    import json
-
-    try:
-        record = json.loads(_records.read_text(root / "analysis" / "analysis_manifest.json",
-                                               encoding="utf-8"))
-    except (OSError, ValueError):
+    # Finished as `--rerun` reads it (`make_way` saves no other).
+    record = analysis_finished(root / "analysis")
+    if record is None:
         return []
-    given = record.get("trajectory_input") if isinstance(record, dict) else None
+    given = record.get("trajectory_input")
     of_the_join = (isinstance(given, str) and Path(given).parts[-2:] == ("joined", "production.dcd"))
     if of_the_join and _records.exists(root / PREVIOUS / "analysis"):
         return []
@@ -1157,8 +1154,21 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
                                               "did not finish."}
     _production_carried_on(root, record)
     owed.unlink(missing_ok=True)
+    _phases_after_ended_well(root)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
+
+
+def _phases_after_ended_well(root: Path) -> None:
+    """The study's record said as its analyses and report ending well leave
+    it (`telemetry.phases_after_ended_well`), where a stop in them is the
+    last thing it says; a record, never the outcome."""
+    try:
+        from fastmdxplora.gui.telemetry import phases_after_ended_well
+
+        phases_after_ended_well(root)
+    except Exception:  # noqa: BLE001 - a record, never the outcome
+        return
 
 
 #: Beside the joined trajectory from before the pieces are joined until the
@@ -1366,31 +1376,55 @@ def _the_analysis_chosen(root: Path) -> bool:
     return _records.is_file(joined) and _chosen_by_the_person(root, given, joined)
 
 
-def _report_of_the_chosen(root: Path, config: dict[str, Any]) -> dict[str, Any]:
+def _report_of_the_chosen(root: Path) -> dict[str, Any]:
     """The study's report written over the analysis the person chose, as
-    `fastmdx report --output` writes it; the study's config as it was."""
+    `fastmdx report --output` writes it, from the study's config as the
+    join's analyses run from it (`_keep_the_study_s_config`): its whole
+    length, never a step count beside a duration it disagrees with, which
+    an analyze of an extended study by an earlier version wrote and the
+    config's check refuses. A refusal is the answer, never a traceback."""
     from fastmdxplora import FastMDXplora
+    from fastmdxplora.refusals import refusal_of
 
     resolved = root / "resolved_config.yml"
-    own = _the_study_s_config_text(root)
-    whole = dict(config)
+    whole_text = _keep_the_study_s_config(root, _the_study_s_config_text(root), chosen=True)
+    import yaml
+
+    try:
+        own = yaml.safe_load(whole_text) if whole_text is not None else None
+    except yaml.YAMLError:
+        own = None
+    if not isinstance(own, dict):
+        return {"ok": False, "stage": "report",
+                "error": "The study's resolved_config.yml does not read as a config, so "
+                         "its report is not written: correct it and resume."}
+    joined_dir = root / "joined"
+    _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
+    whole = dict(own)
     whole["output"] = str(root)
     whole["include_phase"] = ["report"]
     whole.pop("exclude_phase", None)
-    ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
-    if own is not None:
-        try:
-            _write_atomically(resolved, own)
-        except OSError:
-            pass
+    try:
+        ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    except Exception as exc:  # noqa: BLE001 - said as the answer, as every stage's
+        said = refusal_of(exc)
+        ran = None
+    try:
+        _write_atomically(resolved, whole_text)
+        (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
+    except OSError:
+        pass
+    if ran is None:
+        return {"ok": False, "stage": "report", "error": said.message,
+                "refusal": said.as_dict()}
     failed = [result for result in ran if result.status != "ok"]
     if failed:
         return {"ok": False, "stage": "report",
                 "error": failed[0].message or "The report did not finish."}
     return {"ok": True, "reported_only": True,
             "detail": "Production was complete and its analysis is the one chosen "
-                      "after the join (fastmdx analyze --trajectory); its report was "
-                      "written over it."}
+                      "after the join (fastmdx analyze --rerun --trajectory); its report "
+                      "was written over it."}
 
 
 #: The study's config at its whole length, beside the joined trajectory
@@ -1419,7 +1453,8 @@ def _write_atomically(path: Path, text: str) -> None:
     partial.replace(path)
 
 
-def _keep_the_study_s_config(root: Path, kept: str | None) -> str | None:
+def _keep_the_study_s_config(root: Path, kept: str | None, *,
+                             chosen: bool = False) -> str | None:
     """The study's resolved config as the study, not as its last piece,
     put in its place; the text written, None where it is not a config.
 
@@ -1432,7 +1467,9 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> str | None:
     production of every piece, it runs the study to its whole length; an
     extended study analysed again in place finds its joined trajectory
     itself (`analysis.analyze.study_trajectory`). Each write is whole, so a
-    reader never finds half a file.
+    reader never finds half a file. ``chosen`` leaves its `analysis` as
+    it is: the trajectory the person chose is how that analysis is known
+    as theirs (`_chosen_by_the_person`).
     """
     import yaml
 
@@ -1456,7 +1493,7 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> str | None:
         simulation.pop("production_steps", None)
         simulation["duration_ns"] = round(production_done_ns(root), 9)
         config["simulation"] = simulation
-        if isinstance(config.get("analysis"), dict):
+        if isinstance(config.get("analysis"), dict) and not chosen:
             from fastmdxplora.config.recorded import leave_the_study_s_own_files
 
             # Its own frames, found where it is (a copy named the original's).
@@ -1641,6 +1678,8 @@ def frames_before_checkpoint(segment: str | Path) -> int | None:
 #: What `resume_study` did, as a program reads it.
 RESUMED_NOTHING = "nothing"
 RESUMED_ANALYSIS = "analysed"
+#: Only the report, over an analysis the person chose after the join.
+RESUMED_REPORT = "reported"
 RESUMED_PRODUCTION = "continued"
 RESUMED_FROM_START = "restarted"
 
@@ -2183,7 +2222,8 @@ def resume_study(study: str | Path, *,
 
     - finished: nothing (``did`` is ``"nothing"``);
     - production complete, analyses or report not: those, over the whole
-      trajectory (``"analysed"``);
+      trajectory (``"analysed"``); only the report, over an analysis the
+      person chose after the join (``"reported"``);
     - production begun: the rest of it, from the last sealed checkpoint,
       then the join and the analyses, as extending a study does
       (``"continued"``);
@@ -2373,8 +2413,10 @@ def _resume_study(study: str | Path, *,
                 # analyze --rerun --trajectory`), its report moved aside by
                 # that rerun: the GUI says the study completed, and what is
                 # owed is the report of it, not the join's analyses over it.
-                answer = _report_of_the_chosen(root, config)
-                return {**base, **answer, "did": RESUMED_ANALYSIS,
+                answer = _report_of_the_chosen(root)
+                if answer.get("ok"):
+                    _phases_after_ended_well(root)
+                return {**base, **answer, "did": RESUMED_REPORT,
                         **_production_now(root, answer)}
             saved = _save_what_is_replaced(root)
             answer = _join_and_analyse(root, config, segment=None,
@@ -2399,7 +2441,9 @@ def _resume_study(study: str | Path, *,
         if topology.is_file():
             analysis.setdefault("topology", str(topology))
         whole["analysis"] = analysis
-        FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+        ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+        if all(result.status == "ok" for result in ran):
+            _phases_after_ended_well(root)
         return {**base, "ok": True, "did": RESUMED_ANALYSIS,
                 **_production_now(root, {"ok": True}), "production_planned_ns": planned}
 
