@@ -452,6 +452,13 @@ def _interrupted(root: Path) -> Remedy | None:
     if stands.get("status") != "interrupted":
         return None
     ended = stands.get("ended_by")
+    from fastmdxplora.gui.telemetry import ANALYSIS_OWED
+
+    if ended == ANALYSIS_OWED:
+        # Its simulation ended and was joined; what is owed runs here.
+        why = ("The study stopped after its pieces were joined, before their analyses "
+               "and report had run.")
+        return _resume(INTERRUPTED_CODE, why, "the study", [root], root)
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")

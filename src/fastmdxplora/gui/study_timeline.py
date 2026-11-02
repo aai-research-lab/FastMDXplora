@@ -325,7 +325,9 @@ _CARRYING = frozenset({
 #: How a run that ended without writing its end is known to have ended
 #: (`telemetry.status_as_it_stands`'s ``ended_by``), as the pages say it.
 ENDED_HOW = {"process": "its process is gone, and it wrote no end",
-             "silence": "nothing written for a day, and no end written"}
+             "silence": "nothing written for a day, and no end written",
+             "analysis_owed": "stopped after its pieces were joined; fastmdx resume runs "
+                              "their analyses and report"}
 
 
 def _ended(base: Path) -> dict[str, Any] | None:

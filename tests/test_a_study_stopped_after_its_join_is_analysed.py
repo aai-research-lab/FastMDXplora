@@ -338,3 +338,136 @@ def test_every_answer_gives_the_production_done(tmp_path, monkeypatch, did) -> N
     answer = resume.resume_study(study)
     assert (answer["ok"], answer["did"]) == (True, did)
     assert "production_done_ns" in answer and "production_done_source" in answer
+
+
+@needs_backends
+def test_a_study_stopped_after_its_join_by_an_older_version_is_analysed(extended) -> None:
+    from fastmdxplora.simulation.resume import resume_study
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    patches = _points()["joined.json"]()
+    try:
+        for patch in patches:
+            patch.start()
+        with pytest.raises(_Killed):
+            _join_the_extension(study)
+    finally:
+        for patch in patches:
+            patch.stop()
+    # A version before the marker wrote none.
+    (study / "joined" / "analysis_owed.json").unlink()
+
+    answer = resume_study(study)
+    # It was read as finished: "nothing", its analysis of the first piece.
+    assert (answer["ok"], answer["did"]) == (True, "analysed"), answer
+    analysed = json.loads((study / "analysis" / "analysis_manifest.json").read_text())
+    assert Path(analysed["trajectory_input"]) == study / "joined" / "production.dcd"
+    assert analysed["n_frames"] == 6
+
+
+@needs_backends
+def test_its_join_analysed_again_by_hand_owes_nothing(extended, monkeypatch, capfd) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation.resume import resume_study
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    # The join's analysis ends with an answer: the marker stays.
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    assert (study / "joined" / "analysis_owed.json").is_file()
+
+    # Analysed again by hand, from beside the study, by its name alone.
+    monkeypatch.chdir(study.parent)
+    capfd.readouterr()
+    assert main(["analyze", "--output", study.name, "--rerun"]) == 0
+    printed = "".join(capfd.readouterr())
+    assert not (study / "joined" / "analysis_owed.json").exists()
+    assert "so saved in previous/report" in printed
+    config = _config(study)
+    assert config["output"] == str(study)
+    assert config["analysis"]["trajectory"] == str(study / "joined" / "production.dcd")
+    # Its report written again as the line says, it is finished: the marker
+    # left, every resume joined and analysed it again.
+    assert main(["report", "--output", study.name]) == 0
+    assert resume_study(study)["did"] == "nothing"
+
+
+def test_a_continued_answer_plans_its_extension(tmp_path, monkeypatch) -> None:
+    from fastmdxplora.simulation import resume
+
+    study = tmp_path / "s"
+    study.mkdir()
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({
+        "systems": [{"id": "tri", "system": "tri.pdb"}],
+        "simulation": {"duration_ns": 0.006, "timestep_fs": 2.0}}), encoding="utf-8")
+    monkeypatch.setattr(resume, "_finished_record", lambda root, config: (False, None))
+    monkeypatch.setattr(resume, "survey_segments", lambda root: [], raising=False)
+    # An extension of 0.002 ns stopped at its checkpoint, 0.0008 ns in: 0.0012 owed.
+    monkeypatch.setattr(resume, "_owed_by_the_last_piece", lambda root: 0.0012)
+    monkeypatch.setattr(resume, "extension_of", lambda study, **_: resume.Continuation(
+        parent=str(study), checkpoint="", production_done_ns=0.0068,
+        production_planned_ns=0.006, config={}))
+    monkeypatch.setattr(resume, "extend_study", lambda study, **_: {"ok": True})
+    answer = resume.resume_study(study)
+    assert answer["did"] == "continued"
+    # The study's plan before the extension was 0.006, beside 0.008 done.
+    assert answer["production_planned_ns"] == pytest.approx(0.008, abs=1e-9)
+
+
+def test_each_run_of_a_study_of_several_gives_its_production(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora.batch.explorer as explorer
+    from fastmdxplora.simulation import resume
+
+    study = tmp_path / "seeds"
+    runs = []
+    for name, ns in (("seed-1", 0.04), ("seed-2", 0.03)):
+        run = study / "runs" / name / "simulation"
+        run.mkdir(parents=True)
+        (run / "simulation_parameters.json").write_text(json.dumps({
+            "parameters": {"timestep_fs": 2.0, "duration_ns": ns},
+            "duration_ns_actual": ns}), encoding="utf-8")
+        runs.append(SimpleNamespace(run_id=name, status="ok", message="finished",
+                                    output_dir=run.parent))
+    (study / "resolved_config.yml").write_text("systems: []\n", encoding="utf-8")
+
+    class Batch:
+        def __init__(self, **_):
+            pass
+
+        def run(self):
+            return runs
+
+    monkeypatch.setattr(explorer, "BatchExplorer", Batch)
+    answer = resume.resume_batch(study)
+    assert answer["did"] == "runs"
+    assert [run.get("production_done_ns") for run in answer["runs"]] == [0.04, 0.03]
+    assert {run["production_done_source"] for run in answer["runs"]} == {"recorded"}
+
+
+def test_a_copied_study_s_config_names_no_frames_of_the_original(tmp_path, monkeypatch) -> None:
+    from fastmdxplora.simulation import resume
+
+    original = tmp_path / "full"
+    study = tmp_path / "copy"
+    study.mkdir()
+    kept = yaml.safe_dump({
+        "output": str(original),
+        "simulation": {"duration_ns": 0.006, "timestep_fs": 2.0},
+        "analysis": {"include": ["rmsd"],
+                     "trajectory": str(original / "simulation" / "production.dcd"),
+                     "topology": str(original / "simulation" / "trajectory_topology.pdb")}})
+    monkeypatch.setattr(resume, "production_done_ns", lambda root: 0.008)
+    resume._keep_the_study_s_config(study, kept)
+    analysis = _config(study)["analysis"]
+    # The copy's analysis read the original's first piece.
+    assert "trajectory" not in analysis and "topology" not in analysis
+    assert analysis["include"] == ["rmsd"]

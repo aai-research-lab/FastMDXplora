@@ -70,6 +70,13 @@ INTERRUPTED_EXPLANATION = (
     "says whether it can be carried on from its last checkpoint."
 )
 
+ANALYSIS_OWED_EXPLANATION = (
+    "A study carried on in pieces joins them, then runs its analyses and "
+    "report again over the join. It was stopped between the two (a wall time "
+    "lands where it lands), so its analyses and report are those of before "
+    "the join. fastmdx resume runs them over the join, and nothing else."
+)
+
 STOPPED_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) and ended where it can be "
     "carried on. What it wrote up to then is kept, and fastmdx resume "
@@ -946,14 +953,39 @@ def status_as_it_stands(project_root: str | Path, *,
     if ended is None:
         waiting = between_rounds(project_root, status) if status and include_campaign else None
         if waiting is None:
-            return status
+            return _owing_its_analysis(project_root, status)
         return _waiting_for_the_round(status, waiting)
     step, total = status.get("current_step"), status.get("total_planned_steps")
     finished = (str(status.get("stage") or "").lower() in _STEPPED_STAGES
                 and isinstance(step, (int, float)) and isinstance(total, (int, float))
                 and 0 < total <= step)
-    return {**status, "status": "completed" if finished else "interrupted",
-            "ended_by": ended, "recorded_status": status.get("status")}
+    return _owing_its_analysis(project_root, {
+        **status, "status": "completed" if finished else "interrupted",
+        "ended_by": ended, "recorded_status": status.get("status")})
+
+
+#: ``ended_by`` for a study stopped after its pieces were joined, before
+#: their analyses and report had run (`resume.analysis_owed`).
+ANALYSIS_OWED = "analysis_owed"
+
+
+def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A run said finished whose study owes the analyses and report of its
+    joined pieces (`resume.analysis_owed`), said interrupted in its
+    analysis, never completed: its analyses and report are of less than
+    its production, and `fastmdx resume` runs them."""
+    if not status or str(status.get("status") or "").lower() not in _FINISHED_STATUSES:
+        return status
+    from fastmdxplora.simulation.resume import analysis_owed
+
+    if not analysis_owed(project_root):
+        return status
+    # Stopped in the study's analysis, not in a piece's production, nor at
+    # its last step ("in piece 1's analysis, at step 4,400 of 4,400").
+    return {**status, "status": "interrupted", "stage": "analysis", "piece": None,
+            "current_step": None, "total_planned_steps": None,
+            "ended_by": ANALYSIS_OWED,
+            "recorded_status": status.get("recorded_status") or status.get("status")}
 
 
 # ---------------------------------------------------------------------------
@@ -1543,6 +1575,17 @@ def analyze_health(
     waiting = status.get("between_rounds")
     if isinstance(waiting, dict):
         return _said_between_rounds(waiting)
+    if status.get("ended_by") == ANALYSIS_OWED:
+        return {
+            "state": "interrupted",
+            "headline": "Its analysis is owed",
+            "message": ("The study stopped after its pieces were joined, before their "
+                        "analyses and report had run, so those shown may be of less than its "
+                        "whole production. fastmdx resume "
+                        + (f"{root} " if root is not None else "")
+                        + "runs them."),
+            "explanation": ANALYSIS_OWED_EXPLANATION,
+        }
     if str(status.get("status", "")).lower() in _GOING_STATUSES and stage in _PHASES_AFTER:
         # The trajectory analysed or the report written, again or for the
         # first time: nothing of the simulation is being sampled, so its

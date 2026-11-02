@@ -1716,7 +1716,10 @@ class FastMDXplora:
         resolved = {
             "system": self.system,
             "system_id": getattr(self, "_system_id", None),
-            "output": str(self.output_dir),
+            # Run again over a recorded simulation, the study is where it
+            # is, not where the command was given from (`--output cp1/Xc`).
+            "output": str(self.output_dir if recorded is None
+                          else Path(self.output_dir).absolute()),
             "verbose": self.verbose,
             "explain": bool(getattr(get_presenter(), "explain", True)),
             "include_phase": include,

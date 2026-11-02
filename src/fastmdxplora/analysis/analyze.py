@@ -143,7 +143,10 @@ def run(
     if select_atoms is not None and selection is None:
         selection = select_atoms
 
-    project_root = orchestrator.output_dir
+    # Where the study is, whatever folder the command was given from: its
+    # own files are recorded at their paths (`analysis.trajectory` in the
+    # resolved config), not relative to where the command ran.
+    project_root = Path(orchestrator.output_dir).absolute()
     joined_trajectory, joined_topology = study_trajectory(project_root)
     traj_path = Path(trajectory) if trajectory else (
         joined_trajectory or project_root / "simulation" / "production.dcd")
@@ -230,6 +233,17 @@ def run(
         )
 
     results = ao.run(include=include, exclude=exclude, options=options)
+    if (not trajectory and joined_trajectory is not None
+            and stride is None and first is None and last is None
+            and all(r.status != "error" for r in results.values())):
+        # The joined trajectory analysed whole, as the study (`fastmdx
+        # analyze --rerun`): the analyses a join left owed have run, so a
+        # resume does not join and analyse the study again at every call.
+        # The join's own analysis names the trajectory, and its marker goes
+        # once its report has run too (`resume._join_and_analyse`).
+        from fastmdxplora.simulation.resume import ANALYSIS_OWED
+
+        (project_root / "joined" / ANALYSIS_OWED).unlink(missing_ok=True)
 
     # Per-analysis status rows, aligned to the longest analysis name.
     if presenter and results:

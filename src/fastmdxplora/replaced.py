@@ -76,7 +76,7 @@ def make_way(root: Path, plan: Iterable[str], *, keep: bool,
             if record is not None:
                 (where / "phase_record.json").write_text(
                     json.dumps(record, indent=2), encoding="utf-8")
-            done = f"kept in {PREVIOUS}/{phase}"
+            done = f"saved in {PREVIOUS}/{phase}"
         else:
             for path in found:
                 if path.is_dir():

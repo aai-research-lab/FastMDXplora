@@ -1132,13 +1132,65 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
 ANALYSIS_OWED = "analysis_owed.json"
 
 
-def analysis_owed(root: Path) -> bool:
-    """Whether a join of the study's pieces was begun and its analyses and
-    report have not run since (:data:`ANALYSIS_OWED`)."""
+def analysis_owed(root: str | Path) -> bool:
+    """Whether the study's analyses and report of its joined pieces are
+    owed: the one reading `fastmdx resume` and the GUI take.
+
+    Owed where a join of its pieces was begun and they have not run since
+    (:data:`ANALYSIS_OWED`), and where a study stopped after its join by a
+    version that wrote no such marker left an analysis that is not of the
+    join: its `analysis/analysis_manifest.json` names another trajectory
+    than `joined/production.dcd`, or, read whole (no stride, first or last
+    frame), a count of frames other than `joined/joined.json`'s. A study
+    with no join, or no analysis recorded, owes none by this reading."""
+    root = Path(root)
     try:
-        return _records.is_file(root / "joined" / ANALYSIS_OWED)
+        if _records.is_file(root / "joined" / ANALYSIS_OWED):
+            return True
+        return _analysis_not_of_the_join(root)
     except OSError:
         return False
+
+
+#: What `_analysis_not_of_the_join` read, by the two records' times and
+#: sizes: the GUI asks at every poll of a page.
+_NOT_OF_THE_JOIN: dict[tuple[Any, ...], bool] = {}
+
+
+def _analysis_not_of_the_join(root: Path) -> bool:
+    import json
+
+    joined = root / "joined" / "joined.json"
+    manifest = root / "analysis" / "analysis_manifest.json"
+    if not _records.is_file(joined) or not _records.is_file(manifest):
+        return False
+    try:
+        key = (str(root), *((s.st_mtime_ns, s.st_size) for s in
+                            (_records.stat(joined), _records.stat(manifest))))
+    except OSError:
+        return False
+    if key in _NOT_OF_THE_JOIN:
+        return _NOT_OF_THE_JOIN[key]
+    owed = False
+    try:
+        frames = json.loads(_records.read_text(joined, encoding="utf-8")).get("frames")
+        record = json.loads(_records.read_text(manifest, encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        record = None
+    if isinstance(record, dict):
+        given = record.get("trajectory_input")
+        if isinstance(given, str) and given:
+            owed = Path(given).parts[-2:] != ("joined", "production.dcd")
+        loaded = record.get("load_kwargs") if isinstance(record.get("load_kwargs"), dict) else {}
+        whole = all(loaded.get(key) is None for key in ("stride", "first", "last"))
+        counted = record.get("n_frames")
+        if (not owed and whole and isinstance(frames, int) and not isinstance(frames, bool)
+                and isinstance(counted, int) and not isinstance(counted, bool)):
+            owed = counted != frames
+    if len(_NOT_OF_THE_JOIN) > 512:
+        _NOT_OF_THE_JOIN.clear()
+    _NOT_OF_THE_JOIN[key] = owed
+    return owed
 
 
 #: The study's config at its whole length, beside the joined trajectory
@@ -1204,6 +1256,12 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> str | None:
         simulation.pop("production_steps", None)
         simulation["duration_ns"] = round(production_done_ns(root), 9)
         config["simulation"] = simulation
+        if isinstance(config.get("analysis"), dict):
+            from fastmdxplora.config.recorded import leave_the_study_s_own_files
+
+            # Its own frames, found where it is (a copy named the original's).
+            config["analysis"] = dict(config["analysis"])
+            leave_the_study_s_own_files(config["analysis"], config.get("output"), root)
         text = header + yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
         _write_atomically(resolved, text)
         return text
@@ -1984,13 +2042,19 @@ def _resume_study(study: str | Path, *,
             # length, given also where the first piece, stopped, wrote none.
             before = {"production_done_ns": round(plan.production_done_ns, 9),
                       "production_done_source": FROM_CHECKPOINT_STEPS}
+        # The plan as it now stands: an extension asked for past the study's
+        # own plan is part of it (the done and before are the study's
+        # totals, so 0.006 planned beside 0.008 done read 2 ps past it).
+        planned = plan.production_planned_ns
+        if asked is not None:
+            planned = max(planned, plan.production_done_ns + float(asked))
         answer = extend_study(root, more_ns=asked, device_index=device_index,
                               checkpoint_interval_steps=_checkpoint_interval_asked(root))
         return {**base, **answer, "did": RESUMED_PRODUCTION,
                 **_production_now(root, answer),
                 **{key.replace("production_done", "production_done_before"): value
                    for key, value in before.items()},
-                "production_planned_ns": round(plan.production_planned_ns, 9)}
+                "production_planned_ns": round(planned, 9)}
 
     done = plan.production_done_ns
     planned = plan.production_planned_ns
@@ -2174,7 +2238,11 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
 
         return {**base, "ok": False, "did": RESUMED_NOTHING, "error": str(exc),
                 "refusal": refusal_of(exc).as_dict()}
-    listed = [{"run": r.run_id, "status": r.status, "message": r.message}
+    # Each run's production, as a study of one gives its own, where it
+    # ended well and its folder is known.
+    listed = [{"run": r.run_id, "status": r.status, "message": r.message,
+               **(_production_now(Path(r.output_dir), {"ok": r.status == "ok"})
+                  if r.output_dir else {})}
               for r in results]
     failed = [r for r in results if r.status != "ok"]
     answer = {**base, "ok": not failed, "did": RESUMED_RUNS, "runs": listed}

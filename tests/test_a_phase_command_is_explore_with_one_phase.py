@@ -246,7 +246,7 @@ def test_a_simulation_run_again_takes_its_pieces_with_it(tmp_path):
     kept = root / "previous" / "simulation"
     assert sorted(p.name for p in kept.iterdir()) == ["joined", "segment-001", "x"]
     assert not (root / "joined").exists() and (root / "previous" / "analysis" / "x").is_file()
-    assert said[1].startswith("analysis: written from the simulation before, so kept in")
+    assert said[1].startswith("analysis: written from the simulation before, so saved in")
 
 
 def test_the_bundle_leaves_what_was_replaced_out(tmp_path):
