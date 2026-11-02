@@ -151,7 +151,11 @@ from what is being replaced: `fastmdx analyze --rerun` sets the report aside
 too, and says the command that writes it again. `--force-overwrite` removes
 them; `--rerun` keeps them in `previous/<phase>` (`previous/analysis`,
 `previous/report`), one copy of each, in place of what was kept there
-before, with the phase's record from the Manifest beside it. `previous/` is
+before, with the phase's record from the Manifest beside it.
+
+An analysis is saved there only where it finished (its
+`analysis_manifest.json` written): one stopped part-way is removed, and what
+`previous/` holds is left as it is, its report too. `previous/` is
 left out of the report's bundle. A study of several runs is run again run
 by run, and the comparison of its runs built again; so is that comparison
 when one run of it is analysed again on its own (`--output study/runs/a`).
@@ -687,15 +691,23 @@ carried production on, `production_done_before_ns` and
 clock for a variable-step study, its steps times the timestep for a fixed
 one), so their difference is what it ran, and `production_planned_ns`, the
 plan with any extension it carried on. A study of several runs gives each
-run's production in its entry under `runs`. A study stopped after its pieces were joined and
+run's production in its entry under `runs`.
+
+A study stopped after its pieces were joined and
 before their analyses and report had run (`joined/analysis_owed.json` is
 there, or its analysis is of a first piece the person did not choose) is
-analysed, not read as finished; the analysis it had, where it finished, is
+analysed, not read as finished. The analysis it had, where it finished, is
 saved in `previous/analysis` first, and the answer names each phase saved
 (`saved_in_previous`; "Its analysis from before is saved in
-previous/analysis."). Where the analysis is one the person chose after the
-join and only its report is missing, the report is written over it
-(`reported_only`). With `--json` the answer is the one line on
+previous/analysis.").
+
+Where the analysis is one the person chose after the join and only its report
+is missing, the report alone is written over it: `did` is `reported` (with
+`reported_only`), and the answer names the command that chose it, `fastmdx
+analyze --rerun --trajectory`. A setting the study's config refuses is said in
+the answer (`ok: false`, `refusal`), never as a traceback.
+
+With `--json` the answer is the one line on
 stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).

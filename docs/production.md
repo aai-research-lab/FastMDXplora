@@ -669,31 +669,54 @@ removed once the analyses and report of the joined trajectory have run, or once
 first or last frame). A study stopped between, by a wall time or a kill, is
 owed them: `fastmdx resume` runs them over the join, and the GUI says the
 study stopped before its analysis, never Completed, and names `fastmdx resume`.
+A resume stopped from the GUI while it runs them (**Stop the run**) leaves the
+study owed them still: **What would fix it** offers `fastmdx resume` (**Run
+it**), not Analyze again. Once they have run, from the GUI or the command line,
+the study reads Completed.
+
 A study stopped there by a version that wrote no such file is owed them too
 where its analysis is not of the join: its `analysis/analysis_manifest.json`
 names a first piece's trajectory (`simulation/production.dcd`), or, read
-whole, the join at a count of frames other than `joined/joined.json`'s. An
-analysis the person chose is not owed: the study's `resolved_config.yml`
+whole, the join at a count of frames other than `joined/joined.json`'s.
+
+An analysis the person chose is not owed: the study's `resolved_config.yml`
 names its trajectory (`analysis.trajectory`, as `fastmdx analyze --rerun
---trajectory` writes it), and it was begun after the join, by the times the
-records hold, which a copy carries with it: the study's `manifest.json` analysis
-`started_at` later than `joined/joined.json`'s `joined_at` (or, where a version
-before it wrote none, the last piece's simulation `finished_at`). The files'
-own times are not read: `cp -r`, `scp -r` or a download without them writes the
-files in their copy order. Where that analysis's report was moved aside by the
-rerun, `fastmdx resume` writes the report over it, as the GUI says it
-completed; it does not run the join's analyses over it. Before running the
-join's analyses, `fastmdx resume` saves the analysis there in
-`previous/analysis`: only one that finished (its `analysis_manifest.json`
-written), and never an analysis of the join over one saved before, so a
-resume stopped in its own analyses and run again leaves the person's analysis
-saved. While a resume or an extension carries the study on (its
+--trajectory` writes it), and it was begun after the join. That is told by
+the times the records hold, which a copy carries with it: the study's
+`manifest.json` analysis `started_at` later than `joined/joined.json`'s
+`joined_at`.
+
+Where a version before it wrote none, the last piece's simulation
+`finished_at` is read instead. The files' own times are not read: `cp -r`,
+`scp -r` or a download without them writes the files in their copy order.
+
+Where that analysis's report was moved aside by the rerun, `fastmdx resume`
+writes the report over it (`did: reported`), as the GUI says it completed; it
+does not run the join's analyses over it.
+
+The report is written from the study's config at its whole length, as the
+join's analyses are: the first piece's `production_steps`, which an earlier
+version's analyze wrote beside the whole `duration_ns`, is not refused. A
+setting the config's check refuses is the answer (`ok: false`), not a
+traceback.
+
+Before running the join's analyses, `fastmdx resume` saves the analysis there
+in `previous/analysis`: only one that finished (its `analysis_manifest.json`
+written), and never an analysis of the join over one saved before. A resume
+stopped in its own analyses and run again leaves the person's analysis saved.
+
+`fastmdx analyze --rerun`, which the GUI's Analyze again runs, takes the same
+rule: an analysis that did not finish is removed, not saved, and what
+`previous/` holds is left as it is.
+
+While a resume or an extension carries the study on (its
 `.fastmdxplora-carrying-on` lock held), the GUI says it is running, joining
-and analysing its pieces, not owed. The lock is tried whatever machine its
-record names: on a file system several machines share (a cluster's nodes, the
-GUI on another), a lock held anywhere is held. A resume starting in the instant
-the GUI tries the lock tries it again for some 100 ms before saying a run is
-still going.
+and analysing its pieces, not owed.
+
+The lock is tried whatever machine its record names: on a file system several
+machines share (a cluster's nodes, the GUI on another), a lock held anywhere is
+held. A resume starting in the instant the GUI tries the lock tries it again
+for some 100 ms before saying a run is still going.
 
 **By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase

@@ -564,6 +564,31 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   again for some 100 ms, rather than saying a run is still going; the lock's
   file is read as the study's other records are (`record_access`), so a
   link out of the study is not read.
+- `fastmdx resume` of an analysis chosen after the join, by an earlier
+  version's analyze (its config giving the first piece's `production_steps`
+  beside the whole `duration_ns`), writes its report from the study's config
+  at its whole length, as the join's analyses run; it ended in a
+  `ConfigError` traceback, with nothing on stdout under `--json`. A setting
+  the config refuses is the answer (`ok: false`, `refusal`).
+- `fastmdx analyze --rerun`, and the GUI's Analyze again, save an analysis in
+  `previous/analysis` only where it finished, as `fastmdx resume` does (one
+  reading, `replaced.analysis_finished`): one stopped part-way is removed and
+  `previous/` left as it is. An analysis stopped in a resume replaced the
+  person's finished one there.
+- A resume stopped from the GUI in its analyses of the join is said owed
+  them, with `fastmdx resume` (Run it) under What would fix it; it read
+  Stopped, with only Analyze again.
+- A resume that runs a study's analyses and report to their end says so in
+  its record: after a stop from the GUI in them, it read "Stopped here in the
+  analysis" when they had run.
+- The report-only answer of `fastmdx resume` says `did: "reported"`, and
+  names the command that chose the analysis, `fastmdx analyze --rerun
+  --trajectory`.
+- The GUI reads a study's lock (`.fastmdxplora-carrying-on`) in its held
+  reads: refused, a study a resume held read as not held, and the Overview of
+  every study a resume had carried on said "Not read" of it.
+- The docs' new lines on resume are in shorter paragraphs; asked "what does
+  ligand pose do", the docs search found the setting's row no longer.
 - A `continued` answer of `fastmdx resume` gives `production_planned_ns` with
   the extension it carried on (0.006 beside 0.008 done), and a `runs` answer
   each run's `production_done_ns`.
