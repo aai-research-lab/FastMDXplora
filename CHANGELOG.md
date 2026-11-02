@@ -53,6 +53,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A drift refusal says how many segments it tested and which it left out
   and why; two segments that disagree are said not to tell a drift from
   offsets (they were said "not drift").
+- A mean of three or four joined segments not called drifting says beside
+  its verdict, on the Overview's card, the Analysis page, the report and the
+  Agent's answers, how large a steady drift that few segments could miss:
+  about 41 times its pooled error at three and 16 at four, first segment to
+  last, in its own units too, and more where the segments differ in length
+  (counted power of the rule; its record saves `drift_unseen`).
 - A mean an earlier version recorded as determined on fewer independent
   samples than this version determines a mean on reads "not determined",
   with why and that analysing again records this version's verdict, on the

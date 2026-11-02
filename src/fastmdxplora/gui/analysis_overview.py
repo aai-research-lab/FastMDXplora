@@ -340,24 +340,31 @@ def _is_a_mean_record(value: Any) -> bool:
 
 
 def _noted(found: dict[str, Any] | None, findings: dict[str, Any] | None, *,
-           why: str | None = None) -> dict[str, Any]:
-    """A mean's image note, beside its verdict, which it does not change: the
-    note in a line (``noted``) and the analysis's paragraph of it
-    (``noted_why``), read from the record by the one reader every page and
-    the Agent use (:mod:`fastmdxplora.image_note`); empty where the solute
-    did not come within the cutoff of its image in the frames it uses."""
+           why: str | None = None, unit: str | None = None) -> dict[str, Any]:
+    """A mean's notes, beside its verdict, which they do not change: in a
+    line (``noted``) its image note, read from the record by the one reader
+    every page and the Agent use (:mod:`fastmdxplora.image_note`), and, for
+    a joined run of three or four segments not called drifting, how large a
+    drift could go unseen with that few
+    (:func:`fastmdxplora.statistics.drift_unseen_said`); the analysis's
+    paragraph of the image note (``noted_why``); and whether the image note
+    is among them (``image_noted``), for what counts the means it notes.
+    Empty where neither is said."""
     from fastmdxplora.image_note import note_of, paragraph_beside, said_short
+    from fastmdxplora.statistics import drift_unseen_said
 
+    unseen = "" if why else drift_unseen_said(found, unit)
     note = note_of(found)
     short = said_short(note)
     if not short:
-        return {"noted": None, "noted_why": None}
+        return {"noted": unseen or None, "noted_why": None, "image_noted": False}
     # Said as the analysis's where it counts other frames than this mean's;
     # not again where the reason the mean was not determined says it.
     paragraph = paragraph_beside(note if found is not findings else None, findings)
     if paragraph and why and paragraph.split(". ")[0] in why:
         paragraph = ""
-    return {"noted": short, "noted_why": paragraph or None}
+    return {"noted": "; ".join(said for said in (short, unseen) if said),
+            "noted_why": paragraph or None, "image_noted": True}
 
 
 def too_few_by_these_rules(found: Any) -> str | None:
@@ -453,7 +460,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         # record's code: the Overview's lead names it with its remedy.
         "drifting": (not determined and not constant and not (biased and timed)
                      and withheld_code(found) == "analysis.sampling.drifting"),
-        **_noted(found, findings, why=why),
+        **_noted(found, findings, why=why, unit=unit),
     }
 
 
@@ -585,8 +592,8 @@ def convergence_payload(root: str | Path, analysis: str) -> dict[str, Any]:
             "said": said,
             "not_a_measurement": withheld or None,
             "error_withheld_because": found.get("error_withheld_because") or None,
-            # Its image note, as the table above says it.
-            **_noted(found, findings),
+            # Its notes, as the table above says them.
+            **_noted(found, findings, unit=unit),
             "discard_frames": recorded_start,
             "same_start": recorded_start is None or recorded_start == start,
             "start_shared_with_replicas": bool(found.get("start_shared_with_replicas")),

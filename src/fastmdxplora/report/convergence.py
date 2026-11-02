@@ -117,6 +117,10 @@ class Assessment:
     #: The refusal code the mean is withheld under (``analysis.sampling.*``),
     #: from its record or its reason; empty where it carries none.
     withheld_code: str = ""
+    #: For a joined run of three or four segments not called drifting, how
+    #: large a drift could go unseen with that few
+    #: (:func:`fastmdxplora.statistics.drift_unseen_said`); empty otherwise.
+    unseen: str = ""
 
     @property
     def standard_error(self) -> float:
@@ -381,7 +385,7 @@ def assess_series(name: str, values: Any,
     if isinstance(record, dict) and _number(record.get("n_frames")) is not None:
         frames = int(record["n_frames"])
         recorded.add("n_frames")
-    from fastmdxplora.statistics import withheld_code
+    from fastmdxplora.statistics import drift_unseen_said, withheld_code
 
     code = str(getattr(getattr(reason, "refusal", None), "code", "") or "")
     if not code and isinstance(record, dict):
@@ -416,6 +420,7 @@ def assess_series(name: str, values: Any,
         recorded_error=recorded_error,
         recorded=frozenset(recorded),
         withheld_code=code if reason else "",
+        unseen="" if reason else drift_unseen_said(record),
     )
 
 
@@ -627,9 +632,20 @@ def assess_run(
         passed, detail = verdicts.get(key, (None, "not recorded by this run"))
         checks.append({"check": key, "said": said, "passed": passed, "detail": detail})
 
+    # Tested on three or four segments and not called drifting: how large a
+    # drift that few could miss, said beside the verdicts as every page says
+    # it, not as something the run cannot support.
+    unseen = []
+    for name, assessment in sorted(assessments.items(), key=lambda item: said_as(item[0])):
+        if assessment.unseen and assessment.is_determined:
+            said = said_as(name)
+            unseen.append(f"{said[:1].upper()}{said[1:]}: {assessment.unseen[:1].upper()}"
+                          f"{assessment.unseen[1:]}.")
+
     return {
         "observables": {name: a.as_record() for name, a in assessments.items()},
         "findings": findings,
+        "drift_unseen": unseen,
         "checks": checks,
         # The single question somebody wants answered, and the honest answer
         # for most short runs is no.

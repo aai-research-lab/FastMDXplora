@@ -59,6 +59,45 @@ def known_errors() -> list[dict]:
     return rows
 
 
+#: Segment lengths for the drift that could go unseen: equal pieces, and
+#: the unequal layouts the trajectory rows use.
+UNSEEN_LAYOUTS = {
+    3: ([1, 1, 1], [3000, 500, 3000], [500, 4000, 500], [500, 500, 4000], [4000, 500, 500]),
+    4: ([1, 1, 1, 1], [3000, 500, 3000, 3000], [500, 4000, 500, 500], [500, 500, 500, 4000],
+        [1000, 1000, 1000, 5000]),
+}
+
+
+def unseen_in_pooled_errors(lengths, trials: int = 10000, seed: int = 760003,
+                            called: float = 0.8) -> dict:
+    """The smallest steady drift, in whole pooled errors from the first
+    segment's mean to the last's, that the rule calls in at least
+    ``called`` of ``trials`` sets of means. Each segment's error goes as one
+    over the root of its length; each mean sits at its centre in time and
+    the drift is linear in time. The same random numbers at every size."""
+    lengths = np.asarray(lengths, dtype=float)
+    sigma = np.sqrt(lengths.min() / lengths)
+    precisions = 1.0 / sigma**2
+    pooled = 1.0 / np.sqrt(precisions.sum())
+    centres = np.cumsum(lengths) - lengths / 2.0
+    shape = (centres - centres[0]) / (centres[-1] - centres[0])
+    noise = np.random.default_rng(seed).normal(size=(trials, lengths.size)) * sigma
+    size = 0
+    while True:
+        size += 1
+        rows = noise + size * pooled * shape
+        refused = sum(_drift_test(row, precisions, centres)[2] is not None for row in rows)
+        if refused >= called * trials:
+            return dict(segments=int(lengths.size), lengths=lengths.astype(int).tolist(),
+                        trials=trials, seed=seed, in_pooled_errors=size,
+                        drift_refusals=refused)
+
+
+def unseen() -> list[dict]:
+    return [unseen_in_pooled_errors(layout) for count in (3, 4)
+            for layout in UNSEEN_LAYOUTS[count]]
+
+
 def ar1(rng, n, phi, r):
     """r independent stationary AR(1) series of unit variance, length n."""
     e = rng.normal(0.0, np.sqrt(1 - phi * phi), (r, n))
@@ -207,6 +246,7 @@ def ramp_means_determined(realisations: int = 1000) -> dict:
 def check(only: "list[str] | None" = None) -> dict:
     return dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
                 known_errors=[] if only else known_errors(),
+                unseen=[] if only else unseen(),
                 mean_record=None if only else ramp_means_determined(),
                 contiguous_ar1=trajectories(only=only))
 

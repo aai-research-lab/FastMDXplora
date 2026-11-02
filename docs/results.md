@@ -315,7 +315,10 @@ Overview tell a mean still drifting from one withheld for other reasons.
 
 Where a line fails its fit check, the short-run test's `drift_p` is the
 scatter's alone. A mean of three or four segments not called drifting has not
-been shown stationary. Substantial unexplained scatter still qualifies the
+been shown stationary: its record saves `drift_unseen`, and every page says
+beside the mean how large a steady drift that few segments could miss (about
+41 pooled errors at three, 16 at four, first segment to last, and more where
+they differ in length). Substantial unexplained scatter still qualifies the
 error as a lower bound. See the [method, assumptions and fixed synthetic
 checks](short-segment-drift.md) for the formulas and validation counts.
 

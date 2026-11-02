@@ -205,6 +205,47 @@ their saved means too, which before P1 did not read the joins, so a saved
 mean of a joined run of five or more segments can now be withheld as
 drifting.
 
+## What three or four segments can miss
+
+The rule holds its 5% false rate at three and four segments, so it calls only
+a drift large against the means' own scatter. Where it does not call a mean of
+three or four segments drifting (pooled, determined or qualified), its record
+carries `drift_unseen`, and every page that shows the mean's verdict (the
+Overview's card, the Analysis page, the report and the Agent's answers) says
+beside it: with that many segments, a steady drift smaller than about X times
+the pooled error (X times this mean's pooled error, in the quantity's own
+units, from the first segment's mean to the last's) could go unseen.
+
+X is the smallest steady drift, in whole pooled errors from the first
+segment's mean to the last's, that the rule calls in at least 8,000 of 10,000
+sets of means with known Gaussian errors: drift linear in time, each mean at
+the centre of its segment, each segment's error as one over the root of its
+length, the same random numbers at every size (`unseen` in the helper's output). The
+note gives the value for equal segments, and where the record's segments
+differ in length by more than a tenth of the longest it adds that a larger one
+could go unseen with segments as unequal as these:
+
+| Segments | Lengths | X (pooled errors) |
+|---|---|---:|
+| 3 | equal | 41 |
+| 3 | 3,000, 500, 3,000 | 71 |
+| 3 | 500, 4,000, 500 | 48 |
+| 3 | 500, 500, 4,000 | 69 |
+| 3 | 4,000, 500, 500 | 69 |
+| 4 | equal | 16 |
+| 4 | 3,000, 500, 3,000, 3,000 | 22 |
+| 4 | 500, 4,000, 500, 500 | 20 |
+| 4 | 500, 500, 500, 4,000 | 24 |
+| 4 | 1,000, 1,000, 1,000, 5,000 | 21 |
+
+Three segments give the scatter one degree of freedom, so a drift is called
+four times in five only at about 41 pooled errors (24 errors of one of three
+equal segments); a fourth segment brings that to 16. Unequal segments need
+more, at three by up to three quarters. A mean of two segments is not tested
+(its pooled qualification, where the two disagree beyond their errors, says
+two segments cannot tell a drift from offsets), and at five or more the order
+test needs no such note.
+
 ## Limits and records
 
 The small-segment test assumes approximately independent, Gaussian mean
@@ -253,7 +294,8 @@ and 49 rows), the means lie closer to a line and the rule calls it
 0.001 by time). The limit stands for means that are not close to a line in
 time: three segments give the scatter one degree of freedom, so a real drift
 that steps unevenly is not called, and a run of three pieces not called
-drifting has not been shown stationary (a real run's temperature at three pieces, 177.8, 185.4 and
+drifting has not been shown stationary, and its note says how large a drift
+it could miss (a real run's temperature at three pieces, 177.8, 185.4 and
 186.6 K over errors of 0.6 to 0.7 K, with its thermostat at 300 K, is pooled:
 its scatter's p is 0.22). A fourth piece is the stronger test, and more are
 better.

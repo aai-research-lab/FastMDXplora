@@ -202,7 +202,8 @@ def _tiles(root: Path) -> dict[str, Any]:
                 continue
             means += 1
             determined += bool(quantity.get("determined"))
-            noted += bool(quantity.get("noted"))
+            # The means its image note is beside, not every note.
+            noted += bool(quantity.get("image_noted"))
             if quantity.get("withheld_since"):
                 since.append(str(quantity.get("label") or row.get("title") or name))
             if quantity.get("drifting"):
@@ -531,8 +532,13 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
                 # Its image note beside its verdict, as every page says it.
                 from fastmdxplora.image_note import note_of, paragraph_beside, said_short
 
+                from fastmdxplora.statistics import drift_unseen_said
+
                 short = said_short(note_of(entry))
-                means[key]["noted"] = short or None
+                # And, for a joined run of three or four segments, how large
+                # a drift could go unseen, as the Analysis page says it.
+                unseen = drift_unseen_said(entry, unit) if means[key].get("determined") else ""
+                means[key]["noted"] = "; ".join(s for s in (short, unseen) if s) or None
                 # The analysis's paragraph, said as its where it counts the
                 # union of the rows, not this mean's.
                 means[key]["noted_why"] = (paragraph_beside(note_of(entry), {

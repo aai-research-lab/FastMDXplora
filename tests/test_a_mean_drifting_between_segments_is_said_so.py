@@ -212,3 +212,69 @@ def test_two_segments_that_disagree_are_not_said_to_be_free_of_drift() -> None:
     assert why is None and pooled is not None and pooled.qualification
     assert "not drift" not in pooled.qualification
     assert "two segments cannot tell a drift from offsets between them" in pooled.qualification
+
+
+#: The smallest steady drift, in pooled errors first segment to last, the
+#: rule calls in 80% of runs of equal segments (counted by
+#: tests/_short_segment_drift_check.py).
+UNSEEN = {3: 41, 4: 16}
+
+
+def _unseen_said(values, joins, pieces):
+    pooled, _ = summarise_segments(values, joins)
+    amount = float(f"{UNSEEN[pieces] * pooled.standard_error:.2g}")
+    return (f"with {pieces} segments, a steady drift smaller than about {UNSEEN[pieces]} "
+            f"times the pooled error ({amount:g} kJ/mol from the first segment's mean to "
+            "the last's) could go unseen")
+
+
+@pytest.mark.parametrize("pieces", [3, 4])
+def test_three_or_four_segments_not_called_drifting_say_how_large_a_drift_could_go_unseen(
+        tmp_path, pieces) -> None:
+    # The rule holds its 5% false rate at three and four segments, so it
+    # calls only a large drift there: a mean it pools is said with how
+    # large a steady drift that few could miss, on every reader of it.
+    from fastmdxplora.gui.analysis_overview import overview_of
+    from fastmdxplora.gui.overview_view import overview_payload
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.report.document import _convergence_section
+
+    values, joins = _climbing(pieces, step=0.0)
+    record = _saved(mean_record(values, joins=joins))
+    assert not record.get("not_a_measurement")
+    said = _unseen_said(values, joins, pieces)
+    root = _study(tmp_path, values, joins)
+    tile = next(t for t in overview_payload(root)["tiles"] if t["label"] == "Potential energy")
+    row = next(q for r in overview_of(root)["rows"] for q in r["quantities"]
+               if q.get("label") == "Potential energy")
+    assert tile["determined"] and said in tile["noted"], tile
+    # The same text on the Overview's card and the Analysis page.
+    assert tile["noted"] == row["noted"]
+    assert f"Potential energy: {said[:1].upper()}{said[1:]}." in _convergence_section(root)
+    assert said in answer_from_the_records(root, "found")
+
+
+@pytest.mark.parametrize("pieces, step", [(5, 0.0), (4, 0.4), (2, 0.0)])
+def test_no_unseen_drift_is_said_at_five_where_drift_is_called_or_at_two(
+        tmp_path, pieces, step) -> None:
+    from fastmdxplora.gui.overview_view import overview_payload
+
+    values, joins = _climbing(pieces, step=step)
+    root = _study(tmp_path, values, joins)
+    tile = next(t for t in overview_payload(root)["tiles"] if t["label"] == "Potential energy")
+    assert "could go unseen" not in (tile["noted"] or "")
+    assert "drift_unseen" not in _saved(mean_record(values, joins=joins))
+    # The control: at four segments held level, it is said.
+    values, joins = _climbing(4, step=0.0)
+    assert "drift_unseen" in _saved(mean_record(values, joins=joins))
+
+
+def test_the_unseen_drift_is_the_counted_one() -> None:
+    # One derivation: the constant the note says is the helper's count.
+    from fastmdxplora import statistics
+    from tests._short_segment_drift_check import unseen_in_pooled_errors
+
+    for pieces in (3, 4):
+        counted = unseen_in_pooled_errors([1] * pieces)["in_pooled_errors"]
+        assert counted == UNSEEN[pieces]
+        assert getattr(statistics, "DRIFT_UNSEEN_IN_POOLED_ERRORS", {}).get(pieces) == counted

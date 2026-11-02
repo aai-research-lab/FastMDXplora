@@ -1102,6 +1102,11 @@ def _convergence_section(project_root: Path) -> str:
     lines.append(_what_was_worked_out(worked_out, any(
         record.get("recorded") for record in assessed["observables"].values())))
     lines.append("")
+    # Beside the verdicts: on three or four segments, how large a drift
+    # could go unseen.
+    if assessed.get("drift_unseen"):
+        lines.append(" ".join(assessed["drift_unseen"]))
+        lines.append("")
 
     checks = assessed.get("checks") or []
     if checks:
@@ -1322,6 +1327,13 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
             said += f" after discarding {discarded:,} " + (
                 "frame" if discarded == 1 else "frames")
         notes.append(said + ".")
+        from fastmdxplora.statistics import drift_unseen_said
+
+        # A joined run of three or four segments not called drifting: how
+        # large a drift that few could miss, as every page says it.
+        unseen = "" if withheld else drift_unseen_said(measured)
+        if unseen:
+            notes.append(f"{unseen[:1].upper()}{unseen[1:]}.")
     if withheld:
         from fastmdxplora.statistics import too_few_by_these_rules
 

@@ -59,6 +59,7 @@ __all__ = [
     "too_few_by_these_rules",
     "withheld_reason",
     "withheld_code",
+    "drift_unseen_said",
     "DRIFTING_CODES",
     "statistical_inefficiency",
     "correlation_is_resolved",
@@ -948,10 +949,13 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     values = np.asarray(series, dtype=float)
     equilibrated, reason = summarise(values, start_at_least=start_at_least)
     boundaries = sorted({int(j) for j in joins if 0 < int(j) < values.size})
+    unseen: dict[str, Any] | None = None
     if boundaries:
-        _, joined_reason = summarise_segments(values, boundaries)
+        pooled, joined_reason = summarise_segments(values, boundaries)
         if _code_of(joined_reason) == "analysis.sampling.drifting":
             reason = joined_reason
+        elif pooled is not None:
+            unseen = _drift_unseen(pooled, [0, *boundaries, int(values.size)])
     record: dict[str, Any] = {}
     if equilibrated is not None:
         record.update(equilibrated.as_record())
@@ -994,9 +998,76 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
     record["n_frames"] = int(values.size)
     if boundaries:
         record["segment_joins"] = boundaries
+    if unseen is not None and reason is None and equilibrated is not None:
+        record["drift_unseen"] = unseen
     if start_at_least:
         record["start_shared_with_replicas"] = int(start_at_least)
     return record
+
+
+#: The smallest steady drift, in pooled errors from the first segment's mean
+#: to the last's, that the three- and four-segment rule calls in at least
+#: 80% of runs of equal segments (counted by
+#: ``tests/_short_segment_drift_check.py``, 10,000 sets each; segments of
+#: unequal length need more: ``docs/short-segment-drift.md``).
+DRIFT_UNSEEN_IN_POOLED_ERRORS = {3: 41, 4: 16}
+
+#: Segments whose lengths differ by at most this fraction of the longest are
+#: said to be equal, for the drift that could go unseen.
+EQUAL_SEGMENTS_WITHIN = 0.1
+
+
+def _drift_unseen(pooled: "Pooled", edges: "list[int]") -> "dict[str, Any] | None":
+    """How large a steady drift could go unseen on three or four segments
+    that were tested and not called drifting; None for any other count."""
+    count = pooled.contributing
+    if count not in DRIFT_UNSEEN_IN_POOLED_ERRORS or not (
+            math.isfinite(pooled.standard_error) and pooled.standard_error > 0):
+        return None
+    left_out = {index for index, _why in pooled.withheld}
+    lengths = [stop - start for index, (start, stop) in enumerate(zip(edges, edges[1:]))
+               if index not in left_out]
+    times = DRIFT_UNSEEN_IN_POOLED_ERRORS[count]
+    return {"segments": count, "in_pooled_errors": times,
+            "pooled_error": float(pooled.standard_error),
+            "change": float(times * pooled.standard_error),
+            "equal_segments": bool(lengths) and
+            (max(lengths) - min(lengths)) <= EQUAL_SEGMENTS_WITHIN * max(lengths)}
+
+
+def _two_figures(value: float) -> str:
+    """A positive value to two significant figures, grouped, never as an
+    exponent: an "about" needs no more."""
+    rounded = float(f"{value:.2g}")
+    places = max(0, 1 - math.floor(math.log10(abs(rounded))))
+    return f"{rounded:,.{places}f}"
+
+
+def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
+    """Beside a mean of a joined run of three or four segments, determined
+    and not called drifting between them: how large a steady drift could go
+    unseen with that few (``drift_unseen`` on its record), in the pooled
+    error's units and the quantity's own, first segment to last; an empty
+    string for any other record. One reader for every page, the report and
+    the Agent, as a clause that follows the verdict ("; with 3 segments
+    ..."). ``unit`` is the quantity's, where the record does not say it."""
+    if not isinstance(record, dict) or withheld_reason(record):
+        return ""
+    unseen = record.get("drift_unseen")
+    if not isinstance(unseen, dict):
+        return ""
+    count, times, change = (unseen.get(key) for key in ("segments", "in_pooled_errors", "change"))
+    if (not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                for v in (count, times, change))
+            or not (math.isfinite(change) and change > 0 and times > 0)):
+        return ""
+    unit = unit if unit is not None else (record.get("unit") or record.get("units"))
+    amount = _two_figures(float(change)) + (f" {unit}" if unit else "")
+    unequal = ("" if unseen.get("equal_segments", True)
+               else ", and a larger one with segments as unequal as these")
+    return (f"with {int(count)} segments, a steady drift smaller than about "
+            f"{int(times)} times the pooled error ({amount} from the first segment's "
+            f"mean to the last's) could go unseen{unequal}")
 
 
 def withheld_code(record: Any) -> str:
