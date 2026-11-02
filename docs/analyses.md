@@ -220,7 +220,8 @@ size said in the log first).
 The matrix grows with the square of the frames clustered: 31,000 frames make
 7.7 GB of it in float64 and 128,000 frames 131 GB, before the copies a
 method makes. So before it is made, its peak (the matrix and the largest copy
-the methods asked for make, `findings.memory`) is checked against the memory
+the methods asked for make, or the map plotted once it is freed where that is
+more, `findings.memory`) is checked against the memory
 this process can take, of which clustering plans on three quarters: the least
 of the machine's available memory, its control group's limit less its usage
 (`memory.max` less `memory.current` under cgroup v2, `memory.limit_in_bytes`
@@ -233,52 +234,12 @@ holds, the record saying which was least and the refusal saying it in words
 ("the container allows", "this machine has", "the process may use"). The
 peak is counted as resident memory measured it, compiled code's copies
 included (17 n^2 bytes beside the matrix for an average or complete
-linkage). The map is plotted after the matrix is freed, from the averaged
-one, and planned on beside it alone (`findings.memory.bytes_map`: about 144
-bytes a cell and 8 MiB, some 150 MB for a map 1,000 cells across, as
-measured): the peak planned on is the larger of the matrix's part
-(`bytes_matrix`) and the map's. Under an address-space or data limit
-(`ulimit -v`), what runs out is address space, not resident memory. The
-libraries a run maps (SciPy's linkage and eigensolver, its OpenBLAS buffer,
-and Matplotlib's fonts and canvas, a figure plotted as the analyses plot
-theirs) are mapped before that room is read, so they are in what the process
-holds; where the room before them is under what they map (56 MiB, or 40 MiB
-left before each BLAS call), nothing is mapped and no BLAS called, as
-OpenBLAS retried a buffer it could not map for ever and the run hung, and
-what they would map is planned on as part of the need
-(`findings.memory.bytes_libraries_not_mapped`), so the run is refused with
-its record. Clustering plans on all of the room for that peak and 18 MiB
-past it, 50 MiB at the least (glibc's heap and each figure's canvas at 300
-dpi), as measured from the check in `fastmdx analyze`'s own process: that
-room is planned on apart, with that need (`findings.memory.bytes_address_space`,
-`bytes_address_needed`), and read once as the analysis starts, as the
-analyses before it take some of it. That is the need of a process that ran
-nothing before, which maps about 18 MiB more than one where the RMSD ran
-first: the plan keeps that as a margin, and a refusal under `ulimit -v` says
-so. `dimred` plans each method on its own
-(`findings.memory.methods`): 6 MiB and the larger of what the method makes
-(MDS's matrix; t-SNE's neighbours, about 80 bytes for each of 3 x perplexity
-+ 1 a frame) and the figures plotted after (10 MiB a scatter, 10 the
-landscape), the most measured in a process that ran nothing before, which
-maps up to 26 MiB more than one where the RMSD and the clustering ran first,
-said as the plan's margin with a refusal. The room after clustering varies
-from run to run by tens of MB, so the size a refusal says to add can fall
-short by that. A method that does not fit is refused before any runs
-(`findings.methods_refused`, MDS's also as `mds_refused`), the others run and
-saved; the last left refused is the analysis's refusal, its record written.
-A figure the memory runs out plotting all the same is left out and said
-(`findings.figures_not_plotted`, and on the Analysis page in its section by
-its title), with what helps: for the map of at most 1,000 frames the stride
-that halves them; for any other figure, whose canvas is the same at any
-stride, the room to add (a `ulimit -v` about 40 MB larger, as measured), and so is the map's data running out as it is saved
-(`findings.not_saved`), the other figures and files saved; a projection
-running out is refused as past its check is, the other projections saved.
-BLAS and OpenMP are held to one thread while `cluster` and `dimred` run
-under the limit (`findings.memory.threads`): k-means calls BLAS from its
-threads, and an OpenBLAS thread whose buffer could not be mapped under the
-limit retried for ever. Several workers
-clustering at once each read the same memory, and one's matrix is not seen
-by another until it is written: that is not planned for yet.
+linkage). The map is plotted from the averaged matrix after the full one is
+freed. Under `ulimit -v` the libraries are mapped first where the room holds
+them, else the run is refused with its record; each `dimred` method is planned
+on its own; a figure the memory runs out plotting is said with what helps
+(`findings.figures_not_plotted`). Several workers clustering at once each read
+the same memory: that is not planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
 with the stride that fits, then the frames, the bytes needed, the room and
 the three quarters of it planned on (all of it under `ulimit -v`, with how
