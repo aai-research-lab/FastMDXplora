@@ -662,6 +662,18 @@ was asked to run past the plan. Whether a finished study was extended since is
 read from its join (`joined/joined.json`): a study whose `joined` folder is
 gone is joined and analysed again.
 
+**A study stopped after its join is owed its analyses.** Before its pieces are
+joined, `joined/analysis_owed.json` is written beside the join, and it is
+removed once the analyses and report of the joined trajectory have run, or once
+`fastmdx analyze --rerun` has analysed the joined trajectory whole (no stride,
+first or last frame). A study stopped between, by a wall time or a kill, is
+owed them: `fastmdx resume` runs them over the join, and the GUI says the
+study stopped before its analysis, never Completed, and names `fastmdx resume`.
+A study stopped there by a version that wrote no such file is owed them too
+where its analysis is not of the join: its `analysis/analysis_manifest.json`
+names another trajectory than `joined/production.dcd`, or, read whole, a count
+of frames other than `joined/joined.json`'s.
+
 **By hand, recovery is at phase boundaries.** A finished setup or trajectory in a
 directory is reused rather than redone, and `--include` picks up from the phase
 that stopped:

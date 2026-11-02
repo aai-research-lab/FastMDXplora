@@ -685,9 +685,11 @@ production now, as the methods give it (a variable-step run's by its clock):
 carried production on, `production_done_before_ns` and
 `production_done_before_source`, by the same length before it ran (its
 clock for a variable-step study, its steps times the timestep for a fixed
-one), so their difference is what it ran. A study stopped after its pieces were joined and
+one), so their difference is what it ran, and `production_planned_ns`, the
+plan with any extension it carried on. A study of several runs gives each
+run's production in its entry under `runs`. A study stopped after its pieces were joined and
 before their analyses and report had run (`joined/analysis_owed.json` is
-there) is analysed, not read as finished. With `--json` the answer is the one line on
+there, or its analysis is not of the join) is analysed, not read as finished. With `--json` the answer is the one line on
 stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).

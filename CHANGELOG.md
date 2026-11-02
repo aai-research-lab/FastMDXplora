@@ -494,6 +494,32 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   (4 of 12 frames), its result over the whole study's with no warning.
 - A run given `setup_from` that writes only its analysis or report again
   records no setup skipped in its Manifest.
+- A variable-step study whose first piece was stopped in its production is
+  read by its clock. `recorded_stage_lengths` reads a study of that one piece
+  by its checkpoint record's time, so `fastmdx resume` gives
+  `production_done_before_ns` (it was null, "not recorded"); carried on, the
+  Overview decides the clock from what that reading reads (`variable_step`),
+  not the first piece's record, which such a piece never wrote: it said 6 ps
+  beside the methods' and the resume's 4.87 ps.
+- The GUI reads `resume.analysis_owed`: a study stopped after its pieces were
+  joined and before their analyses and report had run is said interrupted,
+  "Its analysis is owed", on the Overview, in All studies and on its
+  timeline, with `fastmdx resume` as what would fix it. It said Completed, 8
+  ps in 2 pieces, beside a report of 6 ps.
+- A study stopped after its join by a version that wrote no
+  `joined/analysis_owed.json` is owed its analyses where its analysis is not
+  of the join: another trajectory, or, read whole, another count of frames
+  than `joined/joined.json`'s. It was read as finished.
+- `fastmdx analyze --rerun` that analyses an extended study's joined
+  trajectory whole takes `joined/analysis_owed.json` away; every later
+  `fastmdx resume` joined and analysed the study again.
+- A `continued` answer of `fastmdx resume` gives `production_planned_ns` with
+  the extension it carried on (0.006 beside 0.008 done), and a `runs` answer
+  each run's `production_done_ns`.
+- Run again from a relative `--output`, a study's `resolved_config.yml` names
+  its folder and its own frames by their absolute paths; what a phase run
+  again replaces is said saved in `previous/`. A copied study carried on no
+  longer names the original's frames in its config.
 - `fastmdx resume` carries on an extended study stopped while its joined
   pieces were analysed. The analysis ran from the last piece's config and
   wrote it over the study's `resolved_config.yml`, with the first piece's
