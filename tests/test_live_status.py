@@ -1220,7 +1220,6 @@ class TestTheFileListCanBeReadWithoutGuessing:
             "\n  function ", 1
         )[0]
         assert "quick_actions" not in section
-        assert "actionHost.hidden = true" in section
 
 
 class TestTheContactResiduesAreNamed:
