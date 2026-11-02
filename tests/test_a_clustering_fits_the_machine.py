@@ -974,7 +974,7 @@ class TestTheAddressSpaceIsPlannedOn:
             assert (folder / saved).is_file(), saved
         found = json.loads((folder / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"]["cluster_kmeans.png"]
-        assert "std::bad_alloc" in said and "Set `stride: 2`" in said, said
+        assert "std::bad_alloc" in said and "stride does not help" in said, said
         assert "cluster_kmeans.png" in result.message
 
     def test_a_matrix_the_memory_runs_out_making_is_refused_with_a_stride(
@@ -1303,6 +1303,102 @@ class TestTheCommandLinesOwnProcess:
             assert (study / "analysis" / "dimred" / f"dimred_{method}.dat").is_file(), method
 
 
+#: ``fastmdx analyze`` in its own process with nothing of clustering's or
+#: the projections' mapped yet: at the first memory check, before anything
+#: is warmed up, ``RLIMIT_AS`` set to what the process holds and ``room``
+#: more.
+_COLD_SCRIPT = r"""
+import resource, sys
+sys.path.insert(0, sys.argv[1])
+from fastmdxplora.analysis import cluster
+study, room = sys.argv[2], int(sys.argv[3])
+real = cluster.memory_available
+calls = []
+
+def at_the_check():
+    if not calls:
+        calls.append(1)
+        _, hard = resource.getrlimit(resource.RLIMIT_AS)
+        resource.setrlimit(resource.RLIMIT_AS,
+                           (cluster._process_status()["VmSize"] + room, hard))
+    return real()
+
+cluster.memory_available = at_the_check
+from fastmdxplora.cli.main import main
+code = main(["analyze", "--output", study, "--rerun", "--no-explain",
+             "--analyses", *sys.argv[4:]])
+print("EXIT", code, flush=True)
+"""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
+class TestALimitTooTightForTheLibrariesIsRefused:
+    """The libraries were warmed up (SciPy's eigensolver, a figure) before
+    the room was read, and under ``ulimit -v`` 485000 to 520000 OpenBLAS
+    could not map its 32 MiB buffer and retried for ever: ``fastmdx
+    analyze`` hung at the check with no record, where the run before
+    refused with one."""
+
+    def test_a_cold_run_a_few_mib_over_what_it_holds_ends_refused(self, studies):
+        import re
+        import subprocess
+        from pathlib import Path
+
+        study = studies[500]
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        try:
+            done = subprocess.run(
+                [sys.executable, "-c", _COLD_SCRIPT, src, str(study), str(8 * 2**20),
+                 "cluster", "dimred"],
+                capture_output=True, text=True, timeout=300, cwd=study, env=_cli_env())
+        except subprocess.TimeoutExpired:
+            pytest.fail("fastmdx analyze did not end in 300 s under a limit 8 MiB over "
+                        "what it held at the check: it hung warming up the libraries")
+        assert "EXIT 1" in done.stdout, done.stdout[-3000:] + done.stderr[-2000:]
+        for name in ("cluster", "dimred"):
+            row, findings = _record(study, name)
+            assert row["status"] == "error", (name, row["message"])
+            assert findings["refused"]["before_it_ran"], (name, findings)
+            memory = findings["memory"]
+            assert memory["bytes_libraries_not_mapped"] == clustering.WARM_UP_BYTES, memory
+            assert "the first time they run, not mapped here" in row["message"], row["message"]
+        # The size to add covers the libraries and the run past them.
+        _, findings = _record(study, "cluster")
+        more = re.search(r"`ulimit -v` allows ([\d.]+) MB more", findings["refused"]["said"])
+        assert more and float(more.group(1)) * 1e6 > clustering.WARM_UP_BYTES, findings
+
+    def test_a_new_process_s_libraries_are_warmed_up_only_where_they_fit(self):
+        """The Python API in a new process, where nothing had called NumPy's
+        BLAS: under a room of 66 MiB the warm-up's figure mapped NumPy's
+        buffer past the limit, and OpenBLAS ended the process ("Memory
+        allocation still failed after 10 retries")."""
+        import subprocess
+        from pathlib import Path
+
+        script = (
+            "import resource, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from fastmdxplora.analysis import cluster\n"
+            "import scipy.linalg, matplotlib.pyplot\n"
+            "held = cluster._process_status()['VmSize']\n"
+            "resource.setrlimit(resource.RLIMIT_AS, (held + int(sys.argv[2]), "
+            "resource.RLIM_INFINITY))\n"
+            "room, said = cluster._rlimit_room()\n"
+            "print('ROOM', room, cluster.libraries_owed(), flush=True)\n")
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        for mib in (30, 66):
+            try:
+                done = subprocess.run([sys.executable, "-c", script, src, str(mib * 2**20)],
+                                      capture_output=True, text=True, timeout=120,
+                                      env=_cli_env())
+            except subprocess.TimeoutExpired:
+                pytest.fail(f"the warm-up under {mib} MiB of room did not end in 120 s")
+            assert done.returncode == 0, (mib, done.stdout + done.stderr[-2000:])
+            words = next(line.split() for line in done.stdout.splitlines()
+                         if line.startswith("ROOM"))
+            assert int(words[2]) == clustering.WARM_UP_BYTES, (mib, words)
+
+
 _RLIMIT = "RLIMIT_AS less what this process holds (VmSize)"
 
 
@@ -1416,6 +1512,72 @@ class TestARefusalReadsInOrder:
             said = clustering.sizes_said(need, room)
             assert value(said[0]) > value(said[2]), (need, room, said)
             assert len({s.split()[1] for s in said}) == 1, said
+
+
+class TestAFigureNotPlottedIsToldWhatHelpsIt:
+    """A figure not plotted for memory was told "Set `stride: 4` ... to plot
+    half as many frames"; followed, the dendrogram and DBSCAN's figure were
+    not plotted again, at stride 4 and 8: their canvas is the same at any
+    stride. Only the map of at most 1,000 frames has fewer cells for fewer
+    frames."""
+
+    @staticmethod
+    def _run_out_on(monkeypatch, module, ending):
+        real = module.save_figure
+
+        def save(fig, path, *args, **kwargs):
+            if str(path).endswith(ending):
+                raise MemoryError("std::bad_alloc")
+            return real(fig, path, *args, **kwargs)
+
+        monkeypatch.setattr(module, "save_figure", save)
+
+    @pytest.mark.parametrize("figure", ["cluster_kmeans.png", "cluster_kmeans_counts.png",
+                                        "cluster_hierarchical_dendrogram.png"])
+    def test_a_figure_whose_canvas_is_the_same_is_told_the_room(
+            self, tmp_path, monkeypatch, figure):
+        self._run_out_on(monkeypatch, clustering, figure)
+        monkeypatch.setattr(clustering, "memory_available", lambda: (10**12, _RLIMIT))
+        result = Cluster(output_dir=tmp_path).run(_chain(80))
+        assert result.status == "ok", result.message
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = (found.get("figures_not_plotted", {}).get(figure)
+                or json.loads((result.output_dir
+                               / "cluster_hierarchical_dendrogram_skipped.json").read_text())["reason"])
+        assert "Set `" not in said and "stride does not help" in said, said
+        assert "where `ulimit -v` allows about 40.0 MB more" in said, said
+
+    def test_the_map_of_few_frames_is_told_the_stride_that_makes_it_smaller(
+            self, tmp_path, monkeypatch):
+        self._run_out_on(monkeypatch, clustering, "cluster_rmsd_matrix.png")
+        result = Cluster(output_dir=tmp_path).run(_chain(80))
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = found["figures_not_plotted"]["cluster_rmsd_matrix.png"]
+        assert "Set `stride: 2`" in said, said
+        # Followed, the map is of fewer cells.
+        assert clustering.map_needed(40) < clustering.map_needed(80)
+
+    def test_the_map_of_many_frames_is_told_the_room(self, tmp_path, monkeypatch):
+        """Past 1,000 frames the map's blocks keep it as many cells across:
+        2,000 frames and 1,000 make the same map."""
+        assert clustering.map_needed(1000) == clustering.map_needed(2000)
+        self._run_out_on(monkeypatch, clustering, "cluster_rmsd_matrix.png")
+        result = Cluster(output_dir=tmp_path, methods=["kmeans"]).run(_chain(2000))
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = found["figures_not_plotted"]["cluster_rmsd_matrix.png"]
+        assert "Set `" not in said and "stride does not help" in said, said
+
+    @pytest.mark.parametrize("figure", ["dimred_pca.png", "dimred_pca_landscape.png"])
+    def test_a_projection_s_figure_is_told_the_room(self, tmp_path, monkeypatch, figure):
+        from fastmdxplora.analysis import dimred as module
+        from fastmdxplora.analysis.dimred import DimRed
+
+        self._run_out_on(monkeypatch, module, figure)
+        result = DimRed(output_dir=tmp_path).run(_chain(120))
+        assert result.status == "ok", result.message
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = found["figures_not_plotted"][figure]
+        assert "stride: 2" not in said and "stride does not help" in said, said
 
 
 class TestTheRefusalSaysWhatToSet:

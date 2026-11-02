@@ -266,6 +266,24 @@ def map_needed(n: int) -> int:
 ADDRESS_BYTES = 18 * 2**20
 ADDRESS_LEAST = 50 * 2**20
 
+#: How much more a process that ran nothing before maps for a clustering
+#: than one where the RMSD ran first, in bytes: the growth of ``VmPeak``
+#: from the check, k-means and average linkage of tri-alanine's 500 frames,
+#: 56.7 MiB against 39.1 (measured again with the libraries warmed up only
+#: where they fit). The plan is of the first, so it keeps this as a margin
+#: in the second, said with a refusal under ``ulimit -v``
+#: (:func:`margin_said`); planned on the second, the first lost figures.
+MARGIN_BYTES = 18 * 2**20
+
+
+def margin_said(margin: int) -> str:
+    """The margin an address-space plan keeps, said with its refusal: a
+    refusal that fits with that margin taken off read as a run that does
+    not fit."""
+    return (f" The plan keeps a margin of about {_gigabytes(margin, 0)}: a process that "
+            "ran nothing before maps that much more than one where other analyses "
+            "ran first.")
+
 #: The share of the address space an address-space limit leaves that a
 #: clustering or a projection plans on: all of it. The room is the limit
 #: less what this process holds once the libraries are mapped, the
@@ -278,6 +296,33 @@ ADDRESS_LEAST = 50 * 2**20
 ADDRESS_SHARE = 1.0
 
 
+#: What a figure not plotted for memory is said to need more of, in
+#: bytes, where its canvas is the same at any stride (every figure but the
+#: map of at most :data:`MOST_MAP_CELLS` frames). Measured in
+#: ``fastmdx analyze`` under ``ulimit -v``, clustering run first with
+#: k-means, hierarchical and DBSCAN on every second of tri-alanine's 500
+#: frames: the dendrogram and DBSCAN's figure were not plotted at the least
+#: limit the check allowed, and every figure was 40 MB above it. Setting
+#: the stride said there left the same figures not plotted at any stride.
+FIGURE_MORE_BYTES = 40 * 10**6
+
+
+def figure_more_said(memory: dict[str, Any]) -> str:
+    """What helps a figure not plotted for memory whose canvas is the same
+    at any stride, said by the room the check read (``memory``, the
+    record's ``findings.memory``): a ``ulimit -v`` or a container allowing
+    :data:`FIGURE_MORE_BYTES` more, or as much more memory free."""
+    more = _gigabytes(FIGURE_MORE_BYTES)
+    if memory.get("bytes_address_space") is not None:
+        where = f"where `ulimit -v` allows about {more} more"
+    elif str(memory.get("available_read_from", "")).startswith("the cgroup"):
+        where = f"where the container allows about {more} more"
+    else:
+        where = f"where about {more} more memory is free"
+    return (f"Its canvas is the same at any stride, so a stride does not help: run it "
+            f"{where}.")
+
+
 def address_space_needed(n: int, methods: Sequence[str], features: str,
                          linkage: str) -> int:
     """The address space clustering ``n`` frames maps at its peak, past what
@@ -287,14 +332,15 @@ def address_space_needed(n: int, methods: Sequence[str], features: str,
     the memory does: under it, a clustering the check planned as resident
     memory failed plotting its figures."""
     return max(memory_needed(n, methods, features, linkage) + ADDRESS_BYTES,
-               ADDRESS_LEAST)
+               ADDRESS_LEAST) + libraries_owed()
 
 
 def address_besides(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
     """What a clustering of ``n`` frames maps past :func:`memory_needed`,
-    in bytes, as part of :func:`address_space_needed`."""
+    in bytes, as part of :func:`address_space_needed`, the libraries left
+    unmapped (:func:`libraries_owed`) apart."""
     return (address_space_needed(n, methods, features, linkage)
-            - memory_needed(n, methods, features, linkage))
+            - memory_needed(n, methods, features, linkage) - libraries_owed())
 
 
 def address_room(available: int | None, read_from: str) -> tuple[int | None, str]:
@@ -460,36 +506,100 @@ def _cgroup_room(proc: Path = Path("/proc/self/cgroup"),
 
 _LIBRARIES_MAPPED = False
 
+#: The address space the libraries map the first time they run
+#: (:func:`libraries_mapped`), in bytes: OpenBLAS's buffer for SciPy's
+#: eigensolver (32 MiB), Matplotlib's canvas, fonts and writers, and the
+#: heap they grow. Measured as the growth of ``VmPeak`` over the warm-up
+#: in ``fastmdx analyze``'s own process, tri-alanine's 500 frames: 53 MiB
+#: with nothing run before it, 43 after the RMSD. Under a limit leaving
+#: less than about 33 MiB OpenBLAS could not map its buffer and retried
+#: for ever, and the run hung at the check with no record (``ulimit -v``
+#: 485000 to 520000); so where the room is under this, nothing is warmed
+#: up and the run is refused with what it would have taken
+#: (:func:`libraries_owed`).
+WARM_UP_BYTES = 56 * 2**20
 
-def libraries_mapped() -> None:
+#: The room each BLAS call of the warm-up is made in, at the least, in
+#: bytes: OpenBLAS maps a buffer of 32 MiB the first time it works, and
+#: below about 33 MiB of room SciPy's retried it for ever and NumPy's ended
+#: the process ("Memory allocation still failed after 10 retries"). In a
+#: process where nothing had called NumPy's BLAS yet (the Python API, new),
+#: the warm-up mapped both buffers, 88 MiB in all; the command line's
+#: analyses before the check had mapped NumPy's.
+BLAS_BUFFER_ROOM = 40 * 2**20
+
+#: What the libraries would map, not mapped at the check as the room was
+#: under it (:data:`WARM_UP_BYTES`); 0 once they are mapped.
+_LIBRARIES_OWED = 0
+
+
+def libraries_owed() -> int:
+    """The address space the libraries would still map the first time they
+    run, in bytes, where the check left them unmapped as the room was under
+    what they take (:data:`WARM_UP_BYTES`); else 0. Planned on as part of
+    each analysis's address-space need."""
+    return _LIBRARIES_OWED
+
+
+def libraries_mapped(room: Any = None) -> None:
     """Map, once, what clustering and the projections map the first time
     they run: SciPy's linkage, distances and eigensolver, OpenBLAS's buffer
     (one product) and Matplotlib's canvas, fonts and writers (a figure as the
     analyses plot theirs, rendered to PNG at 300 dpi and to SVG, in memory).
     Called before the room under an address-space limit is read, so what
     the libraries map is in what the process holds, and the plan
-    (:data:`ADDRESS_BYTES`) counts only what a run maps past them. Planned on as an allowance measured in a new
-    process, the libraries were counted twice in the command line's own,
-    where the analyses before had mapped them: tri-alanine's 500 frames were
-    refused at any stride under ``ulimit -v`` 600000, where all of them ran.
-    Where the memory runs out doing it, the room read after says so."""
-    global _LIBRARIES_MAPPED
+    (:data:`ADDRESS_BYTES`) counts only what a run maps past them. Planned
+    on as an allowance measured in a new process, the libraries were
+    counted twice in the command line's own, where the analyses before had
+    mapped them: tri-alanine's 500 frames were refused at any stride under
+    ``ulimit -v`` 600000, where all of them ran.
+
+    ``room``, where a limit is set, reads what it leaves now (bytes): read
+    before anything is mapped and before each BLAS call, and where it is
+    under :data:`WARM_UP_BYTES` at the start or :data:`BLAS_BUFFER_ROOM`
+    before a call, the warm-up stops there, no BLAS called past it and
+    nothing plotted, and what it did not map is planned on as part of the
+    need (:func:`libraries_owed`): OpenBLAS retried a buffer it could not
+    map for ever, and the run hung. Where the memory runs out plotting the
+    figure, the room read after says so."""
+    global _LIBRARIES_MAPPED, _LIBRARIES_OWED
     if _LIBRARIES_MAPPED:
         return
-    _LIBRARIES_MAPPED = True
     import io
 
+    def short_of(least: int) -> bool:
+        """Whether the room now is under ``least``; what the warm-up maps
+        past NumPy's buffer recorded as owed where it is (in a process
+        where NumPy's BLAS had run, all of it)."""
+        global _LIBRARIES_OWED
+        now = room() if room is not None else None
+        if now is None or now >= least:
+            return False
+        _LIBRARIES_OWED = WARM_UP_BYTES
+        return True
+
+    if short_of(WARM_UP_BYTES):
+        return
     try:
         import scipy.cluster.hierarchy  # noqa: F401
         import scipy.linalg
         import scipy.spatial.distance  # noqa: F401
         from threadpoolctl import threadpool_limits
 
-        square = np.ones((64, 64))
+        # 128 across: NumPy's BLAS mapped no buffer for a product of 64,
+        # and Matplotlib's first figure then mapped it.
+        square = np.ones((128, 128))
         # On one thread, as the run is (:func:`threads_held_to_one`): each
         # further OpenBLAS thread started here held its stack and buffer.
         with threadpool_limits(limits=1):
-            scipy.linalg.eigh(square @ square, subset_by_index=[62, 63])
+            # NumPy's BLAS, then SciPy's: each maps a buffer of its own,
+            # each called only with the room to map it.
+            product = square @ square
+            if short_of(BLAS_BUFFER_ROOM):
+                return
+            scipy.linalg.eigh(product, subset_by_index=[126, 127])
+        _LIBRARIES_MAPPED = True
+        _LIBRARIES_OWED = 0
         opened = figures_open()
         try:
             # A figure as the analyses plot theirs, at their size and the
@@ -509,6 +619,7 @@ def libraries_mapped() -> None:
         finally:
             close_figures_opened_since(opened)
     except (MemoryError, OSError) as error:
+        _LIBRARIES_MAPPED = True
         if not ran_out(error):
             raise
 
@@ -517,7 +628,9 @@ def _rlimit_room() -> tuple[int | None, str]:
     """What ``ulimit -v`` (``RLIMIT_AS``) or ``RLIMIT_DATA`` still lets this
     process take: the limit less what it holds (``VmSize``, ``VmData`` in
     ``/proc/self/status``), read once the libraries a run maps are mapped
-    (:func:`libraries_mapped`). None where neither is set."""
+    (:func:`libraries_mapped`). Where the room is under what they map, they
+    are not mapped, and what they would map is planned on as part of the
+    need (:func:`libraries_owed`). None where neither is set."""
     try:
         import resource
     except ImportError:  # not on Windows
@@ -536,7 +649,12 @@ def _rlimit_room() -> tuple[int | None, str]:
         limits.append((name, field, int(soft)))
     if not limits:
         return None, ""
-    libraries_mapped()
+
+    def room_now() -> int:
+        held = _process_status()
+        return min(soft - held.get(field, 0) for _name, field, soft in limits)
+
+    libraries_mapped(room_now)
     held = _process_status()
     best: tuple[int | None, str] = (None, "")
     for name, field, soft in limits:
@@ -681,12 +799,22 @@ def need_and_room_said(need: float, room: float, room_from: str, mapped: bool,
     the libraries and figures map besides" read as more than the need, of
     which it was part."""
     share = ADDRESS_SHARE if mapped else MEMORY_SHARE
-    said = sizes_said(need, room, share, also=(besides,) if besides is not None else ())
+    owed = libraries_owed() if mapped else 0
+    also = ((besides,) if besides is not None else ()) + ((owed,) if owed else ())
+    said = sizes_said(need, room, share, also=also)
     need_said, room_shown, planned_said = said[:3]
     text = need_said + (" of address space" if mapped else "") + (f" {made}" if made else "")
+    parts = []
     if mapped and besides is not None:
-        text += (f" ({said[3]} of it what the run maps past the libraries: its figures "
-                 "and the heap)")
+        parts.append(f"{said[3]} of it what the run maps past the libraries: its figures "
+                     "and the heap")
+    if owed:
+        # Not mapped at the check: OpenBLAS retried a buffer it could not
+        # map for ever, and the run hung.
+        parts.append(f"{said[-1]} of it what SciPy, OpenBLAS and Matplotlib map the first "
+                     "time they run, not mapped here as the room is under it")
+    if parts:
+        text += f" ({'; '.join(parts)})"
     text += f", and {room_said(int(room), room_from, room_shown)}"
     if share < 1:
         text += f", of which {who} plans on {share:.0%}, {planned_said}"
@@ -938,9 +1066,8 @@ class Cluster(Analysis):
                     raise
                 self._distances = self._embedding = None
                 raise StudyError(
-                    f"Clustering {n_frames:,} frames ran out of memory ({error}), "
-                    "where the check planned it would fit: the memory left fell while "
-                    f"it ran. Set `stride: {2 * self.stride}` under the analysis's "
+                    f"Clustering {n_frames:,} frames ran out of memory as it ran "
+                    f"({error}), though the check planned it would fit. Set `stride: {2 * self.stride}` under the analysis's "
                     "`options: {cluster: ...}` to cluster half as many frames; the "
                     "other analyses keep every frame.",
                     code="analysis.memory.matrix_too_large", frames=n_frames,
@@ -1025,6 +1152,9 @@ class Cluster(Analysis):
             "bytes_address_needed": (address_space_needed(n, methods, features, linkage)
                                      if address is not None else None),
         }
+        if address is not None and libraries_owed():
+            # Not warmed up: the room was under what the libraries map.
+            check["bytes_libraries_not_mapped"] = libraries_owed()
         self.findings["memory"] = check
 
         def short(m: int) -> list[tuple[int, int, str, bool]]:
@@ -1065,7 +1195,8 @@ class Cluster(Analysis):
                 + need_and_room_said(least_need, room, room_from, mapped, "clustering",
                                      besides=(address_besides(least, methods, features, linkage)
                                               if mapped else None))
-                + f". Run it {more_said(least_need, room, mapped, room_from)}, or leave `cluster` "
+                + "." + (margin_said(MARGIN_BYTES) if mapped else "")
+                + f" Run it {more_said(least_need, room, mapped, room_from)}, or leave `cluster` "
                 f"out of the analyses. Read as {room_from}.",
                 code="analysis.memory.matrix_too_large", frames=n,
                 bytes_needed=least_need, bytes_available=room, stride=None)
@@ -1086,7 +1217,8 @@ class Cluster(Analysis):
                                  besides=(address_besides(n, methods, features, linkage)
                                           if mapped else None),
                                  made=made)
-            + f". Read as {room_from}.",
+            + "." + (margin_said(MARGIN_BYTES) if mapped else "")
+            + f" Read as {room_from}.",
             code="analysis.memory.matrix_too_large", frames=n,
             bytes_needed=need, bytes_available=room, stride=stride)
 
@@ -1394,19 +1526,27 @@ class Cluster(Analysis):
     def _not_plotted(self, path: Path, error: BaseException, saving: bool = False) -> str:
         """What a figure the memory ran out plotting says, or the map's data
         it ran out saving (``saving``), recorded and logged: the rest saved,
-        and what to set."""
+        and what helps. A stride, only for the map of at most
+        :data:`MOST_MAP_CELLS` frames, whose cells halving the frames makes
+        fewer (past it, the map's blocks keep it as many cells across); for
+        any other figure, whose canvas is the same at any stride,
+        the room to add (:func:`figure_more_said`): "Set `stride: 4`" was
+        said for the dendrogram, and followed, it was not plotted again."""
+        n = int(self.findings.get("matrix", {}).get("frames") or 0)
+        halved = path.name.startswith("cluster_rmsd_matrix") and n > 1 and (
+            map_needed(-(-n // 2)) < map_needed(n))
+        helps = (f"Set `stride: {2 * self.stride}` under the analysis's "
+                 "`options: {cluster: ...}` to "
+                 + ("save" if saving else "plot") + " the map of half as many frames."
+                 if halved else figure_more_said(self.findings.get("memory", {})))
         if saving:
             said = (f"{path.name} was not saved: the memory ran out saving it "
-                    f"({error}). The labels and the other figures are saved. Set "
-                    f"`stride: {2 * self.stride}` under the analysis's "
-                    "`options: {cluster: ...}` to save the map of half as many frames.")
+                    f"({error}). The labels and the other figures are saved. {helps}")
             self.findings.setdefault("not_saved", {})[path.name] = said
             logger.warning(said)
             return said
         said = (f"{path.name} was not plotted: the memory ran out plotting it "
-                f"({error}). Its data is saved. Set `stride: {2 * self.stride}` under "
-                "the analysis's `options: {cluster: ...}` to plot half as many "
-                "frames.")
+                f"({error}). Its data is saved. {helps}")
         self.findings.setdefault("figures_not_plotted", {})[path.name] = said
         logger.warning(said)
         return said

@@ -250,10 +250,12 @@ class DimRed(Analysis):
 
                 if not ran_out(error):
                     raise
+                # As it ran: what made the plan short is not known here, and
+                # "the memory left fell" was said where nothing had.
                 self._refused(methods, method, StudyError(
-                    f"{NAMED[method]} of {traj.n_frames:,} frames ran out of memory "
-                    f"({error}), where the check planned it would fit: the memory left "
-                    f"fell as the analysis ran. {_INSTEAD[method]}"
+                    f"{NAMED[method]} of {traj.n_frames:,} frames ran out of memory as "
+                    f"it ran ({error}), though the check planned it would fit. "
+                    f"{_INSTEAD[method]}"
                     f"{'or l' if _INSTEAD[method] else 'L'}oad every second "
                     "frame for the analyses (`analysis: {stride: 2}`, which every "
                     "analysis then reads).", code="analysis.memory.matrix_too_large",
@@ -333,21 +335,13 @@ class DimRed(Analysis):
         return model.fit_transform(coords)
 
     def _mds_note(self) -> str:
-        """The methods refused, said on the other projections' figures, with
-        the stride that fits where one does."""
-        from fastmdxplora.analysis.cluster import _ordinal
-
-        notes = []
-        for method, refused in self.findings.get("methods_refused", {}).items():
-            stride = refused.get("stride_that_fits")
-            notes.append(f"{NAMED[method]} was not run: {_WHAT[method]} did not fit in "
-                         "the memory this process can take" + (
-                             f"; every {_ordinal(stride)} frame (analysis: {{stride: "
-                             f"{stride}}}) fits it." if stride else "."))
-        return " ".join(notes)
+        """The methods refused, said on the other projections' figures, one
+        short sentence each (:func:`refused_notes`)."""
+        return " ".join(refused_notes(self.findings.get("methods_refused", {})))
 
     def _refused(self, methods: list[str], method: str, refused: StudyError,
-                 ran: bool = False, stride: int | None = None) -> None:
+                 ran: bool = False, stride: int | None = None,
+                 need_from: str = "method") -> None:
         """``method`` taken out of ``methods``, its refusal recorded and logged,
         the other methods' projections saved; the last method left, the
         refusal is the analysis's. ``ran``: refused as it ran out, not
@@ -358,8 +352,11 @@ class DimRed(Analysis):
             raise refused
         methods.remove(method)
         kept = list(methods)
+        # What set its need: what the method makes, or the figures planned
+        # beside it (`need_from`), as its short note says.
         record = {"code": "analysis.memory.matrix_too_large", "said": str(refused),
-                  "kept": kept, "before_it_ran": not ran, "stride_that_fits": stride}
+                  "kept": kept, "before_it_ran": not ran, "stride_that_fits": stride,
+                  "need_from": need_from}
         self.findings.setdefault("methods_refused", {})[method] = record
         if method == "mds":
             self.findings["mds_refused"] = {key: record[key]
@@ -540,7 +537,7 @@ class DimRed(Analysis):
         memory runs out plotting it, none, said in the record
         (``figures_not_plotted``) with what to set, and the other figures and
         files still saved, as clustering's are."""
-        from fastmdxplora.analysis.cluster import ran_out
+        from fastmdxplora.analysis.cluster import figure_more_said, ran_out
 
         opened = figures_open()
         try:
@@ -551,9 +548,11 @@ class DimRed(Analysis):
             close_figures_opened_since(opened)
             for leftover in (path, path.with_suffix(".svg")):
                 leftover.unlink(missing_ok=True)
+            # A scatter's and the landscape's canvas are the same at any
+            # stride: "Set `analysis: {stride: 2}`" was said, and did not help.
             said = (f"{path.name} was not plotted: the memory ran out plotting it "
-                    f"({error}). Its data is saved. Set `analysis: {{stride: 2}}` to load "
-                    "every second frame for the analyses and plot half as many.")
+                    f"({error}). Its data is saved. "
+                    + figure_more_said(self.findings.get("memory", {})))
             self.findings.setdefault("figures_not_plotted", {})[path.name] = said
             logger.warning(said)
             return []
@@ -711,19 +710,26 @@ _INSTEAD = {"pca": "",
 #: in bytes: once, for each scatter and for PCA's landscape (each figure at
 #: 300 dpi, PNG and SVG). The figures are plotted once every method has run
 #: and freed what it made, so the larger of the figures and the method
-#: running is planned on (:func:`address_space_needed`). Measured from the
-#: check in ``fastmdx analyze``'s own process, as the least room under which
-#: the analysis ends with every figure plotted (``RLIMIT_AS`` set at the
-#: check, BLAS on one thread), on tri-alanine's 500 frames: t-SNE alone 11
-#: MiB, PCA alone 22, PCA, MDS and t-SNE 42 after the RMSD and 50 run alone.
-#: A new process, whose heap the analyses before have not grown, maps more:
-#: 21, 43 and 62 MiB; a figure that runs out there is said with what to
-#: set, and the rest saved. Planned on as a constant (130 MiB) measured in
-#: a new process, the libraries' share was counted twice in the command
-#: line's, and the projections were refused where they ran.
-ADDRESS_BYTES = 8 * 2**20
+#: running is planned on (:func:`address_space_needed`). Measured as the
+#: growth of ``VmPeak`` from the check (BLAS on one thread), tri-alanine's
+#: 500 frames, in ``fastmdx analyze`` with nothing run before: t-SNE alone
+#: 10.7 MiB, PCA alone 21.2, PCA, MDS and t-SNE 32.1; in a new process
+#: through the Python API, 0.6, 13.8 and 43.4; after the RMSD and the
+#: clustering, PCA, MDS and t-SNE 17.4. Planned on as the most of these
+#: (16, 26 and 46 MiB), each run at the room so planned and 0.5 MiB ended
+#: with every figure plotted in ``fastmdx analyze``. Planned at 8, 10 and
+#: 14 MiB (18, 32 and 52), PCA was refused under ``ulimit -v`` 590000 after
+#: the clustering and all three ran there; and as a constant (130 MiB), the
+#: libraries' share was counted twice.
+ADDRESS_BYTES = 6 * 2**20
 SCATTER_BYTES = 10 * 2**20
-LANDSCAPE_BYTES = 14 * 2**20
+LANDSCAPE_BYTES = 10 * 2**20
+
+#: How much more a process that ran nothing before maps for the
+#: projections than one where the RMSD and the clustering ran first, in
+#: bytes (43.4 against 17.4 MiB, PCA, MDS and t-SNE of 500 frames): the
+#: margin the plan keeps, said with a refusal under ``ulimit -v``.
+MARGIN_BYTES = 26 * 2**20
 
 #: What t-SNE makes for each frame's each neighbour, in bytes: scikit-learn
 #: keeps 3 x perplexity + 1 neighbours of every frame, their distances and
@@ -734,6 +740,32 @@ LANDSCAPE_BYTES = 14 * 2**20
 #: frames, under a room planned as a constant, its neighbours' indices
 #: failed to allocate.
 TSNE_BYTES_PER_NEIGHBOUR = 80
+
+
+def refused_notes(refused: dict[str, Any]) -> list[str]:
+    """One short sentence for each method refused for memory
+    (``findings.methods_refused``), as a projection's figure and card say
+    it: refused before it ran, by what set its need (``need_from``), with
+    the stride that fits where one does; or stopped as it ran. The whole
+    refusal, with the room and where it was read, is in the record: the
+    card carried it, two paragraphs under a figure, the cgroup's path in
+    each."""
+    from fastmdxplora.analysis.cluster import _ordinal
+
+    notes = []
+    for method, record in refused.items():
+        record = record if isinstance(record, dict) else {}
+        name = NAMED.get(str(method), str(method))
+        stride = record.get("stride_that_fits")
+        if record.get("before_it_ran", True) is False:
+            notes.append(f"{name} ran out of memory as it ran and was stopped.")
+            continue
+        what = ("the figures planned beside it" if record.get("need_from") == "figures"
+                else _WHAT.get(str(method), "what it makes"))
+        notes.append(f"{name} was not run: {what} did not fit in the memory this process "
+                     "can take" + (f"; every {_ordinal(stride)} frame (analysis: "
+                                   f"{{stride: {stride}}}) fits it." if stride else "."))
+    return notes
 
 
 def mds_memory_needed(n: int) -> int:
@@ -771,9 +803,13 @@ def address_space_needed(method: str, methods: Sequence[str], n: int,
     """The address space ``method`` of ``n`` frames maps at its peak, run
     beside ``methods``: :data:`ADDRESS_BYTES`, and the larger of what it
     makes (:func:`method_memory_needed`) and the figures plotted after
-    every method has run (:func:`figures_needed`)."""
+    every method has run (:func:`figures_needed`), and what the libraries
+    would map where the check left them unmapped
+    (:func:`fastmdxplora.analysis.cluster.libraries_owed`)."""
+    from fastmdxplora.analysis.cluster import libraries_owed
+
     return ADDRESS_BYTES + max(method_memory_needed(method, n, perplexity),
-                               figures_needed(methods))
+                               figures_needed(methods)) + libraries_owed()
 
 
 def _methods_that_fit(self: "DimRed", n: int) -> list[str]:
@@ -793,6 +829,7 @@ def _methods_that_fit(self: "DimRed", n: int) -> list[str]:
         MEMORY_SHARE,
         _ordinal,
         address_room,
+        margin_said,
         memory_available,
         more_said,
         need_and_room_said,
@@ -808,6 +845,11 @@ def _methods_that_fit(self: "DimRed", n: int) -> list[str]:
                    "available_read_from": read_from, "share_usable": MEMORY_SHARE,
                    "bytes_address_space": address, "address_share_usable": ADDRESS_SHARE,
                    "methods": {}})
+    from fastmdxplora.analysis.cluster import libraries_owed
+
+    if address is not None and libraries_owed():
+        # Not warmed up: the room was under what the libraries map.
+        memory["bytes_libraries_not_mapped"] = libraries_owed()
 
     def short(method: str, kept: Sequence[str], m: int) -> list[tuple[int, int, str, bool]]:
         found = []
@@ -848,22 +890,27 @@ def _methods_that_fit(self: "DimRed", n: int) -> list[str]:
             fewer = (f"no stride fits it. Run it {more_said(need, room, mapped, room_from)}, "
                      f"or leave `{'dimred' if methods == [method] else method}` out "
                      f"of {'the analyses' if methods == [method] else '`methods`'}")
-        made = f"for {_WHAT[method]}" if method != "pca" else ""
-        if mapped:
-            figures = len(methods) + (1 if "pca" in methods else 0)
-            made = ("for its figures" if not made else
-                    f"{made}, or for the {figures} figures plotted once it is freed")
+        # What sets the need, named alone: "for its frame-by-frame RMSD
+        # matrix, or for the 4 figures" was said where the matrix was 4 MB
+        # of 54.5 and the figures the rest.
+        figures = len(methods) + (1 if "pca" in methods else 0)
+        by_figures = mapped and figures_needed(methods) >= method_memory_needed(
+            method, n, self.perplexity)
+        made = (f"for the {figures} figure{'s' if figures > 1 else ''} plotted once every "
+                "method has run" if by_figures else f"for {_WHAT[method]}")
         # Every size in one unit, the share computed from the room as said.
         self._refused(methods, method, StudyError(
             f"{NAMED[method]} of {n:,} frames takes about "
             + need_and_room_said(need, room, room_from, mapped, "an analysis",
                                  made=made)
-            + f". {(_INSTEAD[method] + fewer)[:1].upper()}"
+            + "." + (margin_said(MARGIN_BYTES) if mapped else "")
+            + f" {(_INSTEAD[method] + fewer)[:1].upper()}"
             f"{(_INSTEAD[method] + fewer)[1:]}. Read as {room_from}.",
             code="analysis.memory.matrix_too_large", frames=n,
             bytes_needed=need, bytes_available=room,
             stride=stride if fits else None),
-            stride=stride if fits else None)
+            stride=stride if fits else None,
+            need_from="figures" if by_figures else "method")
 
 
 def _pairwise_rmsd(traj: Any, atom_indices: Any = None) -> np.ndarray:
