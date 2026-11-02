@@ -11,7 +11,7 @@ kept there before, so one copy of each is kept and nothing piles up. Either
 way, a phase left stale is said, with the command that writes it again, and
 its record leaves the study's manifest until it is. An analysis is saved in
 `previous/` only where it finished (`analysis_finished`): one stopped
-part-way is never put over a finished one.
+part-way is removed with its report, never put over a finished one.
 """
 
 from __future__ import annotations
@@ -72,9 +72,10 @@ def make_way(root: Path, plan: Iterable[str], *, keep: bool,
              say: Callable[[str], Any] = print) -> list[str]:
     """Clear what ``plan`` will write and what it leaves stale; the phases
     cleared, in order. ``keep`` moves them to ``previous/<phase>``, an
-    analysis only where it finished: one stopped part-way is removed, and
-    what `previous/` holds is left as it is (its report too, so the two
-    saved there stay one analysis and its report)."""
+    analysis only where it finished: one stopped part-way is removed with
+    its report, and what `previous/` holds of them is left as it is, so the
+    two saved there stay one analysis and its report. A setup or simulation
+    is saved whatever its analysis did."""
     root = Path(root)
     planned = [phase for phase in ORDER if phase in set(plan)]
     if not planned:
@@ -88,7 +89,9 @@ def make_way(root: Path, plan: Iterable[str], *, keep: bool,
         if not found:
             continue
         record = _drop_from_the_manifest(root, phase)
-        if unfinished and (phase == "analysis" or (root / PREVIOUS / phase).exists()):
+        if unfinished and phase in ("analysis", "report"):
+            # Only the analysis and its report: a setup or simulation run
+            # again is saved whatever its analysis did.
             for path in found:
                 if path.is_dir():
                     shutil.rmtree(path)

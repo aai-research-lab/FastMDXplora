@@ -34,7 +34,7 @@ from fastmdxplora.refusals import StudyError
 from fastmdxplora.replaced import PREVIOUS
 
 __all__ = ["PHASES", "PREVIOUS", "Again", "analyses_named", "frames_of", "offered",
-           "phases_named", "plan", "recorded_analyses"]
+           "phases_named", "plan", "recorded_analyses", "saved_said"]
 
 #: The phases offered to run again on a study, in the order they run.
 PHASES = ("analysis", "report")
@@ -89,12 +89,7 @@ class Again:
         if self.report_added:
             lines.append("The report is written again too, as the study has one: one "
                          "from the analyses before would contradict them.")
-        kept = " and ".join(f"{phase}/" for phase in self.phases)
-        lines.append(f"The {kept} there now {'are' if len(self.phases) > 1 else 'is'} kept "
-                     f"in {PREVIOUS}/, in place of what was kept there before.")
-        if "analysis" in self.phases:
-            lines.append("An analysis/ that did not finish is removed instead, and what "
-                         f"{PREVIOUS}/ holds is left as it is.")
+        lines.append(saved_said(self.phases))
         if self.campaign is not None and "analysis" in self.phases:
             lines.append("The comparison of the runs is built again after.")
         for name, why in self.left_out:
@@ -109,6 +104,21 @@ class Again:
                 "report_added": self.report_added,
                 "left_out": [{"run": name, "why": why} for name, why in self.left_out],
                 "said": self.said(), "command": ["fastmdx", *self.command()]}
+
+
+def saved_said(phases: Iterable[str]) -> str:
+    """What a run again of ``phases`` does with what they wrote before, as
+    `replaced.make_way` does it: the one wording of `Again.said` and the
+    GUI's Analyze again."""
+    phases = tuple(phases)
+    folders = " and ".join(f"{phase}/" for phase in phases)
+    said = (f"The {folders} there now {'are' if len(phases) > 1 else 'is'} saved in "
+            f"{PREVIOUS}/, in place of what was saved there before.")
+    if "analysis" in phases:
+        said += (" An analysis/ that did not finish is removed instead"
+                 + (", with its report/" if "report" in phases else "")
+                 + f", and what {PREVIOUS}/ holds is left as it is.")
+    return said
 
 
 def phases_named(given: Iterable[Any]) -> tuple[str, ...]:
@@ -309,5 +319,6 @@ def offered(study: str | Path) -> dict[str, Any]:
             continue
         out[phase] = {"can": True, "runs": len(found.runs),
                       "report_too": found.report_added, "said": found.said(),
+                      "saved_said": saved_said(found.phases),
                       "left_out": [{"run": name, "why": why} for name, why in found.left_out]}
     return out

@@ -77,6 +77,14 @@ ANALYSIS_OWED_EXPLANATION = (
     "before the join. fastmdx resume runs them over the join, and nothing else."
 )
 
+#: The same, where the study was asked to stop in those analyses or report.
+ANALYSIS_OWED_STOPPED_EXPLANATION = (
+    "A study carried on in pieces joins them, then runs its analyses and "
+    "report again over the join. It was asked to stop (Ctrl+C, or Stop) while "
+    "they ran, so what it has of them is not whole. fastmdx resume runs them "
+    "over the join, and nothing else."
+)
+
 STOPPED_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) and ended where it can be "
     "carried on. What it wrote up to then is kept, and fastmdx resume "
@@ -1032,9 +1040,12 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
                 "recorded_status": status.get("recorded_status") or status.get("status")}
     # Stopped in the study's analysis, not in a piece's production, nor at
     # its last step ("in piece 1's analysis, at step 4,400 of 4,400").
+    # Where it was asked to stop, the stage it was stopped in, as the
+    # health says it (it read as a wall time landing before the analyses).
     return {**status, "status": "interrupted", "stage": "analysis", "piece": None,
             "current_step": None, "total_planned_steps": None,
             "ended_by": ANALYSIS_OWED,
+            "stopped_in": str(status.get("stage")).lower() if stopped_after else None,
             "recorded_status": status.get("recorded_status") or status.get("status")}
 
 
@@ -1633,6 +1644,19 @@ def analyze_health(
                         "whole: any analyses and report shown until then are of less than "
                         "its whole production."),
             "explanation": "A resume or an extension of the study is running.",
+        }
+    if status.get("ended_by") == ANALYSIS_OWED and status.get("stopped_in") in _PHASES_AFTER:
+        when = ("while its joined pieces were analysed: part of their analyses had "
+                "run, not their report, so any analyses and report shown are"
+                if status["stopped_in"] == "analysis" else
+                "while the report of its joined pieces was written: their analyses had "
+                "run, not their report, so any report shown is")
+        return {
+            "state": "interrupted",
+            "headline": "Its analysis is owed",
+            "message": ("The study was stopped, as asked, " + when + " of less than its "
+                        "whole production. " + _resume_said(root) + " runs them."),
+            "explanation": ANALYSIS_OWED_STOPPED_EXPLANATION,
         }
     if status.get("ended_by") == ANALYSIS_OWED:
         return {

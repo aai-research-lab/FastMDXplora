@@ -602,6 +602,70 @@ def test_analysed_again_after_a_stopped_resume_it_leaves_the_person_s_saved(
     assert "removed, as it did not finish" in printed, printed
 
 
+def _digests(folder: Path) -> dict[str, str]:
+    """Each file under ``folder`` by its path there, with its md5."""
+    import hashlib
+
+    return {path.relative_to(folder).as_posix(): hashlib.md5(path.read_bytes()).hexdigest()
+            for path in sorted(folder.rglob("*")) if path.is_file()}
+
+
+def _of_its_own(saved: Path) -> dict[str, str]:
+    """What ``previous/<phase>`` holds of the phase's own folder: not the
+    join, the pieces or the phase's record moved in beside it."""
+    return {name: digest for name, digest in _digests(saved).items()
+            if name.split("/")[0] not in ("joined", "phase_record.json")
+            and not name.startswith("segment-")}
+
+
+@needs_backends
+@pytest.mark.parametrize("phase", ["setup", "simulation"])
+def test_a_phase_run_again_after_a_stopped_analysis_is_saved(extended, phase) -> None:
+    from types import SimpleNamespace
+
+    import fastmdxplora
+    from fastmdxplora.replaced import make_way
+
+    study, pristine = extended
+    _put_back(study, pristine)
+    with mock.patch.object(fastmdxplora.FastMDXplora, "explore",
+                           lambda self, **_: [SimpleNamespace(status="error",
+                                                              message="stood in")]):
+        assert _join_the_extension(study)["ok"] is False
+    _the_person_s_analysis(study)
+    _stopped_in_its_analyses(study)
+    assert not (study / "analysis" / "analysis_manifest.json").exists()
+    previous = study / "previous"
+    # An older setup and simulation saved there before; a report with none
+    # saved beside it.
+    for name in ("setup", "simulation"):
+        (previous / name).mkdir(parents=True, exist_ok=True)
+        (previous / name / "older.txt").write_text("older", encoding="utf-8")
+    shutil.rmtree(previous / "report", ignore_errors=True)
+    shutil.copytree(pristine / "report", study / "report", dirs_exist_ok=True)
+    before = {name: _digests(study / name) for name in ("setup", "simulation", "joined")}
+    person_s = _saved(study)
+
+    # What `fastmdx simulate --rerun` (or `setup --rerun`) does first. It
+    # removed the simulation (and setup), as the analysis did not finish,
+    # and left the older ones in previous/.
+    said: list[str] = []
+    make_way(study, [phase], keep=True, say=said.append)
+    saved = ("setup", "simulation") if phase == "setup" else ("simulation",)
+    for name in saved:
+        assert _of_its_own(previous / name) == before[name], (name, said)
+        assert f"{name}: " in "".join(said) and f"saved in previous/{name}" in "".join(said)
+    assert _digests(previous / "simulation" / "joined") == before["joined"]
+    assert (study / "simulation" / "production.dcd").exists() is False
+    if phase == "simulation":
+        assert _digests(study / "setup") == before["setup"]
+        assert (previous / "setup" / "older.txt").is_file()
+    # The unfinished analysis removed, the person's saved one left; the
+    # report not saved beside an analysis that is not its own.
+    assert not (study / "analysis").exists() and _saved(study) == person_s
+    assert not (study / "report").exists() and not (previous / "report").exists()
+
+
 @needs_backends
 def test_a_resume_stopped_from_the_gui_in_its_analyses_offers_resume(extended) -> None:
     from fastmdxplora.gui.exploration import _the_stop_recorded
@@ -617,7 +681,14 @@ def test_a_resume_stopped_from_the_gui_in_its_analyses_offers_resume(extended) -
     status = status_as_it_stands(study)
     # Owed, with `fastmdx resume` to run: it read Stopped, with no fix.
     assert (status["status"], status.get("ended_by")) == ("interrupted", ANALYSIS_OWED), status
-    assert analyze_health(status, [], root=study)["headline"] == "Its analysis is owed"
+    health = analyze_health(status, [], root=study)
+    assert health["headline"] == "Its analysis is owed"
+    # Said as it was stopped: it read "stopped after its pieces were joined,
+    # before their analyses and report had run ... a wall time lands where it
+    # lands", part of its analyses having run.
+    said = health["message"] + " " + health["explanation"]
+    assert "stopped, as asked, while its joined pieces were analysed" in said, said
+    assert "part of their analyses had run" in said and "wall time" not in said, said
     fixes = fixes_payload(study)["fixes"]
     assert [fix["argv"] for fix in fixes] == [["resume", str(study)]], fixes
     assert fixes[0]["runnable"] is True

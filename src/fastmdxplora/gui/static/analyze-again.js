@@ -88,15 +88,13 @@
     var lines = ["Analyze " + where + " again from its records, with the " +
                  (chosen === 1 ? "analysis" : chosen + " analyses") + " ticked. " +
                  "Nothing is simulated."];
-    var kept = "analysis/";
     if (analysis.report_too) {
       lines.push("The report is written again too: one from the analyses before " +
                  "would contradict them.");
-      kept = "analysis/ and report/";
     }
-    lines.push("The " + kept + " there now " + (analysis.report_too ? "are" : "is") +
-               " kept in " + (offered.previous || "previous") + "/, in place of what " +
-               "was kept there before.");
+    // What is saved in previous/ and what is removed, as the server says it
+    // (`again.saved_said`), never said here a second way.
+    if (analysis.saved_said) lines.push(analysis.saved_said);
     if (offered.several) lines.push("The comparison of the runs is built again after.");
     (analysis.left_out || []).forEach(function (left) {
       lines.push(left.run + " is left out: " + left.why);
