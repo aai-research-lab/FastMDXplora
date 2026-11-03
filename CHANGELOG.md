@@ -518,6 +518,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- With the folder's defaults file refused, New study no longer says "Checks
+  pass" beside an enabled Run: a start there is refused, so Run is not offered
+  and the status says why until the file is put right.
+- In Settings, This folder: a scroll wheel over a number box no longer
+  changes a lab default; Enter then Tab sends a value once, and one typed
+  while the last is being saved is saved after it; a read of the file that
+  changes nothing keeps a change's Undo and the focus.
+- A one-study setting given as `null` in the defaults file is told one
+  remedy, to take it out of the file.
+
 - The docs search reads a setting named in code in a table row's first cell
   as a name, so "what does ligand pose do" finds the `ligand_pose` row
   whatever the other pages hold (it fell to fifth when the drift page

@@ -627,7 +627,10 @@ only FastMDXplora's own value, where yours say nothing else, goes unsaid.
 The file is changed in **Settings**, under **This folder**. A file that is
 refused (a setting of one study in it, or a value the schema refuses)
 fills nothing: New study says why above the form, with the way to This
-folder, and offers FastMDXplora's own values until it is put right. The
+folder, and offers FastMDXplora's own values until it is put right. A
+study started in that folder is refused until then, so **Run** and **Run it
+as-is** are not offered while the file is refused, and the status says why;
+the Config can still be downloaded or copied to run elsewhere. The
 form keeps the defaults it was filled with: where the file has changed
 since (in This folder or put right), New study says so above the form,
 where it is refused since, the refusal, and **Read the defaults again**
