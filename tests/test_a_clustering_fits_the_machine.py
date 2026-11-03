@@ -1279,7 +1279,7 @@ def _record(study, name: str) -> tuple[dict, dict]:
 
 @pytest.fixture(scope="module")
 def studies(tmp_path_factory):
-    """Studies of 500 and 2,000 frames, analysed once (their RMSD)."""
+    """Studies of 500, 1,001 and 2,000 frames, analysed once (their RMSD)."""
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent))
@@ -1287,7 +1287,7 @@ def studies(tmp_path_factory):
 
     root = tmp_path_factory.mktemp("cli")
     return {n: _analysed(root / str(n), analyses=("rmsd",), n_frames=n, report=False)
-            for n in (500, 2000)}
+            for n in (500, 1001, 2000)}
 
 
 #: The room ``ulimit -v 600000`` left tri-alanine's clustering in ``fastmdx
@@ -1368,6 +1368,21 @@ class TestTheCommandLinesOwnProcess:
         row, findings = _record(study, "cluster")
         assert row["status"] == "ok", row["message"]
         assert "stride" not in findings["frames"], findings["frames"]
+        assert not findings.get("figures_not_plotted"), findings
+
+    def test_1_001_frames_run_whole_in_the_room_planned(self, studies):
+        """Past 1,000 frames the map is of blocks of two, 501 cells across,
+        and the plan, of the map's cells alone, fell to 61.1 MiB, where the
+        dendrogram of 1,001 frames after the RMSD ran out on Python 3.11
+        (63 to 64.4 MiB counted): planned on its frames as well, every
+        figure is plotted in the room the check plans."""
+        study = studies[1001]
+        need = clustering.address_space_needed(1001, ["kmeans", "hierarchical"], "rmsd",
+                                               "average")
+        done = _cli(study, need, ["rmsd", "cluster"])
+        assert "EXIT 0" in done.stdout, done.stdout[-3000:] + done.stderr[-2000:]
+        row, findings = _record(study, "cluster")
+        assert row["status"] == "ok", row["message"]
         assert not findings.get("figures_not_plotted"), findings
 
     def test_one_refused_with_a_stride_runs_at_it_to_its_end(self, studies):
@@ -1708,10 +1723,54 @@ class TestTheRefusalSaysWhatToSet:
 
         monkeypatch.setattr(clustering, "memory_available", lambda: (150 * 2**20, _RLIMIT))
         with pytest.raises(StudyError) as raised:
-            Cluster().compute(_chain(2000))
+            Cluster().compute(_chain(3000))
         said = str(raised.value)
         assert "besides" not in said, said
         assert " of it what the run maps past the libraries" in said, said
+
+    def test_the_map_s_need_is_not_split_by_the_matrix_it_follows(self, monkeypatch):
+        """At 2,000 frames the address plan is the map's: "164.4 MB of
+        address space to plot the map of their RMSD matrix, once the matrix
+        is freed (64.4 MB of it what the run maps past the libraries: its
+        figures and the heap)" left 100 MB to the matrix the same sentence
+        said was freed."""
+        from fastmdxplora.refusals import StudyError
+
+        monkeypatch.setattr(clustering, "memory_available", lambda: (150 * 2**20, _RLIMIT))
+        with pytest.raises(StudyError) as raised:
+            Cluster().compute(_chain(2000))
+        said = str(raised.value)
+        need = clustering.address_space_needed(2000, ["kmeans", "hierarchical"], "rmsd",
+                                               "average")
+        assert (f"need about {need / 1e6:.1f} MB of address space to plot the map of "
+                "their RMSD matrix, once the matrix is freed, and") in said, said
+        assert " of it what the run maps" not in said, said
+
+    def test_the_margin_is_said_for_the_frames_counted_nearest(self, monkeypatch):
+        """"The plan keeps 16 MB to 41 MB past what a clustering where other
+        analyses ran first was counted to need, at 500 to 3,000 frames": a
+        range, not this run's, and said as well where the plan is the least
+        at any number of frames, which was not counted so."""
+        from fastmdxplora.refusals import StudyError
+
+        methods = ["kmeans", "hierarchical"]
+        for n, near in ((2000, 2000), (1900, 2000)):
+            monkeypatch.setattr(clustering, "memory_available", lambda: (100 * 2**20, _RLIMIT))
+            with pytest.raises(StudyError) as raised:
+                Cluster().compute(_chain(n))
+            said = str(raised.value)
+            kept = (clustering.address_space_needed(near, methods, "rmsd", "average")
+                    - clustering.libraries_owed() - clustering.ADDRESS_COUNTED[near]) / 1e6
+            where = (f"At these {n:,} frames" if n == near
+                     else f"At {near:,} frames, the count nearest these {n:,}")
+            assert (f" {where}, the plan keeps {kept:.1f} MB past what k-means and average "
+                    "linkage were counted to need where other analyses ran first, because "
+                    "a process that ran nothing before maps more.") in said, said
+        monkeypatch.setattr(clustering, "memory_available", lambda: (10 * 2**20, _RLIMIT))
+        with pytest.raises(StudyError) as raised:
+            Cluster().compute(_chain(500))
+        said = str(raised.value)
+        assert "at any stride" in said and "the plan keeps" not in said, said
 
     def test_the_matrix_s_file_running_out_is_said_with_its_setting(
             self, tmp_path, monkeypatch):
