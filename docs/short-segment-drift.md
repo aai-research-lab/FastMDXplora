@@ -302,8 +302,10 @@ the note says the error to two figures, or to three where two would not
 multiply out to the figure as said (more in the few notes where three would
 not either), so the figure multiplies out from its basis; the scale is
 said, with how few means it was estimated from, where it reads above 1.0,
-and where it does not it is not applied. Counted by the helper (`inflated` in its output, 10,000 sets a row,
-equal segments whose means scatter h times the variance their errors say):
+and where it does not it is not applied.
+
+Counted by the helper (`inflated` in its output, 10,000 sets a row, equal
+segments whose means scatter h times the variance their errors say):
 
 | Segments | h | Called at X | Called at X times the root of h | Record's figure at least that |
 |---|---:|---:|---:|---:|
@@ -325,8 +327,9 @@ estimate of the ratio, from one degree of freedom at three segments and two
 at four, so its figure is below that true point in about two runs of three.
 That is not the question a reader asks of it, though: whether a drift as
 large as the figure beside this mean would have been called. A small scatter
-both lowers the figure and sharpens the scatter half's test, so counted per
-record (`per_record` in the helper's output, 10,000 sets a row, each figure
+both lowers the figure and sharpens the scatter half's test.
+
+So counted per record (`per_record` in the helper's output, 10,000 sets a row, each figure
 the layout's X times the set's own scale as the note says it: a drift as
 large as each set's own figure put into it; and, for a fixed drift of 0.25 to
 3 times the layout's true 80% point, X times the root of h, the most runs
