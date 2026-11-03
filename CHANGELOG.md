@@ -623,6 +623,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   stands and "Batch stopped" with the round's sentence last, and a study of
   runs leaves out its runs' own remedies above that sentence. An error in a
   run's analyses is not said to give the same one again.
+- A piece stopped at its last step was joined as finished, while its own
+  records still said it stopped: after a resume that ended its study at the
+  ceiling, All studies, the Overview, the Agent and the run's health said
+  stopped for good. The runner now says a run stopped at or past its planned
+  end finished (its checkpoint's record, and production completed in its live
+  record), and records written before are read by one function
+  (`joining.piece_finished`) with the runner's own planned steps, for the
+  join and every page. A variable-step piece is read by its planned steps
+  too (its clock is not its plan), so such a study is carried on as well. A
+  resume a run refused is said refused ("Resume refused"), exit 1, not
+  stopped.
+- The Agent's note on a run whose means are of less than its production says
+  the span its means are of, says the pieces are being analysed while a
+  resume runs, names analysing again where its analyses ended in an error
+  (its "What would fix it" too), and says a last piece not joined. A study's
+  manifest counts a run stopped or cut in its rounds as the summary and the
+  Agent do, the summary says a cut run cut, `round_ended` no longer saves a
+  sentence that a raised ceiling makes stale, a resume at its ceiling adds no
+  round again, and runs stopped side by side are each named.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

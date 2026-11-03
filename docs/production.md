@@ -322,7 +322,8 @@ extension failed in its analyses, it says to analyse that run again (`fastmdx
 explore --output RUN --include analysis report --rerun`) before resuming.
 Where the ceiling was lowered below the longest run, or below the length cut
 extensions run to, no run is carried on and the round is said as it ended. A
-piece stopped at its last step is joined as finished.
+piece stopped at its last step (by its planned steps, a variable step's too)
+is finished, for the join and every page.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.
