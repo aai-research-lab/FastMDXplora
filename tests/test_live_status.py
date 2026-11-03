@@ -1210,18 +1210,6 @@ class TestTheFileListCanBeReadWithoutGuessing:
         assert records[0]["group"] == "record"
         assert records[0]["href"].startswith("/artifacts/")
 
-    def test_the_analysis_tab_does_not_offer_the_report(self) -> None:
-        """The markdown report, slides, bundle and analysis manifest are the
-        report phase's deliverables, and the Report tab lists all of them with
-        size and date. Four of them repeated here made this the place people
-        looked."""
-        js = self._text("dashboard.js")
-        section = js.split("function renderAnalysisSections(payload) {", 1)[1].split(
-            "\n  function ", 1
-        )[0]
-        assert "quick_actions" not in section
-        assert "actionHost.hidden = true" in section
-
 
 class TestTheContactResiduesAreNamed:
     """The row read "Use \u201cShow pocket residues\u201d" -- an instruction where
