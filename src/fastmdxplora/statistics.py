@@ -1083,7 +1083,8 @@ def drift_unseen_in_pooled_errors(errors: "list[float] | tuple[float, ...]",
     each at its ``centres`` in time, the drift linear in time: the same
     random numbers (:data:`DRIFT_UNSEEN_SEED`) at every size, as the
     helper counts it (``unseen_in_pooled_errors``). None where the errors
-    or centres cannot be read. Deterministic, and well under a second."""
+    or centres cannot be read. Deterministic: about 12 sizes read for 41,
+    by doubling and halving."""
     sigma = np.asarray(errors, dtype=float)
     at = np.asarray(centres, dtype=float)
     if (sigma.ndim != 1 or sigma.size not in (3, 4) or at.shape != sigma.shape
@@ -1111,12 +1112,13 @@ def _unseen_for_layout(sigma: "tuple[float, ...]", shape: "tuple[float, ...]") -
         return int(_drift_called(noise + size * pooled * positions, precisions,
                                  positions).sum()) >= wanted
 
-    # One size at a time, as the helper counts, as far as the most unequal
-    # layout counted in the docs needs; beyond it, by halving.
-    for size in range(1, 129):
-        if called(size):
-            return size
-    low, high = 128, 256
+    # By doubling, then halving the bracket: ``low`` is never called and
+    # ``high`` always is, so ``high`` ends as the smallest size called where
+    # the count called rises with the size, as it does on every layout
+    # counted in the docs (sizes 1 to 159, no fall). The helper counts one
+    # size at a time and gives the same sizes; this reads about 12 sizes
+    # for 41, not 41, and 16 for 135.
+    low, high = 0, 1
     while not called(high):
         low, high = high, high * 2
         if high > 1 << 20:
@@ -1172,7 +1174,16 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
     return {**said, "counted_in_pooled_errors": counted,
             "scatter_about_line": scatter if math.isfinite(scatter) else None,
             "in_pooled_errors": float(counted * scale),
-            "pooled_error": error, "change": float(counted * scale * error)}
+            "pooled_error": error, "change": _drift_figure(counted, scale, error)}
+
+
+def _drift_figure(counted: float, scale: float, error: float) -> float:
+    """The drift that could go unseen, worked out from its basis as the note
+    says it: the count, times the scale as said, times the pooled error to
+    two figures, so the three said multiply out to it. "about 55 K" was
+    said beside "42 times ... 0.37 K, times 3.5" (54.4 K), the error being
+    0.374 K."""
+    return float(counted * scale * float(_two_figures(error).replace(",", "")))
 
 
 def _two_figures(value: float) -> str:
@@ -1236,11 +1247,14 @@ def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
     units = f" {unit}" if unit else ""
     which = (f"With {count} segments" if count == total
              else f"With {count} of its {total} segments tested{out}")
-    # The figure is the count times the scale as said, so it multiplies out
-    # from its basis: a scale of 1.04 left unsaid gave 0.43 nm beside
-    # "41 times ... 0.010 nm".
-    scale = _scale_as_said((change / (counted * error)) ** 2)
-    change = counted * scale * error
+    # The figure is the count times the scale as said times the error as
+    # said, so it multiplies out from its basis: a scale of 1.04 left
+    # unsaid gave 0.43 nm beside "41 times ... 0.010 nm".
+    # The scale read back from the count it multiplied (``in_pooled_errors``),
+    # not from the figure, which the error to two figures moves by up to 5%.
+    times = _number(unseen.get("in_pooled_errors"))
+    scale = _scale_as_said(((times if times is not None else change / error) / counted) ** 2)
+    change = _drift_figure(counted, scale, error)
     basis = (f"{counted:g} times the error of their pooled mean, "
              f"{_two_figures(error)}{units}")
     # Said only where it reads above 1.0: "times 1.0" was said.

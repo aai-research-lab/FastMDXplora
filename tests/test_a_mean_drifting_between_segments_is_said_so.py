@@ -224,7 +224,8 @@ def _unseen_said(values, joins, pieces):
     """The note's sentence for a run of segments all tested, its amount the
     X counted for their own errors and centres times the error of the
     segments' inverse-variance pooled mean, times their scatter about the
-    line as the note says it, where that reads above 1.0."""
+    line as the note says it, where that reads above 1.0; the error as said,
+    to two figures."""
     from fastmdxplora import statistics
     from fastmdxplora.statistics import summarise
 
@@ -247,11 +248,13 @@ def _unseen_said(values, joins, pieces):
     layout = getattr(statistics, "drift_unseen_in_pooled_errors", lambda *_: UNSEEN[pieces])
     counted = layout(list(1 / np.sqrt(w)), list(x))
     scale = float(f"{np.sqrt(ratio):.1f}") if ratio > 1 else 1.0
-    amount = counted * error * scale
 
     def two(v):
         r = float(f"{v:.2g}")
         return f"{r:,.{max(0, 1 - int(np.floor(np.log10(r))))}f}"
+
+    # From the error as said, so the figure multiplies out from its basis.
+    amount = counted * float(two(error).replace(",", "")) * scale
 
     basis = f"{counted} times the error of their pooled mean, {two(error)} kJ/mol"
     if scale > 1.0:
@@ -467,7 +470,7 @@ def test_the_figure_is_scaled_where_the_means_scatter_beyond_their_errors() -> N
     values, joins = _real("drifting_3_pieces_temperature_K")
     record = _saved(mean_record(values, joins=joins))
     said = _unseen_of(record, "K")
-    assert said == ("With 3 segments, a steady drift smaller than about 55 K from the first "
+    assert said == ("With 3 segments, a steady drift smaller than about 54 K from the first "
                     "segment's mean to the last's could go unseen (42 times the error of their "
                     "pooled mean, 0.37 K, times 3.5 for their scatter about a straight line "
                     "beyond that error, a scale estimated from only 3 means)"), said
@@ -654,6 +657,52 @@ def test_the_figure_multiplies_out_from_the_basis_it_gives() -> None:
                             "lengths": [1, 1, 1], "errors": [1.0, 1.0, 1.0],
                             "centres": [0.5, 1.5, 2.5]})
     assert unseen["change"] == pytest.approx(0.41), unseen
+
+
+def test_the_figure_is_worked_out_from_the_error_as_said() -> None:
+    # "about 55 K (42 times ... 0.37 K, times 3.5)": 42 x 0.37 x 3.5 is 54.4,
+    # the error being 0.374 K. Over errors spread on a log scale, the
+    # figure is the product of the basis as said, in every note.
+    import re
+
+    from fastmdxplora.statistics import _two_figures, drift_unseen_said
+
+    for scale, scatter in ((1.0, 1.0), (3.5, 3.5 ** 2), (1.1, 1.1 ** 2)):
+        for error in np.geomspace(0.01, 100.0, 97):
+            change = 42 * scale * error
+            record = _a_record(change, float(error), [1, 1, 1], scatter)
+            record["drift_unseen"]["counted_in_pooled_errors"] = 42
+            said = drift_unseen_said(record, "K")
+            figure, basis = re.search(r"about ([\d,.]+) K .*pooled mean, ([\d,.]+) K", said).groups()
+            expected = 42 * scale * float(basis.replace(",", ""))
+            assert figure == _two_figures(expected), (error, said)
+
+
+@pytest.mark.parametrize("lengths, counted", [([1, 1, 1], 41), ([1, 1, 1, 1], 16),
+                                              ([500, 500, 4000], 69), ([200, 200, 8000], 135)])
+def test_the_layout_s_figure_is_found_by_halving_not_size_by_size(
+        monkeypatch, lengths, counted) -> None:
+    # One size at a time from 1: a layout of 135 pooled errors read 128
+    # sizes of 10,000 sets each, over a second for each record's mean.
+    from fastmdxplora import statistics
+
+    read = []
+    called = statistics._drift_called
+
+    def counting(*args, **kwargs):
+        read.append(1)
+        return called(*args, **kwargs)
+
+    monkeypatch.setattr(statistics, "_drift_called", counting)
+    statistics._unseen_for_layout.cache_clear()
+    lengths = np.asarray(lengths, dtype=float)
+    centres = np.cumsum(lengths) - lengths / 2
+    try:
+        assert statistics.drift_unseen_in_pooled_errors(
+            list(np.sqrt(lengths.min() / lengths)), list(centres)) == counted
+    finally:
+        statistics._unseen_for_layout.cache_clear()
+    assert len(read) <= 2 * int(np.log2(counted)) + 2, len(read)
 
 
 def test_a_chip_s_note_has_the_unit_its_value_has(tmp_path) -> None:

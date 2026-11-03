@@ -232,11 +232,16 @@ to the last's, that the rule calls in at least 8,000 of 10,000 simulated sets
 of means simulated with the tested segments' own errors, each mean at its own
 centre in time, as the rule itself sees them (drift linear in time, a fixed
 seed, the same random numbers at every size;
-`statistics.drift_unseen_in_pooled_errors`, the rule in arrays, well under a
-second for three or four means). The helper counts the same with the rule
-one set at a time (`unseen` in its output, each segment's error as one over
-the root of its length or as given), and gives the same X for every layout
-below. Equal pieces give 41 at three and 16 at four. The same record gives the
+`statistics.drift_unseen_in_pooled_errors`, the rule in arrays). It finds X
+by doubling the size until the rule calls it, then halving the bracket: about
+12 sizes read for 41 and 16 for 135, where reading every size from 1 took
+0.29 s for three equal pieces and 0.86 s for 200, 200 and 8,000 frames
+(X 135), now 0.06 s and 0.07 s (best of three, on 2 cores shared with
+other work). The count called rises with the size on every layout
+below (sizes 1 to 159), so halving finds the smallest. The helper counts the
+same one size at a time with the rule one set at a time (`unseen` in its
+output, each segment's error as one over the root of its length or as
+given), and gives the same X for every layout below. Equal pieces give 41 at three and 16 at four. The same record gives the
 same figure and the same text every time. Errors, not lengths, are what X
 depends on: pieces of equal length differ in error with their correlation
 times (a real stationary run's three tested pieces of 100 rows have errors of
@@ -290,8 +295,9 @@ of the weighted line's chi-square per degree of freedom and the unweighted
 line's residual variance over the means' mean error variance, the scatter the
 rule's own-scatter half judges the slope against (weighted alone, an
 imprecise middle mean carried little weight and the scatter read smaller than
-the rule's). The scale is the one the note says, to one decimal, so the
-figure multiplies out from its basis; it is said, with how few means it was
+the rule's). The scale is the one the note says, to one decimal, and the
+error the one it says, to two figures, so the figure multiplies out from its
+basis; the scale is said, with how few means it was
 estimated from, where it reads above 1.0, and where it does not it is not
 applied. Counted by the helper (`inflated` in its output, 10,000 sets a row,
 equal segments whose means scatter h times the variance their errors say):
@@ -373,7 +379,7 @@ h = 54), and a drift the figure says would be seen goes unseen in at most
 1.4% of runs at three segments and 2.3% at four. A real run's temperature at
 three pieces of 20 ps (177.79, 185.45 and 186.61 K over errors of 0.67, 0.68
 and 0.60 K, at their centres in time) scatters 3.5 times its errors about the
-line; its layout gives 42 pooled errors, and its note says about 55 K
+line; its layout gives 42 pooled errors, and its note says about 54 K
 (42 times 0.37 K, times 3.5, a scale estimated from only 3 means), where the
 errors alone said 16 K.
 

@@ -84,6 +84,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   solute's own image" only for an image note. It marked a temperature's
   drift note as an image note and said so of a resolved difference where no
   mean had one, and gave no drift note beside an analysis's mean.
+- The drift note's figure is worked out from the pooled error as the note
+  says it, to two figures, so the count, the scale and the error said
+  multiply out to it: "about 55 K (42 times ... 0.37 K, times 3.5)" is now
+  "about 54 K", the error being 0.374 K (about a third of notes read one
+  off in the second figure).
+- A record's drift figure is found by doubling the size of drift and then
+  halving the bracket, not one size at a time from 1: the same figure on
+  every layout in `docs/short-segment-drift.md`, in about 12 sizes read
+  for 41 where 41 were read, and 16 for 135 where 136 were.
 - The Agent's and the GUI's answers to whether a study ran long enough and
   what would strengthen it name a mean drifting between a joined run's
   segments and its remedy, a longer run of no length a record gives, by the
