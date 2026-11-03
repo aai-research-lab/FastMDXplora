@@ -1315,6 +1315,13 @@
       var dashboard = window.FastMDXDashboard;
       if (dashboard && dashboard.endStudySwitch) dashboard.endStudySwitch();
     }
+    var loadStudy = el("load-study");
+    var loadStudyLabel = loadStudy ? loadStudy.textContent : "";
+    function restoreLoadStudy() {
+      if (!loadStudy) return;
+      loadStudy.disabled = false;
+      loadStudy.textContent = loadStudyLabel;
+    }
     /* Asked of the server by folder; opened as a step of its own. */
     function switchToFolder(folder, page, refused) {
       if (switchHeld()) return false;
@@ -1322,11 +1329,13 @@
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ folder: folder })
       }).then(function (r) { return r.json(); }).then(function (d) {
+        restoreLoadStudy();
         if (d && d.ok) { window.FastMDXDashboard.studyOpened(d, page); return; }
         switchEnded();
         if (refused) refused((d && d.error) || "Could not open that study.");
         else window.FastMDXDashboard.toast((d && d.error) || "Could not open that study.", "warning");
       }).catch(function () {
+        restoreLoadStudy();
         switchEnded();
         if (refused) refused("Could not reach the server.");
         else window.FastMDXDashboard.toast("Could not reach the server.", "warning");
@@ -1334,7 +1343,6 @@
       return true;
     }
 
-    var loadStudy = el("load-study");
     var loadPath = el("load-study-path");
     if (loadStudy && loadPath && window.FastMDXPicker) {
       loadStudy.addEventListener("click", function () {
@@ -1349,8 +1357,6 @@
         // Work a switch would lose holds it, with the reason said. The new
         // study is read at once, on its overview, as a step of its own.
         var asked = switchToFolder(folder, undefined, function (why) {
-          loadStudy.disabled = false;
-          loadStudy.textContent = "Load study";
           window.alert(why === "Could not open that study." ? "Could not load that folder." : why);
         });
         if (!asked) return;

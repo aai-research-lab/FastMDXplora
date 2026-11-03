@@ -77,6 +77,52 @@ def _active(page, key):
                            timeout=20000)
 
 
+def test_a_refused_folder_load_restores_the_menu_item_and_says_why(browser, site):
+    page = _open(browser, site)
+    dialogs = []
+    page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+    page.route("**/api/explore/switch", lambda route: route.fulfill(json={
+        "ok": False, "error": "That folder is not a study."}))
+    try:
+        page.locator("#load-study-path").evaluate("""(input, path) => {
+            input.value = path; input.dispatchEvent(new Event('change'));
+        }""", str(site["studies"][1]))
+        expect(page.locator("#load-study")).to_have_text("Open another folder…")
+        expect(page.locator("#load-study")).to_be_enabled()
+        assert dialogs == ["That folder is not a study."]
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
+def test_an_opened_folder_restores_the_menu_item_before_navigation(browser, site):
+    page = _open(browser, site)
+    try:
+        page.evaluate("""() => {
+            const studyOpened = window.FastMDXDashboard.studyOpened;
+            window.FastMDXDashboard.studyOpened = (answer, route) => {
+                const item = document.getElementById('load-study');
+                sessionStorage.setItem('load-study-before-open', JSON.stringify({
+                    label: item.textContent, disabled: item.disabled
+                }));
+                studyOpened(answer, route);
+            };
+        }""")
+        page.locator("#load-study-path").evaluate("""(input, path) => {
+            input.value = path; input.dispatchEvent(new Event('change'));
+        }""", str(site["studies"][1]))
+
+        _active(page, site["keys"][1])
+        expect(page.locator("#load-study")).to_have_text("Open another folder…")
+        expect(page.locator("#load-study")).to_be_enabled()
+        assert json.loads(page.evaluate(
+            "sessionStorage.getItem('load-study-before-open')")) == {
+                "label": "Open another folder…", "disabled": False}
+        assert page.errors == []
+    finally:
+        page.context.close()
+
+
 def _outside_open(page, site, index, route="overview"):
     # Opened once the evaluation has returned: the page it opens loads in
     # place of this one, and an evaluation still returning then was lost
