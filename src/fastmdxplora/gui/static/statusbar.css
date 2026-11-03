@@ -31,6 +31,8 @@ body.panel-collapsed.panel-peek .side-panel {
 .sb-item:hover { background: color-mix(in srgb, var(--text-primary) 8%, transparent); color: var(--text-primary); }
 .sb-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sb-item[hidden] { display: none; }
+.sb-item[aria-disabled="true"] { cursor: default; }
+.sb-item[aria-disabled="true"]:hover { background: transparent; color: inherit; }
 .sb-text, .sb-item > span { overflow: hidden; text-overflow: ellipsis; }
 .sb-icon { width: 13px; height: 13px; flex: none; }
 .sb-spacer { flex: 1 1 auto; }
