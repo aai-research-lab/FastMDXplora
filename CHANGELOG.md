@@ -518,6 +518,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Compare's empty state names the palette's shortcut as this computer
+  types it (Ctrl K off a Mac), not always ⌘K. Compare's charts zoom and
+  export on their own, apart from the Analysis page's time range; an
+  exported chart keeps its analysis's name, and its CSV names each study as
+  the legend does. The Overview's Report link shows only where there is
+  a report to open: a run's written report, or a study of runs with a run
+  finished or carried so far. Loading another folder puts the menu item
+  back as it was, opened or refused. The machine item in the status bar
+  opens Remote jobs, and says so, only when jobs are recorded; otherwise it
+  is marked as doing nothing (`aria-disabled`). The Analysis
+  page's empty quick-actions area and the payload that filled it are gone.
+  (Prince Otegbulu, #70, #76 to #80)
+
 - The docs search reads a setting named in code in a table row's first cell
   as a name, so "what does ligand pose do" finds the `ligand_pose` row
   whatever the other pages hold (it fell to fifth when the drift page
