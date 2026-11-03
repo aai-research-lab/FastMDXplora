@@ -45,7 +45,8 @@ from fastmdxplora.refusals import StudyError
 #: resolution the counting statistics do not support.
 SHELL_BIN_WIDTH = 0.005
 
-#: Pairs beyond this many are subsampled before the shell search. The count
+#: Pairs beyond this many are subsampled before the shell search, more in a
+#: short run (:func:`fastmdxplora.analysis.rdf.pairs_for`). The count
 #: itself is exact -- it uses a neighbour search, not the histogram -- so
 #: this caps only the curve the cutoff is read from.
 MAX_PAIRS_FOR_SHELL = 200_000
@@ -169,10 +170,14 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
     level across it.
 
     A first minimum is only meaningful after a first maximum: the curve has
-    to rise into a shell before it can fall out of one. So the peak is
-    located first, and must stand above bulk by more than its own scatter
-    times the bar a 1% chance of noise reaching it in any of the bins
-    searched sets (about 3.9 for 300 bins, never under 3). The minimum is
+    to rise into a shell before it can fall out of one. So the first peak is
+    located first (:func:`fastmdxplora.analysis.rdf.first_peak`): the first
+    that stands above bulk by more than its own scatter times the bar a 1%
+    chance of noise reaching it in any of the bins searched sets (about 3.9
+    for 300 bins, never under 3), not the tallest, which skipped water O-H's
+    hydrogen-bond peak (0.183 nm) for the 0.32 nm one and read 18
+    neighbours in a simple cubic lattice whose first two shells, 6 and 12,
+    stand equally tall. The minimum is
     then the first dip clear below bulk after it that the curve climbs
     back out of before going lower, back to bulk and by more than a
     difference of two smoothed values could by noise (three of its
@@ -205,23 +210,24 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
             "no region a shell could occupy."
         )
 
-    masked = np.where(searchable & finite, g, -np.inf)
-    peak = int(np.argmax(masked))
-    if not np.isfinite(masked[peak]):
-        return float("nan"), "g(r) is empty over the searchable range."
+    from fastmdxplora.analysis.rdf import first_peak
 
-    height = float(g[peak]) - 1.0
-    scatter = float(noise[peak]) if np.isfinite(noise[peak]) else np.inf
-    searched = max(1, int(np.count_nonzero(searchable & finite)))
-    bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
-    if height <= bar * scatter:
+    peak, bar, searched, resolved_peak = first_peak(radii, g, noise, smooth_noise)
+    if peak < 0:
+        return float("nan"), "g(r) is empty over the searchable range."
+    if not resolved_peak:
+        height = float(g[peak]) - 1.0
+        scatter = float(noise[peak]) if np.isfinite(noise[peak]) else np.inf
+        alone = (" It clears that in one bin only, and a shell spans several, "
+                 "so it is not distinguishable from one bin of noise."
+                 if height > bar * scatter else "")
         return float("nan"), (
-            f"g(r) rises {height:+.3f} above bulk at its tallest point "
-            f"({radii[peak]:.3f} nm), against a scatter of {scatter:.3f} at "
-            "that separation, from its own counts and from how much it "
-            f"varies over the run, and {bar:.1f} times that is needed where "
-            f"the tallest of {searched} bins is taken. There is no first "
-            "shell resolved here, so "
+            f"g(r) has its first shell at {radii[peak]:.3f} nm, where it "
+            f"stands {height:+.3f} from bulk against a scatter of "
+            f"{scatter:.3f} at that separation, from its own counts and from "
+            f"how much it varies over the run, and {bar:.1f} times that "
+            f"above bulk is needed with {searched} bins searched.{alone} "
+            "There is no first shell resolved here, so "
             "there is no first minimum to take a cutoff from. Give `cutoff` "
             "explicitly, or run for longer."
         )
@@ -229,7 +235,7 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
     after_r = radii[peak:]
     if after_r.size < 3:
         return float("nan"), (
-            f"The tallest point of g(r) is at {radii[peak]:.3f} nm, at the "
+            f"The first peak of g(r) is at {radii[peak]:.3f} nm, at the "
             "edge of the range the box resolves, so the curve never falls out of "
             "the first shell within half the box. No cutoff can be read from "
             "it."
@@ -262,12 +268,20 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
 
     minimum = -1
     for k in range(1, min(end, n - 1)):
-        if not (smooth[k] <= smooth[k - 1] and smooth[k] < smooth[k + 1]
-                and smooth[k] < 1.0 - climb * spread[k]):
+        if not (smooth[k] <= smooth[k - 1] and smooth[k] < smooth[k + 1]):
             continue
         later = smooth[k + 1:]
         lower = np.nonzero(later < smooth[k])[0]
-        out = np.nonzero(later > _out_of(smooth[k], resolved[k]))[0]
+        if smooth[k] < 1.0 - climb * spread[k]:
+            out = np.nonzero(later > _out_of(smooth[k], resolved[k]))[0]
+        else:
+            # A dip that does not fall clear below bulk between two shells
+            # that stand clear above it: the next shell begins there, so it
+            # is the first shell's end (a simple cubic lattice at 0.03 nm,
+            # whose trough at 0.36 nm falls to 0.96, read 27 neighbours past
+            # it), and passing it would count that shell too.
+            out = np.nonzero((later > smooth[k] + resolved[k])
+                             & (later > 1.0 + climb * spread[k + 1:]))[0]
         if out.size and (not lower.size or out[0] < lower[0]):
             minimum = k
             break
@@ -451,12 +465,13 @@ class CoordinationNumber(Analysis):
     ) -> float:
         """The first minimum of g(r) between the two groups, in nm."""
         half_box = _complete_shells_reach(traj)
-        from fastmdxplora.analysis.rdf import PairHistogram, _pairs_between
+        from fastmdxplora.analysis.rdf import PairHistogram, _pairs_between, pairs_for
 
         # Drawn as the RDF analysis draws them, without listing every pair
         # first: a protein against its water is tens of millions of them.
-        pairs, available = _pairs_between(a, b, np.random.default_rng(0),
-                                          limit=MAX_PAIRS_FOR_SHELL)
+        pairs, available = _pairs_between(
+            a, b, np.random.default_rng(0),
+            limit=pairs_for(traj.n_frames, MAX_PAIRS_FOR_SHELL))
         if len(pairs) == 0:
             raise StudyError(
                 "The two selections name the same single atom, so there are "
@@ -482,7 +497,7 @@ class CoordinationNumber(Analysis):
         # Neighbours per atom of `a` up to r, from the curve: the pairs in a
         # shell are g times all the pairs times the shell over the volume.
         edges, running = _running(radii, histogram.g())
-        density = available / float(len(a)) * float(np.mean(1.0 / histogram.volumes))
+        density = available / float(len(a)) * float(histogram.inverse_volume.sum()) / histogram.n_frames
 
         def count(r: float) -> float:
             return float(density * np.interp(r, edges, running))
@@ -518,9 +533,8 @@ class CoordinationNumber(Analysis):
         # the run measures (O-O in 1 M NaCl; the halves of a slowly moving
         # gas), and neither is one no half finds on its own.
         if traj.n_frames >= 2:
-            half = traj.n_frames // 2
             halves = []
-            for frames in (np.arange(half), np.arange(half, traj.n_frames)):
+            for frames in histogram.halves():
                 value, failed, _ = read(frames)
                 halves.append(None if failed else value)
             shell["cutoff_from_each_half_nm"] = halves

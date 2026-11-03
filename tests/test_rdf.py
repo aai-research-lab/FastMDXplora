@@ -235,9 +235,12 @@ class TestThePairsAreDrawnWithoutListingThemAll:
         analysis.compute(traj)
         took = time.perf_counter() - started
         record = analysis.findings["rdf"]
-        assert record["subsampled"] and record["pairs"] == rdf_module.MAX_PAIRS
-        assert "of the 30000000 available" in record["subsampled_note"]
-        assert len(calls[0]) == rdf_module.MAX_PAIRS
+        # One frame: the most pairs a run is given.
+        drawn = rdf_module.pairs_for(1, rdf_module.MAX_PAIRS)
+        assert drawn == rdf_module.MOST_PAIRS
+        assert record["subsampled"] and record["pairs"] == drawn
+        assert f"{drawn} pairs of the 30000000 available" in record["subsampled_note"]
+        assert len(calls[0]) == drawn
         assert len({tuple(p) for p in calls[0][:1000]}) == 1000
         assert took < 5.0, f"{took:.1f} s to choose the pairs"
 

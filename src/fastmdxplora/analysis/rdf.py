@@ -86,6 +86,24 @@ def _pairs_between(a: np.ndarray, b: np.ndarray, rng: np.random.Generator,
 #: Pair distances held at once while histogramming, as pairs times frames.
 DISTANCES_PER_PASS = 10_000_000
 
+#: Pair distances worth computing over a whole run, as pairs times frames:
+#: about 2.5 s. A short run of a large box takes more pairs within it than
+#: :data:`MAX_PAIRS`, up to :data:`MOST_PAIRS`, because the near pairs a
+#: shell is read from are a few in ten thousand of a large box's pairs: 200,000
+#: pairs of 36,000 water oxygens put about one pair a frame in each bin of
+#: the first shell at bulk density, and its peak was not resolved in 60 frames.
+PAIR_FRAMES = 100_000_000
+
+#: The most pairs taken, however short the run.
+MOST_PAIRS = 2_000_000
+
+
+def pairs_for(n_frames: int, least: int) -> int:
+    """How many pairs to draw for a run of ``n_frames``: :data:`PAIR_FRAMES`
+    over the frames, never under ``least`` nor over :data:`MOST_PAIRS`."""
+    return int(max(least, min(MOST_PAIRS, PAIR_FRAMES // max(1, n_frames))))
+
+
 #: Fewer frames than this and the spread over frames is not trusted as a
 #: variance: the counting noise alone is used.
 FRAMES_FOR_A_SPREAD = 10
@@ -93,49 +111,95 @@ FRAMES_FOR_A_SPREAD = 10
 #: Bins a correlation time is read over (:meth:`PairHistogram.scatter`).
 INEFFICIENCY_BINS = 7
 
+#: The most blocks of consecutive frames the counts are held in. Up to this
+#: many frames each frame is its own block; past it frames are summed into
+#: blocks, so a run of 100,000 frames holds 2,000 rows, not 100,000 (0.4 GB
+#: for 1,000 bins, and more for every copy the scatter made).
+MOST_BLOCKS = 2_000
+
 
 class PairHistogram:
-    """Pair distances counted per frame and per bin, once.
+    """Pair distances counted per frame and per bin, once, held in blocks of
+    consecutive frames.
 
     g(r) is made from these counts exactly as ``md.compute_rdf`` makes it
     (``N_pairs sum_f 1/V_f`` times each shell's volume normalises the
     total), and so is the noise it carries (:meth:`scatter`), from the
-    counts' spread over frames, without a second pass over the distances.
+    counts' spread over the blocks, without a second pass over the
+    distances. With at most :data:`MOST_BLOCKS` frames a block is a frame.
+    Beside each block's sums the sums of squares of each frame's g over
+    :data:`INEFFICIENCY_BINS` bins are held, so the correlation
+    inside a block is still counted (:meth:`scatter`).
     """
 
     def __init__(self, traj: md.Trajectory, pairs: np.ndarray, r_max: float,
                  bin_width: float) -> None:
+        from fastmdxplora.analysis.coordination_number import _smoothed
+
         n_bins = int(r_max / bin_width)
         self.edges = np.linspace(0.0, r_max, n_bins + 1)
         self.radii = 0.5 * (self.edges[1:] + self.edges[:-1])
         self.shells = (4.0 / 3.0) * np.pi * (self.edges[1:] ** 3 - self.edges[:-1] ** 3)
-        self.volumes = np.asarray(traj.unitcell_volumes, dtype=np.float64)
+        volumes = np.asarray(traj.unitcell_volumes, dtype=np.float64)
         self.n_pairs = len(pairs)
-        self.counts = np.zeros((traj.n_frames, n_bins), dtype=np.int32)
-        step = max(1, DISTANCES_PER_PASS // max(1, len(pairs)))
+        self.n_frames = traj.n_frames
+        n_blocks = min(self.n_frames, MOST_BLOCKS)
+        # Block k holds frames bounds[k] to bounds[k + 1].
+        self.bounds = np.linspace(0, self.n_frames, n_blocks + 1).round().astype(np.int64)
+        self.sizes = np.diff(self.bounds)
+        block_of = np.repeat(np.arange(n_blocks), self.sizes)
+        shape = (n_blocks, n_bins)
+        self.counts = np.zeros(shape, dtype=np.int64)
+        self.g_sum = np.zeros(shape)
+        self.around_squares = np.zeros(shape)
+        self.inverse_volume = np.bincount(block_of, weights=1.0 / volumes,
+                                          minlength=n_blocks)
+        # Frames per pass held to DISTANCES_PER_PASS values, distances or
+        # bins, whichever a frame has more of.
+        step = max(1, DISTANCES_PER_PASS // max(1, len(pairs), n_bins))
         span = np.array([0.0, r_max])
-        for first in range(0, traj.n_frames, step):
+        norm = max(1, self.n_pairs) * self.shells
+        for first in range(0, self.n_frames, step):
             distances = md.compute_distances(traj[first:first + step], pairs)
             # The binning `md.compute_rdf` gives its one histogram, frame by
             # frame.
-            for k, frame in enumerate(distances):
-                self.counts[first + k] = np.histogram(frame, bins=n_bins, range=span)[0]
+            counts = np.array([np.histogram(frame, bins=n_bins, range=span)[0]
+                               for frame in distances])
+            per_frame = counts * volumes[first:first + len(counts), None] / norm
+            around = _smoothed(per_frame, INEFFICIENCY_BINS)
+            # The pass's frames run in order, so each block's are together.
+            rows = block_of[first:first + len(counts)]
+            starts = np.flatnonzero(np.r_[True, rows[1:] != rows[:-1]])
+            which = rows[starts]
+            self.counts[which] += np.add.reduceat(counts, starts, axis=0)
+            self.g_sum[which] += np.add.reduceat(per_frame, starts, axis=0)
+            self.around_squares[which] += np.add.reduceat(around ** 2, starts, axis=0)
         # A pair listed in both orders, as a selection paired with itself
         # lists it, is one independent count, not two: (sum m)^2 / sum m^2
         # of the listings are independent, m being how often each is listed.
         if len(pairs):
-            _unique, listed = np.unique(np.sort(np.asarray(pairs), axis=1), axis=0,
-                                        return_counts=True)
+            ordered = np.sort(np.asarray(pairs, dtype=np.int64), axis=1)
+            keys = ordered[:, 0] * (int(ordered.max()) + 1) + ordered[:, 1]
+            _unique, listed = np.unique(keys, return_counts=True)
             self.independent = float(listed.sum()) ** 2 / float((listed ** 2).sum())
         else:
             self.independent = 0.0
 
-    def g(self, frames: np.ndarray | slice = slice(None)) -> np.ndarray:
-        norm = self.n_pairs * float(np.sum(1.0 / self.volumes[frames])) * self.shells
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return self.counts[frames].sum(axis=0) / norm
+    @property
+    def n_blocks(self) -> int:
+        return len(self.sizes)
 
-    def scatter(self, frames: np.ndarray | slice = slice(None),
+    def halves(self) -> tuple[slice, slice]:
+        """The two halves of the run, as blocks."""
+        half = self.n_blocks // 2
+        return slice(0, half), slice(half, self.n_blocks)
+
+    def g(self, blocks: np.ndarray | slice = slice(None)) -> np.ndarray:
+        norm = self.n_pairs * float(np.sum(self.inverse_volume[blocks])) * self.shells
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return self.counts[blocks].sum(axis=0) / norm
+
+    def scatter(self, blocks: np.ndarray | slice = slice(None),
                 window: int = 1) -> np.ndarray:
         """The standard error of g(r), or of its running mean over ``window``
         bins, in each bin.
@@ -144,15 +208,19 @@ class PairHistogram:
         normalisation a bin at r expects, at g = 1, N sum_f (V_shell / V_f)
         pairs, N the independent pairs, so g has a Poisson variance of
         g / expected (g taken as at least 1, the safe side close in). The
-        measured one: g in each frame, and its variance over the frames
-        divided by their number. Either is multiplied by that bin's
-        statistical inefficiency, from the same per-frame series, a frozen
-        configuration counting as one frame. The measured spread is what
-        the counting one misses where neighbours come and go together; with
-        fewer than :data:`FRAMES_FOR_A_SPREAD` frames it is not trusted and
-        the counting estimate stands alone. Measured against repeats it is
-        1.0 to 1.2 times the true scatter of an ideal gas and up to a
-        quarter wide in TIP3P water.
+        measured one: g in each block, and its variance over the blocks
+        divided by their number. Each is multiplied by a statistical
+        inefficiency read over INEFFICIENCY_BINS bins around each (over the
+        window, where it is wider): the
+        measured one by that of the blocks' series, the counting one by that
+        of the frames, which is the blocks' times how much more the blocks'
+        means vary than one frame's g would if the frames in a block were
+        independent (a frozen configuration counting as one frame). The
+        measured spread is what the counting one misses where neighbours
+        come and go together; with fewer than :data:`FRAMES_FOR_A_SPREAD`
+        frames it is not trusted and the counting estimate stands alone.
+        Measured against repeats it is 1.0 to 1.2 times the true scatter of
+        an ideal gas and up to a quarter wide in TIP3P water.
 
         It used to be the counting estimate widened by the correlation of
         the count around the first peak alone, and the spread of g(r) in the
@@ -163,39 +231,58 @@ class PairHistogram:
         from fastmdxplora.analysis.coordination_number import _smoothed
         from fastmdxplora.statistics import statistical_inefficiency
 
-        counts = self.counts[frames].astype(np.float64)
-        volumes = self.volumes[frames]
-        n = len(counts)
-        inverse = 1.0 / volumes
-        g = self.g(frames)
+        sizes = self.sizes[blocks].astype(np.float64)
+        frames = float(sizes.sum())
+        n = len(sizes)
+        inverse = self.inverse_volume[blocks]
+        g = self.g(blocks)
         expected = self.independent * float(inverse.sum()) * self.shells
         with np.errstate(divide="ignore", invalid="ignore"):
             counting = np.clip(np.nan_to_num(g), 1.0, None) / expected
         counting[~np.isfinite(counting)] = np.inf
-        per_frame = counts * volumes[:, None] / (self.n_pairs * self.shells[None])
+        means = self.g_sum[blocks] / sizes[:, None]
         if window > 1:
             counting = _smoothed(counting, window) / window
-            per_frame = _smoothed(per_frame, window)
-        variance = counting
-        if n >= FRAMES_FOR_A_SPREAD:
-            weights = inverse / inverse.sum()
-            spread = per_frame.var(axis=0, ddof=1) * float(np.sum(weights ** 2))
-            variance = np.maximum(counting, spread)
-        if 1 < n < 3 and np.all(counts == counts[:1]):
+            means = _smoothed(means, window)
+        weights = inverse / inverse.sum()
+        measured = np.zeros_like(counting)
+        if frames >= FRAMES_FOR_A_SPREAD and n >= 2:
+            if np.any(sizes > 1):
+                # Each block's mean weighted by its frames: blocks of 1 and
+                # 2 frames are not equally precise.
+                centre = np.average(means, axis=0, weights=sizes)
+                measured = ((sizes[:, None] * (means - centre) ** 2).sum(axis=0)
+                            / (n - 1) * float(np.sum(weights ** 2 / sizes)))
+            else:
+                measured = means.var(axis=0, ddof=1) * float(np.sum(weights ** 2))
+        if frames < 3:
             # Frames that agree in every bin are one configuration.
-            variance = variance * n
-        if n >= 3:
-            # Taken over the bins around each, INEFFICIENCY_BINS of them: a
-            # correlation time is the dynamics', shared by neighbouring
-            # bins, and one bin's own estimate scatters so widely that the
-            # tallest bin of a slowly moving gas was often one whose
-            # estimate had come out low.
-            around = (_smoothed(per_frame, INEFFICIENCY_BINS)
-                      if window < INEFFICIENCY_BINS else per_frame)
-            inefficiency = np.array([statistical_inefficiency(around[:, k])
-                                     for k in range(around.shape[1])])
-            variance = variance * np.maximum(1.0, inefficiency)
-        return np.sqrt(variance)
+            counts = self.counts[blocks]
+            alike = frames > 1 and bool(np.all(counts == counts[:1]))
+            return np.sqrt(counting * (frames if alike else 1.0))
+        # The correlation, read over the bins around each.
+        smoothed_means = _smoothed(self.g_sum[blocks] / sizes[:, None], INEFFICIENCY_BINS)
+        around = (_smoothed(means, INEFFICIENCY_BINS) if window < INEFFICIENCY_BINS
+                  else means)
+        by_block = np.array([statistical_inefficiency(around[:, k]) if n >= 3 else 1.0
+                             for k in range(around.shape[1])])
+        by_block = np.maximum(1.0, by_block)
+        by_frame = by_block
+        if np.any(sizes > 1):
+            # Blocks of several frames: the frames' inefficiency is the
+            # blocks' times how much more their means vary than means of
+            # independent frames would (the blocking method).
+            mean_around = _smoothed(self.g_sum[blocks].sum(axis=0) / frames,
+                                    INEFFICIENCY_BINS)
+            of_frames = (self.around_squares[blocks].sum(axis=0) / frames
+                         - mean_around ** 2)
+            of_blocks = np.average((smoothed_means - mean_around) ** 2, axis=0,
+                                   weights=sizes)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratio = np.where(of_frames > 1e-12 * np.maximum(mean_around ** 2, 1e-300),
+                                 float(np.mean(sizes)) * of_blocks / of_frames, frames)
+            by_frame = np.clip(by_block * np.nan_to_num(ratio, nan=frames), 1.0, frames)
+        return np.sqrt(np.maximum(counting * by_frame, measured * by_block))
 
 
 def _reach_or_refuse(traj: md.Trajectory) -> float:
@@ -242,9 +329,84 @@ def _what_would_fix_it(selection: str, traj: md.Trajectory) -> str:
     )
 
 
+def first_peak(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
+               smooth_noise: np.ndarray | None = None) -> tuple[int, float, int, bool]:
+    """The first peak past 0.15 nm that g(r) resolves, or the hill that
+    stops one being named.
+
+    Returns ``(index, bar, searched, resolved)``: -1 for an empty curve; the
+    bar a 1% chance of noise reaching it in any of the ``searched`` bins
+    sets (never under 3). The hills of g(r) smoothed over 0.035 nm are taken
+    in order out from 0.15 nm, each one's tallest bin its peak, and a hill is
+    a shell when the curve then falls away from it, before climbing as high
+    again, by more than two smoothed values differ by noise (the smoothed
+    bar, on root two of the smoothed scatter ``smooth_noise``). The first
+    shell is the first peak: resolved where its peak stands above bulk by
+    ``bar`` of its own scatter (``noise``, :meth:`PairHistogram.scatter`)
+    and, where bins are narrower than 0.0175 nm, a bin beside it stands three
+    scatters clear too or it clears twice the bar alone (a shell spans
+    several bins, a fluke one); unresolved otherwise, and never passed over
+    for a later one (a water
+    O-H's hydrogen-bond peak, short of the bar in 5 frames, gave way to the
+    0.32 nm shell and 34 neighbours). With no such hill the tallest bin is
+    returned, unresolved. Two shells closer than the 0.035 nm smoothing are
+    one hill. The tallest point of the whole curve is a later
+    shell wherever that one stands taller (a water O-H's 0.32 nm peak over
+    its 0.18 nm hydrogen bond).
+    """
+    from statistics import NormalDist
+
+    from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
+
+    finite = np.isfinite(g)
+    searchable = (radii > 0.15) & finite
+    if not searchable.any():
+        return -1, 3.0, 0, False
+    searched = int(np.count_nonzero(searchable))
+    bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
+    bins = _smoothing_bins(radii)
+    stretches = max(1, searched // bins)
+    smooth_bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / stretches))
+    scatter = np.where(np.isfinite(noise), noise, np.inf)
+    if smooth_noise is None:
+        smooth_noise = np.asarray(noise, dtype=np.float64) / np.sqrt(bins)
+    smooth_scatter = np.where(np.isfinite(smooth_noise), smooth_noise, np.inf)
+    smooth = _smoothed(np.where(finite, g, 1.0), bins)
+    # A shell is wider than a bin of 0.005 nm: beside the bin that clears the
+    # bar, another of it must stand clear of bulk (three scatters), so one bin
+    # of noise does not make a peak; a bin wider than about half a shell
+    # holds the shell alone, and a bin twice over the bar stands alone.
+    width = float(radii[1] - radii[0]) if len(radii) > 1 else 0.0
+    one_bin_shells = width >= 0.0175
+    n = len(g)
+    hills = [k for k in range(n) if searchable[k]
+             and (k == 0 or smooth[k] > smooth[k - 1])
+             and (k == n - 1 or smooth[k] >= smooth[k + 1])]
+    for k in hills:
+        # A shell is a hill the curve falls well away from before it climbs
+        # as high again; a hill on a curve still climbing is not one.
+        higher = np.nonzero(smooth[k + 1:] > smooth[k])[0]
+        end = k + 1 + (int(higher[0]) if higher.size else n - k - 1)
+        fall = float(smooth[k] - np.min(smooth[k:end])) if end > k else 0.0
+        if not fall > smooth_bar * np.sqrt(2.0) * smooth_scatter[k]:
+            continue
+        low, high = max(0, k - bins // 2), min(n, k + bins // 2 + 1)
+        top = low + int(np.argmax(np.where(searchable[low:high], g[low:high], -np.inf)))
+        height = float(g[top]) - 1.0
+        beside = np.delete(np.arange(low, high), top - low)
+        beside = beside[searchable[beside]]
+        backed = (one_bin_shells or height > 2.0 * bar * scatter[top]
+                  or bool(np.any(g[beside] - 1.0 > 3.0 * scatter[beside])))
+        # Resolved or not, it is the first shell: a later one is not named
+        # in its place.
+        return top, bar, searched, bool(height > bar * scatter[top] and backed)
+    return int(np.argmax(np.where(searchable, g, -np.inf))), bar, searched, False
+
+
 def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int,
                     noise: np.ndarray | None = None) -> str:
-    """Why the tallest point is not a first peak, or empty if it is one.
+    """Why the point ``peak`` (:func:`first_peak`) is not a first peak, or
+    empty if it is one.
 
     The tallest point of a curve always exists. On a trajectory too short
     for hydration structure to emerge the curve is flat, its tallest point
@@ -290,12 +452,12 @@ def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int,
         searched = max(1, int(np.count_nonzero((radii > 0.15) & np.isfinite(g))))
         bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
         where = (f"at that separation, from its own counts and how much they "
-                 f"vary over the run, {bar:.1f} times which is needed where "
-                 f"the tallest of {searched} bins is taken")
+                 f"vary over the run, {bar:.1f} times which above bulk is "
+                 f"needed with {searched} bins searched")
 
     if peak >= n - max(2, int(n * 0.05)):
         return (
-            f"The tallest point of g(r) is at {radii[peak]:.3f} nm, within a "
+            f"The first peak of g(r) is at {radii[peak]:.3f} nm, within a "
             "few bins of half the box, which is the edge of what a periodic "
             "cell can resolve rather than a shell. A first peak is a local "
             "maximum; this curve was still flat or climbing where it ran "
@@ -307,10 +469,10 @@ def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int,
     height = float(g[peak]) - 1.0
     if height <= bar * scatter:
         return (
-            f"g(r) rises {height:+.3f} above bulk at its tallest point, "
+            f"g(r) stands {height:+.3f} from bulk at {radii[peak]:.3f} nm, "
             f"against a scatter of {scatter:.3f} {where}, so "
-            "the tallest point is not distinguishable from the noise of this "
-            "curve. No hydration structure is resolved here. A longer run is "
+            "that peak is not distinguishable from the noise of this "
+            "curve. No shell is resolved here. A longer run is "
             "the only remedy."
         )
     return ""
@@ -430,7 +592,8 @@ class RadialDistribution(Analysis):
                 f"{self.bin_width:g} nm, so there is no curve to plot.",
                 code="analysis.option.out_of_range")
 
-        pairs, available = _pairs_between(a, b, np.random.default_rng(0))
+        pairs, available = _pairs_between(a, b, np.random.default_rng(0),
+                                          limit=pairs_for(traj.n_frames, MAX_PAIRS))
         subsampled = available > len(pairs)
 
         histogram = PairHistogram(traj, pairs, r_max, self.bin_width)
@@ -453,7 +616,7 @@ class RadialDistribution(Analysis):
             )
         if subsampled:
             record["subsampled_note"] = (
-                f"{MAX_PAIRS} pairs of the {available} available, "
+                f"{len(pairs)} pairs of the {available} available, "
                 "drawn once and held fixed across frames so the curve is "
                 "not a different estimator in every frame."
             )
@@ -462,8 +625,20 @@ class RadialDistribution(Analysis):
         # where there is one to quote.
         inside = radii > 0.15
         if inside.any() and np.isfinite(g[inside]).any():
-            peak = int(np.argmax(np.where(inside, g, -np.inf)))
-            verdict = _is_that_a_peak(radii, g, peak, histogram.scatter())
+            from fastmdxplora.analysis.coordination_number import _smoothing_bins
+
+            noise = histogram.scatter()
+            peak, _bar, _searched, resolved = first_peak(
+                radii, g, noise, histogram.scatter(window=_smoothing_bins(radii)))
+            verdict = _is_that_a_peak(radii, g, peak, noise)
+            if not verdict and not resolved:
+                verdict = (
+                    f"g(r) stands {float(g[peak]) - 1.0:+.3f} from bulk at "
+                    f"{radii[peak]:.3f} nm in one bin, but no bin beside it "
+                    "stands clear of its own noise, and a shell spans several "
+                    "bins, so the peak is not distinguishable from the "
+                    "noise of this curve. No shell is resolved here. A longer run is "
+                    "the only remedy.")
             if verdict:
                 record["not_a_measurement"] = verdict
             else:
