@@ -27,6 +27,33 @@ METHODS = ("kmeans", "hierarchical", "dbscan")
 MOST_FOR_A_MEDOID = 300
 
 
+def _medoids(path: Path) -> dict[int, int]:
+    """Each state's medoid as the cluster analysis recorded it: its frame
+    among those the analysis was given (`medoid_frame` in
+    `cluster_<method>_populations.csv`); none where not recorded."""
+    import math
+
+    import pandas as pd
+
+    from fastmdxplora import record_access
+
+    try:
+        table = pd.read_csv(path) if record_access.can_read(path) and path.is_file() else None
+    except (OSError, ValueError):
+        return {}
+    if table is None or not {"cluster", "medoid_frame"} <= set(table.columns):
+        return {}
+    out: dict[int, int] = {}
+    for label, at in zip(table["cluster"], table["medoid_frame"]):
+        try:
+            label, at = int(label), float(at)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(at) and at >= 0 and at == int(at):
+            out[label] = int(at)
+    return out
+
+
 def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     """Each state the cluster analysis found, with its frames played, its
     share and its representative; or why there are none."""
@@ -68,12 +95,21 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     if len(atoms) < 3:
         atoms = frames.topology.select(ALPHA_CARBONS)
     times = index.get("frame_times_ns") or []
+    recorded = _medoids(folder / f"cluster_{chosen}_populations.csv")
     states = []
     for label in sorted(set(labels.tolist()) - {-1}):
         members = np.where(of_played == label)[0]
         share = float((labels == label).mean())
         representative = None
-        if len(members):
+        given = recorded.get(int(label))
+        if len(members) and given is not None and given < len(analysed):
+            # The medoid the analysis found among every frame it clustered
+            # (`medoid_frame`, the frame given to it, placed in the
+            # trajectory as each label is): the state's frame played nearest
+            # it. Found again among the frames played, a near tie named
+            # another frame than the analysis's own.
+            representative = int(members[int(np.argmin(np.abs(played[members] - analysed[given])))])
+        elif len(members):
             pool = members[_even(len(members), MOST_FOR_A_MEDOID)]
             pooled = frames[pool]
             summed = [float(md.rmsd(pooled, pooled, frame=k, atom_indices=atoms).sum())
@@ -87,9 +123,9 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     states.sort(key=lambda state: -state["share"])
     noise = int((labels == -1).sum())
     said = (f"The {len(states)} states the cluster analysis's {chosen} found among the "
-            f"{len(labels):,} frames it analysed, each shown by its medoid among the frames "
-            f"played (the frame with the least summed RMSD to the state's others, on "
-            f"`{selection}`).")
+            f"{len(labels):,} frames it analysed, each shown by its medoid: the frame played "
+            f"nearest the one the analysis recorded, or where none is recorded, the frame "
+            f"played with the least summed RMSD to the state's others, on `{selection}`.")
     if noise:
         said += f" {noise:,} frames belonged to no state."
     return {"ok": True, "method": chosen, "methods": found, "states": states,

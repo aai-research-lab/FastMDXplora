@@ -1051,7 +1051,9 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
             # of the study is not written into.
             return {"ok": False, "reason": _NOT_SENT[0]}
         said = _load_json(folder / "index.json")
-        if said.get("signature") == index.get("signature") and _sent_here(
+        # Pieces written before they carried the frames' times are
+        # written again (`timed`).
+        if said.get("signature") == index.get("signature") and said.get("timed") and _sent_here(
                 folder, *(f"piece_{k}.xtc" for k in range(len(said.get("pieces", []))))):
             return said
         if any(_linked_out(folder / f"piece_{k}.xtc")
@@ -1063,12 +1065,15 @@ def frames_pieces(output_dir: str | Path) -> dict[str, Any]:
         size = max(1, min(frames.n_frames, PIECE_ATOM_FRAMES // max(1, frames.n_atoms)))
         folder.mkdir(exist_ok=True)
         pieces = []
+        times = index.get("frame_times_ns")
+        times = times if isinstance(times, list) and len(times) == frames.n_frames else None
         for k, start in enumerate(range(0, frames.n_frames, size)):
             piece = frames[start:start + size]
-            _write_xtc(piece, folder / f"piece_{k}.xtc")
+            _write_xtc(piece, folder / f"piece_{k}.xtc",
+                       times[start:start + size] if times else None)
             pieces.append({"start": start, "frames": int(piece.n_frames),
                            "url": f"/structure/frames-piece.xtc?k={k}"})
-        said = {"ok": True, "signature": index.get("signature"), "pieces": pieces,
+        said = {"ok": True, "signature": index.get("signature"), "timed": True, "pieces": pieces,
                 "total": int(frames.n_frames), "atoms": int(frames.n_atoms),
                 "bytes": sum((folder / f"piece_{k}.xtc").stat().st_size
                              for k in range(len(pieces))),
@@ -1092,7 +1097,9 @@ def as_xtc(dcd: Path) -> Path | None:
         return target
     with suppress_native_output():
         frames = md.load_dcd(str(dcd), top=str(dcd.parent / FRAMES_TOPOLOGY))
-    _write_xtc(frames, target)
+    times = _load_json(dcd.parent / FRAMES_INDEX).get("frame_times_ns")
+    _write_xtc(frames, target,
+               times if isinstance(times, list) and len(times) == frames.n_frames else None)
     return target
 
 
@@ -1239,10 +1246,17 @@ def _write_dcd(frames: Any, target: Path) -> None:
     record_access.save_by_name(target, frames.save_dcd)
 
 
-def _write_xtc(frames: Any, target: Path) -> None:
-    """``frames`` saved as the XTC ``target``, as `_write_dcd` saves a DCD."""
+def _write_xtc(frames: Any, target: Path, times_ns: list[Any] | None = None) -> None:
+    """``frames`` saved as the XTC ``target``, as `_write_dcd` saves a DCD,
+    each frame at its time in the production (``times_ns``, from the
+    frames' index) in the XTC's ps. A DCD read by MDTraj carries no clock,
+    so each frame's time was its index: frame 3 said 3 ps."""
     from fastmdxplora import record_access
 
+    if times_ns is not None and len(times_ns) == frames.n_frames and all(
+            isinstance(t, (int, float)) and not isinstance(t, bool) and np.isfinite(t)
+            for t in times_ns):
+        frames.time = np.asarray(times_ns, dtype=float) * 1000.0
     record_access.save_by_name(target, frames.save_xtc)
 
 
@@ -1292,7 +1306,11 @@ def _interval_ns(out: Path, source: dict[str, Any]) -> float | None:
     if record.get("continues") or not isinstance(resolved, dict) \
             or not isinstance(parameters, dict):
         return None
+    # A run stopped before its record was resolved (`resolved: {}`) says
+    # its interval among the parameters it ran with: its frames had no time.
     steps = resolved.get("trajectory_interval_steps")
+    if steps is None:
+        steps = parameters.get("trajectory_interval_steps")
     timestep = parameters.get("timestep_fs")
     if (type(steps) is int and steps > 0 and type(timestep) in (int, float)
             and np.isfinite(timestep) and timestep > 0

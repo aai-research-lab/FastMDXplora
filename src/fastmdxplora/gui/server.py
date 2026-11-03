@@ -5180,6 +5180,17 @@ def _run_title(root: Path, manifest: dict[str, Any]) -> str:
     return root.name or "FastMDXplora Live"
 
 
+def _force_field_files(forcefield: dict[str, Any]) -> str | None:
+    """"amber14-all.xml, amber14/tip3p.xml (amber-openff)", or None where the
+    record names no files."""
+    xmls = forcefield.get("xmls")
+    if not isinstance(xmls, list) or not xmls:
+        return None
+    files = ", ".join(str(x) for x in xmls)
+    name = forcefield.get("name")
+    return f"{files} ({name})" if isinstance(name, str) and name else files
+
+
 def _setup_details(setup_manifest: dict[str, Any]) -> dict[str, Any]:
     params = setup_manifest.get("parameters")
     if not isinstance(params, dict):
@@ -5196,7 +5207,11 @@ def _setup_details(setup_manifest: dict[str, Any]) -> dict[str, Any]:
             params.get("ion_concentration_M"),
             params.get("ion_concentration_m"),
         ),
+        # The files the run used, as the report's Methods names them, with
+        # FastMDXplora's name for the choice beside them: "amber-openff" alone
+        # named a preset, not a force field a reader can look up.
         "force_field": _first_present(
+            _force_field_files(forcefield),
             forcefield.get("name"),
             forcefield.get("protein_forcefield"),
             forcefield.get("forcefield"),

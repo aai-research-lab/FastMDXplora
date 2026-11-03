@@ -134,6 +134,47 @@
         none.appendChild(there);
       }
     });
+    markFound(wanted);
+  }
+
+  /* The words typed, marked where they are in the settings found (their
+   * names, descriptions and groups), without changing the page's text:
+   * the CSS highlights the browser keeps (`::highlight(settings-found)`).
+   * Where the browser has none, the rows are found and nothing marked. */
+  var SKIP = /^(SELECT|OPTION|TEXTAREA|INPUT|BUTTON|SCRIPT|STYLE)$/;
+  function markFound(wanted) {
+    if (typeof Highlight === "undefined" || !window.CSS || !CSS.highlights) return;
+    CSS.highlights.delete("settings-found");
+    if (!wanted.length) return;
+    var ranges = [];
+    $$("#settings-you .pref-group:not([hidden]), #settings-folder .pref-group:not([hidden])")
+      .forEach(function (group) {
+        var walker = document.createTreeWalker(group, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (node) {
+            for (var up = node.parentNode; up && up !== group; up = up.parentNode) {
+              if (SKIP.test(up.nodeName) || up.hidden || (up.classList && up.classList.contains("settings-status"))) {
+                return NodeFilter.FILTER_REJECT;
+              }
+            }
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        for (var node = walker.nextNode(); node; node = walker.nextNode()) {
+          var text = node.nodeValue.toLowerCase();
+          wanted.forEach(function (word) {
+            for (var at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + word.length)) {
+              var range = new Range();
+              range.setStart(node, at);
+              range.setEnd(node, at + word.length);
+              ranges.push(range);
+            }
+          });
+        }
+      });
+    if (!ranges.length) return;
+    var marked = new Highlight();
+    ranges.forEach(function (range) { marked.add(range); });
+    CSS.highlights.set("settings-found", marked);
   }
 
   /* ---- The theme and the accent ------------------------------------ */

@@ -30,7 +30,30 @@ def again_payload(root: Any) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - the analysis stack is optional here
         catalogue = []
     return {"available": True, **offered, "catalogue": catalogue,
-            "previous": again.PREVIOUS}
+            "not_applicable": _not_applicable(study), "previous": again.PREVIOUS}
+
+
+def _not_applicable(study: Path) -> dict[str, str]:
+    """``{analysis: reason}`` for the analyses the study's recorded Config
+    leaves nothing for (`applicable.not_applicable`, as New study reads
+    it): a study never analysed was offered all of them ticked, a ligand's
+    and a membrane's for a protein in water. Nothing where the Config is
+    not read (the analysis decides, as it always has)."""
+    import yaml
+
+    from fastmdxplora import again, record_access
+    from fastmdxplora.config.recorded import RECORDED
+    from fastmdxplora.gui.applicable import not_applicable
+
+    run = study
+    if again._several(study):
+        runs = again._runs_of(study)
+        run = runs[0] if runs else study
+    try:
+        config = yaml.safe_load(record_access.read_text(run / RECORDED, encoding="utf-8"))
+    except (OSError, ValueError, yaml.YAMLError):
+        return {}
+    return not_applicable(config) if isinstance(config, dict) else {}
 
 
 def again_fix(root: Any, action: str, arguments: dict[str, Any] | None) -> dict[str, Any]:

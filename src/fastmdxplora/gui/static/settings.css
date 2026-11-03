@@ -215,3 +215,10 @@
     .settings-page .pref-row:not(.settings-field) { flex-wrap: wrap; }
     .settings-scope-said { display: none; }
 }
+
+/* The words typed in the search, where they are in the settings found
+   (settings.js `markFound`): a tint of the accent, the text as it was. */
+::highlight(settings-found) {
+    background-color: color-mix(in srgb, var(--accent) 34%, transparent);
+    color: inherit;
+}

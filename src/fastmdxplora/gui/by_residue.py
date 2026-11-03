@@ -286,6 +286,13 @@ def _rmsf(folder: Path, record: dict[str, Any], frames: int | None) -> dict[str,
     rows = _rows(_table(path), "rmsf_nm" if _has_header(path) else 1)
     if not rows:
         return None
+    # The frames RMSF itself used (after its equilibrated start), not the
+    # analysis's count of every frame: "over the 100 frames analysed" for
+    # an RMSF of 62.
+    own = ((record.get("findings") or {}).get("frames") or {}) if isinstance(record.get("findings"), dict) else {}
+    used = own.get("n_frames_analysed") if isinstance(own, dict) else None
+    if isinstance(used, int) and not isinstance(used, bool) and used > 0:
+        frames = used
     low, high = _span(rows)
     selection = str(record.get("selection") or ALPHA_CARBONS)
     atoms = "its alpha carbon" if selection in ("name CA", ALPHA_CARBONS) else f"its atoms in `{selection}`"

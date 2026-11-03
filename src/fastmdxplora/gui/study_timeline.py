@@ -354,6 +354,16 @@ def _ended(base: Path) -> dict[str, Any] | None:
     number = re.fullmatch(r"segment-(\d+)", piece)
     where = ((f"in piece {int(number.group(1))}'s " if number else "in ") + stage
              if stage else "")
+    # The stage's own steps, as telemetry says them: the whole run's
+    # clock called "at step 12,000 of 15,000" in production what was
+    # production's step 2,000 of 5,000.
+    planned = {key: status.get(f"{key}_steps_planned") for key in ("nvt", "npt", "production")}
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in planned.values()) \
+            and stage.lower() in planned and isinstance(step, (int, float)) \
+            and not isinstance(step, bool):
+        before = {"nvt": 0, "npt": planned["nvt"],
+                  "production": planned["nvt"] + planned["npt"]}[stage.lower()]
+        step, total = max(int(step) - int(before), 0), planned[stage.lower()]
     if (where and isinstance(step, (int, float)) and isinstance(total, (int, float))
             and not isinstance(step, bool) and total > 0):
         where += f", at step {int(step):,} of {int(total):,}"

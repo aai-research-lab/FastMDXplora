@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora import record_access as _records
-from fastmdxplora.gui.report_dashboard import _numbers_in, unit_of
+from fastmdxplora.gui.report_dashboard import ANALYSIS_SECTION_BY_FOLDER, _numbers_in, unit_of
 
 #: What each series is called and whether it runs over time or residues.
 #: A name not listed is drawn over time if its analysis recorded a mean over
@@ -47,6 +47,15 @@ SERIES: dict[str, tuple[str, str]] = {
 MOST_POINTS = 4000
 
 NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _said(name: str, kind: str) -> tuple[str, str]:
+    """A series by the name it has here, else by its Analysis page heading,
+    as Compare and All studies name it (`workspace._label_of`): the
+    Viewer's tracks and the Overview's chart said "end_to_end"."""
+    if name in SERIES:
+        return SERIES[name]
+    return ANALYSIS_SECTION_BY_FOLDER.get(name) or name, kind
 _NAME = NAME
 
 
@@ -138,7 +147,7 @@ def series_over_time(root: Path) -> dict[str, Any]:
         findings = _json(folder / name / "options.json").get("findings")
         mean = findings.get("mean") if isinstance(findings, dict) else None
         mean = mean if isinstance(mean, dict) else None
-        label, kind = SERIES.get(name, (name, "time" if mean else ""))
+        label, kind = _said(name, "time" if mean else "")
         if kind == "time":
             found.append({"analysis": name, "label": label, "unit": unit_of(name, mean)})
     return {"ok": True, "series": found}
@@ -162,7 +171,7 @@ def series_payload(root: Path, analysis: str) -> dict[str, Any]:
     record = _json(record_path)
     found = (record.get("findings") or {}).get("mean")
     found = found if isinstance(found, dict) else None
-    label, kind = SERIES.get(analysis, (analysis, "time" if found else ""))
+    label, kind = _said(analysis, "time" if found else "")
     if not kind:
         return {"ok": False, "reason": f"{analysis} is not a series"}
 

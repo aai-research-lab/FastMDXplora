@@ -277,7 +277,9 @@
           statusCell(key, said, "") + "</tr>";
       }
       // A failure's first sentence in the row; the chip opens to the rest.
-      var cut = what.search(/[.:]\s/);
+      // A sentence ends at a full stop: cut at a colon, "instantiation
+      // failed: <why>" read only "instantiation failed:" in the row.
+      var cut = what.search(/\.\s/);
       var plain = key === "result" || key === "running" || key === "unread";
       var head = plain || cut < 0 ? what : what.slice(0, cut + 1);
       var rest = plain || cut < 0 ? "" : what.slice(cut + 1).trim();

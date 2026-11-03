@@ -276,6 +276,12 @@
     // thread landed at the foot of the report.
     const column = document.querySelector(".main");
     if (column) column.scrollTop = 0;
+    // At a phone's width the page scrolls as a whole, not the column
+    // (dashboard.css, max-width 800px: the body scrolls): it opened at the
+    // last page's scroll there.
+    [document.scrollingElement, document.body].forEach((scroller) => {
+      if (scroller) scroller.scrollTop = 0;
+    });
     // Each page a step of its own, so Back and Forward go between them;
     // an address only put right replaces its step.
     const address = addressOfPage(page, place);

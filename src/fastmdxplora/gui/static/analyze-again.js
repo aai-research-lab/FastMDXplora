@@ -156,9 +156,19 @@
       var more = node("details", "again-more");
       more.appendChild(node("summary", "", "More analyses (" + others.length + ")"));
       var rest = node("div", "again-list");
+      // A study never analysed: every analysis its Config leaves something
+      // for, ticked; those it leaves nothing for unticked, with the reason
+      // (a ligand's for a protein in water were ticked).
+      var none = offered.not_applicable || {};
       others.forEach(function (item) {
-        rest.appendChild(choice(item, only ? only.indexOf(item.name) >= 0
-          : !recorded.length && !unread));
+        var why = none[item.name];
+        var label = choice(item, only ? only.indexOf(item.name) >= 0
+          : !recorded.length && !unread && !why);
+        if (why) {
+          label.appendChild(node("span", "again-why muted small", why));
+          label.title = why;
+        }
+        rest.appendChild(label);
       });
       more.appendChild(rest);
       if (!recorded.length) more.open = true;

@@ -92,7 +92,7 @@ def test_the_trajectory_comes_first_with_the_topology_it_is_read_with(study):
     trajectory = keys["trajectory"]
     assert trajectory["paths"] == ["simulation/production.dcd",
                                    "simulation/trajectory_topology.pdb"]
-    assert trajectory["what"] == "200 frames over 0.1 ns · one every 0.5 ps · 4 atoms, no water"
+    assert trajectory["what"] == "200 frames over 100 ps · one every 0.5 ps · 4 atoms, no water"
     assert trajectory["load"] == ('md.load("simulation/production.dcd", '
                                   'top="simulation/trajectory_topology.pdb")')
     assert keys["system"]["what"] == "8 atoms, solvated, with the force field as OpenMM built it"

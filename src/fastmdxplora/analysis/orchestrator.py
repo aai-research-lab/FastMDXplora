@@ -360,7 +360,8 @@ class AnalysisOrchestrator:
                 self.results[name] = AnalysisResult(
                     name=name,
                     status="error",
-                    message=f"instantiation failed: {exc}",
+                    # An error with no words of its own said by its kind.
+                    message=f"instantiation failed: {str(exc) or type(exc).__name__}",
                 )
                 continue
 

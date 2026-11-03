@@ -386,7 +386,10 @@ def _tiles_of(root: Path, prefix: str, run: str, by_path: dict[str, dict[str, An
         if isinstance(frames, (int, float)) and frames > 0:
             said.append(f"{int(frames):,} frames")
             if isinstance(span, (int, float)) and span > 0:
-                said[-1] += f" over {_number(span)} ns"
+                # A length under 1 ns in ps, as every page says it: "100
+                # frames over 0.01 ns" was 10 ps.
+                said[-1] += (f" over {_number(span * 1000)} ps" if span < 1
+                             else f" over {_number(span)} ns")
                 if frames > 1:
                     said.append(f"one every {_number(span * 1000 / frames)} ps")
         if opens_with is not None:

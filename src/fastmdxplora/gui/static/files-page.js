@@ -81,18 +81,28 @@
     return (bytes / 1073741824).toFixed(2) + " GB";
   }
 
-  /* When each file was written, in the reader's own time and words. */
+  /* When each file was written, in the reader's own time and words, in
+   * 24 or 12 hours as Settings says (the other pages' clock did; Files'
+   * did not). Said again when the setting changes. */
+  function twelveHours() {
+    var field = document.getElementById("setting-time-format");
+    return Boolean(field && field.value === "12h");
+  }
   function sayWhen(root) {
     var year = new Date().getFullYear();
+    var hour12 = twelveHours();
     all(root, "time[data-when]").forEach(function (el) {
       var at = new Date(parseFloat(el.getAttribute("data-when")) * 1000);
       if (isNaN(at.getTime())) return;
-      var options = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+      var options = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: hour12 };
       if (at.getFullYear() !== year) options.year = "numeric";
       el.textContent = at.toLocaleString(undefined, options);
-      el.title = at.toLocaleString();
+      el.title = at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium", hour12: hour12 });
     });
   }
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "setting-time-format") sayWhen(document);
+  });
 
   /* ---- Finding, filtering, choosing a run --------------------------- */
   function words(text) {
