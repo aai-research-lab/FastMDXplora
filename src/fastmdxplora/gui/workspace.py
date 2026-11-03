@@ -1044,9 +1044,11 @@ def study_state(folder: Path | str) -> str:
 
 def _state_of(base: Path, batch: Any, manifest: Any) -> str:
     try:
-        from fastmdxplora.simulation.resume import _still_running
+        from fastmdxplora.simulation.resume import _still_running, being_carried_on
 
-        if _still_running(base):
+        # Going, or carried on by a resume (its lock taken before its
+        # process record is written): never completed meanwhile.
+        if _still_running(base) or being_carried_on(base):
             return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
@@ -1117,10 +1119,21 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
         if _simulated(base):
             return "not known"
         return "not started"
+    from fastmdxplora.simulation.resume import stopped_at_its_end
+
     for phase in phases:
-        if isinstance(phase, dict) and phase.get("status") == "error":
+        if (isinstance(phase, dict) and phase.get("status") == "error"
+                and not stopped_at_its_end(base, phase)):
             code = str((phase.get("refusal") or {}).get("code") or "")
             return "stopped" if code == "simulation.run.stopped" else "failed"
+    if any(stopped_at_its_end(base, phase) for phase in phases):
+        # Stopped at its last step: whole, and its later phases say the rest.
+        later = {str(p.get("name")): p.get("status") for p in phases if isinstance(p, dict)}
+        if any(later.get(name) not in ("ok", "skipped") for name in ("analysis", "report")
+               if name in later):
+            return "stopped"
+        if not all(name in later for name in ("analysis", "report")):
+            return "stopped"
     from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 
     # Its pieces' analyses owed, with no live record to say so; going while

@@ -846,17 +846,26 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
                 return stopped
 
     last = record["rounds"][-1] if record["rounds"] else {}
-    if (last.get("decision") == "ceiling" and isinstance(last.get("production_ns"),
-                                                         (int, float))
+    try:
+        before = json.loads((record_in / RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        before = {}
+    # The rule as judged then: its targets and independent starts, as now.
+    same_rule = (isinstance(before, dict) and before.get("targets") == record["targets"]
+                 and str(before.get("independent_starts") or "required") == independent)
+    if (same_rule and last.get("decision") == "ceiling"
+            and isinstance(last.get("production_ns"), (int, float))
             and float(last["production_ns"]) >= ceiling - 1e-9
             and all(abs(production_of(run) - float(last["production_ns"])) <= _ONE_LENGTH_NS
                     for run in runs)):
-        # Already at the ceiling it still sets, judged at these lengths: a
-        # resume with nothing run adds no round, the same one again.
+        # Already at the ceiling it still sets, judged at these lengths by
+        # the rule now asked: a resume with nothing run adds no round, the
+        # same one again. A rule changed since is judged.
         record["outcome"] = last["decision"]
         record["said"] = str(last.get("said") or "")
         say("Nothing run: the runs were judged at these lengths already. " + record["said"])
-        return record
+        # Said to its caller, never written.
+        return {**record, "nothing_run": True}
     for _ in range(MOST_ROUNDS):
         production = min(production_of(run) for run in runs)
         verdicts = judge(runs, targets, production)

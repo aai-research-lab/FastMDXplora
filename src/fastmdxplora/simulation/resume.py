@@ -2054,6 +2054,10 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
         if not isinstance(phase, dict):
             continue
         name = str(phase.get("name") or phase.get("phase") or "a phase")
+        if stopped_at_its_end(root, phase):
+            # Stopped at its last step: its production is whole.
+            states[name] = "ok"
+            continue
         if phase.get("status") == "error":
             if (phase.get("refusal") or {}).get("retryable") is True:
                 return False, None
@@ -2077,6 +2081,27 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     exclude = config.get("exclude_phase") or config.get("exclude") or []
     planned = [p for p in PHASES if (not include or p in include) and p not in exclude]
     return all(states.get(p) in ("ok", "skipped") for p in planned), None
+
+
+def stopped_at_its_end(root: str | Path, phase: Any) -> bool:
+    """Whether a run's Manifest records its simulation stopped when asked
+    where its production had reached its end (`joining.piece_finished`, the
+    one reading of a stretch of production's end): the stop is said, and
+    the simulation is whole, so its state is read from its later phases,
+    never stopped for good by it."""
+    from fastmdxplora.analysis.joining import piece_finished
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    if not isinstance(phase, dict) or phase.get("status") != "error":
+        return False
+    if str(phase.get("name") or phase.get("phase") or "") != "simulation":
+        return False
+    if (phase.get("refusal") or {}).get("code") != STOPPED_CODE:
+        return False
+    try:
+        return piece_finished(Path(root) / "simulation")
+    except Exception:  # noqa: BLE001 - not known whole
+        return False
 
 
 # Held by the process carrying a study on, for as long as it does: a second
@@ -2307,11 +2332,11 @@ def _resume_study(study: str | Path, *,
     except (OSError, ValueError):
         pass
     owed = None if root in _JUDGED_AGAIN_HERE else round_ended(root, resuming=True)
-    if owed is None:
+    if owed is None and (root in _JUDGED_AGAIN_HERE or not _its_rule_not_applied(root)):
         return _carry_the_run_on(root, base, device_index=device_index)
     from fastmdxplora.simulation.stopping import runs_kept_below_the_ceiling
 
-    if runs_kept_below_the_ceiling(root):
+    if owed is not None and runs_kept_below_the_ceiling(root):
         # A ceiling lowered below the length its cut extension runs to:
         # nothing is run, as the round's sentence says.
         return {**base, "ok": False, "did": RESUMED_NOTHING, "error": owed.as_text(),
@@ -2354,6 +2379,26 @@ def _resume_study(study: str | Path, *,
         answer.pop("error", None)
         answer.pop("round_ended", None)
     return answer
+
+
+def _its_rule_not_applied(root: Path) -> bool:
+    """Whether a study of one run has a stopping rule its run was stopped
+    (or killed) before: its record planned, or said stopped before the rule
+    was applied. Its resume carries the run on and then applies the rule,
+    as `stopping.json` says, where it ran only the run's analyses."""
+    import json
+
+    from fastmdxplora.simulation.stopping import (RECORD, STOPPED_BEFORE_THE_RULE,
+                                                  STOPPED_BEFORE_THE_RULE_AGAIN)
+
+    try:
+        record = json.loads(_records.read_text(root / RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or str(record.get("outcome")) not in ("stopped", "running"):
+        return False
+    return (not record.get("rounds")
+            or record.get("said") in (STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN))
 
 
 def _where_it_stands(root: Path, *, lengths: bool = True) -> tuple[bool, str | None, bool, Any]:
@@ -2475,7 +2520,7 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
     if finished:
         return {**base, "ok": True, "did": RESUMED_NOTHING,
                 **_production_now(root, {"ok": True}),
-                "detail": "The study finished; there is nothing to carry on."}
+                "detail": NOTHING_TO_CARRY_ON}
 
     # An extension stopped before its first checkpoint left nothing to go
     # on from: the piece before it is carried on instead.
@@ -2730,6 +2775,10 @@ def _judge_the_run_again(root: Path, base: dict[str, Any]) -> dict[str, Any]:
     return answer
 
 
+#: What a resume of a finished study says.
+NOTHING_TO_CARRY_ON = "The study finished; there is nothing to carry on."
+
+
 def resume_batch(root: str | Path) -> dict[str, Any]:
     """Carry a study of several runs on to the end of its plan.
 
@@ -2790,7 +2839,12 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     # Every run carried on, and the rule's round failed again, or a run not
     # carried on and the round left as it ended: not done.
     ended = round_ended(root)
-    answer = {**base, "ok": not failed and ended is None, "did": RESUMED_RUNS,
+    # Every run finished and its rule judged them at these lengths already:
+    # nothing was run, and the study says so, not that its runs were carried on.
+    nothing = (getattr(batch, "_rule_ran_nothing", False)
+               and all(r.status == "ok" and r.message == NOTHING_TO_CARRY_ON for r in results))
+    answer = {**base, "ok": not failed and ended is None,
+              "did": RESUMED_NOTHING if nothing else RESUMED_RUNS,
               "runs": listed, **({"refused": refused} if refused else {})}
     if ended is not None:
         # What carries it on, as every page says it, said last in the study's

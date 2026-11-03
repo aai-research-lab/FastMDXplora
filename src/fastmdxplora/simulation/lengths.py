@@ -237,7 +237,14 @@ def _piece_clock(folder: object) -> tuple[float | None, str]:
     side = read_checkpoint_sidecar(folder / "checkpoint.chk") or {}
     state = _state_time(folder)
     finished = side.get("finished")
-    if not isinstance(finished, bool):
+    if isinstance(finished, bool):
+        # One reading of its end (`joining.piece_finished`): a piece stopped
+        # at its last step, said not finished before the runner said so,
+        # ran to its end.
+        from fastmdxplora.analysis.joining import piece_finished
+
+        finished = piece_finished(folder)
+    else:
         # A sidecar from before it said so: only a clean finish writes the
         # final state (`joining._finished`).
         finished = state is not None
@@ -972,6 +979,21 @@ def _recorded(root: object) -> dict:
             said["production_ran_ns"], said["production_ran_source"] = None, source
         said["pieces"] = clock["pieces"]
 
+    if (not extended and not variable and said["production_ran_ns"] is None
+            and state == "read" and isinstance(said["production"].get("ns"), (int, float))):
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import piece_finished
+
+        # Stopped at its last step, its record unwritten past it: whole, so
+        # what it ran is its plan (`joining.piece_finished`).
+        try:
+            whole = piece_finished(Path(str(root)) / "simulation")
+        except Exception:  # noqa: BLE001 - not known whole
+            whole = False
+        if whole:
+            said["production_ran_ns"] = said["production"]["ns"]
+            said["production_ran_source"] = FROM_STEPS
     said["frames_kept"] = _frames_kept(root)
     return said
 

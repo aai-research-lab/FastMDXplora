@@ -52,14 +52,19 @@ def _span_analysed(base: Path) -> float | None:
     from fastmdxplora.simulation.resume import trajectory_interval_of
 
     try:
-        frames = json.loads(record_access.read_text(
-            base / "analysis" / "analysis_manifest.json", encoding="utf-8"))["n_frames"]
+        manifest = json.loads(record_access.read_text(
+            base / "analysis" / "analysis_manifest.json", encoding="utf-8"))
+        frames = manifest["n_frames"]
+        # Its frames as the analysis read them: every stride-th, so each
+        # spans that many of the run's.
+        stride = (manifest.get("load_kwargs") or {}).get("stride") or 1
         simulation = (yaml.safe_load(record_access.read_text(
             base / "resolved_config.yml", encoding="utf-8")) or {}).get("simulation") or {}
         interval = trajectory_interval_of(base)
-        if _variable_step(simulation) or not interval or not isinstance(frames, int):
+        if (_variable_step(simulation) or not interval or not isinstance(frames, int)
+                or not isinstance(stride, int)):
             return None
-        return frames * interval * float(simulation.get("timestep_fs") or 2.0) / 1e6
+        return frames * stride * interval * float(simulation.get("timestep_fs") or 2.0) / 1e6
     except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
         return None
 
@@ -73,8 +78,8 @@ def _the_means_are_of_less(base: Path) -> str | None:
     refuses, analysing it again. While a resume or an extension runs them,
     that they run (`being_carried_on`)."""
     from fastmdxplora.simulation.resume import (_extended_since_it_finished, analysis_owed,
-                                                being_carried_on, how_a_resume_finds,
-                                                production_done_ns)
+                                                being_carried_on, extended_production,
+                                                how_a_resume_finds, production_done_ns)
     from fastmdxplora.simulation.sampling_ask import length_said
 
     try:
@@ -82,16 +87,30 @@ def _the_means_are_of_less(base: Path) -> str | None:
         if not (owed or unjoined):
             return None
         going = being_carried_on(base)
-        whole = production_done_ns(base)
+        # Its length as the paragraph below says it (`extended_production`).
+        extended = extended_production(base)
+        whole = extended[0] if extended else production_done_ns(base)
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return None
     span = _span_analysed(base)
+    if span is not None and whole and span >= whole - 1e-6:
+        # Its means are of the whole of it.
+        return None
     of = (f"of its first {length_said(span)}" if span is not None
           else "of its pieces before the join")
     the_whole = f"its {length_said(whole)}" if whole else "its whole production"
     if going:
-        return (f"Its pieces are being joined and analysed now: the means below are {of}, "
-                f"not of {the_whole}, until that ends.")
+        from fastmdxplora.gui.telemetry import read_study_status
+
+        try:
+            stage = str(read_study_status(base).get("stage") or "").lower()
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            stage = ""
+        if owed or stage in ("analysis", "report"):
+            return (f"Its pieces are being joined and analysed now: the means below are "
+                    f"{of}, not of {the_whole}, until that ends.")
+        return (f"Its next piece is being simulated now: the means below are {of}, not of "
+                f"{the_whole}, until its pieces are joined and analysed.")
     found = how_a_resume_finds(base) or {}
     study = (base.parent.parent if base.parent.name == "runs"
              and (base.parent.parent / "batch_manifest.json").is_file() else base)

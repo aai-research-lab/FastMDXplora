@@ -1211,8 +1211,8 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
-    #: Production whole: said completed in its live record, at this step.
-    error.finished, error.at_step = whole, step
+    #: Production whole: said completed in its live record, with its frames.
+    error.finished, error.frames = whole, frame
     raise error
 
 
@@ -3490,8 +3490,11 @@ def run_simulation(
             # phases still to run (a piece's run ends here: the join reads
             # it whole, `joining.piece_finished`).
             telemetry.event(str(exc), level="warning")
+            # The run's own step (its equilibration's and this), and every
+            # frame its production wrote: the pages count the whole run on.
             telemetry.mark_stage("production", "completed", status="stopped",
-                                 latest_error=str(exc), current_step=exc.at_step)
+                                 latest_error=str(exc), current_step=current_step,
+                                 current_frame_count=exc.frames)
         elif telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
             # Asked to stop, and stopped where it can be carried on: the
             # stage it was in stays the one it was in, not a failed one.

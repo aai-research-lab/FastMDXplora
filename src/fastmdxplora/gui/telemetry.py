@@ -377,6 +377,11 @@ def phases_after_ended_well(project_root: str | Path) -> None:
     status = _own_status(root / STATUS_FILE)
     stage = str(status.get("stage") or "").lower()
     state = str(status.get("status") or "").lower()
+    if (stage == "production" and state == "stopped" and _its_production_whole(root)):
+        # Stopped at the last step of its production, whole by the join's
+        # reading: its analyses and report run since, it read stopped for
+        # good after the resume that ran them.
+        stage = "report"
     if (stage not in _PHASES_AFTER
             or state not in {"stopped", "failed", "interrupted", *_GOING_STATUSES}):
         return
@@ -390,6 +395,17 @@ def phases_after_ended_well(project_root: str | Path) -> None:
     writer._last_status = before
     writer.write_status(status="completed", stage="report",
                         stage_states={"analysis": "completed", "report": "completed"})
+
+
+def _its_production_whole(simulation: Path) -> bool:
+    """Whether a run's own production ran to its end (`joining.piece_finished`,
+    the one reading of a stretch of production's end)."""
+    from fastmdxplora.analysis.joining import piece_finished
+
+    try:
+        return piece_finished(simulation)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return False
 
 
 def _read_status_path(path: Path) -> dict[str, Any]:
@@ -489,12 +505,14 @@ def _frames_kept(folder: Path) -> int | None:
     """The production frames a piece contributes to the joined trajectory:
     all it wrote where it finished, those before its last checkpoint where
     it was stopped (the rest are run again by the next piece)."""
-    from fastmdxplora.analysis.joining import piece_finished
     from fastmdxplora.simulation.resume import frames_before_checkpoint
 
     simulation = folder / "simulation"
     try:
-        if piece_finished(simulation):
+        # A clean finish (its final state written) says its frames; any other
+        # end, a stop at its last step included, is counted from its
+        # checkpoint, which there is all of them (a live count left stale).
+        if _records.is_file(simulation / "state_final.xml"):
             count = read_status(folder).get("current_frame_count")
             return int(count) if isinstance(count, (int, float)) else None
         return frames_before_checkpoint(folder)
@@ -559,16 +577,21 @@ def _newer(one: dict[str, Any], other: dict[str, Any]) -> bool:
 
 def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
     """A piece's live record, said completed where its production reached
-    its end (`joining.piece_finished`, the join's reading) and its record,
-    written before the runner said so of a stop landing there, says it was
-    stopped: the join takes it whole, and the run read stopped for good
-    after a resume that completed it."""
+    its end (`joining.piece_finished`, the join's reading) and the join has
+    taken it in, its record saying it was stopped (the runner stops there,
+    or said it not finished before): the run read stopped for good after a
+    resume that completed it. Before its join the run is as its round left
+    it: stopped, its production whole, its join owed."""
     if str(status.get("status") or "").lower() != "stopped":
         return status
     from fastmdxplora.analysis.joining import piece_finished
 
     try:
-        if not piece_finished(piece / "simulation"):
+        index = int(piece.name.split("-", 1)[1])
+        joined = json.loads(_records.read_text(piece.parent / "joined" / "joined.json",
+                                               encoding="utf-8"))
+        if (index not in {int(i) for i in joined.get("segments") or []}
+                or not piece_finished(piece / "simulation")):
             return status
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return status
@@ -1049,7 +1072,8 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
                      and str(status.get("stage") or "").lower() in _PHASES_AFTER)
     if not status or (said not in _FINISHED_STATUSES and not stopped_after):
         return status
-    from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
+    from fastmdxplora.simulation.resume import (analysis_owed, being_carried_on,
+                                                how_a_resume_finds)
 
     if not analysis_owed(project_root):
         return status
@@ -1060,6 +1084,16 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
         return {**status, "status": "running", "stage": "analysis", "piece": None,
                 "current_step": None, "total_planned_steps": None,
                 "carrying_on": True,
+                "recorded_status": status.get("recorded_status") or status.get("status")}
+    own = (how_a_resume_finds(project_root) or {}).get("own")
+    if own:
+        # Its analyses of the join ended in an error of their own, which a
+        # resume refuses: failed, analysed again once put right, as the
+        # round's card, the CLI and the Agent say.
+        return {**status, "status": "failed", "stage": "analysis", "piece": None,
+                "latest_error": f"Its analyses of its joined pieces ended in an error: {own}",
+                "analysed_again_by": (f"fastmdx explore --output {Path(project_root)} "
+                                      "--include analysis report --rerun"),
                 "recorded_status": status.get("recorded_status") or status.get("status")}
     # Stopped in the study's analysis, not in a piece's production, nor at
     # its last step ("in piece 1's analysis, at step 4,400 of 4,400").
@@ -1733,11 +1767,14 @@ def analyze_health(
             " coordinate", "energy is"))
         # A headline a card can set large, beside the message, which can run
         # to a paragraph with a path in it and was set as the headline.
+        again = status.get("analysed_again_by")
         return {
             "state": "failed",
             "headline": "Stopped with an error",
             "message": said,
-            "explanation": NUMERIC_EXPLANATION if numeric else "",
+            "explanation": (f"Put right what its analyses said, then {again} analyses it "
+                            "again." if again else NUMERIC_EXPLANATION if numeric else ""),
+            **({"carry_on": again} if again else {}),
         }
 
     latest = metrics[-1] if metrics else {}

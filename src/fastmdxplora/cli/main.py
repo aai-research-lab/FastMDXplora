@@ -2115,9 +2115,15 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     # (or was stopped), as its batch manifest and every page say it.
     ended = round_ended(fmdx.output_dir)
     if ended is not None:
-        # Stopped when asked, as a study stopped at the terminal is: the
-        # shell is told it was interrupted.
-        rc = rc or (130 if ended.state == "stopped" else 1)
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE, _was_stopped
+
+        # The study's state decides, as every page reads it: a round stopped
+        # when asked exits 130, as a study stopped at the terminal does,
+        # whatever its runs stopped in the round are recorded as; 1 is for
+        # a run's own error or a failed round.
+        erred = [r for r in results if r.status == "error" and not _was_stopped(r)
+                 and getattr(r, "error_type", None) not in (STOPPED_ERROR_TYPE, "Interrupted")]
+        rc = 130 if ended.state == "stopped" and not erred else 1
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and

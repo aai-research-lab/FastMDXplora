@@ -400,7 +400,18 @@ def _from_its_records(root: Path) -> list[Remedy]:
     if failed is None:
         return _stopped_unrecorded(root)
     name, refusal = failed
-    return [remedy_for(refusal, study=root, where=f"the study's {name}")]
+    remedy = remedy_for(refusal, study=root, where=f"the study's {name}")
+    from fastmdxplora.simulation.resume import analysis_owed, how_a_resume_finds
+
+    if analysis_owed(root) and (how_a_resume_finds(root) or {}).get("own"):
+        # Its analyses of its joined pieces ended in an error of their own,
+        # which a resume refuses: analysed again once put right, as its
+        # round's sentence, its page and the Agent say.
+        argv = ("explore", "--output", str(root), "--include", "analysis", "report",
+                "--rerun")
+        remedy = replace(remedy, fix="Put right what its analyses said, then analyse it again.",
+                         command="fastmdx " + " ".join(argv), argv=argv, price=None)
+    return [remedy]
 
 
 def _stopped_unrecorded(root: Path) -> list[Remedy]:

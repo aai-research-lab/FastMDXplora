@@ -1939,11 +1939,13 @@ class BatchExplorer:
         runs = [Path(result.output_dir) for result in finished]
         print(f"\nRunning until determined\n{'=' * 40}")
         side_by_side = self.mode == "parallel" and len(runs) > 1
-        run_until_known(runs, targets, stop_when, record_in=self.output_dir,
-                        extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
-                        extend_to=lambda some, total: self._extend_runs(some, None,
-                                                                        total_ns=total),
-                        at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
+        judged = run_until_known(
+            runs, targets, stop_when, record_in=self.output_dir,
+            extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
+            extend_to=lambda some, total: self._extend_runs(some, None, total_ns=total),
+            at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
+        # Judged at these lengths already, by the rule now asked: nothing ran.
+        self._rule_ran_nothing = isinstance(judged, dict) and bool(judged.get("nothing_run"))
         if self.is_single:
             self._report_again(runs[0])
 
@@ -3340,12 +3342,13 @@ class BatchExplorer:
                 gone = min(left, states.count("interrupted"))
                 cut = (f", {left - gone} stopped in the rounds" if left - gone > 0 else "") + (
                     f", {gone} cut in the rounds" if gone else "")
-        if refused:
-            cut += f", {refused} refused by {'its' if refused == 1 else 'their'} resume"
+        # Each run counted once: the refused are among the errors.
+        among = (f" ({refused} of them refused by {'its' if refused == 1 else 'their'} resume)"
+                 if refused else "")
         print(f"\n{'=' * 40}")
         print(
             f"{headline}: {ok} ok, "
-            f"{err} error(s){cut}, {skipped} skipped, {len(self.results)} total"
+            f"{err} error(s){among}{cut}, {skipped} skipped, {len(self.results)} total"
         )
         # The round's own runs are fixed as its sentence, last, says: their
         # own remedies ("suggests nothing", a cost in production) said other.
