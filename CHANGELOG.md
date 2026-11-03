@@ -811,7 +811,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   block resident after it: each pass's block came from glibc's heap and the
   last one freed stayed.
 - Clustering collects the figures it closed before it plots the map, and its
-  plan for the map (155 MiB at 1,000 cells) and under `ulimit -v` is counted
+  plan for the map (159 MiB at 1,000 cells) and under `ulimit -v` is counted
   from a clean start on Python 3.11 and 3.13: on 3.13 the map ran out under
   `ulimit -v` 600000 and a run peaked at 164 MiB against 145 planned.
 - The hierarchical clustering's dendrogram and `hierarchical_linkage.npy` are

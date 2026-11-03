@@ -699,8 +699,8 @@ class TestTheFiguresAreCounted:
         # Within the plan, the map planned with what was before it freed,
         # and 4 MiB: the frames, the labels and the rows read a few at a
         # time, terms in n alone left to the share not planned on
-        # (`MEMORY_SHARE`). 147.9 to 155.6 MiB on Python 3.11 and 142.1 to
-        # 142.6 on 3.13 against 154.9 planned; DBSCAN's 138.2 to 145.4.
+        # (`MEMORY_SHARE`). 148.1 to 156.4 MiB on Python 3.11 and 142.1 to
+        # 142.6 on 3.13 against 158.7 planned; DBSCAN's 138.0 to 145.4.
         assert found["peak"] <= found["needed"] + 4 * 2**20, (
             found["peak"] / 2**20, found["needed"] / 2**20)
 
@@ -713,10 +713,12 @@ class TestTheFiguresAreCounted:
     @pytest.mark.parametrize("n", [1000, 2000])
     def test_the_map_is_in_the_plan(self, n):
         """At 1,000 frames, and at 2,000 in blocks of two, the map is 1,000
-        cells across, 141 MiB to plot alone in a new process as measured
-        (``FIGURE_BYTES_PER_CELL``): in the plan of a clustering that makes
-        the least of its matrix."""
-        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 141 * 2**20
+        cells across, and a whole run plotting it peaked at up to 156.4 MiB
+        on Python 3.11 (``FIGURE_BYTES_PER_CELL``): in the plan of a
+        clustering that makes the least of its matrix, less the 4 MiB of
+        terms in n alone left to the share not planned on. 145.3 MiB were
+        planned."""
+        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 152.4 * 2**20
 
 
 _ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""

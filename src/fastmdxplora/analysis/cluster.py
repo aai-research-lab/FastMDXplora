@@ -131,19 +131,21 @@ ROWS_BYTES = 64 * 2**20
 #: squared and once, in bytes: Matplotlib's mesh of the cells and its
 #: rendering to PNG and SVG, planned on beside the map's own numbers once
 #: the frames' matrix is freed. Counted from the peak resident memory of
-#: whole clusterings at 1,000 and 2,000 frames (k-means and average
-#: linkage, and DBSCAN), from a start where what was freed before is given
-#: back: at most 155.6 MiB on Python 3.11 and 149.6 on 3.13 (NumPy 2.4.6
-#: and 2.5.4, SciPy 1.17.1 and 1.18.1, scikit-learn 1.9.1, Matplotlib
-#: 3.11.2), the map 1,000 cells across, with 4 MiB of terms in n alone left
-#: to the share not planned on (``tests/test_a_clustering_fits_the_machine.py``).
-#: Plotted alone in a new process the map peaked at 141 to 142 MiB, and
-#: 136 bytes a cell were planned; in a run, glibc's threshold for giving an
-#: array a mapping of its own has risen to the size of the largest array of
-#: up to 32 MiB freed before (at 2,000 frames, one n by n), so the map's
-#: arrays come from the heap, and what they leave there freed stays
-#: resident: 0 to 14 MiB more, from one run to the next.
-FIGURE_BYTES_PER_CELL = 146
+#: whole clusterings of 2,000 frames, the map 1,000 cells across, from a
+#: start where what was freed before is given back
+#: (``tests/test_a_clustering_fits_the_machine.py``), with NumPy 2.4.6 and
+#: 2.5.4, SciPy 1.17.1 and 1.18.1, scikit-learn 1.9.1 and Matplotlib 3.11.2
+#: on Python 3.11 and 3.13: k-means and average linkage, 21 runs on 3.11
+#: in two groups, 148.1 to 150.4 MiB and 155.3 to 156.4; 10 runs on 3.13,
+#: 142.4 to 142.6; DBSCAN, 138.0 to 145.3 on either. Planned with room
+#: over the largest, 156.4 MiB, besides the 4 MiB of terms in n alone left
+#: to the share not planned on: 158.7 MiB. Plotted alone in a new process
+#: the map peaked at 141 to 142 MiB, and 136 bytes a cell were planned; in
+#: a run, glibc's threshold for giving an array a mapping of its own has
+#: risen to the size of the largest array of up to 32 MiB freed before (at
+#: 2,000 frames, one n by n), so the map's arrays come from the heap, and
+#: what they leave there freed stays resident: the two groups on 3.11.
+FIGURE_BYTES_PER_CELL = 150
 FIGURE_BYTES = 8 * 2**20
 
 
@@ -249,7 +251,7 @@ def map_needed(n: int) -> int:
     is freed: its cells in float64 (8 bytes a cell), and Matplotlib's mesh
     of them and its rendering (:data:`FIGURE_BYTES_PER_CELL` a cell, and
     :data:`FIGURE_BYTES` once). 1,000 frames, and each whole multiple of
-    them, make a map 1,000 cells across, about 155 MiB."""
+    them, make a map 1,000 cells across, about 159 MiB."""
     cells = -(-int(n) // map_block(n)) if n > 0 else 0
     return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
@@ -278,20 +280,27 @@ def map_needed(n: int) -> int:
 #: study of four residues, with the libraries :data:`FIGURE_BYTES_PER_CELL`
 #: names: after the RMSD, 46 and 118 MiB at 500 and 2,000 frames on Python
 #: 3.11 and 42 and 121 on 3.13; run alone, 66 and 156 on 3.11 and 51 and
-#: 142 on 3.13; against 45 and 155 MiB of :func:`memory_needed`. Before
+#: 142 on 3.13; against 46 and 159 MiB of :func:`memory_needed`. Before
 #: the figures were collected, 500 frames after the RMSD took 76 MiB on
-#: Python 3.13, and the map ran out under ``ulimit -v`` 600000.
-ADDRESS_BYTES = 16 * 2**20
+#: Python 3.13, and the map ran out under ``ulimit -v`` 600000. Run alone,
+#: 500 frames on 3.11 take 5 MiB more than this plan, 61 MiB: a figure
+#: that runs out there is said, and the rest saved.
+ADDRESS_BYTES = 15 * 2**20
 ADDRESS_LEAST = 50 * 2**20
 
-#: How much more a process that ran nothing before maps for a clustering
-#: than one where the RMSD ran first, in bytes: the growth of ``VmPeak``
-#: from the check, k-means and average linkage of tri-alanine's 500 frames,
-#: 56.7 MiB against 39.1 (measured again with the libraries warmed up only
-#: where they fit). The plan is of the first, so it keeps this as a margin
-#: in the second, said with a refusal under ``ulimit -v``
-#: (:func:`margin_said`); planned on the second, the first lost figures.
-MARGIN_BYTES = 18 * 2**20
+#: The margin the address-space plan keeps over a clustering where the
+#: RMSD ran first, in bytes, said with a refusal under ``ulimit -v``
+#: (:func:`margin_said`): a process that ran nothing before maps more. The
+#: least room under which k-means and average linkage of a study of four
+#: residues end with every figure plotted, counted as for
+#: :data:`ADDRESS_BYTES`: after the RMSD, 46 and 42 MiB at 500 frames on
+#: Python 3.11 and 3.13 against 61 planned (15 and 19 MiB less), and 118
+#: and 121 at 2,000 against 174 (56 and 53 less); run alone, 20 and 9 MiB
+#: more than after the RMSD at 500 frames, 38 and 21 at 2,000. The least of
+#: what the plan keeps. It was the growth of ``VmPeak`` from the check on
+#: tri-alanine's 500 frames, 56.7 MiB alone against 39.1 after the RMSD,
+#: under the plan before the figures were collected.
+MARGIN_BYTES = 15 * 2**20
 
 
 def margin_said(margin: int) -> str:
