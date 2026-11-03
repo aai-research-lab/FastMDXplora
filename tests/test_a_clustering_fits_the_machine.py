@@ -1350,6 +1350,21 @@ class TestTheCommandLinesOwnProcess:
         assert "cluster_rmsd_matrix.png" in row["message"] or (
             study / "analysis" / "cluster" / "cluster_rmsd_matrix.png").is_file()
 
+    def test_a_run_after_the_rmsd_is_not_refused_far_past_its_need(self, studies):
+        """The address plan was the resident plan and a constant, 173.7 MiB
+        at 2,000 frames, where a clustering after the RMSD ends whole from
+        118 MiB of room on Python 3.11 and 120 on 3.13 (121 at most,
+        counted): at 165 MiB it was refused with `stride: 3`. With 1.35
+        times the most counted, ``fastmdx analyze`` clusters every frame
+        and plots every figure."""
+        study = studies[2000]
+        done = _cli(study, int(1.35 * 121 * 2**20), ["rmsd", "cluster"])
+        assert "EXIT 0" in done.stdout, done.stdout[-3000:] + done.stderr[-2000:]
+        row, findings = _record(study, "cluster")
+        assert row["status"] == "ok", row["message"]
+        assert "stride" not in findings["frames"], findings["frames"]
+        assert not findings.get("figures_not_plotted"), findings
+
     def test_one_refused_with_a_stride_runs_at_it_to_its_end(self, studies):
         """2,000 frames with 120 MiB of room at the check: refused with the
         stride that fits, and that stride, followed under the same room,

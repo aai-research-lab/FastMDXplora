@@ -256,51 +256,62 @@ def map_needed(n: int) -> int:
     return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
 
-#: The address space a clustering maps past what :func:`memory_needed`
-#: counts, in bytes, and the least it maps at any number of frames: glibc's
-#: heap, which grows and is not given back, and each figure's canvas at 300
-#: dpi, PNG and SVG. The libraries, and a figure plotted as the analyses
-#: plot theirs, are mapped before the room is read (:func:`libraries_mapped`),
+#: The address space a clustering maps, past what the process holds once
+#: the libraries are mapped (:func:`address_space_needed`), in bytes: once,
+#: and a cell of the map squared, where the map and its figures are the
+#: most of it; beside the matrix and its copies (:func:`matrix_needed`),
+#: where they are; and the least at any number of frames. glibc's heap,
+#: which grows and is not given back, and each figure's canvas at 300 dpi,
+#: PNG and SVG. The libraries, and a figure plotted as the analyses plot
+#: theirs, are mapped before the room is read (:func:`libraries_mapped`),
 #: so they are in what the process holds and not here. Address space, not
-#: resident memory: under ``ulimit -v`` it is what runs out. Measured from
-#: the check in ``fastmdx analyze``'s own process, where ``ulimit -v`` is
-#: set, as the least room under which the clustering ends with every figure
-#: plotted (``RLIMIT_AS`` set at the check, BLAS on one thread), k-means and
-#: average linkage on tri-alanine: 36 MiB at 500 frames and at 50 (every
-#: 10th) after the RMSD, 53 and 48 run alone, against 42 and 8 MiB of
-#: :func:`memory_needed`. A new process, whose heap no analysis before has
-#: grown, maps more: 62, 83 and 186 MiB at 50, 500 and 2,000 frames, about
-#: 17 MiB past this plan; a figure that runs out there is said with what to
-#: set, and the rest saved (:meth:`Cluster._plotted`). Measured there, the
-#: allowance (150 MiB) counted the libraries a second time in the command
-#: line's process, and tri-alanine's 500 frames were refused at any stride
-#: under ``ulimit -v`` 600000, where they ran with room to spare. Counted
-#: again with the map's plan (:data:`FIGURE_BYTES_PER_CELL`) and the
-#: figures before it collected (:func:`give_back_freed`), the same way on a
-#: study of four residues, with the libraries :data:`FIGURE_BYTES_PER_CELL`
-#: names: after the RMSD, 46 and 118 MiB at 500 and 2,000 frames on Python
-#: 3.11 and 42 and 121 on 3.13; run alone, 66 and 156 on 3.11 and 51 and
-#: 142 on 3.13; against 46 and 159 MiB of :func:`memory_needed`. Before
-#: the figures were collected, 500 frames after the RMSD took 76 MiB on
-#: Python 3.13, and the map ran out under ``ulimit -v`` 600000. Run alone,
-#: 500 frames on 3.11 take 5 MiB more than this plan, 61 MiB: a figure
-#: that runs out there is said, and the rest saved.
+#: resident memory: under ``ulimit -v`` it is what runs out.
+#:
+#: Counted in ``fastmdx analyze``'s own process as the least room under
+#: which the clustering ends with every figure plotted (``RLIMIT_AS`` set at
+#: the check, BLAS on one thread, the check itself passed by), k-means and
+#: average linkage on the tests' study of four residues, with the libraries
+#: :data:`FIGURE_BYTES_PER_CELL` names, after the RMSD and run alone:
+#:
+#: ======  ===============  ===============  ===============  =======
+#: frames  after, 3.11      after, 3.13      alone, 3.11/13   planned
+#: ======  ===============  ===============  ===============  =======
+#: 500     46 MiB           41               66 / 52          61
+#: 1,000   131              131              149 / 140        157
+#: 2,000   118              120              155 / 140        157
+#: 3,000   207              208              206 / 197        230
+#: ======  ===============  ===============  ===============  =======
+#:
+#: The map is 250 cells across at 500 frames and 1,000 from 1,000 on, so
+#: 29 MiB and 134 bytes a cell fit the counts at both: 1.20 to 1.33 times
+#: what a run after the RMSD needs at 1,000 and 2,000 frames, and 1.32 and
+#: 1.49 at 500, where the 29 MiB is most of it, the plan within the room
+#: ``ulimit -v`` 600000 left tri-alanine. Planned as the resident plan and
+#: a constant (18, then 15 MiB), it was 1.47 times that at 2,000 frames,
+#: and refused at 165 MiB, with a stride of 3, a run that ends whole from
+#: 118. From 3,000
+#: frames the matrix and its copies are the most of it, planned on with
+#: :data:`ADDRESS_BYTES` beside them (215 MiB of :func:`matrix_needed`).
+#: Run alone on this study, 500 frames on Python 3.11 take 66 MiB, 5 more
+#: than the plan's 61: a figure that runs out there is said, and the rest
+#: saved (:meth:`Cluster._plotted`); tri-alanine's 500 frames run alone
+#: within it. Before the figures before the map were collected
+#: (:func:`give_back_freed`), 500 frames after the RMSD took 76 MiB on
+#: Python 3.13, and the map ran out under ``ulimit -v`` 600000.
+ADDRESS_MAP_BYTES = 29 * 2**20
+ADDRESS_BYTES_PER_CELL = 134
 ADDRESS_BYTES = 15 * 2**20
 ADDRESS_LEAST = 50 * 2**20
 
-#: The margin the address-space plan keeps over a clustering where the
-#: RMSD ran first, in bytes, said with a refusal under ``ulimit -v``
-#: (:func:`margin_said`): a process that ran nothing before maps more. The
-#: least room under which k-means and average linkage of a study of four
-#: residues end with every figure plotted, counted as for
-#: :data:`ADDRESS_BYTES`: after the RMSD, 46 and 42 MiB at 500 frames on
-#: Python 3.11 and 3.13 against 61 planned (15 and 19 MiB less), and 118
-#: and 121 at 2,000 against 174 (56 and 53 less); run alone, 20 and 9 MiB
-#: more than after the RMSD at 500 frames, 38 and 21 at 2,000. The least of
-#: what the plan keeps. It was the growth of ``VmPeak`` from the check on
-#: tri-alanine's 500 frames, 56.7 MiB alone against 39.1 after the RMSD,
-#: under the plan before the figures were collected.
-MARGIN_BYTES = 15 * 2**20
+#: What the address-space plan keeps past the room a clustering where the
+#: other analyses ran first was counted to need, in bytes, the least and
+#: the most from 500 to 3,000 frames on Python 3.11 and 3.13 (the table at
+#: :data:`ADDRESS_MAP_BYTES`): 15 MiB at 500 frames, 39 at 2,000. Said with a
+#: refusal under ``ulimit -v`` (:func:`address_margin_said`): a process
+#: that ran nothing before maps more, and a refusal that fits with the
+#: margin taken off read as a run that does not fit.
+MARGIN_LEAST_BYTES = 15 * 2**20
+MARGIN_MOST_BYTES = 39 * 2**20
 
 
 def margin_said(margin: int) -> str:
@@ -310,6 +321,17 @@ def margin_said(margin: int) -> str:
     return (f" The plan keeps a margin of about {_gigabytes(margin, 0)}: a process that "
             "ran nothing before maps that much more than one where other analyses "
             "ran first.")
+
+
+def address_margin_said() -> str:
+    """What clustering's address-space plan keeps past what a run needs
+    where other analyses ran first, said with its refusal as the range it
+    was counted in (:data:`MARGIN_LEAST_BYTES`): it is not the same at
+    every number of frames."""
+    return (f" The plan keeps {_gigabytes(MARGIN_LEAST_BYTES, 0)} to "
+            f"{_gigabytes(MARGIN_MOST_BYTES, 0)} past what a clustering where other "
+            "analyses ran first was counted to need, at 500 to 3,000 frames, as a "
+            "process that ran nothing before maps more.")
 
 #: The share of the address space an address-space limit leaves that a
 #: clustering or a projection plans on: all of it. The room is the limit
@@ -353,21 +375,29 @@ def figure_more_said(memory: dict[str, Any]) -> str:
 def address_space_needed(n: int, methods: Sequence[str], features: str,
                          linkage: str) -> int:
     """The address space clustering ``n`` frames maps at its peak, past what
-    the process holds once the libraries are mapped: :func:`memory_needed`
-    and :data:`ADDRESS_BYTES`, and :data:`ADDRESS_LEAST` at the least.
-    Planned on where an address-space limit (``ulimit -v``) leaves less than
-    the memory does: under it, a clustering the check planned as resident
-    memory failed plotting its figures."""
-    return max(memory_needed(n, methods, features, linkage) + ADDRESS_BYTES,
-               ADDRESS_LEAST) + libraries_owed()
+    the process holds once the libraries are mapped: the larger of the map
+    and its figures (:data:`ADDRESS_MAP_BYTES` and
+    :data:`ADDRESS_BYTES_PER_CELL` a cell of it squared) and the matrix and
+    its copies (:func:`matrix_needed`) with :data:`ADDRESS_BYTES`, and
+    :data:`ADDRESS_LEAST` at the least. Planned on where an address-space
+    limit (``ulimit -v``) leaves less than the memory does: under it, a
+    clustering the check planned as resident memory failed plotting its
+    figures. Counted on its own, not as the resident plan and a constant:
+    the heap's pages a run leaves freed are resident memory, and address
+    space the run maps again."""
+    cells = -(-int(n) // map_block(n)) if n > 0 else 0
+    the_map = ADDRESS_MAP_BYTES + ADDRESS_BYTES_PER_CELL * float(cells) * float(cells)
+    matrix = matrix_needed(n, methods, features, linkage) + ADDRESS_BYTES
+    return int(max(the_map, matrix, ADDRESS_LEAST)) + libraries_owed()
 
 
 def address_besides(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
-    """What a clustering of ``n`` frames maps past :func:`memory_needed`,
-    in bytes, as part of :func:`address_space_needed`, the libraries left
-    unmapped (:func:`libraries_owed`) apart."""
+    """What a clustering of ``n`` frames maps past its matrix and the
+    copies the methods make (:func:`matrix_needed`), in bytes, as part of
+    :func:`address_space_needed`: its figures and the heap, the libraries
+    left unmapped (:func:`libraries_owed`) apart."""
     return (address_space_needed(n, methods, features, linkage)
-            - memory_needed(n, methods, features, linkage) - libraries_owed())
+            - matrix_needed(n, methods, features, linkage) - libraries_owed())
 
 
 def address_room(available: int | None, read_from: str) -> tuple[int | None, str]:
@@ -1235,7 +1265,7 @@ class Cluster(Analysis):
                 + need_and_room_said(least_need, room, room_from, mapped, "clustering",
                                      besides=(address_besides(least, methods, features, linkage)
                                               if mapped else None))
-                + "." + (margin_said(MARGIN_BYTES) if mapped else "")
+                + "." + (address_margin_said() if mapped else "")
                 + f" Run it {more_said(least_need, room, mapped, room_from)}, or leave `cluster` "
                 f"out of the analyses. Read as {room_from}.",
                 code="analysis.memory.matrix_too_large", frames=n,
@@ -1257,7 +1287,7 @@ class Cluster(Analysis):
                                  besides=(address_besides(n, methods, features, linkage)
                                           if mapped else None),
                                  made=made)
-            + "." + (margin_said(MARGIN_BYTES) if mapped else "")
+            + "." + (address_margin_said() if mapped else "")
             + f" Read as {room_from}.",
             code="analysis.memory.matrix_too_large", frames=n,
             bytes_needed=need, bytes_available=room, stride=stride)
