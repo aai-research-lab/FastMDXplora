@@ -373,3 +373,19 @@ def test_the_docs_say_what_unequal_lengths_with_equal_errors_need():
     assert (f"pieces of unequal length with equal errors need about what equal pieces "
             f"need ({need[3][0]} to {need[3][1]} at three, {need[4][0]} to {need[4][1]} "
             f"at four,") in text, need
+
+
+def test_the_results_doc_says_of_unequal_lengths_what_the_drift_doc_says():
+    # docs/results.md said the figure is "more where their errors differ"
+    # straight after the equal pieces' 41 and 16, as if unequal lengths
+    # needed more: with equal errors they need about that, 38 to 41 and 15
+    # to 16, as the drift doc says.
+    from pathlib import Path
+
+    docs = Path(__file__).parents[1] / "docs"
+    results = " ".join((docs / "results.md").read_text(encoding="utf-8").split())
+    drift = " ".join((docs / "short-segment-drift.md").read_text(encoding="utf-8").split())
+    assert "pieces of unequal length with equal errors need about what equal pieces need" in drift
+    assert ("41 times the error of their pooled mean for three equal pieces, 16 for four, about "
+            "that for pieces of unequal length with equal errors, more where their errors "
+            "differ") in results, results[results.index("41 times"):][:300]

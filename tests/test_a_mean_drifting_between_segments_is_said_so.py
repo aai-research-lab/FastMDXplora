@@ -984,3 +984,69 @@ def test_the_compare_page_marks_the_drift_note_apart_and_says_no_image_bias(tmp_
     assert any(line.startswith("‡ ") and ", Temperature: With 4 segments" in line
                for line in seen["unseen"]), seen["unseen"]
     assert sum(", RMSD: With " in line for line in seen["unseen"]) == 2, seen["unseen"]
+
+
+def test_one_mean_with_both_notes_on_compare_has_both_marks_and_the_bias_sentence_once(
+        tmp_path) -> None:
+    # A mean carrying an image note and a drift note: its cell read "image..
+    # With" in its hover text, its second mark could wrap alone, and the
+    # image-bias sentence came after the drift notes, as if said of them.
+    pytest.importorskip("playwright.sync_api")
+    import urllib.parse
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.workspace_studies import compared
+
+    first, second = _compared_studies(tmp_path)
+    options = second / "analysis" / "thermodynamics" / "options.json"
+    data = json.loads(options.read_text(encoding="utf-8"))
+    data["findings"]["thermodynamics"]["temperature"]["solute_image"] = {
+        "frames_used": 539, "frames_under_cutoff": 54, "cutoff_nm": 1.0}
+    options.write_text(json.dumps(data), encoding="utf-8")
+    said, ok = compared(first, second)
+    assert ok
+    line = next(x for x in said.splitlines() if x.lstrip().startswith("Temperature:"))
+    assert ("; may be biased: in 54 of 539 frames used (10%) the solute was within 1 nm of "
+            "its own image. With 4 segments, a steady drift") in line, line
+    session = start_dashboard_session(output=str(first), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1250, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#compare/" + "|".join(
+                urllib.parse.quote(str(p), safe="") for p in (first, second)),
+                wait_until="domcontentloaded")
+            page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+            seen = page.evaluate("""() => {
+              const row = document.querySelector(
+                '.compare-means-table tr[data-analysis="temperature"]');
+              const cell = row.children[2];
+              const marks = cell.querySelector('.compare-marks');
+              return {text: cell.textContent, title: cell.title,
+                      marks: marks ? [marks.textContent, getComputedStyle(marks).whiteSpace]
+                        : null,
+                      lines: [...document.querySelectorAll('.compare-noted, .compare-unseen')]
+                        .map((n) => [n.className.includes('compare-unseen') ? 'u' : 'n',
+                                     n.textContent])};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    # Both marks after the mean, with their spaces, where no line can wrap.
+    assert seen["text"].endswith(" K † ‡") and seen["marks"] == [" † ‡", "nowrap"], seen
+    assert ".." not in seen["title"] and "own image. With 4 segments" in seen["title"], seen
+    kinds = [kind for kind, _ in seen["lines"]]
+    noted = [text for kind, text in seen["lines"] if kind == "n"]
+    # The † line, the bias sentence counting this mean once, then the ‡ lines.
+    assert noted[0].startswith("† ") and ", Temperature: may be biased" in noted[0], noted
+    assert noted[1].startswith("One resolved difference has a mean that may be biased by "
+                               "the solute's own image"), noted
+    assert len(noted) == 2 and kinds[:2] == ["n", "n"] and set(kinds[2:]) == {"u"}, kinds
+    assert any(", Temperature: With 4 segments" in text for kind, text in seen["lines"]
+               if kind == "u"), seen["lines"]

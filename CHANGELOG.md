@@ -87,6 +87,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   solute's own image" only for an image note. It marked a temperature's
   drift note as an image note and said so of a resolved difference where no
   mean had one, and gave no drift note beside an analysis's mean.
+- On Compare of two studies the sentence that a resolved difference "may be
+  biased by the solute's own image" follows the image notes (†), before the
+  drift notes (‡), where it read as said of a drift note; a mean with both
+  notes has its hover text joined with one full stop ("image.. With" was
+  said), and its marks stay beside it, never on a line alone.
 - The drift note's figure is worked out from the unrounded pooled error, so
   it does not depend on the quantity's units (from the error to two figures
   it moved by up to 5%: an error of 1.0499 said 1.0 gave a figure 4.8%
