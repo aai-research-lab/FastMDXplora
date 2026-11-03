@@ -1682,7 +1682,16 @@ class BatchExplorer:
             )
             print(f"\nFastMDXplora: exploring {n} systems ({self.mode})\n{'=' * 40}")
 
-        if self.mode == "parallel" and not self.is_single:
+        self._past = self._past_the_ceiling_now(stopping)
+        if self._past:
+            # A ceiling lowered below a run since its round: no run is carried
+            # on (a cut piece went on to its own length, past the ceiling),
+            # and the rule says why (`run_until_known`), as `round_ended` did.
+            self.results = [_skipped_run_result(
+                spec, self._run_output_dir(spec),
+                "Not carried on: a run is past the ceiling the study now sets.")
+                for spec in self.run_specs]
+        elif self.mode == "parallel" and not self.is_single:
             self.results = self._run_parallel(include, exclude)
         else:
             self.results = self._run_sequential(include, exclude)
@@ -1761,6 +1770,28 @@ class BatchExplorer:
         rounds = record.get("rounds") if isinstance(record, dict) else None
         return list(rounds) if isinstance(rounds, list) else []
 
+    def _the_rule_s_runs(self) -> list[str]:
+        """The runs the rule's rounds judged, as its record names them."""
+        from fastmdxplora.simulation.stopping import RECORD
+
+        try:
+            record = json.loads((self.output_dir / RECORD).read_text(encoding="utf-8"))
+            return [str(name) for name in record.get("runs") or []]
+        except (OSError, ValueError, AttributeError, TypeError):
+            return []
+
+    def _past_the_ceiling_now(self, stopping: Any) -> list[str]:
+        """The runs of a resumed study past the ceiling its config now sets,
+        where its runs are not at one length (`stopping._past_the_ceiling`)."""
+        if not self.resume or stopping is None or self.is_single or not self._earlier_rounds():
+            return []
+        from fastmdxplora.simulation.stopping import _past_the_ceiling, _production_of_each
+
+        stop_when = (self._raw.get("simulation") or {}).get("stop_when") or {}
+        names = self._the_rule_s_runs()
+        return _past_the_ceiling(_production_of_each(self.output_dir, names),
+                                 stop_when.get("max_duration_ns"))
+
     def _run_until_known(self, targets: list) -> None:
         """Extend the runs until what the study asked for is determined, then
         write the study's report again with the record of how long it ran."""
@@ -1789,12 +1820,22 @@ class BatchExplorer:
             where.write_text(json.dumps(record, indent=2), encoding="utf-8")
             print(said)
 
+        if getattr(self, "_past", None):
+            # Said, and no run extended (`run_until_known`).
+            run_until_known([self.output_dir / "runs" / name for name in self._the_rule_s_runs()],
+                            targets, stop_when, record_in=self.output_dir,
+                            earlier_rounds=self._earlier_rounds())
+            return
         if any(_was_stopped(result) for result in self.results):
             ended("stopped", STOPPED_BEFORE_THE_RULE)
             return
         finished = [result for result in self.results
                     if result.status == "ok" and result.output_dir is not None]
-        missed = [result for result in self.results if result not in finished]
+        # Only the runs its rounds judged: a run that failed before the rule
+        # is said as it was, and was refused again at every resume.
+        judged = set(self._the_rule_s_runs())
+        missed = [result for result in self.results
+                  if result not in finished and result.run_id in judged]
         if self.resume and missed:
             from fastmdxplora.simulation.stopping import round_ended, round_not_carried_on
 

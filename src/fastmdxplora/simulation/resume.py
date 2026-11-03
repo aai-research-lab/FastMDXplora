@@ -1856,7 +1856,8 @@ def _owed_by_the_last_piece(root: Path) -> float | None:
     return owed if owed > 0 else None
 
 
-def _the_last_piece_s_answer(root: Path) -> tuple[str, str, float, float] | None:
+def _the_last_piece_s_answer(root: Path, *, lengths: bool = True
+                             ) -> tuple[str, str, float, float] | None:
     """(its folder's name, why it stopped, the length it was asked to run
     and how far past the study's plan that reaches, in ns) where the
     study's last numbered piece stopped
@@ -1873,13 +1874,16 @@ def _the_last_piece_s_answer(root: Path) -> tuple[str, str, float, float] | None
     found = max(pieces, key=lambda each: each.index)
     last = found.directory
     try:
-        config = yaml.safe_load((last / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+        config = yaml.safe_load(_records.read_text(last / "resolved_config.yml",
+                                                   encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
         config = {}
     config = config if isinstance(config, dict) else {}
     _finished, stopped = _finished_record(last, config)
     if stopped is None:
         return None
+    if not lengths:
+        return last.name, stopped, 0.0, 0.0
     # Where the piece was asked to end, against the plan: the production
     # of every piece before it, and its own length.
     past = asked = 0.0
@@ -1922,13 +1926,15 @@ def _extended_since_it_finished(root: Path) -> bool:
         return False
     if numbered:
         try:
-            joined = json.loads((root / "joined" / "joined.json").read_text(encoding="utf-8"))
+            joined = json.loads(_records.read_text(root / "joined" / "joined.json",
+                                                   encoding="utf-8"))
             taken = {int(index) for index in joined.get("segments") or []}
         except (OSError, ValueError, TypeError, AttributeError):
             taken = set()
         if max(numbered) not in taken:
             return True
-    if not any(path.is_dir() for path in root.glob(f"segment-*{NEVER_CHECKPOINTED}*")):
+    if not any(_records.is_dir(path)
+               for path in _records.glob(root, f"segment-*{NEVER_CHECKPOINTED}*")):
         return False
     try:
         checkpoint = extension_of(root).checkpoint
@@ -2030,13 +2036,13 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
 
     manifest = root / "manifest.json"
     try:
-        record = json.loads(manifest.read_text(encoding="utf-8"))
+        record = json.loads(_records.read_text(manifest, encoding="utf-8"))
     except (OSError, ValueError):
         return False, None
     try:
-        started = json.loads((root / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+        started = json.loads(_records.read_text(root / RUN_PROCESS_FILE, encoding="utf-8"))
         began = datetime.fromisoformat(str(started["started_at"])).timestamp()
-        if manifest.stat().st_mtime < began:
+        if _records.stat(manifest).st_mtime < began:
             return False, None
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -2313,46 +2319,50 @@ def _resume_study(study: str | Path, *,
         standing = None
     finished = standing is not None and not _carried_on_first(standing)
     _hold_run_process(root, rewrite=True)
+    carried = True
     try:
         if finished:
-            return _judge_the_run_again(root, base)
-        answer = _carry_the_run_on(root, base, device_index=device_index, standing=standing)
-        if not answer.get("ok"):
-            # Said as the round's end where its record said it went on.
-            names = _the_record_s_runs(root)
-            round_not_carried_on(root, names[0] if names else root.name, answer)
-            ended = round_ended(root, resuming=True)
-            if ended is not None:
-                answer["round_ended"] = ended.as_record()
-            return answer
-        return {**_judge_the_run_again(root, base),
-                "carried_on": answer.get("did")}
+            answer = _judge_the_run_again(root, base)
+        else:
+            answer = _carry_the_run_on(root, base, device_index=device_index,
+                                       standing=standing)
+            carried = bool(answer.get("ok"))
+            if carried:
+                answer = {**_judge_the_run_again(root, base), "carried_on": answer.get("did")}
     finally:
         _release_run_process(root)
+    if not carried:
+        # Said as the round's end where its record said it went on.
+        round_not_carried_on(root, "the run", answer)
+    # Read with the hold given back: a process record newer than its
+    # Manifest read as a run that never said how it ended.
+    ended = round_ended(root, resuming=True)
+    if ended is not None:
+        # What carries it on, as every page says it (its own refusal
+        # advised an extension outside the rule, in ns).
+        answer.update(ok=False, error=ended.as_text(), round_ended=ended.as_record())
+    elif "round_ended" in answer:
+        # Said under the hold, which read it so: it ended as the rule decides.
+        answer.update(ok=True)
+        answer.pop("error", None)
+        answer.pop("round_ended", None)
+    return answer
 
 
-def _the_record_s_runs(root: Path) -> list[str]:
-    import json
-
-    try:
-        from fastmdxplora.simulation.stopping import RECORD
-
-        return [str(name) for name in
-                json.loads(_records.read_text(root / RECORD, encoding="utf-8"))["runs"]]
-    except (OSError, ValueError, KeyError, TypeError):
-        return []
-
-
-def _where_it_stands(root: Path) -> tuple[bool, str | None, bool, Any]:
+def _where_it_stands(root: Path, *, lengths: bool = True) -> tuple[bool, str | None, bool, Any]:
     """How a study of one run stands, as its resume reads it: (finished,
     the answer it stopped with, extended since it finished or owing the
     analyses of its pieces, its last piece's own answer). Raises on a
-    config not read or pieces that cannot be told apart."""
+    config not read or pieces that cannot be told apart. Read through
+    `record_access`, so a page held to the study reads nothing its links
+    lead out to; ``lengths`` False leaves out how far the last piece was
+    asked to run, which only the resume's own refusal says."""
     import yaml
 
     from fastmdxplora.analysis.joining import survey_segments
 
-    config = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+    config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                               encoding="utf-8")) or {}
     finished, stopped = _finished_record(root, config)
     # Pieces that cannot be told apart (two folders for one number) are
     # said here, as an answer, before anything reads them.
@@ -2363,7 +2373,8 @@ def _where_it_stands(root: Path) -> tuple[bool, str | None, bool, Any]:
     # A piece carried on that stopped with an answer of its own gives
     # the same one when run again: said, not set aside and run again,
     # whether the study had finished or not.
-    piece = _the_last_piece_s_answer(root) if extended or not finished else None
+    piece = (_the_last_piece_s_answer(root, lengths=lengths)
+             if extended or not finished else None)
     return finished, stopped, extended, piece
 
 
@@ -2374,32 +2385,28 @@ def _carried_on_first(standing: tuple[bool, str | None, bool, Any]) -> bool:
     return not finished or stopped is not None or extended or piece is not None
 
 
-def run_carried_on_first(root: str | Path) -> bool:
-    """Whether `fastmdx resume` carries a study of one run on (an extension
-    cut, its analyses owed) before it judges its rule's round again, as
-    `_resume_study` reads it; said by `stopping.round_ended`."""
-    import yaml
-
-    try:
-        standing = _where_it_stands(Path(root))
-    except (OSError, ValueError, StudyError, yaml.YAMLError):
-        return False
-    return _carried_on_first(standing) and standing[1] is None and standing[3] is None
-
-
-def last_piece_answered(root: str | Path) -> Path | None:
-    """The folder of the last piece of a study of one run (or of one run of
-    several) where that piece stopped with an answer of its own, which
-    `fastmdx resume` gives again rather than running it (said by
-    `stopping.round_ended` as what the resume does); None otherwise."""
+def how_a_resume_finds(root: str | Path) -> dict[str, Any] | None:
+    """What `fastmdx resume` finds in a study of one run (or one run of
+    several), as `_carry_the_run_on` reads it, for `stopping.round_ended`
+    to say what the resume does: ``piece`` (the folder of a last piece that
+    stopped with an answer of its own, given again), ``own`` (the answer
+    the run itself stopped with, in its analyses or report, given again),
+    ``carried_on_first`` (an extension cut or its pieces' analyses owed,
+    carried on before the round is judged) and ``analyses_owed``. None
+    where it is not read."""
     import yaml
 
     root = Path(root)
     try:
-        piece = _where_it_stands(root)[3]
+        standing = _where_it_stands(root, lengths=False)
     except (OSError, ValueError, StudyError, yaml.YAMLError):
         return None
-    return root / piece[0] if piece is not None else None
+    _finished, stopped, _extended, piece = standing
+    return {"piece": root / piece[0] if piece is not None else None,
+            "own": stopped if piece is None else None,
+            "carried_on_first": (_carried_on_first(standing) and stopped is None
+                                 and piece is None),
+            "analyses_owed": analysis_owed(root)}
 
 
 def _carry_the_run_on(root: Path, base: dict[str, Any], *,
@@ -2772,13 +2779,14 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     ended = round_ended(root)
     answer = {**base, "ok": not failed and ended is None, "did": RESUMED_RUNS,
               "runs": listed}
-    if failed:
+    if ended is not None:
+        # What carries it on, as every page says it, said last in the study's
+        # summary, so not said again: a run's own refusal advised an
+        # extension outside the rule, in ns.
+        answer["error"] = ended.as_text()
+        answer["said_above"] = True
+        answer["round_ended"] = ended.as_record()
+    elif failed:
         answer["error"] = (f"{len(failed)} of {len(results)} runs did not finish: "
                            + "; ".join(f"{r.run_id}: {r.message}" for r in failed[:3]))
-    elif ended is not None:
-        answer["error"] = ended.as_text()
-        # Said last in the study's summary, so not said again.
-        answer["said_above"] = True
-    if ended is not None:
-        answer["round_ended"] = ended.as_record()
     return answer

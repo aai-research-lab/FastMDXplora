@@ -1645,7 +1645,13 @@ def analyze_health(
                         "its whole production."),
             "explanation": "A resume or an extension of the study is running.",
         }
-    if status.get("ended_by") == ANALYSIS_OWED and status.get("stopped_in") in _PHASES_AFTER:
+    owing = status.get("ended_by") == ANALYSIS_OWED
+    ended = _its_round_ended(root) if owing and root is not None else None
+    if ended is not None:
+        # Cut after its round's join: the round's sentence, as All studies
+        # and the card say it, with what the resume runs first.
+        return _round_health(ended)
+    if owing and status.get("stopped_in") in _PHASES_AFTER:
         when = ("while its joined pieces were analysed: part of their analyses had "
                 "run, not their report, so any analyses and report shown are"
                 if status["stopped_in"] == "analysis" else
@@ -1765,13 +1771,7 @@ def analyze_health(
         # extension, whose rule's round did not end (`stopping.round_ended`):
         # said as All studies and the sidebar say it, with the command that
         # carries it on, where a run cut said only that it ended unsaid.
-        return {
-            "state": ended.state,
-            "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
-            "message": ended.said,
-            "explanation": ended.carry_on_on_a_page,
-            "carry_on": " ".join(ended.argv),
-        }
+        return _round_health(ended)
 
     if said == "interrupted":
         silent = status.get("ended_by") == "silence"
@@ -1811,6 +1811,18 @@ def analyze_health(
             "the setting. Either way there is nothing on disk to read, and "
             "the page cannot fill. A new run records it without being asked."
         ),
+    }
+
+
+def _round_health(ended: Any) -> dict[str, str]:
+    """The health of a study of one run whose rule's round ended before it
+    was judged again (`stopping.round_ended`)."""
+    return {
+        "state": ended.state,
+        "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
+        "message": ended.said,
+        "explanation": ended.carry_on_on_a_page,
+        "carry_on": " ".join(ended.argv),
     }
 
 

@@ -761,7 +761,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         # The runs whose extension finished: side by side, the others
         # can, and the runs are then not at one length.
         entry["extended"] = [r.name for r, a in zip(tried, answers) if a.get("ok")]
-        _the_round_stopped(record, entry, run.name, answer)
+        # A study of one run is named "the run", not by its folder.
+        _the_round_stopped(record, entry, run.name if len(runs) > 1 else "the run", answer)
         write()
         say(record["said"])
         return record
@@ -1128,37 +1129,25 @@ def _ceiling_a_resume_uses(study: Path, record: dict[str, Any]) -> float | None:
             and math.isfinite(float(value)) else None)
 
 
-def _pieces_that_answered(study: Path, names: list[str]) -> list[tuple[str, Path]]:
-    """Each run whose last piece stopped with an answer of its own, which
-    `fastmdx resume` gives again rather than running it
-    (`resume.last_piece_answered`), with that piece's folder."""
-    from fastmdxplora.simulation.resume import last_piece_answered
+def _what_resume_finds(study: Path, names: list[str]) -> dict[str, dict[str, Any] | None]:
+    """What `fastmdx resume` finds in each run (`resume.how_a_resume_finds`,
+    which its resume reads too): a last piece or the run itself stopped
+    with an answer, given again; an extension cut or analyses owed,
+    carried on first. Read through `record_access`, held to the study."""
+    from fastmdxplora.simulation.resume import how_a_resume_finds
 
     from fastmdxplora import record_access
 
-    found = []
+    found: dict[str, dict[str, Any] | None] = {}
     for name in names:
         folder = study / "runs" / name
         try:
             if not record_access.is_dir(folder):
                 folder = study
-            piece = last_piece_answered(folder)
-        except Exception:  # noqa: BLE001 - not known to have answered
-            piece = None
-        if piece is not None:
-            found.append((name, piece))
+            found[name] = how_a_resume_finds(folder)
+        except Exception:  # noqa: BLE001 - not known
+            found[name] = None
     return found
-
-
-def _carried_on_first(study: Path) -> bool:
-    """Whether a resume carries a study of one run on before judging its
-    round again (`resume.run_carried_on_first`)."""
-    from fastmdxplora.simulation.resume import run_carried_on_first
-
-    try:
-        return run_carried_on_first(study)
-    except Exception:  # noqa: BLE001 - not known to be carried on
-        return False
 
 
 def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | None:
@@ -1205,10 +1194,15 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
                 or not (resuming or _its_process_is_gone(study))):
             return None
         state = "interrupted"
+        brought = rounds[-1].get("brought_up")
+        length = round_length(rounds)
+        if isinstance(brought, list) and brought and length is not None:
+            # A catch-up round extends only the shorter runs, to a length.
+            what = f"{_and([str(n) for n in brought])} to {length_said(length)}"
+        else:
+            what = them + (f" by {length_said(more)}" if more is not None else "")
         said = (f"Its stopping rule's round {number} did not finish: the study's process "
-                f"ended while it extended {them}"
-                + (f" by {length_said(more)}" if more is not None else "")
-                + ", with no record of how the round ended.")
+                f"ended while it extended {what}, with no record of how the round ended.")
     else:
         if study_ended(record):
             return None
@@ -1229,31 +1223,70 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
                     else f"Its stopping rule's round {number} was stopped: {first}.")
     productions = _production_of_each(study, names) if names else {}
     ceiling = _ceiling_a_resume_uses(study, record)
-    target, short = brought_up(rounds, productions, ceiling)
-    said += _how_far_each_got(names, rounds[-1], productions, round_length(rounds))
+    length = round_length(rounds)
+    said += _how_far_each_got(names, rounds[-1], productions, length)
     argv = ("fastmdx", "resume", str(study))
     command = f"`{' '.join(argv)}`"
-    answered = _pieces_that_answered(study, names)
+    # What the resume does, from what it finds (`resume.how_a_resume_finds`)
+    # and the lengths it reads, in the order it acts on them.
     past = _past_the_ceiling(productions, ceiling)
-    if answered:
-        # What the resume does with them (`resume._resume_study`): gives
-        # their answer again, and carries nothing on.
-        name, piece = answered[0]
-        whose = (f"{name}'s last piece, {piece.name}," if len(names) > 1
-                 else f"the run's last piece, {piece.name},")
-        carry_on = (f"{command} does not carry the round on: {whose} stopped with an "
-                    "answer of its own, and running it again would give the same one. To "
-                    f"run it again anyway, move {piece} out of "
-                    + ("its run's" if len(names) > 1 else "the study's")
-                    + f" folder, then {command} carries the round on.")
-    elif past and ceiling is not None:
-        # What the resume does with them (`run_until_known`).
+    found = _what_resume_finds(study, names) if names and not past else {}
+    answered = [(name, f) for name in names
+                if (f := found.get(name)) and (f["piece"] is not None or f["own"])]
+    if past and ceiling is not None:
+        # The runs are not carried on, nor judged together (`run_until_known`,
+        # `BatchExplorer`).
         carry_on = (f"{command} does not judge the runs together: {_and(past)} "
                     f"{'is' if len(past) == 1 else 'are'} past the {length_said(ceiling)} "
-                    "ceiling the study now sets. With `max_duration_ns` at least "
+                    "ceiling the study now sets, and carries no run on. With "
+                    "`max_duration_ns` at least "
                     f"{length_said(max(productions[n] or 0.0 for n in past))} in its "
                     f"config, {command} brings them to one length and judges them.")
+    elif answered:
+        name, f = answered[0]
+        several = len(names) > 1
+        if f["piece"] is not None:
+            piece = f["piece"]
+            whose = (f"{name}'s last piece, {piece.name}," if several
+                     else f"the run's last piece, {piece.name},")
+            carry_on = (f"{command} does not carry the round on: {whose} stopped with an "
+                        "answer of its own, and running it again would give the same one. "
+                        f"To run it again anyway, move {piece} out of "
+                        + ("its run's" if several else "the study's")
+                        + f" folder, then {command} carries the round on.")
+        else:
+            phase = str(f["own"]).split(":")[0].strip() or "a phase"
+            run = study / "runs" / name if several else study
+            carry_on = (f"{command} does not carry the round on: "
+                        + (name if several else "the run")
+                        + f" stopped with an answer of its own in its {phase}, and running "
+                        "it again would give the same one. Once what it says is put right, "
+                        f"`fastmdx explore --output {run} --include analysis report --rerun` "
+                        f"runs its analyses and report again, then {command} carries the "
+                        "round on.")
     else:
+        # Each run's extension cut is carried on to the round's length, and
+        # its pieces' analyses owed are run, before the runs are compared.
+        carried = [n for n in names if (found.get(n) or {}).get("carried_on_first")]
+        cut = [n for n in carried if length is not None and productions.get(n) is not None
+               and productions[n] < length - _ONE_LENGTH_NS]
+        owed = [n for n in carried if n not in cut and (found.get(n) or {}).get("analyses_owed")]
+        projected = {n: (length if n in cut else ns) for n, ns in productions.items()}
+        target, short = brought_up(rounds, projected, ceiling)
+        steps = []
+        if cut:
+            steps.append("carries "
+                         + ("the run's extension" if len(names) == 1
+                            else f"the extension{'s' if len(cut) > 1 else ''} of {_and(cut)}")
+                         + f" on to {length_said(length)}")
+        if owed:
+            steps.append("runs the analyses and report of "
+                         + ("the run's" if len(names) == 1 else f"{_and(owed)}'s")
+                         + " joined pieces")
+        if short and target is not None:
+            longer = [name for name in names if name not in short]
+            steps.append(f"extends {_and(short)} to {length_said(target)}"
+                         + (f", the length of {_and(longer)}" if longer else ""))
         units = {v.get("analysis"): v.get("unit") or ""
                  for entry in rounds for v in entry.get("verdicts") or [] if isinstance(v, dict)}
         try:
@@ -1262,19 +1295,7 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
             targets = []
         asked = "; ".join(t.said(units.get(t.analysis, "")) for t in targets)
         each = " in each run" if len(names) > 1 else ""
-        first = ""
-        length = round_length(rounds)
-        if short and target is not None:
-            longer = [name for name in names if name not in short]
-            first = (f"first extends {_and(short)} to {length_said(target)}"
-                     + (f", the length of {_and(longer)}," if longer else ",")
-                     + " then ")
-        elif len(names) == 1 and _carried_on_first(study):
-            # Its extension cut (or its analyses owed): carried on to the
-            # length it was asked, as a resume carries any study on.
-            first = ("first carries the run's extension on"
-                     + (f" to {length_said(length)}" if length is not None else "")
-                     + ", then ")
+        first = f"first {', then '.join(steps)}, then " if steps else ""
         carry_on = (f"{command} {first}judges "
                     + (f"its {len(names)} runs" if len(names) > 1 else "the run")
                     + " again and extends "

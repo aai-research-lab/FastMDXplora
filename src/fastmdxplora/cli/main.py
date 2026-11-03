@@ -3383,7 +3383,10 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
         from fastmdxplora.batch.explorer import _what_would_fix_it
 
-        fixes = _what_would_fix_it(answer.get("study") or args.study)
+        # A round not carried on is fixed as its sentence says: a run's own
+        # remedy (`fastmdx resume` for its owed analyses) said otherwise.
+        fixes = ([] if answer.get("round_ended")
+                 else _what_would_fix_it(answer.get("study") or args.study))
         if fixes:
             print("\n".join(fixes), file=sys.stderr)
     if answer.get("ok"):
