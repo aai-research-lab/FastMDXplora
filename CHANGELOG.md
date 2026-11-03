@@ -67,7 +67,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   errors by the root of that scatter as the rule judges it, to the one
   decimal the note says, with how few means it was estimated from (per
   record, on every layout in `docs/short-segment-drift.md`: a drift as large
-  as the figure is called in 89% to 100% of runs; its record saves
+  as the figure is called in 91.6% to 100% of runs at three segments and
+  72.8% to 100% at four, lowest where the first or last of four pieces is
+  the imprecise one and the means scatter beyond their errors, the scale
+  then estimated from two degrees of freedom; its record saves
   `drift_unseen`). Said also where the joined summary was withheld for a
   segment whose correlation is not resolved and the mean stands, with the
   segments tested and those left out; where fewer than three could be tested,

@@ -305,3 +305,71 @@ def test_segments_left_out_for_one_reason_are_said_together():
     _, why = summarise_segments(values, joins)
     assert ("The means of the 5 segments tested (2 left out, numbered from zero: 1 and 4, "
             "their correlation not resolved) move in order") in str(why), why
+
+
+def test_the_docs_count_every_per_record_layout_and_state_the_range_from_all_rows():
+    # The docs said a drift as large as a record's figure is called in "89%
+    # to 100%" of runs, from layouts whose imprecise piece was inside: four
+    # segments with an imprecise first or last piece are called in as few
+    # as 73%, and go unseen though said seen in up to 5%.
+    from pathlib import Path
+
+    from tests._short_segment_drift_check import PER_RECORD
+
+    text = (Path(__file__).parents[1] / "docs" / "short-segment-drift.md").read_text(
+        encoding="utf-8")
+    head = "| Layout | X | h | Called at its own figure | Unseen though said seen |"
+    table = text[text.index(head):].split("\n\n")[0].splitlines()[2:]
+    rows = {}
+    for line in table:
+        layout, _, h, called, unseen = (c.strip() for c in line.strip("|").split("|"))
+        rows[(layout, int(h))] = (int(called.replace(",", "")), int(unseen))
+
+    def label(layout):
+        if "errors" in layout:
+            return "Errors " + ", ".join(f"{e:g}" for e in layout["errors"])
+        return "Lengths " + ", ".join(f"{n:,}" for n in layout["lengths"])
+
+    counts = {3: [], 4: []}
+    for layout, ratios in PER_RECORD:
+        size = len(layout.get("errors") or layout["lengths"])
+        for h in ratios:
+            assert (label(layout), h) in rows, (label(layout), h)
+            counts[size].append(rows[(label(layout), h)])
+    assert len(rows) == sum(len(r) for _, r in PER_RECORD)
+    said = " ".join(text[text.index("On every layout counted"):].split("\n\n")[0].split())
+    limits = " ".join(text[text.index("## Limits and records"):].split())
+    least = {n: min(c for c, _ in counts[n]) for n in (3, 4)}
+    most = {n: max(u for _, u in counts[n]) for n in (3, 4)}
+    assert (f"{least[3] / 100:.1f}% to 100% of runs at three segments (the least "
+            f"{least[3]:,} of 10,000") in said, said
+    assert f"{least[4] / 100:.1f}% to 100% at four (the least {least[4]:,}," in said, said
+    assert (f"at most {most[3] / 100:.1f}% of runs at three segments and "
+            f"{most[4] / 100:.1f}% at four") in said, said
+    assert (f"{least[3] / 100:.1f}% to 100% of runs at three segments and "
+            f"{least[4] / 100:.1f}% to 100% at four") in limits
+
+
+def test_the_docs_say_what_unequal_lengths_with_equal_errors_need():
+    # "Pieces of unequal length with equal errors need what equal pieces
+    # need": 500, 500 and 4,000 frames at equal errors need 39, not 41.
+    from pathlib import Path
+
+    from fastmdxplora.statistics import drift_unseen_in_pooled_errors
+    from tests._short_segment_drift_check import UNSEEN_LAYOUTS
+
+    text = " ".join((Path(__file__).parents[1] / "docs" / "short-segment-drift.md")
+                    .read_text(encoding="utf-8").split())
+    need = {}
+    for count in (3, 4):
+        found = []
+        for lengths in UNSEEN_LAYOUTS[count]:
+            if len(set(lengths)) > 1:
+                lengths = np.asarray(lengths, dtype=float)
+                found.append(drift_unseen_in_pooled_errors(
+                    [1.0] * count, list(np.cumsum(lengths) - lengths / 2)))
+        need[count] = (min(found), max(found))
+    assert need[3][1] == 41 and need[4][1] == 16, need
+    assert (f"pieces of unequal length with equal errors need about what equal pieces "
+            f"need ({need[3][0]} to {need[3][1]} at three, {need[4][0]} to {need[4][1]} "
+            f"at four,") in text, need
