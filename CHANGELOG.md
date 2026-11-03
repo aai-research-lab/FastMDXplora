@@ -516,6 +516,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   whose clock read 3.28 ps. `recorded_stage_lengths` gives such a summed
   production no steps beside it, the first piece's as `first_piece_steps`.
 
+### Changed
+
+- The Agent's mode is shown by its name alone (Seeker, Ranger) under the
+  composer, in the settings menu, on the Settings page and in the status bar;
+  what it is and does ("built-in, assisted" and its note) is said under the
+  choice, on the Settings page and on hover.
+
 ### Fixed
 
 - With the folder's defaults file refused, New study no longer says "Checks
