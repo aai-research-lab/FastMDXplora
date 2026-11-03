@@ -472,13 +472,18 @@ class TestTheHierarchyIsMadeOnce:
     clustering, a condensed copy and SciPy's working one (8 n^2): on Python
     3.13 it raised the resident memory by 28 to 31 MiB at 2,000 frames,
     held in glibc's heap until the map. The hierarchy saved and plotted is
-    the tree the labels were cut from, and it is SciPy's linkage of what
-    they were cut from."""
+    the tree the labels were cut from: SciPy's linkage of what they were
+    cut from, the distances or Ward's points, on either feature space, and
+    cut to the clusters asked for it gives the labels."""
 
+    @pytest.mark.parametrize("features", ["rmsd", "coordinates"])
     @pytest.mark.parametrize("linkage", ["average", "complete", "single", "ward"])
-    def test_one_linkage_is_made_and_saved(self, tmp_path, monkeypatch, linkage):
+    def test_one_linkage_is_made_and_saved(self, tmp_path, monkeypatch, linkage,
+                                           features):
+        import pandas as pd
         from scipy.cluster import hierarchy
         from scipy.spatial.distance import squareform
+        from sklearn.metrics import adjusted_rand_score
 
         real = hierarchy.linkage
         made, inside = [], []
@@ -500,17 +505,27 @@ class TestTheHierarchyIsMadeOnce:
         monkeypatch.setattr(hierarchy, "linkage", counted(real, None))
         monkeypatch.setattr(hierarchy, "ward", counted(hierarchy.ward, "ward"))
         traj = _chain(300)
-        result = Cluster(methods=["hierarchical"], linkage=linkage,
-                         output_dir=tmp_path).run(traj)
+        result = Cluster(methods=["hierarchical"], linkage=linkage, features=features,
+                         n_clusters=5, output_dir=tmp_path).run(traj)
         assert result.status == "ok", result.message
         assert made == [linkage], made
-        saved = np.load(tmp_path / "cluster" / "hierarchical_linkage.npy")
-        distances = _pairwise_rmsd(traj, np.arange(traj.n_atoms))
+        folder = tmp_path / "cluster"
+        saved = np.load(folder / "hierarchical_linkage.npy")
+        atoms = np.arange(traj.n_atoms)
+        if features == "coordinates":
+            points = clustering._superposed_coordinates(traj, atoms)
+            distances = clustering._euclidean_matrix(points)
+        else:
+            points = None
+            distances = _pairwise_rmsd(traj, atoms)
         if linkage == "ward":
-            expected = real(clustering._ward_points(distances, None), method="ward")
+            expected = real(clustering._ward_points(distances, points), method="ward")
         else:
             expected = real(squareform(distances, checks=False), method=linkage)
         np.testing.assert_allclose(saved, expected, rtol=1e-12, atol=0.0)
+        labels = pd.read_csv(folder / "cluster_hierarchical.dat")["cluster"].to_numpy()
+        cut = hierarchy.fcluster(saved, 5, criterion="maxclust")
+        assert adjusted_rand_score(labels, cut) == 1.0
 
 
 _PEAK_SCRIPT = r"""
