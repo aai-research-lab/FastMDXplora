@@ -815,8 +815,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Python 3.10, 3.11 and 3.13: on 3.13 the map ran out under `ulimit -v`
   600000 and a run peaked at 164 MiB against 145 planned.
 - Under `ulimit -v`, clustering plans the address space on what runs were
-  counted to map (157 MiB at 1,000 and 2,000 frames, 1.20 to 1.33 times what
-  a run after the RMSD needs), not on the resident plan and a constant.
+  counted to map, a term once, a map cell and a frame (152 and 161 MiB at
+  1,000 and 2,000 frames, 1.16 to 1.37 times what a run after the RMSD
+  needs), not on the resident plan and a constant; its refusal says the
+  margin kept at the frames counted nearest the run's.
 - The hierarchical clustering's dendrogram and `hierarchical_linkage.npy` are
   the tree its labels were cut from, not a second linkage made from the
   distances after it (8 n^2 bytes more).
