@@ -811,9 +811,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   block resident after it: each pass's block came from glibc's heap and the
   last one freed stayed.
 - Clustering collects the figures it closed before it plots the map, and its
-  plan for the map (159 MiB at 1,000 cells) and under `ulimit -v` is counted
-  from a clean start on Python 3.11 and 3.13: on 3.13 the map ran out under
-  `ulimit -v` 600000 and a run peaked at 164 MiB against 145 planned.
+  plan for the map (163 MiB at 1,000 cells) is counted from a clean start on
+  Python 3.10, 3.11 and 3.13: on 3.13 the map ran out under `ulimit -v`
+  600000 and a run peaked at 164 MiB against 145 planned.
+- Under `ulimit -v`, clustering plans the address space on what runs were
+  counted to map (157 MiB at 1,000 and 2,000 frames, 1.20 to 1.33 times what
+  a run after the RMSD needs), not on the resident plan and a constant.
 - The hierarchical clustering's dendrogram and `hierarchical_linkage.npy` are
   the tree its labels were cut from, not a second linkage made from the
   distances after it (8 n^2 bytes more).
