@@ -830,7 +830,7 @@ fastmdx report --output runs/study --rerun --no-slides --no-bundle
 # Add an analysis to a finished study; its report is set aside to write again
 fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
 
-# Watch a run in the browser while it happens
+# Watch a run in the GUI while it happens
 fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 
 # Check a selection before a study depends on it

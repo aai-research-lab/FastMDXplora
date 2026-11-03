@@ -518,6 +518,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Every page of the docs names the interface the GUI. Four lines said "the
+  browser": where the Agent's attempts are capped, where its API key is
+  typed, the one server for `fastmdx gui` and `fastmdx agent`, and the
+  command that watches a run. The test that held three pages to it now
+  reads every page in `docs/` and the README.
+
 - The docs search reads a setting named in code in a table row's first cell
   as a name, so "what does ligand pose do" finds the `ligand_pose` row
   whatever the other pages hold (it fell to fifth when the drift page
