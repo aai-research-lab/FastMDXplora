@@ -373,7 +373,7 @@
       "Write " + (several ? "each run's report" : "the report") + " again from " +
       "this study's records? The report, its slides, PDF, dashboard.html and " +
       "bundle are written again as the study's report settings ask. The report " +
-      "there now is kept in previous/, in place of what was kept there before. " +
+      "there now is saved in previous/, in place of what was saved there before. " +
       "Nothing is simulated or analysed."));
     var yes = node("button", "primary-btn fix-confirm", "Yes, write it");
     yes.type = "button";

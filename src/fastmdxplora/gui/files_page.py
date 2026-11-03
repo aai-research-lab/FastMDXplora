@@ -45,7 +45,7 @@ __all__ = ["FOLDED", "Links", "files_model", "human_size", "render", "render_fol
 FOLDED = frozenset({"record", "previous", "scratch"})
 
 #: What a folded section's heading says of it besides its size.
-_PHASE_NOTE = {"previous": "one copy of each phase kept",
+_PHASE_NOTE = {"previous": "one copy of each phase saved",
                "scratch": "the Viewer's, written again when needed, and the live view's snapshots"}
 
 #: Analyses the study writes outside `analysis/`, by their folder.
@@ -785,7 +785,7 @@ def _toolbar(model: dict[str, Any], links: Links) -> str:
 
 #: The phases the bar of space shows, each in its own colour.
 _USAGE = (("setup", "Setup"), ("simulation", "Simulation"), ("analysis", "Analysis"),
-          ("report", "Report"), ("other", "Records and kept"), ("previous", "Set aside"),
+          ("report", "Report"), ("other", "Records and what is saved"), ("previous", "Set aside"),
           ("scratch", "Scratch"))
 
 

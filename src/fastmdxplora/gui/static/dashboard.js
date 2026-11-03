@@ -1805,7 +1805,7 @@
     }
     return {
       title: "No live record",
-      body: "This study kept no record of its simulation as it ran: it stopped before "
+      body: "This study saved no record of its simulation as it ran: it stopped before "
         + "the simulation began, or ran with simulation.live_telemetry off.",
       offerToStart: false,
     };

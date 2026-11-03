@@ -96,7 +96,7 @@
     }
     if (c.added.length) box.appendChild(make("p", "muted small", "Added: " + c.added.join(", ") + "."));
     if (c.dropped.length) {
-      box.appendChild(make("p", "muted small", "Not run again, kept in previous/analysis: " +
+      box.appendChild(make("p", "muted small", "Not run again, saved in previous/analysis: " +
                                               c.dropped.join(", ") + "."));
     }
     if (unread.length) {

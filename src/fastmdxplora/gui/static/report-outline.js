@@ -325,7 +325,7 @@
           ", as the report gives it."));
       }
       if (found.also && found.also.length) {
-        card.appendChild(make("p", "muted", "The same setting is kept in " + found.also.join(", ") + "."));
+        card.appendChild(make("p", "muted", "The same setting is saved in " + found.also.join(", ") + "."));
       }
       var one = opener(record.file, "Open the record", span);
       if (one) card.appendChild(one);
