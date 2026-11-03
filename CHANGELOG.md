@@ -581,6 +581,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   judged together now, and the round and the sentence say so, with the
   ceiling that would judge them. The GUI shows the `fastmdx resume` command
   as plain text, without its code marks.
+- A resume after a failed round, in a study with a run that failed before
+  its rule, said the round was not carried on for that run and carried
+  nothing on, at every resume: only the runs the round judged count now.
+- A round whose extension failed in its analyses (an error, not a piece's
+  answer) said `fastmdx resume` judges the run again, while the resume
+  refused it as an answer and advised `fastmdx resume` again. The sentence
+  is read from what the resume finds, and says to analyse the run again
+  (`fastmdx explore --output RUN --include analysis report --rerun`) before
+  resuming. Where a resume does not carry a round on, its last line is the
+  round's sentence, not an extension outside the rule in ns. A study of one
+  run is named "the run" in its round's sentence, not by its folder.
+- How a failed round's study stands was read, for every page, from its
+  pieces' records where the study's links led out of it: read now as every
+  other record of the study is, held to it.
+- A ceiling lowered below a run, where another run's extension was cut: the
+  cut piece was carried on past it. No run is carried on now. A round cut
+  while it brought one run up names that run; runs whose extension was cut,
+  or whose joined pieces' analyses are owed, are said carried on first, and
+  a study of one run cut after its join says its round on its status page.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

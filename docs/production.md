@@ -317,8 +317,11 @@ run cut mid round has its extension carried on to the round's length, then
 is judged. While a resume runs, the study reads running. Where a run's last
 piece stopped with an answer of its own (a checkpoint refused inside it), the
 resume gives that answer again and the round is still said failed, and the
-sentence says so, with the piece to move out before resuming. Where the
-ceiling was lowered below the longest run, the runs are not judged together.
+sentence says so, with the piece to move out before resuming; where a run's
+extension failed in its analyses, it says to analyse that run again (`fastmdx
+explore --output RUN --include analysis report --rerun`) before resuming.
+Where the ceiling was lowered below the longest run, the runs are not judged
+together and no run is carried on.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.
