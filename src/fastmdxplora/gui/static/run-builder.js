@@ -66,6 +66,9 @@
     open: new Set(),       // groups shown whole, analyses' settings shown
     found: null,
     configVerdict: null,
+    // The folder's defaults file as last read refused ("" where it is
+    // not): a study started here is refused with it (new-study.js says it).
+    defaultsRefused: "",
     loadedFrom: null,
     sweep: [],             // [{ axis, values }] -- values as typed
     refused: null,         // a refusal said on its fields: { targets, why, fix, ... }
@@ -98,7 +101,11 @@
     if (state.schema) return Promise.resolve(state.schema);
     if (!schemaAsked) {
       schemaAsked = fetch("/api/schema").then((response) => response.json())
-        .then((schema) => { state.schema = schema; return schema; })
+        .then((schema) => {
+          state.schema = schema;
+          state.defaultsRefused = (schema && schema.defaults_refused) || "";
+          return schema;
+        })
         .catch((error) => { schemaAsked = null; throw error; });
     }
     return schemaAsked;
@@ -2666,6 +2673,15 @@
       if (button) button.disabled = !can;
     });
     if (!can) setStatus("waiting", why);
+    // Downloaded or copied, the Config can run elsewhere; started here it
+    // cannot while the folder's defaults are refused.
+    else if (state.defaultsRefused) {
+      ["run-start-button", "run-phone-start"].forEach((id) => {
+        const button = el(id);
+        if (button) button.disabled = true;
+      });
+      setStatus(...checksPass());
+    }
     renderChanged();
     scheduleCheck();
     schedulePreview();
@@ -2674,7 +2690,15 @@
   /* "Checks pass", and how many things are worth knowing where there are:
    * a 10 fs timestep read "Checks pass" above the advice that it is too
    * long for its constraints. */
+  /* With the folder's defaults file refused, the Config's checks may
+   * pass and a study started here is still refused: the start reads the
+   * file (`cli/main.py` `_with_your_defaults`). "Checks pass" beside Run
+   * enabled read as ready, and the start then failed. */
+  const REFUSED_HERE = "Will not start here: your defaults file is refused, and a study started"
+    + " in this folder is refused until it is put right (This folder in Settings)";
+
   function checksPass() {
+    if (state.defaultsRefused) return ["refused", REFUSED_HERE];
     const advice = (state.estimate && state.estimate.ok && state.estimate.advisories) || [];
     const said = advice.length
       ? `Checks pass; ${advice.length === 1 ? "one thing" : advice.length + " things"} worth knowing`
@@ -3742,7 +3766,7 @@
   let launchesPending = 0;
   async function runAsItStands() {
     const path = el("run-config-path").value.trim();
-    if (!path) return;
+    if (!path || state.defaultsRefused) return;
     const button = el("run-as-is");
     button.disabled = true;
     text(el("run-note"), "Starting…");
@@ -3806,7 +3830,7 @@
     // Opening and running are only offered once the file is known to be sound.
     ["run-open-config", "run-as-is", "run-as-is-elsewhere"].forEach((id) => {
       const button = el(id);
-      if (button) button.disabled = !verdict.ok;
+      if (button) button.disabled = !verdict.ok || (id === "run-as-is" && Boolean(state.defaultsRefused));
     });
     updateSummary();
     saveDraft();
@@ -3847,7 +3871,7 @@
       if (typed && typed.isConnected && (!document.activeElement
           || document.activeElement === document.body)) typed.focus({ preventScroll: true });
     };
-    if (!ready()) {
+    if (!ready() || state.defaultsRefused) {
       backToTyping();
       return;
     }
@@ -4291,11 +4315,22 @@
     renderPreview, describeCost, previewCost, boxVectors, periodicCell, pickResidue,
     sayRefusal, renderSettings, showSetting, forLoaded, bodyOf, snapshotOfLoaded,
     beforeStudySwitch: () => draftHeld(),
+    /* The folder's defaults as last read (new-study.js, each time New
+     * study is shown): refused, Run here is quiet and says why. */
+    defaultsRefused: (said) => {
+      const now = String(said || "");
+      if (now === state.defaultsRefused) return;
+      state.defaultsRefused = now;
+      updateSummary();
+      const asIs = el("run-as-is");
+      if (asIs && state.configVerdict) asIs.disabled = !state.configVerdict.ok || Boolean(now);
+    },
     /* The settings the form is drawn with; `again`, read again and the form
      * drawn from them (new-study.js, when the folder's defaults changed). */
     schema: (again) => (again ? fetch("/api/schema").then((response) => response.json())
       .then((schema) => {
         state.schema = schema;
+        state.defaultsRefused = (schema && schema.defaults_refused) || "";
         schemaAsked = Promise.resolve(schema);
         describeOutput();
         renderAll();

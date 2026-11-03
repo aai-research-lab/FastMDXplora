@@ -223,7 +223,29 @@
   /* `sent` counts the changes sent, and `pending` those not yet answered:
    * a read asked before the last of them, or while one is in flight, may
    * be answered with the file as it was, and is dropped. */
-  var folder = { said: null, asking: false, before: {}, sent: 0, pending: 0 };
+  /* `busy` holds each row's change in flight, with what was asked of the
+   * row meanwhile (`next`, the last wanted value): sent after the answer
+   * only where it differs from what the file then says. Enter then Tab
+   * sent one value twice, and on a slow answer Undo took back both and a
+   * late answer lost the last. `again` asks for a read once nothing is in
+   * flight, where one was dropped. */
+  var folder = { said: null, asking: false, before: {}, sent: 0, pending: 0, busy: {}, again: false };
+
+  function heldNow(name) {
+    var now = folder.said.values;
+    return Object.prototype.hasOwnProperty.call(now, name) ? now[name] : undefined;
+  }
+
+  /* The change that makes the file say `wanted` (undefined: FastMDXplora's)
+   * for `field`, or none where it says so already. */
+  function changeTo(field, wanted) {
+    var held = heldNow(field.name);
+    if (wanted === undefined) return held === undefined ? null : { unset: [field.name] };
+    if (JSON.stringify(wanted) === JSON.stringify(held)) return null;
+    var body = { set: {} };
+    body.set[field.name] = wanted;
+    return body;
+  }
 
   function shownValue(field, value) {
     if (value === null || value === undefined) return "";
@@ -337,6 +359,12 @@
       node = make("input");
       node.type = field.control === "number" ? "number" : "text";
       if (field.control === "number") {
+        // A wheel over a focused number box stepped a lab's default and
+        // saved it on leaving, for every new study in the folder: the box
+        // is left first, so the wheel scrolls the page.
+        node.addEventListener("wheel", function () {
+          if (document.activeElement === node) node.blur();
+        }, { passive: true });
         node.step = "any";
         if (field.minimum !== null && field.minimum !== undefined) node.min = String(field.minimum);
         if (field.maximum !== null && field.maximum !== undefined) node.max = String(field.maximum);
@@ -387,19 +415,12 @@
       // which fired its change and sent it again, so Undo put back the
       // value just set.
       var commit = function () {
-        var now = folder.said.values;
-        var held = Object.prototype.hasOwnProperty.call(now, field.name) ? now[field.name] : undefined;
         var wanted = taken(field, input);
         if (wanted instanceof Error) { refused(field.name, wanted.message); return; }
-        if (wanted === undefined) {
-          if (held === undefined) return;
-          change(field, { unset: [field.name] });
-          return;
-        }
-        if (JSON.stringify(wanted) === JSON.stringify(held)) return;
-        var body = { set: {} };
-        body.set[field.name] = wanted;
-        change(field, body);
+        var busy = folder.busy[field.name];
+        if (busy) { busy.next = { wanted: wanted }; return; }
+        var body = changeTo(field, wanted);
+        if (body) change(field, body);
       };
       if (field.control === "multiselect") input.addEventListener("change", commit);
       else {
@@ -475,16 +496,30 @@
     if (asked) asked.setAttribute("aria-busy", "true");
     folder.sent += 1;
     folder.pending += 1;
+    folder.busy[field.name] = { next: null };
     var inFlight = true;
-    function answered() { if (inFlight) { inFlight = false; folder.pending -= 1; } }
+    function answered() {
+      if (!inFlight) return;
+      inFlight = false;
+      folder.pending -= 1;
+      var busy = folder.busy[field.name];
+      delete folder.busy[field.name];
+      // What was asked of the row while this was in flight, against the
+      // file as the answer says it.
+      var next = busy && busy.next && changeTo(field, busy.next.wanted);
+      if (next) { change(fieldOf(field.name) || field, next); return; }
+      if (folder.pending === 0 && folder.again) { folder.again = false; loadFolder(); }
+    }
     fetch("/api/defaults-file", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
     }).then(function (r) { return r.json(); }).then(function (said) {
-      answered();
       if (asked) asked.removeAttribute("aria-busy");
       var item = rowOf(field.name);
       if (item) item.removeAttribute("aria-busy");
       if (!said || said.ok === false) {
+        // A refusal ends what was asked meanwhile too: it said the same.
+        if (folder.busy[field.name]) folder.busy[field.name].next = null;
+        answered();
         refused(field.name, (said && (said.reason || said.error)) || "The file could not be written.");
         return;
       }
@@ -524,7 +559,9 @@
       }
       var refocus = focused && again.querySelector(focused);
       if (refocus) refocus.focus();
+      answered();
     }).catch(function () {
+      if (folder.busy[field.name]) folder.busy[field.name].next = null;
       answered();
       if (asked) asked.removeAttribute("aria-busy");
       var item = rowOf(field.name);
@@ -610,11 +647,20 @@
       // A change sent since it was asked, or not yet answered when it was:
       // the file as it was, which would draw that change's row as not set.
       // The change's answer says it.
-      if (stale()) return;
+      if (stale()) {
+        if (folder.pending === 0) loadFolder();
+        else folder.again = true;
+        return;
+      }
       if (said && said.ok === false && !said.fields) said.cannot = said.reason || said.error || "Not here.";
-      folder.said = said || { cannot: "The folder's defaults could not be read." };
-      if (!folder.said.values) folder.said.values = {};
-      if (!folder.said.whys) folder.said.whys = {};
+      said = said || { cannot: "The folder's defaults could not be read." };
+      if (!said.values) said.values = {};
+      if (!said.whys) said.whys = {};
+      // The file as the page already says it: with every row made again, a change's
+      // "Saved in the file. Undo" was wiped and the focus lost, a second or
+      // two after Settings opened.
+      if (folder.said && JSON.stringify(said) === JSON.stringify(folder.said)) return;
+      folder.said = said;
       drawFolder();
     }).catch(function () {
       folder.asking = false;

@@ -157,7 +157,8 @@ def _one_study_s(block: str, key: str, value: Any) -> tuple[str, str] | None:
             import json
 
             return name, (f"is one study's setting; given as `{json.dumps(value)}` it sets "
-                          "nothing, so take it out of the file")
+                          "nothing, so take it out of the file. Given a value, it would belong in "
+                          "that study's config")
         return name, _ONE_STUDY_SAID[name]
     if name == "analysis.options" and isinstance(value, dict):
         for analysis, given in value.items():
@@ -299,9 +300,12 @@ def read_defaults(path: str | Path) -> YourDefaults:
             one = _one_study_s(key, str(setting), value)
             if one is not None:
                 name, said = one
+                # Said once: the words for a setting given as nothing end
+                # with where a value of it belongs.
+                belongs = "" if "belong in that study's config" in said else (
+                    ": it belongs in that study's config")
                 raise ConfigError(
-                    f"{where} sets `{name}`, which {said}. {_THE_RULE}: "
-                    "it belongs in that study's config.",
+                    f"{where} sets `{name}`, which {said}. {_THE_RULE}{belongs}.",
                     code="config.option.inapplicable", option=name, context=DEFAULTS_FILE)
     try:
         # Checked as part of a config: every setting known, every value one

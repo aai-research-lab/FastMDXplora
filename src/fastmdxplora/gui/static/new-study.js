@@ -15,6 +15,9 @@
  * A file refused since the form was filled from it is said as refused, as
  * on opening: the start refuses it, so it is not one a study runs with.
  *
+ * Refused, the form's Run is quiet (run-builder.js `defaultsRefused`): the
+ * start reads the file and would refuse it whatever the checks said.
+ *
  * A phone's page scrolls as a whole, and New study was come back to where
  * This folder was left, the note far above: it is brought into view as it
  * is said, where it is not in view already. */
@@ -49,7 +52,8 @@
     note.appendChild(document.createTextNode(drawnFromFile
       ? " This form was filled with the file's values; read the defaults again to offer"
         + " FastMDXplora's own. "
-      : " This form offers FastMDXplora's own values until the file is put right. "));
+      : " This form offers FastMDXplora's own values, and a study started here is refused"
+        + " until the file is put right. "));
     var link = make("a", "", "This folder in Settings");
     link.href = "#settings";
     link.addEventListener("click", function (e) {
@@ -131,6 +135,7 @@
       var now = both[0];
       var drawn = both[1];
       var refused = now && now.defaults_refused;
+      if (form && form.defaultsRefused) form.defaultsRefused(refused || "");
       var differs = drawn && defaultsOf(drawn) !== defaultsOf(now);
       if (differs && !refused) changed(note);
       else say(note, refused, differs && fromFile(drawn));

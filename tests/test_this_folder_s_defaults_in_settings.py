@@ -516,7 +516,7 @@ def test_new_study_says_a_refused_defaults_file(browser, session):
     assert errors == []
     assert said[0].startswith("Your defaults are not used. "), said[0]
     assert "sets setup.mutations, which says what one study simulates" in said[0], said[0]
-    assert "FastMDXplora's own values until the file is put right" in said[0]
+    assert "FastMDXplora's own values, and a study started here is refused until the file is put right" in said[0]
     assert said[0].count(str(where)) == 1 and "`" not in said[0]
     assert "setup.mutations" in said[1]
     assert scope == "true"
