@@ -111,9 +111,12 @@
           <label class="builder-field">
             <span class="builder-label">Mode</span>
             <select id="agent-mode">
-              <option value="assisted">Seeker: built-in, assisted</option>
-              <option value="autonomous">Ranger: built-in, autonomous</option>
-              <option value="unvalidated">Unvalidated: outside the schema</option>
+              <!-- Each mode by its name; what it is and what it does
+                   (`data-kind`, and its note in agent-panel.js) said under
+                   the choice and on hover wherever the name is shown. -->
+              <option value="assisted" data-kind="Built-in, assisted">Seeker</option>
+              <option value="autonomous" data-kind="Built-in, autonomous">Ranger</option>
+              <option value="unvalidated" data-kind="Outside the schema, not one of the modes">Unvalidated</option>
             </select>
             <p class="builder-card-note" id="agent-mode-note"></p>
           </label>
@@ -291,7 +294,7 @@
     <div class="settings-divider"></div>
     <div class="settings-section">Agent</div>
     <div class="settings-row"><span>Engine</span><span class="settings-value" id="settings-engine">none</span></div>
-    <div class="settings-row"><span>Mode</span><span class="settings-value" id="settings-mode">Seeker: built-in, assisted</span></div>
+    <div class="settings-row"><span>Mode</span><span class="settings-value" id="settings-mode" title="Seeker: built-in, assisted. I show you each one first. Nothing runs until you say so.">Seeker</span></div>
     <a href="#agent" class="settings-item" id="settings-agent-link">Agent settings&hellip;</a>
     <div class="settings-divider"></div>
     <a href="#settings" class="settings-item" id="settings-page-link">Settings&hellip; <span class="settings-hint">every setting, in one place</span></a>
@@ -1879,9 +1882,10 @@
               <div class="pref-rows">
                 <div class="pref-row"><span>Engine<small>Whose AI the Agent asks</small></span>
                   <span class="settings-value" id="settings-page-engine">none</span></div>
-                <div class="pref-row"><span>Mode<small>With the engine and the GPU-hour ceiling,
-                  in the Agent's settings</small></span>
-                  <span class="settings-value" id="settings-page-mode">Seeker: built-in, assisted</span></div>
+                <div class="pref-row"><span>Mode<small id="settings-page-mode-said">Built-in, assisted. I show
+                  you each one first. Nothing runs until you say so.</small><small>Chosen with the engine and
+                  the GPU-hour ceiling, in the Agent's settings</small></span>
+                  <span class="settings-value" id="settings-page-mode" title="Seeker: built-in, assisted. I show you each one first. Nothing runs until you say so.">Seeker</span></div>
                 <div class="pref-row settings-row-end">
                   <button type="button" class="ghost-btn" id="settings-page-agent"
                           aria-haspopup="dialog">Change the Agent's settings&hellip;</button>
@@ -1966,7 +1970,7 @@
                  opens the Agent's settings; the conversations; a fresh
                  one. Where every AI app a person has used keeps them. -->
             <div class="agent-footer">
-              <button id="agent-settings-open" class="agent-footer-link" type="button" title="The Agent's mode: open its settings"><span id="agent-footer-mode">Seeker: built-in, assisted</span></button>
+              <button id="agent-settings-open" class="agent-footer-link" type="button" title="Seeker: built-in, assisted. I show you each one first. Nothing runs until you say so.&#10;Open the Agent's settings"><span id="agent-footer-mode">Seeker</span></button>
               <button id="agent-conversations" class="line-btn" type="button" aria-label="Conversations"
                       title="Conversations: open an earlier one"><!--icon:chat:line-icon--></button>
               <button id="agent-new" class="line-btn" type="button" aria-label="New conversation"

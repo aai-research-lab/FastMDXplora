@@ -448,9 +448,8 @@ it is about, and sees that study's context. It lives inside the study
 folder, at `<study>/agent/conversations/`, so copying a
 study carries the conversations that made it — the record stays with the
 data. A conversation about no study lives at the workspace level. Under the
-composer, at the right: the mode by its name and its two words (**Seeker:
-built-in, assisted** or **Ranger: built-in, autonomous**), which
-opens the Agent's settings; *Conversations*, a list grouped by study with
+composer, at the right: the mode by its name (**Seeker** or **Ranger**),
+what it is and does said on hover, which opens the Agent's settings; *Conversations*, a list grouped by study with
 the loaded one first, where opening a conversation from another study loads
 that study; and *New conversation*, which starts a fresh thread and keeps
 the last. Every exchange is saved as it happens; a reload shows the thread

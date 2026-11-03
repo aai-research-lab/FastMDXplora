@@ -69,8 +69,8 @@ def test_the_help_names_the_modes():
 
 def test_the_rest_of_the_agent_page_says_the_modes_by_their_names():
     text = " ".join((DOCS / "agent.md").read_text(encoding="utf-8").split())
-    assert ("the mode by its name and its two words (**Seeker: built-in, assisted** or "
-            "**Ranger: built-in, autonomous**), which opens the Agent's settings") in text
+    assert ("the mode by its name (**Seeker** or **Ranger**), what it is and does said on "
+            "hover, which opens the Agent's settings") in text
     assert "A Ranger (`autonomous`) Config that carries its own `budget_hours`" in text
     assert "a Ranger (`autonomous`) run still needs its budget" in text
     assert "is what Seeker (`assisted`) promises" in text

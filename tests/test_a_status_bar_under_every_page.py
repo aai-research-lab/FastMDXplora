@@ -99,7 +99,7 @@ def test_the_strip_is_under_every_page_and_the_columns_end_above_it(tmp_path):
         assert bar["width"] == bar["innerWidth"] and not bar["scrolls"], name
         assert bar["mainBottom"] <= bar["top"] and bar["sidebarBottom"] <= bar["top"], name
         assert bar["items"]["sb-machine"].startswith(host + " · "), name
-        assert bar["items"]["sb-agent"] == "Agent · Seeker: built-in, assisted", name
+        assert bar["items"]["sb-agent"] == "Agent · Seeker", name
     assert said["phone"] == "none"
 
 
@@ -175,11 +175,12 @@ def test_the_machine_s_gpus_and_the_agent_s_mode_are_said_never_its_model(tmp_pa
     status_bar.forget()
     assert seen["machine"][0].endswith("· GeForce RTX 4090")
     assert "GPU 0: NVIDIA GeForce RTX 4090, 23 GB free of 24 GB, 3% busy" in seen["machine"][1]
-    # The mode by its name and its two words; the AI model nowhere in the strip.
-    assert seen["agent"] == "Agent · Seeker: built-in, assisted"
-    assert seen["footer"] == "Seeker: built-in, assisted"
-    assert seen["ranger"][0] == "Agent · Ranger: built-in, autonomous"
-    assert seen["footer_ranger"] == "Ranger: built-in, autonomous"
+    # The mode by its name, what it is on hover; the AI model nowhere in the strip.
+    assert seen["agent"] == "Agent · Seeker"
+    assert seen["footer"] == "Seeker"
+    assert seen["ranger"][0] == "Agent · Ranger"
+    assert seen["ranger"][1].startswith("The Agent's mode: Ranger: built-in, autonomous. I run it")
+    assert seen["footer_ranger"] == "Ranger"
     assert "claude-test-model" not in seen["strip"] and "claude-test-model" not in seen["ranger"][1]
     # No Intel item on a person's own install, and never the model in its place.
     assert "Intel" not in seen["strip"]

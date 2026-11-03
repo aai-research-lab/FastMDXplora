@@ -181,13 +181,21 @@
   /* ---- The Agent --------------------------------------------------- */
   /* Its engine and mode as the settings popup says them (frame.js and the
    * Agent's own dialog fill those); changed in the Agent's dialog. */
-  function mirror(from, to) {
+  /* `said`: where the source's description (`data-described`) is said
+   * in words, as the mode's is under its name on this page. */
+  function mirror(from, to, said) {
     var source = el(from);
     var target = el(to);
     if (!source || !target) return;
-    var copy = function () { target.textContent = source.textContent; };
+    var words = said && el(said);
+    var copy = function () {
+      target.textContent = source.textContent;
+      if (source.title) target.title = source.title;
+      if (words && source.dataset.described) words.textContent = source.dataset.described;
+    };
     copy();
-    new MutationObserver(copy).observe(source, { childList: true, characterData: true, subtree: true });
+    new MutationObserver(copy).observe(source, { childList: true, characterData: true, subtree: true,
+                                                 attributes: true, attributeFilter: ["title", "data-described"] });
   }
 
   /* ---- A part of the page ------------------------------------------ */
@@ -705,7 +713,7 @@
     sayDisplaySize();
 
     mirror("settings-engine", "settings-page-engine");
-    mirror("settings-mode", "settings-page-mode");
+    mirror("settings-mode", "settings-page-mode", "settings-page-mode-said");
     var agent = el("settings-page-agent");
     if (agent) {
       agent.addEventListener("click", function () {

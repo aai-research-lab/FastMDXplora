@@ -309,7 +309,7 @@ def test_the_menu_says_the_agent_s_provider_and_mode_and_its_model_only_in_its_s
         started.server.shutdown()
     assert errors == []
     assert engine == "Anthropic"
-    assert mode == "Seeker: built-in, assisted"
+    assert mode == "Seeker"
     assert "claude-test-model" not in menu
     assert "claude-test-model" not in elsewhere
     assert settings == "claude-test-model"

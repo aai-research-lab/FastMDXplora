@@ -2818,9 +2818,9 @@ class TestTheWordsAndTheRows(unittest.TestCase):
         self.assertLess(agent.index('<div class="agent-composer-box">'), agent.index('<div class="agent-footer">'))
 
     def test_the_footer_shows_the_mode(self):
-        """By its name and its two words, as its choice says it (user,
-        10-18: "Seeker: built-in, assisted"), under the composer and in the
-        settings menu."""
+        """By its name alone, as its choice says it, under the composer and
+        in the settings menu; what it is on hover (user, 11-03: "just
+        mention the name")."""
         import pathlib
 
         import fastmdxplora.gui as gui
@@ -2829,9 +2829,11 @@ class TestTheWordsAndTheRows(unittest.TestCase):
                   / "agent-panel.js").read_text(encoding="utf-8")
         self.assertIn('["agent-footer-mode", "settings-mode"]', script)
         page = self.page()
-        self.assertIn('<span id="agent-footer-mode">Seeker: built-in, assisted</span>', page)
-        self.assertIn('id="settings-mode">Seeker: built-in, assisted</span>', page)
-        self.assertIn('<option value="autonomous">Ranger: built-in, autonomous</option>', page)
+        self.assertIn('<span id="agent-footer-mode">Seeker</span>', page)
+        self.assertIn('id="settings-mode" title="Seeker: built-in, assisted. ', page)
+        self.assertIn('data-kind="Built-in, autonomous"', page)
+        self.assertIn('>Ranger</option>', page)
+        self.assertNotIn(">Seeker: built-in, assisted<", page)
         self.assertNotIn("Assisted</span> mode", page)
 
     def test_page_headers_are_one_row(self):

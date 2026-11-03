@@ -103,15 +103,18 @@
   /* The Agent's mode                                                    */
   /* ------------------------------------------------------------------ */
 
-  /* The mode by its name and its two words, as its choice says it
-   * ("Seeker: built-in, assisted"); never the AI model. */
+  /* The mode by its name, as its choice says it ("Seeker"); what it is
+   * and does on hover, as the choice's own hover says it (agent-panel.js
+   * sets it before this reads it, and on each change); never the AI
+   * model. */
   function showMode() {
     var item = byId("sb-agent");
     var select = byId("agent-mode");
     if (!item || !select || select.selectedIndex < 0) return;
-    var said = select.options[select.selectedIndex].text;
+    var option = select.options[select.selectedIndex];
+    var said = option.text;
     setItem(item, "agent", "Agent · " + said,
-      "The Agent's mode: " + said + "\nOpen the Agent's settings");
+      "The Agent's mode: " + (option.title || said) + "\nOpen the Agent's settings");
     item.hidden = false;
   }
 

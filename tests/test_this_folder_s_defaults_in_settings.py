@@ -730,7 +730,7 @@ def test_the_agent_s_mode_and_ceiling_are_saved(browser, session):
     page.context.close()
     assert errors == []
     assert said[:2] == ["autonomous", "12"]
-    assert said[2] == said[3] == "Ranger: built-in, autonomous"
+    assert said[2] == said[3] == "Ranger"
     assert "Ranger" in said[4]
 
 

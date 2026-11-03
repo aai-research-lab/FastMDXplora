@@ -19,9 +19,14 @@
 
   var providers = [];
 
-  /* One line per mode, said where the mode is chosen: what stands between
-   * it and a bad study. That is the only thing a reader needs at the
-   * moment of choosing. The Agent says it of itself. */
+  /* A mode is shown by its name alone (Seeker, Ranger); what it is and
+   * what stands between it and a bad study are its description, said
+   * under the choice and on hover wherever the name is (user, 11-03: "just
+   * mention the name ... the details should be in the description in
+   * settings and on hover"). What it is: the choice's own `data-kind`
+   * (the template); what stands between it and a bad study, the one line a
+   * reader needs at the moment of choosing: `MODE_NOTES`, which the Agent
+   * says of itself. */
   var MODE_NOTES = {
     assisted: "I show you each one first. Nothing runs until you say so.",
     autonomous: "I run it without showing it to you first, so a ceiling is " +
@@ -29,6 +34,28 @@
     unvalidated: "I work outside the schema, so nothing validates the method. " +
                  "Every figure I produce is stamped."
   };
+  function modeOption(mode) {
+    var select = el("agent-mode");
+    if (!select) return null;
+    return Array.prototype.filter.call(select.options, function (o) { return o.value === mode; })[0] || null;
+  }
+  function modeNote(mode) {
+    return MODE_NOTES[mode] || "";
+  }
+  /* "Built-in, assisted. I show you each one first. ..." */
+  function modeDescribed(mode) {
+    var option = modeOption(mode);
+    if (!option) return "";
+    var kind = option.dataset.kind || "";
+    return (kind ? kind + ". " : "") + modeNote(mode);
+  }
+  /* "Seeker: built-in, assisted. I show you ...", for a hover. */
+  function modeHover(mode) {
+    var option = modeOption(mode);
+    if (!option) return "";
+    var described = modeDescribed(mode);
+    return option.text + (described ? ": " + described.charAt(0).toLowerCase() + described.slice(1) : "");
+  }
 
   /* Where a key comes from, for the provider actually chosen. Said here
    * because this is where somebody needs it; a GUI that tells you to run
@@ -738,7 +765,7 @@
     var mode = el("agent-mode");
     if (note && mode) {
       note.textContent = "I draft a config and the software validates it. "
-        + (MODE_NOTES[mode.value] || "");
+        + modeNote(mode.value);
     }
   }
 
@@ -5635,17 +5662,24 @@
 
     function modeChanged() {
       var mode = el("agent-mode").value;
-      el("agent-mode-note").textContent = MODE_NOTES[mode] || "";
-      /* The mode by its name and its two words ("Seeker: built-in,
-       * assisted"), as the choice says it, wherever it is shown: under the
-       * composer, in the settings menu and in the status bar (statusbar.js
-       * reads the same choice). */
+      el("agent-mode-note").textContent = modeDescribed(mode);
+      /* The mode by its name ("Seeker"), as the choice says it, wherever it
+       * is shown: under the composer, in the settings menu, on the Settings
+       * page and in the status bar (statusbar.js reads the same choice);
+       * what it is, on hover. */
       var select = el("agent-mode");
       var said = select.selectedIndex >= 0 ? select.options[select.selectedIndex].text : mode;
+      var hover = modeHover(mode);
+      Array.prototype.forEach.call(select.options, function (o) { o.title = modeHover(o.value); });
       ["agent-footer-mode", "settings-mode"].forEach(function (id) {
         var node = el(id);
-        if (node) node.textContent = said;
+        if (!node) return;
+        node.textContent = said;
+        node.title = hover;
+        node.dataset.described = modeDescribed(mode);
       });
+      var open = el("agent-settings-open");
+      if (open) open.title = hover + "\nOpen the Agent's settings";
       el("agent-budget-note").textContent = mode === "autonomous"
         ? "Required in this mode. Checked after setup, where the cost is "
           + "first known."
