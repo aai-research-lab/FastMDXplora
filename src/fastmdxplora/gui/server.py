@@ -4403,12 +4403,8 @@ def _report_panels(root: Path) -> dict[str, Any]:
         logger.debug("report panels unavailable", exc_info=True)
         return {"summary_cards": [], "metric_rows": [], "phase_rows": []}
     sections: list[dict[str, Any]] = []
-    quick_actions: list[dict[str, Any]] = []
     try:
-        from fastmdxplora.gui.report_dashboard import (
-            analysis_sections_for,
-            quick_actions_for,
-        )
+        from fastmdxplora.gui.report_dashboard import analysis_sections_for
 
         built = analysis_sections_for(root)
         sections = [
@@ -4433,10 +4429,6 @@ def _report_panels(root: Path) -> dict[str, Any]:
             for section in built
             if section.panels
         ]
-        quick_actions = [
-            {"label": link.label, "href": f"/artifacts/{link.href}", "detail": link.detail}
-            for link in quick_actions_for(root, built)
-        ]
     except Exception:  # noqa: BLE001 - a panel must never break the dashboard
         logger.debug("analysis sections unavailable", exc_info=True)
 
@@ -4452,7 +4444,6 @@ def _report_panels(root: Path) -> dict[str, Any]:
         "metric_rows": [asdict(row) for row in metrics],
         "phase_rows": [asdict(row) for row in phases],
         "analysis_sections": sections,
-        "quick_actions": quick_actions,
         # What made each analysis's figures, and the command that makes
         # them again, for the chip on each figure.
         "figure_provenance": provenance,
