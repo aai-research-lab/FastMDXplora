@@ -734,7 +734,7 @@ _THE_BROWSER_ITSELF = re.compile(
     r"|\bare\s+the\s+browser['’]s\s+own\s*:"
     r"|\bbrowser-based\b|#browser[\w-]*"
     r"|\bbrowsers\b"
-    r"|\b(?:your|a|an|any|each|every|another|other|one|which|the\s+same)\s+"
+    r"|\b(?:your|a|an|any|each|every|another|other|which|the\s+same)\s+"
     r"(?:(?:default|different|headless|modern|supported|current|separate|new|private"
     rf"|other|web)\s+)?browser\b{_NOT_A_GUI_PART}"
     rf"|\b(?:web|file|default)\s+browser\b{_NOT_A_GUI_PART}"
@@ -809,11 +809,16 @@ class TestTheInterfaceIsCalledTheGUI:
             for folder in ("static", "templates")
             for path in sorted((root / "src" / "fastmdxplora" / "gui" / folder).iterdir())
             if path.suffix in {".js", ".html"})
-        for page in ("docs/gui.md", "docs/studies.md", "README.md"):
-            text = (root / page).read_text(encoding="utf-8")
+        pages = sorted(root.glob("docs/**/*.md")) + [root / "README.md"]
+        assert root / "docs" / "gui.md" in pages
+        said = []
+        for path in pages:
+            page = path.relative_to(root).as_posix()
+            text = path.read_text(encoding="utf-8")
             lines = text.split("\n")
-            said = _browser_named_as_the_interface(text, gui_source)
-            assert said == [], [f"{page}:{n}: {lines[n - 1].strip()[:80]}" for n in said]
+            said += [f"{page}:{n}: {lines[n - 1].strip()[:80]}"
+                     for n in _browser_named_as_the_interface(text, gui_source)]
+        assert said == []
 
     @pytest.mark.parametrize("line", [
         "Results open in the browser.",
@@ -831,6 +836,7 @@ class TestTheInterfaceIsCalledTheGUI:
         "Open the browser tab named Analysis to see RMSD.",
         "A new browser page opens for each analysis.",
         "Results appear in the browser on this page.",
+        "One browser and one codebase.",
         "Deleting it? The browser does not allow it.",
         "The plots are the browser's own.",
         "THE BROWSER SHOWS RESULTS.",
