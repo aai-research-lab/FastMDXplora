@@ -725,18 +725,14 @@ def _platform_logged(root: object) -> tuple[tuple[str, str | None] | None, bool]
 
 def last_piece_stopped(root: object) -> bool:
     """Whether a study carried on in pieces has its last piece stopped
-    before its end: no final state, and no sidecar saying it finished."""
-    from fastmdxplora import record_access
-    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+    before its end, by the join's reading (`joining.piece_finished`): a
+    piece whose checkpoint is at its last step is not."""
+    from fastmdxplora.analysis.joining import piece_finished
 
     pieces = _segments(root)
     if not pieces:
         return False
-    folder = pieces[-1] / "simulation"
-    finished = (read_checkpoint_sidecar(folder / "checkpoint.chk") or {}).get("finished")
-    if isinstance(finished, bool):
-        return not finished
-    return not record_access.is_file(folder / "state_final.xml")
+    return not piece_finished(pieces[-1] / "simulation")
 
 
 def _held() -> bool:

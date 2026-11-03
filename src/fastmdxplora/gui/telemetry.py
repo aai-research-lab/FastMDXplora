@@ -489,12 +489,12 @@ def _frames_kept(folder: Path) -> int | None:
     """The production frames a piece contributes to the joined trajectory:
     all it wrote where it finished, those before its last checkpoint where
     it was stopped (the rest are run again by the next piece)."""
-    from fastmdxplora.analysis.joining import _finished
+    from fastmdxplora.analysis.joining import piece_finished
     from fastmdxplora.simulation.resume import frames_before_checkpoint
 
     simulation = folder / "simulation"
     try:
-        if _finished(simulation):
+        if piece_finished(simulation):
             count = read_status(folder).get("current_frame_count")
             return int(count) if isinstance(count, (int, float)) else None
         return frames_before_checkpoint(folder)
@@ -557,12 +557,35 @@ def _newer(one: dict[str, Any], other: dict[str, Any]) -> bool:
     return first > second
 
 
+def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A piece's live record, said completed where its production reached
+    its end (`joining.piece_finished`, the join's reading) and its record,
+    written before the runner said so of a stop landing there, says it was
+    stopped: the join takes it whole, and the run read stopped for good
+    after a resume that completed it."""
+    if str(status.get("status") or "").lower() != "stopped":
+        return status
+    from fastmdxplora.analysis.joining import piece_finished
+
+    try:
+        if not piece_finished(piece / "simulation"):
+            return status
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return status
+    states = dict(status.get("stage_states") or {}) if isinstance(
+        status.get("stage_states"), dict) else {}
+    states["production"] = "completed"
+    total = status.get("total_planned_steps")
+    return {**status, "status": "completed", "latest_error": None, "stage_states": states,
+            **({"current_step": total} if isinstance(total, (int, float)) else {})}
+
+
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
     pieces = _pieces_of(root)
     if not pieces:
         return first
     newest = pieces[-1]
-    last = read_status(newest)
+    last = _as_it_ended(newest, read_status(newest))
     if not last:
         return first
     whole = dict(first)

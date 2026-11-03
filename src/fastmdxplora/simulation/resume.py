@@ -2782,13 +2782,16 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
                   if r.output_dir else {})}
               for r in results]
     failed = [r for r in results if r.status != "ok"]
+    from fastmdxplora.batch.explorer import RESUME_REFUSED
     from fastmdxplora.simulation.stopping import round_ended
+
+    refused = [r.run_id for r in results if getattr(r, "error_type", None) == RESUME_REFUSED]
 
     # Every run carried on, and the rule's round failed again, or a run not
     # carried on and the round left as it ended: not done.
     ended = round_ended(root)
     answer = {**base, "ok": not failed and ended is None, "did": RESUMED_RUNS,
-              "runs": listed}
+              "runs": listed, **({"refused": refused} if refused else {})}
     if ended is not None:
         # What carries it on, as every page says it, said last in the study's
         # summary, so not said again: a run's own refusal advised an

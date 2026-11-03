@@ -181,34 +181,60 @@ def _finished(simulation_dir: Path, *, piece: bool = False) -> bool:
     return _records.is_file(simulation_dir / "state_final.xml")
 
 
-def _at_its_last_step(simulation_dir: Path, side: dict[str, Any]) -> bool:
-    """Whether a piece's checkpoint, written as it was stopped, is at the
-    last step of its production: a stop landing in its last frame interval
-    left a checkpoint at its full length, said not finished, and every join
-    refused the piece as one that would be run again. Its production steps
-    from the piece's own config; never for a variable step, whose steps say
-    no length."""
+def piece_finished(simulation_dir: Path) -> bool:
+    """The one reading of whether a piece of a study (an extension,
+    ``segment-NNN/simulation``) ran to its end, for the join and for every
+    reader of a piece's or a run's state (`telemetry.read_study_status`,
+    `lengths.last_piece_stopped`, the frames it keeps): its sidecar says it
+    finished, or, written before the runner said so of a stop landing at
+    its end, its checkpoint is at its last production step
+    (`_at_its_last_step`)."""
+    return _finished(simulation_dir, piece=True)
+
+
+def planned_production_steps(simulation_dir: Path) -> int | None:
+    """The production steps a run planned, as the runner planned them
+    (`lengths.steps_in`, by `lengths.stage_lengths` over the run's own
+    `simulation_parameters.json`), else from its `resolved_config.yml` by
+    the same function. A variable-step integrator is run by this count too,
+    each step of the size it chooses, so its clock is not its plan: a piece
+    stopped at step 1,000 of 1,000 read 1.64 ps of a nominal 2 ps. None
+    where neither is read."""
     import yaml
 
-    from fastmdxplora.simulation.lengths import _variable_step
+    from fastmdxplora.simulation.lengths import stage_lengths, steps_in
 
-    step = side.get("step")
-    if side.get("stage") != "production" or not isinstance(step, int) or isinstance(step, bool):
-        return False
+    try:
+        record = json.loads(_records.read_text(simulation_dir / "simulation_parameters.json",
+                                               encoding="utf-8"))
+        steps = stage_lengths(record)["production"]["steps"]
+        if isinstance(steps, int) and steps > 0:
+            return steps
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
     try:
         config = yaml.safe_load(_records.read_text(simulation_dir.parent / "resolved_config.yml",
                                                    encoding="utf-8")) or {}
         simulation = config.get("simulation") or {}
-        if _variable_step(simulation):
-            return False
         if simulation.get("production_steps") is not None:
-            planned = int(simulation["production_steps"])
-        else:
-            planned = round(float(simulation["duration_ns"]) * 1e6
-                            / float(simulation.get("timestep_fs") or 2.0))
+            return int(simulation["production_steps"])
+        return steps_in(float(simulation["duration_ns"]),
+                        float(simulation.get("timestep_fs") or 2.0))
     except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        return None
+
+
+def _at_its_last_step(simulation_dir: Path, side: dict[str, Any]) -> bool:
+    """Whether a piece's checkpoint, written as it was stopped, is at the
+    last step of its production (`planned_production_steps`): a stop landing
+    in its last frame interval left a checkpoint at its full length, said
+    not finished, and every join refused the piece as one that would be run
+    again. By steps for a variable step too, since its plan is in steps."""
+    step = side.get("step")
+    if side.get("stage") != "production" or not isinstance(step, int) or isinstance(step, bool):
         return False
-    return 0 < planned <= step
+    planned = planned_production_steps(simulation_dir)
+    return planned is not None and 0 < planned <= step
 
 
 def survey_segments(root: Path | str, *,

@@ -1834,12 +1834,30 @@ class BatchExplorer:
         before a resume as after one."""
         import yaml
 
+        from fastmdxplora.gui.exploration import runs_of_a_study
         from fastmdxplora.simulation.resume import _finished_record
 
+        # A run its round's extension was stopped or cut in: as the pages,
+        # the Agent and the summary count it, not "ok" from its first piece.
+        try:
+            states = {str(run.get("run_id")): run.get("state")
+                      for run in runs_of_a_study(self.output_dir) or []}
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            states = {}
         for index, result in enumerate(self.results):
             if result.status != "ok" or result.output_dir is None:
                 continue
             folder = Path(result.output_dir)
+            state = states.get(result.run_id)
+            if state in ("stopped", "interrupted"):
+                from dataclasses import replace
+
+                self.results[index] = replace(
+                    result, status="error",
+                    error_type=STOPPED_ERROR_TYPE if state == "stopped" else "Interrupted",
+                    message=("Stopped when asked in the study's rounds." if state == "stopped"
+                             else "Its process ended in the study's rounds."))
+                continue
             try:
                 config = yaml.safe_load((folder / "resolved_config.yml").read_text(
                     encoding="utf-8")) or {}
@@ -3293,8 +3311,11 @@ class BatchExplorer:
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")
         stopped = sum(1 for r in self.results if _was_stopped(r))
+        refused = sum(1 for r in self.results if getattr(r, "error_type", None) == RESUME_REFUSED)
         ended = self._round_ended()
-        headline = ("Batch failed" if ended is not None and ended.state == "failed"
+        # A resume a run refused ran nothing: said refused, never stopped.
+        headline = ("Resume refused" if refused
+                    else "Batch failed" if ended is not None and ended.state == "failed"
                     else "Batch stopped" if stopped or ended is not None
                     else "Batch failed" if err
                     else "Batch complete")
@@ -3304,12 +3325,23 @@ class BatchExplorer:
 
             # Each run as it stands after the rounds, counted as the GUI and
             # the Agent count it: a run whose extension was stopped is not ok.
-            states = [run.get("state") for run in runs_of_a_study(self.output_dir) or []]
+            runs = runs_of_a_study(self.output_dir) or []
+            given = {getattr(r, "run_id", None): r.status for r in self.results}
+            # A run "waiting" for the next round, read in this process while
+            # it holds the study, has ended as its result says once it ends.
+            states = [("completed" if run.get("state") == "waiting"
+                       and given.get(run.get("run_id")) == "ok" else run.get("state"))
+                      for run in runs]
             if len(states) == len(self.results):
                 ok = states.count("completed")
                 err = states.count("failed")
                 left = len(states) - ok - err - skipped
-                cut = f", {left} stopped in the rounds" if left > 0 else ""
+                # Cut (its process ended) is not stopped (asked to stop).
+                gone = min(left, states.count("interrupted"))
+                cut = (f", {left - gone} stopped in the rounds" if left - gone > 0 else "") + (
+                    f", {gone} cut in the rounds" if gone else "")
+        if refused:
+            cut += f", {refused} refused by {'its' if refused == 1 else 'their'} resume"
         print(f"\n{'=' * 40}")
         print(
             f"{headline}: {ok} ok, "

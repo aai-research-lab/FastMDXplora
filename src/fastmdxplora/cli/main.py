@@ -3391,8 +3391,10 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             print("\n".join(fixes), file=sys.stderr)
     if answer.get("ok"):
         return 0
-    # A round stopped when asked, as `fastmdx explore` says it: interrupted.
-    return 130 if (answer.get("round_ended") or {}).get("state") == "stopped" else 1
+    # A round stopped when asked, as `fastmdx explore` says it: interrupted;
+    # a resume a run refused ran nothing, and was not stopped.
+    return (130 if (answer.get("round_ended") or {}).get("state") == "stopped"
+            and not answer.get("refused") else 1)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

@@ -460,6 +460,18 @@ def _interrupted(root: Path) -> Remedy | None:
         # subject ("The study:") before the reason.
         why = "Stopped after its pieces were joined, before their analyses and report had run."
         remedy = _resume(INTERRUPTED_CODE, why, "the study", [root], root)
+        from fastmdxplora.simulation.resume import how_a_resume_finds
+
+        own = (how_a_resume_finds(root) or {}).get("own")
+        if own:
+            # Its analyses ended in an error of their own, which a resume
+            # refuses: analysed again, as its round's sentence says.
+            argv = ("explore", "--output", str(root), "--include", "analysis", "report",
+                    "--rerun")
+            return replace(
+                remedy, why=f"Its analyses of its joined pieces ended in an error: {own}",
+                fix="Put right what its analyses said, then analyse it again.",
+                command="fastmdx " + " ".join(argv), argv=argv, price=None)
         unpriced = remedy.fix[remedy.fix.find(" The price is not given"):] if (
             " The price is not given" in remedy.fix) else ""
         return replace(remedy, fix="Run its analyses and report over the joined pieces."

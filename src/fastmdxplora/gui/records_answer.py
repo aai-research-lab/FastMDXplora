@@ -17,6 +17,8 @@ records through its tools.
 
 from __future__ import annotations
 
+import json
+
 import re
 from pathlib import Path
 from typing import Any
@@ -38,10 +40,70 @@ TRAPPED = ("A single run's error is estimated from the run itself, so it cannot 
            "extends them until their means agree.")
 
 
-#: Said first of a run whose joined pieces' analyses are owed.
-OWED_SAID = ("Its pieces were joined and their analyses and report have not run, so "
-             "the means and lengths below are of its pieces before the join, not of its "
-             "whole production; `fastmdx resume` runs them.")
+def _span_analysed(base: Path) -> float | None:
+    """The production its analyses read, in ns: their frames times the run's
+    frame interval and timestep (`analysis/analysis_manifest.json`). None
+    for a variable step, whose frames are not evenly spaced in time, and
+    where a record does not say."""
+    import yaml
+
+    from fastmdxplora import record_access
+    from fastmdxplora.simulation.lengths import _variable_step
+    from fastmdxplora.simulation.resume import trajectory_interval_of
+
+    try:
+        frames = json.loads(record_access.read_text(
+            base / "analysis" / "analysis_manifest.json", encoding="utf-8"))["n_frames"]
+        simulation = (yaml.safe_load(record_access.read_text(
+            base / "resolved_config.yml", encoding="utf-8")) or {}).get("simulation") or {}
+        interval = trajectory_interval_of(base)
+        if _variable_step(simulation) or not interval or not isinstance(frames, int):
+            return None
+        return frames * interval * float(simulation.get("timestep_fs") or 2.0) / 1e6
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        return None
+
+
+def _the_means_are_of_less(base: Path) -> str | None:
+    """Said first of a run whose means are of less than its production: its
+    joined pieces' analyses owed, or its last piece not joined. Of what span
+    its means are, and what gives them over the whole, as the resume reads
+    it (`resume.how_a_resume_finds`): `fastmdx resume` of its study, or,
+    where the run stopped with an error in its analyses, which a resume
+    refuses, analysing it again. While a resume or an extension runs them,
+    that they run (`being_carried_on`)."""
+    from fastmdxplora.simulation.resume import (_extended_since_it_finished, analysis_owed,
+                                                being_carried_on, how_a_resume_finds,
+                                                production_done_ns)
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    try:
+        owed, unjoined = analysis_owed(base), _extended_since_it_finished(base)
+        if not (owed or unjoined):
+            return None
+        going = being_carried_on(base)
+        whole = production_done_ns(base)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return None
+    span = _span_analysed(base)
+    of = (f"of its first {length_said(span)}" if span is not None
+          else "of its pieces before the join")
+    the_whole = f"its {length_said(whole)}" if whole else "its whole production"
+    if going:
+        return (f"Its pieces are being joined and analysed now: the means below are {of}, "
+                f"not of {the_whole}, until that ends.")
+    found = how_a_resume_finds(base) or {}
+    study = (base.parent.parent if base.parent.name == "runs"
+             and (base.parent.parent / "batch_manifest.json").is_file() else base)
+    if found.get("own"):
+        then = (f"once what its analyses said is put right, fastmdx explore --output {base} "
+                "--include analysis report --rerun runs them")
+    else:
+        then = f"fastmdx resume {study} " + ("joins it and runs them" if unjoined
+                                               else "runs them")
+    what = ("Its last piece is not joined" if unjoined else
+            "Its pieces were joined and their analyses and report have not run")
+    return f"{what}, so the means below are {of}, not of {the_whole}; {then}."
 
 
 def answer_from_the_records(root: str | Path | None, question: str) -> str | None:
@@ -56,13 +118,13 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
         return _several_runs(base)
     said = {"found": _found, "long_enough": _long_enough,
             "strengthen": _strengthen}[question](base)
-    from fastmdxplora.simulation.resume import analysis_owed
     from fastmdxplora.simulation.stopping import round_ended
 
-    if analysis_owed(base):
-        # Its pieces joined and their analyses not run: what its records give
-        # is of the pieces before the join, never the whole run's.
-        said = (f"{OWED_SAID}\n\n{said}")
+    owed = _the_means_are_of_less(base)
+    if owed:
+        # Its means are of less than its production: said first, with what
+        # gives them over the whole.
+        said = f"{owed}\n\n{said}"
     ended = round_ended(base)
     if ended is not None:
         # A run that completed whose rule's round did not: said first, as

@@ -644,10 +644,10 @@ def _the_round_stopped(record: dict[str, Any], entry: dict[str, Any], run: str,
     entry["stopped_by"] = "asked" if asked else "error"
     record["outcome"] = "stopped"
     if asked:
+        # What resuming runs first is the round's sentence's to say
+        # (`round_ended`): it may join or carry pieces on before it judges.
         record["said"] = (f"Stopped when asked, while extending {run}. "
-                          "Resuming the study judges "
-                          + ("the run" if run == "the run" else "the runs")
-                          + " again and carries on from there.")
+                          "Resuming the study carries its round on from there.")
     elif answer.get("lost"):
         record["said"] = ("Stopped: a worker extending the runs ended abruptly "
                           f"({answer.get('error') or 'no reason recorded'}), and which "
@@ -800,8 +800,12 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         # The runs whose extension finished: side by side, the others
         # can, and the runs are then not at one length.
         entry["extended"] = [r.name for r, a in zip(tried, answers) if a.get("ok")]
-        # A study of one run is named "the run", not by its folder.
-        _the_round_stopped(record, entry, run.name if len(runs) > 1 else "the run", answer)
+        # A study of one run is named "the run", not by its folder; runs
+        # stopped side by side are each named.
+        named = run.name
+        if answer.get("stopped"):
+            named = _and([r.name for r, a in failed if a.get("stopped")] or [run.name])
+        _the_round_stopped(record, entry, named if len(runs) > 1 else "the run", answer)
         write()
         say(record["said"])
         return record
@@ -841,6 +845,18 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             if stopped is not None:
                 return stopped
 
+    last = record["rounds"][-1] if record["rounds"] else {}
+    if (last.get("decision") == "ceiling" and isinstance(last.get("production_ns"),
+                                                         (int, float))
+            and float(last["production_ns"]) >= ceiling - 1e-9
+            and all(abs(production_of(run) - float(last["production_ns"])) <= _ONE_LENGTH_NS
+                    for run in runs)):
+        # Already at the ceiling it still sets, judged at these lengths: a
+        # resume with nothing run adds no round, the same one again.
+        record["outcome"] = last["decision"]
+        record["said"] = str(last.get("said") or "")
+        say("Nothing run: the runs were judged at these lengths already. " + record["said"])
+        return record
     for _ in range(MOST_ROUNDS):
         production = min(production_of(run) for run in runs)
         verdicts = judge(runs, targets, production)
@@ -1065,8 +1081,10 @@ class RoundEnded:
     productions: tuple[tuple[str, float | None], ...] = ()
 
     def as_record(self) -> dict[str, Any]:
-        return {"state": self.state, "said": self.said, "carry_on": self.carry_on,
-                "command": " ".join(self.argv)}
+        """As `batch_manifest.json` and an answer record it: what carries
+        it on is read when asked (`round_ended`), not saved, since it rests
+        on the study's config and runs as they stand then."""
+        return {"state": self.state, "said": self.said, "command": " ".join(self.argv)}
 
     def as_text(self) -> str:
         return f"{self.said} {self.carry_on}"

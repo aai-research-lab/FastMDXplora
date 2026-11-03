@@ -1173,20 +1173,28 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                          timestep_fs: float) -> None:
     """Write the checkpoint a stopped run is carried on from, and end it.
 
-    Raises the retryable refusal a resume reads as an interruption.
+    Raises the retryable refusal a resume reads as an interruption. A stop
+    landing at or past the run's planned end (in its last frame interval)
+    ends a run whose production is whole: its sidecar says it finished, and
+    its live record says production completed, the run stopped (the
+    exception's ``finished``), so the join and every page read the piece
+    as whole. It still raises, so the study stops where it was asked to.
     """
     from fastmdxplora.refusals import StudyError
 
     step = int(stop.at_step or 0)
+    whole = bool(stop.on_frame) and 0 < int(planned_steps) <= step
     done_ns = step * float(timestep_fs) / 1e6
     planned_ns = int(planned_steps) * float(timestep_fs) / 1e6
     frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
     where = checkpoint.parent.parent
     if stop.on_frame and step > 0:
         _write_checkpoint_pair(simulation, checkpoint)
-        write_checkpoint_sidecar(checkpoint, step=step, finished=False,
+        write_checkpoint_sidecar(checkpoint, step=step, finished=whole,
                                  time_ps=_time_ps(simulation), **sidecar)
-        said = (f"A checkpoint was written on frame {frame}, so `fastmdx resume "
+        said = (f"Its production had reached its end, so the run is whole; `fastmdx "
+                f"resume {where}` goes on from there." if whole else
+                f"A checkpoint was written on frame {frame}, so `fastmdx resume "
                 f"{where}` carries it on from there, and the joined trajectory "
                 "keeps its spacing.")
     else:
@@ -1197,12 +1205,15 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 "after it.")
     from fastmdxplora.simulation.sampling_ask import length_said
 
-    raise StudyError(
+    error = StudyError(
         f"Production was stopped by {_who_asked(stop.name)} at step {step:,} "
         f"({length_said(done_ns)} of {length_said(planned_ns)}). {said}",
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
+    #: Production whole: said completed in its live record, at this step.
+    error.finished, error.at_step = whole, step
+    raise error
 
 
 def _who_asked(signal_name: str) -> str:
@@ -3472,7 +3483,16 @@ def run_simulation(
             )
 
     except Exception as exc:
-        if telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
+        if (telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE
+                and getattr(exc, "finished", False)):
+            # Stopped at its end: its production is whole, as its sidecar
+            # says, and the run stopped where it was asked to, its later
+            # phases still to run (a piece's run ends here: the join reads
+            # it whole, `joining.piece_finished`).
+            telemetry.event(str(exc), level="warning")
+            telemetry.mark_stage("production", "completed", status="stopped",
+                                 latest_error=str(exc), current_step=exc.at_step)
+        elif telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
             # Asked to stop, and stopped where it can be carried on: the
             # stage it was in stays the one it was in, not a failed one.
             telemetry.event(str(exc), level="warning")
