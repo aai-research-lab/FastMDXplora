@@ -622,13 +622,19 @@ def _phrase(text: str) -> str:
 
 def _labels_of(text: str) -> frozenset:
     """The names a passage gives in bold: the GUI's buttons and pages, the
-    things it defines (**Movie**, **Name it**, **Useful or Wrong**)."""
+    things it defines (**Movie**, **Name it**, **Useful or Wrong**); and the
+    setting a table row names in code in its first cell, in words."""
     labels = set()
     for bold in re.findall(r"\*\*(.+?)\*\*", text, re.S):
         label = _phrase(bold)
         if (3 <= len(bold) <= 60 and "\n\n" not in bold
                 and any(len(w) > 2 and w not in _STOP for w in label.split())):
             labels.add(label)
+    # A setting's row names it in code in its first cell (`ligand_pose`), as
+    # a bold name names a button: asked in words ("ligand pose"), the row is
+    # the one that answers.
+    for name in re.findall(r"^\|\s*`([a-z][a-z0-9_]*_[a-z0-9_]*)`\s*\|", text, re.M):
+        labels.add(_phrase(name.replace("_", " ")))
     return frozenset(labels)
 
 

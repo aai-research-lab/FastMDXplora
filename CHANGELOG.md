@@ -518,6 +518,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The docs search reads a setting named in code in a table row's first cell
+  as a name, so "what does ligand pose do" finds the `ligand_pose` row
+  whatever the other pages hold (it fell to fifth when the drift page
+  grew).
+
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
