@@ -642,6 +642,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Agent do, the summary says a cut run cut, `round_ended` no longer saves a
   sentence that a raised ceiling makes stale, a resume at its ceiling adds no
   round again, and runs stopped side by side are each named.
+- A Ctrl-C in a round of several runs exited 1 once its runs stopped in the
+  round were recorded in error: the exit code is read from the study's state
+  (130 for a round stopped when asked, 1 for a run's own error or a refused
+  resume). A study of one run stopped at the last step of its production, not
+  split into pieces, was resumed by its analyses alone, its rule never applied,
+  and read stopped for good: its resume applies the rule its record says it
+  applies, and a run whose production is whole reads completed once its
+  analyses have run. A rule changed since a study's last round is judged, not
+  skipped as "Nothing run"; a resume that ran nothing says so last.
+- A run whose round piece reached its end read completed before its pieces
+  were joined: it reads stopped, its join owed, until the join takes the
+  piece in. The runner's stop at the end writes the run's own step and its
+  frames, and a piece's frames are counted from its checkpoint unless it
+  finished cleanly, so the whole run's counts no longer fall back to its
+  first piece. A run whose analyses ended in an error says failed on its own
+  page, with `fastmdx explore --output RUN --include analysis report --rerun`,
+  as its round, the CLI and the Agent do. The Agent's span of the means
+  follows the analysis's stride, its run's length is said one way, it says a
+  next piece is being simulated (not joined) while that runs, and a study
+  being carried on never reads completed meanwhile. A refused run is counted
+  once among the errors.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
