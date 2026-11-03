@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import mdtraj as md
 import numpy as np
 import pytest
@@ -259,7 +261,7 @@ class TestWhatItRefuses:
                 selection_a="name CA", selection_b="name O",
                 cutoff="rdf").compute(_gas())
 
-        assert "no first shell resolved" in str(raised.value)
+        assert re.search("no first shell (is )?resolved", str(raised.value))
         assert raised.value.code == "analysis.sampling.no_variance"
 
 

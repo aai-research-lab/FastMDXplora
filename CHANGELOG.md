@@ -521,24 +521,39 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - `rdf`'s first peak and `coordination_number`'s `cutoff: rdf` take the
   first shell g(r) resolves, not its tallest point: water O-H's
   hydrogen-bond peak (0.183 nm) was passed over for the 0.32 nm one, so its
-  coordination number was refused or read as about 30 (the next shell's),
-  and a simple cubic lattice, whose first two shells stand equally tall,
-  read 18 to 81 neighbours, or was refused, where it has 6. A shell is a
-  hill the curve then falls well away from, its peak resolved where it
-  clears its bar and, with bins narrower than 0.0175 nm, a bin beside it
-  stands clear too; an unresolved first shell is refused, never passed
-  over for a later one, and a hill on a curve still climbing is not a
-  shell (a protein against its water, whose g(r) climbs to just over bulk
-  at 2 nm, has none named there). A
-  trough between two shells that does not fall clear below bulk ends the
-  first shell (simple cubic at 0.03 nm read 27 neighbours past it). A short
-  run draws more pairs (about 1e8 pair distances over the run, up to
-  2,000,000 pairs, never fewer than before), for less counting noise in the
-  first shell's bins: 200,000 pairs among 36,000 water oxygens are about
-  one pair a frame in each bin of the first shell at bulk density. The
-  counts are held in at most 2,000 blocks of consecutive frames, with the
-  same scatter (a frozen run read as one frame): 20,000 frames of 1,000
-  bins took 1.1 GB at its peak, now 0.5 GB.
+  coordination number was refused or read as about 30 (the next shell's; now
+  3.8 at 0.243 nm, two of them its own hydrogens), and a simple cubic
+  lattice, whose first two shells stand equally tall, read 18 to 81
+  neighbours, or was refused, where it has 6. A shell is a hill the curve
+  then falls well away from; its peak is resolved where it clears its bar
+  and, with bins narrower than 0.0175 nm, a bin beside it stands three
+  scatters clear of bulk or it clears twice the bar alone. An unresolved
+  first shell (a hill the curve falls away from) is refused, never passed
+  over for a later one, and the refusal
+  says why and what would tell: a curve still climbing at the end of the
+  range (a protein against its water, whose g(r) climbs to just over bulk at
+  half the box), a shell under bulk (around a protein's polar N and O, whose
+  volume holds g(r) under 1; where the curve falls from it is said, for a
+  `cutoff` to be given), frames of one configuration, or a hill too low, too
+  narrow or falling too little for its noise (the first hill that came near
+  a shell, its fall and the fall needed are said, from the search's own
+  numbers). A
+  trough that does not fall clear below bulk ends the first shell where the
+  curve climbs from it into the next (simple cubic at 0.03 nm was read past
+  it, at 25 to 81 neighbours, and now reads 6 from about 3 frames; from one
+  frame it can still be read past; BCC of lattice constant 0.33 nm with atoms
+  displaced 0.007 nm now reads its 8 first neighbours from about 3 frames,
+  where it read 14). A
+  short run draws more pairs (about 1e8 pair distances over the run, up to
+  2,000,000 pairs, never fewer than before; the default protein against
+  water O over 45 frames takes about 2 times as long in `rdf` and 3 to 5
+  times in `coordination_number`), for less counting noise in the first shell's
+  bins (200,000 pairs among 36,000 water oxygens are about one pair a frame
+  in each bin of the first shell at bulk density), so fewer frames can
+  resolve a minimum. The counts are held in at most 2,000 blocks of
+  consecutive frames: the scatter is as before up to 2,000 frames, and past
+  them the same per bin to a median within 1% (a frozen run read as one
+  frame); 20,000 frames of 1,000 bins took 1.1 GB at its peak, now 0.5 GB.
 - The docs search reads a setting named in code in a table row's first cell
   as a name, so "what does ligand pose do" finds the `ligand_pose` row
   whatever the other pages hold (it fell to fifth when the drift page

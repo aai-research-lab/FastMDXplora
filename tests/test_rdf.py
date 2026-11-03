@@ -175,7 +175,7 @@ class TestTheOutputs:
         analysis.compute(_gas())
         record = analysis.findings["rdf"]
         assert "first_peak_nm" not in record
-        assert "not distinguishable from the noise" in record["not_a_measurement"]
+        assert "No first peak is reported" in record["not_a_measurement"]
 
 
 def _every_pair_then_a_draw(a, b, limit, seed=0):
@@ -239,7 +239,7 @@ class TestThePairsAreDrawnWithoutListingThemAll:
         drawn = rdf_module.pairs_for(1, rdf_module.MAX_PAIRS)
         assert drawn == rdf_module.MOST_PAIRS
         assert record["subsampled"] and record["pairs"] == drawn
-        assert f"{drawn} pairs of the 30000000 available" in record["subsampled_note"]
+        assert f"{drawn:,} pairs of the 30,000,000 available" in record["subsampled_note"]
         assert len(calls[0]) == drawn
         assert len({tuple(p) for p in calls[0][:1000]}) == 1000
         assert took < 5.0, f"{took:.1f} s to choose the pairs"

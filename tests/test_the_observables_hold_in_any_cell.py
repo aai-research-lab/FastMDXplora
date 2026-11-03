@@ -124,7 +124,7 @@ class TestACrystalHasAFirstShell:
         """Fifty copies of one configuration are one sample, not fifty."""
         one = _gas(np.eye(3) * 3.0, n_atoms=300, n_frames=1, seed=4)
         frozen = _in_cell(np.repeat(one.xyz, 50, axis=0), np.eye(3) * 3.0)
-        with pytest.raises(ValueError, match="no first shell resolved"):
+        with pytest.raises(ValueError, match="no first shell (is )?resolved"):
             CoordinationNumber(selection_a="all", selection_b="all",
                                output_dir=str(tmp_path)).compute(frozen)
 
@@ -500,7 +500,7 @@ class TestTheHalvesOfTheRunAreHeard:
         real = cn._first_minimum
         calls = []
 
-        def staged(radii, g, noise, smooth_noise=None, record=None):
+        def staged(radii, g, noise, smooth_noise=None, record=None, **_):
             calls.append(1)
             if len(calls) == 1:
                 return real(radii, g, noise, smooth_noise, record)

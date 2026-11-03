@@ -158,7 +158,8 @@ def _out_of(floor: float, resolved: float) -> float:
 
 def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
                    smooth_noise: np.ndarray | None = None,
-                   record: dict[str, Any] | None = None) -> tuple[float, str]:
+                   record: dict[str, Any] | None = None,
+                   frozen: bool = False) -> tuple[float, str]:
     """Where the first solvation shell ends, or why it cannot be said.
 
     Returns ``(cutoff_nm, "")`` on success and ``(nan, reason)`` otherwise.
@@ -212,25 +213,25 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
 
     from fastmdxplora.analysis.rdf import first_peak
 
-    peak, bar, searched, resolved_peak = first_peak(radii, g, noise, smooth_noise)
-    if peak < 0:
-        return float("nan"), "g(r) is empty over the searchable range."
-    if not resolved_peak:
-        height = float(g[peak]) - 1.0
-        scatter = float(noise[peak]) if np.isfinite(noise[peak]) else np.inf
-        alone = (" It clears that in one bin only, and a shell spans several, "
-                 "so it is not distinguishable from one bin of noise."
-                 if height > bar * scatter else "")
+    from fastmdxplora.analysis.rdf import why_no_first_peak
+
+    found = first_peak(radii, g, noise, smooth_noise)
+    peak = found[0]
+    why, kind = why_no_first_peak(radii, g, noise, found, smooth_noise, frozen=frozen)
+    if why:
+        from fastmdxplora.analysis.rdf import WHAT_WOULD_CHANGE_IT
+
+        remedy = WHAT_WOULD_CHANGE_IT[kind]
+        if kind.startswith("under bulk"):
+            after = "There is no peak above bulk to read a first minimum after"
+        elif kind == "climbing" or not found[4]:
+            after = "There is no first minimum to take a cutoff from"
+        else:
+            after = ("There is no first shell resolved here, so there is no "
+                     "first minimum to take a cutoff from")
         return float("nan"), (
-            f"g(r) has its first shell at {radii[peak]:.3f} nm, where it "
-            f"stands {height:+.3f} from bulk against a scatter of "
-            f"{scatter:.3f} at that separation, from its own counts and from "
-            f"how much it varies over the run, and {bar:.1f} times that "
-            f"above bulk is needed with {searched} bins searched.{alone} "
-            "There is no first shell resolved here, so "
-            "there is no first minimum to take a cutoff from. Give `cutoff` "
-            "explicitly, or run for longer."
-        )
+            f"{why} {after}. Give `cutoff` explicitly"
+            + (f". {remedy}" if remedy else "."))
 
     after_r = radii[peak:]
     if after_r.size < 3:
@@ -278,8 +279,8 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
             # A dip that does not fall clear below bulk between two shells
             # that stand clear above it: the next shell begins there, so it
             # is the first shell's end (a simple cubic lattice at 0.03 nm,
-            # whose trough at 0.36 nm falls to 0.96, read 27 neighbours past
-            # it), and passing it would count that shell too.
+            # whose trough at 0.36 nm falls to 0.96, read 25 to 81 neighbours
+            # past it), and passing it would count that shell too.
             out = np.nonzero((later > smooth[k] + resolved[k])
                              & (later > 1.0 + climb * spread[k + 1:]))[0]
         if out.size and (not lower.size or out[0] < lower[0]):
@@ -324,13 +325,15 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
     depth = 1.0 - floor
     # Two smoothed values are told apart at LEVEL_SCATTERS scatters of
     # their difference, which is root two of one's.
-    level = floor + max(0.1 * depth, LEVEL_SCATTERS * np.sqrt(2.0) * float(spread[minimum]))
+    level = floor + max(0.1 * max(depth, 0.0),
+                        LEVEL_SCATTERS * np.sqrt(2.0) * float(spread[minimum]))
     near = left + np.nonzero(smooth[left:right + 1] <= level)[0]
     low, high = float(after_r[near[0]]), float(after_r[near[-1]])
     edges, running = _running(radii, g)
     counted = np.interp([low, float(after_r[minimum]), high], edges, running)
     change = float(counted[2] - counted[0]) / max(float(counted[1]), 1e-300)
-    flat = change <= LEVEL_COUNT
+    # A stretch of one bin is a minimum, not a level gap.
+    flat = change <= LEVEL_COUNT and high > low
     if record is not None:
         record.update(range_nm=(low, high), level=flat)
     if flat:
@@ -338,7 +341,8 @@ def _first_minimum(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
     if high - low > FLAT_TROUGH_NM:
         return float("nan"), (
             f"After its first peak g(r) stays within its scatter of its "
-            f"lowest point ({depth:.3f} below bulk) from {low:.3f} to "
+            f"lowest point ({abs(depth):.3f} {'below' if depth >= 0 else 'above'} "
+            f"bulk) from {low:.3f} to "
             f"{high:.3f} nm, and the count changes by {100.0 * change:.0f}% "
             "across that, so the trough has no minimum to read, and a cutoff "
             "anywhere in it would be a choice rather than a measurement. "
@@ -487,7 +491,8 @@ class CoordinationNumber(Analysis):
             found: dict[str, Any] = {}
             cutoff, reason = _first_minimum(
                 radii, histogram.g(frames), histogram.scatter(frames),
-                histogram.scatter(frames, window=bins), found)
+                histogram.scatter(frames, window=bins), found,
+                frozen=histogram.frozen)
             return cutoff, reason, found
 
         cutoff, reason, found = read(slice(None))
@@ -517,16 +522,16 @@ class CoordinationNumber(Analysis):
         if found["level"]:
             said = (
                 f"The cutoff, {cutoff:.3f} nm, is the middle of the trough "
-                f"between the first two shells of g(r), which is level from "
-                f"{low:.3f} to {high:.3f} nm: the count is the same anywhere "
-                "in it.")
+                "between the first two shells of g(r), which is level "
+                f"from {low:.3f} to {high:.3f} nm: the count is the same "
+                "anywhere in it.")
         else:
             said = (
-                f"The cutoff, {cutoff:.3f} nm, is the first minimum of g(r). "
-                f"The curve is within its scatter of that minimum from "
-                f"{low:.3f} to {high:.3f} nm, over which the count runs from "
-                f"{count(low):.2f} to {count(high):.2f} neighbours per atom of "
-                "`selection_a`.")
+                f"The cutoff, {cutoff:.3f} nm, is the first minimum of g(r)."
+                + (f" The curve is within its scatter of that minimum from "
+                   f"{low:.3f} to {high:.3f} nm, over which the count runs from "
+                   f"{count(low):.2f} to {count(high):.2f} neighbours per atom "
+                   "of `selection_a`." if high > low else ""))
 
         # Read again from each half of the run: a minimum that moves with
         # the frames read, outside where the whole run places it, is not one

@@ -159,12 +159,20 @@ class PairHistogram:
         step = max(1, DISTANCES_PER_PASS // max(1, len(pairs), n_bins))
         span = np.array([0.0, r_max])
         norm = max(1, self.n_pairs) * self.shells
+        # Whether every frame counts the same pairs in every bin: frames of
+        # one configuration, which read as one frame.
+        self.frozen = self.n_frames > 1
+        first_counts = None
         for first in range(0, self.n_frames, step):
             distances = md.compute_distances(traj[first:first + step], pairs)
             # The binning `md.compute_rdf` gives its one histogram, frame by
             # frame.
             counts = np.array([np.histogram(frame, bins=n_bins, range=span)[0]
                                for frame in distances])
+            if first_counts is None:
+                first_counts = counts[0].copy()
+            if self.frozen and not np.all(counts == first_counts):
+                self.frozen = False
             per_frame = counts * volumes[first:first + len(counts), None] / norm
             around = _smoothed(per_frame, INEFFICIENCY_BINS)
             # The pass's frames run in order, so each block's are together.
@@ -330,11 +338,13 @@ def _what_would_fix_it(selection: str, traj: md.Trajectory) -> str:
 
 
 def first_peak(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
-               smooth_noise: np.ndarray | None = None) -> tuple[int, float, int, bool]:
+               smooth_noise: np.ndarray | None = None
+               ) -> tuple[int, float, int, bool, bool]:
     """The first peak past 0.15 nm that g(r) resolves, or the hill that
     stops one being named.
 
-    Returns ``(index, bar, searched, resolved)``: -1 for an empty curve; the
+    Returns ``(index, bar, searched, resolved, shell)``: -1 for an empty
+    curve; whether ``index`` is a shell (``shell``) and its peak resolved; the
     bar a 1% chance of noise reaching it in any of the ``searched`` bins
     sets (never under 3). The hills of g(r) smoothed over 0.035 nm are taken
     in order out from 0.15 nm, each one's tallest bin its peak, and a hill is
@@ -354,42 +364,18 @@ def first_peak(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
     shell wherever that one stands taller (a water O-H's 0.32 nm peak over
     its 0.18 nm hydrogen bond).
     """
-    from statistics import NormalDist
-
-    from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
-
-    finite = np.isfinite(g)
-    searchable = (radii > 0.15) & finite
-    if not searchable.any():
-        return -1, 3.0, 0, False
-    searched = int(np.count_nonzero(searchable))
-    bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / searched))
-    bins = _smoothing_bins(radii)
-    stretches = max(1, searched // bins)
-    smooth_bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / stretches))
-    scatter = np.where(np.isfinite(noise), noise, np.inf)
-    if smooth_noise is None:
-        smooth_noise = np.asarray(noise, dtype=np.float64) / np.sqrt(bins)
-    smooth_scatter = np.where(np.isfinite(smooth_noise), smooth_noise, np.inf)
-    smooth = _smoothed(np.where(finite, g, 1.0), bins)
+    curve = _ShellSearch(radii, g, noise, smooth_noise)
+    if curve.searched == 0:
+        return -1, 3.0, 0, False, False
+    g, scatter, smooth, bins, n = curve.g, curve.scatter, curve.smooth, curve.bins, len(g)
+    searchable, bar = curve.searchable, curve.bar
     # A shell is wider than a bin of 0.005 nm: beside the bin that clears the
     # bar, another of it must stand clear of bulk (three scatters), so one bin
     # of noise does not make a peak; a bin wider than about half a shell
     # holds the shell alone, and a bin twice over the bar stands alone.
     width = float(radii[1] - radii[0]) if len(radii) > 1 else 0.0
     one_bin_shells = width >= 0.0175
-    n = len(g)
-    hills = [k for k in range(n) if searchable[k]
-             and (k == 0 or smooth[k] > smooth[k - 1])
-             and (k == n - 1 or smooth[k] >= smooth[k + 1])]
-    for k in hills:
-        # A shell is a hill the curve falls well away from before it climbs
-        # as high again; a hill on a curve still climbing is not one.
-        higher = np.nonzero(smooth[k + 1:] > smooth[k])[0]
-        end = k + 1 + (int(higher[0]) if higher.size else n - k - 1)
-        fall = float(smooth[k] - np.min(smooth[k:end])) if end > k else 0.0
-        if not fall > smooth_bar * np.sqrt(2.0) * smooth_scatter[k]:
-            continue
+    def judged(k: int) -> tuple[int, float, int, bool, bool]:
         low, high = max(0, k - bins // 2), min(n, k + bins // 2 + 1)
         top = low + int(np.argmax(np.where(searchable[low:high], g[low:high], -np.inf)))
         height = float(g[top]) - 1.0
@@ -397,10 +383,179 @@ def first_peak(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
         beside = beside[searchable[beside]]
         backed = (one_bin_shells or height > 2.0 * bar * scatter[top]
                   or bool(np.any(g[beside] - 1.0 > 3.0 * scatter[beside])))
+        return top, bar, curve.searched, bool(height > bar * scatter[top] and backed), True
+
+    for k in curve.hills:
+        fall, _climbs = _fall(smooth, k)
+        if not fall > curve.needed(k):
+            continue
         # Resolved or not, it is the first shell: a later one is not named
         # in its place.
-        return top, bar, searched, bool(height > bar * scatter[top] and backed)
-    return int(np.argmax(np.where(searchable, g, -np.inf))), bar, searched, False
+        return judged(k)
+    # No shell: the tallest hill tested, or the tallest bin with no hill.
+    if curve.hills:
+        k = max(curve.hills, key=lambda h: smooth[h])
+        return int(k), bar, curve.searched, False, False
+    return (int(np.argmax(np.where(searchable, g, -np.inf))), bar, curve.searched,
+            False, False)
+
+
+class _ShellSearch:
+    """What :func:`first_peak` reads a curve with, so its reasons
+    (:func:`why_no_first_peak`) are told from the same numbers."""
+
+    def __init__(self, radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
+                 smooth_noise: np.ndarray | None) -> None:
+        from statistics import NormalDist
+
+        from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
+
+        finite = np.isfinite(g)
+        self.g = g
+        self.searchable = (radii > 0.15) & finite
+        self.searched = int(np.count_nonzero(self.searchable))
+        self.bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / max(1, self.searched)))
+        self.bins = _smoothing_bins(radii)
+        stretches = max(1, self.searched // self.bins)
+        self.smooth_bar = max(3.0, NormalDist().inv_cdf(1.0 - 0.01 / stretches))
+        self.scatter = np.where(np.isfinite(noise), noise, np.inf)
+        if smooth_noise is None:
+            smooth_noise = np.asarray(noise, dtype=np.float64) / np.sqrt(self.bins)
+        self.smooth_scatter = np.where(np.isfinite(smooth_noise), smooth_noise, np.inf)
+        self.smooth = _smoothed(np.where(finite, g, 1.0), self.bins)
+        n, smooth = len(g), self.smooth
+        self.hills = [k for k in range(n) if self.searchable[k]
+                      and (k == 0 or smooth[k] > smooth[k - 1])
+                      and (k == n - 1 or smooth[k] >= smooth[k + 1])]
+
+    def needed(self, k: int) -> float:
+        """The fall a hill at ``k`` needs to be a shell: the smoothed bar on
+        root two of the smoothed scatter there."""
+        return float(self.smooth_bar * np.sqrt(2.0) * self.smooth_scatter[k])
+
+
+def _fall(smooth: np.ndarray, k: int) -> tuple[float, bool]:
+    """How far the curve falls from its hill at ``k`` before it climbs as
+    high again, and whether it does."""
+    higher = np.nonzero(smooth[k + 1:] > smooth[k])[0]
+    end = k + 1 + (int(higher[0]) if higher.size else len(smooth) - k - 1)
+    fall = float(smooth[k] - np.min(smooth[k:end])) if end > k + 1 else 0.0
+    return fall, bool(higher.size)
+
+
+def why_no_first_peak(radii: np.ndarray, g: np.ndarray, noise: np.ndarray,
+                      found: tuple[int, float, int, bool, bool],
+                      smooth_noise: np.ndarray | None = None,
+                      frozen: bool = False) -> tuple[str, str]:
+    """Why :func:`first_peak`'s answer names no first peak, in a sentence or
+    two, told from the numbers it tested, and its kind, which says what
+    would change it (:data:`WHAT_WOULD_CHANGE_IT`): ``"climbing"`` (still
+    climbing at the end of the range, with no hill falling half what a shell
+    needs before it), ``"under bulk"`` (a shell g(r) holds under 1, clear of
+    its noise, with where the curve falls to; ``"under bulk, not clear"``
+    within it), ``"frozen"`` (frames of one
+    configuration) or ``"noise"`` (a longer run would tell). Empty where a
+    first peak is named."""
+    peak, bar, searched, resolved, shell = found
+    if resolved:
+        return "", ""
+    if peak < 0:
+        return "g(r) is empty over the searchable range.", "noise"
+    curve = _ShellSearch(radii, g, noise, smooth_noise)
+    smooth, n, bins = curve.smooth, len(g), curve.bins
+    one = (" Its frames are all one configuration, so they count as one."
+           if frozen else "")
+    kind = "frozen" if frozen else "noise"
+    if not shell:
+        # The hill that came nearest to a shell: the first whose fall comes
+        # within half of the best fall against the fall it needed.
+        tried = [(k, *_fall(smooth, k)) for k in curve.hills]
+        ratios = [f / max(curve.needed(k), 1e-300) for k, f, _c in tried]
+        best = max(ratios, default=0.0)
+        at_end = int(np.argmax(np.where(curve.searchable, smooth, -np.inf))) >= n - bins - 1
+        if at_end and best < 0.5:
+            return (
+                "g(r) is still climbing at the end of the range ("
+                f"{float(smooth[-1]):.3f} at {radii[-1]:.3f} nm, smoothed over "
+                "0.035 nm), and no hill before it falls away by even half what "
+                "a shell needs, so no first shell shows in it. If a longer run "
+                "shows none either, there is none around the first selection "
+                f"to show (a protein against all its water).{one}"), "climbing"
+        if not tried or best < 0.5:
+            return (
+                "g(r) has no hill past 0.15 nm that falls away by even half "
+                "what a shell needs (its highest point is "
+                f"{float(g[peak]):.3f} at {radii[peak]:.3f} nm), so no first "
+                f"shell is resolved in it.{one}"), kind
+        k, fall, climbs = next(t for t, ratio in zip(tried, ratios) if ratio >= 0.5 * best)
+        low_bin, high_bin = max(0, k - bins // 2), min(n, k + bins // 2 + 1)
+        at = low_bin + int(np.argmax(np.where(curve.searchable[low_bin:high_bin],
+                                              g[low_bin:high_bin], -np.inf)))
+        return (
+            f"g(r)'s first hill that comes near a shell, at {radii[at]:.3f} nm "
+            f"({float(smooth[k]):.3f} smoothed over 0.035 nm), falls by "
+            f"{fall:.3f}, to {float(smooth[k]) - fall:.3f}, "
+            + ("before climbing as high again" if climbs else
+               "and does not climb as high again")
+            + f", where {curve.needed(k):.3f} is needed to tell it from the "
+            "noise there, so no first shell is resolved in it." + one), kind
+    height = float(g[peak]) - 1.0
+    scatter = float(curve.scatter[peak])
+    if height < 0.0:
+        top = peak
+        while top + 1 < n and smooth[top + 1] > smooth[top]:
+            top += 1
+        while top > 0 and smooth[top - 1] > smooth[top]:
+            top -= 1
+        higher = np.nonzero(smooth[top + 1:] > smooth[top])[0]
+        end = top + 1 + (int(higher[0]) if higher.size else n - top - 1)
+        low = top + int(np.argmin(smooth[top:end]))
+        falls_to = (f" The curve falls from it to {float(smooth[low]):.3f} at "
+                    f"{radii[low]:.3f} nm (smoothed over 0.035 nm): a `cutoff` of "
+                    f"{radii[low]:.3f} nm counts this shell.")
+        if -height > bar * scatter:
+            return (
+                f"g(r)'s first shell, at {radii[peak]:.3f} nm, peaks at "
+                f"{float(g[peak]):.3f} in its tallest bin, under bulk: the "
+                "molecule the first selection is part of takes up volume "
+                "around it, as a protein does, holding g(r) under 1 there, so "
+                "no peak above bulk is named, and a longer run will not "
+                f"change that.{falls_to}"), "under bulk"
+        return (
+            f"g(r)'s first shell, at {radii[peak]:.3f} nm, peaks at "
+            f"{float(g[peak]):.3f} in its tallest bin, under bulk but not yet "
+            f"clear of its noise (a scatter of {scatter:.3f}), so no peak is "
+            f"named.{falls_to}{one}"), "under bulk, not clear"
+    if height > bar * scatter:
+        return (
+            f"g(r)'s first hill, at {radii[peak]:.3f} nm, "
+            f"stands {height:+.3f} from bulk in one bin, "
+            f"{height / scatter:.1f} times its scatter of {scatter:.3f}, over "
+            f"the {bar:.1f} needed, but no bin beside it stands three scatters "
+            "clear of bulk and it is short of twice that bar, and a shell "
+            "spans several bins, so it is not distinguishable from one bin of "
+            f"noise.{one}"), kind
+    return (
+        f"g(r)'s first hill, at {radii[peak]:.3f} nm, "
+        f"stands {height:+.3f} from bulk against a scatter of {scatter:.3f} at "
+        "that separation, from its own counts and from how much they vary "
+        f"over the run, and {bar:.1f} times that is needed with {searched} "
+        "bins searched, so it is not distinguishable from the noise of this "
+        f"curve.{one}"), kind
+
+
+#: What would change a refusal of each kind (:func:`why_no_first_peak`).
+WHAT_WOULD_CHANGE_IT = {
+    "climbing": ("A longer run would tell; a `selection_a` of atoms with a "
+                 "shell of their own (for a protein, a site such as a lysine's "
+                 "NZ) may show one in `rdf`."),
+    "under bulk": "",
+    "under bulk, not clear": ("A longer run would show whether it stands under "
+                              "bulk; a `cutoff` near where the curve falls to "
+                              "gives a count meanwhile."),
+    "frozen": "Frames that move, or more atoms, would tell a shell from none.",
+    "noise": "A longer run, or more of these atoms, would tell a shell from none.",
+}
 
 
 def _is_that_a_peak(radii: np.ndarray, g: np.ndarray, peak: int,
@@ -616,7 +771,7 @@ class RadialDistribution(Analysis):
             )
         if subsampled:
             record["subsampled_note"] = (
-                f"{len(pairs)} pairs of the {available} available, "
+                f"{len(pairs):,} pairs of the {available:,} available, "
                 "drawn once and held fixed across frames so the curve is "
                 "not a different estimator in every frame."
             )
@@ -628,17 +783,17 @@ class RadialDistribution(Analysis):
             from fastmdxplora.analysis.coordination_number import _smoothing_bins
 
             noise = histogram.scatter()
-            peak, _bar, _searched, resolved = first_peak(
+            found = first_peak(
                 radii, g, noise, histogram.scatter(window=_smoothing_bins(radii)))
-            verdict = _is_that_a_peak(radii, g, peak, noise)
-            if not verdict and not resolved:
-                verdict = (
-                    f"g(r) stands {float(g[peak]) - 1.0:+.3f} from bulk at "
-                    f"{radii[peak]:.3f} nm in one bin, but no bin beside it "
-                    "stands clear of its own noise, and a shell spans several "
-                    "bins, so the peak is not distinguishable from the "
-                    "noise of this curve. No shell is resolved here. A longer run is "
-                    "the only remedy.")
+            peak = found[0]
+            verdict, kind = why_no_first_peak(
+                radii, g, noise, found, histogram.scatter(window=_smoothing_bins(radii)),
+                frozen=histogram.frozen)
+            if verdict:
+                remedy = WHAT_WOULD_CHANGE_IT[kind]
+                verdict += " No first peak is reported." + (f" {remedy}" if remedy else "")
+            else:
+                verdict = _is_that_a_peak(radii, g, peak, noise)
             if verdict:
                 record["not_a_measurement"] = verdict
             else:

@@ -69,27 +69,68 @@ class TestTheFirstPeakIsTheFirst:
              + 0.9 * np.exp(-((r - 0.32) / 0.03) ** 2))
         g[r < 0.15] = 0.0
         noise = np.full_like(g, 0.02)
-        peak, _bar, _searched, resolved = first_peak(r, g, noise)
+        peak, _bar, _searched, resolved, _shell = first_peak(r, g, noise)
         assert resolved and r[peak] == pytest.approx(0.18, abs=0.005)
         # Short of the bar, it is not passed over for the next one: a hill
         # the curve falls well away from is a shell, so none is named.
         noise[r < 0.22] = 0.3
-        peak, _bar, _searched, resolved = first_peak(r, g, noise)
+        peak, _bar, _searched, resolved, _shell = first_peak(r, g, noise)
         assert not resolved and r[peak] == pytest.approx(0.18, abs=0.005)
         # A wiggle of noise before the shell is passed over.
         wiggle = 1.0 + 0.04 * np.exp(-((r - 0.17) / 0.01) ** 2) + 0.9 * np.exp(
             -((r - 0.32) / 0.03) ** 2)
         wiggle[r < 0.15] = 0.0
-        peak, _bar, _searched, resolved = first_peak(r, wiggle, np.full_like(r, 0.02))
+        peak, _bar, _searched, resolved, _shell = first_peak(r, wiggle, np.full_like(r, 0.02))
         assert resolved and r[peak] == pytest.approx(0.32, abs=0.005)
 
-    def test_nothing_resolved_gives_the_tallest_point(self):
+    def test_nothing_resolved_gives_the_tallest_hill_tested(self):
+        """With no shell, the index is the tallest hill the search tested,
+        and with no hill falling by half what a shell needs, the reason says
+        so rather than naming one."""
+        from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
+        from fastmdxplora.analysis.rdf import _ShellSearch, why_no_first_peak
+
         r = np.arange(0.0, 1.5, 0.005) + 0.0025
         g = 1.0 + 0.01 * np.sin(np.arange(r.size))
         g[r < 0.15] = 0.0
-        peak, bar, searched, resolved = first_peak(r, g, np.full_like(g, 0.05))
-        assert not resolved and peak == int(np.argmax(np.where(r > 0.15, g, -np.inf)))
+        g[150] = 1.2   # the tallest bin, not on the tallest smoothed hill
+        noise = np.full_like(g, 0.05)
+        found = first_peak(r, g, noise)
+        peak, bar, searched, resolved, shell = found
+        assert not resolved and not shell
+        curve = _ShellSearch(r, g, noise, None)
+        smooth = _smoothed(g, _smoothing_bins(r))
+        assert peak == max(curve.hills, key=lambda k: smooth[k])
         assert bar > 3.0 and searched == int(np.count_nonzero(r > 0.15))
+        said, kind = why_no_first_peak(r, g, noise, found)
+        assert "falls away by even half what a shell needs" in said
+        assert kind == "noise"
+
+    def test_a_hill_that_comes_near_a_shell_is_named(self):
+        """A hill that falls by more than half what a shell needs is named,
+        with the fall it tested against the fall needed."""
+        from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
+        from fastmdxplora.analysis.rdf import _fall, _ShellSearch, why_no_first_peak
+
+        r = np.arange(0.0, 1.5, 0.005) + 0.0025
+        g = 1.0 + 0.01 * np.sin(np.arange(r.size))
+        g[r < 0.15] = 0.0
+        g += 0.08 * np.exp(-((r - 0.5) / 0.03) ** 2)
+        noise = np.full_like(g, 0.05)
+        found = first_peak(r, g, noise)
+        assert not found[3] and not found[4]
+        curve = _ShellSearch(r, g, noise, None)
+        smooth = _smoothed(g, _smoothing_bins(r))
+        said, kind = why_no_first_peak(r, g, noise, found)
+        ratios = [_fall(smooth, k)[0] / curve.needed(k) for k in curve.hills]
+        assert 0.5 <= max(ratios) < 1.0
+        near = next(k for k, ratio in zip(curve.hills, ratios) if ratio >= 0.5 * max(ratios))
+        fall, _climbs = _fall(smooth, near)
+        window = np.arange(max(0, near - 3), near + 4)
+        at = window[np.argmax(g[window])]
+        assert f"at {r[at]:.3f} nm" in said
+        assert f"falls by {fall:.3f}" in said and f"{curve.needed(near):.3f} is needed" in said
+        assert kind == "noise"
 
     def test_rdf_reports_the_first_peak(self, tmp_path):
         """Two shells around each A, of 4 at 0.2 nm and 30 at 0.35 nm: the
@@ -190,7 +231,7 @@ class TestALongRunIsHeldInBlocks:
 
 def test_a_half_of_one_configuration_repeated_is_one_frame():
     """Frames A, A, B, B: each half is one configuration twice, whatever the
-    other half holds (it was judged over the whole run)."""
+    other half holds."""
     rng = np.random.default_rng(5)
     a, b = rng.random((60, 3)) * 2.0, rng.random((60, 3)) * 2.0
     traj = _cell(np.array([a, a, b, b]), ["AR"] * 60, 2.0)
@@ -214,7 +255,7 @@ class TestAShellIsAHillTheCurveFallsFrom:
         g = 1.04 - 0.74 * np.exp(-r / 0.6) + 0.004 * np.exp(-((r - 1.88) / 0.02) ** 2)
         g[r < 0.15] = 0.0
         noise = np.full_like(g, 0.001)
-        peak, _bar, _searched, resolved = first_peak(r, g, noise)
+        peak, _bar, _searched, resolved, _shell = first_peak(r, g, noise)
         assert not resolved
 
     def test_a_hydration_hill_under_bulk_is_the_first_shell(self):
@@ -223,18 +264,18 @@ class TestAShellIsAHillTheCurveFallsFrom:
         a later wiggle is not named in its place."""
         r = self._r()
         g = (1.04 - 0.74 * np.exp(-r / 0.6)
-             + 0.45 * np.exp(-((r - 0.283) / 0.02) ** 2)
+             + 0.1 * np.exp(-((r - 0.283) / 0.02) ** 2)
              - 0.2 * np.exp(-((r - 0.33) / 0.02) ** 2)
              + 0.03 * np.exp(-((r - 1.9) / 0.03) ** 2))
         g[r < 0.2] = 0.0
-        peak, _bar, _searched, resolved = first_peak(r, g, np.full_like(g, 0.01))
+        peak, _bar, _searched, resolved, _shell = first_peak(r, g, np.full_like(g, 0.01))
         assert not resolved and r[peak] == pytest.approx(0.283, abs=0.006)
 
     def test_a_curve_falling_across_the_excluded_volume_is_not_a_hill(self):
         """Falling across 0.15 nm from a closer peak, then a shell at 0.30."""
         r = self._r()
         g = 1.0 + 2.0 * np.exp(-((r - 0.12) / 0.02) ** 2) + np.exp(-((r - 0.30) / 0.03) ** 2)
-        peak, _bar, _searched, resolved = first_peak(r, g, np.full_like(g, 0.03))
+        peak, _bar, _searched, resolved, _shell = first_peak(r, g, np.full_like(g, 0.03))
         assert resolved and r[peak] == pytest.approx(0.30, abs=0.006)
 
     def test_a_shell_in_one_bin_stands_alone(self, tmp_path):
@@ -248,10 +289,102 @@ class TestAShellIsAHillTheCurveFallsFrom:
     @pytest.mark.parametrize("seed", [1, 3])
     def test_a_trough_above_bulk_between_two_shells_ends_the_first(self, tmp_path, seed):
         """Simple cubic at 0.03 nm: the trough at 0.36 nm falls only to about
-        0.96, and the minimum past the second shell gave 26 to 81 neighbours.
+        0.96, and the minimum past the second shell gave 25 to 81 neighbours.
         The shells overlap at this spread, so the count is near 6, not 6."""
         analysis = CoordinationNumber(selection_a="all", selection_b="all",
                                       output_dir=str(tmp_path))
-        counts = analysis.compute(_simple_cubic(0.03, 3, n=10, seed=seed))
+        counts = analysis.compute(_simple_cubic(0.03, 10, n=10, seed=seed))
         assert analysis.findings["shell"]["cutoff_nm"] < 0.282 * np.sqrt(2)
         assert float(np.mean(counts)) == pytest.approx(6.0, abs=0.7)
+
+
+class TestTheRefusalSaysWhy:
+
+    def test_a_climbing_curve_is_said_to_have_no_shell(self):
+        from fastmdxplora.analysis.rdf import why_no_first_peak
+
+        r = np.arange(0.0, 2.2, 0.005) + 0.0025
+        g = 1.05 - 0.75 * np.exp(-r / 0.6)
+        g[r < 0.15] = 0.0
+        noise = np.full_like(g, 0.001)
+        found = first_peak(r, g, noise)
+        assert not found[3] and not found[4]
+        said, kind = why_no_first_peak(r, g, noise, found)
+        assert "still climbing at the end of the range" in said and kind == "climbing"
+        assert "If a longer run shows none either" in said
+
+    def test_a_hill_too_noisy_to_fall_is_put_down_to_its_noise(self):
+        """Ten Na+ and ten Cl-: g(r) falls from 15.6 to 0 after 0.27 nm, on
+        one to three pairs, too few to tell its fall from noise."""
+        from fastmdxplora.analysis.rdf import why_no_first_peak
+
+        r = np.arange(0.0, 1.5, 0.005) + 0.0025
+        g = 1.0 + 14.6 * np.exp(-((r - 0.273) / 0.02) ** 2)
+        g[(r > 0.34) & (r < 0.4)] = 0.0
+        g[r < 0.2] = 0.0
+        noise = np.full_like(g, 8.0)
+        found = first_peak(r, g, noise)
+        said, kind = why_no_first_peak(r, g, noise, found)
+        assert not found[3] and kind == "noise"
+        assert "is needed to tell it from the noise there" in said and "no hill" not in said
+
+    def test_a_shell_under_bulk_is_not_blamed_on_noise(self):
+        from fastmdxplora.analysis.rdf import why_no_first_peak
+
+        r = np.arange(0.0, 2.2, 0.005) + 0.0025
+        g = (1.04 - 0.74 * np.exp(-r / 0.6) + 0.1 * np.exp(-((r - 0.283) / 0.02) ** 2)
+             - 0.2 * np.exp(-((r - 0.33) / 0.02) ** 2))
+        g[r < 0.2] = 0.0
+        noise = np.full_like(g, 0.01)
+        said = why_no_first_peak(r, g, noise, first_peak(r, g, noise))
+        assert "under bulk" in said[0] and "a longer run will not change that" in said[0]
+        assert "noise" not in said[0] and said[1] == "under bulk"
+        assert "falls from it to" in said[0]
+
+    def test_the_coordination_number_says_it_too(self, tmp_path):
+        """The default pairing on a solvated protein said its first shell was
+        at half the box, clear in one bin only."""
+        rng = np.random.default_rng(2)
+        length, frames = 3.0, 6
+        centre = np.full(3, 1.5)
+        xyz = []
+        for _ in range(frames):
+            water = rng.random((2600, 3)) * length
+            apart = water - centre
+            apart -= length * np.round(apart / length)
+            water = water[np.linalg.norm(apart, axis=1) > 0.8][:2000]
+            core = centre + rng.normal(0.0, 0.25, (60, 3))
+            xyz.append(np.vstack([core, water]))
+        traj = _cell(np.asarray(xyz), ["P"] * 60 + ["O"] * 2000, length)
+        with pytest.raises(ValueError) as refused:
+            CoordinationNumber(selection_a="name P", selection_b="name O",
+                               output_dir=str(tmp_path)).compute(traj)
+        assert "in one bin" not in str(refused.value)
+        assert "is needed to tell it from the noise there" in str(refused.value)
+
+
+class TestTheRemedyFitsTheCase:
+
+    def test_a_frozen_run_is_not_told_to_run_longer(self, tmp_path):
+        traj = _gas(20, seed=3, kind="frozen", n=300, length=3.0)
+        analysis = RadialDistribution(selection_a="all", selection_b="all",
+                                      output_dir=str(tmp_path))
+        analysis.compute(traj)
+        said = analysis.findings["rdf"]["not_a_measurement"]
+        assert "all one configuration" in said and "Frames that move" in said
+        assert "A longer run would tell" not in said
+
+    def test_the_trough_after_a_shell_under_bulk_is_said(self):
+        from fastmdxplora.analysis.coordination_number import _smoothed, _smoothing_bins
+        from fastmdxplora.analysis.rdf import why_no_first_peak
+
+        r = np.arange(0.0, 2.2, 0.005) + 0.0025
+        g = (1.04 - 0.74 * np.exp(-r / 0.6) + 0.1 * np.exp(-((r - 0.283) / 0.02) ** 2)
+             - 0.2 * np.exp(-((r - 0.33) / 0.02) ** 2))
+        g[r < 0.2] = 0.0
+        noise = np.full_like(g, 0.01)
+        said, _kind = why_no_first_peak(r, g, noise, first_peak(r, g, noise))
+        smooth = _smoothed(g, _smoothing_bins(r))
+        window = (r > 0.29) & (r < 0.45)
+        low = int(np.flatnonzero(window)[np.argmin(smooth[window])])
+        assert f"falls from it to {smooth[low]:.3f} at {r[low]:.3f} nm" in said
