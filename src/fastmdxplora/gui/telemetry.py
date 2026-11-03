@@ -1757,7 +1757,23 @@ def analyze_health(
                 "explanation": STALE_EXPLANATION,
             }
 
-    if str(status.get("status", "")).lower() == "interrupted":
+    said = str(status.get("status", "")).lower()
+    ended = (_its_round_ended(root) if root is not None
+             and (said in _FINISHED_STATUSES or said == "interrupted") else None)
+    if ended is not None:
+        # A study of one run that completed, or was cut in its round's
+        # extension, whose rule's round did not end (`stopping.round_ended`):
+        # said as All studies and the sidebar say it, with the command that
+        # carries it on, where a run cut said only that it ended unsaid.
+        return {
+            "state": ended.state,
+            "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
+            "message": ended.said,
+            "explanation": ended.carry_on_on_a_page,
+            "carry_on": " ".join(ended.argv),
+        }
+
+    if said == "interrupted":
         silent = status.get("ended_by") == "silence"
         return {
             "state": "interrupted",
@@ -1767,18 +1783,6 @@ def analyze_health(
             "explanation": SILENT_EXPLANATION if silent else INTERRUPTED_EXPLANATION,
         }
 
-    ended = _its_round_ended(root) if root is not None else None
-    if ended is not None and str(status.get("status", "")).lower() in _FINISHED_STATUSES:
-        # A study of one run that completed, whose rule's round did not
-        # (`stopping.round_ended`): said as All studies and the sidebar say
-        # it, with the command that carries it on.
-        return {
-            "state": ended.state,
-            "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
-            "message": ended.said,
-            "explanation": ended.carry_on,
-            "carry_on": " ".join(ended.argv),
-        }
     if str(status.get("status", "")).lower() in _FINISHED_STATUSES:
         # A run that has stopped is not progressing. Every check above still
         # applies -- they read the last sample it wrote -- but the verdict is
@@ -1892,7 +1896,7 @@ def _a_study_of_runs(root: str | Path) -> dict[str, str] | None:
             "state": state,
             "headline": headline,
             "message": ended.said,
-            "explanation": ended.carry_on,
+            "explanation": ended.carry_on_on_a_page,
             "of_runs": True,
             "carry_on": " ".join(ended.argv),
         }

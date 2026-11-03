@@ -56,7 +56,7 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
     if ended is not None:
         # A run that completed whose rule's round did not: said first, as
         # its status and All studies say it (`stopping.round_ended`).
-        said = ended.as_text() + "\n\n" + said
+        said = f"{ended.said} {ended.carry_on_on_a_page}\n\n{said}"
     return MARK + "\n\n" + said
 
 
@@ -588,7 +588,7 @@ def _several_runs(base: Path) -> str:
     if ended is not None:
         # Its runs each completed and the study did not: said first, as
         # every page says it (`stopping.round_ended`).
-        parts.insert(0, ended.as_text())
+        parts.insert(0, f"{ended.said} {ended.carry_on_on_a_page}")
     energy = _free_energy(base)
     if energy:
         parts.insert(0, energy)

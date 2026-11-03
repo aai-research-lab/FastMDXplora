@@ -3378,13 +3378,18 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                 print("The study's production is "
                       + str(answer.get("production_done_source") or "not recorded") + ".")
     else:
-        print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+        if not answer.get("said_above"):
+            # A study of several says its round's end last in its summary.
+            print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
         from fastmdxplora.batch.explorer import _what_would_fix_it
 
         fixes = _what_would_fix_it(answer.get("study") or args.study)
         if fixes:
             print("\n".join(fixes), file=sys.stderr)
-    return 0 if answer.get("ok") else 1
+    if answer.get("ok"):
+        return 0
+    # A round stopped when asked, as `fastmdx explore` says it: interrupted.
+    return 130 if (answer.get("round_ended") or {}).get("state") == "stopped" else 1
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

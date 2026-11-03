@@ -1794,6 +1794,21 @@ class BatchExplorer:
             return
         finished = [result for result in self.results
                     if result.status == "ok" and result.output_dir is not None]
+        missed = [result for result in self.results if result not in finished]
+        if self.resume and missed:
+            from fastmdxplora.simulation.stopping import round_ended, round_not_carried_on
+
+            if round_ended(self.output_dir, resuming=True) is not None:
+                # Resumed after a round that failed, was stopped or was cut,
+                # and a run not carried on: the round is not carried on, and
+                # says how it ended (`round_ended`, with what a resume does),
+                # where "Not applied" was written over it.
+                round_not_carried_on(self.output_dir, missed[0].run_id,
+                                     {"ok": False, "stage": "its resume",
+                                      "error": missed[0].message or "it did not finish"})
+                print(f"The stopping rule's round is not carried on: "
+                      f"{', '.join(result.run_id for result in missed)} did not finish.")
+                return
         independent = str(stop_when.get("independent_starts") or "required")
         if not finished or (independent == "required" and len(finished) < 2):
             ended("not_applied", f"Not applied: {len(finished)} of {len(self.results)} runs "
@@ -1843,10 +1858,18 @@ class BatchExplorer:
             futures = [pool.submit(_extend_one, str(run), more_ns,
                                    self._device_for_worker(index), total_ns)
                        for index, run in enumerate(runs)]
+            from concurrent.futures.process import BrokenProcessPool
+
             answers = []
             for future in futures:
                 try:
                     answers.append(future.result())
+                except BrokenProcessPool as exc:
+                    # A worker ended abruptly (killed, out of memory): every
+                    # run's future gets this, whichever worker it was, so no
+                    # run is named by it (`stopping._the_round_stopped`).
+                    answers.append({"ok": False, "stage": None, "lost": True,
+                                    "error": f"{type(exc).__name__}: {exc}"})
                 except Exception as exc:  # noqa: BLE001 - said in the record
                     answers.append({"ok": False, "stage": "simulation",
                                     "error": f"{type(exc).__name__}: {exc}"})
@@ -3169,6 +3192,7 @@ class BatchExplorer:
         ended = self._round_ended()
         headline = ("Batch failed" if ended is not None and ended.state == "failed"
                     else "Batch stopped" if stopped or ended is not None
+                    else "Batch failed" if err
                     else "Batch complete")
         cut = ""
         if ended is not None:

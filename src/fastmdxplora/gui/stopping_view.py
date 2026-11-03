@@ -300,7 +300,7 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         # study's status, All studies and the report say it, with what
         # `fastmdx resume` would run (`stopping.round_ended`).
         shown = "stopped" if cut.state in ("failed", "stopped") else "interrupted"
-        label, said, ended = cut.label, cut.as_text(), None
+        label, said, ended = cut.label, f"{cut.said} {cut.carry_on_on_a_page}", None
         reached = [ns for _name, ns in cut.productions if ns is not None]
         if reached:
             production = max(reached)

@@ -263,7 +263,9 @@ def test_the_overview_s_card_says_it_with_the_command(failed):
     card = stopping_payload(failed["study"])
     assert card["outcome_label"] == "Failed"
     assert card["said"].startswith("Its stopping rule's round 1 failed")
-    assert f"`fastmdx resume {failed['study']}`" in card["said"]
+    # Read as plain text on the page: no code marks around the command.
+    assert f"fastmdx resume {failed['study']} first extends {SECOND}" in card["said"]
+    assert "`" not in card["said"]
     assert card["carry_on"] == f"fastmdx resume {failed['study']}"
     assert re.fullmatch(r"0\.6 ps to [\d.]+ ps", card["production_said"])
 
@@ -544,3 +546,423 @@ def test_the_cli_and_the_agent_count_the_runs_alike(failed, tmp_path):
                       answer_from_the_records(study, "found"))
     assert counted and agent
     assert counted.group(1) == agent.group(1) == "1"
+
+
+# ---------------------------------------------------------------------------
+# A study of one run cut mid round, its process killed
+# ---------------------------------------------------------------------------
+
+def _source() -> str:
+    import fastmdxplora
+
+    return str(Path(fastmdxplora.__file__).resolve().parents[1])
+
+
+@pytest.fixture(scope="module")
+def cut_one(tmp_path_factory):
+    """A study of one run whose process is killed (SIGKILL, as the kernel
+    kills one out of memory) while its round's extension runs: the piece
+    has a checkpoint and has not finished, and the record says the round
+    goes on."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    root = tmp_path_factory.mktemp("one_cut")
+    pdb = root / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config.pop("sweep")
+    config["simulation"]["stop_when"]["independent_starts"] = "not_required"
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(root / "study")
+    (root / "study.yml").write_text(yaml.safe_dump(config))
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(
+        [_source(), *filter(None, [os.environ.get("PYTHONPATH")])])}
+    process = subprocess.Popen(
+        [sys.executable, "-m", "fastmdxplora.cli.main", "explore", "-c", str(root / "study.yml")],
+        cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True)
+    study = root / "study"
+    try:
+        deadline = time.monotonic() + 1200
+        while time.monotonic() < deadline and process.poll() is None:
+            if any((piece / "simulation" / "checkpoint.chk").is_file()
+                   for piece in study.glob("segment-*/")):
+                break
+            time.sleep(0.1)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "running", record.get("said")
+    return {"study": study, "record": record}
+
+
+def _length_of_the_round(record: dict) -> float:
+    last = record["rounds"][-1]
+    return last["production_ns"] + last["more_ns"]
+
+
+def test_one_run_cut_mid_round_reads_interrupted_with_its_round(cut_one, tmp_path):
+    """Its status page said only "The run ended without recording why.";
+    the sentence said "the runs" of one run, and that the resume judges
+    the run again, where it first carries its extension on."""
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.simulation.sampling_ask import length_said
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(cut_one["study"], study, symlinks=True)
+    assert _production(study) < _length_of_the_round(cut_one["record"]) - 1e-6
+    assert study_state(study) == "interrupted"
+    ended = round_ended(study)
+    assert ended.said.startswith("Its stopping rule's round 1 did not finish: the study's "
+                                 "process ended while it extended the run by ")
+    assert ended.carry_on.startswith(
+        f"`fastmdx resume {study}` first carries the run's extension on to "
+        f"{length_said(_length_of_the_round(cut_one['record']))}, then judges the run again")
+    health = _status_records(study)["health"]
+    assert health["state"] == "interrupted"
+    assert health["message"] == ended.said
+    assert health["explanation"] == ended.carry_on.replace("`", "")
+
+
+def test_one_run_being_resumed_is_not_said_interrupted(cut_one, tmp_path):
+    """While a resume carried it on, its process record still named the
+    killed process, and All studies, the sidebar and the Agent said it was
+    interrupted and to resume it. The resume killed in turn reads cut."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(cut_one["study"], study, symlinks=True)
+    began = time.time()
+    resuming = subprocess.Popen(
+        [sys.executable, "-c", "import sys\nfrom fastmdxplora.simulation.resume import "
+         "resume_study\nresume_study(sys.argv[1])", str(study)],
+        env={**os.environ, "PYTHONPATH": _source()}, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        # Until the piece it carries on writes again: the resume is going.
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline and resuming.poll() is None:
+            if any(status.stat().st_mtime > began for status in
+                   study.glob("segment-*/simulation/live_status.json")):
+                break
+            time.sleep(0.2)
+        assert resuming.poll() is None
+        assert round_ended(study) is None
+        assert study_state(study) == "running"
+        assert "did not finish" not in (answer_from_the_records(study, "found") or "")
+    finally:
+        if resuming.poll() is None:
+            os.killpg(resuming.pid, signal.SIGKILL)
+        resuming.wait()
+    # Killed hard in turn: cut, and said so.
+    assert study_state(study) == "interrupted"
+    assert round_ended(study).state == "interrupted"
+
+
+def test_one_run_cut_mid_round_is_carried_on_by_its_rule(cut_one, tmp_path):
+    """Its cut piece was carried on and the resume returned: the rule never
+    judged it, the record stayed "running", and the study read completed."""
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.simulation import resume
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(cut_one["study"], study, symlinks=True)
+    length = _length_of_the_round(cut_one["record"])
+    answer = resume.resume_study(study)
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] in ("met", "ceiling", "rounds"), record.get("said")
+    cut = len(cut_one["record"]["rounds"])
+    # Judged at the round's length: the run brought to it, then judged.
+    assert record["rounds"][cut]["production_ns"] == pytest.approx(length, abs=1e-6)
+    assert record["rounds"][cut]["verdicts"]
+    assert _production(study) <= record["max_duration_ns"] + 1e-9
+    assert round_ended(study) is None
+    assert study_state(study) == "completed"
+    assert answer["ok"] is True, answer
+
+
+# ---------------------------------------------------------------------------
+# An extension that failed with an answer of its own
+# ---------------------------------------------------------------------------
+
+def _noise_in_the_checkpoint(name: str):
+    """`extend_study`, with the checkpoint of the run ``name`` overwritten
+    with noise while its first extension runs (put back after): the piece's
+    own run refuses it, a piece that stopped with an answer."""
+    import os
+
+    from fastmdxplora.simulation import resume
+
+    real = resume.extend_study
+    done = []
+
+    def extend_study(run, *args, **kwargs):
+        run = Path(run)
+        if run.name != name or done:
+            return real(run, *args, **kwargs)
+        done.append(run)
+        checkpoint = run / "simulation" / "checkpoint.chk"
+        saved = checkpoint.read_bytes()
+        checkpoint.write_bytes(os.urandom(4096))
+        try:
+            return real(run, *args, **kwargs)
+        finally:
+            checkpoint.write_bytes(saved)
+
+    return extend_study
+
+
+@pytest.fixture(scope="module")
+def answered(failed, tmp_path_factory):
+    """The failed study resumed, the second seed's catch-up refused inside
+    its own piece."""
+    from fastmdxplora.simulation import resume
+
+    study = tmp_path_factory.mktemp("answered") / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(resume, "extend_study", _noise_in_the_checkpoint(SECOND))
+        with contextlib.redirect_stdout(io.StringIO()):
+            answer = resume.resume_study(study)
+    assert answer["ok"] is False
+    assert (study / "runs" / SECOND / "segment-001").is_dir()
+    return {"study": study}
+
+
+def _resume_by_the_cli(study: Path) -> tuple[int, str, str]:
+    from fastmdxplora.cli.main import main
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(["resume", str(study)])
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_a_resume_that_does_not_carry_the_round_on_leaves_it_failed(failed, answered,
+                                                                     tmp_path):
+    """The sentence said the resume extends the second seed; the resume gave
+    the piece's answer, wrote "Not applied" over the round's failure and
+    printed "Batch complete"."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(answered["study"], study, symlinks=True)
+    first = failed["study"] / "runs" / "tri__random-seed-1"
+    ended = round_ended(study)
+    assert ended.state == "failed"
+    before = (study / "stopping.json").read_text()
+    code, printed, _said = _resume_by_the_cli(study)
+    assert code == 1
+    assert "Batch complete" not in printed
+    assert "Batch failed" in printed
+    assert (study / "stopping.json").read_text() == before
+    assert round_ended(study) == ended
+    # What the resume did, said before it.
+    piece = study / "runs" / SECOND / "segment-001"
+    assert ended.carry_on == (
+        f"`fastmdx resume {study}` does not carry the round on: {SECOND}'s last piece, "
+        "segment-001, stopped with an answer of its own, and running it again would give "
+        f"the same one. To run it again anyway, move {piece} out of its run's folder, then "
+        f"`fastmdx resume {study}` carries the round on.")
+    manifest = json.loads((study / "batch_manifest.json").read_text())
+    assert manifest["round_ended"]["carry_on"] == ended.carry_on
+    # The runs at the length before the round said there, not extended.
+    assert (f"tri__random-seed-1 is at {_production(first) * 1000:g} ps; the extension of "
+            f"{SECOND} did not finish") in ended.said
+    # What it says works: the piece moved out, the round carried on.
+    shutil.move(str(piece), str(tmp_path / "segment-001"))
+    with contextlib.redirect_stdout(io.StringIO()):
+        from fastmdxplora.simulation import resume
+
+        answer = resume.resume_study(study)
+    record = json.loads((study / "stopping.json").read_text())
+    after = [_production(study / "runs" / name) for name in record["runs"]]
+    assert answer["ok"] is True, answer
+    assert record["outcome"] in ("met", "ceiling", "rounds"), record.get("said")
+    assert after[0] == pytest.approx(after[1], abs=1e-6)
+    assert max(after) <= record["max_duration_ns"] + 1e-9
+
+
+def test_one_run_whose_piece_answered_is_said_not_carried_on(one, tmp_path):
+    from fastmdxplora.simulation import resume
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(one["study"], study, symlinks=True)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(resume, "extend_study", _noise_in_the_checkpoint(study.name))
+        with contextlib.redirect_stdout(io.StringIO()):
+            first = resume.resume_study(study)
+    assert first["ok"] is False
+    ended = round_ended(study)
+    assert ended.state == "failed"
+    piece = study / "segment-001"
+    assert ended.carry_on.startswith(
+        f"`fastmdx resume {study}` does not carry the round on: the run's last piece, "
+        f"segment-001, stopped with an answer of its own")
+    assert f"move {piece} out of the study's folder" in ended.carry_on
+    before = (study / "stopping.json").read_text()
+    answer = resume.resume_study(study)
+    assert answer["ok"] is False
+    assert (study / "stopping.json").read_text() == before
+
+
+# ---------------------------------------------------------------------------
+# A worker killed, a stop past production, a ceiling lowered
+# ---------------------------------------------------------------------------
+
+class _BrokenPool:
+    """A pool whose worker ended abruptly: every future gets the error, as a
+    `ProcessPoolExecutor` gives it to each run when one worker is killed."""
+
+    submitted: list = []
+
+    def __init__(self, *args, **kwargs):
+        self._processes = {}
+
+    def submit(self, fn, *args):
+        from concurrent.futures import Future
+        from concurrent.futures.process import BrokenProcessPool
+
+        type(self).submitted.append(args)
+        future = Future()
+        future.set_exception(BrokenProcessPool(
+            "A process in the process pool was terminated abruptly while the future "
+            "was running or pending."))
+        return future
+
+    def shutdown(self, *args, **kwargs):
+        pass
+
+
+def test_a_killed_worker_names_no_run_and_a_run_at_the_round_s_length_is_extended(
+        failed, tmp_path):
+    """Every run of a broken pool got the error, and the first in order was
+    named; the run at the round's length was said not finished."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation.stopping import round_ended, run_until_known, targets_of
+
+    study = tmp_path / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    record = json.loads((study / "stopping.json").read_text())
+    runs = [study / "runs" / name for name in record["runs"]]
+    batch = BatchExplorer.__new__(BatchExplorer)
+    batch.mode, batch.workers, batch.devices = "parallel", 2, []
+    batch.run_specs, batch.output_dir = [None, None], study
+    # The ceiling at the first seed's length, so the round extends to it.
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": _production(runs[0])}
+    _BrokenPool.submitted = []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(explorer, "ProcessPoolExecutor", _BrokenPool)
+        # To a length, side by side, as a catch-up round of two runs asks.
+        answers = batch._extend_runs(runs, None, total_ns=0.004)
+        assert [args[-1] for args in _BrokenPool.submitted] == [0.004, 0.004]
+        assert not any(answer["ok"] for answer in answers)
+        # Judged from the first piece again, as round 1 was.
+        (study / "stopping.json").unlink()
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_until_known(runs, targets_of(stop_when), stop_when, record_in=study,
+                            extend_all=batch._extend_runs,
+                            production_of=lambda run: record["rounds"][0]["production_ns"])
+    ended = round_ended(study)
+    assert ended.said.startswith("Its stopping rule's round 1 failed: a worker extending "
+                                 "the runs ended abruptly (BrokenProcessPool: ")
+    assert "which run it was extending is not known" in ended.said
+    assert "extending tri__random-seed-1 failed" not in ended.said
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    last = json.loads((study / "stopping.json").read_text())["rounds"][-1]
+    length = last["production_ns"] + last["more_ns"]
+    assert _production(runs[0]) >= length - 1e-6 > _production(runs[1])
+    assert (f"tri__random-seed-1 was extended to {length_said(length)}; the extension of "
+            f"{SECOND} did not finish") in ended.said
+
+
+def _stopped_in_the_report_of(name: str):
+    """The phase runner, with a stop (SIGTERM, outside production) reaching
+    the report of ``name``'s joined pieces once, as a Stop pressed there."""
+    from fastmdxplora.orchestrator import FastMDXplora
+    from fastmdxplora.refusals import RunStopped
+
+    real = FastMDXplora._resolve_phase_runner
+    done = []
+
+    def resolve(phase):
+        runner = real(phase)
+        if phase != "report":
+            return runner
+
+        def run(orchestrator, output_dir, **kwargs):
+            if Path(orchestrator.output_dir).name == name and not done:
+                done.append(name)
+                raise RunStopped("SIGTERM")
+            return runner(orchestrator=orchestrator, output_dir=output_dir, **kwargs)
+
+        return run
+
+    return staticmethod(resolve)
+
+
+def test_a_stop_past_production_is_said_stopped_and_exits_130(failed, tmp_path):
+    """Stopped in the extension's report, the round was said failed "at
+    analysis", and the resume exited 1 and said the sentence twice."""
+    from fastmdxplora.orchestrator import FastMDXplora
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(FastMDXplora, "_resolve_phase_runner", _stopped_in_the_report_of(SECOND))
+        code, printed, said = _resume_by_the_cli(study)
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["rounds"][-1]["stopped_by"] == "asked", record["said"]
+    assert record["said"].startswith(f"Stopped when asked, while extending {SECOND}.")
+    ended = round_ended(study)
+    assert ended.state == "stopped"
+    assert code == 130
+    assert (printed + said).count("Its stopping rule's round 2 was stopped when asked") == 1
+
+
+def test_a_ceiling_lowered_before_a_resume_is_not_passed(failed, tmp_path):
+    """Lowered below the longest run, the shorter run was brought up to it
+    and judged beside the longer run, past it."""
+    from fastmdxplora.simulation import resume
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    config = yaml.safe_load((study / "resolved_config.yml").read_text())
+    config["simulation"]["stop_when"]["max_duration_ns"] = 0.001
+    (study / "resolved_config.yml").write_text(yaml.safe_dump(config))
+    runs = {name: study / "runs" / name for name in ("tri__random-seed-1", SECOND)}
+    before = {name: _production(run) for name, run in runs.items()}
+    assert before["tri__random-seed-1"] > 0.001 > before[SECOND]
+    assert round_ended(study).carry_on.startswith(
+        f"`fastmdx resume {study}` does not judge the runs together: tri__random-seed-1 is "
+        "past the 1 ps ceiling the study now sets.")
+    with contextlib.redirect_stdout(io.StringIO()):
+        resume.resume_study(study)
+    record = json.loads((study / "stopping.json").read_text())
+    assert {name: _production(run) for name, run in runs.items()} == before
+    assert record["outcome"] == "ceiling"
+    assert record["rounds"][-1]["past_the_ceiling"] == ["tri__random-seed-1"]
+    assert round_ended(study) is None
