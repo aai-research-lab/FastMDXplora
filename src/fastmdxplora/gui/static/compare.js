@@ -294,7 +294,7 @@
       top.appendChild(make("th", "", label));
     });
     table.appendChild(top);
-    var noMean = [], noted = [], notedResolved = [];
+    var noMean = [], noted = [], unseen = [], notedResolved = [];
     found.forEach(function (m) {
       var row = make("tr");
       row.dataset.analysis = m.analysis;
@@ -315,6 +315,13 @@
           node.title = (node.title ? node.title + ". " : "") + line;
           noted.push("† " + said + ", " + (m.label || m.analysis) + ": " + side.noted + ".");
           if (m.versus && m.versus.resolved && notedResolved.indexOf(m) < 0) notedResolved.push(m);
+        }
+        if (side && side.mean != null && side.unseen) {
+          // What its joined run's drift test could miss, with its own mark
+          // as the runs compared give it: no image note, and no bias.
+          node.appendChild(document.createTextNode(" \u2021"));
+          node.title = (node.title ? node.title + ". " : "") + side.unseen + ".";
+          unseen.push("\u2021 " + said + ", " + (m.label || m.analysis) + ": " + side.unseen + ".");
         }
         row.appendChild(node);
         if (side && side.mean == null && side.withheld) {
@@ -358,6 +365,9 @@
     }
     noted.forEach(function (line) {
       host.appendChild(make("p", "muted small compare-noted", line));
+    });
+    unseen.forEach(function (line) {
+      host.appendChild(make("p", "muted small compare-unseen", line));
     });
     if (notedResolved.length) {
       // As the runs compared say it (runs_compared.py), of the settings

@@ -800,7 +800,10 @@ def means_of(base: Path) -> dict[str, dict[str, Any]]:
                           "unit": unit,
                           "withheld": None if determined else (str(said.get("why") or "")
                                                                or "not determined"),
-                          "noted": said.get("noted") or None}
+                          # The image note and the drift note apart: the
+                          # drift note is no image note (Compare marks each).
+                          "noted": said.get("image_said") or None,
+                          "unseen": said.get("unseen") or None}
         elif key in shown and found.get("not_read"):
             means[key] = {"label": label, "mean": None, "error": None, "unit": unit,
                           "withheld": None, "not_read": True}
@@ -919,7 +922,7 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
     from fastmdxplora.batch.aggregate import read_member_findings
     from fastmdxplora.gui.report_dashboard import unit_of
     from fastmdxplora.image_note import note_of, said_short
-    from fastmdxplora.statistics import withheld_reason
+    from fastmdxplora.statistics import drift_unseen_said, withheld_reason
 
     try:
         found = read_member_findings(base)
@@ -935,15 +938,19 @@ def _means(base: Path) -> list[tuple[str, dict[str, Any]]]:
         # mean an earlier version called determined on too few independent
         # samples was compared on its error.
         withheld = withheld_reason(mean)
+        unit = unit_of(name, mean)
 
         out.append((name, {
             "label": _label_of(name),
             "mean": _finite(mean.get("mean")),
             "error": None if withheld else _finite(mean.get("standard_error")),
-            "unit": unit_of(name, mean),
+            "unit": unit,
             "withheld": str(withheld) if withheld else None,
             # Its image note beside its verdict (`image_note`).
             "noted": said_short(note_of(mean)) or None,
+            # And, apart from it, what its joined run's drift test could
+            # miss, as every page says it.
+            "unseen": drift_unseen_said(mean, unit or None) or None,
         }))
     return out
 

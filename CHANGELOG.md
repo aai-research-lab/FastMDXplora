@@ -76,6 +76,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   citation chips, its answers and its own context, after a full stop as a
   sentence (the Agent's records answer, the Analysis page's convergence
   panel and Compare of two studies said "; With 3 segments").
+- Compare of two studies carries a mean's drift note apart from its image
+  note, as the runs compared do: the drift note with its own mark (‡) and a
+  line of its own under the table, for every mean there, each analysis's
+  (RMSD) included, and in the Agent's text of the two compared; the image
+  mark (†) and the sentence that a resolved difference "may be biased by the
+  solute's own image" only for an image note. It marked a temperature's
+  drift note as an image note and said so of a resolved difference where no
+  mean had one, and gave no drift note beside an analysis's mean.
 - The Agent's and the GUI's answers to whether a study ran long enough and
   what would strengthen it name a mean drifting between a joined run's
   segments and its remedy, a longer run of no length a record gives, by the

@@ -543,6 +543,10 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
                 unseen = drift_unseen_said(entry, unit) if means[key].get("determined") else ""
                 means[key]["noted"] = (f"{short}. {unseen}" if short and unseen
                                        else short or unseen or None)
+                # Each apart, for a page that marks them apart (Compare of
+                # two studies): the drift note is no image note.
+                means[key]["image_said"] = short or None
+                means[key]["unseen"] = unseen or None
                 # The analysis's paragraph, said as its where it counts the
                 # union of the rows, not this mean's.
                 means[key]["noted_why"] = (paragraph_beside(note_of(entry), {

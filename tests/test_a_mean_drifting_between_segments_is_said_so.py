@@ -792,3 +792,91 @@ def test_the_recorded_mean_s_note_is_joined_as_a_sentence_where_it_is_one():
     assert said == ["Recorded mean -22,300 ± 1.1 kJ/mol. With 3 segments, a steady drift "
                     "smaller than about 51 kJ/mol.",
                     "Recorded mean -22,300 ± 1.1 kJ/mol; may be biased by the solute's image."]
+
+
+def _compared_studies(tmp_path: Path) -> tuple[Path, Path]:
+    """Two real joined tri-alanine studies' records
+    (``tests/data/drift_short_compared_studies.json``): a stationary one
+    (friction 1/ps) in 3 pieces of 20, 20 and 100 ps, and a drifting one
+    (friction 0.002/ps) in 4 of 100, 20, 20 and 20 ps. Neither mean carries
+    an image note; their temperatures differ, resolved, and the second's
+    carries a drift note, as each RMSD does."""
+    data = json.loads((Path(__file__).parent / "data" / "drift_short_compared_studies.json")
+                      .read_text(encoding="utf-8"))
+    roots = []
+    for name in ("stationary_3_pieces", "drifting_4_pieces"):
+        root = tmp_path / "ws" / name
+        for relative, text in data[name].items():
+            (root / relative).parent.mkdir(parents=True, exist_ok=True)
+            (root / relative).write_text(text, encoding="utf-8")
+        roots.append(root)
+    return roots[0], roots[1]
+
+
+def test_compare_of_two_studies_carries_the_drift_note_apart_from_the_image_note(
+        tmp_path) -> None:
+    # Compare of two studies took a drift note for an image note: it marked
+    # the temperature with the image mark and said a resolved difference
+    # "may be biased by the solute's own image" where no mean had one, and
+    # gave no drift note beside the RMSD.
+    from fastmdxplora.gui.workspace import studies_compared
+    from fastmdxplora.workspace_studies import compared
+
+    first, second = _compared_studies(tmp_path)
+    found = studies_compared(first, second)
+    rows = {row["analysis"]: row for row in found["measures"]}
+    temperature = rows["temperature"]
+    assert temperature["versus"]["resolved"], temperature
+    assert temperature["second"]["noted"] is None, temperature["second"]
+    assert temperature["second"]["unseen"].startswith("With 4 segments, a steady drift"), \
+        temperature["second"]
+    for side, figure in (("first", "about 0.030 nm"), ("second", "about 0.0042 nm")):
+        assert rows["rmsd"][side]["noted"] is None, rows["rmsd"][side]
+        assert figure in (rows["rmsd"][side].get("unseen") or ""), rows["rmsd"][side]
+    said, ok = compared(first, second)
+    assert ok
+    line = next(x for x in said.splitlines() if x.lstrip().startswith("RMSD:"))
+    assert line.count(". With 3 segments") + line.count(". With 4 segments") == 2, line
+    assert "image" not in said, said
+
+
+def test_the_compare_page_marks_the_drift_note_apart_and_says_no_image_bias(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    import urllib.parse
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    first, second = _compared_studies(tmp_path)
+    session = start_dashboard_session(output=str(first), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#compare/" + "|".join(
+                urllib.parse.quote(str(p), safe="") for p in (first, second)),
+                wait_until="domcontentloaded")
+            page.wait_for_selector('.page[data-page="compare"][data-compared="yes"]')
+            seen = page.evaluate("""() => {
+              const lines = (s) => [...document.querySelectorAll(s)].map((n) => n.textContent);
+              const cells = {};
+              document.querySelectorAll('.compare-means-table tr[data-analysis]').forEach((r) => {
+                cells[r.dataset.analysis] = [...r.children].slice(1, 3).map((c) => c.textContent);
+              });
+              return {noted: lines('.compare-noted'), unseen: lines('.compare-unseen'), cells};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert seen["noted"] == [], seen["noted"]
+    assert not any("†" in cell for row in seen["cells"].values() for cell in row), seen
+    assert seen["cells"]["temperature"][1].endswith("‡"), seen["cells"]
+    assert all(cell.endswith("‡") for cell in seen["cells"]["rmsd"]), seen["cells"]
+    assert any(line.startswith("‡ ") and ", Temperature: With 4 segments" in line
+               for line in seen["unseen"]), seen["unseen"]
+    assert sum(", RMSD: With " in line for line in seen["unseen"]) == 2, seen["unseen"]
