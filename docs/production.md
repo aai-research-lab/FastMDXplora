@@ -320,8 +320,9 @@ resume gives that answer again and the round is still said failed, and the
 sentence says so, with the piece to move out before resuming; where a run's
 extension failed in its analyses, it says to analyse that run again (`fastmdx
 explore --output RUN --include analysis report --rerun`) before resuming.
-Where the ceiling was lowered below the longest run, the runs are not judged
-together and no run is carried on.
+Where the ceiling was lowered below the longest run, or below the length cut
+extensions run to, no run is carried on and the round is said as it ended. A
+piece stopped at its last step is joined as finished.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.

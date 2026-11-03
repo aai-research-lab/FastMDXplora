@@ -600,6 +600,29 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   while it brought one run up names that run; runs whose extension was cut,
   or whose joined pieces' analyses are owed, are said carried on first, and
   a study of one run cut after its join says its round on its status page.
+- A piece stopped when asked at its last step (a Ctrl-C in its last frame
+  interval) wrote its checkpoint at its full length, said not finished, and
+  every join refused it ("Segments [2] did not finish"): such a study could
+  never be resumed, while every page said `fastmdx resume` carried its round
+  on, and the resume said "Batch stopped", exit 130, with no stop asked. The
+  join now takes a piece whose checkpoint is at its last production step as
+  finished, the sentence says the resume joins it first, and a resume a run
+  refused is not counted stopped.
+- A run whose extension failed in its analyses was counted ok ("2 ok, 0
+  error(s)", the manifest, the Agent) until a resume refused it: it is
+  counted in error from its own record, before a resume as after.
+- A study of one run stopped between its round's piece and its join, its
+  record left "running" with no process record, read as owing only its
+  analyses, and the Agent gave the means of before the join as the run's: a
+  round left running with no process holding it is read cut, with what the
+  resume runs, and the Agent says its means are of the pieces before the
+  join.
+- A ceiling lowered below the length cut extensions run to: the resume
+  carries no run on, as it does below a run. Nothing then is recorded as a
+  round, the round's failure is still said, the CLI says each run as it
+  stands and "Batch stopped" with the round's sentence last, and a study of
+  runs leaves out its runs' own remedies above that sentence. An error in a
+  run's analyses is not said to give the same one again.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
