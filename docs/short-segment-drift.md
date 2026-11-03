@@ -300,9 +300,9 @@ the rule's). The scale is the one the note says, to one decimal, and the
 error is unrounded, so the figure does not depend on the quantity's units;
 the note says the error to two figures, or to three where two would not
 multiply out to the figure as said (more in the few notes where three would
-not either), so the figure multiplies out from its basis; the scale is said, with how few means it was
-estimated from, where it reads above 1.0, and where it does not it is not
-applied. Counted by the helper (`inflated` in its output, 10,000 sets a row,
+not either), so the figure multiplies out from its basis; the scale is
+said, with how few means it was estimated from, where it reads above 1.0,
+and where it does not it is not applied. Counted by the helper (`inflated` in its output, 10,000 sets a row,
 equal segments whose means scatter h times the variance their errors say):
 
 | Segments | h | Called at X | Called at X times the root of h | Record's figure at least that |
@@ -336,10 +336,10 @@ large would have been seen):
 | Layout | X | h | Called at its own figure | Unseen though said seen |
 |---|---:|---:|---:|---:|
 | Errors 1, 1, 1 | 41 | 1 | 10,000 | 0 |
-| Errors 1, 1, 1 | 41 | 2 | 9,997 | 0 |
-| Errors 1, 1, 1 | 41 | 4 | 9,974 | 0 |
-| Errors 1, 1, 1 | 41 | 10 | 9,888 | 5 |
-| Errors 1, 1, 1 | 41 | 54 | 9,585 | 52 |
+| Errors 1, 1, 1 | 41 | 2 | 9,996 | 0 |
+| Errors 1, 1, 1 | 41 | 4 | 9,970 | 12 |
+| Errors 1, 1, 1 | 41 | 10 | 9,879 | 5 |
+| Errors 1, 1, 1 | 41 | 54 | 9,566 | 52 |
 | Errors 1, 2, 1 | 61 | 1 | 10,000 | 0 |
 | Errors 1, 2, 1 | 61 | 4 | 10,000 | 0 |
 | Errors 1, 2, 1 | 61 | 54 | 9,970 | 0 |
@@ -348,66 +348,81 @@ large would have been seen):
 | Errors 1, 2.45, 1 | 71 | 54 | 9,981 | 0 |
 | Errors 1, 3, 1 | 85 | 1 | 10,000 | 0 |
 | Errors 1, 3, 1 | 85 | 4 | 10,000 | 0 |
-| Errors 1, 3, 1 | 85 | 54 | 9,997 | 0 |
+| Errors 1, 3, 1 | 85 | 54 | 9,996 | 0 |
 | Lengths 500, 500, 4,000 | 69 | 1 | 10,000 | 0 |
 | Lengths 500, 500, 4,000 | 69 | 4 | 10,000 | 0 |
-| Lengths 500, 500, 4,000 | 69 | 54 | 9,946 | 2 |
+| Lengths 500, 500, 4,000 | 69 | 54 | 9,939 | 2 |
 | Lengths 4,000, 500, 500 | 69 | 1 | 10,000 | 0 |
 | Lengths 4,000, 500, 500 | 69 | 4 | 10,000 | 0 |
-| Lengths 4,000, 500, 500 | 69 | 54 | 9,951 | 4 |
+| Lengths 4,000, 500, 500 | 69 | 54 | 9,942 | 4 |
 | Lengths 3,000, 500, 3,000 | 71 | 1 | 10,000 | 0 |
 | Lengths 3,000, 500, 3,000 | 71 | 4 | 10,000 | 0 |
-| Lengths 3,000, 500, 3,000 | 71 | 54 | 9,984 | 0 |
-| Lengths 500, 4,000, 500 | 48 | 1 | 9,995 | 0 |
-| Lengths 500, 4,000, 500 | 48 | 4 | 9,832 | 0 |
-| Lengths 500, 4,000, 500 | 48 | 54 | 9,162 | 136 |
+| Lengths 3,000, 500, 3,000 | 71 | 54 | 9,981 | 0 |
+| Lengths 500, 4,000, 500 | 48 | 1 | 9,993 | 3 |
+| Lengths 500, 4,000, 500 | 48 | 4 | 9,800 | 69 |
+| Lengths 500, 4,000, 500 | 48 | 54 | 9,097 | 136 |
+| Lengths 100, 5,000, 100 | 101 | 1 | 9,990 | 5 |
+| Lengths 100, 5,000, 100 | 101 | 4 | 9,785 | 71 |
+| Lengths 100, 5,000, 100 | 101 | 54 | 9,012 | 165 |
 | Errors 1, 1, 1, 1 | 16 | 1 | 9,876 | 71 |
 | Errors 1, 1, 1, 1 | 16 | 2 | 9,598 | 53 |
 | Errors 1, 1, 1, 1 | 16 | 4 | 9,264 | 234 |
 | Errors 1, 1, 1, 1 | 16 | 10 | 8,990 | 161 |
 | Errors 1, 1, 1, 1 | 16 | 54 | 8,881 | 177 |
 | Errors 1, 2, 1, 1 | 20 | 1 | 9,989 | 5 |
-| Errors 1, 2, 1, 1 | 20 | 4 | 9,823 | 64 |
-| Errors 1, 2, 1, 1 | 20 | 54 | 9,536 | 78 |
-| Lengths 500, 500, 500, 4,000 | 24 | 1 | 9,997 | 2 |
-| Lengths 500, 500, 500, 4,000 | 24 | 4 | 9,852 | 46 |
-| Lengths 500, 500, 500, 4,000 | 24 | 54 | 9,598 | 44 |
-| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 1 | 9,980 | 5 |
-| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 4 | 9,755 | 81 |
-| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 54 | 9,461 | 67 |
-| Errors 1, 1, 1, 2 | 17 | 1 | 9,450 | 192 |
-| Errors 1, 1, 1, 2 | 17 | 4 | 8,614 | 288 |
-| Errors 1, 1, 1, 2 | 17 | 54 | 8,226 | 247 |
-| Errors 2, 1, 1, 2 | 17 | 1 | 9,406 | 260 |
-| Errors 2, 1, 1, 2 | 17 | 4 | 8,411 | 390 |
-| Errors 2, 1, 1, 2 | 17 | 54 | 8,077 | 290 |
-| Errors 1, 1, 1, 4 | 24 | 1 | 8,704 | 402 |
-| Errors 1, 1, 1, 4 | 24 | 4 | 7,889 | 364 |
-| Errors 1, 1, 1, 4 | 24 | 54 | 7,492 | 329 |
-| Errors 6, 1, 1, 1 | 32 | 1 | 8,521 | 496 |
-| Errors 6, 1, 1, 1 | 32 | 4 | 7,672 | 454 |
-| Errors 6, 1, 1, 1 | 32 | 54 | 7,278 | 444 |
-| Lengths 1,000, 1,000, 1,000, 250 | 17 | 1 | 9,608 | 27 |
-| Lengths 1,000, 1,000, 1,000, 250 | 17 | 4 | 8,937 | 85 |
-| Lengths 1,000, 1,000, 1,000, 250 | 17 | 54 | 8,568 | 182 |
-| Lengths 4,000, 4,000, 4,000, 250 | 25 | 1 | 8,780 | 237 |
-| Lengths 4,000, 4,000, 4,000, 250 | 25 | 4 | 8,078 | 201 |
-| Lengths 4,000, 4,000, 4,000, 250 | 25 | 54 | 7,712 | 189 |
+| Errors 1, 2, 1, 1 | 20 | 4 | 9,839 | 64 |
+| Errors 1, 2, 1, 1 | 20 | 54 | 9,568 | 78 |
+| Lengths 500, 500, 500, 4,000 | 24 | 1 | 9,998 | 2 |
+| Lengths 500, 500, 500, 4,000 | 24 | 4 | 9,860 | 46 |
+| Lengths 500, 500, 500, 4,000 | 24 | 54 | 9,613 | 44 |
+| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 1 | 9,986 | 5 |
+| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 4 | 9,777 | 81 |
+| Lengths 1,000, 1,000, 1,000, 5,000 | 21 | 54 | 9,491 | 67 |
+| Errors 1, 1, 1, 2 | 17 | 1 | 9,489 | 192 |
+| Errors 1, 1, 1, 2 | 17 | 4 | 8,684 | 288 |
+| Errors 1, 1, 1, 2 | 17 | 54 | 8,292 | 221 |
+| Errors 2, 1, 1, 2 | 17 | 1 | 9,424 | 260 |
+| Errors 2, 1, 1, 2 | 17 | 4 | 8,446 | 390 |
+| Errors 2, 1, 1, 2 | 17 | 54 | 8,102 | 290 |
+| Errors 1, 1, 1, 4 | 24 | 1 | 8,716 | 402 |
+| Errors 1, 1, 1, 4 | 24 | 4 | 7,899 | 364 |
+| Errors 1, 1, 1, 4 | 24 | 54 | 7,504 | 329 |
+| Errors 6, 1, 1, 1 | 32 | 1 | 8,546 | 496 |
+| Errors 6, 1, 1, 1 | 32 | 4 | 7,702 | 454 |
+| Errors 6, 1, 1, 1 | 32 | 54 | 7,318 | 432 |
+| Lengths 1,000, 1,000, 1,000, 250 | 17 | 1 | 9,569 | 158 |
+| Lengths 1,000, 1,000, 1,000, 250 | 17 | 4 | 8,882 | 244 |
+| Lengths 1,000, 1,000, 1,000, 250 | 17 | 54 | 8,497 | 182 |
+| Lengths 4,000, 4,000, 4,000, 250 | 25 | 1 | 8,887 | 237 |
+| Lengths 4,000, 4,000, 4,000, 250 | 25 | 4 | 8,215 | 201 |
+| Lengths 4,000, 4,000, 4,000, 250 | 25 | 54 | 7,865 | 165 |
 
-On every layout counted, a drift as large as a record's figure is called in
-91.6% to 100% of runs at three segments (the least 9,162 of 10,000, lengths
-500, 4,000 and 500 at h = 54) and in 72.8% to 100% at four (the least 7,278,
-errors 6, 1, 1, 1 at h = 54); and a drift the figure says would be seen goes
-unseen in at most 1.4% of runs at three segments and 5.0% at four (errors 6,
-1, 1, 1 at h = 1). It is lowest where the first or last of four pieces is
-the imprecise one, and below the 80% that defines the figure there once the
-means scatter beyond their errors (errors 1, 1, 1, 4 and 6, 1, 1, 1 at h = 4
-and 54; lengths 4,000, 4,000, 4,000 and 250 at h = 54): the figure is the
-layout's own 80% point scaled by the scatter as the note says it, and at
-four segments that scale is estimated from two degrees of freedom, so it
-reads below the true scatter in many runs. At four segments every layout
-whose first and last pieces are no less precise than the inner ones stays at
-88.8% or more.
+The table gives examples; it is not a bound. Over a wider sweep (`sweep`
+in the helper, `--sweep`, its summary saved in
+`tests/data/drift_short_per_record_sweep.json`: seed 760013, 150 random
+layouts of three segments and 150 of four, a third with lengths spread over
+50 to 10,000 frames, a third equal pieces with errors spread over a factor of
+100, a third both, the errors besides multiplied by 1 to 10; and 20 edge
+layouts, such as lengths 100, 5,000 and 100, lengths 50, 10,000 and 50,
+errors 1, 1, 1 and 100, and equal pieces; each at h = 1, 4 and 54, 10,000 sets a row),
+a drift as large as a record's figure is called in about 89% to 100% of runs
+at three segments and 71% to 100% at four, and a drift the figure says would
+be seen goes unseen though said seen in up to about 1.8% at three and 6.2%
+at four. At three it is lowest where the middle piece is far the most
+precise (lengths 50, 10,000 and 50 at h = 54: 8,975 called, 171 unseen
+though said seen); at four where the first or last piece is far the least
+precise (errors 2.78, 3.91, 1 and 10.6 at h = 54: 7,181 called; errors 1, 1,
+1 and 100 at h = 1: 619 unseen though said seen), below the 80% that defines
+the figure once the means scatter beyond their errors. The figure is the
+layout's own 80% point scaled by the scatter as the note says it, and that
+scale is estimated from one degree of freedom at three segments and two at
+four, so it reads below the true scatter in many runs: on every layout of
+the sweep the share called is least at h = 54. Where the errors hold
+(h = 1), a drift above the 80% point still goes unseen in some runs, most
+where one outer piece of four is far the least precise. At four segments,
+layouts whose first and last pieces are no less precise than the inner ones
+are called in about 88% or more (the least, 8,881, four equal pieces at
+h = 54).
 
 A real run's temperature at three pieces of 20 ps (177.79, 185.45 and
 186.61 K over errors of 0.67, 0.68 and 0.60 K, at their centres in time)
@@ -429,10 +444,13 @@ before the pooled error is accepted.
 The note beside a mean not called drifting at three or four segments gives
 its layout's 80% point where the segment errors hold, scaled by the means'
 scatter as estimated from the means themselves, on one degree of freedom at
-three segments and two at four. Per record, a drift as large as that figure
-is called in 91.6% to 100% of runs at three segments and 72.8% to 100% at
-four, lowest where the first or last of four pieces is the imprecise one and
-the means scatter beyond their errors (counts above); it is a figure for
+three segments and two at four. Per record, over a
+sweep of layouts (counts above), a drift as large as that figure is called
+in about 89% to 100% of runs at three segments and 71% to 100% at four, and
+a drift the figure says would be seen goes unseen though said seen in up to
+about 1.8% at three and 6.2% at four: lowest at three where the middle piece
+is far the most precise, at four where the first or last piece is far the
+least precise, and the means scatter beyond their errors. It is a figure for
 the record's layout, not a bound that holds in four runs of five on every
 record.
 

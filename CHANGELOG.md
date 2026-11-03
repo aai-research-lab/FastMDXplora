@@ -66,12 +66,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   multiplied where the means scatter about a straight line beyond their
   errors by the root of that scatter as the rule judges it, to the one
   decimal the note says, with how few means it was estimated from (per
-  record, on every layout in `docs/short-segment-drift.md`: a drift as large
-  as the figure is called in 91.6% to 100% of runs at three segments and
-  72.8% to 100% at four, lowest where the first or last of four pieces is
-  the imprecise one and the means scatter beyond their errors, the scale
-  then estimated from two degrees of freedom; its record saves
-  `drift_unseen`). Said also where the joined summary was withheld for a
+  record, an approximate range from a random sweep of layouts in
+  `docs/short-segment-drift.md`, not a bound: a drift as large as the figure
+  is called in about 89% to 100% of runs at three segments and 71% to 100%
+  at four, and goes unseen though said seen in up to about 1.8% and 6.2%,
+  lowest at three where the middle piece is far the most precise and at four
+  where the first or last piece is far the least precise, the means
+  scattering beyond their errors and the scale estimated from one or two
+  degrees of freedom; its record saves `drift_unseen`). Said also where the joined summary was withheld for a
   segment whose correlation is not resolved and the mean stands, with the
   segments tested and those left out; where fewer than three could be tested,
   that drift between them was not tested. On the Overview's card (a line of

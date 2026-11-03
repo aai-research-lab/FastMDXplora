@@ -11,6 +11,7 @@ rather than being mistaken for a steady trend.
 
 from __future__ import annotations
 
+import json
 import math
 
 import numpy as np
@@ -307,14 +308,31 @@ def test_segments_left_out_for_one_reason_are_said_together():
             "their correlation not resolved) move in order") in str(why), why
 
 
-def test_the_docs_count_every_per_record_layout_and_state_the_range_from_all_rows():
-    # The docs said a drift as large as a record's figure is called in "89%
-    # to 100%" of runs, from layouts whose imprecise piece was inside: four
-    # segments with an imprecise first or last piece are called in as few
-    # as 73%, and go unseen though said seen in up to 5%.
+def _sweep_summary() -> dict:
     from pathlib import Path
 
-    from tests._short_segment_drift_check import PER_RECORD
+    return json.loads((Path(__file__).parent / "data" / "drift_short_per_record_sweep.json")
+                      .read_text(encoding="utf-8"))
+
+
+def _about(share: float, down: bool) -> str:
+    """A share of runs as the docs say it: to the whole percent below it
+    for the least called, to a tenth above it for the most unseen."""
+    if down:
+        return f"{math.floor(share * 100):d}%"
+    return f"{math.ceil(share * 1000) / 10:.1f}%"
+
+
+def test_the_docs_state_the_per_record_range_from_the_sweep_and_table_its_examples():
+    # The docs stated "91.6% to 100% of runs at three segments" from the
+    # table's 58 rows as if a bound for every record: lengths 100, 5,000 and
+    # 100, not in the table, are called in 90.6%, and the figure moved with
+    # the quantity's units. Now the range is from a random sweep of
+    # layouts, said as approximate, and the table gives examples.
+    from pathlib import Path
+
+    from tests._short_segment_drift_check import (PER_RECORD, SWEEP_EDGES, SWEEP_LAYOUTS,
+                                                  SWEEP_RATIOS, SWEEP_SEED, per_record)
 
     text = (Path(__file__).parents[1] / "docs" / "short-segment-drift.md").read_text(
         encoding="utf-8")
@@ -322,32 +340,76 @@ def test_the_docs_count_every_per_record_layout_and_state_the_range_from_all_row
     table = text[text.index(head):].split("\n\n")[0].splitlines()[2:]
     rows = {}
     for line in table:
-        layout, _, h, called, unseen = (c.strip() for c in line.strip("|").split("|"))
-        rows[(layout, int(h))] = (int(called.replace(",", "")), int(unseen))
+        layout, x, h, called, unseen = (c.strip() for c in line.strip("|").split("|"))
+        rows[(layout, int(h))] = (int(x), int(called.replace(",", "")), int(unseen.replace(",", "")))
 
     def label(layout):
         if "errors" in layout:
             return "Errors " + ", ".join(f"{e:g}" for e in layout["errors"])
         return "Lengths " + ", ".join(f"{n:,}" for n in layout["lengths"])
 
-    counts = {3: [], 4: []}
-    for layout, ratios in PER_RECORD:
-        size = len(layout.get("errors") or layout["lengths"])
-        for h in ratios:
-            assert (label(layout), h) in rows, (label(layout), h)
-            counts[size].append(rows[(label(layout), h)])
     assert len(rows) == sum(len(r) for _, r in PER_RECORD)
-    said = " ".join(text[text.index("On every layout counted"):].split("\n\n")[0].split())
+    assert {"lengths": [100, 5000, 100]} in [layout for layout, _ in PER_RECORD]
+    # One row of the table recounted by the helper: 100, 5,000 and 100 at h = 54.
+    import tests._short_segment_drift_check as helper
+
+    saved = helper.PER_RECORD
+    try:
+        helper.PER_RECORD = ((dict(lengths=[100, 5000, 100]), (54,)),)
+        (counted,) = per_record()
+    finally:
+        helper.PER_RECORD = saved
+    assert rows[("Lengths 100, 5,000, 100", 54)] == (
+        counted["in_pooled_errors"], counted["called_at_own_figure"],
+        counted["unseen_though_said_seen"]), counted
+
+    summary = _sweep_summary()
+    assert (summary["seed"], summary["layouts_each"], summary["edges"], summary["ratios"]) == (
+        SWEEP_SEED, SWEEP_LAYOUTS, len(SWEEP_EDGES), list(SWEEP_RATIOS))
+    assert len(summary["rows"]) == (2 * SWEEP_LAYOUTS + len(SWEEP_EDGES)) * len(SWEEP_RATIOS)
+    trials = summary["trials"]
+    least = {n: summary[f"least_called_{n}"]["called_at_own_figure"] / trials for n in (3, 4)}
+    most = {n: summary[f"most_unseen_{n}"]["unseen_though_said_seen"] / trials for n in (3, 4)}
+    outer = summary["least_called_4_outer_precise"]["called_at_own_figure"] / trials
+    said = " ".join(text[text.index("Over a wider sweep"):].split("\n\n")[0].split())
     limits = " ".join(text[text.index("## Limits and records"):].split())
-    least = {n: min(c for c, _ in counts[n]) for n in (3, 4)}
-    most = {n: max(u for _, u in counts[n]) for n in (3, 4)}
-    assert (f"{least[3] / 100:.1f}% to 100% of runs at three segments (the least "
-            f"{least[3]:,} of 10,000") in said, said
-    assert f"{least[4] / 100:.1f}% to 100% at four (the least {least[4]:,}," in said, said
-    assert (f"at most {most[3] / 100:.1f}% of runs at three segments and "
-            f"{most[4] / 100:.1f}% at four") in said, said
-    assert (f"{least[3] / 100:.1f}% to 100% of runs at three segments and "
-            f"{least[4] / 100:.1f}% to 100% at four") in limits
+    assert (f"seed {SWEEP_SEED}, {SWEEP_LAYOUTS} random layouts of three segments and "
+            f"{SWEEP_LAYOUTS} of four") in said, said
+    assert f"{len(SWEEP_EDGES)} edge layouts" in said, said
+    called = (f"about {_about(least[3], True)} to 100% of runs at three segments and "
+              f"{_about(least[4], True)} to 100% at four")
+    unseen = (f"unseen though said seen in up to about {_about(most[3], False)} at three and "
+              f"{_about(most[4], False)} at four")
+    assert called in said and unseen in said, said
+    assert f"about {_about(outer, True)} or more" in said, said
+    assert called in limits and unseen in limits, limits
+    # The table's examples lie inside the range the sweep gives.
+    for (layout, _), (_, row_called, row_unseen) in rows.items():
+        count = 3 if layout.count(",") == 2 else 4
+        assert row_called / trials >= least[count] and row_unseen / trials <= most[count], layout
+    assert "91.6%" not in text and "72.8%" not in text
+
+
+def test_the_helper_reproduces_a_row_of_the_saved_sweep():
+    # The sweep takes about fifteen minutes, so its summary is saved; the
+    # helper recounts one layout of it here (100, 5,000 and 100, an edge
+    # layout), and every row the summary names as least or most is one of
+    # its rows.
+    from tests._short_segment_drift_check import SWEEP_LAYOUTS, sweep, sweep_layouts
+
+    summary = _sweep_summary()
+    layouts = sweep_layouts()
+    for row in summary["rows"]:
+        layout = layouts[row["layout"]]
+        assert all(row[k] == v for k, v in layout.items()), (row, layout)
+    number = layouts.index(dict(lengths=[100, 5000, 100]))
+    assert number == 2 * SWEEP_LAYOUTS
+    again = [{k: v for k, v in r.items() if k not in ("trials", "seed")}
+             for r in sweep(only=number)]
+    assert again == [r for r in summary["rows"] if r["layout"] == number], again
+    for key in ("least_called_3", "least_called_4", "most_unseen_3", "most_unseen_4",
+                "least_called_4_outer_precise"):
+        assert summary[key] in summary["rows"], key
 
 
 def test_the_docs_say_what_unequal_lengths_with_equal_errors_need():

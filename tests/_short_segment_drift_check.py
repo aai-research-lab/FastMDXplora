@@ -4,7 +4,10 @@ Run from an installed checkout:
     python tests/_short_segment_drift_check.py --output /tmp/p1.json
 To count another checkout, put its src directory first on PYTHONPATH. The
 seeds and cases are fixed here; the thresholds live in statistics.py. The
-trajectory cases take about ten minutes on one core.
+trajectory cases take about ten minutes on one core. ``--sweep`` counts the
+per-record sweep alone and writes its summary as
+tests/data/drift_short_per_record_sweep.json holds it (about fifteen minutes
+on one core).
 """
 
 from __future__ import annotations
@@ -156,6 +159,7 @@ PER_RECORD = (
     (dict(lengths=[4000, 500, 500]), (1, 4, 54)),
     (dict(lengths=[3000, 500, 3000]), (1, 4, 54)),
     (dict(lengths=[500, 4000, 500]), (1, 4, 54)),
+    (dict(lengths=[100, 5000, 100]), (1, 4, 54)),
     (dict(lengths=[500, 500, 500, 4000]), (1, 4, 54)),
     (dict(lengths=[1000, 1000, 1000, 5000]), (1, 4, 54)),
     (dict(errors=[1, 1, 1, 2]), (1, 4, 54)),
@@ -167,47 +171,152 @@ PER_RECORD = (
 )
 
 
-def per_record(trials: int = 10000, seed: int = 760007) -> list[dict]:
-    """What a record's own figure (``statistics._drift_unseen``, its
-    layout's 80% point from its errors and centres, scaled by each set's own
-    scatter) claims, counted the way a reader uses it: a steady drift as
-    large as the figure beside the mean, put into that set, is it called
-    (``called_at_own_figure``); and, for a fixed drift of 0.25 to 3 times
-    the layout's true 80% point (its X times the root of h), how often it
-    goes unseen while the figure says a drift that large would have been
-    seen (``unseen_though_said_seen``, the largest over those sizes). The
-    means' scatter h times what their errors say."""
-    from fastmdxplora.statistics import _drift_unseen, _line_scatter
+def per_record_row(sigma, centres, h: float, trials: int = 10000,
+                   seed: int = 760007) -> dict:
+    """What a record's own figure (``statistics._drift_unseen``: its layout's
+    80% point from its errors and centres, scaled by each set's own scatter
+    as the note says it) claims for one layout at one h, counted the way a
+    reader uses it: a steady drift as large as the figure beside the mean,
+    put into that set, is it called (``called_at_own_figure``); and, for a
+    fixed drift of 0.25 to 3 times the layout's true 80% point (its X times
+    the root of h), how often it goes unseen while the figure says a drift
+    that large would have been seen (``unseen_though_said_seen``, the
+    largest over those sizes). The means scatter h times what their errors
+    say. The rule in arrays (``statistics._drift_called``, the same verdict
+    as ``_drift_test``), each set's scatter and figure the package's own."""
+    from fastmdxplora.statistics import (_drift_called, _drift_figure, _drift_unseen,
+                                         _line_scatter, _scale_as_said)
 
+    sigma = np.asarray(sigma, dtype=float)
+    centres = np.asarray(centres, dtype=float)
+    precisions = 1.0 / sigma**2
+    pooled = 1.0 / np.sqrt(precisions.sum())
+    shape = (centres - centres[0]) / (centres[-1] - centres[0])
+    tested = dict(segments=sigma.size, tested=sigma.size, left_out="", called=False,
+                  pooled_error=pooled, errors=sigma.tolist(), centres=centres.tolist())
+    counted = _drift_unseen({**tested, "line_scatter": 1.0})["counted_in_pooled_errors"]
+    noise = np.random.default_rng(seed).normal(size=(trials, sigma.size)) * sigma * np.sqrt(h)
+    figures = np.array([_drift_figure(counted, _scale_as_said(_line_scatter(
+        row, precisions, centres)), pooled) for row in noise])
+    own = int(_drift_called(noise + figures[:, None] * shape, precisions, centres).sum())
+    worst = 0
+    for times in (0.25, 0.5, 1.0, 1.5, 2.0, 3.0):
+        drift = times * counted * np.sqrt(h) * pooled
+        missed = ~_drift_called(noise + drift * shape, precisions, centres)
+        worst = max(worst, int((missed & (figures <= drift)).sum()))
+    return dict(in_pooled_errors=int(counted), variance_ratio=h, trials=trials, seed=seed,
+                called_at_own_figure=own, unseen_though_said_seen=worst)
+
+
+def _layout(layout: dict) -> tuple:
+    """A layout's errors and centres in time: given as segment lengths (each
+    error one over the root of its length, the smallest 1), as errors of
+    equal pieces, or as both."""
+    lengths = np.asarray(layout.get("lengths") or [1] * len(layout["errors"]), dtype=float)
+    sigma = (np.asarray(layout["errors"], dtype=float) if "errors" in layout
+             else np.sqrt(lengths.min() / lengths))
+    return sigma, np.cumsum(lengths) - lengths / 2.0
+
+
+def per_record(trials: int = 10000, seed: int = 760007) -> list[dict]:
+    """:func:`per_record_row` for every layout and h in ``PER_RECORD``."""
     rows = []
     for layout, ratios in PER_RECORD:
-        lengths = np.asarray(layout.get("lengths") or [1] * len(layout["errors"]), dtype=float)
-        sigma = (np.asarray(layout["errors"], dtype=float) if "errors" in layout
-                 else np.sqrt(lengths.min() / lengths))
-        precisions = 1.0 / sigma**2
-        pooled = 1.0 / np.sqrt(precisions.sum())
-        centres = np.cumsum(lengths) - lengths / 2.0
-        shape = (centres - centres[0]) / (centres[-1] - centres[0])
-        tested = dict(segments=sigma.size, tested=sigma.size, left_out="", called=False,
-                      pooled_error=pooled, errors=sigma.tolist(), centres=centres.tolist())
-        counted = _drift_unseen({**tested, "line_scatter": 1.0})["counted_in_pooled_errors"]
+        sigma, centres = _layout(layout)
         for h in ratios:
-            noise = np.random.default_rng(seed).normal(size=(trials, sigma.size)) * sigma * np.sqrt(h)
-            figures = np.array([_drift_unseen({**tested, "line_scatter": _line_scatter(
-                row, precisions, centres)})["change"] for row in noise])
-            own = sum(_drift_test(row + figure * shape, precisions, centres)[2] is not None
-                      for row, figure in zip(noise, figures))
-            worst = 0
-            for times in (0.25, 0.5, 1.0, 1.5, 2.0, 3.0):
-                drift = times * counted * np.sqrt(h) * pooled
-                unseen_said_seen = sum(
-                    _drift_test(row + drift * shape, precisions, centres)[2] is None
-                    and figure <= drift for row, figure in zip(noise, figures))
-                worst = max(worst, unseen_said_seen)
-            rows.append(dict(**layout, in_pooled_errors=counted, variance_ratio=h,
-                             trials=trials, seed=seed, called_at_own_figure=int(own),
-                             unseen_though_said_seen=int(worst)))
+            rows.append(dict(**layout, **per_record_row(sigma, centres, h, trials, seed)))
     return rows
+
+
+#: The sweep of layouts per record: its seed, how many random layouts of
+#: three and of four segments, the variance ratios, and the edge layouts
+#: counted besides.
+SWEEP_SEED = 760013
+SWEEP_LAYOUTS = 150
+SWEEP_RATIOS = (1, 4, 54)
+SWEEP_EDGES = (
+    dict(lengths=[100, 5000, 100]), dict(lengths=[50, 10000, 50]),
+    dict(lengths=[50, 50, 10000]), dict(lengths=[10000, 50, 50]),
+    dict(errors=[1, 0.2, 1]), dict(errors=[1, 0.1, 1]), dict(errors=[1, 10, 1]),
+    dict(errors=[10, 1, 1]), dict(errors=[1, 1, 10]),
+    dict(lengths=[10000, 10000, 10000, 50]), dict(lengths=[50, 10000, 10000, 50]),
+    dict(lengths=[10000, 50, 50, 10000]), dict(lengths=[50, 50, 50, 10000]),
+    dict(errors=[1, 1, 1, 30]), dict(errors=[30, 1, 1, 1]), dict(errors=[1, 1, 1, 100]),
+    dict(errors=[1, 10, 10, 1]), dict(errors=[1, 0.1, 0.1, 1]),
+    dict(errors=[1, 1, 1]), dict(errors=[1, 1, 1, 1]),
+)
+
+
+def sweep_layouts(seed: int = SWEEP_SEED, size: int = SWEEP_LAYOUTS) -> list[dict]:
+    """``size`` random layouts of three segments and ``size`` of four, then
+    the edge layouts. A third each: lengths spread over a factor of 200 (50
+    to 10,000 frames, log-uniform; each error one over the root of its
+    length); equal pieces whose errors are spread over a factor of 100
+    (log-uniform); and both, the lengths so and each error besides
+    multiplied by 1 to 10 (a correlation time up to 100 times another's)."""
+    rng = np.random.default_rng(seed)
+    layouts = []
+    for count in (3, 4):
+        for index in range(size):
+            kind = index % 3
+            lengths = np.round(10 ** rng.uniform(np.log10(50), 4, count)).astype(int)
+            errors = 10 ** rng.uniform(0, 2, count)
+            factors = 10 ** rng.uniform(0, 1, count)
+            if kind == 0:
+                layouts.append(dict(lengths=lengths.tolist()))
+            elif kind == 1:
+                layouts.append(dict(errors=[float(f"{e / errors.min():.3g}") for e in errors]))
+            else:
+                sigma = factors / np.sqrt(lengths)
+                layouts.append(dict(lengths=lengths.tolist(),
+                                    errors=[float(f"{e / sigma.min():.3g}") for e in sigma]))
+    return layouts + [dict(layout) for layout in SWEEP_EDGES]
+
+
+def sweep(seed: int = SWEEP_SEED, size: int = SWEEP_LAYOUTS, trials: int = 10000,
+          only: "int | None" = None) -> list[dict]:
+    """:func:`per_record_row` over :func:`sweep_layouts` at each of
+    ``SWEEP_RATIOS``, each row numbered by its layout (``only`` counts that
+    one layout alone)."""
+    rows = []
+    for number, layout in enumerate(sweep_layouts(seed, size)):
+        if only is not None and number != only:
+            continue
+        sigma, centres = _layout(layout)
+        for h in SWEEP_RATIOS:
+            rows.append(dict(layout=number, **layout,
+                             **per_record_row(sigma, centres, h, trials)))
+    return rows
+
+
+def sweep_summary(rows: list[dict], seed: int = SWEEP_SEED, size: int = SWEEP_LAYOUTS) -> dict:
+    """The range the docs state from a sweep: at three and at four segments,
+    the least called at its own figure and the most unseen though said
+    seen, with the rows they are of, and every row."""
+    trials, records = rows[0]["trials"], rows[0]["seed"]
+    rows = [{k: v for k, v in r.items() if k not in ("trials", "seed")} for r in rows]
+    summary = dict(seed=seed, layouts_each=size, edges=len(SWEEP_EDGES),
+                   ratios=list(SWEEP_RATIOS), trials=trials, sets_seed=records, rows=rows)
+    for count in (3, 4):
+        mine = [r for r in rows if len(r.get("errors") or r["lengths"]) == count]
+        summary[f"rows_{count}"] = len(mine)
+        summary[f"least_called_{count}"] = min(mine, key=lambda r: r["called_at_own_figure"])
+        summary[f"most_unseen_{count}"] = max(mine, key=lambda r: r["unseen_though_said_seen"])
+    # Four segments whose first and last pieces are no less precise than the
+    # inner ones.
+    outer = [r for r in rows if len(r.get("errors") or r["lengths"]) == 4
+             and max(_layout(r)[0][[0, -1]]) <= min(_layout(r)[0][1:-1])]
+    summary["rows_4_outer_precise"] = len(outer)
+    summary["least_called_4_outer_precise"] = min(outer, key=lambda r: r["called_at_own_figure"])
+    return summary
+
+
+def sweep_written(summary: dict) -> str:
+    """The summary as ``tests/data/drift_short_per_record_sweep.json``
+    holds it: one row a line."""
+    head = {k: v for k, v in summary.items() if k != "rows"}
+    rows = ",\n".join("  " + json.dumps(r, separators=(", ", ": ")) for r in summary["rows"])
+    return json.dumps(head, indent=1)[:-2] + ',\n "rows": [\n' + rows + "\n ]\n}\n"
 
 
 def ar1(rng, n, phi, r):
@@ -369,11 +478,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cases", nargs="*", help="count only these trajectory cases")
+    parser.add_argument("--sweep", action="store_true",
+                        help="count the per-record sweep alone (about ten minutes) and write "
+                             "its summary")
     parser.add_argument("--by-index", action="store_true",
                         help="place each mean at its segment's index, not its centre in time")
     args = parser.parse_args()
     if args.by_index:
         by_index()
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.sweep:
+        args.output.write_text(sweep_written(sweep_summary(sweep())), encoding="utf-8")
+        raise SystemExit(0)
     counted = {**check(args.cases), "positions": "index" if args.by_index else "time"}
     args.output.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
