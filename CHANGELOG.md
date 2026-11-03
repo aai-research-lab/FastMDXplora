@@ -518,12 +518,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- Settings marks the words found in the settings its search shows.
+
 - The Agent's mode is shown by its name alone (Seeker, Ranger) under the
   composer, in the settings menu, on the Settings page and in the status bar;
   what it is and does ("built-in, assisted" and its note) is said under the
   choice, on the Settings page and on hover.
 
 ### Fixed
+
+- The study pages say what the records say: a trajectory under 1 ns is said
+  in ps on Files ("100 frames over 10 ps"), and Files' times follow the 24 or
+  12 hours Settings says; end-to-end distance is named so over time; a stopped
+  run is said at its stage's own step; "Coloured by RMSF" names the frames
+  RMSF used; the Viewer's States show the medoid the cluster analysis
+  recorded; the Viewer's XTC frames carry their times and a stopped run's
+  frames the interval it ran with; Information names the force field's files
+  beside the preset; a failed analysis's row keeps its reason; Analyze again
+  on a study never analysed leaves unticked, with why, the analyses its
+  Config leaves nothing for; at a phone's width a page opens at its top.
 
 - With the folder's defaults file refused, New study no longer says "Checks
   pass" beside an enabled Run: a start there is refused, so Run is not offered
