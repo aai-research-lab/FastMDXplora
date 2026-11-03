@@ -238,12 +238,11 @@
     var H = W < 480 ? 240 : 280, L = 64, R = 16, T = 12, B = 40;
     var xs = [], ys = [];
     drawn.forEach(function (d) { xs = xs.concat(d.series.x); ys = ys.concat(d.series.y); });
-    // Zoomed, or the page's time range on its clock (plot-tools.js), in the
-    // series' own units: what it shows. Only the Analysis page's own chart
-    // takes the tools; Compare's cards are drawn whole.
-    var tools = over ? null : window.FastMDXPlotTools;
+    // Analysis follows the page's time range; Compare's studies have their
+    // own clock, so their tools keep the view on this chart alone.
+    var tools = window.FastMDXPlotTools;
     var xLabel = drawn[0].series.x_label;
-    var shared = tools ? tools.range(xLabel) : null;
+    var shared = tools && !over ? tools.range(xLabel) : null;
     var view = shared ? [shared.from, shared.to] : (tools && chart._view) || null;
     chart.dataset.view = view ? (shared ? "range" : "zoomed") : "";
     // In picoseconds under a nanosecond, as every chart of a series says it.
@@ -343,7 +342,7 @@
       var clocked = xLabel !== "Frame";
       tools.attach(chart, {
         svg: svg, width: W, height: H, plot: { left: L, top: T, right: W - R, bottom: H - B },
-        zoom: "x", shared: xLabel, zoomed: !!view,
+        zoom: "x", shared: over ? null : xLabel, zoomed: !!view,
         full: { x: (function () {
           var all = [];
           drawn.forEach(function (d) { all = all.concat(d.series.x); });
@@ -366,7 +365,9 @@
             d.series.x.forEach(function (x, k) {
               var at = x * clock.factor;
               if (at < x0 - 1e-12 || at > x1 + 1e-12) return;
-              rows.push([d.r.run.run_id, x, d.series.y[k]]);
+              // Compare's two studies by the names its legend gives them.
+              rows.push([over ? d.r.run.label || d.r.run.run_id : d.r.run.run_id,
+                         x, d.series.y[k]]);
             });
           });
           return rows;
