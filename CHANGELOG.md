@@ -12,7 +12,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Joining segments whose trajectories were saved for a subset of atoms reads
   them with the saved `trajectory_topology.pdb`, not the whole system's.
 - Dashboard links to files whose names hold `%`, `#` or spaces open those
-  files; quick-action links, quoted already, are not quoted twice.
+  files.
 - The Report page shows no report that arrives after the study shown has
   changed, and asks for the report of the study now shown; a study opened
   elsewhere clears the last study's report at once.
@@ -62,6 +62,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   seconds for as long as it was open.
 - The Analysis page names protein-ligand interactions in its subtitle only
   where the study has a ligand's analyses.
+- Compare's empty state names the palette's shortcut as this computer
+  types it (Ctrl K off a Mac), not always ⌘K. Compare's charts zoom and
+  export on their own, apart from the Analysis page's time range; an
+  exported chart keeps its analysis's name, and its CSV names each study as
+  the legend does. The Overview's Report link shows only where there is
+  a report to open: a run's written report, or a study of runs with a run
+  finished or carried so far. Loading another folder puts the menu item
+  back as it was, opened or refused. The machine item in the status bar
+  opens Remote jobs, and says so, only when jobs are recorded; otherwise it
+  is marked as doing nothing (`aria-disabled`). The Analysis
+  page's empty quick-actions area and the payload that filled it are gone.
+  (Prince Otegbulu, #70, #76 to #80)
 
 ### Added
 
