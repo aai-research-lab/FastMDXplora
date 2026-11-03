@@ -297,8 +297,10 @@ line's residual variance over the means' mean error variance, the scatter the
 rule's own-scatter half judges the slope against (weighted alone, an
 imprecise middle mean carried little weight and the scatter read smaller than
 the rule's). The scale is the one the note says, to one decimal, and the
-error the one it says, to two figures, so the figure multiplies out from its
-basis; the scale is said, with how few means it was
+error is unrounded, so the figure does not depend on the quantity's units;
+the note says the error to two figures, or to three where two would not
+multiply out to the figure as said (more in the few notes where three would
+not either), so the figure multiplies out from its basis; the scale is said, with how few means it was
 estimated from, where it reads above 1.0, and where it does not it is not
 applied. Counted by the helper (`inflated` in its output, 10,000 sets a row,
 equal segments whose means scatter h times the variance their errors say):
@@ -410,7 +412,7 @@ whose first and last pieces are no less precise than the inner ones stays at
 A real run's temperature at three pieces of 20 ps (177.79, 185.45 and
 186.61 K over errors of 0.67, 0.68 and 0.60 K, at their centres in time)
 scatters 3.5 times its errors about the line; its layout gives 42 pooled
-errors, and its note says about 54 K (42 times 0.37 K, times 3.5, a scale
+errors, and its note says about 55 K (42 times 0.373 K, times 3.5, a scale
 estimated from only 3 means), where the errors alone said 16 K.
 
 ## Limits and records

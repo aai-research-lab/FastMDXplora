@@ -1178,20 +1178,41 @@ def _drift_unseen(tested: "dict[str, Any]") -> "dict[str, Any] | None":
 
 
 def _drift_figure(counted: float, scale: float, error: float) -> float:
-    """The drift that could go unseen, worked out from its basis as the note
-    says it: the count, times the scale as said, times the pooled error to
-    two figures, so the three said multiply out to it. "about 55 K" was
-    said beside "42 times ... 0.37 K, times 3.5" (54.4 K), the error being
-    0.374 K."""
-    return float(counted * scale * float(_two_figures(error).replace(",", "")))
+    """The drift that could go unseen: the count, times the scale as said,
+    times the pooled error unrounded, so the figure does not depend on the
+    quantity's units (the error to two figures moved it by up to 5%, as
+    1.0499 or 1.0501 read 1.0 or 1.1). The note says the error to as many
+    figures as multiply out to the figure as said (:func:`_error_as_said`)."""
+    return float(counted * scale * error)
+
+
+def _error_as_said(counted: float, scale: float, error: float) -> str:
+    """The pooled error as the note says it: to two figures, or to three
+    where two would not multiply out to the figure as said, so the count
+    times the error said, times the scale, gives the figure to its two
+    figures ("42 times ... 0.373 K, times 3.5" beside "about 55 K", where
+    0.37 K gives 54); more in the few notes where three would not either
+    (about 2 in 100 over errors spread on a log scale), as many as do."""
+    figure = _two_figures(_drift_figure(counted, scale, error))
+    for figures in range(2, 18):
+        said = _figures(error, figures)
+        if _two_figures(counted * scale * float(said.replace(",", ""))) == figure:
+            return said
+    return _figures(error, 17)
+
+
+def _figures(value: float, figures: int) -> str:
+    """A positive value to ``figures`` significant figures, grouped, never
+    as an exponent."""
+    rounded = float(f"{value:.{figures}g}")
+    places = max(0, figures - 1 - math.floor(math.log10(abs(rounded))))
+    return f"{rounded:,.{places}f}"
 
 
 def _two_figures(value: float) -> str:
     """A positive value to two significant figures, grouped, never as an
     exponent: an "about" needs no more."""
-    rounded = float(f"{value:.2g}")
-    places = max(0, 1 - math.floor(math.log10(abs(rounded))))
-    return f"{rounded:,.{places}f}"
+    return _figures(value, 2)
 
 
 def _signed(value: float, unit: "str | None" = None) -> str:
@@ -1247,16 +1268,17 @@ def drift_unseen_said(record: Any, unit: "str | None" = None) -> str:
     units = f" {unit}" if unit else ""
     which = (f"With {count} segments" if count == total
              else f"With {count} of its {total} segments tested{out}")
-    # The figure is the count times the scale as said times the error as
-    # said, so it multiplies out from its basis: a scale of 1.04 left
-    # unsaid gave 0.43 nm beside "41 times ... 0.010 nm".
+    # The figure is the count times the scale as said times the error, the
+    # error said to as many figures as multiply out to it: a scale of 1.04
+    # left unsaid gave 0.43 nm beside "41 times ... 0.010 nm".
     # The scale read back from the count it multiplied (``in_pooled_errors``),
-    # not from the figure, which the error to two figures moves by up to 5%.
+    # not from the figure, which a record saved with the error to two
+    # figures holds moved by up to 5%.
     times = _number(unseen.get("in_pooled_errors"))
     scale = _scale_as_said(((times if times is not None else change / error) / counted) ** 2)
     change = _drift_figure(counted, scale, error)
     basis = (f"{counted:g} times the error of their pooled mean, "
-             f"{_two_figures(error)}{units}")
+             f"{_error_as_said(counted, scale, error)}{units}")
     # Said only where it reads above 1.0: "times 1.0" was said.
     if scale > 1.0:
         basis += (f", times {scale:.1f} for their scatter about a straight line "

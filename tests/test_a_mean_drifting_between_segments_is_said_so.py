@@ -224,8 +224,8 @@ def _unseen_said(values, joins, pieces):
     """The note's sentence for a run of segments all tested, its amount the
     X counted for their own errors and centres times the error of the
     segments' inverse-variance pooled mean, times their scatter about the
-    line as the note says it, where that reads above 1.0; the error as said,
-    to two figures."""
+    line as the note says it, where that reads above 1.0; the error
+    unrounded, said to two figures or to as many more as multiply out."""
     from fastmdxplora import statistics
     from fastmdxplora.statistics import summarise
 
@@ -249,14 +249,20 @@ def _unseen_said(values, joins, pieces):
     counted = layout(list(1 / np.sqrt(w)), list(x))
     scale = float(f"{np.sqrt(ratio):.1f}") if ratio > 1 else 1.0
 
+    def figures(v, n):
+        r = float(f"{v:.{n}g}")
+        return f"{r:,.{max(0, n - 1 - int(np.floor(np.log10(r))))}f}"
+
     def two(v):
-        r = float(f"{v:.2g}")
-        return f"{r:,.{max(0, 1 - int(np.floor(np.log10(r))))}f}"
+        return figures(v, 2)
 
-    # From the error as said, so the figure multiplies out from its basis.
-    amount = counted * float(two(error).replace(",", "")) * scale
+    # From the error unrounded, the error said to as many figures as
+    # multiply out to the figure as said.
+    amount = counted * error * scale
+    error_said = next(figures(error, n) for n in range(2, 18) if two(
+        counted * scale * float(figures(error, n).replace(",", ""))) == two(amount))
 
-    basis = f"{counted} times the error of their pooled mean, {two(error)} kJ/mol"
+    basis = f"{counted} times the error of their pooled mean, {error_said} kJ/mol"
     if scale > 1.0:
         basis += (f", times {scale:.1f} for their scatter about a straight line "
                   f"beyond that error, a scale estimated from only {pieces} means")
@@ -464,15 +470,15 @@ def test_the_figure_is_scaled_where_the_means_scatter_beyond_their_errors() -> N
     # 186.61 K over errors of 0.6 to 0.7 K: their scatter about the line is
     # 3.4 times their errors (Q 11.9 on 1 degree of freedom), and there the
     # rule is decided by that scatter. Said "15 K" from errors that do not
-    # hold; the rule calls four in five drifts only of about 54 K, and the
+    # hold; the rule calls four in five drifts only of about 55 K, and the
     # scale rests on 3 means. Its own errors and centres in time give 42
     # pooled errors.
     values, joins = _real("drifting_3_pieces_temperature_K")
     record = _saved(mean_record(values, joins=joins))
     said = _unseen_of(record, "K")
-    assert said == ("With 3 segments, a steady drift smaller than about 54 K from the first "
+    assert said == ("With 3 segments, a steady drift smaller than about 55 K from the first "
                     "segment's mean to the last's could go unseen (42 times the error of their "
-                    "pooled mean, 0.37 K, times 3.5 for their scatter about a straight line "
+                    "pooled mean, 0.373 K, times 3.5 for their scatter about a straight line "
                     "beyond that error, a scale estimated from only 3 means)"), said
 
 
@@ -661,7 +667,7 @@ def test_the_figure_multiplies_out_from_the_basis_it_gives() -> None:
 
 def test_the_figure_is_worked_out_from_the_error_as_said() -> None:
     # "about 55 K (42 times ... 0.37 K, times 3.5)": 42 x 0.37 x 3.5 is 54.4,
-    # the error being 0.374 K. Over errors spread on a log scale, the
+    # the error being 0.373 K. Over errors spread on a log scale, the
     # figure is the product of the basis as said, in every note.
     import re
 
@@ -676,6 +682,55 @@ def test_the_figure_is_worked_out_from_the_error_as_said() -> None:
             figure, basis = re.search(r"about ([\d,.]+) K .*pooled mean, ([\d,.]+) K", said).groups()
             expected = 42 * scale * float(basis.replace(",", ""))
             assert figure == _two_figures(expected), (error, said)
+
+
+def test_the_figure_is_the_unrounded_error_s_and_the_error_is_said_as_it_multiplies_out() -> None:
+    # The figure was the count times the scale times the error to two
+    # figures, so it moved by up to 5% with the quantity's units: an error
+    # of 1.0499 (said 1.0) gave a figure 4.8% below its layout's 80% point.
+    # Now the figure is the unrounded error's, the same in any units, and the
+    # error is said to two figures, or to three (more, rarely) where two
+    # would not multiply out to it.
+    import re
+
+    from fastmdxplora.statistics import _two_figures, drift_unseen_said
+
+    def _figures(value, n):
+        rounded = float(f"{value:.{n}g}")
+        return f"{rounded:,.{max(0, n - 1 - int(np.floor(np.log10(rounded))))}f}"
+
+    def said(counted, scale, error, unit):
+        record = _a_record(counted * scale * error, error, [1, 1, 1], scale ** 2)
+        record["drift_unseen"]["counted_in_pooled_errors"] = counted
+        text = drift_unseen_said(record, unit)
+        return re.search(rf"about ([\d,.]+) {unit} .*pooled mean, ([\d,.]+) {unit}",
+                         text).groups()
+
+    assert said(42, 3.5, 0.374, "K") == ("55", "0.374")
+    assert said(41, 1.0, 1.0499, "nm") == ("43", "1.05")
+    assert said(41, 1.0, 0.010499, "nm") == ("0.43", "0.0105")
+    longer = 0
+    for counted in (16, 41, 42, 69, 135):
+        for scale in (1.0, 1.1, 2.3, 3.5):
+            # Off round values, so no product sits on a rounding tie.
+            for error in np.geomspace(0.001, 1000.0, 211) * 1.0137:
+                figure, basis = said(counted, scale, float(error), "K")
+                assert figure == _two_figures(counted * scale * error), (counted, error)
+                value = float(basis.replace(",", ""))
+                assert _two_figures(counted * scale * value) == figure, (counted, error)
+                two = _figures(error, 2)
+                if _two_figures(counted * scale * float(two.replace(",", ""))) == figure:
+                    assert basis == two, (counted, scale, error, basis)
+                else:
+                    longer += 1
+                    assert basis in [_figures(error, n) for n in range(3, 18)], (
+                        counted, scale, error, basis)
+                # The same record in units a thousand times smaller says the
+                # same digits.
+                small, _ = said(counted, scale, float(error) / 1000.0, "K")
+                assert float(small.replace(",", "")) * 1000.0 == pytest.approx(
+                    float(figure.replace(",", ""))), (counted, error)
+    assert longer, "no error needed more than two figures"
 
 
 @pytest.mark.parametrize("lengths, counted", [([1, 1, 1], 41), ([1, 1, 1, 1], 16),
