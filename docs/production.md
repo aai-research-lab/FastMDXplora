@@ -312,7 +312,13 @@ production, since an extension that did not finish may have run part of the
 way. A study whose process was killed while it extended its runs, its record
 left "running", is said interrupted. `fastmdx resume` first extends the runs
 short of the round's length to it, never past the ceiling, then judges them
-again; a resume whose round fails again is not done (exit 1).
+again; a resume whose round fails again is not done (exit 1). A study of one
+run cut mid round has its extension carried on to the round's length, then
+is judged. While a resume runs, the study reads running. Where a run's last
+piece stopped with an answer of its own (a checkpoint refused inside it), the
+resume gives that answer again and the round is still said failed, and the
+sentence says so, with the piece to move out before resuming. Where the
+ceiling was lowered below the longest run, the runs are not judged together.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.

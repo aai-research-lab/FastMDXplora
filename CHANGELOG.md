@@ -552,6 +552,35 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   only the plan, so each extension built the comparison across its runs from
   none ("Comparison report needs ≥2 successful runs (found 0)"): the runs
   that finished are written before the rounds.
+- A study of one run whose process was killed mid round was carried on by
+  `fastmdx resume` without its rule: its extension was finished, its record
+  left "running", and it then read completed. The resume now carries the
+  run's extension on to the round's length and judges it there, as the
+  round's sentence says, and holds the study's process record while it runs,
+  so the study reads running (All studies, the sidebar and the Agent said it
+  was interrupted, and to resume it), and a resume killed in turn reads
+  interrupted. A run not carried on leaves the round said failed, never
+  "running". Its status page says the round's sentence, not "The run ended
+  without recording why."
+- After an extension that failed with an answer of its own (its checkpoint
+  refused inside the piece), `fastmdx resume` gave that answer again, wrote
+  "Not applied" over the round's failure and printed "Batch complete", while
+  the round's sentence said it would extend the run. The sentence is now
+  read from what the resume does: it does not carry the round on, and names
+  the piece to move out first. The round is still said failed after it, and a
+  study with a run in error is not said "Batch complete".
+- A worker killed while the runs were extended side by side was blamed on
+  the first run, since every run of a broken pool gets the error: no run is
+  named now, and a run that reached the round's length is said extended, by
+  its production. A stop asked while an extension was past its production
+  (its analyses or report) was said failed, exit 1: it is said stopped, exit
+  130, and `fastmdx resume` of a round stopped when asked exits 130 and says
+  its sentence once.
+- A ceiling lowered below the longest run before a resume: the shorter runs
+  were brought up and judged beside it, past the ceiling. The runs are not
+  judged together now, and the round and the sentence say so, with the
+  ceiling that would judge them. The GUI shows the `fastmdx resume` command
+  as plain text, without its code marks.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
