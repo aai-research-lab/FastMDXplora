@@ -24,6 +24,8 @@
   var MACHINE_EVERY_MS = 60000;
   var JOBS_EVERY_MS = 30000;
   var app = null;
+  var machineInfo = null;
+  var hasRecordedJobs = false;
 
   function byId(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -78,7 +80,7 @@
       lines.push(m.gpus_read ? "No NVIDIA GPU read here." : "No nvidia-smi here, so no GPU read.");
     }
     if (m.platform) lines.push("A study here runs on OpenMM's " + m.platform + " platform.");
-    lines.push("Open Remote jobs and the machines");
+    if (hasRecordedJobs) lines.push("Open Remote jobs");
     return lines.join("\n");
   }
 
@@ -86,14 +88,17 @@
     getJSON("/api/status-bar").then(function (data) {
       var machine = byId("sb-machine");
       if (!data || !data.ok) {
+        machineInfo = null;
         if (machine) machine.hidden = true;
         return;
       }
       if (machine && data.machine) {
+        machineInfo = data.machine;
         setItem(machine, "machine", machineSaid(data.machine), machineTitle(data.machine));
         machine.hidden = false;
       }
     }).catch(function () {
+      machineInfo = null;
       var machine = byId("sb-machine");
       if (machine) machine.hidden = true;
     });
@@ -123,9 +128,11 @@
 
   function loadJobs() {
     getJSON("/api/remote/machines").then(function (data) {
+      var allJobs = data && data.ok ? (data.jobs || []) : [];
+      jobsRecorded(allJobs.length > 0);
       var host = byId("sb-remote");
       if (!host) return;
-      var jobs = data && data.ok ? (data.jobs || []).filter(function (j) { return GOING[j.state]; }) : [];
+      var jobs = allJobs.filter(function (j) { return GOING[j.state]; });
       var key = JSON.stringify(jobs.map(function (j) { return [j.name, j.machine, j.state, j.detail]; }));
       if (host.dataset.key === key) return;
       host.dataset.key = key;
@@ -140,7 +147,25 @@
         item.addEventListener("click", openRemote);
         host.appendChild(item);
       });
-    }).catch(function () { /* no remote routes here: no jobs said */ });
+    }).catch(function () { jobsRecorded(false); /* no remote routes here: no jobs said */ });
+  }
+
+  /* The machine item opens Remote jobs only where jobs are recorded, and
+     says it does nothing otherwise. */
+  function jobsRecorded(recorded) {
+    hasRecordedJobs = recorded;
+    var machine = byId("sb-machine");
+    if (!machine) return;
+    machine.setAttribute("aria-disabled", String(!recorded));
+    if (machineInfo) {
+      setItem(machine, "machine", machineSaid(machineInfo), machineTitle(machineInfo));
+    }
+  }
+
+  /* A job's own item always opens Remote jobs; the machine item only where
+     jobs are recorded. */
+  function openRemoteFromMachine() {
+    if (hasRecordedJobs) openRemote();
   }
 
   function openRemote() {
@@ -240,7 +265,10 @@
     var remote = byId("sb-remote");
     bar.insertBefore(elsewhere, remote);
     var machine = byId("sb-machine");
-    if (machine) machine.addEventListener("click", openRemote);
+    if (machine) {
+      machine.setAttribute("aria-disabled", "true");
+      machine.addEventListener("click", openRemoteFromMachine);
+    }
     var agent = byId("sb-agent");
     if (agent) {
       agent.addEventListener("click", function () {
