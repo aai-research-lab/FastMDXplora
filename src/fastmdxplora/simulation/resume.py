@@ -1153,11 +1153,11 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
         # Its answer is in the study's Manifest; the analysis stays owed.
         # Said in the phase it ended in (the report's, or the analyses'),
         # and as a stop where it was asked to stop, as a piece's is.
-        ended = [phase for result in failed for phase in result.phases
-                 if phase.status == "error"]
+        ended = [phase for result in failed for phase in getattr(result, "phases", None) or ()
+                 if getattr(phase, "status", None) == "error"]
         return {"ok": False, "stage": ended[0].name if ended else "analysis",
-                "stopped": any((phase.refusal or {}).get("code") == STOPPED_CODE
-                               for phase in ended),
+                "stopped": any((getattr(phase, "refusal", None) or {}).get("code")
+                               == STOPPED_CODE for phase in ended),
                 "segment": segment_text, "joined": record,
                 "error": failed[0].message or "The analyses of the joined trajectory "
                                               "did not finish."}
@@ -2309,6 +2309,13 @@ def _resume_study(study: str | Path, *,
     owed = None if root in _JUDGED_AGAIN_HERE else round_ended(root, resuming=True)
     if owed is None:
         return _carry_the_run_on(root, base, device_index=device_index)
+    from fastmdxplora.simulation.stopping import runs_kept_below_the_ceiling
+
+    if runs_kept_below_the_ceiling(root):
+        # A ceiling lowered below the length its cut extension runs to:
+        # nothing is run, as the round's sentence says.
+        return {**base, "ok": False, "did": RESUMED_NOTHING, "error": owed.as_text(),
+                "round_ended": owed.as_record()}
     from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
 
     # Read before the hold: a process record newer than its Manifest says
@@ -2392,7 +2399,8 @@ def how_a_resume_finds(root: str | Path) -> dict[str, Any] | None:
     stopped with an answer of its own, given again), ``own`` (the answer
     the run itself stopped with, in its analyses or report, given again),
     ``carried_on_first`` (an extension cut or its pieces' analyses owed,
-    carried on before the round is judged) and ``analyses_owed``. None
+    carried on before the round is judged), ``analyses_owed`` and
+    ``unjoined`` (a piece the join has not taken in). None
     where it is not read."""
     import yaml
 
@@ -2406,7 +2414,9 @@ def how_a_resume_finds(root: str | Path) -> dict[str, Any] | None:
             "own": stopped if piece is None else None,
             "carried_on_first": (_carried_on_first(standing) and stopped is None
                                  and piece is None),
-            "analyses_owed": analysis_owed(root)}
+            "analyses_owed": analysis_owed(root),
+            # A piece the join has not taken in (one stopped at its last step).
+            "unjoined": _extended_since_it_finished(root)}
 
 
 def _carry_the_run_on(root: Path, base: dict[str, Any], *,

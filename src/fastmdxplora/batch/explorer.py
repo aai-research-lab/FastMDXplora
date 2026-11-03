@@ -209,6 +209,10 @@ _running_a_run = False
 #: phase was running to carry the refusal.
 STOPPED_ERROR_TYPE = "Stopped"
 
+#: What a run of a study being resumed is recorded as where its resume
+#: refused it (`_resume_run`).
+RESUME_REFUSED = "ResumeRefused"
+
 
 def _listen_for_a_stop_in_this_worker() -> None:
     """Have a stop end this worker's run with a record, not end the worker.
@@ -303,6 +307,10 @@ def _was_stopped(result: Any) -> bool:
         return False
     if getattr(result, "error_type", None) == STOPPED_ERROR_TYPE:
         return True
+    if getattr(result, "error_type", None) == RESUME_REFUSED:
+        # A resume that refused ran nothing: the stop its run's records hold
+        # is the one it came back from, not one asked of this resume.
+        return False
     return any((getattr(phase, "refusal", None) or {}).get("code") == STOPPED_CODE
                for phase in getattr(result, "phases", None) or ())
 
@@ -618,9 +626,10 @@ def _check_selections_against(prepared: Path, spec: dict[str, Any]) -> None:
         return
 
 
-def _what_would_fix_it(study: Any) -> list[str]:
+def _what_would_fix_it(study: Any, *, leave_out: Any = ()) -> list[str]:
     """What would fix each thing that stopped the study, and its price, as
-    the console says it. Nothing where nothing stopped it."""
+    the console says it. Nothing where nothing stopped it. ``leave_out``:
+    runs, by name, whose remedies are not said."""
     try:
         from fastmdxplora.remedies import remedies_of
 
@@ -628,6 +637,9 @@ def _what_would_fix_it(study: Any) -> list[str]:
     except Exception:  # noqa: BLE001 - advice, never the study's outcome
         logger.debug("What would fix the study could not be read", exc_info=True)
         return []
+    left = set(leave_out or ())
+    found = [remedy for remedy in found or []
+             if not (remedy.where in left or (remedy.covers and set(remedy.covers) <= left))]
     if not found:
         return []
     lines = ["What would fix it:"]
@@ -712,7 +724,7 @@ def _resume_run(spec_dict: dict[str, Any], run_out: str,
         message=(answer.get("detail") or f"resumed: {answer.get('did')}") if ok
         else str(answer.get("error") or "it could not be resumed"),
         error_type=None if ok else (STOPPED_ERROR_TYPE if answer.get("stopped")
-                                    else "ResumeRefused"),
+                                    else RESUME_REFUSED),
     )
 
 
@@ -1619,6 +1631,9 @@ class BatchExplorer:
         stopping = self._stopping_rule()
         if stopping is not None:
             self._write_planned_stopping(stopping)
+        self._past = self._past_the_ceiling_now(stopping)
+        # Read before the plan is written over the study's record of its runs.
+        self._as_they_were = self._results_as_they_were() if self._past else []
 
         # The study's process, at its top: each run records its own (a
         # worker's, in parallel), which says nothing between two runs,
@@ -1682,15 +1697,12 @@ class BatchExplorer:
             )
             print(f"\nFastMDXplora: exploring {n} systems ({self.mode})\n{'=' * 40}")
 
-        self._past = self._past_the_ceiling_now(stopping)
         if self._past:
-            # A ceiling lowered below a run since its round: no run is carried
-            # on (a cut piece went on to its own length, past the ceiling),
-            # and the rule says why (`run_until_known`), as `round_ended` did.
-            self.results = [_skipped_run_result(
-                spec, self._run_output_dir(spec),
-                "Not carried on: a run is past the ceiling the study now sets.")
-                for spec in self.run_specs]
+            # A ceiling lowered since its round below a run, or below the
+            # length a cut extension would carry a run to: no run is carried
+            # on, each said as it stands, and the round as it ended
+            # (`round_ended`, which says why), never a round judged.
+            self.results = self._as_they_were
         elif self.mode == "parallel" and not self.is_single:
             self.results = self._run_parallel(include, exclude)
         else:
@@ -1705,6 +1717,8 @@ class BatchExplorer:
                 # rounds are judged again, so not read here.
                 self._write_batch_manifest(round_said=False)
             self._run_until_known(stopping)
+            if not self.is_single:
+                self._the_runs_as_their_records_say()
 
         # One run of a study of several analysed again: the study's
         # comparison of its runs read this run's analyses before.
@@ -1781,16 +1795,65 @@ class BatchExplorer:
             return []
 
     def _past_the_ceiling_now(self, stopping: Any) -> list[str]:
-        """The runs of a resumed study past the ceiling its config now sets,
-        where its runs are not at one length (`stopping._past_the_ceiling`)."""
+        """The runs of a resumed study that keep it from running anything, by
+        the ceiling its config now sets (`stopping.runs_kept_below_the_ceiling`)."""
         if not self.resume or stopping is None or self.is_single or not self._earlier_rounds():
             return []
-        from fastmdxplora.simulation.stopping import _past_the_ceiling, _production_of_each
+        from fastmdxplora.simulation.stopping import runs_kept_below_the_ceiling
 
-        stop_when = (self._raw.get("simulation") or {}).get("stop_when") or {}
-        names = self._the_rule_s_runs()
-        return _past_the_ceiling(_production_of_each(self.output_dir, names),
-                                 stop_when.get("max_duration_ns"))
+        return runs_kept_below_the_ceiling(self.output_dir)
+
+    def _results_as_they_were(self) -> list[Any]:
+        """Each run's result as the study's record last gave it, its phases
+        as its own Manifest has them: a run nothing ran is said as it stands,
+        never skipped."""
+        from fastmdxplora.orchestrator import RunResult, _phases_recorded_in
+
+        try:
+            before = json.loads((self.output_dir / "batch_manifest.json").read_text(
+                encoding="utf-8")).get("runs") or []
+        except (OSError, ValueError, AttributeError):
+            before = []
+        given = {str(run.get("run_id")): run for run in before if isinstance(run, dict)}
+        results = []
+        for spec in self.run_specs:
+            folder = self._run_output_dir(spec)
+            run = given.get(spec.run_id) or {}
+            results.append(RunResult(
+                run_id=spec.run_id, system=spec.system,
+                status=str(run.get("status") or "skipped"), output_dir=folder,
+                sweep_values=spec.sweep_values, phases=_phases_recorded_in(Path(folder)),
+                message=str(run.get("message") or ""), error_type=run.get("error_type")))
+        return results
+
+    def _the_runs_as_their_records_say(self) -> None:
+        """A run its study's rounds extended that its own record says ended
+        with an answer (its analyses failed: `resume._finished_record`, the
+        reading a resume refuses it by) counted in error, not ok from its
+        first piece: the summary, the manifest and the pages count it so
+        before a resume as after one."""
+        import yaml
+
+        from fastmdxplora.simulation.resume import _finished_record
+
+        for index, result in enumerate(self.results):
+            if result.status != "ok" or result.output_dir is None:
+                continue
+            folder = Path(result.output_dir)
+            try:
+                config = yaml.safe_load((folder / "resolved_config.yml").read_text(
+                    encoding="utf-8")) or {}
+                _finished, answer = _finished_record(folder, config)
+            except (OSError, ValueError, yaml.YAMLError):
+                continue
+            if answer:
+                from dataclasses import replace
+
+                from fastmdxplora.orchestrator import _phases_recorded_in
+
+                self.results[index] = replace(result, status="error", message=answer,
+                                              phases=_phases_recorded_in(folder),
+                                              error_type="StudyError")
 
     def _run_until_known(self, targets: list) -> None:
         """Extend the runs until what the study asked for is determined, then
@@ -1821,10 +1884,8 @@ class BatchExplorer:
             print(said)
 
         if getattr(self, "_past", None):
-            # Said, and no run extended (`run_until_known`).
-            run_until_known([self.output_dir / "runs" / name for name in self._the_rule_s_runs()],
-                            targets, stop_when, record_in=self.output_dir,
-                            earlier_rounds=self._earlier_rounds())
+            # No run carried on, nor any round judged: said by the summary's
+            # last lines (`round_ended`).
             return
         if any(_was_stopped(result) for result in self.results):
             ended("stopped", STOPPED_BEFORE_THE_RULE)
@@ -3222,7 +3283,9 @@ class BatchExplorer:
         failed, as its report and pages say it."""
         from fastmdxplora.simulation.stopping import round_ended
 
-        return round_ended(self.output_dir)
+        # A resume reads its own record "running" (a cut round not carried
+        # on) as cut: the process it names is this one.
+        return round_ended(self.output_dir, resuming=bool(getattr(self, "resume", False)))
 
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:
@@ -3252,7 +3315,10 @@ class BatchExplorer:
             f"{headline}: {ok} ok, "
             f"{err} error(s){cut}, {skipped} skipped, {len(self.results)} total"
         )
-        fixes = _what_would_fix_it(self.output_dir)
+        # The round's own runs are fixed as its sentence, last, says: their
+        # own remedies ("suggests nothing", a cost in production) said other.
+        fixes = _what_would_fix_it(self.output_dir,
+                                   leave_out=self._the_rule_s_runs() if ended else ())
         if fixes:
             print("\n".join(fixes))
         elif stopped:

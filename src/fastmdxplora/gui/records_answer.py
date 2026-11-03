@@ -38,6 +38,12 @@ TRAPPED = ("A single run's error is estimated from the run itself, so it cannot 
            "extends them until their means agree.")
 
 
+#: Said first of a run whose joined pieces' analyses are owed.
+OWED_SAID = ("Its pieces were joined and their analyses and report have not run, so "
+             "the means and lengths below are of its pieces before the join, not of its "
+             "whole production; `fastmdx resume` runs them.")
+
+
 def answer_from_the_records(root: str | Path | None, question: str) -> str | None:
     """The answer to one of :data:`QUESTIONS` about the study at ``root``, in
     Markdown, or None where there is no study there or no such question."""
@@ -50,8 +56,13 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
         return _several_runs(base)
     said = {"found": _found, "long_enough": _long_enough,
             "strengthen": _strengthen}[question](base)
+    from fastmdxplora.simulation.resume import analysis_owed
     from fastmdxplora.simulation.stopping import round_ended
 
+    if analysis_owed(base):
+        # Its pieces joined and their analyses not run: what its records give
+        # is of the pieces before the join, never the whole run's.
+        said = (f"{OWED_SAID}\n\n{said}")
     ended = round_ended(base)
     if ended is not None:
         # A run that completed whose rule's round did not: said first, as

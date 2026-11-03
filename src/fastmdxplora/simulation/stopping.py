@@ -645,8 +645,9 @@ def _the_round_stopped(record: dict[str, Any], entry: dict[str, Any], run: str,
     record["outcome"] = "stopped"
     if asked:
         record["said"] = (f"Stopped when asked, while extending {run}. "
-                          "Resuming the study judges the runs again and carries "
-                          "on from there.")
+                          "Resuming the study judges "
+                          + ("the run" if run == "the run" else "the runs")
+                          + " again and carries on from there.")
     elif answer.get("lost"):
         record["said"] = ("Stopped: a worker extending the runs ended abruptly "
                           f"({answer.get('error') or 'no reason recorded'}), and which "
@@ -687,6 +688,44 @@ def _past_the_ceiling(productions: dict[str, float | None],
             or not isinstance(ceiling_ns, (int, float)) or isinstance(ceiling_ns, bool)):
         return []
     return [name for name, ns in known.items() if ns > float(ceiling_ns) + _ONE_LENGTH_NS]
+
+
+def _held_below_the_ceiling(names: list[str], productions: dict[str, float | None],
+                            found: dict[str, dict[str, Any] | None], length: float | None,
+                            ceiling: float | None) -> tuple[list[str], list[str]]:
+    """What a ceiling lowered since the round keeps a resume from running:
+    the runs past it where the runs are not at one length
+    (`_past_the_ceiling`), and the runs whose cut extension a resume would
+    carry on to the round's length, past it (`resume.how_a_resume_finds`).
+    A resume then carries no run on, and `round_ended` says so."""
+    over = _past_the_ceiling(productions, ceiling)
+    would = [name for name in names
+             if ceiling is not None and length is not None
+             and length > float(ceiling) + _ONE_LENGTH_NS
+             and (found.get(name) or {}).get("carried_on_first")
+             and productions.get(name) is not None
+             and productions[name] < length - _ONE_LENGTH_NS]
+    return over, would
+
+
+def runs_kept_below_the_ceiling(study: str | Path) -> list[str]:
+    """The runs that keep a resume of the study from running anything, by
+    the ceiling its config now sets (`_held_below_the_ceiling`), as
+    `round_ended` reads them; read by `BatchExplorer` and `_resume_study`."""
+    study = Path(study)
+    try:
+        record = json.loads((study / RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    names = [str(name) for name in record.get("runs") or []]
+    if not rounds or not names:
+        return []
+    productions = _production_of_each(study, names)
+    over, would = _held_below_the_ceiling(names, productions, _what_resume_finds(study, names),
+                                          round_length(rounds),
+                                          _ceiling_a_resume_uses(study, record))
+    return over + [name for name in would if name not in over]
 
 
 def _past_the_ceiling_said(past: list[str], ceiling_ns: float) -> str:
@@ -773,13 +812,9 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         # A ceiling lowered since the round: those runs are not brought
         # down, and the others brought up to them would pass it, so the
         # runs are not judged together. Said, with what would judge them.
-        entry = {"production_ns": round(min(production_of(run) for run in runs), 9),
-                 "verdicts": [], "decision": "ceiling", "past_the_ceiling": list(past)}
-        record["rounds"].append(entry)
-        record["outcome"] = "ceiling"
-        record["said"] = entry["said"] = _past_the_ceiling_said(past, ceiling)
-        write()
-        say(record["said"])
+        # No round is recorded: none was judged, and the round before is
+        # said as it ended (`round_ended`) until the ceiling is raised.
+        say(_past_the_ceiling_said(past, ceiling))
         return record
 
     if record["rounds"]:
@@ -1071,9 +1106,13 @@ def _its_process_is_gone(study: Path) -> bool:
     """Whether the process that ran the study's rounds has ended, by the
     record it keeps while it runs: no process has its number here. Never
     where that record was written on another machine (not asked here),
-    names this process or one above it (the study judging its own rounds),
-    or is not there; nor where a process other than its run has its number
-    now, which the card says as not finished when written."""
+    names this process or one above it (the study judging its own rounds);
+    nor where a process other than its run has its number now, which the
+    card says as not finished when written. Gone where a study has no
+    record: every process that runs its rounds holds it while it runs (a
+    stop between a piece and its join took it away and left the round
+    going).
+    Asked after `_carried_on_elsewhere`, so no resume holds the study."""
     from fastmdxplora.gui.exploration import _process_alive
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
     from fastmdxplora.simulation.resume import _this_process_and_its_parents
@@ -1082,6 +1121,13 @@ def _its_process_is_gone(study: Path) -> bool:
 
     try:
         process = json.loads(record_access.read_text(study / RUN_PROCESS_FILE, encoding="utf-8"))
+    except FileNotFoundError:
+        # A study (its resolved_config.yml, which every run writes as it
+        # starts) whose rounds ran: a record only, from no run, says nothing.
+        try:
+            return record_access.is_file(study / "resolved_config.yml")
+        except OSError:
+            return False
     except (OSError, ValueError):
         return False
     pid = process.get("pid") if isinstance(process, dict) else None
@@ -1229,19 +1275,30 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
     command = f"`{' '.join(argv)}`"
     # What the resume does, from what it finds (`resume.how_a_resume_finds`)
     # and the lengths it reads, in the order it acts on them.
-    past = _past_the_ceiling(productions, ceiling)
-    found = _what_resume_finds(study, names) if names and not past else {}
+    found = _what_resume_finds(study, names) if names else {}
+    over, would = _held_below_the_ceiling(names, productions, found, length, ceiling)
     answered = [(name, f) for name in names
                 if (f := found.get(name)) and (f["piece"] is not None or f["own"])]
-    if past and ceiling is not None:
-        # The runs are not carried on, nor judged together (`run_until_known`,
-        # `BatchExplorer`).
-        carry_on = (f"{command} does not judge the runs together: {_and(past)} "
-                    f"{'is' if len(past) == 1 else 'are'} past the {length_said(ceiling)} "
-                    "ceiling the study now sets, and carries no run on. With "
-                    "`max_duration_ns` at least "
-                    f"{length_said(max(productions[n] or 0.0 for n in past))} in its "
-                    f"config, {command} brings them to one length and judges them.")
+    if (over or would) and ceiling is not None:
+        # The resume carries no run on (`runs_kept_below_the_ceiling`).
+        one = len(names) == 1
+        parts = []
+        if over:
+            parts.append(f"{_and(over)} {'is' if len(over) == 1 else 'are'} past the "
+                         f"{length_said(ceiling)} ceiling the study now sets")
+        if would and length is not None:
+            parts.append(("its extension" if one else
+                          f"the extension of {_and(would)}")
+                         + f" was to run to {length_said(length)}"
+                         + (", past it" if over else
+                            f", past the {length_said(ceiling)} ceiling the study now sets"))
+        needed = max([productions[n] or 0.0 for n in over]
+                     + ([length] if would and length is not None else []))
+        carry_on = (f"{command} carries no run on: " + "; ".join(parts)
+                    + f". With `max_duration_ns` at least {length_said(needed)} in its "
+                    f"config, {command} carries "
+                    + ("the run on and judges it." if one
+                       else "the runs on and judges them at one length."))
     elif answered:
         name, f = answered[0]
         several = len(names) > 1
@@ -1259,8 +1316,8 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
             run = study / "runs" / name if several else study
             carry_on = (f"{command} does not carry the round on: "
                         + (name if several else "the run")
-                        + f" stopped with an answer of its own in its {phase}, and running "
-                        "it again would give the same one. Once what it says is put right, "
+                        + f" stopped with an error of its own in its {phase}. Once what it "
+                        "says is put right, "
                         f"`fastmdx explore --output {run} --include analysis report --rerun` "
                         f"runs its analyses and report again, then {command} carries the "
                         "round on.")
@@ -1270,7 +1327,10 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
         carried = [n for n in names if (found.get(n) or {}).get("carried_on_first")]
         cut = [n for n in carried if length is not None and productions.get(n) is not None
                and productions[n] < length - _ONE_LENGTH_NS]
-        owed = [n for n in carried if n not in cut and (found.get(n) or {}).get("analyses_owed")]
+        # Pieces at the round's length the join has not taken in (stopped at
+        # their last step), and joined pieces whose analyses are owed.
+        unjoined = [n for n in carried if n not in cut and (found.get(n) or {}).get("unjoined")]
+        owed = [n for n in carried if n not in cut and n not in unjoined]
         projected = {n: (length if n in cut else ns) for n, ns in productions.items()}
         target, short = brought_up(rounds, projected, ceiling)
         steps = []
@@ -1283,6 +1343,10 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
             steps.append("runs the analyses and report of "
                          + ("the run's" if len(names) == 1 else f"{_and(owed)}'s")
                          + " joined pieces")
+        if unjoined:
+            steps.append("joins "
+                         + ("the run's" if len(names) == 1 else f"{_and(unjoined)}'s")
+                         + " pieces and runs their analyses and report")
         if short and target is not None:
             longer = [name for name in names if name not in short]
             steps.append(f"extends {_and(short)} to {length_said(target)}"

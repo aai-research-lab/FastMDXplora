@@ -961,15 +961,15 @@ def test_a_ceiling_lowered_before_a_resume_is_not_passed(failed, tmp_path):
     before = {name: _production(run) for name, run in runs.items()}
     assert before["tri__random-seed-1"] > 0.001 > before[SECOND]
     assert round_ended(study).carry_on.startswith(
-        f"`fastmdx resume {study}` does not judge the runs together: tri__random-seed-1 is "
-        "past the 1 ps ceiling the study now sets, and carries no run on.")
+        f"`fastmdx resume {study}` carries no run on: tri__random-seed-1 is past the 1 ps "
+        "ceiling the study now sets. With `max_duration_ns` at least ")
+    before_record = (study / "stopping.json").read_text()
     with contextlib.redirect_stdout(io.StringIO()):
         resume.resume_study(study)
-    record = json.loads((study / "stopping.json").read_text())
     assert {name: _production(run) for name, run in runs.items()} == before
-    assert record["outcome"] == "ceiling"
-    assert record["rounds"][-1]["past_the_ceiling"] == ["tri__random-seed-1"]
-    assert round_ended(study) is None
+    # No round judged, and the round's failure said as before.
+    assert (study / "stopping.json").read_text() == before_record
+    assert round_ended(study).state == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -1089,7 +1089,7 @@ def test_one_run_whose_extension_failed_in_its_analyses_is_said_not_carried_on(
     assert ended.state == "failed"
     assert ended.carry_on == (
         f"`fastmdx resume {study}` does not carry the round on: the run stopped with an "
-        "answer of its own in its analysis, and running it again would give the same one. "
+        "error of its own in its analysis. "
         f"Once what it says is put right, `fastmdx explore --output {study} --include "
         "analysis report --rerun` runs its analyses and report again, then "
         f"`fastmdx resume {study}` carries the round on.")
@@ -1120,25 +1120,40 @@ def test_runs_one_of_whose_extensions_failed_in_its_analyses_are_said_not_carrie
     from fastmdxplora.simulation import resume
     from fastmdxplora.simulation.stopping import round_ended
 
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+
     study = tmp_path / "study"
     shutil.copytree(failed["study"], study, symlinks=True)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(FastMDXplora, "_resolve_phase_runner", _failing_once("analysis", SECOND))
-        with contextlib.redirect_stdout(io.StringIO()):
-            resume.resume_study(study)
+        _code, first, _said = _resume_by_the_cli(study)
     ended = round_ended(study)
     assert ended.state == "failed"
+
+    def counted(printed):
+        manifest = json.loads((study / "batch_manifest.json").read_text())
+        return (re.search(r"Batch failed: (\d+ ok, \d+ error\(s\))", printed).group(1),
+                {run["run_id"]: run["status"] for run in manifest["runs"]},
+                re.search(r"study of 2 runs, (\d+) completed",
+                          answer_from_the_records(study, "found")).group(1))
+
+    # Its analyses failed: in error, from its record, before a resume as after.
+    once = counted(first)
+    assert once == ("1 ok, 1 error(s)", {"tri__random-seed-1": "ok", SECOND: "error"}, "1")
     run = study / "runs" / SECOND
     assert ended.carry_on.startswith(
         f"`fastmdx resume {study}` does not carry the round on: {SECOND} stopped with an "
-        "answer of its own in its analysis")
+        "error of its own in its analysis.")
     assert f"`fastmdx explore --output {run} --include analysis report --rerun`" in \
         ended.carry_on
     before = (study / "stopping.json").read_text()
     code, printed, said = _resume_by_the_cli(study)
     assert code == 1
-    assert "Batch failed" in printed
+    assert counted(printed) == once
     assert printed.rstrip().splitlines()[-1] == ended.carry_on
+    # The run's own remedy ("suggests nothing", a cost in production) is not
+    # said above the round's sentence, which says what fixes it.
+    assert "What would fix it" not in printed
     assert (study / "stopping.json").read_text() == before
     assert "extra_ns" not in said
     _analysed_again(run)
@@ -1237,7 +1252,6 @@ def test_a_cut_catch_up_round_is_said_as_it_was(catch_up_cut, tmp_path):
 def test_a_ceiling_lowered_over_a_cut_piece_is_not_passed(catch_up_cut, tmp_path):
     """The cut piece was carried on to its own length, past the ceiling the
     sentence said would not be passed, and judged there."""
-    from fastmdxplora.simulation import resume
     from fastmdxplora.simulation.stopping import round_ended
 
     study = tmp_path / "study"
@@ -1249,13 +1263,26 @@ def test_a_ceiling_lowered_over_a_cut_piece_is_not_passed(catch_up_cut, tmp_path
     config = yaml.safe_load((study / "resolved_config.yml").read_text())
     config["simulation"]["stop_when"]["max_duration_ns"] = ceiling
     (study / "resolved_config.yml").write_text(yaml.safe_dump(config))
-    assert "does not judge the runs together" in round_ended(study).carry_on
-    with contextlib.redirect_stdout(io.StringIO()):
-        resume.resume_study(study)
+    from fastmdxplora.gui.stopping_view import stopping_payload
+
+    ended = round_ended(study)
+    assert ended.carry_on.startswith(f"`fastmdx resume {study}` carries no run on: "
+                                     "tri__random-seed-1 is past the ")
+    before_record = (study / "stopping.json").read_text()
+    code, printed, said = _resume_by_the_cli(study)
     assert {name: _production(run) for name, run in runs.items()} == before
-    record = json.loads((study / "stopping.json").read_text())
-    assert record["outcome"] == "ceiling"
-    assert round_ended(study) is None
+    # Each run as it stands, the round as it ended, its sentence last.
+    manifest = json.loads((study / "batch_manifest.json").read_text())
+    assert {run["run_id"]: run["status"] for run in manifest["runs"]} == {
+        "tri__random-seed-1": "ok", SECOND: "ok"}
+    assert re.search(r"^Batch stopped: ", printed, re.M)
+    assert printed.rstrip().splitlines()[-1] == round_ended(study).carry_on
+    assert ".;" not in printed + said
+    assert (study / "stopping.json").read_text() == before_record
+    assert round_ended(study).state == "interrupted"
+    card = stopping_payload(study)
+    assert "`" not in card["said"] and "carries no run on" in card["said"]
+    assert " to " in card["production_said"]
 
 
 @pytest.fixture(scope="module")
@@ -1285,9 +1312,10 @@ def cut_after_its_join(tmp_path_factory):
     try:
         deadline = time.monotonic() + 1200
         while time.monotonic() < deadline and process.poll() is None:
-            if (study / "joined" / "analysis_owed.json").is_file():
+            # Its join written whole, the analyses of it begun.
+            if (study / "joined" / "joined.json").is_file():
                 break
-            time.sleep(0.1)
+            time.sleep(0.05)
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
@@ -1359,3 +1387,251 @@ def test_a_worker_killed_in_a_round_names_no_run(tmp_path):
     assert ended.said.startswith("Its stopping rule's round 1 failed: a worker extending "
                                  "the runs ended abruptly (BrokenProcessPool")
     assert "extending tri__random-seed" not in ended.said
+
+
+# ---------------------------------------------------------------------------
+# Fix after round 4: pieces stopped at their last step, a stop between a
+# piece and its join, a ceiling below a cut extension's length
+# ---------------------------------------------------------------------------
+
+def _stopped_at_the_last_step_of(name: str):
+    """A stop (SIGINT) asked as the production of ``name``'s piece reaches
+    its last step, as a Ctrl-C landing in its last frame interval: the
+    runner's own stop, its checkpoint written at the piece's full length and
+    said not finished. Patches the runner's chunking and stop request."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    real_cap = runner._cap_for_stopping
+    seen: dict = {}
+
+    def cap(chunk, done, elapsed):
+        chunk = real_cap(chunk, done, elapsed)
+        seen["reached"] = done + chunk
+        return chunk
+
+    def planned(folder) -> int | None:
+        try:
+            simulation = yaml.safe_load((Path(folder) / "resolved_config.yml").read_text())[
+                "simulation"]
+            return round(float(simulation["duration_ns"]) * 1e6
+                         / float(simulation.get("timestep_fs") or 2.0))
+        except (OSError, KeyError, TypeError, ValueError):
+            return None
+
+    def requested(self):
+        folder = Path(self.folder) if self.folder is not None else None
+        if (self.signal is None and folder is not None and folder.parent.name == name
+                and folder.name.startswith("segment-")
+                and seen.get("reached") is not None
+                and seen["reached"] >= (planned(folder) or float("inf"))):
+            self.signal = signal.SIGINT
+        return self.signal is not None
+
+    return cap, property(requested)
+
+
+@pytest.fixture(scope="module")
+def stopped_at_their_last_step(failed, tmp_path_factory):
+    """The failed study resumed, and stopped as the second seed's catch-up
+    piece reached its last step: the round stopped when asked, the piece's
+    checkpoint at its full length, said not finished."""
+    from fastmdxplora.simulation import runner
+
+    study = tmp_path_factory.mktemp("last_step") / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    cap, requested = _stopped_at_the_last_step_of(SECOND)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_cap_for_stopping", cap)
+        patch.setattr(runner._StopRequests, "requested", requested)
+        code, _printed, _said = _resume_by_the_cli(study)
+    record = json.loads((study / "stopping.json").read_text())
+    side = json.loads((study / "runs" / SECOND / "segment-001" / "simulation" /
+                       "checkpoint.chk.json").read_text())
+    assert code == 130 and record["rounds"][-1]["stopped_by"] == "asked"
+    assert side["finished"] is False and side["stage"] == "production"
+    return {"study": study, "step": side["step"]}
+
+
+def test_pieces_stopped_at_their_last_step_are_carried_on(stopped_at_their_last_step,
+                                                          tmp_path):
+    """Every resume refused ("Segments [1] did not finish: their checkpoints
+    were written along the way") and said "Batch stopped", exit 130, with no
+    stop asked, while every page said `fastmdx resume` carried the round on."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(stopped_at_their_last_step["study"], study, symlinks=True)
+    sentence = round_ended(study).carry_on
+    code, printed, said = _resume_by_the_cli(study)
+    record = json.loads((study / "stopping.json").read_text())
+    assert "did not finish" not in printed + said
+    assert "Batch stopped" not in printed
+    assert code == 0, said[-2000:]
+    assert record["outcome"] in ("met", "ceiling", "rounds"), record.get("said")
+    after = [_production(study / "runs" / name) for name in record["runs"]]
+    assert after[0] == pytest.approx(after[1], abs=1e-6)
+    assert max(after) <= record["max_duration_ns"] + 1e-9
+    # What it was said to run first, before it ran.
+    assert f"first joins {SECOND}'s pieces and runs their analyses and report, then" in sentence
+
+
+def test_a_refused_resume_is_not_said_stopped():
+    """A run of a resumed study its resume refused, whose own records hold
+    the stop it came back from, was counted stopped ("Batch stopped", 130)."""
+    from fastmdxplora.batch.explorer import _was_stopped
+    from fastmdxplora.orchestrator import PhaseResult, RunResult
+
+    stop = PhaseResult(name="simulation", status="error",
+                       refusal={"code": "simulation.run.stopped"})
+    refused = RunResult(run_id="a", system="a", status="error", phases=[stop],
+                        error_type="ResumeRefused")
+    assert not _was_stopped(refused)
+
+
+@pytest.fixture(scope="module")
+def stopped_before_its_join(tmp_path_factory):
+    """A study of one run whose explore is stopped (Ctrl-C) as its round's
+    piece is joined: the join written, its analyses owed, the record left
+    "running" and no process record."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation import resume
+
+    root = tmp_path_factory.mktemp("before_join")
+    pdb = root / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config.pop("sweep")
+    config["simulation"]["stop_when"]["independent_starts"] = "not_required"
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(root / "study")
+    (root / "study.yml").write_text(yaml.safe_dump(config))
+    # Its join written (joined.json), the analyses of it not begun.
+    def the_study_s_config_text(root):
+        raise KeyboardInterrupt
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(resume, "_the_study_s_config_text", the_study_s_config_text)
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                main(["explore", "-c", str(root / "study.yml")])
+            except KeyboardInterrupt:
+                pass
+    study = root / "study"
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "running"
+    assert not (study / RUN_PROCESS_FILE).exists()
+    assert (study / "joined" / "analysis_owed.json").is_file()
+    assert (study / "joined" / "joined.json").is_file()
+    return {"study": study}
+
+
+def test_one_run_stopped_before_its_join_is_a_cut_round(stopped_before_its_join, tmp_path):
+    """Its round was said nowhere: the pages said the resume only analyses
+    (it judged and extended), and the Agent gave the means of before the
+    join as the whole run's."""
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(stopped_before_its_join["study"], study, symlinks=True)
+    ended = round_ended(study)
+    assert ended is not None and ended.state == "interrupted"
+    assert ended.carry_on.startswith(
+        f"`fastmdx resume {study}` first runs the analyses and report of the run's joined "
+        "pieces, then judges the run again")
+    assert study_state(study) == "interrupted"
+    answer = answer_from_the_records(study, "found")
+    owed = "are of its pieces before the join, not of its whole production"
+    assert owed in answer
+    assert answer.index(owed) < answer.index("The prepared system")
+
+
+@pytest.fixture(scope="module")
+def both_cut(tmp_path_factory):
+    """Two seeds side by side, the explore killed (SIGKILL) while both
+    runs' round 1 pieces run: both cut, the record running."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    root = tmp_path_factory.mktemp("both_cut")
+    pdb = root / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config["execution"] = {"mode": "parallel", "workers": 2}
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(root / "study")
+    (root / "study.yml").write_text(yaml.safe_dump(config))
+    process = subprocess.Popen(
+        [sys.executable, "-m", "fastmdxplora.cli.main", "explore", "-c", str(root / "study.yml")],
+        cwd=root, env={**os.environ, "PYTHONPATH": _source()}, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True)
+    study = root / "study"
+    checkpoints = [study / "runs" / name / "segment-001" / "simulation" / "checkpoint.chk"
+                   for name in ("tri__random-seed-1", SECOND)]
+    try:
+        deadline = time.monotonic() + 1200
+        while time.monotonic() < deadline and process.poll() is None:
+            if all(checkpoint.is_file() for checkpoint in checkpoints):
+                break
+            time.sleep(0.02)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    record = json.loads((study / "stopping.json").read_text())
+    length = _length_of_the_round(record)
+    assert record["outcome"] == "running"
+    assert all(_production(study / "runs" / name) < length - 1e-6 for name in record["runs"])
+    return {"study": study, "record": record, "length": length}
+
+
+def test_both_runs_cut_are_said_carried_on_first(both_cut, tmp_path):
+    from fastmdxplora.simulation.sampling_ask import length_said
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(both_cut["study"], study, symlinks=True)
+    assert round_ended(study).carry_on.startswith(
+        f"`fastmdx resume {study}` first carries the extensions of tri__random-seed-1 and "
+        f"{SECOND} on to {length_said(both_cut['length'])}, then judges its 2 runs again")
+
+
+def test_a_ceiling_below_cut_extensions_length_carries_no_run_on(both_cut, tmp_path):
+    """Both pieces were carried on to the round's length, past a ceiling
+    lowered below it, under a sentence naming that ceiling as the most."""
+    from fastmdxplora.simulation.sampling_ask import length_said
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(both_cut["study"], study, symlinks=True)
+    runs = {name: study / "runs" / name for name in both_cut["record"]["runs"]}
+    before = {name: _production(run) for name, run in runs.items()}
+    length = both_cut["length"]
+    ceiling = round((max(before.values()) + length) / 2, 6)
+    config = yaml.safe_load((study / "resolved_config.yml").read_text())
+    config["simulation"]["stop_when"]["max_duration_ns"] = ceiling
+    (study / "resolved_config.yml").write_text(yaml.safe_dump(config))
+    assert round_ended(study).carry_on.startswith(
+        f"`fastmdx resume {study}` carries no run on: the extension of tri__random-seed-1 "
+        f"and {SECOND} was to run to {length_said(length)}, past the "
+        f"{length_said(ceiling)} ceiling the study now sets.")
+    _code, printed, _said = _resume_by_the_cli(study)
+    assert {name: _production(run) for name, run in runs.items()} == before
+    assert re.search(r"^Batch stopped: ", printed, re.M)
+    assert round_ended(study).state == "interrupted"
+
+
+def test_a_stop_when_asked_of_one_run_says_the_run():
+    from fastmdxplora.simulation.stopping import _the_round_stopped
+
+    record, entry = {}, {}
+    _the_round_stopped(record, entry, "the run", {"stopped": True})
+    assert record["said"] == ("Stopped when asked, while extending the run. Resuming the "
+                              "study judges the run again and carries on from there.")

@@ -161,7 +161,7 @@ def _config_digest(directory: Path, *, _depth: int = 0) -> str:
     ).hexdigest()[:16]
 
 
-def _finished(simulation_dir: Path) -> bool:
+def _finished(simulation_dir: Path, *, piece: bool = False) -> bool:
     """Whether the run in `simulation_dir` reached its end.
 
     Read from the checkpoint's sidecar, which says so. This used to be the
@@ -170,14 +170,45 @@ def _finished(simulation_dir: Path) -> bool:
     the frames it wrote past its last checkpoint were kept, and the resume
     ran them again, so the joined trajectory held that stretch twice. A
     sidecar from before the sidecar said it is read by the final state,
-    which only a clean finish writes.
+    which only a clean finish writes. A ``piece`` (an extension) stopped at
+    its last step is finished (`_at_its_last_step`).
     """
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
     side = read_checkpoint_sidecar(simulation_dir / "checkpoint.chk") or {}
     if isinstance(side.get("finished"), bool):
-        return side["finished"]
+        return side["finished"] or (piece and _at_its_last_step(simulation_dir, side))
     return _records.is_file(simulation_dir / "state_final.xml")
+
+
+def _at_its_last_step(simulation_dir: Path, side: dict[str, Any]) -> bool:
+    """Whether a piece's checkpoint, written as it was stopped, is at the
+    last step of its production: a stop landing in its last frame interval
+    left a checkpoint at its full length, said not finished, and every join
+    refused the piece as one that would be run again. Its production steps
+    from the piece's own config; never for a variable step, whose steps say
+    no length."""
+    import yaml
+
+    from fastmdxplora.simulation.lengths import _variable_step
+
+    step = side.get("step")
+    if side.get("stage") != "production" or not isinstance(step, int) or isinstance(step, bool):
+        return False
+    try:
+        config = yaml.safe_load(_records.read_text(simulation_dir.parent / "resolved_config.yml",
+                                                   encoding="utf-8")) or {}
+        simulation = config.get("simulation") or {}
+        if _variable_step(simulation):
+            return False
+        if simulation.get("production_steps") is not None:
+            planned = int(simulation["production_steps"])
+        else:
+            planned = round(float(simulation["duration_ns"]) * 1e6
+                            / float(simulation.get("timestep_fs") or 2.0))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        return False
+    return 0 < planned <= step
 
 
 def survey_segments(root: Path | str, *,
@@ -216,7 +247,7 @@ def survey_segments(root: Path | str, *,
             index=index,
             directory=directory,
             trajectory=trajectory if _records.is_file(trajectory) else None,
-            finished=_finished(simulation_dir),
+            finished=_finished(simulation_dir, piece=True),
             config_digest=_config_digest(directory),
         ))
     # By number, which is the order the pieces were run in. Names sort the
