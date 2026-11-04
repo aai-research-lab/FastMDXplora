@@ -893,12 +893,13 @@ def _asked_going(target: Path, runtime: Any) -> bool:
 
 
 def _as_the_study_reads(root: Path, status: str, head: str, *,
-                        stopped: bool) -> tuple[str, str]:
+                        stopped: bool, counted: bool = False) -> tuple[str, str]:
     """How a run the Agent started ended, as every page reads the study
     (`workspace.study_state`, its rule's round first, `stopping.round_ended`):
     the round's sentence where it ended short or its rule was never applied,
-    and its state where it is said; what its runs and records gave
-    otherwise. Stopped here and said so stands."""
+    and its state where its runs and records said another. A head that
+    counts a study's runs stands with that state; "ended", said where its
+    records do not say how, stands. Stopped here and said so stands."""
     try:
         from fastmdxplora.gui.workspace import study_state
         from fastmdxplora.simulation.stopping import round_ended
@@ -912,9 +913,12 @@ def _as_the_study_reads(root: Path, status: str, head: str, *,
         # stopped), said with the round's sentence.
         return (state if state in ("stopped", "failed", "interrupted") else ended.state,
                 ended.said)
-    if state in ("completed", "stopped", "failed", "interrupted") and not (
-            stopped and status == "stopped"):
-        return state, head if state == status else _ENDED_AS.get(state, head)
+    if stopped and status == "stopped" or state not in _ENDED_AS:
+        return status, head
+    if counted:
+        return state, head
+    if status in _ENDED_AS and state != status:
+        return state, _ENDED_AS[state]
     return status, head
 
 
@@ -1012,7 +1016,8 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             # Asked only to prepare: not "completed" above its records'
             # word that no run was run (tenth review, 10-08).
             head = f"The study was prepared once, for its {prepared} windows"
-        status, head = _as_the_study_reads(root, status, head, stopped=stopped)
+        status, head = _as_the_study_reads(root, status, head, stopped=stopped,
+                                           counted=True)
         return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
     if not _wrote_records(root):
