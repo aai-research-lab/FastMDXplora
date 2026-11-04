@@ -4711,10 +4711,12 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
         background: transparent;
     }
     .brand-product { font-size: var(--text-xl); }
-    /* At least as wide as the study's state, said whole ("Interrupted" was
-       cut to "Interrupte" at 390 px); a long name still wraps. */
+    /* The study's state said whole ("Interrupted" was cut to "Interrupte"
+       at 390 px): the card is at least as wide as its state, never its
+       name, which gives way to it (cut short, it no longer pushed the
+       account button to a row of its own). */
     .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: min-content; }
-    .sidebar-study .study-name { font-size: var(--text-sm); }
+    .sidebar-study .study-name { font-size: var(--text-sm); width: 0; min-width: 100%; }
     .sidebar-study-card .status-text { flex: none; }
     .sidebar-foot { position: static; margin: 0; background: transparent; }
     .sidebar-account-text, .sidebar-account-caret { display: none; }
@@ -5703,6 +5705,10 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
     .sidebar .sidebar-brand .brand-product { font-size: var(--text-lg); }
     .sidebar .sidebar-account-gear { display: none; }
     .sidebar .sidebar-foot .sidebar-account { padding: 4px; }
+}
+@media (max-width: 480px) {
+    /* A phone's header holds the study's state whole beside its buttons. */
+    .sidebar { column-gap: 8px; }
 }
 
 /* ===========================================================================

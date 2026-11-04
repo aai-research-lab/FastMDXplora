@@ -2265,35 +2265,6 @@ def test_one_run_asking_no_analysis_stopped_at_its_end_is_completed(tmp_path):
     assert study_state(study) == "completed"
 
 
-def test_a_catch_up_stopped_before_any_run_moved_is_not_a_second_round(tmp_path, monkeypatch):
-    """A resume stopped while it carried round 1 on said "round 2" and
-    recorded a second stopped round at the same lengths."""
-    from fastmdxplora.simulation import stopping
-
-    runs = [tmp_path / "runs" / "a", tmp_path / "runs" / "b"]
-    for run in runs:
-        run.mkdir(parents=True)
-    monkeypatch.setattr(stopping, "_frame_ns", lambda run: 0.0001)
-    monkeypatch.setattr(stopping, "_swept", lambda *args, **kwargs: None)
-    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
-                 "max_duration_ns": 0.01}
-    lengths = {"a": 0.004, "b": 0.002}
-    earlier = [{"production_ns": 0.002, "verdicts": [], "decision": "stopped", "more_ns": 0.002,
-                "stopped_by": "error", "extended": ["a"], "said": "Stopped: it failed."}]
-    record = stopping.run_until_known(
-        runs, stopping.targets_of(stop_when), stop_when, record_in=tmp_path,
-        extend_to=lambda some, total: [{"ok": False, "stopped": True}],
-        say=lambda said: None, production_of=lambda run: lengths[run.name],
-        earlier_rounds=earlier)
-    assert len(record["rounds"]) == 1
-    assert record["rounds"][0]["stopped_by"] == "asked"
-    monkeypatch.setattr(stopping, "_production_of_each",
-                        lambda study, names: {name: lengths[name] for name in names})
-    monkeypatch.setattr(stopping, "_what_resume_finds", lambda study, names: {})
-    assert stopping.round_ended(tmp_path, resuming=True).said.startswith(
-        "Its stopping rule's round 1 was stopped when asked")
-
-
 def test_a_run_whose_extension_never_began_is_said_so():
     """Sequential: "The extension of seed-1 and seed-2 did not finish" where
     seed-2's never began."""
@@ -2346,10 +2317,504 @@ def test_the_header_s_state_is_said_whole_at_390(cut_one, tmp_path):
               const text = document.getElementById('topbar-status-text');
               const line = text.closest('.study-status');
               const a = text.getBoundingClientRect(), b = line.getBoundingClientRect();
+              // The account button on the header's row, beside the study.
+              const card = document.querySelector('.sidebar-study').getBoundingClientRect();
+              const account = document.querySelector('.sidebar-foot').getBoundingClientRect();
               return {inside: a.right <= b.right + 1 && a.left >= b.left - 1,
-                      page: document.documentElement.scrollWidth <= 390};
+                      page: document.documentElement.scrollWidth <= 390,
+                      row: account.top < card.bottom && account.bottom > card.top};
             }""")
             browser.close()
     finally:
         session.server.shutdown()
-    assert found == {"inside": True, "page": True}
+    assert found == {"inside": True, "page": True, "row": True}
+
+
+@pytest.fixture(scope="module")
+def stopped_at_its_end(tmp_path_factory):
+    """One run with a rule, stopped as its production reached its last step."""
+    return _one_run_stopped_at_its_end(tmp_path_factory.mktemp("at_its_end"), rule=True)
+
+
+_KILLED_AT = '''
+import os, sys
+from fastmdxplora.simulation import resume
+from fastmdxplora.cli.main import main
+
+def killed(*args, **kwargs):
+    os._exit(9)
+
+setattr(resume, sys.argv[2], killed)
+sys.exit(main(["resume", sys.argv[1]]))
+'''
+
+
+def _resumed_until(study: Path, where: str) -> int:
+    """`fastmdx resume STUDY` in a process of its own, killed (no handler
+    runs, as SIGKILL) as it calls ``resume.<where>``."""
+    import os
+    import subprocess
+    import sys
+
+    import fastmdxplora
+
+    driver = study.parent / "killed_at.py"
+    driver.write_text(_KILLED_AT)
+    env = {**os.environ, "PYTHONPATH": str(Path(fastmdxplora.__file__).parents[1])}
+    return subprocess.run([sys.executable, str(driver), str(study), where], env=env,
+                          capture_output=True, timeout=900).returncode
+
+
+def _summary_of(study: Path) -> dict[str, str]:
+    from fastmdxplora.gui import server
+
+    def read(path: Path) -> dict:
+        return json.loads(path.read_text()) if path.is_file() else {}
+
+    from fastmdxplora.simulation.resume import extended_production
+
+    records = server._summary_records(
+        study, read(study / "manifest.json"),
+        read(study / "analysis" / "analysis_manifest.json"),
+        read(study / "simulation" / "simulation_parameters.json"),
+        extended=extended_production(study))
+    return {record["label"]: record["value"] for record in records}
+
+
+def _read_whole_after_its_resume(study: Path) -> None:
+    """Every reader of a run stopped at its end, its resume finished: the
+    rule applied, completed, its stop not a problem, its length and frames."""
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.overview_view import _phases
+    from fastmdxplora.gui.problems_view import problems_payload
+    from fastmdxplora.gui.workspace import study_state
+
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "ceiling" and record["rounds"], record.get("said")
+    assert study_state(study) == "completed"
+    assert fixes_payload(study)["fixes"] == []
+    manifest = json.loads((study / "manifest.json").read_text())
+    simulation = next(phase for phase in manifest["phases"] if phase["name"] == "simulation")
+    assert simulation["status"] == "ok" and simulation["stopped_at_its_end"]["refusal"]
+    assert "production.dcd" in simulation["artifacts"]
+    assert {phase["status"] for phase in _phases(study)} == {"ok"}
+    items = problems_payload(study)["items"]
+    assert not [item for item in items if "stopped" in json.dumps(item).lower()], items
+    summary = _summary_of(study)
+    assert summary["Project status"] == "completed"
+    # The GUI's dash for a value not there.
+    assert summary["Production"] not in ("", "\u2014") and summary["Frames"] not in ("", "\u2014")
+
+
+@pytest.mark.parametrize("where", ["_judge_the_run_again", "_phases_after_ended_well",
+                                   "_its_stop_at_its_end_said_whole"],
+                         ids=["before its rule", "before its live record",
+                              "before its Manifest"])
+def test_a_resume_killed_before_it_said_the_run_whole_is_finished_by_the_next(
+        stopped_at_its_end, tmp_path, where):
+    """Killed after its analyses and before its rule, it read completed with
+    its rule never applied and no fix offered; killed between the Manifest
+    and its live record, it read stopped and the next resume did nothing."""
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.workspace import study_state
+
+    study = tmp_path / "study"
+    shutil.copytree(stopped_at_its_end, study, symlinks=True)
+    assert _resumed_until(study, where) == 9
+    assert study_state(study) == "stopped"
+    # The run page's "Project status" as the study's state, one reading.
+    assert _summary_of(study)["Project status"] == "stopped"
+    assert "fastmdx resume" in json.dumps(fixes_payload(study)["fixes"])
+    code, printed, said = _resume_by_the_cli(study)
+    assert code == 0, said[-2000:]
+    _read_whole_after_its_resume(study)
+
+
+def test_a_resume_of_one_run_stopped_at_its_end_is_read_whole_on_every_page(
+        stopped_at_its_end, tmp_path):
+    """Its Problems listed the stop as a run warning offering `fastmdx
+    resume`, its run page said no Production and no Frames, and its Manifest
+    listed none of the files it wrote."""
+    study = tmp_path / "study"
+    shutil.copytree(stopped_at_its_end, study, symlinks=True)
+    code, printed, said = _resume_by_the_cli(study)
+    assert code == 0, said[-2000:]
+    _read_whole_after_its_resume(study)
+
+
+# ---------------------------------------------------------------------------
+# Fix after round 8: a resume stopped in its first act, Ctrl-C in a join and
+# at a catch-up's start, a piece finished and not joined, the fold, the
+# rounds' numbering
+# ---------------------------------------------------------------------------
+
+def _stopped_part_way_in(match, *, at: int = 100):
+    """The runner's own stop (SIGINT) asked once, as the production of the
+    piece ``match(folder)`` names passes step ``at``: it stops at the next
+    frame, part way, with a checkpoint there."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    real_cap = runner._cap_for_stopping
+    seen: dict = {}
+
+    def cap(chunk, done, elapsed):
+        chunk = min(real_cap(chunk, done, elapsed), 50)
+        seen["reached"] = done + chunk
+        return chunk
+
+    def requested(self):
+        if (self.signal is None and self.folder is not None and match(Path(self.folder))
+                and not seen.get("fired") and (seen.get("reached") or 0) >= at):
+            seen["fired"] = True
+            self.signal = signal.SIGINT
+        return self.signal is not None
+
+    return cap, property(requested)
+
+
+def _piece_of(name: str, piece: str):
+    return lambda folder: folder.name == piece and folder.parent.name == name
+
+
+@pytest.fixture(scope="module")
+def sequential_stopped(tmp_path_factory):
+    """Two seeds one after another, stopped part way through the first
+    seed's round piece (R15's q2m)."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation import runner
+
+    tmp_path = tmp_path_factory.mktemp("sequential_stopped")
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    cap, requested = _stopped_part_way_in(_piece_of("tri__random-seed-1", "segment-001"))
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_cap_for_stopping", cap)
+        patch.setattr(runner._StopRequests, "requested", requested)
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main(["explore", "-c", str(tmp_path / "study.yml")]) == 130
+    return tmp_path / "study"
+
+
+def test_a_resume_stopped_as_it_carries_its_round_on_keeps_the_round(sequential_stopped,
+                                                                      tmp_path):
+    """Stopped as it carried seed-1's cut piece on, it exited 1, said "before
+    the rule was applied again" (the round no longer said), counted seed-2
+    not started, and said a refusal that has no code at no cost."""
+    from fastmdxplora.gui.exploration import runs_of_a_study
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.simulation import runner
+    from fastmdxplora.simulation.stopping import STOPPED_BEFORE_THE_RULE_AGAIN, round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    cap, requested = _stopped_part_way_in(_piece_of("tri__random-seed-1", "segment-002"),
+                                          at=0)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_cap_for_stopping", cap)
+        patch.setattr(runner._StopRequests, "requested", requested)
+        code, printed, said = _resume_by_the_cli(study)
+    assert code == 130, (printed + said)[-2000:]
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["said"] != STOPPED_BEFORE_THE_RULE_AGAIN
+    ended = round_ended(study)
+    assert ended is not None and ended.state == "stopped"
+    assert ended.said.startswith("Its stopping rule's round 1 "), ended.said
+    states = {run["run_id"]: run["state"] for run in runs_of_a_study(study)}
+    assert states == {"tri__random-seed-1": "stopped", SECOND: "completed"}, states
+    batch = json.loads((study / "batch_manifest.json").read_text())
+    assert {run["run_id"]: run["status"] for run in batch["runs"]}[SECOND] == "ok"
+    for text in (printed + said, json.dumps(fixes_payload(study))):
+        assert "has not been given a code" not in text and "no simulation" not in text
+
+
+_SIGNALLED_AT = '''
+import os, signal, sys
+from fastmdxplora.simulation import resume
+from fastmdxplora.cli.main import main
+
+# Ctrl-C as a terminal leaves it, whatever the tests were started from (a
+# shell starts a job in the background with it ignored).
+signal.signal(signal.SIGINT, signal.default_int_handler)
+name, run = sys.argv[1], sys.argv[2]
+real = getattr(resume, name)
+done = []
+
+def signalled(*args, **kwargs):
+    if not done and (run == "-" or run in str(args[0])):
+        done.append(1)
+        os.kill(os.getpid(), signal.SIGINT)
+    return real(*args, **kwargs)
+
+setattr(resume, name, signalled)
+sys.exit(main(sys.argv[3:]))
+'''
+
+
+def _signalled_at(where: Path, name: str, run: str, *argv: str):
+    """`fastmdx ARGV` in a process of its own, sent a real SIGINT as it first
+    calls ``resume.<name>`` (for ``run``'s folder; "-" any)."""
+    import os
+    import subprocess
+    import sys
+
+    driver = where / "signalled_at.py"
+    driver.write_text(_SIGNALLED_AT)
+    return subprocess.run([sys.executable, str(driver), name, run, *argv],
+                          env={**os.environ, "PYTHONPATH": _source()}, cwd=where,
+                          capture_output=True, text=True, timeout=1200)
+
+
+@pytest.fixture(scope="module")
+def one_stopped_in_its_join(tmp_path_factory):
+    """One run with a rule, Ctrl-C (a real SIGINT) as its round's piece is
+    joined."""
+    tmp_path = tmp_path_factory.mktemp("stopped_in_its_join")
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config.pop("sweep")
+    config["simulation"]["stop_when"].update(max_duration_ns=0.0018,
+                                             independent_starts="not_required")
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    ran = _signalled_at(tmp_path, "_join_and_analyse", "-", "explore", "-c",
+                        str(tmp_path / "study.yml"))
+    return {"study": tmp_path / "study", "ran": ran}
+
+
+def test_ctrl_c_in_a_round_s_join_of_one_run_is_a_stop_asked(one_stopped_in_its_join):
+    """It was recorded a cut: stopping.json "running", every page saying the
+    round did not finish."""
+    from fastmdxplora.gui.workspace import study_state
+
+    study, ran = one_stopped_in_its_join["study"], one_stopped_in_its_join["ran"]
+    assert ran.returncode == 130, ran.stderr[-2000:]
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "stopped" and record["rounds"][-1]["stopped_by"] == "asked"
+    assert study_state(study) == "stopped"
+
+
+def test_ctrl_c_in_a_round_s_join_of_its_resume_ends_without_a_traceback(
+        one_stopped_in_its_join, tmp_path):
+    """Its resume, Ctrl-C as its round's piece was joined: a traceback, -2."""
+    from fastmdxplora.gui.workspace import study_state
+
+    study = tmp_path / "study"
+    shutil.copytree(one_stopped_in_its_join["study"], study, symlinks=True)
+    ran = _signalled_at(tmp_path, "_join_and_analyse", "-", "resume", str(study))
+    assert ran.returncode == 130 and "Traceback" not in ran.stderr, ran.stderr[-2000:]
+    assert study_state(study) == "stopped"
+
+
+def test_ctrl_c_in_a_sequential_resume_s_join_ends_without_a_traceback(sequential_stopped,
+                                                                         tmp_path):
+    """Ctrl-C as seed-1's carried-on piece was joined: a traceback."""
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    ran = _signalled_at(tmp_path, "_join_and_analyse", "-", "resume", str(study))
+    assert ran.returncode == 130 and "Traceback" not in ran.stderr, (ran.stdout[-3000:]
+                                                                     + ran.stderr[-2000:])
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "stopped" and record["rounds"][-1]["stopped_by"] == "asked"
+
+
+def test_ctrl_c_as_a_catch_up_begins_is_not_dropped(sequential_stopped, tmp_path):
+    """Ctrl-C as seed-2's catch-up began ended the resume in a traceback,
+    its round said cut (or, raised where Python ignores it, was lost and the
+    resume ran on to its ceiling)."""
+    from fastmdxplora.gui.workspace import study_state
+
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    ran = _signalled_at(tmp_path, "extend_study", SECOND, "resume", str(study))
+    assert ran.returncode == 130 and "Traceback" not in ran.stderr, ran.stderr[-2000:]
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "stopped", record.get("said")
+    assert study_state(study) == "stopped"
+
+
+_KILLED_IN = '''
+import os, sys
+from fastmdxplora.simulation import resume
+from fastmdxplora.cli.main import main
+
+def killed(*args, **kwargs):
+    os._exit(9)
+
+setattr(resume, sys.argv[1], killed)
+sys.exit(main(sys.argv[2:]))
+'''
+
+
+@pytest.fixture(scope="module")
+def sequential_unjoined(tmp_path_factory):
+    """Two seeds one after another, the study's process killed as the first
+    seed's round piece, finished, was to be joined."""
+    import os
+    import subprocess
+    import sys
+
+    tmp_path = tmp_path_factory.mktemp("sequential_unjoined")
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    driver = tmp_path / "killed_in.py"
+    driver.write_text(_KILLED_IN)
+    ran = subprocess.run([sys.executable, str(driver), "_join_and_analyse", "explore", "-c",
+                          str(tmp_path / "study.yml")],
+                         env={**os.environ, "PYTHONPATH": _source()}, cwd=tmp_path,
+                         capture_output=True, timeout=1200)
+    assert ran.returncode == 9
+    return tmp_path / "study"
+
+
+def test_a_round_piece_finished_and_not_joined_reads_its_join_owed(sequential_unjoined):
+    """seed-1, its round piece run whole and never joined, read completed
+    (the runs list, its health, the Agent's count) beside the Agent saying
+    its last piece is not joined."""
+    from fastmdxplora.gui.exploration import runs_of_a_study
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+
+    study = sequential_unjoined
+    run = study / "runs" / "tri__random-seed-1"
+    assert json.loads((run / "segment-001" / "simulation" / "live_status.json").read_text())[
+        "status"] == "completed"
+    states = {r["run_id"]: r["state"] for r in runs_of_a_study(study)}
+    assert states["tri__random-seed-1"] == "stopped", states
+    health = status_as_it_stands(run)
+    assert health["status"] == "stopped" and "fastmdx resume" in health["latest_error"]
+    said = answer_from_the_records(study, "found") or ""
+    assert "2 completed" not in said, said[:600]
+    summary = _summary_of(run)
+    assert "not joined" in summary["Production"] and "of its first" in summary["Frames"], summary
+
+
+def test_a_catch_up_is_folded_only_into_a_round_stopped_when_asked(tmp_path, monkeypatch):
+    """A failed round was written over as stopped when asked; the folded
+    round kept the old round's runs extended."""
+    from fastmdxplora.simulation import stopping
+
+    runs = [tmp_path / "runs" / "a", tmp_path / "runs" / "b"]
+    for run in runs:
+        run.mkdir(parents=True)
+    monkeypatch.setattr(stopping, "_frame_ns", lambda run: 0.0001)
+    monkeypatch.setattr(stopping, "_swept", lambda *args, **kwargs: None)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.01}
+    lengths = {"a": 0.004, "b": 0.002}
+
+    def resumed(stopped_by: str) -> dict:
+        earlier = [{"production_ns": 0.002, "verdicts": [], "decision": "stopped",
+                    "more_ns": 0.002, "stopped_by": stopped_by, "extended": ["a"],
+                    "said": "Stopped: it failed." if stopped_by == "error" else
+                    "Stopped when asked, while extending a. Resuming the study carries its "
+                    "round on from there."}]
+        return stopping.run_until_known(
+            runs, stopping.targets_of(stop_when), stop_when, record_in=tmp_path,
+            extend_to=lambda some, total: [{"ok": False, "stopped": True}],
+            say=lambda said: None, production_of=lambda run: lengths[run.name],
+            earlier_rounds=earlier)
+
+    record = resumed("asked")
+    assert len(record["rounds"]) == 1
+    assert record["rounds"][0]["stopped_by"] == "asked"
+    # What the catch-up began and extended, not the old round's.
+    folded = record["rounds"][0]
+    assert (folded.get("started"), folded.get("extended")) == (["b"], []), folded
+    record = resumed("error")
+    assert len(record["rounds"]) == 2
+    assert record["rounds"][0]["stopped_by"] == "error"
+    assert record["rounds"][0]["said"] == "Stopped: it failed."
+
+
+def test_a_cut_says_an_extension_never_begun_did_not_start(tmp_path, monkeypatch):
+    """Cut in seed-1's extension, one after another: "the extension of seed-2
+    did not finish" for an extension that never began."""
+    from fastmdxplora.simulation import resume, stopping
+
+    runs = [tmp_path / "runs" / "a", tmp_path / "runs" / "b"]
+    for run in runs:
+        run.mkdir(parents=True)
+    monkeypatch.setattr(stopping, "judge", lambda runs, targets, production: [
+        stopping.Verdict(analysis="rmsd", met=False, said="rmsd not yet", value=0.1,
+                         error=0.01, allowed=1e-6, unit="nm", more_ns=1.0)])
+    monkeypatch.setattr(stopping, "_frame_ns", lambda run: 0.0001)
+    monkeypatch.setattr(stopping, "_swept", lambda *args, **kwargs: None)
+
+    class _Cut(BaseException):
+        pass
+
+    def cut(run, **kwargs):
+        raise _Cut
+
+    monkeypatch.setattr(resume, "extend_study", cut)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.01}
+    with pytest.raises(_Cut):
+        stopping.run_until_known(runs, stopping.targets_of(stop_when), stop_when,
+                                 record_in=tmp_path, say=lambda said: None,
+                                 production_of=lambda run: 0.002)
+    # Cut after a's extension reached the round's length, before its answer.
+    length = stopping.round_length(json.loads((tmp_path / "stopping.json").read_text())[
+        "rounds"])
+    monkeypatch.setattr(stopping, "_production_of_each",
+                        lambda study, names: {"a": length, "b": 0.002})
+    monkeypatch.setattr(stopping, "_what_resume_finds", lambda study, names: {})
+    monkeypatch.setattr(stopping, "_its_process_is_gone", lambda study: True)
+    said = stopping.round_ended(tmp_path, resuming=True).said
+    assert "the extension of b did not start" in said, said
+
+
+def test_the_rounds_are_numbered_as_judged_on_every_reader(tmp_path):
+    """A round stopped and its catch-up stopped after a run moved: the
+    sentence said round 1, the card's table and count, the Timeline, the
+    methods and the Agent said 2."""
+    from fastmdxplora.gui.agent_panel import _stopping_summary
+    from fastmdxplora.gui.stopping_view import stopping_payload
+    from fastmdxplora.gui.study_timeline import _rounds
+    from fastmdxplora.report.methods import _stopping_sentences
+
+    record = {
+        "targets": [{"analysis": "rmsd", "standard_error": 1e-6}], "max_duration_ns": 0.01,
+        "independent_starts": "required", "runs": ["a", "b"], "outcome": "stopped",
+        "said": "Stopped when asked, while extending b. Resuming the study carries its round "
+                "on from there.",
+        "rounds": [
+            {"production_ns": 0.002, "verdicts": [], "decision": "stopped", "more_ns": 0.002,
+             "stopped_by": "asked", "extended": ["a"], "started": ["a", "b"],
+             "said": "Stopped when asked, while extending b. Resuming the study carries its "
+                     "round on from there."},
+            {"production_ns": 0.003, "verdicts": [], "decision": "stopped", "more_ns": 0.001,
+             "brought_up": ["b"], "stopped_by": "asked", "extended": [], "started": ["b"],
+             "said": "Stopped when asked, while extending b. Resuming the study carries its "
+                     "round on from there."}]}
+    (tmp_path / "stopping.json").write_text(json.dumps(record))
+    card = stopping_payload(tmp_path)
+    assert [r["round"] for r in card["rounds"]] == [1, 1] and card["rounds_judged"] == 1
+    events = [e for e in _rounds(tmp_path) if e.get("round")]
+    assert [e["said"].split(":")[0] for e in events] == ["Round 1", "Round 1, its catch-up"]
+    said = " ".join(_stopping_sentences(record, {}))
+    assert "1 round" in said and "2 rounds" not in said, said
+    assert "round 2" not in _stopping_summary(tmp_path)
+
+
+def test_a_batch_resume_s_last_line_is_its_rule_s_outcome(sequential_stopped, tmp_path):
+    """Its last line said every run was carried on; what its rule decided was
+    only in the middle of what it printed."""
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    code, printed, said = _resume_by_the_cli(study)
+    assert code == 0, (printed + said)[-2000:]
+    record = json.loads((study / "stopping.json").read_text())
+    assert printed.strip().splitlines()[-1] == f"Its stopping rule: {record['said']}"

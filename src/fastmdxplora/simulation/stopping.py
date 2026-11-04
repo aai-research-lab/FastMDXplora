@@ -605,12 +605,36 @@ def _frame_ns(run: Path) -> float | None:
     return interval * timestep * 1e-6 if interval else None
 
 
+#: Told the name of each run whose extension in a round begins
+#: (`extension_begins`), while `run_until_known` judges and extends.
+_BEGINNING: list[Any] = []
+
+
+def extension_begins(run: str | Path) -> None:
+    """A run's extension in its study's round begins: recorded in the
+    round's ``started`` as it begins, so a round cut after it says which
+    runs' extensions never began."""
+    for note in list(_BEGINNING):
+        note(Path(run).name)
+
+
+def to_begin_another() -> bool:
+    """Whether another run's extension in the round may begin: not once a
+    stop was asked in the round (`runner.a_stop_asked_in_the_rounds`)."""
+    from fastmdxplora.simulation.runner import a_stop_asked_in_the_rounds
+
+    return not a_stop_asked_in_the_rounds()
+
+
 def extend_one_after_another(runs: list[Path], more_ns: float) -> list[dict[str, Any]]:
     """Each run extended in turn, stopping at the first that fails."""
     from fastmdxplora.simulation.resume import extend_study
 
     answers = []
     for run in runs:
+        if not to_begin_another():
+            break
+        extension_begins(run)
         answers.append(extend_study(run, more_ns=more_ns))
         if not answers[-1].get("ok"):
             break
@@ -624,6 +648,9 @@ def extend_each_to(runs: list[Path], total_ns: float) -> list[dict[str, Any]]:
 
     answers = []
     for run in runs:
+        if not to_begin_another():
+            break
+        extension_begins(run)
         answers.append(extend_study(run, total_ns=total_ns))
         if not answers[-1].get("ok"):
             break
@@ -749,10 +776,39 @@ def planned_record(targets: list[StopTarget], stop_when: dict[str, Any],
 
 
 def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict[str, Any],
-                    *, record_in: Path, extend_all: Any = None,
-                    say: Any = print, at_once: int = 1,
-                    earlier_rounds: list[dict[str, Any]] | None = None,
-                    production_of: Any = None, extend_to: Any = None) -> dict[str, Any]:
+                    *, record_in: Path, **given: Any) -> dict[str, Any]:
+    """`_run_until_known`, a stop asked while it judges and extends the runs
+    noted (`runner._StopInTheRounds`), never raised where the round would
+    read cut, and each run's extension recorded as it begins."""
+    from fastmdxplora.simulation.runner import _StopInTheRounds
+
+    current: dict[str, Any] = {}
+
+    def begun(name: str) -> None:
+        entry, write = current.get("entry"), current.get("write")
+        if entry is None or write is None:
+            return
+        started = entry.setdefault("started", [])
+        if name not in started:
+            started.append(name)
+            write()
+
+    _BEGINNING.append(begun)
+    try:
+        with _StopInTheRounds(folder=record_in) as heard:
+            return _run_until_known(runs, targets, stop_when, record_in=record_in,
+                                    heard=heard, current=current, **given)
+    finally:
+        _BEGINNING.remove(begun)
+
+
+def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict[str, Any],
+                     *, record_in: Path, extend_all: Any = None,
+                     say: Any = print, at_once: int = 1,
+                     earlier_rounds: list[dict[str, Any]] | None = None,
+                     production_of: Any = None, extend_to: Any = None,
+                     heard: Any = None, current: dict[str, Any] | None = None
+                     ) -> dict[str, Any]:
     """Judge the runs, extend every one of them by what is needed, and judge
     again, until each target is met or the ceiling is reached. The rounds
     are written to ``record_in / stopping.json`` as they happen.
@@ -789,19 +845,36 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     def write() -> None:
         (record_in / RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
 
+    current = {} if current is None else current
+    current["write"] = write
+
+    def asked() -> bool:
+        return bool(heard is not None and heard.requested)
+
     def ended_by(entry: dict[str, Any], tried: list[Path],
                  answers: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The round stopped where an extension of ``tried`` failed or was
-        stopped when asked; None where each finished."""
+        stopped when asked, or a stop was asked between its pieces (a join,
+        a run's start: `runner._StopInTheRounds`); None where each finished
+        with no stop asked."""
         failed = [(run, answer) for run, answer in zip(tried, answers) if not answer.get("ok")]
-        if not failed and len(answers) >= len(tried):
+        if not failed and len(answers) >= len(tried) and not asked():
             return None
-        run, answer = failed[0] if failed else (tried[len(answers)], {})
+        if failed:
+            run, answer = failed[0]
+        elif asked():
+            # The run its round was working on when asked, or the first.
+            run, answer = tried[max(0, len(answers) - 1)], {"stopped": True}
+        else:
+            run, answer = tried[len(answers)], {}
         # The runs whose extension finished: side by side, the others
         # can, and the runs are then not at one length.
         entry["extended"] = [r.name for r, a in zip(tried, answers) if a.get("ok")]
-        # One after another, a run after the one that ended was never begun.
-        entry["started"] = [r.name for r, _ in zip(tried, answers)]
+        # One after another, a run after the one that ended was never begun:
+        # as each began (`extension_begins`), else from the answers.
+        began = entry.get("started")
+        entry["started"] = ([str(name) for name in began] if isinstance(began, list) and began
+                            else [r.name for r, _ in zip(tried, answers)])
         # A study of one run is named "the run", not by its folder; runs
         # stopped side by side are each named.
         named = run.name
@@ -841,20 +914,27 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             record["said"] = entry["said"] = (
                 f"Extending {_and(short)} to {length_said(target)}, the length the "
                 "other runs reached, before the runs are judged again.")
+            entry["started"] = []
+            current["entry"] = entry
             write()
             tried = [run for run in runs if run.name in short]
-            stopped = ended_by(entry, tried, list(extend_to(tried, target)))
+            stopped = ended_by(entry, tried, [] if asked() else list(extend_to(tried, target)))
             if stopped is not None:
-                if entry.get("stopped_by") == "asked" and all(
-                        abs(production_of(run) - productions[run.name]) <= _ONE_LENGTH_NS
-                        for run in runs if productions.get(run.name) is not None):
-                    # Stopped when asked before any run moved: the round it
-                    # carries on is said stopped by this, not a second round
-                    # recorded at the same lengths.
+                previous = record["rounds"][-2] if len(record["rounds"]) > 1 else {}
+                if (entry.get("stopped_by") == "asked" and previous.get("stopped_by") == "asked"
+                        and all(abs(production_of(run) - productions[run.name])
+                                <= _ONE_LENGTH_NS
+                                for run in runs if productions.get(run.name) is not None)):
+                    # Stopped when asked before any run moved, carrying on a
+                    # round itself stopped when asked: that round is said
+                    # stopped by this, with what this began and extended,
+                    # not a second round recorded at the same lengths. A
+                    # round that failed or was cut keeps its own ending, and
+                    # this is said beside it.
                     record["rounds"].pop()
-                    previous = record["rounds"][-1]
-                    previous.update(decision="stopped", stopped_by=entry["stopped_by"],
-                                    said=entry["said"])
+                    previous.update(decision="stopped", stopped_by="asked",
+                                    said=entry["said"], started=entry.get("started", []),
+                                    extended=entry.get("extended", []))
                     write()
                 return stopped
 
@@ -928,6 +1008,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             return record
         entry["decision"] = "extend"
         entry["more_ns"] = more
+        entry["started"] = []
+        current["entry"] = entry
         record["said"] = entry["said"] = (
             f"Extending by {length_said(more)}, to {length_said(production + more)} of the "
             f"{length_said(ceiling)} allowed: "
@@ -936,7 +1018,7 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         say(f"Not yet determined: {'; '.join(v.said for v in verdicts if not v.met)}. "
             f"Extending {'every run' if len(runs) > 1 else 'the run'} by {length_said(more)} "
             f"(to {length_said(production + more)} of the {length_said(ceiling)} allowed).")
-        stopped = ended_by(entry, runs, list(extend_all(runs, more)))
+        stopped = ended_by(entry, runs, [] if asked() else list(extend_all(runs, more)))
         if stopped is not None:
             return stopped
     record["outcome"] = "rounds"
@@ -1236,6 +1318,27 @@ def _what_resume_finds(study: Path, names: list[str]) -> dict[str, dict[str, Any
     return found
 
 
+def round_numbers(rounds: list[Any]) -> list[int]:
+    """Each entry's round number, as the rule judged its rounds: an entry
+    that brings shorter runs up (`brought_up`) carries the round before it
+    on and is shown as part of it, never as a round of its own. One
+    numbering for every reader: the sentence (`round_ended`), the Overview's
+    card and its count, the Timeline, the methods and the Agent's context."""
+    numbers: list[int] = []
+    number = 0
+    for entry in rounds or []:
+        if number == 0 or not (isinstance(entry, dict) and entry.get("brought_up")):
+            number += 1
+        numbers.append(number)
+    return numbers
+
+
+def rounds_judged(rounds: list[Any]) -> int:
+    """How many rounds the rule judged (`round_numbers`)."""
+    numbers = round_numbers(rounds)
+    return numbers[-1] if numbers else 0
+
+
 def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | None:
     """The one derivation of a study whose rule's last round failed, was
     stopped, or was cut by its process ending while it extended the runs,
@@ -1269,7 +1372,7 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
         return None
     # Rounds the rule judged: one that brings shorter runs up carries the
     # round before it on, and is not a round of its own in the count.
-    number = len([entry for entry in rounds if not entry.get("brought_up")]) or len(rounds)
+    number = rounds_judged(rounds)
     names = [str(name) for name in record.get("runs") or []]
     them = "the runs" if len(names) > 1 else "the run"
     more = rounds[-1].get("more_ns")

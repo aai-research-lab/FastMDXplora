@@ -2098,7 +2098,8 @@ def _its_stop_at_its_end_said_whole(root: Path) -> bool:
 
     manifest = root / "manifest.json"
     try:
-        record = json.loads(manifest.read_text(encoding="utf-8"))
+        # Its own record, never one linked out of the study (rewritten here).
+        record = json.loads(_records.read_own_text(manifest, encoding="utf-8"))
     except (OSError, ValueError):
         return False
     phases = record.get("phases") if isinstance(record, dict) else None
@@ -2112,10 +2113,35 @@ def _its_stop_at_its_end_said_whole(root: Path) -> bool:
             phase["status"] = "ok"
             phase["message"] = ("Production ran to its last step, where it was stopped "
                                 "when asked: the run is whole.")
+            if not phase.get("artifacts"):
+                # What it wrote, as a simulation that ended ok lists it.
+                phase["artifacts"] = _written_by_the_simulation(root / "simulation")
             changed = True
     if changed:
         _write_atomically(manifest, json.dumps(record, indent=2))
     return changed
+
+
+def _written_by_the_simulation(simulation: Path) -> list[str]:
+    """The files a simulation stopped at its last step wrote, as its record
+    lists them (``artifacts_written``, written at the stop), else as they
+    are there."""
+    import json
+
+    from fastmdxplora.simulation.pipeline import artifacts_of_a_whole_production
+
+    try:
+        said = json.loads(_records.read_own_text(simulation / "simulation_parameters.json",
+                                                 encoding="utf-8"))
+        written = [str(path) for path in said.get("artifacts_written") or []]
+    except (OSError, ValueError, AttributeError, TypeError):
+        written = []
+    if not written:
+        written = artifacts_of_a_whole_production(simulation)
+    if "simulation_parameters.json" not in written and (
+            simulation / "simulation_parameters.json").is_file():
+        written.append("simulation_parameters.json")
+    return written
 
 
 def stopped_at_its_end(root: str | Path, phase: Any) -> bool:
@@ -2392,13 +2418,20 @@ def _resume_study(study: str | Path, *,
             answer = _judge_the_run_again(root, base)
         else:
             answer = _carry_the_run_on(root, base, device_index=device_index,
-                                       standing=standing)
+                                       standing=standing, said_whole=False)
             carried = bool(answer.get("ok"))
             if carried:
                 judged = _judge_the_run_again(root, base)
                 # What the carrying on did, where the rule then ran nothing.
                 answer = {**judged, "did": (answer.get("did") if judged.get("did")
                                             == RESUMED_JUDGED else judged.get("did"))}
+    except KeyboardInterrupt:
+        # Ctrl+C outside a production and outside the rule's rounds (a
+        # piece's join, the rule about to be applied): a stop asked, said
+        # as the study then stands, where it ended in a traceback.
+        answer = {**base, "ok": False, "did": RESUMED_NOTHING, "stopped": True,
+                  "error": STOPPED_IN_A_RESUME}
+        carried = False
     finally:
         _release_run_process(root)
     if not carried:
@@ -2416,7 +2449,29 @@ def _resume_study(study: str | Path, *,
         answer.update(ok=True)
         answer.pop("error", None)
         answer.pop("round_ended", None)
+    if ended is None and answer.get("ok"):
+        # Its rule applied: the run stopped at its end said whole, last.
+        _said_whole_last(root)
     return answer
+
+
+def _said_whole_last(root: Path) -> None:
+    """What a resume says it finished, written last, after the work it
+    stands for (its analyses and report run, its rule applied): the live
+    record said as they leave it (`_phases_after_ended_well`), then the
+    Manifest's simulation, stopped when asked at its last step, said whole
+    (`_its_stop_at_its_end_said_whole`). A resume ended anywhere before the
+    Manifest's leaves the run read stopped (`telemetry.status_as_it_stands`
+    reads a stop at its end not yet said whole so), with `fastmdx resume`
+    offered, and that resume finishes it; the live record is written
+    again by it whatever it says."""
+    _phases_after_ended_well(root)
+    _its_stop_at_its_end_said_whole(root)
+
+
+#: What a resume of one run stopped by Ctrl+C outside its production says.
+STOPPED_IN_A_RESUME = ("Stopped when asked (Ctrl+C) before the resume finished; "
+                       "`fastmdx resume` carries it on from there.")
 
 
 def _its_rule_not_applied(root: Path) -> bool:
@@ -2504,11 +2559,13 @@ def how_a_resume_finds(root: str | Path) -> dict[str, Any] | None:
 
 def _carry_the_run_on(root: Path, base: dict[str, Any], *,
                       device_index: str | int | None = None,
-                      standing: tuple[bool, str | None, bool, Any] | None = None
-                      ) -> dict[str, Any]:
+                      standing: tuple[bool, str | None, bool, Any] | None = None,
+                      said_whole: bool = True) -> dict[str, Any]:
     """A study of one run carried on to the end of its plan, its rule's
     rounds aside; ``standing`` is how it stood (`_where_it_stands`), where
-    read before this resume took its process record."""
+    read before this resume took its process record. ``said_whole`` False
+    leaves a run stopped at its end said stopped, for its rule to be
+    applied before it is said whole (`_said_whole_last`)."""
     import yaml
 
     from fastmdxplora import FastMDXplora
@@ -2557,9 +2614,10 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
                          f"({stopped}). Running it again would give the same one."}
     if finished:
         # Stopped at its end with nothing after it to run (its analyses not
-        # asked): whole, and said so where it said stopped.
-        if _its_stop_at_its_end_said_whole(root):
-            _phases_after_ended_well(root)
+        # asked), or by a resume ended before it said the run whole: said
+        # so now, where it said stopped.
+        if said_whole:
+            _said_whole_last(root)
         return {**base, "ok": True, "did": RESUMED_NOTHING,
                 **_production_now(root, {"ok": True}),
                 "detail": NOTHING_TO_CARRY_ON}
@@ -2666,9 +2724,8 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
             analysis.setdefault("topology", str(topology))
         whole["analysis"] = analysis
         ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
-        if all(result.status == "ok" for result in ran):
-            _its_stop_at_its_end_said_whole(root)
-            _phases_after_ended_well(root)
+        if all(result.status == "ok" for result in ran) and said_whole:
+            _said_whole_last(root)
         return {**base, "ok": True, "did": RESUMED_ANALYSIS,
                 **_production_now(root, {"ok": True}), "production_planned_ns": planned}
 
@@ -2898,16 +2955,25 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     did = (RESUMED_NOTHING if quiet and getattr(batch, "_rule_ran_nothing", False)
            else RESUMED_JUDGED if quiet and not getattr(batch, "_rule_extended", True)
            else RESUMED_RUNS)
+    from fastmdxplora.batch.explorer import STOPPED_IN_THE_ROUNDS, _was_stopped
+
+    # A run stopped when asked, in the round it carried on or not: a stop
+    # asked, which the CLI exits 130 for.
+    stopped = any(_was_stopped(r) or getattr(r, "error_type", None) == STOPPED_IN_THE_ROUNDS
+                  for r in results)
     answer = {**base, "ok": not failed and ended is None, "did": did,
-              "runs": listed, **({"refused": refused} if refused else {})}
-    if did == RESUMED_JUDGED:
+              "runs": listed, **({"refused": refused} if refused else {}),
+              **({"stopped": True} if stopped else {})}
+    if not failed and ended is None and did != RESUMED_NOTHING:
         import json as _json
 
         from fastmdxplora.simulation.stopping import RECORD
 
+        # What its rule decided, said last, as a study of one says it.
         try:
-            answer["rule_said"] = str(_json.loads((root / RECORD).read_text(
-                encoding="utf-8")).get("said") or "")
+            record = _json.loads((root / RECORD).read_text(encoding="utf-8"))
+            if str(record.get("outcome") or "") in ("met", "ceiling", "rounds", "stopped"):
+                answer["rule_said"] = str(record.get("said") or "")
         except (OSError, ValueError, AttributeError):
             pass
     if ended is not None:

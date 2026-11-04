@@ -1228,8 +1228,14 @@ def _stopping_summary(root: Any) -> str:
     if not isinstance(record, dict):
         return ""
     lines = ["how long the study ran, and why (simulation.stop_when, as recorded):"]
-    for number, entry in enumerate(record.get("rounds") or [], start=1):
+    from fastmdxplora.simulation.stopping import round_numbers
+
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    # Numbered as the rule judged them: a catch-up is part of its round.
+    for number, entry in zip(round_numbers(rounds), rounds):
         said = "; ".join(str(v.get("said")) for v in entry.get("verdicts") or [])
+        if entry.get("brought_up"):
+            said = f"its catch-up of {', '.join(map(str, entry['brought_up']))}"
         lines.append(f"  round {number}, at {entry.get('production_ns')} ns: {said}"
                      f" -> {entry.get('decision')}"
                      + (f" by {entry['more_ns']} ns" if entry.get("more_ns") else ""))

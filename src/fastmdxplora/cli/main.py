@@ -3329,14 +3329,20 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
     from fastmdxplora.simulation.resume import resume_study
 
-    if getattr(args, "json", False):
-        # What the runs print goes to stderr, so the answer on stdout is the
-        # one line of JSON a program reads; it followed every phase's
-        # progress there, and no JSON reader read it.
-        with _stdout_on_stderr():
+    try:
+        if getattr(args, "json", False):
+            # What the runs print goes to stderr, so the answer on stdout is
+            # the one line of JSON a program reads; it followed every phase's
+            # progress there, and no JSON reader read it.
+            with _stdout_on_stderr():
+                answer = resume_study(args.study)
+        else:
             answer = resume_study(args.study)
-    else:
-        answer = resume_study(args.study)
+    except KeyboardInterrupt:
+        # A second Ctrl+C, obeyed at once: said, never a traceback.
+        print(f"fastmdx: stopped when asked; `fastmdx resume {args.study}` carries it on.",
+              file=sys.stderr)
+        return 130
     if getattr(args, "json", False):
         if not answer.get("ok"):
             from fastmdxplora.remedies import remedies_of
@@ -3404,9 +3410,11 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             print("\n".join(fixes), file=sys.stderr)
     if answer.get("ok"):
         return 0
-    # A round stopped when asked, as `fastmdx explore` says it: interrupted;
-    # a resume a run refused ran nothing, and was not stopped.
-    return (130 if (answer.get("round_ended") or {}).get("state") == "stopped"
+    # A stop asked (the round stopped when asked, or the resume itself), as
+    # `fastmdx explore` says it: interrupted; a resume a run refused ran
+    # nothing, and was not stopped; a round that failed is not a stop.
+    state = (answer.get("round_ended") or {}).get("state")
+    return (130 if (state == "stopped" or (answer.get("stopped") and state is None))
             and not answer.get("refused") else 1)
 
 

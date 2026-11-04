@@ -1035,6 +1035,13 @@ class _StopRequests:
                 self._previous[number] = _signal.signal(number, self._note)
             except (ValueError, OSError):  # pragma: no cover - a platform without it
                 continue
+        # A stop the study's round noted before this production began (a
+        # catch-up piece's start): it stops at its first frame.
+        pending = next((listener for listener in reversed(_LISTENING[:-1])
+                        if isinstance(listener, _StopInTheRounds)
+                        and listener.signal is not None), None)
+        if pending is not None and self.signal is None:
+            self.signal, self.asked_here = pending.signal, pending.asked_here
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
@@ -1074,6 +1081,43 @@ class _StopRequests:
 
     def ask_here(self) -> str:
         return _asked_here(self)
+
+
+class _StopInTheRounds(_StopRequests):
+    """SIGTERM and SIGINT while a study's stopping rule judges and extends
+    its runs, outside a run's production (a piece's join and analyses,
+    between runs, a catch-up piece's start), noted rather than obeyed at
+    once, as production notes them: the round ends stopped when asked once
+    the run it extends has answered, and a production begun after the stop
+    stops at its first frame. A KeyboardInterrupt raised there recorded the
+    round cut, or was lost where Python ignores it (in a weakref callback),
+    and the study ran on. A second is obeyed at once."""
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import os as _os
+        import signal as _signal
+
+        heard = _a_stop_heard(number)
+        if heard == "again":
+            return
+        if self.signal is None:
+            self.signal = number
+            logger.warning(
+                "%s received: the study's round ends once the run it extends has "
+                "answered, where `fastmdx resume` carries it on. Send it again to stop "
+                "now.", self.name)
+            return
+        self._restore()
+        if number == _signal.SIGINT:
+            raise KeyboardInterrupt
+        _os.kill(_os.getpid(), number)
+
+
+def a_stop_asked_in_the_rounds() -> bool:
+    """Whether a stop was asked while the study's rule extends its runs
+    (`_StopInTheRounds`): no further run's extension is begun."""
+    return any(isinstance(listener, _StopInTheRounds) and listener.signal is not None
+               for listener in list(_LISTENING))
 
 
 #: What in this process listens for a stop now, newest last: a production
@@ -1211,8 +1255,10 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
-    #: Production whole: said completed in its live record, with its frames.
+    #: Production whole: said completed in its live record, with its frames
+    #: and its length (steps times the timestep, as a run that ended says it).
     error.finished, error.frames = whole, frame
+    error.duration_ns = done_ns if whole else None
     raise error
 
 

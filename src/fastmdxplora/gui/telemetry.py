@@ -581,7 +581,12 @@ def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
     taken it in, its record saying it was stopped (the runner stops there,
     or said it not finished before): the run read stopped for good after a
     resume that completed it. Before its join the run is as its round left
-    it: stopped, its production whole, its join owed."""
+    it: stopped, its production whole, its join owed. So is a piece that
+    finished as planned and was never joined (its study stopped or cut
+    between the two, `_its_join_owed`): it read completed, while the Agent
+    and the round's sentence said its join owed."""
+    if str(status.get("status") or "").lower() in _FINISHED_STATUSES:
+        return _its_join_owed(piece, status)
     if str(status.get("status") or "").lower() != "stopped":
         return status
     from fastmdxplora.analysis.joining import piece_finished
@@ -601,6 +606,35 @@ def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
     total = status.get("total_planned_steps")
     return {**status, "status": "completed", "latest_error": None, "stage_states": states,
             **({"current_step": total} if isinstance(total, (int, float)) else {})}
+
+
+def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A piece's live record that says it finished, read stopped where the
+    join has not taken it in (`joined/joined.json`) and nothing carries the
+    study on now: its production whole, its join and the analyses of it
+    owed, which `fastmdx resume` runs (`resume.how_a_resume_finds`,
+    ``unjoined``). Only a piece an extension made, its config written
+    beside it (`segment-NNN.yml`), is joined by it."""
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    try:
+        if not _records.is_file(piece.with_name(piece.name + ".yml")):
+            return status
+        index = int(piece.name.split("-", 1)[1])
+        try:
+            joined = json.loads(_records.read_text(piece.parent / "joined" / "joined.json",
+                                                   encoding="utf-8"))
+            taken = {int(i) for i in joined.get("segments") or []}
+        except (OSError, ValueError):
+            taken = set()
+        if index in taken or being_carried_on(piece.parent):
+            return status
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return status
+    return {**status, "status": "stopped", "join_owed": True,
+            "latest_error": (f"Its piece {piece.name} ran to its end, and the study ended "
+                             "before the piece was joined: `fastmdx resume` joins it and "
+                             "runs its analyses and report.")}
 
 
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
@@ -1042,15 +1076,41 @@ def status_as_it_stands(project_root: str | Path, *,
     if ended is None:
         waiting = between_rounds(project_root, status) if status and include_campaign else None
         if waiting is None:
-            return _owing_its_analysis(project_root, status)
+            return _not_yet_said_whole(project_root, _owing_its_analysis(project_root, status))
         return _waiting_for_the_round(status, waiting)
     step, total = status.get("current_step"), status.get("total_planned_steps")
     finished = (str(status.get("stage") or "").lower() in _STEPPED_STAGES
                 and isinstance(step, (int, float)) and isinstance(total, (int, float))
                 and 0 < total <= step)
-    return _owing_its_analysis(project_root, {
+    return _not_yet_said_whole(project_root, _owing_its_analysis(project_root, {
         **status, "status": "completed" if finished else "interrupted",
-        "ended_by": ended, "recorded_status": status.get("status")})
+        "ended_by": ended, "recorded_status": status.get("status")}))
+
+
+def _not_yet_said_whole(project_root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A run said completed whose Manifest still records its simulation
+    stopped when asked at its last step (`resume.stopped_at_its_end`, not
+    yet said whole): a resume says it whole last, after its analyses and
+    its rule (`resume._said_whole_last`), so one ended before that is read
+    stopped, its stop said, and `fastmdx resume` finishes it. It read
+    completed with its rule never applied and no fix offered."""
+    if str((status or {}).get("status") or "").lower() not in _FINISHED_STATUSES:
+        return status
+    from fastmdxplora.simulation.resume import being_carried_on, stopped_at_its_end
+
+    try:
+        manifest = json.loads(_records.read_text(Path(project_root) / "manifest.json",
+                                                 encoding="utf-8"))
+    except (OSError, ValueError):
+        return status
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    stop = next((phase for phase in phases or [] if stopped_at_its_end(project_root, phase)),
+                None)
+    if stop is None or being_carried_on(project_root):
+        return status
+    return {**status, "status": "stopped", "stage": "production",
+            "latest_error": str(stop.get("message") or "") or status.get("latest_error"),
+            "recorded_status": status.get("recorded_status") or status.get("status")}
 
 
 #: ``ended_by`` for a study stopped after its pieces were joined, before

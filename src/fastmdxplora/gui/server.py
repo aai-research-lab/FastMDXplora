@@ -4823,6 +4823,21 @@ def _summary_records(
                   else "in progress")
     else:
         status = "not run"
+    if phase_statuses:
+        # The study's state, as its header and every page read it
+        # (`workspace.study_state`): its Manifest is its first piece's, or
+        # its run's before its rule's round, and read completed beside a
+        # round that failed or was cut.
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            state = study_state(root)
+        except Exception:  # noqa: BLE001 - the Manifest's word stands
+            state = None
+        if state in ("completed", "stopped", "failed", "interrupted"):
+            status = state
+        elif state == "running":
+            status = "in progress"
     frames = _first_present(
         analysis_manifest.get("n_frames"),
         sim_manifest.get("n_production_frames"),
@@ -4861,6 +4876,18 @@ def _summary_records(
     ]
     if extended:
         records[4]["value"] += f" in {extended[1]} pieces"
+        # Its last piece not joined: its frames are of the pieces before it
+        # (`records_answer._span_analysed`), as the Agent says.
+        try:
+            from fastmdxplora.gui.records_answer import _span_analysed
+            from fastmdxplora.simulation.resume import _extended_since_it_finished
+
+            span = _span_analysed(root) if _extended_since_it_finished(root) else None
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            span = None
+        if span is not None and span < float(extended[0]) - 1e-6:
+            records[4]["value"] += ", its last not joined"
+            records[2]["value"] += f" (of its first {say_length(span)}, joined)"
     elif production_not_read:
         records[4]["value"] = "not read"
     return records

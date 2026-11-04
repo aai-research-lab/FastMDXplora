@@ -711,6 +711,11 @@ def _resume_run(spec_dict: dict[str, Any], run_out: str,
         with quiet_banner(_os.path.join(run_out, "run.log")) if quiet \
                 else _nothing_to_silence():
             answer = resume_study(run_out, device_index=device_override)
+    except KeyboardInterrupt:
+        # Ctrl+C outside the run's production (its piece's join): a stop
+        # asked, as one in production is, never a traceback.
+        answer = {"ok": False, "stopped": True,
+                  "error": "Stopped when asked (Ctrl+C) as it was carried on."}
     except (Exception, RunStopped) as exc:  # noqa: BLE001 -- isolate per-run failures
         from fastmdxplora.refusals import refusal_of
         from fastmdxplora.simulation.runner import STOPPED_CODE
@@ -1639,7 +1644,8 @@ class BatchExplorer:
             self._write_planned_stopping(stopping)
         self._past = self._past_the_ceiling_now(stopping)
         # Read before the plan is written over the study's record of its runs.
-        self._as_they_were = self._results_as_they_were() if self._past else []
+        self._as_they_were = (self._results_as_they_were()
+                              if self._past or getattr(self, "resume", False) else [])
 
         # The study's process, at its top: each run records its own (a
         # worker's, in parallel), which says nothing between two runs,
@@ -1708,7 +1714,7 @@ class BatchExplorer:
             # length a cut extension would carry a run to: no run is carried
             # on, each said as it stands, and the round as it ended
             # (`round_ended`, which says why), never a round judged.
-            self.results = self._as_they_were
+            self.results = list(self._as_they_were)
         elif self.mode == "parallel" and not self.is_single:
             self.results = self._run_parallel(include, exclude)
         else:
@@ -1913,6 +1919,8 @@ class BatchExplorer:
             # last lines (`round_ended`).
             return
         if any(_was_stopped(result) for result in self.results):
+            if getattr(self, "resume", False) and self._carried_its_round_on_until_stopped():
+                return
             ended("stopped", STOPPED_BEFORE_THE_RULE)
             return
         finished = [result for result in self.results
@@ -1961,6 +1969,33 @@ class BatchExplorer:
         if self.is_single:
             self._report_again(runs[0])
 
+    def _carried_its_round_on_until_stopped(self) -> bool:
+        """A resume carrying on its study's round that failed, was stopped or
+        was cut (`round_ended`), stopped when asked as it carried a run on:
+        the round is still the round's, said stopped (a cut one by this
+        stop, `round_not_carried_on`), never "before the rule was applied";
+        a run it stopped is a run stopped in the round, and a run it never
+        reached is counted as its record last gave it, as `fastmdx explore`
+        stopped in a round counts them. Whether it was so."""
+        from dataclasses import replace
+
+        from fastmdxplora.simulation.stopping import round_ended, round_not_carried_on
+
+        if round_ended(self.output_dir, resuming=True) is None:
+            return False
+        stopped = [result for result in self.results if _was_stopped(result)]
+        round_not_carried_on(self.output_dir, stopped[0].run_id,
+                             {"ok": False, "stopped": True})
+        before = {result.run_id: result for result in self._as_they_were}
+        for index, result in enumerate(self.results):
+            if _was_stopped(result):
+                self.results[index] = replace(
+                    result, error_type=STOPPED_IN_THE_ROUNDS,
+                    message="Stopped when asked in the study's rounds.")
+            elif result.status == "skipped" and result.run_id in before:
+                self.results[index] = before[result.run_id]
+        return True
+
     def _extend_runs(self, runs: list[Path], more_ns: float | None, *,
                      total_ns: float | None = None) -> list[dict[str, Any]]:
         """Every run extended by ``more_ns`` (or to ``total_ns``): side by
@@ -1969,10 +2004,16 @@ class BatchExplorer:
         if self.mode != "parallel" or len(runs) < 2:
             from fastmdxplora.simulation.resume import extend_study
 
+            from fastmdxplora.simulation.stopping import extension_begins, to_begin_another
+
             device = str(self.devices[0]) if self.devices else None
             answers = []
             with _within_the_rounds():
                 for run in runs:
+                    if not to_begin_another():
+                        # A stop asked in the round: no further run begun.
+                        break
+                    extension_begins(run)
                     # To a length only when asked: an extension by one is
                     # called as it always was.
                     answers.append(extend_study(
@@ -1989,6 +2030,10 @@ class BatchExplorer:
         stop = _StudyStop(pool, folder=self.output_dir)
         try:
             stop.__enter__()
+            from fastmdxplora.simulation.stopping import extension_begins
+
+            for run in runs:
+                extension_begins(run)
             futures = [pool.submit(_extend_one, str(run), more_ns,
                                    self._device_for_worker(index), total_ns)
                        for index, run in enumerate(runs)]

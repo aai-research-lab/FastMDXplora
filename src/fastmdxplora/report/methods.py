@@ -1205,7 +1205,11 @@ def _stopping_sentences(stopping: dict[str, Any], units: dict[str, str]) -> list
     produced = last.get("production_ns")
     at = (f", at {length_said(produced)} of production" + (" per run" if replicas else "")
           if isinstance(produced, (int, float)) and not isinstance(produced, bool) else "")
-    count = f"{len(rounds)} round" + ("s" if len(rounds) != 1 else "")
+    from fastmdxplora.simulation.stopping import rounds_judged
+
+    # Rounds the rule judged: a catch-up is part of the round it carries on.
+    judged = rounds_judged(rounds)
+    count = f"{judged} round" + ("s" if judged != 1 else "")
     outcome = stopping.get("outcome")
     # What stopped it, as the report's table and the Timeline say it.
     decided = round_decided(last, last=True, record=stopping)
