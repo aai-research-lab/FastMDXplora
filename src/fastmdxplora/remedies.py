@@ -504,7 +504,10 @@ def _interrupted(root: Path) -> Remedy | None:
         # piece was joined (`telemetry._its_join_owed`): said in its own
         # words, never as a day of silence; `fastmdx resume` joins it.
         why = str(stands.get("latest_error") or "Its last piece was not joined.")
-        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root, price=False),
+        # The study's own resume (`_resume` gives a run of several's), as
+        # the health card gives it.
+        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root,
+                               price=False),
                        fix="Join its last piece, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
@@ -751,6 +754,11 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
     cost = (Price(production_ns=_round(production), equilibration_ns=_round(equilibration),
                   runs=len(folders), seconds=seconds, platform=platform)
             if folders and price and not unpriced else None)
+    if study is not None and study.parent.name == "runs" and (
+            study.parent.parent / "batch_manifest.json").is_file():
+        # A run of a study of several is carried on by its study's resume:
+        # its own ran it alone and left its study's round unjudged.
+        study = study.parent.parent
     said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
     return Remedy(code=code, where=where, why=why,
                   fix=(f"{family} Production already written is kept, and the "

@@ -1046,6 +1046,8 @@ class _StopRequests:
         if pending is not None and self.signal is None:
             self.signal, self.asked_here = pending.signal, pending.asked_here
             self.before_it_began = True
+            #: The study whose round noted it: its resume carries the round on.
+            self.study = pending.folder
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
@@ -1252,8 +1254,9 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
     frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
     where = checkpoint.parent.parent
     if step == 0 and getattr(stop, "before_it_began", False):
-        said = ("It was asked before its first step, so nothing of it is kept; `fastmdx "
-                f"resume {where}` carries the run on from the piece before it.")
+        said = ("It was asked before its first step, so nothing of it is saved; `fastmdx "
+                f"resume {getattr(stop, 'study', None) or where}` carries the study's round "
+                "on, this run from the piece before it.")
     elif stop.on_frame and step > 0:
         _write_checkpoint_pair(simulation, checkpoint)
         write_checkpoint_sidecar(checkpoint, step=step, finished=whole,

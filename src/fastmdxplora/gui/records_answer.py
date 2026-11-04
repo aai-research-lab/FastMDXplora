@@ -500,9 +500,11 @@ def _not_analysed(base: Path) -> str:
     said = ("Its records do not say yet: it has not been analysed, so no analysis "
             "has judged whether its series equilibrated.")
     try:
-        from fastmdxplora.gui.telemetry import status_as_it_stands
+        # The study's state, as every page reads it (`workspace.study_state`,
+        # its rule's round first), not its live record's.
+        from fastmdxplora.gui.workspace import study_state
 
-        status = str(status_as_it_stands(base).get("status") or "").lower()
+        status = str(study_state(base) or "").lower()
     except Exception:  # noqa: BLE001 - the plainer answer stands
         status = ""
     if status in ("stopped", "failed", "interrupted"):

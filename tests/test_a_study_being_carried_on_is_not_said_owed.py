@@ -297,10 +297,14 @@ def test_a_lock_file_linked_out_of_the_study_is_not_read(tmp_path: Path) -> None
     outside = tmp_path / "elsewhere.lock"
     (root / CARRYING_ON_FILE).symlink_to(outside)
     with _held_as(outside, "here"):
-        # Read as the GUI reads a study's records: a link out of it is not.
+        # Read as the GUI reads a study's records: a link at the lock's name
+        # is no lock of the study's, not opened, and not a record refused
+        # (All studies said "not known" while its header said Completed).
         with confined_records(root, lambda path: True) as scope:
             assert not being_carried_on(root)
-        assert CARRYING_ON_FILE in scope.denied
+        assert CARRYING_ON_FILE not in scope.denied
+        # Nor opened outside a held read (a link to a FIFO hung the CLI).
+        assert not being_carried_on(root)
 
 
 def test_the_study_s_lock_is_read_by_the_gui_s_own_rule(held) -> None:

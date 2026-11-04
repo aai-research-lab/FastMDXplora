@@ -2271,12 +2271,9 @@ def being_carried_on(root: str | Path) -> bool:
     path = root / CARRYING_ON_FILE
     try:
         if path.is_symlink():
-            # A link out of the study is no lock of its: refused as any
-            # record linked out is (`record_access`, which names it), and
-            # not read.
-            from fastmdxplora import record_access
-
-            record_access.read_text(path, encoding="utf-8")
+            # A link at the lock's name is no lock of the study's: not
+            # opened (a link to a FIFO hung a reader), and not a record it
+            # refused either, so every page reads the study the same.
             record = None
         else:
             # The study's own lock, read for the process it names and never
@@ -2443,7 +2440,13 @@ def _resume_study(study: str | Path, *,
         standing = None
     finished = standing is not None and not _carried_on_first(standing)
     _hold_run_process(root, rewrite=True)
+    from fastmdxplora.simulation.stopping import carried_on_marked
+
     carried = True
+    # Its record says this resume carries it on, before its work: one that
+    # dies reads cut, never stopped when asked by an earlier stop's words.
+    marked = carried_on_marked(root)
+    marked.__enter__()
     try:
         if finished:
             answer = _judge_the_run_again(root, base)
@@ -2464,6 +2467,7 @@ def _resume_study(study: str | Path, *,
                   "error": STOPPED_IN_A_RESUME}
         carried = False
     finally:
+        marked.__exit__(None, None, None)
         _release_run_process(root)
     if not carried:
         # Said as the round's end where its record said it went on.
@@ -2977,7 +2981,11 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     config["output"] = str(root)
     try:
         batch = BatchExplorer(config_data=config, output_dir=str(root), resume=True)
-        results = batch.run()
+        from fastmdxplora.simulation.stopping import carried_on_marked
+
+        # Its record says this resume carries it on, before its work.
+        with carried_on_marked(root):
+            results = batch.run()
     except Exception as exc:  # noqa: BLE001 - said, not raised, as a resume is
         from fastmdxplora.refusals import refusal_of
 

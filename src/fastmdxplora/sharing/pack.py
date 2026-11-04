@@ -172,9 +172,12 @@ def finished_manifest(root: Path) -> dict[str, Any]:
         raise ShareRefused(f"{root} holds no FastMDXplora study (no manifest.json).",
                            code="environment.share.not_a_study")
     try:
-        from fastmdxplora.gui.telemetry import status_as_it_stands
+        # The study's state, as every page reads it (`workspace.study_state`,
+        # its rule's round first): its live record alone read a study whose
+        # rule was never applied as finished.
+        from fastmdxplora.gui.workspace import study_state
 
-        status = str(status_as_it_stands(root).get("status") or "").lower()
+        status = str(study_state(root) or "").lower()
     except Exception:  # noqa: BLE001 - the Manifest still says how each phase ended
         status = ""
     if status in ("running", "starting", "paused"):
@@ -182,9 +185,18 @@ def finished_manifest(root: Path) -> dict[str, Any]:
                            "finished.", code="environment.share.not_finished")
     short = [str(p.get("name")) for p in manifest["phases"]
              if isinstance(p, dict) and str(p.get("status")) not in ("ok", "skipped")]
-    if short or status in ("stopped", "failed", "interrupted"):
+    if status in ("stopped", "failed", "interrupted"):
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(root)
         raise ShareRefused(
-            f"The study in {root} did not finish ({', '.join(short) or status}); share it "
+            f"The study in {root} did not finish ("
+            + (ended.said if ended is not None else status) + "); share it once it has, "
+            "after `fastmdx resume` where it stopped.",
+            code="environment.share.not_finished")
+    if short:
+        raise ShareRefused(
+            f"The study in {root} did not finish ({', '.join(short)}); share it "
             "once it has, after `fastmdx resume` where it stopped.",
             code="environment.share.not_finished")
     if not (root / "resolved_config.yml").is_file():

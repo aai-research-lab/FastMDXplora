@@ -27,11 +27,12 @@ starting structures test it further.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.statistics import with_its_error
@@ -1328,6 +1329,87 @@ def _what_resume_finds(study: Path, names: list[str]) -> dict[str, dict[str, Any
     return found
 
 
+#: In the record of a study whose resume carries it on, from before its
+#: work until it ends (`carried_on_marked`): a resume that died leaves it,
+#: so the study reads cut, never stopped when asked by an earlier stop's
+#: sentence; written over by the rule's next round.
+CARRIED_ON_BY = "carried_on_by"
+
+
+@contextlib.contextmanager
+def carried_on_marked(study: str | Path) -> Iterator[None]:
+    """The study's record of its rounds says a resume of this process
+    carries it on, while it does: written before its work, taken away
+    after however it ended. Nothing where the study keeps no such record."""
+    import os
+
+    where = Path(study) / RECORD
+
+    def rewrite(change: Any) -> None:
+        try:
+            record = json.loads(where.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if isinstance(record, dict) and change(record):
+            try:
+                where.write_text(json.dumps(record, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+
+    def mark(record: dict[str, Any]) -> bool:
+        record[CARRIED_ON_BY] = {"pid": os.getpid()}
+        return True
+
+    def unmark(record: dict[str, Any]) -> bool:
+        marked = record.get(CARRIED_ON_BY)
+        if isinstance(marked, dict) and marked.get("pid") == os.getpid():
+            record.pop(CARRIED_ON_BY)
+            return True
+        return False
+
+    rewrite(mark)
+    try:
+        yield
+    finally:
+        rewrite(unmark)
+
+
+def _a_resume_died(record: dict[str, Any]) -> bool:
+    """Whether the record says a resume carried the study on, and that
+    resume's process is gone (killed, out of memory)."""
+    marked = record.get(CARRIED_ON_BY)
+    pid = marked.get("pid") if isinstance(marked, dict) else None
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        return not _process_alive(pid)
+    except Exception:  # noqa: BLE001 - not known gone
+        return False
+
+
+def round_stopped_when_asked(study: str | Path) -> bool:
+    """Whether the study's last round was stopped when asked, by its record
+    of its rounds alone (never by when its files were written, which a copy
+    or a touch changes): its last round's ``stopped_by``, and no resume
+    since that died carrying it on (`CARRIED_ON_BY`). Read held to the
+    study, its record only (a run's page reads no other record of it)."""
+    from fastmdxplora import record_access
+
+    try:
+        record = json.loads(record_access.read_text(Path(study) / RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or record.get(CARRIED_ON_BY):
+        return False
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    if str(record.get("outcome") or "") != "stopped":
+        return False
+    return (study_ended(record) == "asked"
+            or bool(rounds) and rounds[-1].get("stopped_by") == "asked")
+
+
 def rule_owed(study: str | Path, *, resuming: bool = False) -> RoundEnded | None:
     """A study whose stopping rule was never applied to how its runs now
     stand, though nothing goes on: its process ended (killed, out of
@@ -1352,8 +1434,10 @@ def rule_owed(study: str | Path, *, resuming: bool = False) -> RoundEnded | None
     outcome = str(record.get("outcome") or "")
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
     said = record.get("said")
+    died = not resuming and _a_resume_died(record)
     if outcome == "stopped" and said in (STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN):
-        state = "stopped"
+        # Stopped when asked, unless a resume carried it on since and died.
+        state = "interrupted" if died else "stopped"
     elif outcome == "running" and not rounds:
         state = "interrupted"
     else:
@@ -1373,6 +1457,8 @@ def rule_owed(study: str | Path, *, resuming: bool = False) -> RoundEnded | None
     said = ("Its stopping rule was not applied" + again + ": "
             + ("it was stopped when asked before the rule was applied" + again + "."
                if state == "stopped" else
+               "the resume carrying it on ended before the rule was applied" + again + "."
+               if died else
                "the study's process ended before its first round was judged."))
     return RoundEnded(state=state, said=said,
                       carry_on=f"{command} judges the runs as they stand and extends them "
@@ -1507,6 +1593,13 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
                     f"{first.removeprefix(_STOPPED_WHEN_ASKED)}."
                     if first.startswith(_STOPPED_WHEN_ASKED)
                     else f"Its stopping rule's round {number} was stopped: {first}.")
+        if state == "stopped" and not resuming and _a_resume_died(record):
+            # A resume carried the round on and its process ended (killed,
+            # out of memory) with no record of how: cut, never said stopped
+            # when asked by the earlier stop's sentence.
+            state = "interrupted"
+            said = (f"Its stopping rule's round {number} did not finish: the resume carrying "
+                    "it on ended with no record of how the round ended.")
     productions = _production_of_each(study, names) if names else {}
     ceiling = _ceiling_a_resume_uses(study, record)
     length = round_length(rounds)

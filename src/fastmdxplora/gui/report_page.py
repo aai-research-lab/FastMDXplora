@@ -261,7 +261,16 @@ def _study_of_runs_payload(base: Path, *, trace: bool = True) -> dict[str, Any]:
                 "figure_provenance": _comparison_provenance(comparison.parent),
                 **_traced(html, rendered, base, comparison, trace=trace)}
     if not completed:
-        return {"ok": False, "reason": f"none of {len(runs)} runs completed yet",
+        try:
+            from fastmdxplora.simulation.stopping import round_ended
+
+            ended = round_ended(base)
+        except Exception:  # noqa: BLE001 - said as its runs stand
+            ended = None
+        # Its round ended short: said, as every page says it.
+        return {"ok": False, "reason": (f"{ended.said} {ended.carry_on_on_a_page}"
+                                        if ended is not None else
+                                        f"none of {len(runs)} runs completed yet"),
                 "html": "", "not_produced": [], "downloads": {},
                 "runs": len(runs), "pending": pending}
     html, rendered = render_markdown(_so_far(base, runs, completed))
@@ -501,9 +510,26 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     # Read so far between rounds where it says so; else completed.
     done = sum(1 for r in completed if not (r.get("so_far") and r.get("state") != "completed"))
     between = len(completed) - done
-    # Still to run: neither completed nor read so far between rounds.
-    pending = len(runs) - len(completed)
+    # Still to run: neither completed nor read so far between rounds, nor
+    # ended without finishing (a run cut or stopped is not "to run").
+    ended_short = [r for r in runs if r not in completed
+                   and r.get("state") in ("interrupted", "stopped", "failed")]
+    pending = len(runs) - len(completed) - len(ended_short)
     lines = [f"# {base.name}: {done} of {len(runs)} runs completed", ""]
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(base)
+    except Exception:  # noqa: BLE001 - the runs still say how far each got
+        ended = None
+    if ended is not None:
+        # Its rule's round ended short, or its rule was never applied: said
+        # first, as every page says it (`stopping.round_ended`), with what
+        # carries it on.
+        lines += [f"**{ended.label}.** {ended.said} {ended.carry_on_on_a_page}", ""]
+    if ended_short and ended is None:
+        lines += [f"_{len(ended_short)} ended without finishing: see "
+                  f"{'its' if len(ended_short) == 1 else 'their'} Overview._", ""]
     if between:
         lines += [f"_{between} {'is' if between == 1 else 'are'} read as far as "
                   f"{'its' if between == 1 else 'their'} finished pieces go: the study extends "

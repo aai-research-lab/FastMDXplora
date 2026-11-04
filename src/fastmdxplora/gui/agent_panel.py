@@ -892,6 +892,32 @@ def _asked_going(target: Path, runtime: Any) -> bool:
         record.get("pid"), target, record.get("argv"), record)
 
 
+def _as_the_study_reads(root: Path, status: str, head: str, *,
+                        stopped: bool) -> tuple[str, str]:
+    """How a run the Agent started ended, as every page reads the study
+    (`workspace.study_state`, its rule's round first, `stopping.round_ended`):
+    the round's sentence where it ended short or its rule was never applied,
+    and its state where it is said; what its runs and records gave
+    otherwise. Stopped here and said so stands."""
+    try:
+        from fastmdxplora.gui.workspace import study_state
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(root)
+        state = study_state(root)
+    except Exception:  # noqa: BLE001 - its runs and records still say how it ended
+        return status, head
+    if ended is not None:
+        # The study's state (a run that refused its resume fails a round
+        # stopped), said with the round's sentence.
+        return (state if state in ("stopped", "failed", "interrupted") else ended.state,
+                ended.said)
+    if state in ("completed", "stopped", "failed", "interrupted") and not (
+            stopped and status == "stopped"):
+        return state, head if state == status else _ENDED_AS.get(state, head)
+    return status, head
+
+
 def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
                          path_for: Any = None) -> dict[str, Any]:
     """What a run the Agent started found, once it has ended, written from
@@ -986,6 +1012,7 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             # Asked only to prepare: not "completed" above its records'
             # word that no run was run (tenth review, 10-08).
             head = f"The study was prepared once, for its {prepared} windows"
+        status, head = _as_the_study_reads(root, status, head, stopped=stopped)
         return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
     if not _wrote_records(root):
@@ -1007,6 +1034,7 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
     head = _ENDED_AS.get(status, "The run ended")
     if seconds:
         head += (" in " if status == "completed" else " after ") + _hms(seconds)
+    status, head = _as_the_study_reads(root, status, head, stopped=stopped)
     if (root / "batch_manifest.json").is_file():
         # A study of several runs is answered in one paragraph, the same for
         # every question: said once.
@@ -1084,11 +1112,18 @@ def _run_status(runtime: Any, *, first: str | None = None,
         status = status_as_it_stands(runtime.active_root) or {}
         if status.get("stage"):
             lines.append(f"stage: {status['stage']}")
+        # The health as its card says it: the study's rule's round first
+        # (`stopping.round_ended`), with the run's folder, so it is never
+        # "Completed" of a study whose rule was never applied.
+        health = analyze_health(status, [], root=runtime.active_root)
         # A record left saying the run goes on, by a run that has ended: the
         # time it had left is not said, as the page does not say it.
         ended = status.get("status") == "interrupted"
         if ended:
-            lines.append("state: interrupted: the run ended without recording why; its "
+            why = (str(health.get("message") or "") if health.get("state") == "interrupted"
+                   else "")
+            lines.append("state: interrupted: "
+                         + (why or "the run ended without recording why") + "; its "
                          f"last update was {status.get('last_update_timestamp') or 'not recorded'}")
         # The numbers the sidebar shows, so "how far along?" is answered
         # with a step and a time rather than "I have only the stage". The
@@ -1128,7 +1163,6 @@ def _run_status(runtime: Any, *, first: str | None = None,
         speed = status.get("ns_per_day") or status.get("speed")
         if isinstance(speed, (int, float)) and speed > 0:
             lines.append(f"speed: {speed:.2f} ns/day")
-        health = analyze_health(status, [])
         if health.get("state"):
             lines.append(f"health: {health['state']}"
                          + (f" -- {health['message']}" if health.get("message") else ""))

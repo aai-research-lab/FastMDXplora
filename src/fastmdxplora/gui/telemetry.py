@@ -669,21 +669,13 @@ def _study_of(run: Path) -> Path:
 
 
 def _its_round_was_stopped(run: Path, piece: Path) -> bool:
-    """Whether the study's rule's round ended stopped when asked
-    (`stopping.round_ended`) after ``piece`` ran: a stop recorded before it
-    is an earlier one (a resume that ran the piece was then killed, and no
-    one asked)."""
-    from fastmdxplora.simulation.stopping import RECORD, round_ended
+    """Whether the study's rule's round ended stopped when asked, with no
+    resume since that died carrying it on (`stopping.round_stopped_when_asked`,
+    from its record of its rounds alone: never from when files were written,
+    nor from records of the study a run's page does not read)."""
+    from fastmdxplora.simulation.stopping import round_stopped_when_asked
 
-    study = _study_of(run)
-    ended = round_ended(study)
-    if ended is None or ended.state != "stopped":
-        return False
-    try:
-        return (_records.stat(study / RECORD).st_mtime
-                >= _records.stat(piece / "simulation" / STATUS_FILE).st_mtime)
-    except OSError:
-        return True
+    return round_stopped_when_asked(_study_of(run))
 
 
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
