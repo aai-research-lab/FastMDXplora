@@ -663,6 +663,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   next piece is being simulated (not joined) while that runs, and a study
   being carried on never reads completed meanwhile. A refused run is counted
   once among the errors.
+- A study of pieces whose piece config does not read was said to have run
+  its first piece's plan: the plan's length is taken only for a run not split
+  into pieces. A run stopped at its last step and resumed still recorded its
+  simulation stopped, so its fixes, the Agent's remedies, its page and the
+  timeline offered `fastmdx resume`, which did nothing: the resume now records
+  the simulation whole once what came after it has run (the stop saved beside
+  it), and a study asking no analysis reads completed by the phases it asks.
+  Runs stopped or cut in a round are recorded as such and left to the round's
+  sentence, not offered as a refusal with no code costing nothing. A resume's
+  last line says what it did (its analyses, its rule applied, nothing
+  simulated); a catch-up stopped before any run moved is not a second round;
+  a run whose extension never began is said so; a refused resume's card says
+  Failed as its header does; the Agent says a piece stopped at its end is
+  being joined; the stop at the end writes its simulated time; and the
+  header's state is not cut at 390 px.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

@@ -341,7 +341,7 @@ two files at the campaign root:
 
 | File | What it records |
 |---|---|
-| `batch_manifest.json` | The campaign: `n_runs`, the `execution` block, every system, the sweep, and a result record per run; `round_ended` (its `state`, `said` and `command`) where its stopping rule's last round failed, was stopped, or was cut by its process ending; what `fastmdx resume` would run is read when asked (it rests on the study's config and runs as they stand), not saved |
+| `batch_manifest.json` | The campaign: `n_runs`, the `execution` block, every system, the sweep, and a result record per run; `round_ended` (its `state`, `said` and `command`) where its stopping rule's last round failed, was stopped, or was cut by its process ending; what `fastmdx resume` would run is read when asked (it rests on the study's config and runs as they stand), not saved. A run stopped or cut in a round is recorded with `error_type` `StoppedInTheRounds` or `CutInTheRounds`, fixed as the round says |
 | `members.json` | What each member concluded, and whether the spread between members is an error or a result |
 
 An umbrella study also writes `pmf.json`. See
