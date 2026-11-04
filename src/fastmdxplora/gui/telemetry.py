@@ -609,16 +609,20 @@ def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
 
 
 def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
-    """A piece's live record that says it finished, read stopped where the
-    join has not taken it in (`joined/joined.json`) and nothing carries the
-    study on now: its production whole, its join and the analyses of it
-    owed, which `fastmdx resume` runs (`resume.how_a_resume_finds`,
-    ``unjoined``). Only a piece an extension made, its config written
-    beside it (`segment-NNN.yml`), is joined by it."""
+    """A piece's live record that says it finished, read as its study left
+    it where the join has not taken it in (`joined/joined.json`) and nothing
+    carries the study on now: its production whole, its join and the
+    analyses of it owed, which `fastmdx resume` runs
+    (`resume.how_a_resume_finds`, ``unjoined``). Stopped where the study's
+    round was stopped when asked; else its process ended before the join
+    (killed, out of memory): interrupted, never "stopped, as asked". Only a
+    piece an extension made is joined by it, told by its own config (it
+    resumes from a checkpoint) or the config written beside it; a piece
+    with neither (a record written by hand) reads as it says."""
     from fastmdxplora.simulation.resume import being_carried_on
 
     try:
-        if not _records.is_file(piece.with_name(piece.name + ".yml")):
+        if not _an_extension_s_piece(piece):
             return status
         index = int(piece.name.split("-", 1)[1])
         try:
@@ -629,12 +633,48 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
             taken = set()
         if index in taken or being_carried_on(piece.parent):
             return status
+        stopped = _its_round_was_stopped(piece.parent)
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return status
-    return {**status, "status": "stopped", "join_owed": True,
-            "latest_error": (f"Its piece {piece.name} ran to its end, and the study ended "
-                             "before the piece was joined: `fastmdx resume` joins it and "
-                             "runs its analyses and report.")}
+    how = ("the study was stopped when asked" if stopped
+           else "the study's process ended")
+    return {**status, "status": "stopped" if stopped else "interrupted",
+            "join_owed": True,
+            "latest_error": (f"Its piece {piece.name} ran to its end, and {how} before the "
+                             f"piece was joined: {_resume_said(_study_of(piece.parent))} "
+                             "joins it and runs its analyses and report.")}
+
+
+def _an_extension_s_piece(piece: Path) -> bool:
+    """Whether a piece was made by an extension (or a resume), which joins
+    it: its own config resumes from a checkpoint, or its config is written
+    beside it (`segment-NNN.yml`)."""
+    if _records.is_file(piece.with_name(piece.name + ".yml")):
+        return True
+    import yaml
+
+    try:
+        config = yaml.safe_load(_records.read_text(piece / "resolved_config.yml",
+                                                   encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    return isinstance(simulation, dict) and bool(simulation.get("resume_from"))
+
+
+def _study_of(run: Path) -> Path:
+    """The study a run belongs to: its own folder, or the study of runs it
+    is one of (``runs/<name>``)."""
+    return run.parent.parent if run.parent.name == "runs" else run
+
+
+def _its_round_was_stopped(run: Path) -> bool:
+    """Whether the study's rule's round ended stopped when asked
+    (`stopping.round_ended`)."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(_study_of(run))
+    return ended is not None and ended.state == "stopped"
 
 
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
@@ -650,7 +690,7 @@ def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
     whole["pieces"] = len(pieces) + 1
     # What the simulation last said of itself is its newest piece's word.
     for key in ("latest_error", "latest_warning", "current_checkpoint_path", "platform",
-                "precision", "precision_applied"):
+                "precision", "precision_applied", "join_owed"):
         if key in last:
             whole[key] = last.get(key)
     if _newer(last, first):
@@ -777,8 +817,10 @@ def read_study_status(project_root: str | Path) -> dict[str, Any]:
         whole["current_checkpoint_path"] = _checkpoint_here(root, whole)
     if not whole.get("piece"):
         whole = _as_far_as_it_wrote(root, whole)
-    elif (str(whole.get("status") or "").lower() == "stopped"
+    elif (str(whole.get("status") or "").lower() == "stopped" and not whole.get("join_owed")
           and str(whole.get("stage") or "").lower() == "production"):
+        # A piece stopped part way, said as the study; one run to its end
+        # and not joined keeps its own words (`_its_join_owed`).
         whole["latest_error"] = _stopped_as_one_run(root, whole)
     return _the_stage_it_ended_in(whole)
 

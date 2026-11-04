@@ -657,7 +657,7 @@ def extend_each_to(runs: list[Path], total_ns: float) -> list[dict[str, Any]]:
     return answers
 
 
-def _the_round_stopped(record: dict[str, Any], entry: dict[str, Any], run: str,
+def _the_round_stopped(record: dict[str, Any], entry: dict[str, Any], run: str | None,
                        answer: dict[str, Any]) -> None:
     """The round ``entry`` said stopped by the answer of ``run``'s
     extension: when asked (a stop in production, or the stop's refusal in
@@ -673,8 +673,10 @@ def _the_round_stopped(record: dict[str, Any], entry: dict[str, Any], run: str,
     if asked:
         # What resuming runs first is the round's sentence's to say
         # (`round_ended`): it may join or carry pieces on before it judges.
-        record["said"] = (f"Stopped when asked, while extending {run}. "
-                          "Resuming the study carries its round on from there.")
+        record["said"] = ((f"Stopped when asked, while extending {run}. " if run else
+                           "Stopped when asked, while the runs were judged, before any "
+                           "extension began. ")
+                          + "Resuming the study carries its round on from there.")
     elif answer.get("lost"):
         record["said"] = ("Stopped: a worker extending the runs ended abruptly "
                           f"({answer.get('error') or 'no reason recorded'}), and which "
@@ -862,9 +864,13 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
             return None
         if failed:
             run, answer = failed[0]
+        elif asked() and not answers:
+            # Asked while the rule judged the runs, before any extension
+            # began: no run named as being extended.
+            run, answer = None, {"stopped": True}
         elif asked():
-            # The run its round was working on when asked, or the first.
-            run, answer = tried[max(0, len(answers) - 1)], {"stopped": True}
+            # The run its round was working on when asked.
+            run, answer = tried[len(answers) - 1], {"stopped": True}
         else:
             run, answer = tried[len(answers)], {}
         # The runs whose extension finished: side by side, the others
@@ -877,10 +883,14 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
                             else [r.name for r, _ in zip(tried, answers)])
         # A study of one run is named "the run", not by its folder; runs
         # stopped side by side are each named.
-        named = run.name
-        if answer.get("stopped"):
-            named = _and([r.name for r, a in failed if a.get("stopped")] or [run.name])
-        _the_round_stopped(record, entry, named if len(runs) > 1 else "the run", answer)
+        if run is None:
+            named = None
+        else:
+            named = run.name
+            if answer.get("stopped"):
+                named = _and([r.name for r, a in failed if a.get("stopped")] or [run.name])
+            named = named if len(runs) > 1 else "the run"
+        _the_round_stopped(record, entry, named, answer)
         write()
         say(record["said"])
         return record
@@ -1318,6 +1328,52 @@ def _what_resume_finds(study: Path, names: list[str]) -> dict[str, dict[str, Any
     return found
 
 
+def rule_owed(study: str | Path) -> RoundEnded | None:
+    """A study whose stopping rule was never applied to how its runs now
+    stand, though nothing goes on: its process ended (killed, out of
+    memory) before the rule's first round was judged (``running``, no
+    round), or it was stopped when asked before the rule was applied (again).
+    Its runs can each read completed, and it read completed with what it
+    asked never judged and no fix offered. Said stopped (asked) or
+    interrupted (ended), with `fastmdx resume`, which applies the rule; its
+    readers ask it only where the study otherwise reads completed (a run
+    stopped or cut says so itself). None for a study with no rule, going,
+    or judged since."""
+    from fastmdxplora import record_access
+
+    study = Path(study)
+    try:
+        record = json.loads(record_access.read_text(study / RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not record.get("targets"):
+        return None
+    outcome = str(record.get("outcome") or "")
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    said = record.get("said")
+    if outcome == "stopped" and said in (STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN):
+        state = "stopped"
+    elif outcome == "running" and not rounds:
+        if _carried_on_elsewhere(study) or not _its_process_is_gone(study):
+            return None
+        state = "interrupted"
+    else:
+        return None
+    if _carried_on_elsewhere(study):
+        return None
+    argv = ("fastmdx", "resume", str(study))
+    command = f"`{' '.join(argv)}`"
+    again = " again" if rounds else ""
+    said = ("Its stopping rule was not applied" + again + ": "
+            + ("it was stopped when asked before the rule was applied" + again + "."
+               if state == "stopped" else
+               "the study's process ended before its first round was judged."))
+    return RoundEnded(state=state, said=said,
+                      carry_on=f"{command} judges the runs as they stand and extends them "
+                               "until what was asked is determined.",
+                      argv=argv)
+
+
 def round_numbers(rounds: list[Any]) -> list[int]:
     """Each entry's round number, as the rule judged its rounds: an entry
     that brings shorter runs up (`brought_up`) carries the round before it
@@ -1549,6 +1605,9 @@ def _how_far_each_got(names: list[str], last: dict[str, Any],
     if not left:
         return ""
     began = last.get("started")
+    if isinstance(began, list) and not began and not done and last.get("stopped_by") == "asked":
+        # Stopped before any extension began: its sentence says so.
+        return ""
     unbegun = ([name for name in left if name not in began]
                if isinstance(began, list) else [])
     left = [name for name in left if name not in unbegun]

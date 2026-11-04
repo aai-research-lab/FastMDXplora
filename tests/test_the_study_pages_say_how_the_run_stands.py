@@ -84,8 +84,10 @@ def test_a_run_whose_process_is_gone_reads_interrupted(tmp_path, public):
 
     said = _pages(root, tmp_path, public=public)
 
-    # As 1094e1c9 said it, its process record read; the link not followed.
-    assert (said["project"], said["latest"]) == ("completed", "interrupted")
+    # Its process record read; the link not followed. Both rows are one
+    # reading, the run's state (`study_state`): its Manifest's one phase said
+    # "completed" beside "interrupted" (1094e1c9), two states on one page.
+    assert (said["project"], said["latest"]) == ("interrupted", "interrupted")
     assert said["phases"] == {"setup": "ok"}
     assert said["status"] == ("interrupted", "interrupted", ["setup"], None)
     assert said["overview_unavailable"] == ["analysis/rmsd/options.json"]
@@ -109,7 +111,9 @@ def test_a_carry_on_killed_in_its_piece_reads_stopped_not_running(tmp_path, publ
     # The phase strip said "Simulation running" beside the card's
     # "Interrupted"; 1094e1c9 said it stopped.
     assert said["phases"] == {"setup": "ok", "simulation": "stopped"}
-    assert (said["project"], said["latest"]) == ("stopped", "interrupted")
+    # One reading on both rows: the carry-on was killed, not stopped (its
+    # Manifest's stop is the first piece's, which was carried on).
+    assert (said["project"], said["latest"]) == ("interrupted", "interrupted")
     assert said["status"][:3] == ("interrupted", "interrupted", ["setup", "simulation"])
     assert said["status"][3] == pytest.approx(0.0128)
     assert said["overview_unavailable"] == ["analysis/rmsd/options.json"]
@@ -136,7 +140,9 @@ def test_a_run_waiting_for_its_study_s_next_round_reads_waiting(tmp_path, done_s
     # As 1094e1c9 said it, from the study's own record of its rounds.
     assert said["phases"] == {"setup": "ok", "simulation": "waiting", "analysis": "waiting",
                               "report": "waiting"}
-    assert (said["project"], said["latest"]) == ("completed", "waiting")
+    # One reading on both rows: the run waits for its study's next round,
+    # as its status card says (its Manifest's "completed" was its pieces so far).
+    assert (said["project"], said["latest"]) == ("waiting", "waiting")
     assert said["status"] == ("waiting", "waiting",
                               ["setup", "simulation", "analysis", "report"], None)
     assert said["overview_unavailable"] == ["analysis/rmsd/options.json"]

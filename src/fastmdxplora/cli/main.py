@@ -3339,7 +3339,19 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         else:
             answer = resume_study(args.study)
     except KeyboardInterrupt:
-        # A second Ctrl+C, obeyed at once: said, never a traceback.
+        # A Ctrl+C obeyed at once: said as the study then stands, never a
+        # traceback; one heard after its last record was written leaves it
+        # finished, and is not a stop.
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            finished = study_state(args.study) == "completed"
+        except Exception:  # noqa: BLE001 - said as a stop
+            finished = False
+        if finished:
+            print("fastmdx: the study had finished when the stop was heard; nothing is "
+                  "left to carry on.", file=sys.stderr)
+            return 0
         print(f"fastmdx: stopped when asked; `fastmdx resume {args.study}` carries it on.",
               file=sys.stderr)
         return 130
@@ -3365,6 +3377,8 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                     "study's comparison across them rebuilt.",
             "judged": "Nothing was simulated: its stopping rule was applied to its "
                       "production as it stands.",
+            "records": "Nothing was simulated: the run's records were finished, and it "
+                       "reads completed.",
         }
         if answer.get("did") == "reported":
             # What was reported over, and the command that chose it.

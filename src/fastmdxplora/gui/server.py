@@ -4823,11 +4823,13 @@ def _summary_records(
                   else "in progress")
     else:
         status = "not run"
+    state = None
     if phase_statuses:
-        # The study's state, as its header and every page read it
-        # (`workspace.study_state`): its Manifest is its first piece's, or
-        # its run's before its rule's round, and read completed beside a
-        # round that failed or was cut.
+        # One reading for both rows: the study's state, as its header and
+        # every page read it (`workspace.study_state`). Its Manifest is its
+        # first piece's, or its run's before its rule's round, and read
+        # completed beside a round that failed or was cut, or beside a run
+        # whose process was gone ("completed" over "interrupted").
         try:
             from fastmdxplora.gui.workspace import study_state
 
@@ -4858,6 +4860,14 @@ def _summary_records(
         # Its live record not read, or a piece's: not the manifest's word,
         # nor the first piece's, in its place.
         latest = "not read"
+    elif state == "running" and str(latest).lower() == "waiting":
+        # A run waiting for its study's next round: going, and said so on
+        # both rows, as its status card says it.
+        status = "waiting"
+    elif status in ("completed", "stopped", "failed", "interrupted") and latest != status:
+        # The live record is a piece's or the run's own, and said
+        # "completed" beside a round that stopped: the one reading on both.
+        latest = status
     records = [
         {"label": "Project status", "value": status},
         {"label": "Latest status", "value": str(latest or "—")},

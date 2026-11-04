@@ -1043,6 +1043,20 @@ def study_state(folder: Path | str) -> str:
 
 
 def _state_of(base: Path, batch: Any, manifest: Any) -> str:
+    state = _state_read(base, batch, manifest)
+    if state == "completed":
+        from fastmdxplora.simulation.stopping import rule_owed
+
+        # Its runs ended well, and its rule was never applied to them
+        # (killed or stopped before its first round, or before it was
+        # applied again): not completed, and `fastmdx resume` applies it.
+        owed = rule_owed(base)
+        if owed is not None:
+            return owed.state
+    return state
+
+
+def _state_read(base: Path, batch: Any, manifest: Any) -> str:
     try:
         from fastmdxplora.simulation.resume import _still_running, being_carried_on
 

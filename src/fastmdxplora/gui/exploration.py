@@ -371,6 +371,10 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             # Interrupted, as its card says: in a later piece, or before any
             # result was written.
             state = "interrupted"
+        elif live and live.get("join_owed") and str(live.get("status")).lower() == "interrupted":
+            # Its last piece ran to its end and its process ended before the
+            # join (`telemetry._its_join_owed`): cut, its join owed.
+            state = "interrupted"
         elif live and str(live.get("status") or "").lower() in ("failed", "error", "stopped"):
             # The run's own record says it failed or was stopped: believed
             # over the study's result, as the run's state is everywhere else
@@ -398,6 +402,19 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
                 state = "running"
         elif folder.exists():
             state = "running"
+        if state == "completed":
+            # Its pieces joined, their analyses and report not run (its
+            # study stopped or cut between): not completed, as its own page
+            # and health say (`telemetry._owing_its_analysis`).
+            from fastmdxplora.gui.telemetry import _owing_its_analysis
+
+            try:
+                owed = str(_owing_its_analysis(folder, {"status": "completed",
+                                                        "stage": "report"}).get("status"))
+            except Exception:  # noqa: BLE001 - a record, not a verdict
+                owed = "completed"
+            if owed in ("interrupted", "failed", "running"):
+                state = owed
         out.append({"run_id": run_id, "path": str(folder), "system": entry.get("system"),
                     "values": entry.get("sweep_values") or {}, "state": state,
                     "fraction": fraction, "so_far": so_far,

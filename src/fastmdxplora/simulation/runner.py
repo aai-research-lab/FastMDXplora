@@ -1113,6 +1113,21 @@ class _StopInTheRounds(_StopRequests):
         _os.kill(_os.getpid(), number)
 
 
+    def ask_here(self) -> str:
+        """Asked to stop without a signal (the GUI in this process), as a
+        first SIGTERM asks, said as the rounds stop: no production need be
+        running (a join, between runs)."""
+        import signal as _signal
+
+        if self.signal is not None:
+            return "Stopping: asked already."
+        self.signal, self.asked_here = _signal.SIGTERM, True
+        logger.warning("Stop asked from the GUI: the study's round ends once the run it "
+                       "extends has answered, where `fastmdx resume` carries it on.")
+        return ("Stopping: the study's round ends once the run it extends has answered, "
+                "and `fastmdx resume` carries it on.")
+
+
 def a_stop_asked_in_the_rounds() -> bool:
     """Whether a stop was asked while the study's rule extends its runs
     (`_StopInTheRounds`): no further run's extension is begun."""
@@ -1197,11 +1212,14 @@ def _step_to_a_frame(simulation: Any, stop: _StopRequests, *, done: int,
     if interval <= 0:
         stop.on_frame = False
         return 0
-    to_go = (-done) % interval
+    # Asked before a step was taken (a stop the study's round noted before
+    # this production began): to its first frame.
+    to_go = (-done) % interval if done > 0 else interval
     if to_go == 0:
         stop.on_frame = True
         return 0
-    seconds = to_go * elapsed / done if done > 0 and elapsed > 0 else float("inf")
+    seconds = (to_go * elapsed / done if done > 0 and elapsed > 0
+               else 0.0 if done <= 0 else float("inf"))
     if (limit is not None and to_go > int(limit)) or seconds > stop_grace_seconds():
         stop.on_frame = False
         return 0
@@ -1726,6 +1744,10 @@ def _run_md_stage(
     chunk = min(max(total // 50, 1), 5000)
     done = 0
     started = _time.monotonic()
+    if stop is not None and stop.requested and total > 0:
+        # Asked before it began: it ends at its first frame, not its first chunk.
+        return _step_to_a_frame(simulation, stop, done=0, frame_interval=frame_interval,
+                                elapsed=0.0, limit=total)
     while done < total:
         this = min(chunk, total - done)
         if stop is not None:
@@ -1794,6 +1816,13 @@ def _run_md_stage_with_live_metrics(
     remaining = int(n_steps)
     interval = max(1, int(telemetry_interval or DEFAULT_STATE_INTERVAL_STEPS))
     started = _time.monotonic()
+    if stop is not None and stop.requested:
+        # Asked before it began (a stop the study's round noted before this
+        # production started): it ends at its first frame, not after its
+        # first chunk.
+        return current_step + _step_to_a_frame(
+            simulation, stop, done=0, frame_interval=trajectory_interval_steps,
+            elapsed=0.0, limit=remaining)
     while remaining > 0:
         chunk = min(interval, remaining)
         if stop is not None:

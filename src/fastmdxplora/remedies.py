@@ -354,12 +354,24 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
     try:
-        return _from_its_records(root)
+        found = _from_its_records(root)
     except OutsideWorkspace as refusal:
         # A record that says what stopped the study, refused by a held read
         # (`record_access`): not read, and nothing of it said. Not a study
         # with no such record either, which reads as stopped another way.
         return [_unread(refusal, root, "the study")]
+    if not found:
+        from fastmdxplora.simulation.stopping import rule_owed
+
+        # Its runs ended well and its stopping rule was never applied to
+        # them: `fastmdx resume` applies it (`stopping.rule_owed`).
+        owed = rule_owed(root)
+        if owed is not None:
+            found = [Remedy(code=STOPPED_REFUSAL if owed.state == "stopped"
+                            else INTERRUPTED_CODE, where="the study", why=owed.said,
+                            fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
+                            argv=owed.argv[1:])]
+    return found
 
 
 def _unread(refusal: OSError, root: Path, where: str) -> Remedy:

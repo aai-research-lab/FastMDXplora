@@ -2241,7 +2241,6 @@ def being_carried_on(root: str | Path) -> bool:
     starting as it is tried tries again (`_carrying_on`)."""
     import json
 
-    from fastmdxplora import record_access
     from fastmdxplora.orchestrator import record_is_from_elsewhere
 
     root = Path(root).expanduser()
@@ -2254,7 +2253,20 @@ def being_carried_on(root: str | Path) -> bool:
             return True
     path = root / CARRYING_ON_FILE
     try:
-        record = json.loads(record_access.read_text(path, encoding="utf-8") or "null")
+        if path.is_symlink():
+            # A link out of the study is no lock of its: refused as any
+            # record linked out is (`record_access`, which names it), and
+            # not read.
+            from fastmdxplora import record_access
+
+            record_access.read_text(path, encoding="utf-8")
+            record = None
+        else:
+            # The study's own lock, read for the process it names and never
+            # shown: not one of its results, so not read through
+            # `record_access`, which refused it and had the study said "Not
+            # read" once its process died holding it.
+            record = json.loads(path.read_text(encoding="utf-8") or "null")
     except (OSError, ValueError):
         record = None
     pid = record.get("pid") if isinstance(record, dict) else None
@@ -2455,7 +2467,7 @@ def _resume_study(study: str | Path, *,
     return answer
 
 
-def _said_whole_last(root: Path) -> None:
+def _said_whole_last(root: Path) -> bool:
     """What a resume says it finished, written last, after the work it
     stands for (its analyses and report run, its rule applied): the live
     record said as they leave it (`_phases_after_ended_well`), then the
@@ -2464,9 +2476,21 @@ def _said_whole_last(root: Path) -> None:
     Manifest's leaves the run read stopped (`telemetry.status_as_it_stands`
     reads a stop at its end not yet said whole so), with `fastmdx resume`
     offered, and that resume finishes it; the live record is written
-    again by it whatever it says."""
+    again by it whatever it says. Whether either record was changed."""
+    import json
+
+    live = root / "simulation" / "live_status.json"
+
+    def said() -> Any:
+        try:
+            return json.loads(_records.read_own_text(live, encoding="utf-8")).get("status")
+        except (OSError, ValueError, AttributeError):
+            return None
+
+    before = said()
     _phases_after_ended_well(root)
-    _its_stop_at_its_end_said_whole(root)
+    rewritten = _its_stop_at_its_end_said_whole(root)
+    return rewritten or said() != before
 
 
 #: What a resume of one run stopped by Ctrl+C outside its production says.
@@ -2616,8 +2640,12 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
         # Stopped at its end with nothing after it to run (its analyses not
         # asked), or by a resume ended before it said the run whole: said
         # so now, where it said stopped.
-        if said_whole:
-            _said_whole_last(root)
+        if said_whole and _said_whole_last(root):
+            # A resume ended before it said the run whole: its records
+            # finished now, said as what this one did, not "Nothing to do".
+            return {**base, "ok": True, "did": RESUMED_RECORDS,
+                    **_production_now(root, {"ok": True}),
+                    "detail": RECORDS_FINISHED}
         return {**base, "ok": True, "did": RESUMED_NOTHING,
                 **_production_now(root, {"ok": True}),
                 "detail": NOTHING_TO_CARRY_ON}
@@ -2885,6 +2913,10 @@ def _judge_the_run_again(root: Path, base: dict[str, Any]) -> dict[str, Any]:
 
 #: What a resume of a finished study says.
 NOTHING_TO_CARRY_ON = "The study finished; there is nothing to carry on."
+#: What a resume did that finished the records of a run whose production,
+#: analyses and rule were done (`_said_whole_last`), and what it says.
+RESUMED_RECORDS = "records"
+RECORDS_FINISHED = "The run's records were finished: it reads completed."
 
 
 def resume_batch(root: str | Path) -> dict[str, Any]:
