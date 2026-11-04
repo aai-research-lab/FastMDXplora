@@ -2225,6 +2225,23 @@ def _carrying_on(root: Path) -> Iterator[None]:
                 _unlock(handle)
 
 
+def _the_lock_s_text(path: Path) -> str | None:
+    """The text of a study's lock, opened with no link followed, without
+    blocking, and read only where it is a regular file; None otherwise (no
+    lock). Raises OSError where it cannot be opened."""
+    import os
+    import stat as stat_module
+
+    from fastmdxplora.record_access import _opened_without_links
+
+    descriptor = _opened_without_links(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        return None
+    with os.fdopen(descriptor, encoding="utf-8") as stream:
+        return stream.read()
+
+
 def being_carried_on(root: str | Path) -> bool:
     """Whether a run of the study is going now: a resume or an extension
     holds its lock (:data:`CARRYING_ON_FILE`) in this process or another,
@@ -2263,10 +2280,12 @@ def being_carried_on(root: str | Path) -> bool:
             record = None
         else:
             # The study's own lock, read for the process it names and never
-            # shown: not one of its results, so not read through
-            # `record_access`, which refused it and had the study said "Not
-            # read" once its process died holding it.
-            record = json.loads(path.read_text(encoding="utf-8") or "null")
+            # shown: not one of its results, so not refused as one (that had
+            # the study said "Not read" once its process died holding it),
+            # but opened as `record_access` opens a record: no link, without
+            # blocking, a regular file only (a FIFO at its name hung the
+            # GUI's study list); anything else is no lock.
+            record = json.loads(_the_lock_s_text(path) or "null")
     except (OSError, ValueError):
         record = None
     pid = record.get("pid") if isinstance(record, dict) else None

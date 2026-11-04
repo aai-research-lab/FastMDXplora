@@ -499,6 +499,13 @@ def _interrupted(root: Path) -> Remedy | None:
             " The price is not given" in remedy.fix) else ""
         return replace(remedy, fix="Run its analyses and report over the joined pieces."
                                    + unpriced)
+    if stands.get("join_owed"):
+        # Its last piece ran to its end, and its process ended before the
+        # piece was joined (`telemetry._its_join_owed`): said in its own
+        # words, never as a day of silence; `fastmdx resume` joins it.
+        why = str(stands.get("latest_error") or "Its last piece was not joined.")
+        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root, price=False),
+                       fix="Join its last piece, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")

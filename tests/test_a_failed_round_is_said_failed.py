@@ -2566,8 +2566,16 @@ def test_ctrl_c_in_a_round_s_join_of_its_resume_ends_without_a_traceback(
 
     study = tmp_path / "study"
     shutil.copytree(one_stopped_in_its_join["study"], study, symlinks=True)
+    # A ceiling past its first round's length, so its resume extends it and
+    # joins a piece whatever length the rule chose for that round (it could
+    # reach the ceiling there, and its resume then judged it, joining none).
+    # (A study of one run keeps its rule in its record of its rounds.)
+    record = json.loads((study / "stopping.json").read_text())
+    record["max_duration_ns"] = 0.006
+    (study / "stopping.json").write_text(json.dumps(record))
     ran = _signalled_at(tmp_path, "_join_and_analyse", "-", "resume", str(study))
-    assert ran.returncode == 130 and "Traceback" not in ran.stderr, ran.stderr[-2000:]
+    assert ran.returncode == 130 and "Traceback" not in ran.stderr, (ran.stdout[-1500:]
+                                                                     + ran.stderr[-2000:])
     assert study_state(study) == "stopped"
 
 
@@ -2596,6 +2604,12 @@ def test_ctrl_c_as_a_catch_up_begins_is_not_dropped(sequential_stopped, tmp_path
     record = json.loads((study / "stopping.json").read_text())
     assert record["outcome"] == "stopped", record.get("said")
     assert study_state(study) == "stopped"
+    # Its catch-up piece, begun after the stop, took no step (it stepped a
+    # whole frame interval, past the grace): nothing of it to keep.
+    piece = sorted((study / "runs" / SECOND).glob("segment-*/manifest.json"))[-1]
+    simulation = next(p for p in json.loads(piece.read_text())["phases"]
+                      if p["name"] == "simulation")
+    assert "asked before its first step" in simulation["message"], simulation["message"]
 
 
 _KILLED_IN = '''
@@ -2676,8 +2690,11 @@ def test_a_round_piece_finished_and_not_joined_reads_its_join_owed(sequential_un
     from fastmdxplora.gui.server import _status_records
     from fastmdxplora.gui.workspace import study_state
 
-    message = _status_records(run)["health"]["message"]
+    health_card = _status_records(run)["health"]
+    message = health_card["message"]
     assert "as asked" not in message and "joins it" in message, message
+    # Its header reads the health's state first: it said "Failed".
+    assert health_card["state"] == "interrupted", health_card
     assert study_state(study) == "interrupted"
     said = answer_from_the_records(study, "found") or ""
     assert "2 completed" not in said, said[:600]
@@ -2895,6 +2912,10 @@ def test_a_study_killed_before_its_rule_is_not_said_completed(killed_before_its_
     record = json.loads((study / "stopping.json").read_text())
     assert record["outcome"] == "running" and record["rounds"] == []
     assert study_state(study) == "interrupted"
+    # Every reader says its rule was not applied, with `fastmdx resume`:
+    # its health said Completed, its card "Running the first piece".
+    _every_reader_agrees(study, "interrupted")
+    assert "rule was not applied" in _every_reader(study)["health"]["message"]
     fixes = json.dumps(fixes_payload(study)["fixes"])
     assert "fastmdx resume" in fixes and "rule was not applied" in fixes, fixes
     if killed_before_its_rule["seeds"]:
@@ -3026,3 +3047,216 @@ def test_sigterm_and_the_gui_s_own_stop_in_a_round_are_stops_asked(tmp_path, mon
     assert record["rounds"][-1]["stopped_by"] == "asked", record["said"]
     assert "round" in answered[0] and "next frame" not in answered[0], answered
     assert runner._LISTENING == []
+
+
+# ---------------------------------------------------------------------------
+# Fix after round 10: every reader of a study's state, over every state the
+# file builds, from one derivation (`study_state`, `round_ended`)
+# ---------------------------------------------------------------------------
+
+#: The words a reader's chip, card or row gives a study that did not end.
+_ENDED_SAID = {"Interrupted": "interrupted", "Stopped": "stopped", "Failed": "failed"}
+
+
+def _every_reader(study: Path) -> dict:
+    """What each reader of the study's state says (docs/production.md lists
+    them): its word, and what it says carries the study on."""
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui.agent_panel import _stopping_summary
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.gui.stopping_view import stopping_payload
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation.stopping import round_ended
+
+    health = _status_records(study)["health"]
+    card = stopping_payload(study)
+    one_run = not (study / "batch_manifest.json").is_file()
+    return {
+        "words": {
+            # The header, sidebar and All studies.
+            "study_state": study_state(study),
+            # The health card and `/api/status` (the header reads it first).
+            "health": {"ok": "completed", "warning": "completed"}.get(health["state"],
+                                                                      health["state"]),
+            # The rule's card.
+            "card": (_ENDED_SAID.get(card.get("outcome_label"), "completed")
+                     if card.get("ok") else "completed"),
+            # The run page's summary, both rows (a study of one run).
+            **({"summary": _summary_of(study)["Project status"],
+                "latest": _summary_of(study)["Latest status"]} if one_run else {}),
+        },
+        "health": health, "card": card, "ended": round_ended(study),
+        "fixes": json.dumps(fixes_payload(study)["fixes"]),
+        "cli": " ".join(_what_would_fix_it(study)),
+        "remedies": " ".join(str(remedy) for remedy in remedies_of(study)),
+        "answer": answer_from_the_records(study, "found") or "",
+        "context": _stopping_summary(study),
+    }
+
+
+def _every_reader_agrees(study: Path, state: str) -> None:
+    """Every reader gives the study ``state``; one that did not end says
+    what carries it on, as the one derivation (`round_ended`) says it."""
+    said = _every_reader(study)
+    assert set(said["words"].values()) == {state}, said["words"]
+    ended = said["ended"]
+    if state == "completed":
+        assert ended is None
+        for reader in ("fixes", "cli", "remedies", "answer"):
+            assert "fastmdx resume" not in said[reader], (reader, said[reader][:500])
+        assert "not completed" not in said["context"]
+        return
+    # Its rule's round, or its rule never applied, said with its command by
+    # the health, the card, the Agent's answer and its context; a study
+    # whose run refused its resume fails beside a round stopped.
+    assert ended is not None
+    assert said["card"]["carry_on"] == " ".join(ended.argv)
+    for reader in ("answer", "context"):
+        assert ended.said in said[reader], (reader, said[reader][:800])
+    if ended.state == state:
+        assert said["health"]["message"] == ended.said, said["health"]
+    # A fix where one is offered is never a day of silence nor "stopped,
+    # as asked" of a study no one asked.
+    for reader in ("fixes", "cli", "remedies"):
+        assert "Nothing has been written for a day" not in said[reader], reader
+        if state != "stopped":
+            assert ", as asked" not in said[reader], (reader, said[reader][:500])
+
+
+@pytest.mark.parametrize("built,state", [
+    ("failed", "failed"), ("one", "failed"), ("cut_one", "interrupted"),
+    ("sequential_stopped", "stopped"), ("one_stopped_in_its_join", "stopped"),
+    ("sequential_unjoined", "interrupted"), ("sequential_joined_not_analysed", "interrupted"),
+    ("one_killed_in_its_join", "interrupted"),
+])
+def test_every_reader_says_each_state_alike(request, tmp_path, built, state):
+    """Each review found a reader left on its own branch of the live record:
+    a piece killed before its join "Failed" on the header, a rule never
+    applied "Completed" on its health and "Running the first piece" on its
+    card, a day of silence on the fixes a minute after a kill."""
+    value = request.getfixturevalue(built)
+    study = tmp_path / "study"
+    shutil.copytree(value["study"] if isinstance(value, dict) else value, study,
+                    symlinks=True)
+    _every_reader_agrees(study, state)
+
+
+def test_every_reader_says_a_refused_resume_and_a_completed_study_alike(
+        stopped_mid_round, stopped_at_its_end, tmp_path):
+    """A study whose run refused its resume reads failed on every reader;
+    one whose resume finished reads completed on every reader."""
+    refused = tmp_path / "refused" / "study"
+    shutil.copytree(stopped_mid_round["study"], refused, symlinks=True)
+    checkpoint = refused / "runs" / SECOND / "segment-001" / "simulation" / "checkpoint.chk"
+    data = bytearray(checkpoint.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    checkpoint.write_bytes(bytes(data))
+    assert _resume_by_the_cli(refused)[0] == 1
+    _every_reader_agrees(refused, "failed")
+    done = tmp_path / "done" / "study"
+    shutil.copytree(stopped_at_its_end, done, symlinks=True)
+    assert _resume_by_the_cli(done)[0] == 0
+    _every_reader_agrees(done, "completed")
+
+
+@pytest.fixture(scope="module")
+def one_killed_in_its_join(tmp_path_factory):
+    """One run with a rule, its process killed as its round's piece, run to
+    its end, was to be joined (R20 H1, M1)."""
+    root = tmp_path_factory.mktemp("killed_in_its_join")
+    config = _study_of_seeds(root, seeds=False)
+    assert _killed_in(root, "_join_and_analyse", "explore", "-c", str(config)) == 9
+    return root / "study"
+
+
+def test_one_run_killed_in_its_join_is_fixed_in_its_own_words(one_killed_in_its_join,
+                                                              tmp_path):
+    """Its fixes card, the CLI's fixes and the Agent's remedies said "Nothing
+    has been written for a day" a minute after the kill, and its header
+    "Failed"."""
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.remedies import remedies_of
+
+    study = tmp_path / "study"
+    shutil.copytree(one_killed_in_its_join, study, symlinks=True)
+    assert _status_records(study)["health"]["state"] == "interrupted"
+    said = " ".join(str(remedy) for remedy in remedies_of(study))
+    assert "fastmdx resume" in said and "Nothing has been written" not in said, said
+
+
+def test_a_lock_that_is_not_a_regular_file_is_no_lock(tmp_path):
+    """A FIFO at the lock's name hung the GUI's study list: its read blocked
+    for ever, where it was refused before."""
+    import os
+    import threading
+
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.record_access import confined_records
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, being_carried_on
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("this system makes no FIFO")
+    study = tmp_path / "study"
+    study.mkdir()
+    (study / "resolved_config.yml").write_text("simulation: {}\n")
+    os.mkfifo(study / CARRYING_ON_FILE)
+    answered: dict = {}
+
+    def read():
+        with confined_records(study, lambda path: True) as scope:
+            answered["going"] = being_carried_on(study)
+            answered["state"] = study_state(study)
+        answered["refused"] = set(scope.denied)
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(timeout=20)
+    if reader.is_alive():
+        # Opened for writing, the FIFO lets the hung read go.
+        os.close(os.open(study / CARRYING_ON_FILE, os.O_WRONLY | os.O_NONBLOCK))
+        pytest.fail("the study's lock, a FIFO, was read as a file and blocked")
+    assert answered["going"] is False and answered["state"] != "not read", answered
+    assert CARRYING_ON_FILE not in answered["refused"]
+
+
+def test_a_plain_run_s_stop_as_production_begins_keeps_the_grace(tmp_path, monkeypatch):
+    """Heard before a plain run's first chunk, the stop stepped a whole frame
+    interval, past the grace period (4,000 steps and 19 s where 1,000 and
+    4.7 s were taken before)."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation import runner
+
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config.pop("sweep")
+    config["simulation"].pop("stop_when")
+    config["simulation"].update(production_steps=4000, trajectory_interval_steps=2000,
+                                checkpoint_interval_steps=2000)
+    config["exclude_phase"] = ["analysis", "report"]
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    # Its stop heard as its production begins; a frame further than allowed.
+    monkeypatch.setenv(runner.STOP_GRACE_ENV, "0.000001")
+
+    def requested(self):
+        import signal
+
+        if self.signal is None:
+            self.signal = signal.SIGINT
+        return True
+
+    monkeypatch.setattr(runner._StopRequests, "requested", property(requested))
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert main(["explore", "-c", str(tmp_path / "study.yml")]) == 130
+    manifest = json.loads((tmp_path / "study" / "manifest.json").read_text())
+    simulation = next(p for p in manifest["phases"] if p["name"] == "simulation")
+    step = simulation["refusal"]["details"].get("details", simulation["refusal"]["details"])[
+        "step"]
+    # Stopped after its first chunk, its frame refused past the grace.
+    assert 0 < step < 2000, simulation["message"]
+    assert "further than" in simulation["message"], simulation["message"]

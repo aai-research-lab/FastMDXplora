@@ -1328,16 +1328,17 @@ def _what_resume_finds(study: Path, names: list[str]) -> dict[str, dict[str, Any
     return found
 
 
-def rule_owed(study: str | Path) -> RoundEnded | None:
+def rule_owed(study: str | Path, *, resuming: bool = False) -> RoundEnded | None:
     """A study whose stopping rule was never applied to how its runs now
     stand, though nothing goes on: its process ended (killed, out of
     memory) before the rule's first round was judged (``running``, no
     round), or it was stopped when asked before the rule was applied (again).
     Its runs can each read completed, and it read completed with what it
     asked never judged and no fix offered. Said stopped (asked) or
-    interrupted (ended), with `fastmdx resume`, which applies the rule; its
-    readers ask it only where the study otherwise reads completed (a run
-    stopped or cut says so itself). None for a study with no rule, going,
+    interrupted (ended), with `fastmdx resume`, which applies the rule, and
+    given by `round_ended`, so every reader of the study's state says it.
+    Only where each run ended well by its own records (a run stopped or cut
+    says so itself, in its own words). None for a study with no rule, going,
     or judged since."""
     from fastmdxplora import record_access
 
@@ -1354,12 +1355,17 @@ def rule_owed(study: str | Path) -> RoundEnded | None:
     if outcome == "stopped" and said in (STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN):
         state = "stopped"
     elif outcome == "running" and not rounds:
-        if _carried_on_elsewhere(study) or not _its_process_is_gone(study):
-            return None
         state = "interrupted"
     else:
         return None
-    if _carried_on_elsewhere(study):
+    # Its runs first: one that did not end well says so itself, and the
+    # study's own records (its process) are read no further for it.
+    names = [str(name) for name in record.get("runs") or []]
+    if not names or not _each_ended_well(study, names):
+        return None
+    if not resuming and _carried_on_elsewhere(study):
+        return None
+    if state == "interrupted" and not resuming and not _its_process_is_gone(study):
         return None
     argv = ("fastmdx", "resume", str(study))
     command = f"`{' '.join(argv)}`"
@@ -1371,7 +1377,34 @@ def rule_owed(study: str | Path) -> RoundEnded | None:
     return RoundEnded(state=state, said=said,
                       carry_on=f"{command} judges the runs as they stand and extends them "
                                "until what was asked is determined.",
-                      argv=argv)
+                      argv=argv,
+                      productions=tuple(_production_of_each(study, names).items()))
+
+
+def _each_ended_well(study: Path, names: list[str]) -> bool:
+    """Whether each run of the study ended well by its own records, as its
+    resume reads it (`resume._where_it_stands`): finished, with no answer
+    of its own, nothing extended since nor analyses owed, no piece left."""
+    import yaml
+
+    from fastmdxplora import record_access
+    from fastmdxplora.simulation.resume import _where_it_stands
+
+    for name in names:
+        run = study / "runs" / name
+        if not run.is_dir():
+            run = study
+        try:
+            # A run that never wrote its Manifest did not end well, and is
+            # read no further (its other records are its going's).
+            if not record_access.is_file(run / "manifest.json"):
+                return False
+            finished, stopped, extended, piece = _where_it_stands(run, lengths=False)
+        except (OSError, ValueError, StudyError, yaml.YAMLError):
+            return False
+        if not finished or stopped is not None or extended or piece is not None:
+            return False
+    return True
 
 
 def round_numbers(rounds: list[Any]) -> list[int]:
@@ -1421,6 +1454,12 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
         return None
     outcome = str(record.get("outcome") or "")
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    if ((outcome == "running" and not rounds)
+            or (outcome == "stopped" and record.get("said") in (
+                STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN))):
+        # No round judged since its runs ended well: its rule never applied
+        # to them (`rule_owed`), said here so every reader says it.
+        return rule_owed(study, resuming=resuming)
     if not rounds or outcome not in ("stopped", "running"):
         return None
     if not resuming and _carried_on_elsewhere(study):

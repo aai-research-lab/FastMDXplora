@@ -96,7 +96,7 @@ def test_a_run_whose_process_is_gone_reads_interrupted(tmp_path, public):
 
 
 @PUBLIC
-def test_a_carry_on_killed_in_its_piece_reads_stopped_not_running(tmp_path, public):
+def test_a_carry_on_killed_in_its_piece_reads_interrupted_not_running(tmp_path, public):
     root = _piece(_stopped_study(tmp_path / "study"), status="running", step=3600,
                   minutes_ago=1)
     _write(root / "manifest.json", {"phases": [

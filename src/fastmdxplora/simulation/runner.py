@@ -1003,6 +1003,9 @@ class _StopRequests:
         self.signal: int | None = None
         #: Asked without a signal, by the GUI in this process.
         self.asked_here = False
+        #: Asked before this production began (the study's round noted it):
+        #: it takes no step.
+        self.before_it_began = False
         self.at_step: int | None = None
         self.on_frame = False
         self._previous: dict[int, Any] = {}
@@ -1042,6 +1045,7 @@ class _StopRequests:
                         and listener.signal is not None), None)
         if pending is not None and self.signal is None:
             self.signal, self.asked_here = pending.signal, pending.asked_here
+            self.before_it_began = True
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
@@ -1212,14 +1216,11 @@ def _step_to_a_frame(simulation: Any, stop: _StopRequests, *, done: int,
     if interval <= 0:
         stop.on_frame = False
         return 0
-    # Asked before a step was taken (a stop the study's round noted before
-    # this production began): to its first frame.
-    to_go = (-done) % interval if done > 0 else interval
+    to_go = (-done) % interval
     if to_go == 0:
         stop.on_frame = True
         return 0
-    seconds = (to_go * elapsed / done if done > 0 and elapsed > 0
-               else 0.0 if done <= 0 else float("inf"))
+    seconds = to_go * elapsed / done if done > 0 and elapsed > 0 else float("inf")
     if (limit is not None and to_go > int(limit)) or seconds > stop_grace_seconds():
         stop.on_frame = False
         return 0
@@ -1250,7 +1251,10 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
     planned_ns = int(planned_steps) * float(timestep_fs) / 1e6
     frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
     where = checkpoint.parent.parent
-    if stop.on_frame and step > 0:
+    if step == 0 and getattr(stop, "before_it_began", False):
+        said = ("It was asked before its first step, so nothing of it is kept; `fastmdx "
+                f"resume {where}` carries the run on from the piece before it.")
+    elif stop.on_frame and step > 0:
         _write_checkpoint_pair(simulation, checkpoint)
         write_checkpoint_sidecar(checkpoint, step=step, finished=whole,
                                  time_ps=_time_ps(simulation), **sidecar)
@@ -1744,10 +1748,12 @@ def _run_md_stage(
     chunk = min(max(total // 50, 1), 5000)
     done = 0
     started = _time.monotonic()
-    if stop is not None and stop.requested and total > 0:
-        # Asked before it began: it ends at its first frame, not its first chunk.
-        return _step_to_a_frame(simulation, stop, done=0, frame_interval=frame_interval,
-                                elapsed=0.0, limit=total)
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step, nothing of it is owed, and none is run past the
+        # grace a frame further on would cost.
+        stop.at_step, stop.on_frame = 0, False
+        return 0
     while done < total:
         this = min(chunk, total - done)
         if stop is not None:
@@ -1816,13 +1822,13 @@ def _run_md_stage_with_live_metrics(
     remaining = int(n_steps)
     interval = max(1, int(telemetry_interval or DEFAULT_STATE_INTERVAL_STEPS))
     started = _time.monotonic()
-    if stop is not None and stop.requested:
-        # Asked before it began (a stop the study's round noted before this
-        # production started): it ends at its first frame, not after its
-        # first chunk.
-        return current_step + _step_to_a_frame(
-            simulation, stop, done=0, frame_interval=trajectory_interval_steps,
-            elapsed=0.0, limit=remaining)
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step (`_end_the_stopped_run` says so), where it ran a
+        # frame interval past the grace; a stop heard as a plain run's
+        # production begins is taken after its first chunk, as always.
+        stop.at_step, stop.on_frame = 0, False
+        return current_step
     while remaining > 0:
         chunk = min(interval, remaining)
         if stop is not None:

@@ -633,7 +633,7 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
             taken = set()
         if index in taken or being_carried_on(piece.parent):
             return status
-        stopped = _its_round_was_stopped(piece.parent)
+        stopped = _its_round_was_stopped(piece.parent, piece)
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return status
     how = ("the study was stopped when asked" if stopped
@@ -668,13 +668,22 @@ def _study_of(run: Path) -> Path:
     return run.parent.parent if run.parent.name == "runs" else run
 
 
-def _its_round_was_stopped(run: Path) -> bool:
+def _its_round_was_stopped(run: Path, piece: Path) -> bool:
     """Whether the study's rule's round ended stopped when asked
-    (`stopping.round_ended`)."""
-    from fastmdxplora.simulation.stopping import round_ended
+    (`stopping.round_ended`) after ``piece`` ran: a stop recorded before it
+    is an earlier one (a resume that ran the piece was then killed, and no
+    one asked)."""
+    from fastmdxplora.simulation.stopping import RECORD, round_ended
 
-    ended = round_ended(_study_of(run))
-    return ended is not None and ended.state == "stopped"
+    study = _study_of(run)
+    ended = round_ended(study)
+    if ended is None or ended.state != "stopped":
+        return False
+    try:
+        return (_records.stat(study / RECORD).st_mtime
+                >= _records.stat(piece / "simulation" / STATUS_FILE).st_mtime)
+    except OSError:
+        return True
 
 
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
@@ -1805,11 +1814,30 @@ def analyze_health(
             "explanation": "A resume or an extension of the study is running.",
         }
     owing = status.get("ended_by") == ANALYSIS_OWED
-    ended = _its_round_ended(root) if owing and root is not None else None
+    # A run's own record (a study of runs keeps none, and is said from its
+    # state below, `_a_study_of_runs`, which a run refused fails).
+    ended = _its_round_ended(root) if root is not None and status else None
     if ended is not None:
-        # Cut after its round's join: the round's sentence, as All studies
-        # and the card say it, with what the resume runs first.
+        # Its rule's round failed, was stopped or was cut, or its rule was
+        # never applied (`stopping.round_ended`, the one derivation
+        # `workspace.study_state` reads): the round's sentence, as the
+        # header, All studies and the card say it, with what the resume runs
+        # first, whatever the live record of its last piece says.
         return _round_health(ended)
+    if status.get("join_owed"):
+        # Its last piece ran to its end and was never joined
+        # (`_its_join_owed`): cut or stopped as its study is, in its own
+        # words, never "Stopped with an error".
+        said = str(status.get("status") or "interrupted").lower()
+        return {
+            "state": said,
+            "headline": "Stopped" if said == "stopped" else "Interrupted",
+            "message": str(latest_error or ""),
+            "explanation": ("Its piece's production is whole; joining it, then its analyses "
+                            "and report, is what remains."),
+            "carry_on": f"fastmdx resume {_study_of(Path(root))}" if root is not None
+            else "fastmdx resume",
+        }
     if owing and status.get("stopped_in") in _PHASES_AFTER:
         when = ("while its joined pieces were analysed: part of their analyses had "
                 "run, not their report, so any analyses and report shown are"
@@ -1926,15 +1954,6 @@ def analyze_health(
             }
 
     said = str(status.get("status", "")).lower()
-    ended = (_its_round_ended(root) if root is not None
-             and (said in _FINISHED_STATUSES or said == "interrupted") else None)
-    if ended is not None:
-        # A study of one run that completed, or was cut in its round's
-        # extension, whose rule's round did not end (`stopping.round_ended`):
-        # said as All studies and the sidebar say it, with the command that
-        # carries it on, where a run cut said only that it ended unsaid.
-        return _round_health(ended)
-
     if said == "interrupted":
         silent = status.get("ended_by") == "silence"
         return {
