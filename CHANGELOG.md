@@ -707,6 +707,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   ends at its first frame; a stop while the rule judges names no run; the
   GUI's own stop in a round says the round ends; a resume that finished a
   run's records says so; and a Ctrl+C after its last write is not a stop.
+- Every reader of a study's state takes it from one derivation
+  (`round_ended`, then `study_state`), listed in docs/production.md and
+  walked over each state by a test: a piece killed before its join reads
+  interrupted on the header and health (it read Failed), with its own fix
+  (not "Nothing has been written for a day"); a study whose rule was never
+  applied says so on its health, its rule's card and to the Agent; a
+  production begun after a stop in the rounds takes no step, and a plain
+  run's stop keeps its grace period; the study's lock is opened without
+  blocking (a FIFO there hung the study list); a piece run by a resume that
+  was killed is not said stopped when asked.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

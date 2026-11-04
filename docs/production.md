@@ -337,8 +337,10 @@ A Ctrl+C or a signal while the rule judges and extends the runs, outside a
 run's production (a piece's join or analyses, between two runs, as a
 catch-up piece starts), is noted, not raised: the run being extended
 finishes what it is doing, no further run's extension begins, a production
-begun after it stops at its first frame (before its first chunk is run),
-and the round is said stopped when asked (exit 130); asked while the rule
+begun after it takes no step (nothing of it is kept, and the resume carries
+the run on from the piece before), and the round is said stopped when asked
+(exit 130); a stop heard as a plain run's production begins is taken after
+its first chunk, its frame bounded by the grace period, as always; asked while the rule
 judges, no run is named as being extended. A second one stops at once. The
 GUI's own Stop in the study's process is taken the same way. Each run's extension is
 recorded in the round as it begins (`started`), so a round cut after it
@@ -348,6 +350,25 @@ exits 130. A catch-up stopped before any run moved is said as part of the
 round it carries on only where that round was itself stopped when asked; a
 round that failed or was cut keeps its own ending. Every reader numbers the
 rounds as the rule judged them, a catch-up shown as part of its round.
+
+**One reading of a study's state.** A study's state is derived once:
+`stopping.round_ended` (its rule's round failed, was stopped or was cut, or
+its rule was never applied to runs that ended well), then
+`workspace.study_state` (its runs, or its run's own records). Every reader
+takes it from there, never from its own reading of a live record: the
+header, the sidebar and All studies (`study_state`); the health card, its
+Stop and `/api/status` (`telemetry.analyze_health`, which says the round
+first); the run page's summary, both rows (`server._summary_records`); the
+fixes card, the CLI's fixes and the Agent's remedies (`remedies.remedies_of`,
+which leave a round's runs to its sentence and give a piece not joined its
+own words); the rule's card (`stopping_view.stopping_payload`); the Agent's
+context (`agent_panel._stopping_summary`), its records answer and its count
+of runs (`records_answer`, `exploration.runs_of_a_study`); the CLI's last
+line and exit code, `batch_manifest.json` and the comparison report; and
+the report (`report_dashboard`). The round's test file walks every reader
+over each state it builds (a rule never applied, a piece not joined, runs
+joined and not analysed, stopped in a round, cut, failed, a resume refused,
+completed) and checks they agree.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.
