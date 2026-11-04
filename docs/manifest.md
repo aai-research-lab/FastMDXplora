@@ -93,6 +93,22 @@ worth retrying. See [FastMDXplora refusals](refusals.md).
 
 `artifacts` are paths relative to that phase's directory.
 
+A simulation phase stopped when asked (`simulation.run.stopped`) is rewritten
+`ok` once `fastmdx resume` has carried the run on, with the stop it came back
+from beside it, its message and refusal as they were: under `carried_on_from`
+where its production was carried on in pieces and joined, and under
+`stopped_at_its_end` where the stop landed at the last step of a whole
+production (its message then says so). A run stopped at its last step lists
+the files it wrote in `artifacts`, and its `simulation_parameters.json` gives
+its `n_production_frames` and `duration_ns_actual`, as a run that ended does.
+A reader of the Manifest alone reads such a run completed, as it is.
+
+A resume writes what it finished in this order: the run's analyses and report,
+then its stopping rule applied (`stopping.json`), then its live status, and
+the Manifest's `stopped_at_its_end` last. A resume ended before that last
+write leaves the run read stopped, with `fastmdx resume` offered, and that
+resume finishes what is left.
+
 A run given `setup_from` records its `setup` as `skipped`, with `taken_from`
 naming the prepared system it simulated; a run that simulates nothing (an
 analysis or a report written again) records no setup. A study of several runs

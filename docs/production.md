@@ -323,7 +323,22 @@ explore --output RUN --include analysis report --rerun`) before resuming.
 Where the ceiling was lowered below the longest run, or below the length cut
 extensions run to, no run is carried on and the round is said as it ended. A
 piece stopped at its last step (by its planned steps, a variable step's too)
-is finished, for the join and every page.
+is finished, for the join and every page; a piece that ran to its end and
+was never joined reads stopped, its join owed, until a resume joins it.
+
+A Ctrl+C or a signal while the rule judges and extends the runs, outside a
+run's production (a piece's join or analyses, between two runs, as a
+catch-up piece starts), is noted, not raised: the run being extended
+finishes what it is doing, no further run's extension begins, a production
+begun after it stops at its first frame, and the round is said stopped when
+asked (exit 130); a second one stops at once. Each run's extension is
+recorded in the round as it begins (`started`), so a round cut after it
+says which runs' extensions never began. A resume stopped as it carries its
+round on leaves the round said stopped, its runs counted as they stand, and
+exits 130. A catch-up stopped before any run moved is said as part of the
+round it carries on only where that round was itself stopped when asked; a
+round that failed or was cut keeps its own ending. Every reader numbers the
+rounds as the rule judged them, a catch-up shown as part of its round.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.

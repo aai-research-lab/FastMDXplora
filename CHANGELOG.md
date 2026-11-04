@@ -678,6 +678,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   Failed as its header does; the Agent says a piece stopped at its end is
   being joined; the stop at the end writes its simulated time; and the
   header's state is not cut at 390 px.
+- A resume of a run stopped at its last step said the run whole before its
+  rule was applied: ended there, it read completed with its rule never
+  applied and no fix offered, and ended between the Manifest and the live
+  record, it read stopped for good. What a resume says it finished is now
+  written last, after its analyses, its rule and its live record, and a run
+  whose stop is not yet said whole reads stopped, with `fastmdx resume`,
+  which finishes it. The rewritten phase lists the files the run wrote, and
+  its record its frames and length; its Problems no longer list the stop.
+  A resume stopped as it carries its round on keeps the round said stopped,
+  counts its runs as they stand and exits 130; a Ctrl+C in a round outside
+  production (a join, a catch-up's start) is a stop asked, never a cut, a
+  traceback or lost. A piece run to its end and never joined reads stopped
+  with its join owed, its frames said of what is joined. A catch-up is folded
+  only into a round stopped when asked, with what it began; each extension
+  is recorded as it begins; every reader numbers rounds as judged; a batch
+  resume ends with its rule's outcome; the run page's Project status is the
+  study's state; and at 390 px the account button stays on the header's row.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
