@@ -323,15 +323,24 @@ explore --output RUN --include analysis report --rerun`) before resuming.
 Where the ceiling was lowered below the longest run, or below the length cut
 extensions run to, no run is carried on and the round is said as it ended. A
 piece stopped at its last step (by its planned steps, a variable step's too)
-is finished, for the join and every page; a piece that ran to its end and
-was never joined reads stopped, its join owed, until a resume joins it.
+is finished, for the join and every page; a piece an extension made (its
+own config resumes from a checkpoint) that ran to its end and was never
+joined reads with its join owed until a resume joins it: stopped where the
+round was stopped when asked, interrupted where its process ended. A run
+joined and not yet analysed is not counted completed. A study whose runs
+ended well and whose rule was never applied to them (its process ended
+before the first round was judged, or it was stopped before the rule was
+applied again) reads interrupted or stopped, with `fastmdx resume`, which
+applies it.
 
 A Ctrl+C or a signal while the rule judges and extends the runs, outside a
 run's production (a piece's join or analyses, between two runs, as a
 catch-up piece starts), is noted, not raised: the run being extended
 finishes what it is doing, no further run's extension begins, a production
-begun after it stops at its first frame, and the round is said stopped when
-asked (exit 130); a second one stops at once. Each run's extension is
+begun after it stops at its first frame (before its first chunk is run),
+and the round is said stopped when asked (exit 130); asked while the rule
+judges, no run is named as being extended. A second one stops at once. The
+GUI's own Stop in the study's process is taken the same way. Each run's extension is
 recorded in the round as it begins (`started`), so a round cut after it
 says which runs' extensions never began. A resume stopped as it carries its
 round on leaves the round said stopped, its runs counted as they stand, and

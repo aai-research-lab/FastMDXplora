@@ -695,6 +695,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   is recorded as it begins; every reader numbers rounds as judged; a batch
   resume ends with its rule's outcome; the run page's Project status is the
   study's state; and at 390 px the account button stays on the header's row.
+- The run page's two status rows are one reading, the study's state; a run
+  waiting for its study's next round says waiting on both. A study whose
+  rule was never applied to runs that ended well (killed before its first
+  round, or stopped before it was applied again) reads interrupted or
+  stopped with `fastmdx resume`, not completed; a run joined and not
+  analysed is not counted completed. A piece run to its end and never
+  joined says why in its own words (cut, or stopped when asked), whether
+  or not its config sits beside it, and a study killed holding its lock no
+  longer reads "Not read". A production begun after a stop in the rounds
+  ends at its first frame; a stop while the rule judges names no run; the
+  GUI's own stop in a round says the round ends; a resume that finished a
+  run's records says so; and a Ctrl+C after its last write is not a stop.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
