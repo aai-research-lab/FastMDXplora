@@ -949,7 +949,8 @@ def test_a_stop_past_production_is_said_stopped_and_exits_130(failed, tmp_path):
     ended = round_ended(study)
     assert ended.state == "stopped"
     assert code == 130
-    assert (printed + said).count("Its stopping rule's round 2 was stopped when asked") == 1
+    # Round 1 carried on (its catch-up is not a round the rule judged).
+    assert (printed + said).count("Its stopping rule's round 1 was stopped when asked") == 1
     # What carries the round on read when asked, not saved to go stale.
     manifest = json.loads((study / "batch_manifest.json").read_text())
     assert manifest["round_ended"] == ended.as_record() and "carry_on" not in \
@@ -1304,7 +1305,7 @@ def test_a_ceiling_lowered_over_a_cut_piece_is_not_passed(catch_up_cut, tmp_path
     # The cut run is not "ok": as the summary and the Agent count it.
     assert {run["run_id"]: (run["status"], run.get("error_type"))
             for run in manifest["runs"]} == {"tri__random-seed-1": ("ok", None),
-                                             SECOND: ("error", "Interrupted")}
+                                             SECOND: ("error", "CutInTheRounds")}
     assert re.search(r"^Batch stopped: 1 ok, 0 error\(s\), 1 cut in the rounds, ", printed,
                      re.M)
     assert printed.rstrip().splitlines()[-1] == round_ended(study).carry_on
@@ -1610,6 +1611,10 @@ def both_cut(tmp_path_factory):
     pdb.write_text(TRI_ALANINE)
     config = json.loads(json.dumps(_CONFIG))
     config["execution"] = {"mode": "parallel", "workers": 2}
+    # Pieces long enough that a kill at their first checkpoint is mid piece,
+    # however loaded the machine.
+    config["simulation"]["production_steps"] = 1500
+    config["simulation"]["stop_when"]["max_duration_ns"] = 0.03
     config["systems"] = [{"id": "tri", "system": str(pdb)}]
     config["output"] = str(root / "study")
     (root / "study.yml").write_text(yaml.safe_dump(config))
@@ -1744,6 +1749,9 @@ def test_a_piece_stopped_at_its_end_is_said_finished_by_the_runner(stopped_at_th
     assert side["finished"] is True
     assert status["stage_states"]["production"] == "completed"
     assert status["current_step"] == side["step"]
+    # Its simulated time with its step, never left at an earlier sample's.
+    assert status["simulation_time_completed_ns"] == pytest.approx(
+        status["current_step"] * 2.0 / 1e6)
 
 
 def test_a_run_whose_last_piece_was_stopped_at_its_end_reads_completed(
@@ -1766,7 +1774,17 @@ def test_a_run_whose_last_piece_was_stopped_at_its_end_reads_completed(
     # And says so last, not that its runs were carried on.
     assert printed.rstrip().splitlines()[-1] == "Nothing to do: the study finished."
     _read_as_completed(study)
-    # A rule changed since is judged, at the same lengths.
+
+
+def test_a_rule_changed_at_the_ceiling_is_judged(stopped_at_their_last_step, tmp_path):
+    """At its ceiling, a resume said "Nothing run" of a rule changed since,
+    and its record still held the old rule; and its last line said every run was
+    carried on where only the rule was applied."""
+    study = tmp_path / "study"
+    shutil.copytree(stopped_at_their_last_step["study"], study, symlinks=True)
+    _ended_at_the_last_piece(study)
+    code, _printed, said = _resume_by_the_cli(study)
+    assert code == 0, said[-2000:]
     config = yaml.safe_load((study / "resolved_config.yml").read_text())
     config["simulation"]["stop_when"]["measures"] = [{"analysis": "rmsd",
                                                       "standard_error": 1.0}]
@@ -1776,6 +1794,11 @@ def test_a_run_whose_last_piece_was_stopped_at_its_end_reads_completed(
     assert "Nothing run" not in printed
     assert record["targets"][0]["standard_error"] == 1.0
     assert record["rounds"][-1]["verdicts"]
+    lines = printed.rstrip().splitlines()
+    assert "Every run of the study was carried on or run" not in printed
+    assert lines[-2] == ("Nothing was simulated: its stopping rule was applied to its "
+                         "production as it stands.")
+    assert lines[-1] == f"Its stopping rule: {record['said']}"
 
 
 def test_a_record_written_before_the_runner_said_it_reads_completed(
@@ -1949,15 +1972,17 @@ def test_runs_stopped_side_by_side_are_each_named(tmp_path, monkeypatch):
 # rule's comparison, a piece at its end before its join
 # ---------------------------------------------------------------------------
 
-def test_runs_stopped_mid_round_side_by_side_exit_130(tmp_path):
-    """Ctrl-C in a round of two runs side by side exited 1: the runs stopped
-    in the round were recorded in error, and the code was read from them."""
+@pytest.fixture(scope="module")
+def stopped_mid_round(tmp_path_factory):
+    """Two runs side by side, Ctrl-C (to the whole group, as a terminal
+    sends it) while their round's pieces run, mid piece."""
     import os
     import signal
     import subprocess
     import sys
     import time
 
+    tmp_path = tmp_path_factory.mktemp("mid_round")
     pdb = tmp_path / "tri-ala.pdb"
     pdb.write_text(TRI_ALANINE)
     config = json.loads(json.dumps(_CONFIG))
@@ -1979,7 +2004,6 @@ def test_runs_stopped_mid_round_side_by_side_exit_130(tmp_path):
         deadline = time.monotonic() + 1200
         while time.monotonic() < deadline and process.poll() is None:
             if all(checkpoint.is_file() for checkpoint in checkpoints):
-                # Ctrl-C at the terminal: to the whole group.
                 os.killpg(process.pid, signal.SIGINT)
                 break
             time.sleep(0.02)
@@ -1988,12 +2012,25 @@ def test_runs_stopped_mid_round_side_by_side_exit_130(tmp_path):
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-    record = json.loads((tmp_path / "study" / "stopping.json").read_text())
+    return {"study": tmp_path / "study", "code": code, "checkpoints": checkpoints}
+
+
+def test_runs_stopped_mid_round_side_by_side_exit_130(stopped_mid_round):
+    """Ctrl-C in a round of two runs side by side exited 1: the runs stopped
+    in the round were recorded in error, and the code was read from them."""
+    study = stopped_mid_round["study"]
+    record = json.loads((study / "stopping.json").read_text())
     assert record["rounds"][-1]["stopped_by"] == "asked", record.get("said")
     pieces = [json.loads(checkpoint.with_name("checkpoint.chk.json").read_text())
-              for checkpoint in checkpoints]
+              for checkpoint in stopped_mid_round["checkpoints"]]
     assert not any(piece["finished"] for piece in pieces), pieces
-    assert code == 130
+    assert stopped_mid_round["code"] == 130
+    # The GUI's fixes card: no refusal of the runs' own with no code and no
+    # cost; they are carried on as the round's sentence says.
+    from fastmdxplora.gui.fixes_view import fixes_payload
+
+    said = json.dumps(fixes_payload(study))
+    assert "has not been given a code" not in said and "no simulation" not in said
 
 
 def _stopped_at_its_last_step(match):
@@ -2069,9 +2106,22 @@ def test_one_run_stopped_at_its_end_is_completed_by_its_resume(tmp_path, rule):
     from fastmdxplora.gui.server import _status_records
     from fastmdxplora.gui.workspace import study_state
 
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.remedies import remedies_of
+
     study = _one_run_stopped_at_its_end(tmp_path, rule=rule)
-    code, _printed, said = _resume_by_the_cli(study)
+    code, printed, said = _resume_by_the_cli(study)
     assert code == 0, said[-2000:]
+    # Said as what ran: its analyses, and the rule; nothing carried on.
+    assert "Production was complete; the analyses and report were run." in printed
+    assert "carried on from its last checkpoint" not in printed
+    # Every reader of its Manifest reads it as its state does: nothing to fix.
+    assert remedies_of(study) == [] and _what_would_fix_it(study) == []
+    assert fixes_payload(study)["fixes"] == []
+    manifest = json.loads((study / "manifest.json").read_text())
+    simulation = next(phase for phase in manifest["phases"] if phase["name"] == "simulation")
+    assert simulation["status"] == "ok" and simulation["stopped_at_its_end"]["refusal"]
     assert study_state(study) == "completed"
     # Its health reads its last sample (a temperature, say), never the stop.
     health = _status_records(study)["health"]
@@ -2080,6 +2130,7 @@ def test_one_run_stopped_at_its_end_is_completed_by_its_resume(tmp_path, rule):
         record = json.loads((study / "stopping.json").read_text())
         assert record["outcome"] == "ceiling", record.get("said")
         assert record["rounds"] and record["rounds"][-1]["verdicts"]
+        assert f"Its stopping rule: {record['said']}" in printed
 
 
 def test_a_piece_at_its_end_reads_stopped_until_it_is_joined(stopped_at_their_last_step,
@@ -2143,20 +2194,26 @@ def _held(folder: Path):
 
 
 def test_a_piece_being_simulated_is_not_said_joined(stopped_at_their_last_step, tmp_path):
-    """While a resume ran its next piece, the Agent said its pieces were
-    being joined and analysed."""
+    """While a resume joins a piece stopped at its end (its first act), the
+    Agent said a piece was being simulated; while a piece runs, it said
+    they were being joined."""
     from fastmdxplora.gui.records_answer import answer_from_the_records
 
     study = tmp_path / "study"
     shutil.copytree(stopped_at_their_last_step["study"], study, symlinks=True)
-    holding = _held(study / "runs" / SECOND)
+    run = study / "runs" / SECOND
+    holding = _held(run)
     try:
-        answer = answer_from_the_records(study / "runs" / SECOND, "found")
+        joining = answer_from_the_records(run, "found")
+        # Its newest piece's own record going: a piece is being simulated.
+        status = run / "segment-001" / "simulation" / "live_status.json"
+        status.write_text(json.dumps({**json.loads(status.read_text()), "status": "running"}))
+        simulating = answer_from_the_records(run, "found")
     finally:
         holding.kill()
         holding.wait()
-    assert "Its next piece is being simulated now" in answer
-    assert "being joined and analysed" not in answer
+    assert "Its pieces are being joined and analysed now" in joining
+    assert "Its next piece is being simulated now" in simulating
 
 
 def test_a_study_carried_on_is_not_said_completed(failed, tmp_path):
@@ -2173,3 +2230,126 @@ def test_a_study_carried_on_is_not_said_completed(failed, tmp_path):
         holding.kill()
         holding.wait()
     assert state == "running"
+
+
+# ---------------------------------------------------------------------------
+# Fix after round 7
+# ---------------------------------------------------------------------------
+
+def test_one_run_asking_no_analysis_stopped_at_its_end_is_completed(tmp_path):
+    """A study whose phases end at its simulation, stopped at its last step,
+    read stopped for good after a resume that said "Nothing to do"."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.simulation import runner
+
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config.pop("sweep")
+    config["simulation"].pop("stop_when")
+    config["exclude_phase"] = ["analysis", "report"]
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    study = (tmp_path / "study").resolve()
+    cap, requested = _stopped_at_its_last_step(lambda folder: folder.resolve() == study)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "_cap_for_stopping", cap)
+        patch.setattr(runner._StopRequests, "requested", requested)
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert main(["explore", "-c", str(tmp_path / "study.yml")]) == 130
+    code, printed, said = _resume_by_the_cli(study)
+    assert code == 0, said[-2000:]
+    assert "Nothing to do" in printed
+    assert study_state(study) == "completed"
+
+
+def test_a_catch_up_stopped_before_any_run_moved_is_not_a_second_round(tmp_path, monkeypatch):
+    """A resume stopped while it carried round 1 on said "round 2" and
+    recorded a second stopped round at the same lengths."""
+    from fastmdxplora.simulation import stopping
+
+    runs = [tmp_path / "runs" / "a", tmp_path / "runs" / "b"]
+    for run in runs:
+        run.mkdir(parents=True)
+    monkeypatch.setattr(stopping, "_frame_ns", lambda run: 0.0001)
+    monkeypatch.setattr(stopping, "_swept", lambda *args, **kwargs: None)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.01}
+    lengths = {"a": 0.004, "b": 0.002}
+    earlier = [{"production_ns": 0.002, "verdicts": [], "decision": "stopped", "more_ns": 0.002,
+                "stopped_by": "error", "extended": ["a"], "said": "Stopped: it failed."}]
+    record = stopping.run_until_known(
+        runs, stopping.targets_of(stop_when), stop_when, record_in=tmp_path,
+        extend_to=lambda some, total: [{"ok": False, "stopped": True}],
+        say=lambda said: None, production_of=lambda run: lengths[run.name],
+        earlier_rounds=earlier)
+    assert len(record["rounds"]) == 1
+    assert record["rounds"][0]["stopped_by"] == "asked"
+    monkeypatch.setattr(stopping, "_production_of_each",
+                        lambda study, names: {name: lengths[name] for name in names})
+    monkeypatch.setattr(stopping, "_what_resume_finds", lambda study, names: {})
+    assert stopping.round_ended(tmp_path, resuming=True).said.startswith(
+        "Its stopping rule's round 1 was stopped when asked")
+
+
+def test_a_run_whose_extension_never_began_is_said_so():
+    """Sequential: "The extension of seed-1 and seed-2 did not finish" where
+    seed-2's never began."""
+    from fastmdxplora.simulation.stopping import _how_far_each_got
+
+    said = _how_far_each_got(["a", "b"], {"extended": [], "started": ["a"]},
+                             {"a": 0.0008, "b": 0.0006}, 0.0012)
+    assert said.startswith(" The extension of a did not finish (a has 0.8 ps of production)")
+    assert "the extension of b did not start" in said
+
+
+def test_a_refused_resume_s_card_says_what_its_header_says(stopped_mid_round, tmp_path):
+    """After a resume a run refused (its checkpoint altered), the header said
+    Failed and the round's card Stopped."""
+    from fastmdxplora.gui.stopping_view import stopping_payload
+    from fastmdxplora.gui.workspace import study_state
+
+    study = tmp_path / "study"
+    shutil.copytree(stopped_mid_round["study"], study, symlinks=True)
+    checkpoint = study / "runs" / SECOND / "segment-001" / "simulation" / "checkpoint.chk"
+    data = bytearray(checkpoint.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    checkpoint.write_bytes(bytes(data))
+    code, printed, _said = _resume_by_the_cli(study)
+    assert code == 1 and "Resume refused" in printed, printed[-1500:]
+    assert study_state(study) == "failed"
+    assert stopping_payload(study)["outcome_label"] == "Failed"
+
+
+def test_the_header_s_state_is_said_whole_at_390(cut_one, tmp_path):
+    """At 390 px the run page's header said "Interrupte"."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = tmp_path / "study"
+    shutil.copytree(cut_one["study"], study, symlinks=True)
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#overview", wait_until="domcontentloaded")
+            page.wait_for_function(
+                "() => (document.getElementById('topbar-status-text') || {}).textContent"
+                " === 'Interrupted'")
+            found = page.evaluate("""() => {
+              const text = document.getElementById('topbar-status-text');
+              const line = text.closest('.study-status');
+              const a = text.getBoundingClientRect(), b = line.getBoundingClientRect();
+              return {inside: a.right <= b.right + 1 && a.left >= b.left - 1,
+                      page: document.documentElement.scrollWidth <= 390};
+            }""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert found == {"inside": True, "page": True}

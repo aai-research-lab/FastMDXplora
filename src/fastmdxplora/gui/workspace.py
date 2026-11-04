@@ -1127,12 +1127,14 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
             code = str((phase.get("refusal") or {}).get("code") or "")
             return "stopped" if code == "simulation.run.stopped" else "failed"
     if any(stopped_at_its_end(base, phase) for phase in phases):
-        # Stopped at its last step: whole, and its later phases say the rest.
+        from fastmdxplora.gui.telemetry import phases_asked
+
+        # Stopped at its last step: whole, and the phases the study asks for
+        # after it say the rest (none asked: it is done).
         later = {str(p.get("name")): p.get("status") for p in phases if isinstance(p, dict)}
-        if any(later.get(name) not in ("ok", "skipped") for name in ("analysis", "report")
-               if name in later):
-            return "stopped"
-        if not all(name in later for name in ("analysis", "report")):
+        asked = phases_asked(base) or ["analysis", "report"]
+        if any(later.get(name) not in ("ok", "skipped")
+               for name in ("analysis", "report") if name in asked):
             return "stopped"
     from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 

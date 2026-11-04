@@ -2115,14 +2115,16 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     # (or was stopped), as its batch manifest and every page say it.
     ended = round_ended(fmdx.output_dir)
     if ended is not None:
-        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE, _was_stopped
+        from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                                 STOPPED_IN_THE_ROUNDS, _was_stopped)
 
         # The study's state decides, as every page reads it: a round stopped
         # when asked exits 130, as a study stopped at the terminal does,
         # whatever its runs stopped in the round are recorded as; 1 is for
         # a run's own error or a failed round.
         erred = [r for r in results if r.status == "error" and not _was_stopped(r)
-                 and getattr(r, "error_type", None) not in (STOPPED_ERROR_TYPE, "Interrupted")]
+                 and getattr(r, "error_type", None) not in (
+                     STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
         rc = 130 if ended.state == "stopped" and not erred else 1
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
@@ -3355,12 +3357,17 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             "restarted": "Production had not begun, so the study was run from its start.",
             "runs": "Every run of the study was carried on or run, and the "
                     "study's comparison across them rebuilt.",
+            "judged": "Nothing was simulated: its stopping rule was applied to its "
+                      "production as it stands.",
         }
         if answer.get("did") == "reported":
             # What was reported over, and the command that chose it.
             print(answer.get("detail") or said["reported"])
         else:
             print(said.get(answer.get("did"), "Done."))
+        if answer.get("rule_said"):
+            # What its rule decided, last of what was done.
+            print(f"Its stopping rule: {answer['rule_said']}")
         saved = [str(phase) for phase in answer.get("saved_in_previous") or []]
         if saved:
             # What was saved, by name: the report too only where it was there.

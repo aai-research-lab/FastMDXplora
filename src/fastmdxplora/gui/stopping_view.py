@@ -301,6 +301,15 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         # `fastmdx resume` would run (`stopping.round_ended`).
         shown = "stopped" if cut.state in ("failed", "stopped") else "interrupted"
         label, said, ended = cut.label, f"{cut.said} {cut.carry_on_on_a_page}", None
+        from fastmdxplora.gui.workspace import study_state
+
+        try:
+            # The study's word, as its header and All studies give it: a run
+            # whose resume was refused fails the study whose round stopped.
+            if cut.state != "failed" and study_state(where) == "failed":
+                label = "Failed"
+        except Exception:  # noqa: BLE001 - the round's own word stands
+            pass
         reached = [ns for _name, ns in cut.productions if ns is not None]
         if reached:
             production = max(reached)

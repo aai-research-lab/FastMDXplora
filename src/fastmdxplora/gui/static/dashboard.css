@@ -4711,8 +4711,11 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
         background: transparent;
     }
     .brand-product { font-size: var(--text-xl); }
-    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: 0; }
+    /* At least as wide as the study's state, said whole ("Interrupted" was
+       cut to "Interrupte" at 390 px); a long name still wraps. */
+    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: min-content; }
     .sidebar-study .study-name { font-size: var(--text-sm); }
+    .sidebar-study-card .status-text { flex: none; }
     .sidebar-foot { position: static; margin: 0; background: transparent; }
     .sidebar-account-text, .sidebar-account-caret { display: none; }
     .sidebar .sidebar-nav {

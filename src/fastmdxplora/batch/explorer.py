@@ -213,6 +213,12 @@ STOPPED_ERROR_TYPE = "Stopped"
 #: refused it (`_resume_run`).
 RESUME_REFUSED = "ResumeRefused"
 
+#: What a run its study's round stopped or cut is recorded as: not a run's
+#: own refusal, and fixed as the round's sentence says (`round_ended`), so
+#: no remedy of its own, nor the exit code of an error.
+STOPPED_IN_THE_ROUNDS = "StoppedInTheRounds"
+CUT_IN_THE_ROUNDS = "CutInTheRounds"
+
 
 def _listen_for_a_stop_in_this_worker() -> None:
     """Have a stop end this worker's run with a record, not end the worker.
@@ -1854,7 +1860,8 @@ class BatchExplorer:
 
                 self.results[index] = replace(
                     result, status="error",
-                    error_type=STOPPED_ERROR_TYPE if state == "stopped" else "Interrupted",
+                    error_type=(STOPPED_IN_THE_ROUNDS if state == "stopped"
+                                else CUT_IN_THE_ROUNDS),
                     message=("Stopped when asked in the study's rounds." if state == "stopped"
                              else "Its process ended in the study's rounds."))
                 continue
@@ -1939,13 +1946,18 @@ class BatchExplorer:
         runs = [Path(result.output_dir) for result in finished]
         print(f"\nRunning until determined\n{'=' * 40}")
         side_by_side = self.mode == "parallel" and len(runs) > 1
+        earlier = len(self._earlier_rounds())
         judged = run_until_known(
             runs, targets, stop_when, record_in=self.output_dir,
             extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
             extend_to=lambda some, total: self._extend_runs(some, None, total_ns=total),
             at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
-        # Judged at these lengths already, by the rule now asked: nothing ran.
+        # Judged at these lengths already, by the rule now asked: nothing ran;
+        # or judged only, no round extending a run.
         self._rule_ran_nothing = isinstance(judged, dict) and bool(judged.get("nothing_run"))
+        self._rule_extended = not isinstance(judged, dict) or any(
+            entry.get("decision") in ("extend", "stopped") or entry.get("brought_up")
+            for entry in (judged.get("rounds") or [])[earlier:] if isinstance(entry, dict))
         if self.is_single:
             self._report_again(runs[0])
 

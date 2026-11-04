@@ -100,13 +100,18 @@ def _the_means_are_of_less(base: Path) -> str | None:
           else "of its pieces before the join")
     the_whole = f"its {length_said(whole)}" if whole else "its whole production"
     if going:
-        from fastmdxplora.gui.telemetry import read_study_status
+        from fastmdxplora.gui.telemetry import _GOING_STATUSES, _pieces_of, read_status
 
+        # Simulated only while its newest piece's own record says it goes;
+        # otherwise the resume joins and analyses (a piece stopped at its
+        # end is joined first).
         try:
-            stage = str(read_study_status(base).get("stage") or "").lower()
+            pieces = _pieces_of(base)
+            simulated = bool(pieces) and str(read_status(pieces[-1]).get("status") or
+                                             "").lower() in _GOING_STATUSES
         except Exception:  # noqa: BLE001 - a record, not a verdict
-            stage = ""
-        if owed or stage in ("analysis", "report"):
+            simulated = False
+        if owed or not simulated:
             return (f"Its pieces are being joined and analysed now: the means below are "
                     f"{of}, not of {the_whole}, until that ends.")
         return (f"Its next piece is being simulated now: the means below are {of}, not of "

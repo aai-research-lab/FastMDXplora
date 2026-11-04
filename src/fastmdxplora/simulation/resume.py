@@ -1690,6 +1690,8 @@ RESUMED_ANALYSIS = "analysed"
 #: Only the report, over an analysis the person chose after the join.
 RESUMED_REPORT = "reported"
 RESUMED_PRODUCTION = "continued"
+#: Its stopping rule applied to its runs as they stand, nothing simulated.
+RESUMED_JUDGED = "judged"
 RESUMED_FROM_START = "restarted"
 
 
@@ -2083,6 +2085,39 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     return all(states.get(p) in ("ok", "skipped") for p in planned), None
 
 
+def _its_stop_at_its_end_said_whole(root: Path) -> bool:
+    """A run's Manifest, its simulation stopped when asked at the last step
+    of a whole production (`stopped_at_its_end`), written as the run it is
+    once a resume has run what came after it: its simulation "ok", the
+    stop saved beside it (``stopped_at_its_end``). Every reader of the
+    Manifest (the fixes, the Agent's remedies, the run's page, the
+    Overview and the timeline) then reads the run as completed, as its
+    state does, where they offered `fastmdx resume` for a run with nothing
+    to carry on. Whether it was so written."""
+    import json
+
+    manifest = root / "manifest.json"
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    phases = record.get("phases") if isinstance(record, dict) else None
+    if not isinstance(phases, list):
+        return False
+    changed = False
+    for phase in phases:
+        if stopped_at_its_end(root, phase):
+            phase["stopped_at_its_end"] = {"message": phase.get("message"),
+                                          "refusal": phase.pop("refusal", None)}
+            phase["status"] = "ok"
+            phase["message"] = ("Production ran to its last step, where it was stopped "
+                                "when asked: the run is whole.")
+            changed = True
+    if changed:
+        _write_atomically(manifest, json.dumps(record, indent=2))
+    return changed
+
+
 def stopped_at_its_end(root: str | Path, phase: Any) -> bool:
     """Whether a run's Manifest records its simulation stopped when asked
     where its production had reached its end (`joining.piece_finished`, the
@@ -2360,7 +2395,10 @@ def _resume_study(study: str | Path, *,
                                        standing=standing)
             carried = bool(answer.get("ok"))
             if carried:
-                answer = {**_judge_the_run_again(root, base), "carried_on": answer.get("did")}
+                judged = _judge_the_run_again(root, base)
+                # What the carrying on did, where the rule then ran nothing.
+                answer = {**judged, "did": (answer.get("did") if judged.get("did")
+                                            == RESUMED_JUDGED else judged.get("did"))}
     finally:
         _release_run_process(root)
     if not carried:
@@ -2518,6 +2556,10 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
                 "error": f"The study stopped with an answer, not an interruption "
                          f"({stopped}). Running it again would give the same one."}
     if finished:
+        # Stopped at its end with nothing after it to run (its analyses not
+        # asked): whole, and said so where it said stopped.
+        if _its_stop_at_its_end_said_whole(root):
+            _phases_after_ended_well(root)
         return {**base, "ok": True, "did": RESUMED_NOTHING,
                 **_production_now(root, {"ok": True}),
                 "detail": NOTHING_TO_CARRY_ON}
@@ -2625,6 +2667,7 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
         whole["analysis"] = analysis
         ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
         if all(result.status == "ok" for result in ran):
+            _its_stop_at_its_end_said_whole(root)
             _phases_after_ended_well(root)
         return {**base, "ok": True, "did": RESUMED_ANALYSIS,
                 **_production_now(root, {"ok": True}), "production_planned_ns": planned}
@@ -2762,12 +2805,20 @@ def _judge_the_run_again(root: Path, base: dict[str, Any]) -> dict[str, Any]:
     _JUDGED_AGAIN_HERE.add(root)
     try:
         with _within_the_rounds():
-            run_until_known([root], targets, stop_when, record_in=root, earlier_rounds=rounds)
+            judged = run_until_known([root], targets, stop_when, record_in=root,
+                                     earlier_rounds=rounds)
         BatchExplorer._report_again(root)
     finally:
         _JUDGED_AGAIN_HERE.discard(root)
     ended = round_ended(root)
-    answer = {**base, "ok": ended is None, "did": RESUMED_PRODUCTION,
+    # Said as what ran: production carried on where a round extended it,
+    # else only the rule applied (it judged the run as it stands).
+    extended = any(entry.get("decision") in ("extend", "stopped")
+                   for entry in (judged or {}).get("rounds", [])[len(rounds):]
+                   if isinstance(entry, dict))
+    answer = {**base, "ok": ended is None,
+              "did": RESUMED_PRODUCTION if extended else RESUMED_JUDGED,
+              "rule_said": str((judged or {}).get("said") or ""),
               **_production_now(root, {"ok": True})}
     if ended is not None:
         answer["error"] = ended.as_text()
@@ -2841,11 +2892,24 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     ended = round_ended(root)
     # Every run finished and its rule judged them at these lengths already:
     # nothing was run, and the study says so, not that its runs were carried on.
-    nothing = (getattr(batch, "_rule_ran_nothing", False)
-               and all(r.status == "ok" and r.message == NOTHING_TO_CARRY_ON for r in results))
-    answer = {**base, "ok": not failed and ended is None,
-              "did": RESUMED_NOTHING if nothing else RESUMED_RUNS,
+    quiet = all(r.status == "ok" and r.message == NOTHING_TO_CARRY_ON for r in results)
+    # Its runs finished: nothing ran where its rule judged them at these
+    # lengths already, or only its rule was applied, no round extending them.
+    did = (RESUMED_NOTHING if quiet and getattr(batch, "_rule_ran_nothing", False)
+           else RESUMED_JUDGED if quiet and not getattr(batch, "_rule_extended", True)
+           else RESUMED_RUNS)
+    answer = {**base, "ok": not failed and ended is None, "did": did,
               "runs": listed, **({"refused": refused} if refused else {})}
+    if did == RESUMED_JUDGED:
+        import json as _json
+
+        from fastmdxplora.simulation.stopping import RECORD
+
+        try:
+            answer["rule_said"] = str(_json.loads((root / RECORD).read_text(
+                encoding="utf-8")).get("said") or "")
+        except (OSError, ValueError, AttributeError):
+            pass
     if ended is not None:
         # What carries it on, as every page says it, said last in the study's
         # summary, so not said again: a run's own refusal advised an

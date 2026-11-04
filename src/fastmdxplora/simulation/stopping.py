@@ -800,6 +800,8 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         # The runs whose extension finished: side by side, the others
         # can, and the runs are then not at one length.
         entry["extended"] = [r.name for r, a in zip(tried, answers) if a.get("ok")]
+        # One after another, a run after the one that ended was never begun.
+        entry["started"] = [r.name for r, _ in zip(tried, answers)]
         # A study of one run is named "the run", not by its folder; runs
         # stopped side by side are each named.
         named = run.name
@@ -843,6 +845,17 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             tried = [run for run in runs if run.name in short]
             stopped = ended_by(entry, tried, list(extend_to(tried, target)))
             if stopped is not None:
+                if entry.get("stopped_by") == "asked" and all(
+                        abs(production_of(run) - productions[run.name]) <= _ONE_LENGTH_NS
+                        for run in runs if productions.get(run.name) is not None):
+                    # Stopped when asked before any run moved: the round it
+                    # carries on is said stopped by this, not a second round
+                    # recorded at the same lengths.
+                    record["rounds"].pop()
+                    previous = record["rounds"][-1]
+                    previous.update(decision="stopped", stopped_by=entry["stopped_by"],
+                                    said=entry["said"])
+                    write()
                 return stopped
 
     last = record["rounds"][-1] if record["rounds"] else {}
@@ -1254,7 +1267,9 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
     if not resuming and _carried_on_elsewhere(study):
         # A resume carries it on: going, as the join is while one runs it.
         return None
-    number = len(rounds)
+    # Rounds the rule judged: one that brings shorter runs up carries the
+    # round before it on, and is not a round of its own in the count.
+    number = len([entry for entry in rounds if not entry.get("brought_up")]) or len(rounds)
     names = [str(name) for name in record.get("runs") or []]
     them = "the runs" if len(names) > 1 else "the run"
     more = rounds[-1].get("more_ns")
@@ -1430,12 +1445,28 @@ def _how_far_each_got(names: list[str], last: dict[str, Any],
     left = [name for name in names if name not in done]
     if not left:
         return ""
+    began = last.get("started")
+    unbegun = ([name for name in left if name not in began]
+               if isinstance(began, list) else [])
+    left = [name for name in left if name not in unbegun]
+    after = (f"; the extension of {_and(unbegun)} did not start" if unbegun else "")
+    if not left:
+        # Only runs whose extension never began are short.
+        where = [known.get(name) for name in unbegun]
+        at = (f" ({unbegun[0]} has {length_said(where[0])} of production)"
+              if len(unbegun) == 1 and where[0] is not None else "")
+        lead = (f" {_and(done)} {'was' if len(done) == 1 else 'were'} extended"
+                + (f" to {length_said(length)}" if length is not None else "") + ";"
+                if done else "")
+        return (f"{lead} the extension of {_and(unbegun)} did not start{at}"
+                if done else f" The extension of {_and(unbegun)} did not start{at}") + (
+            ", so the runs are not at one length." if differ else ".")
     where = [known.get(name) for name in left]
     at = ""
     if all(ns is not None for ns in where):
         at = (f" ({left[0]} has {length_said(where[0])} of production)" if len(left) == 1
               else f" (they have {_and([length_said(ns) for ns in where])} of production)")
-    tail = ", so the runs are not at one length." if differ else "."
+    tail = after + (", so the runs are not at one length." if differ else ".")
     if not done:
         return f" The extension of {_and(left)} did not finish{at}{tail}" if differ else ""
     to = f" to {length_said(length)}" if length is not None else ""

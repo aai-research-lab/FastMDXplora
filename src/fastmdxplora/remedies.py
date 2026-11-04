@@ -522,6 +522,13 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
             continue
         if run.get("status") != "error":
             continue
+        from fastmdxplora.batch.explorer import CUT_IN_THE_ROUNDS, STOPPED_IN_THE_ROUNDS
+
+        if run.get("error_type") in (STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS):
+            # Stopped or cut in its study's round: fixed as the round's own
+            # sentence says (`stopping.round_ended`), never as a refusal of
+            # its own with no code and no cost.
+            continue
         refusal = _refusal_of_run(run)
         if run.get("error_type") == "Stopped" or _retryable(refusal):
             stopped.append((run_id, folder, str(refusal.get("code") or "simulation.run.stopped")))

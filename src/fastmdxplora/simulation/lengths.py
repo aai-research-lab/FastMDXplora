@@ -979,8 +979,14 @@ def _recorded(root: object) -> dict:
             said["production_ran_ns"], said["production_ran_source"] = None, source
         said["pieces"] = clock["pieces"]
 
+    # A run not split into pieces only: a study of pieces whose length is not
+    # recorded (a piece's config that does not read, a piece not read) says
+    # so, never its first piece's plan.
     if (not extended and not variable and said["production_ran_ns"] is None
-            and state == "read" and isinstance(said["production"].get("ns"), (int, float))):
+            and state == "read" and not _segments(root)
+            and said.get("production_ran_source") not in (NOT_READ,)
+            and not said.get("production_ran_said")
+            and isinstance(said["production"].get("ns"), (int, float))):
         from pathlib import Path
 
         from fastmdxplora.analysis.joining import piece_finished

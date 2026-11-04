@@ -3494,7 +3494,9 @@ def run_simulation(
             # frame its production wrote: the pages count the whole run on.
             telemetry.mark_stage("production", "completed", status="stopped",
                                  latest_error=str(exc), current_step=current_step,
-                                 current_frame_count=exc.frames)
+                                 current_frame_count=exc.frames,
+                                 simulation_time_completed_ns=(
+                                     float(current_step) * float(timestep_fs) / 1_000_000.0))
         elif telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
             # Asked to stop, and stopped where it can be carried on: the
             # stage it was in stays the one it was in, not a failed one.
