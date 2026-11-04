@@ -717,6 +717,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   run's stop keeps its grace period; the study's lock is opened without
   blocking (a FIFO there hung the study list); a piece run by a resume that
   was killed is not said stopped when asked.
+- The Agent's health line and the AI app's record, its run-ended note,
+  `fastmdx share`, the Report page and the long-enough answer read a study's
+  state from the one derivation too: a rule never applied is not "Completed"
+  there, nor shared as finished, and the Report page says a round's ending.
+  A run's page in a study of several reads of its study only its record of
+  its rounds ("Not read: ../../resolved_config.yml" is gone). A resume notes
+  in that record that it carries the study on, so one that died reads cut,
+  never stopped when asked, whatever its files' times; a link at the lock's
+  name is no lock and is not opened. The no-step stop and the fixes of a
+  run of a study of several give the study's `fastmdx resume`; "saved", not
+  "kept", for what is stored.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
