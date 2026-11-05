@@ -388,8 +388,8 @@ study's lock; a run's page reads any marker as its study's round carried on
 is the study's, read in the study's own held read. A run record from this
 machine before its last boot names a process that is gone. One from a
 different host or container names a process that cannot be asked from here:
-while the study's records were written within the last hour (by their own
-timestamps, so a copy reads the same), the study reads going on every
+while the study's records were written within the last hour, the study
+reads going on every
 reader, "It is going on <host>, which cannot be asked from here", with the
 time after which it can be resumed from here; once quiet for an hour, it
 reads as its records say it ended, saying where, and its fix is the
@@ -397,7 +397,17 @@ person's to run once it has ended there, never run from the GUI. `fastmdx
 resume --taken-over` carries it on before the hour, for a person who knows
 its process there has ended; a process on this machine holding the study
 still refuses it, and the GUI never runs it. A record of a piece its run's
-join took in is not read as going. The study is going too while any of its
+join took in, or a piece set aside, is not read as going. "Written" is a
+heartbeat: while a study's process (a resume's, a worker's) lives it stamps
+its own process record every 5 minutes (``alive_at``), in every phase,
+from a thread of its own, so an hour is twelve heartbeats missed, never a
+long setup, analysis or join; the newest of that stamp and the live
+records' is read, on the clock of the machine that wrote it, so a copy
+reads the same. That reading trusts the other machine's clock: one running
+an hour or more slow makes a study going there read quiet here, so a
+cluster's nodes keep their clocks set (NTP), and a study read from a
+machine whose clock is not is resumed only once its process is known to
+have ended there. The study is going too while any of its
 runs' locks is held (a round's extension holds its run's), and `fastmdx
 resume`, or an extension of one of its runs, refuses, before it writes
 anything, while a process on this machine runs it, the study's lock or any

@@ -781,6 +781,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   cut; a one-run study whose resume died as it judged its rule owes the
   rule; a round cut in its join gives its resume on the Fixes card; one
   reading of "a run of a study" everywhere.
+- A study's process stamps its own process record every 5 minutes in every
+  phase (a heartbeat), and the hour of quiet for another machine's study is
+  counted from it: a study in a long setup, analysis or join there no longer
+  reads quiet, nor is it resumed from here. An extension of a one-run study
+  running here or going elsewhere is refused before anything is written, a
+  piece set aside is not read as going, the runs of a study going elsewhere
+  read going, an hour's quiet is said as an hour, the time left names its
+  zone and quotes the folder, and `--taken-over` refuses a lock held now,
+  naming it.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
