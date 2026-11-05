@@ -369,8 +369,8 @@ the note the Agent panel posts when a run it started has ended
 runs (`records_answer`, `exploration.runs_of_a_study`, the runs list); each
 run's own page in a study of several, read held to the run (it reads of its
 study only its record of its rounds, `stopping.round_stopped_when_asked`
-and `stopping.round_failed`, and its rule's card takes the ceiling from that
-record); the Report page (`report_page`, the round's sentence above the runs
+and `stopping.round_failed`, and its rule's card is the study's,
+`server.stopping_card`); the Report page (`report_page`, the round's sentence above the runs
 so far, or above a study of one run's report); `fastmdx share`
 (`sharing.pack.finished_manifest`, for a study of one run or several, before
 it reads each run); the CLI's last line and
@@ -381,8 +381,14 @@ thermodynamics, Problems, the Timeline) say no ended state. A resume writes
 in the study's record of its rounds that it carries the study on, before
 its work, and takes it away after, naming its process as the study's lock
 does (its number, when it began, the machine): one that died leaves the
-study read cut, never stopped when asked by an earlier stop's words, and a
-marker is read only once no process holds the study's lock. A fix for a run
+study read cut, never stopped when asked or failed by an earlier round's
+words. The study's readers read a marker only once no process holds the
+study's lock; a run's page reads any marker as its study's round carried on
+(neither stopped when asked nor failed), going or ended, and its rule's card
+is the study's, read in the study's own held read. A run record from this
+machine before its last boot names a process that is gone; one from another
+machine, which cannot be asked here, leaves a study whose rule goes on read
+running. A fix for a run
 of a study of several gives the study's `fastmdx resume`. The round's test
 file walks every reader, each run's page and its rule's card in its held
 read, over each state it builds (a rule never applied, a piece not joined,

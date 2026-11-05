@@ -739,6 +739,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   for it. The rule's card of a rule never applied says its measure was not
   judged; the run-ended note gives the round's sentence once; the Report page
   of a study of one run says its round above its report.
+- A run's page shows its study's rule card, read as the study's page reads
+  it, so what it says a resume does follows the ceiling the study's config
+  now sets. A study killed and then found after the machine restarted reads
+  cut, not completed, and is not shared; one whose run record is another
+  machine's reads running. A run whose join failed is headed "Stopped with an
+  error", its status bar "Joining failed"; a failed round whose resume died
+  reads cut. `fastmdx share` names the phases that did not finish where no
+  round says; the Report page says a round once, and a copied study's saved
+  comparison says the folder it was written in.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
