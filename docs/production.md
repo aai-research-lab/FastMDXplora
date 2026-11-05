@@ -368,21 +368,28 @@ the note the Agent panel posts when a run it started has ended
 (`agent_panel.run_summary_endpoint`), its records answer and its count of
 runs (`records_answer`, `exploration.runs_of_a_study`, the runs list); each
 run's own page in a study of several, read held to the run (it reads of its
-study only its record of its rounds, `stopping.round_stopped_when_asked`);
-the Report page (`report_page`, the round's sentence above the runs so far);
-`fastmdx share` (`sharing.pack.finished_manifest`); the CLI's last line and
+study only its record of its rounds, `stopping.round_stopped_when_asked`
+and `stopping.round_failed`, and its rule's card takes the ceiling from that
+record); the Report page (`report_page`, the round's sentence above the runs
+so far, or above a study of one run's report); `fastmdx share`
+(`sharing.pack.finished_manifest`, for a study of one run or several, before
+it reads each run); the CLI's last line and
 exit code, `batch_manifest.json` and the comparison report; and the report
 (`report_dashboard`). Readers that ask only whether a run is going (the
 files page, the deposit, the trajectory's frames, the Overview's
 thermodynamics, Problems, the Timeline) say no ended state. A resume writes
 in the study's record of its rounds that it carries the study on, before
-its work, and takes it away after: one that died leaves the study read cut,
-never stopped when asked by an earlier stop's words; and a fix for a run of
-a study of several gives the study's `fastmdx resume`. The round's test file
-walks every reader, each run's page in its held read, over each state it
-builds (a rule never applied, a piece not joined, runs joined and not
-analysed, stopped in a round, cut, failed, a resume refused, completed) and
-checks they agree, what each fix gives, and that no read is refused.
+its work, and takes it away after, naming its process as the study's lock
+does (its number, when it began, the machine): one that died leaves the
+study read cut, never stopped when asked by an earlier stop's words, and a
+marker is read only once no process holds the study's lock. A fix for a run
+of a study of several gives the study's `fastmdx resume`. The round's test
+file walks every reader, each run's page and its rule's card in its held
+read, over each state it builds (a rule never applied, a piece not joined,
+runs joined and not analysed, stopped in a round, cut, failed, failed in its
+join, a resume that died, a resume refused, completed) and checks they
+agree, what each fix gives, what `fastmdx share` does, the CLI's last line
+and exit code, and that no read is refused.
 
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.

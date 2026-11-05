@@ -728,6 +728,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   name is no lock and is not opened. The no-step stop and the fixes of a
   run of a study of several give the study's `fastmdx resume`; "saved", not
   "kept", for what is stored.
+- `fastmdx share` of a study of several runs refuses one whose round failed,
+  was stopped or was cut, or whose rule was never applied, with the round's
+  sentence and the study's `fastmdx resume`, before it reads each run. The
+  rule's card on a run's page takes the ceiling from the record of rounds,
+  and reads nothing of its study it is not given. A round that failed in its
+  join is said failed by the fixes card, the run's page and the Agent's
+  record, never cut. A resume's note in the record names its process as the
+  study's lock does, so another process given its number since is not taken
+  for it. The rule's card of a rule never applied says its measure was not
+  judged; the run-ended note gives the round's sentence once; the Report page
+  of a study of one run says its round above its report.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
