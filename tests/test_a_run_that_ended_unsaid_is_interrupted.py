@@ -173,10 +173,16 @@ class TestWhetherItEnded:
                 _its_process(root, _a_gone_process(), **where)
             return root
 
+        from fastmdxplora.simulation.resume import ANOTHER_HOST_QUIET_SECONDS
+
         if "pidns" in where and not this_machine()["pidns"]:
             pytest.skip("this system does not say which process namespace")
+        # Another machine's or container's process: an hour of nothing
+        # written (the user's decision of 11-05); none recorded: a day.
+        span = SILENT_RUN_ENDED_AFTER_SECONDS if "none" in where else ANOTHER_HOST_QUIET_SECONDS
         assert not run_ended_unsaid(study("recent", _ago(60)))
-        assert not run_ended_unsaid(study("slow", _ago(SILENT_RUN_ENDED_AFTER_SECONDS - 60)))
+        assert not run_ended_unsaid(study("slow", _ago(span - 60)))
+        assert how_the_run_ended(study("quiet", _ago(span + 60))) == "silence"
         assert how_the_run_ended(study("weeks", _ago(21 * 86400))) == "silence"
 
     @pytest.mark.parametrize("arguments", [False, True])
