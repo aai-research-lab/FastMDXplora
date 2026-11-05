@@ -1300,12 +1300,12 @@ def _ceiling_a_resume_uses(study: Path, record: dict[str, Any]) -> float | None:
 
     from fastmdxplora import record_access
 
+    value = record.get("max_duration_ns")
     try:
-        if not record_access.can_read(study / "resolved_config.yml"):
-            raise KeyError("resolved_config.yml")
-        config = yaml.safe_load(record_access.read_text(study / "resolved_config.yml",
-                                                        encoding="utf-8"))
-        value = config["simulation"]["stop_when"]["max_duration_ns"]
+        if record_access.can_read(study / "resolved_config.yml"):
+            config = yaml.safe_load(record_access.read_text(study / "resolved_config.yml",
+                                                            encoding="utf-8"))
+            value = config["simulation"]["stop_when"]["max_duration_ns"]
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         value = record.get("max_duration_ns")
     return (float(value) if isinstance(value, (int, float)) and not isinstance(value, bool)
