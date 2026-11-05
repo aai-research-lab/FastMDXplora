@@ -757,6 +757,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   resume uses, and names a linked-out config as not read. A failed join's fix
   has its own code, `simulation.round.join_failed`, and is counted at its
   production's end.
+- A study going on another machine or container (its process record
+  another's, its records written within a day) reads going, saying where,
+  never interrupted with a resume offered from here; once quiet it reads as
+  its records say it ended, its fix the person's to run once it has ended
+  there. A study is going while any of its runs' locks is held, and
+  `fastmdx resume` refuses before writing anything while the study's or any
+  run's lock is held (it rewrote a finished run's report first). Problems
+  are read on a run's page and on a study under `runs/` again; a run whose
+  study's record of runs is missing or broken is still that study's. A
+  failed join's code is SEMANTIC and its fix, to put right what failed it
+  first, is not run from the GUI at once.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
