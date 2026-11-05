@@ -994,6 +994,16 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             return "interrupted" if code < 0 else "failed" if code else ""
         return status
 
+    if not ours:
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        # Going on another machine, as its state says (`workspace.study_state`):
+        # not ended, whatever its runs' records say between its pieces.
+        try:
+            if going_elsewhere(root):
+                return {"ok": True, "ended": False}
+        except Exception:  # noqa: BLE001 - as its records say
+            pass
     runs = runs_of_a_study(root)
     if runs:
         if not ours and any(recorded(Path(r["path"])) in _GOING

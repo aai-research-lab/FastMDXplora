@@ -1266,11 +1266,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "had begun; the whole study again if it had not. A study that "
             "stopped with a refusal is not run again, since that was its "
             "answer. Running this twice does the work once, so a service "
-            "can run it every time a job restarts."
+            "can run it every time a job restarts. A job restarted on "
+            "another node or in another container finds the study's "
+            "process recorded there, which cannot be asked from here: it "
+            "is refused until that record has been quiet for an hour, or "
+            "run with --taken-over once that process has ended."
         ),
     )
     resume.add_argument("study", metavar="STUDY",
                         help="The study folder, as given to --output when it ran.")
+    resume.add_argument("--taken-over", action="store_true",
+                        help="Carry on a study whose process was recorded on another "
+                             "machine or container, which cannot be asked from here, "
+                             "without waiting for its records to be quiet for an hour: "
+                             "for when you know that process has ended. A process on "
+                             "this machine still refuses it. The GUI never runs this.")
     resume.add_argument("--json", action="store_true",
                         help="Print the outcome as one line of JSON, for a program to read.")
 
@@ -3335,9 +3345,10 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             # the one line of JSON a program reads; it followed every phase's
             # progress there, and no JSON reader read it.
             with _stdout_on_stderr():
-                answer = resume_study(args.study)
+                answer = resume_study(args.study,
+                                      taken_over=getattr(args, "taken_over", False))
         else:
-            answer = resume_study(args.study)
+            answer = resume_study(args.study, taken_over=getattr(args, "taken_over", False))
     except KeyboardInterrupt:
         # A Ctrl+C obeyed at once: said as the study then stands, never a
         # traceback; one heard after its last record was written leaves it

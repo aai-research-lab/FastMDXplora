@@ -3222,7 +3222,11 @@ def _every_reader(study: Path) -> dict:
         # The rule's card on the run's page, as the server answers it.
         run_card = stopping_card(folder)
         run_refused |= set(run_card.get("unavailable") or ())
+        from fastmdxplora.gui.problems_view import problems_payload
+
         said["run_pages"][run["run_id"]] = {
+            # Its Problems, read held to the run as their pane reads them.
+            "problems": problems_payload(folder).get("available", True),
             "headline": run_health.get("headline"),
             "card_said": [run_card.get(key) for key in ("said", "carry_on", "ceiling_said",
                                                          "outcome_label")],
@@ -3260,6 +3264,7 @@ def _every_reader_agrees(study: Path, state: str, *, ran: dict | None = None) ->
         # nothing of its study it is not given (a run killed before its join
         # said "Not read: ../../resolved_config.yml").
         assert not page["refused"], (name, page["refused"])
+        assert page["problems"], (name, "its Problems not read")
         words = {page[key] for key in ("listed", "study_state", "card_of", "health")}
         assert len(words) == 1, (name, page)
         # Its rule's card is the study's card, word for word: what a resume
@@ -3576,10 +3581,14 @@ def test_a_linked_out_config_is_named_on_the_rule_s_card(sequential_stopped, tmp
 
 def _quiet(monkeypatch) -> None:
     """Every record read as written longer ago than a run may go unwritten
-    (`telemetry.SILENT_RUN_ENDED_AFTER_SECONDS`, a day): quiet."""
+    (`telemetry.SILENT_RUN_ENDED_AFTER_SECONDS`, a day, and
+    `resume.ANOTHER_HOST_QUIET_SECONDS`, an hour, for another machine's):
+    quiet."""
     from fastmdxplora.gui import telemetry
+    from fastmdxplora.simulation import resume
 
     monkeypatch.setattr(telemetry, "SILENT_RUN_ENDED_AFTER_SECONDS", -1)
+    monkeypatch.setattr(resume, "ANOTHER_HOST_QUIET_SECONDS", -1)
 
 
 def _written_on(study: Path, changed: str) -> None:
@@ -3637,49 +3646,98 @@ def _snapshot(study: Path) -> dict:
             if path.is_file() and not path.is_symlink() and path.name != "live_status.json"}
 
 
+#: Where a study going elsewhere is held: its process waits there.
+_HELD_AT = {
+    "mid piece": {"piece": "segment-001", "runs": "tri__random-seed-1", "after": "100",
+                  "checkpoint": "1"},
+    "between pieces": {"call": "fastmdxplora.simulation.stopping:run_until_known"},
+    "in the rule": {"call": "fastmdxplora.simulation.stopping:judge"},
+    "in the join": {"call": "fastmdxplora.simulation.resume:_join_and_analyse"},
+}
+
+
+def _every_reader_says_going(study: Path, *, elsewhere: bool) -> None:
+    """Every reader of a study going (on another machine where
+    ``elsewhere``): its header, card and health, the rule's card, the
+    run-ended note, the Agent's health line, its fixes, share, and each of
+    its runs' pages, their Problems read."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.gui.agent_panel import _run_status, run_summary_endpoint
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.problems_view import problems_payload
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.gui.workspace import card_of, study_state
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.sharing.pack import ShareRefused, finished_manifest
+    from fastmdxplora.simulation.stopping import round_ended
+
+    assert study_state(study) == "running" and card_of(study)["state"] == "running"
+    assert round_ended(study) is None
+    health = _status_records(study)["health"]
+    assert health["state"] not in ("interrupted", "failed", "stopped", "ok"), health
+    card = stopping_card(study)
+    assert _CARD_SAID.get(card.get("outcome_label"), "running") == "running", card
+    assert run_summary_endpoint({"study": str(study)}, SimpleNamespace(
+        running_root=None, process=None, stopped_roots=()))["ended"] is False
+    said = _run_status(SimpleNamespace(active_root=study, snapshot=lambda: {
+        "active_run": True, "status": "running"})) or ""
+    assert "health: interrupted" not in said and "health: ok -- Completed" not in said, said
+    assert fixes_payload(study)["fixes"] == []
+    with pytest.raises(ShareRefused):
+        finished_manifest(study)
+    if not elsewhere:
+        return
+    assert health["message"].startswith("It is going on another-host") or \
+        "another container" in health["message"], health
+    assert "--taken-over" in health["message"], health
+    for run in sorted((study / "runs").glob("*")):
+        assert study_state(run) == "running", run
+        page = _status_records(run)["health"]
+        assert page["state"] == "running", (run, page)
+        assert stopping_card(run).get("outcome_label") == card.get("outcome_label")
+        assert remedies_of(run) == []
+        assert problems_payload(run).get("available", True), problems_payload(run)
+
+
 @pytest.mark.parametrize("where,changed", [
-    ("mid piece", "host"), ("mid piece", "pidns"), ("mid piece", None),
-    ("between pieces", "host")])
+    *[(where, changed) for where in _HELD_AT for changed in ("host", "pidns")],
+    ("mid piece", None)])
 def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, where, changed,
                                                                      monkeypatch):
     """A study really going (not killed) whose records name another machine
     (a cluster node, read over a shared folder) read interrupted for its
-    whole round with a resume offered from here; a resume from here, while
-    a round extended one of its runs, rewrote another run's report before
-    it was refused at that run's lock."""
+    whole round with a resume offered from here; its run pages, the rule's
+    card, the note and the Agent said it ended while its header said
+    running; a resume from here, while a round extended one of its runs,
+    rewrote another run's report before it was refused at that run's lock."""
     import os
     import signal
 
-    from fastmdxplora.gui.fixes_view import fixes_payload, runnable
-    from fastmdxplora.gui.server import _status_records
-    from fastmdxplora.gui.workspace import card_of, study_state
-    from fastmdxplora.sharing.pack import ShareRefused, finished_manifest
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.remedies import remedies_of
     from fastmdxplora.simulation.stopping import round_ended
 
     config = _study_of_seeds(tmp_path, seeds=True)
     hold = tmp_path / "hold"
-    at = ({"piece": "segment-001", "runs": "tri__random-seed-1", "after": "100",
-           "checkpoint": "1"} if where == "mid piece" else
-          {"call": "fastmdxplora.simulation.stopping:run_until_known"})
     process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)],
-                          tmp_path, hold, **at)
+                          tmp_path, hold, **_HELD_AT[where])
     study = tmp_path / "study"
     try:
         _until_held(process, hold, ["tri__random-seed-1" if where == "mid piece" else "call"])
         if changed:
             _written_on(study, changed)
-        assert study_state(study) == "running" and card_of(study)["state"] == "running"
-        assert round_ended(study) is None
-        health = _status_records(study)["health"]
-        assert health["state"] not in ("interrupted", "failed", "stopped"), health
-        if changed:
-            assert "It is going " in health["message"], health
-        assert fixes_payload(study)["fixes"] == []
-        with pytest.raises(ShareRefused):
-            finished_manifest(study)
+        _every_reader_says_going(study, elsewhere=bool(changed))
         before = _snapshot(study)
         code, printed, said = _resume_by_the_cli(study)
         assert code != 0 and "still going" in printed + said, (code, printed[-800:], said[-800:])
+        if not changed:
+            # Taken over is refused where this machine's process holds it.
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                assert main(["resume", "--taken-over", str(study)]) != 0
+            assert "--taken-over carries on only" in out.getvalue(), out.getvalue()[-800:]
         after = _snapshot(study)
         assert [name for name in before if before[name] != after.get(name)] == [] \
             and set(after) == set(before), sorted(set(after) ^ set(before))
@@ -3691,10 +3749,75 @@ def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, w
         # Gone quiet: what its records say, where, and the person's to run.
         _quiet(monkeypatch)
         state = study_state(study)
-        assert state == "interrupted", state
-        assert "which cannot be asked from here" in round_ended(study).said
-        fixes = _fixes_of_its_pages(study)
-        assert fixes and not any(runnable(fix) for fix in fixes), fixes
+        assert state in ("interrupted", "stopped", "failed"), state
+        ended = round_ended(study)
+        if ended is not None:
+            assert "which cannot be asked from here" in ended.said
+        fixes = [fix for page in [study, *sorted((study / "runs").glob("*"))]
+                 for fix in remedies_of(page)]
+        assert fixes and all(fix.decision for fix in fixes), fixes
+        assert all("which cannot be asked from here" in fix.why for fix in fixes), fixes
+
+
+def test_a_study_killed_elsewhere_is_taken_over_or_resumed_after_the_hour(
+        killed_before_its_rule, tmp_path, monkeypatch):
+    """A study killed on another machine or container was refused for a
+    day, told neither when nor any way past it."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.gui.workspace import study_state
+
+    if killed_before_its_rule["seeds"]:
+        pytest.skip("one run says it; two seeds take twice as long")
+    help_said = io.StringIO()
+    with contextlib.redirect_stdout(help_said), pytest.raises(SystemExit):
+        main(["resume", "--help"])
+    assert "--taken-over" in help_said.getvalue() and "another node" in help_said.getvalue()
+    for how in ("taken over", "after the hour"):
+        study = tmp_path / how.replace(" ", "_") / "study"
+        shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+        _written_on(study, "host")
+        code, printed, said = _resume_by_the_cli(study)
+        assert code != 0 and "--taken-over" in printed + said, printed[-800:]
+        assert "resumed from here after" in printed + said, printed[-800:]
+        if how == "taken over":
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                assert main(["resume", "--taken-over", str(study)]) == 0, out.getvalue()[-1500:]
+        else:
+            with monkeypatch.context() as patch:
+                _quiet(patch)
+                assert _resume_by_the_cli(study)[0] == 0
+        assert study_state(study) == "completed", how
+
+
+def test_a_finished_study_does_not_read_going_from_a_killed_piece_s_record(cut_one, tmp_path):
+    """A study whose round's extension was killed, then resumed to its end,
+    left that piece's process record, and read running elsewhere for a day
+    where the record was another machine's."""
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = tmp_path / "study"
+    shutil.copytree(cut_one["study"], study, symlinks=True)
+    assert _resume_by_the_cli(study)[0] == 0
+    assert study_state(study) == "completed"
+    assert list(study.glob(f"segment-*/{RUN_PROCESS_FILE}")), "no piece record to read"
+    _written_on(study, "host")
+    assert study_state(study) == "completed"
+
+
+def test_a_one_run_study_whose_resume_died_judging_owes_its_rule(killed_before_its_rule,
+                                                                 tmp_path):
+    """Killed before its rule, then its resume killed as it judged: read
+    Completed with no fix, and would be shared, from the dead resume's
+    process record newer than its Manifest."""
+    if killed_before_its_rule["seeds"]:
+        pytest.skip("two seeds read it right already")
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    assert _killed_in(tmp_path, "fastmdxplora.simulation.stopping:run_until_known", "resume",
+                      str(study)) == 9
+    _every_reader_agrees(study, "interrupted")
 
 
 def _a_run_s_page_of_a_study_with_its_manifest(study: Path, manifest: str) -> Path:

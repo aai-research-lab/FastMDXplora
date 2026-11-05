@@ -885,6 +885,12 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     a discontinuity is worse than one that never ran.
     """
     root = Path(study).expanduser().resolve()
+    # A run of a study going elsewhere, or held by another process (its
+    # study's lock or another run's), is refused before anything is written.
+    held = _held_elsewhere(root) if root.parent.name == "runs" else ""
+    if held:
+        return {"ok": False, "stage": "planning",
+                "error": held.replace(_STILL_GOING, _STILL_GOING_TO_EXTEND)}
     try:
         with _carrying_on(root):
             return _extend_study(root, total_ns=total_ns, more_ns=more_ns, analyse=analyse,
@@ -1980,11 +1986,10 @@ def _still_running(root: Path) -> bool:
     running by the very command sent to carry it on."""
     import json
 
-    from fastmdxplora import record_access
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
 
     try:
-        record = json.loads(record_access.read_text(root / RUN_PROCESS_FILE, encoding="utf-8"))
+        record = json.loads(_held_alone(root / RUN_PROCESS_FILE))
     except (OSError, ValueError):
         return False
     pid = record.get("pid") if isinstance(record, dict) else None
@@ -1995,6 +2000,48 @@ def _still_running(root: Path) -> bool:
     from fastmdxplora.gui.exploration import _process_is_this_run
 
     return bool(_process_is_this_run(pid, root, record))
+
+
+def _held_alone(path: Path) -> str:
+    """A record's text, read where the read is held (`record_access`), or,
+    where that hold does not admit it (a run's page asking of its study),
+    in a hold of its own over that record only, never through a link: a
+    reader held to a run has nothing refused for it."""
+    from fastmdxplora import record_access
+
+    scope = record_access._scope.get()
+    try:
+        inside = scope is None or path.absolute().is_relative_to(scope.root)
+    except (OSError, ValueError):
+        inside = True
+    if inside:
+        # Where the read is held: refused there as any record of it is.
+        return record_access.read_text(path, encoding="utf-8")
+    held = path.parent.resolve()
+    with record_access.confined_records(
+            path.parent, lambda place: place.parent == held and place.name == path.name):
+        return record_access.read_text(path, encoding="utf-8")
+
+
+def _the_resume_that_died(root: Path, started: dict[str, Any]) -> bool:
+    """Whether a run's process record is that of a resume that carried its
+    study on and died (`stopping.CARRIED_ON_BY`, its marker left): a record
+    of that resume, not a run of it that never wrote its end, so the run
+    reads as its Manifest says (its rule owed, `stopping.rule_owed`)."""
+    import json
+
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.stopping import CARRIED_ON_BY, RECORD, _a_resume_died
+
+    study = campaign_of(root) or root
+    try:
+        record = json.loads(_held_alone(study / RECORD))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or not _a_resume_died(record):
+        return False
+    marked = record.get(CARRIED_ON_BY)
+    return isinstance(marked, dict) and marked.get("pid") == started.get("pid")
 
 
 def _this_process_and_its_parents() -> set[int]:
@@ -2044,7 +2091,8 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     try:
         started = json.loads(_records.read_text(root / RUN_PROCESS_FILE, encoding="utf-8"))
         began = datetime.fromisoformat(str(started["started_at"])).timestamp()
-        if _records.stat(manifest).st_mtime < began:
+        if _records.stat(manifest).st_mtime < began and not _the_resume_that_died(
+                root, started):
             return False, None
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -2294,12 +2342,15 @@ def _its_runs(root: Path) -> list[Path]:
         return []
 
 
-def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset()) -> bool:
+def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset(),
+                 elsewhere: bool = True) -> bool:
     """Whether another process holds the lock at ``path`` (a study's or a
     run's :data:`CARRYING_ON_FILE`): one on this machine, alive, holding
     it; one on another machine sharing the file system, holding it there.
     Not one of ``but`` (on this machine: this process's and those above
-    it, where a worker asks of the study its parent carries on)."""
+    it, where a worker asks of the study its parent carries on).
+    ``elsewhere`` false: a lock another machine or container recorded is
+    not asked (`resume --taken-over`)."""
     import json
 
     from fastmdxplora.orchestrator import record_is_from_elsewhere
@@ -2323,7 +2374,7 @@ def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset()) ->
     pid = record.get("pid") if isinstance(record, dict) else None
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
         if record_is_from_elsewhere(record) or _from_another_host(record):
-            return _lock_taken(path)
+            return elsewhere and _lock_taken(path)
         return pid not in but and _lock_held(path, pid)
     return False
 
@@ -2340,6 +2391,24 @@ def _the_lock_s_process(path: Path) -> int | None:
     except (OSError, ValueError):
         return None
     pid = record.get("pid") if isinstance(record, dict) else None
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+
+
+def _the_process_s(study: Path) -> int | None:
+    """The process the study's own process record names, where it is this
+    machine's; None otherwise."""
+    import json
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
+
+    try:
+        record = json.loads(_the_lock_s_text(study / RUN_PROCESS_FILE) or "null")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record_is_from_elsewhere(record) or _from_another_host(
+            record):
+        return None
+    pid = record.get("pid")
     return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
 
 
@@ -2368,12 +2437,29 @@ def _process_records(root: Path) -> list[Path]:
     them: the study, each run, and each of their pieces."""
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 
+    import json
+
     folders = [root, *_its_runs(root)]
     found = []
     for folder in folders:
         found.append(folder / RUN_PROCESS_FILE)
+        # A piece its run's join took in is part of the run, its process
+        # long ended (a record a killed process left there is not read as
+        # going once a resume finished the run).
         try:
-            found += [piece / RUN_PROCESS_FILE for piece in sorted(folder.glob("segment-*"))]
+            joined = json.loads(_the_lock_s_text(folder / "joined" / "joined.json") or "null")
+            taken = {int(i) for i in (joined.get("segments") or [])} if isinstance(
+                joined, dict) else set()
+        except (OSError, ValueError, TypeError):
+            taken = set()
+        try:
+            for piece in sorted(folder.glob("segment-*")):
+                try:
+                    index = int(piece.name.split("-", 1)[1])
+                except ValueError:
+                    index = None
+                if index not in taken:
+                    found.append(piece / RUN_PROCESS_FILE)
         except OSError:
             pass
     return found
@@ -2403,50 +2489,95 @@ def another_host_said(root: str | Path) -> str:
     return ""
 
 
-def _written_lately(root: Path) -> bool:
-    """Whether the study's records were written within
-    `telemetry.SILENT_RUN_ENDED_AFTER_SECONDS` (a day): its process
-    records, its record of rounds and the live records of it, its runs and
-    their pieces, by when each was last written (not read)."""
+#: How long a study whose process record is another machine's or
+#: container's may go unwritten before it is taken to have ended there,
+#: and read as its records say it ended (the user's decision of 11-05):
+#: an hour. `fastmdx resume --taken-over` carries it on before that, for a
+#: person who knows its process there has ended.
+ANOTHER_HOST_QUIET_SECONDS = 3600
+
+
+def _last_written(root: Path) -> float | None:
+    """When the study's records were last written, on one clock with
+    telemetry's (`telemetry.how_the_run_ended`): each live record's own
+    `last_update_timestamp` (of the study, its runs and their pieces), so a
+    copy that does not keep file times reads the same; where no live record
+    says one, when its process and round records were last written."""
+    import json
     import os
     import time
 
-    from fastmdxplora.gui.telemetry import SILENT_RUN_ENDED_AFTER_SECONDS, STATUS_FILE
+    from fastmdxplora.gui.telemetry import STATUS_FILE, _timestamp_age_seconds
 
-    places = [*_process_records(root), root / "stopping.json"]
-    places += [path.parent / "simulation" / STATUS_FILE for path in _process_records(root)]
-    newest = None
-    for place in places:
+    folders = {path.parent for path in _process_records(root)}
+    stamps = []
+    for folder in folders:
         try:
-            written = os.lstat(place).st_mtime
+            record = json.loads(_the_lock_s_text(folder / "simulation" / STATUS_FILE) or "null")
+        except (OSError, ValueError):
+            continue
+        age = _timestamp_age_seconds(str(record.get("last_update_timestamp") or "")) if (
+            isinstance(record, dict)) else None
+        if age is not None:
+            stamps.append(time.time() - age)
+    if stamps:
+        return max(stamps)
+    written = []
+    for place in [*_process_records(root), root / "stopping.json"]:
+        try:
+            written.append(os.lstat(place).st_mtime)
         except OSError:
             continue
-        newest = written if newest is None else max(newest, written)
-    return newest is not None and time.time() - newest <= SILENT_RUN_ENDED_AFTER_SECONDS
+    return max(written) if written else None
+
+
+def _clock(when: float) -> str:
+    """A time of day as this machine says it (``14:05``), with its date
+    where it is not today."""
+    import time
+
+    day = time.strftime("%Y-%m-%d", time.localtime(when))
+    said = time.strftime("%H:%M", time.localtime(when))
+    return said if day == time.strftime("%Y-%m-%d") else f"{day} {said}"
 
 
 def going_elsewhere(root: str | Path) -> str:
     """The sentence of a study going on another machine or container: its
     process record is another's (`another_host_said`), which cannot be asked
-    from here, and its records were written within a day
-    (`_written_lately`). Empty otherwise: once quiet it reads as its records
-    say it ended."""
+    from here, and its records were written within
+    `ANOTHER_HOST_QUIET_SECONDS` (`_last_written`), with when it can be
+    resumed from here and how before then. Empty otherwise: once quiet it
+    reads as its records say it ended."""
+    import time
+
     root = Path(root)
     where = another_host_said(root)
-    if not where or not _written_lately(root):
+    last = _last_written(root) if where else None
+    if last is None or time.time() - last > ANOTHER_HOST_QUIET_SECONDS:
         return ""
-    return (f"It is going {where}, which cannot be asked from here: its records were "
-            "written within the last day.")
+    return (f"It is going {where}, which cannot be asked from here: its records were last "
+            f"written at {_clock(last)}. It can be resumed from here after "
+            f"{_clock(last + ANOTHER_HOST_QUIET_SECONDS)}, or now with `fastmdx resume "
+            f"--taken-over {root}` once it has ended there.")
 
 
-def _held_elsewhere(root: Path) -> str:
+#: Why `fastmdx resume --taken-over` is refused: it overrides only a
+#: process on another machine or container.
+_HELD_HERE = ("A process on this machine holds this study; --taken-over carries on only a "
+              "study whose process was on another machine or container.")
+
+
+def _held_elsewhere(root: Path, *, taken_over: bool = False) -> str:
     """Why a resume of ``root`` (a study, or a run of one) is refused before
-    it writes anything: the study's lock or one of its runs' held by
-    another process, or the study going on another machine; empty where
-    nothing else carries it on. This process's own holds are its own."""
-    study = root
-    if root.parent.name == "runs" and (root.parent.parent / "batch_manifest.json").is_file():
-        study = root.parent.parent
+    it writes anything: a process on this machine running it, the study's
+    lock or one of its runs' held by another process, or the study going on
+    another machine; empty where nothing else carries it on. This process's
+    own holds are its own. ``taken_over``: the person knows the process on
+    the other machine or container has ended, so only what is held on this
+    machine refuses it."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    study = campaign_of(root) or root
     with _CARRYING:
         if _carried_here.get(study) or _carried_here.get(root):
             return ""
@@ -2454,12 +2585,22 @@ def _held_elsewhere(root: Path) -> str:
     # study's lock: that resume's own, and so are its other runs' locks,
     # held by its other workers.
     above = _this_process_and_its_parents()
-    if root != study and _the_lock_s_process(study / CARRYING_ON_FILE) in above:
+    if root != study and (_the_lock_s_process(study / CARRYING_ON_FILE) in above
+                          or _the_process_s(study) in above):
+        # Or of the study's run itself (its rule extending its runs in
+        # workers, each holding its run's lock).
         return ""
-    if _a_lock_held(study / CARRYING_ON_FILE, but=above) or any(
-            _a_lock_held(run / CARRYING_ON_FILE, but=above) for run in _its_runs(study)):
-        return _STILL_GOING
-    going = going_elsewhere(study)
+    refused = _HELD_HERE if taken_over else _STILL_GOING
+    try:
+        if _still_running(study) or (root != study and _still_running(root)):
+            return refused
+    except Exception:  # noqa: BLE001 - its locks still say
+        pass
+    if _a_lock_held(study / CARRYING_ON_FILE, but=above, elsewhere=not taken_over) or any(
+            _a_lock_held(run / CARRYING_ON_FILE, but=above, elsewhere=not taken_over)
+            for run in _its_runs(study)):
+        return refused
+    going = "" if taken_over else going_elsewhere(study)
     return f"{_STILL_GOING} {going}" if going else ""
 
 
@@ -2508,7 +2649,8 @@ _STILL_GOING_TO_EXTEND = "A run of this study is still going. Extend it once it 
 
 
 def resume_study(study: str | Path, *,
-                 device_index: str | int | None = None) -> dict[str, Any]:
+                 device_index: str | int | None = None,
+                 taken_over: bool = False) -> dict[str, Any]:
     """Carry a study that stopped part-way on to the end of its plan.
 
     A study being carried on by another process is said, not carried on
@@ -2540,12 +2682,15 @@ def resume_study(study: str | Path, *,
     A study of several runs is carried on run by run
     (:func:`resume_batch`). ``device_index`` puts a run's simulation on the
     device given, where a campaign shares out its cards again.
+    ``taken_over``: the person knows the process on the other machine or
+    container that last ran it has ended (`fastmdx resume --taken-over`);
+    what is held on this machine still refuses it.
     """
     root = Path(study).expanduser().resolve()
     # Refused before anything is written while another process carries the
     # study or one of its runs on (a resume rewrote a run's report, then
     # was refused at the run a round was extending).
-    held = _held_elsewhere(root)
+    held = _held_elsewhere(root, taken_over=taken_over)
     if held:
         return {"study": str(root), "ok": False, "did": RESUMED_NOTHING, "error": held}
     try:

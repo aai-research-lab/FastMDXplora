@@ -1050,6 +1050,13 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
         # process record is written): never completed meanwhile.
         if _still_running(base) or being_carried_on(base):
             return "running"
+        from fastmdxplora.batch.explorer import campaign_of
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        # A run of a study going on another machine: going, as its study.
+        study = campaign_of(base)
+        if study is not None and going_elsewhere(study):
+            return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
     from fastmdxplora.simulation.stopping import round_ended

@@ -117,8 +117,9 @@ def _the_means_are_of_less(base: Path) -> str | None:
         return (f"Its next piece is being simulated now: the means below are {of}, not of "
                 f"{the_whole}, until its pieces are joined and analysed.")
     found = how_a_resume_finds(base) or {}
-    study = (base.parent.parent if base.parent.name == "runs"
-             and (base.parent.parent / "batch_manifest.json").is_file() else base)
+    from fastmdxplora.batch.explorer import campaign_of
+
+    study = campaign_of(base) or base
     if found.get("own"):
         then = (f"once what its analyses said is put right, fastmdx explore --output {base} "
                 "--include analysis report --rerun runs them")

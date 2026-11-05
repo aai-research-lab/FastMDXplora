@@ -1295,7 +1295,7 @@ def _where_its_process_was(study: Path) -> str:
     except Exception:  # noqa: BLE001 - said without where
         return ""
     return (f" Its process record was written {where}, which cannot be asked from here, and "
-            "nothing has been written for a day: resume it only once it has ended there."
+            "nothing has been written for an hour: resume it only once it has ended there."
             if where else "")
 
 
@@ -1436,6 +1436,19 @@ def _failed_said(record: dict[str, Any], number: int) -> str:
     return f"Its stopping rule's round {number} failed: {body}."
 
 
+def _its_record_held(study: Path) -> Any:
+    """The study's record of its rounds, read where the read is held, or
+    in a hold of its own over that record only (`resume._held_alone`): a
+    run's page held to the run (Problems) has nothing refused for it. None
+    where it cannot be read."""
+    from fastmdxplora.simulation.resume import _held_alone
+
+    try:
+        return json.loads(_held_alone(study / RECORD))
+    except (OSError, ValueError):
+        return None
+
+
 def round_failed(study: str | Path) -> str | None:
     """The sentence of the study's last round where it failed (an
     extension's error: its join, its piece), by its record of its rounds
@@ -1443,12 +1456,7 @@ def round_failed(study: str | Path) -> str | None:
     study, its record only, so a run's page reads it as its study's page
     does: a piece left unjoined by a join that failed is not a process
     that ended."""
-    from fastmdxplora import record_access
-
-    try:
-        record = json.loads(record_access.read_text(Path(study) / RECORD, encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    record = _its_record_held(Path(study))
     if not isinstance(record, dict) or str(record.get("outcome") or "") != "stopped":
         return None
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
@@ -1465,12 +1473,7 @@ def round_stopped_when_asked(study: str | Path) -> bool:
     or a touch changes): its last round's ``stopped_by``, and no resume
     since that died carrying it on (`CARRIED_ON_BY`). Read held to the
     study, its record only (a run's page reads no other record of it)."""
-    from fastmdxplora import record_access
-
-    try:
-        record = json.loads(record_access.read_text(Path(study) / RECORD, encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
+    record = _its_record_held(Path(study))
     if not isinstance(record, dict) or _a_resume_died(record):
         return False
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]

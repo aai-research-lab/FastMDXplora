@@ -372,6 +372,13 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     # carried it on since an earlier stop and ended, the rule's sentence is
     # the reason, not the stop that resume carried on from.
     owed = rule_owed(root)
+    if owed is None and not found:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        # A round cut (in its join, say) gives its resume as the rule's
+        # card does (`stopping.round_ended`).
+        ended = round_ended(root)
+        owed = ended if ended is not None and ended.state == "interrupted" else None
     if owed is not None and (not found or owed.state == "interrupted"):
         found = [Remedy(code=STOPPED_REFUSAL if owed.state == "stopped"
                         else INTERRUPTED_CODE, where="the study", why=owed.said,
@@ -383,8 +390,14 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         elsewhere = ""
     if elsewhere:
         # Its process was another machine's, not seen to end from here: the
-        # person's to run, once it has ended there, never run from here.
-        found = [replace(remedy, decision=True) for remedy in found]
+        # person's to run, once it has ended there, never run from here, and
+        # said why.
+        from fastmdxplora.simulation.stopping import _where_its_process_was
+
+        where = _where_its_process_was(owner).strip()
+        found = [replace(remedy, decision=True,
+                         why=remedy.why if where in remedy.why else f"{remedy.why} {where}")
+                 for remedy in found]
     return found
 
 
@@ -782,11 +795,12 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
     cost = (Price(production_ns=_round(production), equilibration_ns=_round(equilibration),
                   runs=len(folders), seconds=seconds, platform=platform)
             if folders and price and not unpriced else None)
-    if study is not None and study.parent.name == "runs" and (
-            study.parent.parent / "batch_manifest.json").is_file():
+    if study is not None:
+        from fastmdxplora.batch.explorer import campaign_of
+
         # A run of a study of several is carried on by its study's resume:
         # its own ran it alone and left its study's round unjudged.
-        study = study.parent.parent
+        study = campaign_of(study) or study
     said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
     return Remedy(code=code, where=where, why=why,
                   fix=(f"{family} Production already written is kept, and the "

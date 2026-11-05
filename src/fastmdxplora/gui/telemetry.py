@@ -631,7 +631,8 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
             taken = {int(i) for i in joined.get("segments") or []}
         except (OSError, ValueError):
             taken = set()
-        if index in taken or being_carried_on(piece.parent):
+        if index in taken or being_carried_on(piece.parent) or being_carried_on(
+                _study_of(piece.parent)):
             return status
         from fastmdxplora.simulation.stopping import round_failed
 
@@ -1114,7 +1115,15 @@ def how_the_run_ended(project_root: str | Path,
     if said == "running":
         return None
     age = _timestamp_age_seconds(str(status.get("last_update_timestamp") or ""))
-    return "silence" if age is not None and age > SILENT_RUN_ENDED_AFTER_SECONDS else None
+    span = SILENT_RUN_ENDED_AFTER_SECONDS
+    if isinstance(record, dict):
+        from fastmdxplora.simulation.resume import ANOTHER_HOST_QUIET_SECONDS, _from_another_host
+
+        if _from_another_host(record):
+            # Another machine's or container's process: an hour, as the
+            # study's readers take it (`resume.going_elsewhere`).
+            span = min(span, ANOTHER_HOST_QUIET_SECONDS)
+    return "silence" if age is not None and age > span else None
 
 
 def run_ended_unsaid(project_root: str | Path, status: dict[str, Any] | None = None) -> bool:
@@ -1815,7 +1824,7 @@ def analyze_health(
     """
     health = _analyze_health(status, metrics, stale_after_seconds=stale_after_seconds,
                              root=root)
-    if root is None or health.get("state") in ("failed", "stopped", "interrupted"):
+    if root is None:
         return health
     try:
         from fastmdxplora.simulation.resume import going_elsewhere
@@ -1824,7 +1833,10 @@ def analyze_health(
     except Exception:  # noqa: BLE001 - its health as its records say it
         where = ""
     if where:
-        health = {**health, "message": f"{health.get('message') or ''} {where}".strip()}
+        # Going there, as its study's state says (`workspace.study_state`),
+        # on the study's page and each of its runs' alike: never ended
+        # from records a process there is still writing.
+        health = {**health, "state": "running", "headline": "Running", "message": where}
     return health
 
 

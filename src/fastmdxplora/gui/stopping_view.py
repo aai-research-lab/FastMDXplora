@@ -275,7 +275,15 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
     rounds = [r for r in record.get("rounds") or [] if isinstance(r, dict)]
     outcome = str(record.get("outcome") or "running")
     said = study_said(record)
-    ended = _ended_without_finishing(record, where)
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    try:
+        # Going (its lock or a run's held, or going on another machine):
+        # its card says it runs, never stopped without finishing.
+        carried_on = being_carried_on(where)
+    except Exception:  # noqa: BLE001 - as its record says
+        carried_on = False
+    ended = None if carried_on else _ended_without_finishing(record, where)
     shown = outcome
     if ended is not None:
         # Its record was written while it ran: said as it stands.
@@ -297,7 +305,7 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
     ceiling = _finite(_ceiling_a_resume_uses(where, record))
     # Said running only where its process is known to be (`_known_live`):
     # otherwise as the record stood when it was written.
-    live = ended is None and _known_live(record, where)
+    live = carried_on or ended is None and _known_live(record, where)
     from fastmdxplora.simulation.stopping import round_ended, round_numbers
 
     label = None
