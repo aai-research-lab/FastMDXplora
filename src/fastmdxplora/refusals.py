@@ -707,7 +707,7 @@ CODES: tuple[Code, ...] = (
     Code("simulation.round.join_failed",
          "A stopping rule's round whose extension ran to its end and failed as "
          "it was joined: its piece is whole, and the join is run again.",
-         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True),
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("simulation.resume.checkpoint_truncated",
          "A checkpoint that is not the whole file that was written.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
