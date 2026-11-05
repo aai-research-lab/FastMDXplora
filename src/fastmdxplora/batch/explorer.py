@@ -980,8 +980,8 @@ def campaign_of(run: Path) -> Path | None:
     or None: the one reading of "a run of a study". Its record of runs
     (`batch_manifest.json`) names it; where that record is missing or not
     readable as JSON, its record of rounds (`stopping.json`) names it; a
-    record of runs linked out of the study, and so not read, leaves it a run
-    of the study by its place. A study of its own saved in a folder named
+    record of runs linked out of the study, and so not read, or naming no
+    run yet, leaves it a run of the study by its place. A study of its own saved in a folder named
     ``runs`` is no run. Read in a hold of its own, the study's two records
     only, never through a link, so a reader held to the run (Problems) has
     nothing refused for it."""
@@ -1016,6 +1016,9 @@ def campaign_of(run: Path) -> Path | None:
         for key in key_of:
             for entry in record.get(key) or []:
                 found.add(str(entry.get("run_id")) if isinstance(entry, dict) else str(entry))
+        if not found:
+            # A record of runs naming none yet: a run of it by its place.
+            return True if name == "batch_manifest.json" else None
         return run.name in found
 
     try:
