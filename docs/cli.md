@@ -675,7 +675,17 @@ outside the study's folder, or a name is not known.
 ```bash
 fastmdx resume runs/study          # says what it did
 fastmdx resume runs/study --json   # the same, as one line of JSON
+fastmdx resume runs/study --taken-over   # its process on another node has ended
 ```
+
+A study whose process was recorded on another machine or in another
+container (a cluster node, a job requeued elsewhere) cannot be asked from
+here whether that process still runs. While its records were written within
+the last hour, `resume` refuses it, saying when it can be resumed from here;
+after an hour of nothing written it is carried on as any stopped study is.
+`--taken-over` carries it on at once, for when you know the process there
+has ended; a process on this machine holding the study still refuses it,
+and the GUI never runs it (its Fixes card shows the command, for you to run).
 
 Reads how far a study got and does what is left: nothing, the analyses and
 report, the rest of production from its last sealed checkpoint, or the whole

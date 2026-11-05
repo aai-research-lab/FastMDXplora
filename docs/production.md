@@ -387,17 +387,22 @@ study's lock; a run's page reads any marker as its study's round carried on
 (neither stopped when asked nor failed), going or ended, and its rule's card
 is the study's, read in the study's own held read. A run record from this
 machine before its last boot names a process that is gone. One from a
-different host or container names a process that cannot be asked from here: while
-the study's records were written within the last day (the span after which
-a run with no process here to ask is taken to have ended), the study reads
-going, "It is going on <host>, which cannot be asked from here"; once
-quiet, it reads as its records say it ended, saying where, and its fix is
-the person's to run once it has ended there, never run from the GUI. The
-study is going too while any of its runs' locks is held (a round's
-extension holds its run's), and `fastmdx resume` refuses, before it writes
-anything, while the study's lock or any run's is held or it goes on that
-host. A folder under `runs/` is a run of the study above only where that
-study's `batch_manifest.json` names it (or, that record missing or broken,
+different host or container names a process that cannot be asked from here:
+while the study's records were written within the last hour (by their own
+timestamps, so a copy reads the same), the study reads going on every
+reader, "It is going on <host>, which cannot be asked from here", with the
+time after which it can be resumed from here; once quiet for an hour, it
+reads as its records say it ended, saying where, and its fix is the
+person's to run once it has ended there, never run from the GUI. `fastmdx
+resume --taken-over` carries it on before the hour, for a person who knows
+its process there has ended; a process on this machine holding the study
+still refuses it, and the GUI never runs it. A record of a piece its run's
+join took in is not read as going. The study is going too while any of its
+runs' locks is held (a round's extension holds its run's), and `fastmdx
+resume`, or an extension of one of its runs, refuses, before it writes
+anything, while a process on this machine runs it, the study's lock or any
+run's is held, or it goes on that host. A folder under `runs/` is a run of
+the study above only where that study's `batch_manifest.json` names it (or, that record missing or broken,
 its `stopping.json`; or that record linked out of the study), read in a hold
 of its own (`explorer.campaign_of`). A fix for a run
 of a study of several gives the study's `fastmdx resume`. The round's test

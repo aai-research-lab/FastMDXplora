@@ -768,6 +768,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study's record of runs is missing or broken is still that study's. A
   failed join's code is SEMANTIC and its fix, to put right what failed it
   first, is not run from the GUI at once.
+- `fastmdx resume --taken-over` carries on a study whose process was
+  recorded on another machine or container once you know it has ended
+  there; the GUI never runs it. Without it, such a study reads going while
+  its records were written within the last hour (their own timestamps, so a
+  copy reads the same), saying when it can be resumed from here, and then as
+  its records say it ended. Every reader of a study going there agrees (its
+  run pages, the rule's card, the run-ended note, the Agent); a finished
+  run's joined pieces' records are not read as going; a resume refused on
+  this machine, or an extension of a run of a study held elsewhere, writes
+  nothing first. Problems are read on a run page whose join failed or was
+  cut; a one-run study whose resume died as it judged its rule owes the
+  rule; a round cut in its join gives its resume on the Fixes card; one
+  reading of "a run of a study" everywhere.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
